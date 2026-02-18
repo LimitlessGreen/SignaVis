@@ -18,6 +18,9 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Check version sync
+        run: bash ./scripts/check-version-sync.sh
+
       - name: Check npm package archive
         run: npm pack
 
@@ -29,8 +32,9 @@ jobs:
       - name: Build Python package
         run: |
           cd python-wrapper
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build twine
           python -m build
+          python -m twine check dist/*
 
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -45,6 +49,9 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Check version sync (incl. tag)
+        run: bash ./scripts/check-version-sync.sh
 
       - name: Publish npm
         run: npm publish --access public
@@ -64,11 +71,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Check version sync (incl. tag)
+        run: bash ./scripts/check-version-sync.sh
+
       - name: Build Python package
         run: |
           cd python-wrapper
           python -m pip install --upgrade pip build twine
           python -m build
+          python -m twine check dist/*
 
       - name: Publish to PyPI
         run: |

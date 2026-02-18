@@ -2,7 +2,20 @@
 
 Python helper package to embed `audio-workbench-player` in Streamlit, Jupyter, and other HTML-capable UIs.
 
-## Install (local)
+## Install (PyPI)
+
+```bash
+pip install audio-workbench-player
+```
+
+Optional demo dependencies:
+
+```bash
+pip install "audio-workbench-player[streamlit]"
+pip install "audio-workbench-player[gradio]"
+```
+
+## Install (local dev)
 
 ```bash
 pip install -e .

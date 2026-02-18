@@ -238,12 +238,44 @@ Dann öffnen:
 - `http://localhost:8080/demo/storybook.html` (kuratierte Interactive Stories)
 - `http://localhost:8080/demo/index.html` (Standard-Demo)
 
-## Publish
+## Release Runbook
+
+1. Version nur in `VERSION` erhöhen (Single Source of Truth):
+
+```bash
+echo "X.Y.Z" > VERSION
+npm run version:sync
+npm run version:check
+```
+
+2. Build + Packaging lokal prüfen:
+
+```bash
+npm test
+npm pack
+cd python-wrapper
+python -m pip install --upgrade build twine
+python -m build
+python -m twine check dist/*
+```
+
+3. Changelog aktualisieren (`CHANGELOG.md`).
+
+4. Commit + Tag erstellen (automatisiert):
+
+```bash
+bash ./scripts/release.sh X.Y.Z
+```
+
+5. Veröffentlichung läuft über GitHub Actions bei Tag `v*`:
+- npm: `publish-npm`
+- PyPI: `publish-pypi`
+
+6. Optional manueller Fallback:
 
 ```bash
 npm publish --access public
 cd python-wrapper
-python -m build
 python -m twine upload dist/*
 ```
 
