@@ -1,18 +1,18 @@
-# audio-workbench-player (Python wrapper)
+# audio-workbench (Python wrapper)
 
-Python helper package to embed `audio-workbench-player` in Streamlit, Jupyter, and other HTML-capable UIs.
+Python helper package to embed `audio-workbench` in Streamlit, Jupyter, and other HTML-capable UIs.
 
 ## Install (PyPI)
 
 ```bash
-pip install audio-workbench-player
+pip install audio-workbench
 ```
 
 Optional demo dependencies:
 
 ```bash
-pip install "audio-workbench-player[streamlit]"
-pip install "audio-workbench-player[gradio]"
+pip install "audio-workbench[streamlit]"
+pip install "audio-workbench[gradio]"
 ```
 
 ## Install (local dev)
@@ -24,7 +24,7 @@ pip install -e .
 ## Usage
 
 ```python
-from audio_workbench_player import render_daw_player
+from audio_workbench import render_daw_player
 html = render_daw_player(
     audio_bytes,
     iframe_height=320,

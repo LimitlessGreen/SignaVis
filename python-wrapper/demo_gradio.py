@@ -3,7 +3,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from audio_workbench_player import render_daw_player
+from audio_workbench import render_daw_player
 
 
 PRESETS = {

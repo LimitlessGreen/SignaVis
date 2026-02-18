@@ -3,7 +3,7 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from audio_workbench_player import render_daw_player
+from audio_workbench import render_daw_player
 
 
 PRESETS = {

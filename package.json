@@ -1,5 +1,5 @@
 {
-  "name": "audio-workbench-player",
+  "name": "audio-workbench",
   "version": "0.0.3",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "type": "module",
@@ -35,7 +35,7 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/user/audio-workbench-player"
+    "url": "https://github.com/LimitlessGreen/Audio-Workbench"
   },
   "scripts": {
     "build": "bash ./scripts/build.sh",

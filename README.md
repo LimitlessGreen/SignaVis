@@ -1,11 +1,11 @@
-# audio-workbench-player
+# audio-workbench
 
 DAW-ähnlicher Audio-Player (Waveform + Spektrogramm + Transport Controls) als eigenständige Library.
 
 ## Install
 
 ```bash
-npm i audio-workbench-player wavesurfer
+npm i audio-workbench wavesurfer
 ```
 
 ## Paketinhalt
@@ -18,8 +18,8 @@ npm i audio-workbench-player wavesurfer
 ## Quickstart
 
 ```js
-import { BirdNETPlayer } from 'audio-workbench-player'
-import 'audio-workbench-player/style'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
@@ -29,8 +29,8 @@ await player.ready
 
 ### 1) ESM (Vite/Vanilla)
 ```js
-import { BirdNETPlayer } from 'audio-workbench-player'
-import 'audio-workbench-player/style'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
@@ -55,8 +55,8 @@ input.addEventListener('change', async () => {
 ### 4) React
 ```jsx
 import { useEffect, useRef } from 'react'
-import { BirdNETPlayer } from 'audio-workbench-player'
-import 'audio-workbench-player/style'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
 export default function Player() {
   const ref = useRef(null)
@@ -72,8 +72,8 @@ export default function Player() {
 ### 5) Vue
 ```js
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { BirdNETPlayer } from 'audio-workbench-player'
-import 'audio-workbench-player/style'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
 const root = ref(null)
 let player
@@ -86,8 +86,8 @@ onBeforeUnmount(() => player?.destroy())
 ```svelte
 <script>
   import { onMount } from 'svelte'
-  import { BirdNETPlayer } from 'audio-workbench-player'
-  import 'audio-workbench-player/style'
+  import { BirdNETPlayer } from 'audio-workbench'
+  import 'audio-workbench/style'
 
   let el
   let player
@@ -103,8 +103,8 @@ onBeforeUnmount(() => player?.destroy())
 ### 7) CDN / IIFE (Vanilla)
 ```html
 <script src="https://unpkg.com/wavesurfer@7"></script>
-<script src="https://unpkg.com/audio-workbench-player@0.0.1/iife"></script>
-<link rel="stylesheet" href="https://unpkg.com/audio-workbench-player@0.0.1/style" />
+<script src="https://unpkg.com/audio-workbench@0.0.1/iife"></script>
+<link rel="stylesheet" href="https://unpkg.com/audio-workbench@0.0.1/style" />
 <div id="player"></div>
 <script>
   const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
@@ -113,7 +113,7 @@ onBeforeUnmount(() => player?.destroy())
 
 ### 8) Streamlit (Python)
 ```python
-from audio_workbench_player import render_daw_player
+from audio_workbench import render_daw_player
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -123,15 +123,15 @@ components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
 ### 9) Jupyter Notebook
 ```python
 from IPython.display import HTML
-from audio_workbench_player import render_daw_player
+from audio_workbench import render_daw_player
 
 HTML(render_daw_player(audio_bytes))
 ```
 
 ### 10) Electron / Tauri WebView
 ```js
-import { BirdNETPlayer } from 'audio-workbench-player'
-import 'audio-workbench-player/style'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
 const p = new BirdNETPlayer(document.getElementById('player'))
 await p.loadUrl('file:///absolute/path/to/audio.wav')
@@ -222,7 +222,7 @@ npm test
 ## Build / Sync from parent project
 
 ```bash
-cd audio-workbench-player-lib
+cd audio-workbench-lib
 bash scripts/build.sh
 npm pack
 ```
@@ -230,7 +230,7 @@ npm pack
 ## Storybook-Style Demo
 
 ```bash
-cd audio-workbench-player-lib
+cd audio-workbench-lib
 python -m http.server 8080
 ```
 
@@ -239,6 +239,12 @@ Dann öffnen:
 - `http://localhost:8080/demo/index.html` (Standard-Demo)
 
 ## Release Runbook
+
+0. Einmalig npm Trusted Publishing einrichten:
+- npm Package `audio-workbench` -> `Settings` -> `Trusted publisher`
+- GitHub owner/org: `limitlessgreen`
+- Repository: `Audio-Workbench`
+- Workflow file: `.github/workflows/ci.yml`
 
 1. Version nur in `VERSION` erhöhen (Single Source of Truth):
 

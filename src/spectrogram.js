@@ -5,7 +5,7 @@
 import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
 import { getTimeGridSteps } from './utils.js';
 
-const CACHE_DB_NAME = 'audio-workbench-player-cache';
+const CACHE_DB_NAME = 'audio-workbench-cache';
 const CACHE_DB_VERSION = 1;
 const CACHE_STORE = 'spectrograms';
 

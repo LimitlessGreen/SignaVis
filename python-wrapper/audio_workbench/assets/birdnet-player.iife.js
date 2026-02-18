@@ -494,7 +494,7 @@ var BirdNETPlayerModule = (() => {
   }
 
   // src/spectrogram.js
-  var CACHE_DB_NAME = "audio-workbench-player-cache";
+  var CACHE_DB_NAME = "audio-workbench-cache";
   var CACHE_DB_VERSION = 1;
   var CACHE_STORE = "spectrograms";
   function computeAmplitudePeak(channelData) {
