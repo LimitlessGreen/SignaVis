@@ -1,6 +1,6 @@
 {
   "name": "audio-workbench-player",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "type": "module",
   "main": "./dist/birdnet-player.esm.js",
@@ -41,6 +41,9 @@
     "build": "bash ./scripts/build.sh",
     "types:generate": "node ./scripts/generate-types.js",
     "pack:check": "npm pack",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "version:sync": "bash ./scripts/sync-version.sh",
+    "version:check": "bash ./scripts/check-version-sync.sh",
+    "release": "bash ./scripts/release.sh"
   }
 }

@@ -1,20 +1,29 @@
 [build-system]
-requires = ["setuptools>=68", "wheel", "build"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "audio-workbench-player"
-version = "0.0.1"
+version = "0.0.2"
 description = "Python wrapper for Audio Workbench Player (HTML/Streamlit embedding)"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
-authors = [{ name = "Dein Name" }]
-license = { text = "AGPL-3.0-only" }
+authors = [{ name = "Perch Contributors" }]
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["audio", "player", "streamlit", "jupyter", "embed", "waveform", "spectrogram"]
 classifiers = [
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
   "Operating System :: OS Independent"
 ]
+urls = { "Homepage" = "https://github.com/LimitlessGreen/Audio-Workbench", "Repository" = "https://github.com/LimitlessGreen/Audio-Workbench", "Issues" = "https://github.com/LimitlessGreen/Audio-Workbench/issues" }
+
+[project.optional-dependencies]
+streamlit = ["streamlit>=1.30"]
+gradio = ["gradio>=4.0"]
 
 [tool.setuptools]
 package-dir = {"" = "."}
