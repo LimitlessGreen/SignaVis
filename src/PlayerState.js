@@ -102,7 +102,7 @@ export class PlayerState {
         this.sampleRateHz = 32000;
         this.audioHash = null;
         this.amplitudePeakAbs = 1;
-        this.currentColorScheme = this.d.colorSchemeSelect.value || 'fire';
+        this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
         this.volume = 0.8;
         this.muted = false;
         this.preMuteVolume = 0.8;

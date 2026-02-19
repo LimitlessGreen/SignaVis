@@ -728,8 +728,8 @@ self.onmessage = (event) => {
 
     for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
         const offset = frameIdx * hopSize;
-        const powerSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
-        const melSpectrum = applyMelFilterbank(powerSpectrum, melFilterbank);
+        const magnitudeSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
+        const melSpectrum = applyMelFilterbank(magnitudeSpectrum, melFilterbank);
 
         const base = frameIdx * nMels;
         for (let m = 0; m < nMels; m++) {
@@ -762,7 +762,8 @@ function fftPowerSpectrum(audio, offset, winLength, fftSize) {
 
     const out = new Float32Array(fftSize / 2);
     for (let i = 0; i < out.length; i++) {
-        out[i] = real[i] * real[i] + imag[i] * imag[i];
+        // Hoplite/librosa uses melspectrogram(..., power=1): mel energy from magnitude spectrum.
+        out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
     }
     return out;
 }
@@ -957,7 +958,7 @@ export function createSpectrogramProcessor() {
                 }
                 iterativeFFT(re, im);
                 const o = new Float32Array(fft / 2);
-                for (let i = 0; i < o.length; i++) o[i] = re[i]*re[i] + im[i]*im[i];
+                for (let i = 0; i < o.length; i++) o[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
                 return o;
             }
 

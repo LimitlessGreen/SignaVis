@@ -240,6 +240,12 @@ Dann öffnen:
 
 ## Release Runbook
 
+Git hooks einmalig installieren:
+
+```bash
+npm run hooks:install
+```
+
 0. Einmalig npm Trusted Publishing einrichten:
 - npm Package `audio-workbench` -> `Settings` -> `Trusted publisher`
 - GitHub owner/org: `limitlessgreen`

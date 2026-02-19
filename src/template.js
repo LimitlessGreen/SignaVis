@@ -149,8 +149,8 @@ export function createPlayerHTML(opts = {}) {
 
             <label class="toolbar-label" for="colorSchemeSelect">Color</label>
             <select id="colorSchemeSelect" class="toolbar-select">
-                <option value="fire" selected>Fire</option>
-                <option value="grayscale">B/W</option>
+                <option value="grayscale" selected>B/W</option>
+                <option value="fire">Fire</option>
                 <option value="inferno">Inferno</option>
                 <option value="viridis">Viridis</option>
                 <option value="magma">Magma</option>

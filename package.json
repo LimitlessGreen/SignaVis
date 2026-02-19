@@ -42,6 +42,8 @@
     "types:generate": "node ./scripts/generate-types.js",
     "pack:check": "npm pack",
     "test": "node --test tests/*.test.mjs",
+    "hooks:install": "bash ./scripts/setup-git-hooks.sh",
+    "dist:check": "bash ./scripts/check-dist-sync.sh",
     "version:sync": "bash ./scripts/sync-version.sh",
     "version:check": "bash ./scripts/check-version-sync.sh",
     "release": "bash ./scripts/release.sh"

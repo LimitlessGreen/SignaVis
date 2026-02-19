@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "${ROOT_DIR}"
+
+echo "[pre-push] Running tests"
+npm test
+
+echo "[pre-push] Checking src/dist sync"
+bash ./scripts/check-dist-sync.sh

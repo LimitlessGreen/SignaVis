@@ -188,8 +188,8 @@ var BirdNETPlayerModule = (() => {
 
             <label class="toolbar-label" for="colorSchemeSelect">Color</label>
             <select id="colorSchemeSelect" class="toolbar-select">
-                <option value="fire" selected>Fire</option>
-                <option value="grayscale">B/W</option>
+                <option value="grayscale" selected>B/W</option>
+                <option value="fire">Fire</option>
                 <option value="inferno">Inferno</option>
                 <option value="viridis">Viridis</option>
                 <option value="magma">Magma</option>
@@ -1339,8 +1339,8 @@ self.onmessage = (event) => {
 
     for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
         const offset = frameIdx * hopSize;
-        const powerSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
-        const melSpectrum = applyMelFilterbank(powerSpectrum, melFilterbank);
+        const magnitudeSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
+        const melSpectrum = applyMelFilterbank(magnitudeSpectrum, melFilterbank);
 
         const base = frameIdx * nMels;
         for (let m = 0; m < nMels; m++) {
@@ -1373,7 +1373,7 @@ function fftPowerSpectrum(audio, offset, winLength, fftSize) {
 
     const out = new Float32Array(fftSize / 2);
     for (let i = 0; i < out.length; i++) {
-        out[i] = real[i] * real[i] + imag[i] * imag[i];
+        out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
     }
     return out;
 }
@@ -1563,7 +1563,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
                 }
                 iterativeFFT(re, im);
                 const o = new Float32Array(fft / 2);
-                for (let i = 0; i < o.length; i++) o[i] = re[i]*re[i] + im[i]*im[i];
+                for (let i = 0; i < o.length; i++) o[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
                 return o;
             }
 
@@ -1903,7 +1903,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       this.sampleRateHz = 32e3;
       this.audioHash = null;
       this.amplitudePeakAbs = 1;
-      this.currentColorScheme = this.d.colorSchemeSelect.value || "fire";
+      this.currentColorScheme = this.d.colorSchemeSelect.value || "grayscale";
       this.volume = 0.8;
       this.muted = false;
       this.preMuteVolume = 0.8;

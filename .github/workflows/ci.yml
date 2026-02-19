@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -20,6 +22,15 @@ jobs:
 
       - name: Check version sync
         run: bash ./scripts/check-version-sync.sh
+
+      - name: Check src/dist sync
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch origin "${{ github.base_ref }}"
+            bash ./scripts/check-dist-sync.sh "origin/${{ github.base_ref }}"
+          else
+            bash ./scripts/check-dist-sync.sh "origin/main"
+          fi
 
       - name: Check npm package archive
         run: npm pack
