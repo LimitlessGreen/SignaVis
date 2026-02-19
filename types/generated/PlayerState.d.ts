@@ -97,6 +97,7 @@ export class PlayerState {
     spectrogramAbsLogMin: number;
     spectrogramAbsLogMax: number;
     sampleRateHz: number;
+    _externalSpectrogram: boolean;
     amplitudePeakAbs: number;
     currentColorScheme: any;
     volume: number;
@@ -300,6 +301,16 @@ export class PlayerState {
     _updateAriaPlaybackPosition(currentTimeSec: any): void;
     _updatePlayhead(currentTime: any, fromPlayback: any): void;
     _generateSpectrogram(): Promise<void>;
+    /**
+     * Mode 1: Raw data — enter pipeline at Stage 1 (grayscale → colorize → render).
+     * Contrast sliders, color map selection, and frequency controls all remain functional.
+     */
+    _setExternalSpectrogram(data: any, nFrames: any, nMels: any, options?: {}): void;
+    /**
+     * Mode 2: Pre-rendered image — bypasses entire DSP + colorization pipeline.
+     * Contrast/color controls have no effect; the image is drawn as-is.
+     */
+    _setExternalSpectrogramImage(image: any, options?: {}): Promise<any>;
     _mergeProgressiveResults(chunkResults: any, nMels: any): {
         data: Float32Array<ArrayBuffer>;
         nFrames: number;

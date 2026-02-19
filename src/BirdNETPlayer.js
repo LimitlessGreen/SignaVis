@@ -269,6 +269,45 @@ export class BirdNETPlayer {
         this._emit('labeltaxonomyapply', { id: key, taxonomy: { ...tax } });
         return true;
     }
+    /**
+     * Inject a pre-computed spectrogram as raw data (Float32Array or base64-encoded).
+     * The player applies its own colorization pipeline (contrast, color map).
+     *
+     * @param {Float32Array|ArrayBuffer|string} data — spectrogram values.
+     *   If string, decoded as base64 → Float32 (little-endian).
+     * @param {number} nFrames — number of time frames
+     * @param {number} nMels   — number of frequency bins
+     * @param {Object} [options]
+     * @param {string} [options.mode='perch'] — 'perch'|'classic' (affects freq axis labels)
+     * @param {number} [options.sampleRate]   — sample rate for freq labels (default: from audio)
+     */
+    async setSpectrogramData(data, nFrames, nMels, options = {}) {
+        await this.ready;
+        return this._state._setExternalSpectrogram(data, nFrames, nMels, options);
+    }
+
+    /**
+     * Inject a pre-rendered spectrogram image (bypasses all DSP + colorization).
+     *
+     * @param {string|HTMLImageElement|HTMLCanvasElement} image — base64 data-URL,
+     *   regular URL, or an already-loaded Image/Canvas element.
+     * @param {Object} [options]
+     * @param {number} [options.sampleRate] — for freq labels
+     */
+    async setSpectrogramImage(image, options = {}) {
+        await this.ready;
+        return this._state._setExternalSpectrogramImage(image, options);
+    }
+
+    /**
+     * Clear any externally-injected spectrogram and re-enable auto-compute.
+     */
+    async clearExternalSpectrogram() {
+        await this.ready;
+        this._state._externalSpectrogram = false;
+        if (this._state.audioBuffer) this._state._generateSpectrogram();
+    }
+
     setPlaybackViewportConfig(config = {}) {
         return this._state?.updatePlaybackViewportConfig?.(config) || null;
     }

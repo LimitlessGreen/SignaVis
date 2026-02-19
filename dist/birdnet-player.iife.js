@@ -1727,6 +1727,7 @@ void main() {
       this.spectrogramAbsLogMin = 0;
       this.spectrogramAbsLogMax = 1;
       this.sampleRateHz = 32e3;
+      this._externalSpectrogram = false;
       this.amplitudePeakAbs = 1;
       this.currentColorScheme = this.d.colorSchemeSelect.value || "grayscale";
       this.volume = 0.8;
@@ -2648,6 +2649,7 @@ void main() {
     // ═════════════════════════════════════════════════════════════════
     async _generateSpectrogram() {
       if (!this.audioBuffer) return;
+      if (this._externalSpectrogram) return;
       this._setTransportState("rendering", "spectrogram-generate");
       const spectrogramMode = this.d.spectrogramModeSelect?.value || "perch";
       const options = {
@@ -2704,6 +2706,99 @@ void main() {
         this._emit("error", { message: error?.message || String(error), source: "spectrogram" });
         throw error;
       }
+    }
+    // ── External Spectrogram Injection ────────────────────────────
+    /**
+     * Mode 1: Raw data — enter pipeline at Stage 1 (grayscale → colorize → render).
+     * Contrast sliders, color map selection, and frequency controls all remain functional.
+     */
+    _setExternalSpectrogram(data, nFrames, nMels, options = {}) {
+      let floats;
+      if (typeof data === "string") {
+        const binary = atob(data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        floats = new Float32Array(bytes.buffer);
+      } else if (data instanceof ArrayBuffer) {
+        floats = new Float32Array(data);
+      } else if (data instanceof Float32Array) {
+        floats = data;
+      } else {
+        throw new Error("setSpectrogramData: data must be Float32Array, ArrayBuffer, or base64 string");
+      }
+      if (floats.length !== nFrames * nMels) {
+        throw new Error(`setSpectrogramData: data.length (${floats.length}) !== nFrames*nMels (${nFrames}*${nMels}=${nFrames * nMels})`);
+      }
+      this._externalSpectrogram = true;
+      this.spectrogramData = floats;
+      this.spectrogramFrames = nFrames;
+      this.spectrogramMels = nMels;
+      if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+      if (options.mode && this.d.spectrogramModeSelect) {
+        this.d.spectrogramModeSelect.value = options.mode;
+      }
+      this._updateSpectrogramStats();
+      this._autoContrast();
+      this._autoFrequency();
+      this._buildSpectrogramGrayscale();
+      this._buildSpectrogramBaseImage();
+      this._drawSpectrogram();
+      this._syncOverviewWindowToViewport();
+      this._setTransportState("ready", "spectrogram-external-data");
+      this._emit("ready", {
+        duration: this.audioBuffer?.duration || 0,
+        sampleRate: this.sampleRateHz,
+        nFrames: this.spectrogramFrames,
+        nMels: this.spectrogramMels,
+        external: true
+      });
+    }
+    /**
+     * Mode 2: Pre-rendered image — bypasses entire DSP + colorization pipeline.
+     * Contrast/color controls have no effect; the image is drawn as-is.
+     */
+    _setExternalSpectrogramImage(image, options = {}) {
+      return new Promise((resolve, reject) => {
+        const apply = (img) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          this._externalSpectrogram = true;
+          this.spectrogramBaseCanvas = canvas;
+          this.spectrogramData = new Float32Array(0);
+          this.spectrogramFrames = canvas.width;
+          this.spectrogramMels = canvas.height;
+          this.spectrogramGrayInfo = null;
+          if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+          this._drawSpectrogram();
+          this._syncOverviewWindowToViewport();
+          this._setTransportState("ready", "spectrogram-external-image");
+          this._emit("ready", {
+            duration: this.audioBuffer?.duration || 0,
+            sampleRate: this.sampleRateHz,
+            nFrames: this.spectrogramFrames,
+            nMels: this.spectrogramMels,
+            external: true,
+            externalImage: true
+          });
+          resolve();
+        };
+        if (image instanceof HTMLCanvasElement || image instanceof HTMLImageElement && image.complete) {
+          apply(image);
+        } else if (image instanceof HTMLImageElement) {
+          image.onload = () => apply(image);
+          image.onerror = reject;
+        } else if (typeof image === "string") {
+          const img = new Image();
+          img.onload = () => apply(img);
+          img.onerror = reject;
+          img.src = image;
+        } else {
+          reject(new Error("setSpectrogramImage: unsupported image type"));
+        }
+      });
     }
     _mergeProgressiveResults(chunkResults, nMels) {
       let totalFrames = 0;
@@ -4816,6 +4911,42 @@ void main() {
       this._syncLinkedLabelsToLayers();
       this._emit("labeltaxonomyapply", { id: key, taxonomy: { ...tax } });
       return true;
+    }
+    /**
+     * Inject a pre-computed spectrogram as raw data (Float32Array or base64-encoded).
+     * The player applies its own colorization pipeline (contrast, color map).
+     *
+     * @param {Float32Array|ArrayBuffer|string} data — spectrogram values.
+     *   If string, decoded as base64 → Float32 (little-endian).
+     * @param {number} nFrames — number of time frames
+     * @param {number} nMels   — number of frequency bins
+     * @param {Object} [options]
+     * @param {string} [options.mode='perch'] — 'perch'|'classic' (affects freq axis labels)
+     * @param {number} [options.sampleRate]   — sample rate for freq labels (default: from audio)
+     */
+    async setSpectrogramData(data, nFrames, nMels, options = {}) {
+      await this.ready;
+      return this._state._setExternalSpectrogram(data, nFrames, nMels, options);
+    }
+    /**
+     * Inject a pre-rendered spectrogram image (bypasses all DSP + colorization).
+     *
+     * @param {string|HTMLImageElement|HTMLCanvasElement} image — base64 data-URL,
+     *   regular URL, or an already-loaded Image/Canvas element.
+     * @param {Object} [options]
+     * @param {number} [options.sampleRate] — for freq labels
+     */
+    async setSpectrogramImage(image, options = {}) {
+      await this.ready;
+      return this._state._setExternalSpectrogramImage(image, options);
+    }
+    /**
+     * Clear any externally-injected spectrogram and re-enable auto-compute.
+     */
+    async clearExternalSpectrogram() {
+      await this.ready;
+      this._state._externalSpectrogram = false;
+      if (this._state.audioBuffer) this._state._generateSpectrogram();
     }
     setPlaybackViewportConfig(config = {}) {
       return this._state?.updatePlaybackViewportConfig?.(config) || null;

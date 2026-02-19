@@ -96,6 +96,7 @@ export class PlayerState {
         this.spectrogramAbsLogMin = 0;   // absolute range (full data)
         this.spectrogramAbsLogMax = 1;
         this.sampleRateHz = 32000;
+        this._externalSpectrogram = false; // true when externally-injected data/image
         this.amplitudePeakAbs = 1;
         this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
         this.volume = 0.8;
@@ -1104,6 +1105,7 @@ export class PlayerState {
 
     async _generateSpectrogram() {
         if (!this.audioBuffer) return;
+        if (this._externalSpectrogram) return; // external data — do not overwrite
         this._setTransportState('rendering', 'spectrogram-generate');
 
         const spectrogramMode = this.d.spectrogramModeSelect?.value || 'perch';
@@ -1172,6 +1174,114 @@ export class PlayerState {
             this._emit('error', { message: error?.message || String(error), source: 'spectrogram' });
             throw error;
         }
+    }
+
+    // ── External Spectrogram Injection ────────────────────────────
+
+    /**
+     * Mode 1: Raw data — enter pipeline at Stage 1 (grayscale → colorize → render).
+     * Contrast sliders, color map selection, and frequency controls all remain functional.
+     */
+    _setExternalSpectrogram(data, nFrames, nMels, options = {}) {
+        // Decode base64 string → Float32Array
+        let floats;
+        if (typeof data === 'string') {
+            const binary = atob(data);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            floats = new Float32Array(bytes.buffer);
+        } else if (data instanceof ArrayBuffer) {
+            floats = new Float32Array(data);
+        } else if (data instanceof Float32Array) {
+            floats = data;
+        } else {
+            throw new Error('setSpectrogramData: data must be Float32Array, ArrayBuffer, or base64 string');
+        }
+
+        if (floats.length !== nFrames * nMels) {
+            throw new Error(`setSpectrogramData: data.length (${floats.length}) !== nFrames*nMels (${nFrames}*${nMels}=${nFrames * nMels})`);
+        }
+
+        this._externalSpectrogram = true;
+        this.spectrogramData = floats;
+        this.spectrogramFrames = nFrames;
+        this.spectrogramMels = nMels;
+
+        if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+        if (options.mode && this.d.spectrogramModeSelect) {
+            this.d.spectrogramModeSelect.value = options.mode;
+        }
+
+        this._updateSpectrogramStats();
+        this._autoContrast();
+        this._autoFrequency();
+        this._buildSpectrogramGrayscale();
+        this._buildSpectrogramBaseImage();
+        this._drawSpectrogram();
+        this._syncOverviewWindowToViewport();
+        this._setTransportState('ready', 'spectrogram-external-data');
+
+        this._emit('ready', {
+            duration: this.audioBuffer?.duration || 0,
+            sampleRate: this.sampleRateHz,
+            nFrames: this.spectrogramFrames,
+            nMels: this.spectrogramMels,
+            external: true,
+        });
+    }
+
+    /**
+     * Mode 2: Pre-rendered image — bypasses entire DSP + colorization pipeline.
+     * Contrast/color controls have no effect; the image is drawn as-is.
+     */
+    _setExternalSpectrogramImage(image, options = {}) {
+        return new Promise((resolve, reject) => {
+            const apply = (img) => {
+                // Draw image onto an offscreen canvas for the rendering pipeline
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                this._externalSpectrogram = true;
+                this.spectrogramBaseCanvas = canvas;
+                this.spectrogramData = new Float32Array(0); // placeholder
+                this.spectrogramFrames = canvas.width;
+                this.spectrogramMels = canvas.height;
+                this.spectrogramGrayInfo = null;
+
+                if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+
+                this._drawSpectrogram();
+                this._syncOverviewWindowToViewport();
+                this._setTransportState('ready', 'spectrogram-external-image');
+
+                this._emit('ready', {
+                    duration: this.audioBuffer?.duration || 0,
+                    sampleRate: this.sampleRateHz,
+                    nFrames: this.spectrogramFrames,
+                    nMels: this.spectrogramMels,
+                    external: true,
+                    externalImage: true,
+                });
+                resolve();
+            };
+
+            if (image instanceof HTMLCanvasElement || (image instanceof HTMLImageElement && image.complete)) {
+                apply(image);
+            } else if (image instanceof HTMLImageElement) {
+                image.onload = () => apply(image);
+                image.onerror = reject;
+            } else if (typeof image === 'string') {
+                const img = new Image();
+                img.onload = () => apply(img);
+                img.onerror = reject;
+                img.src = image; // data:image/png;base64,... or URL
+            } else {
+                reject(new Error('setSpectrogramImage: unsupported image type'));
+            }
+        });
     }
 
     _mergeProgressiveResults(chunkResults, nMels) {

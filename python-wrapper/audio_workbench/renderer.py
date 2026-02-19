@@ -2,6 +2,13 @@ import base64
 import html
 import json
 from importlib.resources import files
+from typing import Optional, Union
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 
 _PLAYER_JS = (
@@ -17,20 +24,107 @@ _PLAYER_CSS = (
 )
 
 
-def render_daw_player(audio_bytes: bytes, **options) -> str:
+def _encode_spectrogram_data(data) -> tuple:
+    """Encode a numpy array (nFrames × nMels) to base64 float32 + dimensions.
+
+    The JS side expects row-major float32: data[frame * nMels + mel].
+    Numpy arrays in (n_mels, n_frames) layout (librosa convention) are
+    automatically transposed.
+    """
+    if not _HAS_NUMPY:
+        raise ImportError(
+            "numpy is required for spectrogram_data. "
+            "Install with: pip install numpy"
+        )
+    arr = np.asarray(data, dtype=np.float32)
+    if arr.ndim != 2:
+        raise ValueError(f"spectrogram_data must be 2D, got {arr.ndim}D")
+
+    # Heuristic: if shape is (n_mels, n_frames) with n_mels < n_frames,
+    # transpose to (n_frames, n_mels) for JS row-major layout.
+    # Users can pass (n_frames, n_mels) directly to skip this.
+    n_frames, n_mels = arr.shape
+    if n_frames < n_mels:
+        arr = arr.T
+        n_frames, n_mels = arr.shape
+
+    # Ensure C-contiguous for correct byte order
+    arr = np.ascontiguousarray(arr)
+    b64 = base64.b64encode(arr.tobytes()).decode("ascii")
+    return b64, n_frames, n_mels
+
+
+def render_daw_player(
+    audio_bytes: bytes,
+    *,
+    spectrogram_data=None,
+    spectrogram_image: Optional[Union[str, bytes]] = None,
+    spectrogram_mode: str = "perch",
+    sample_rate: Optional[int] = None,
+    **options,
+) -> str:
     """Return an embeddable HTML iframe string with BirdNET DAW player.
 
     Parameters
     ----------
     audio_bytes : bytes
         Raw audio bytes (e.g. WAV/MP3).
+    spectrogram_data : numpy.ndarray, optional
+        Pre-computed spectrogram as 2D float32 array (nFrames × nMels).
+        The player applies its own colorization (contrast, color map).
+        Librosa-style (n_mels × n_frames) arrays are auto-transposed.
+    spectrogram_image : str or bytes, optional
+        Pre-rendered spectrogram image. Can be:
+        - base64 data-URL string ("data:image/png;base64,...")
+        - raw PNG/JPEG bytes (auto-wrapped in data URL)
+        - URL string ("https://...")
+        Bypasses all DSP + colorization; image is drawn as-is.
+    spectrogram_mode : str
+        'perch' or 'classic' — affects frequency axis labels. Default: 'perch'.
+    sample_rate : int, optional
+        Override sample rate for frequency axis labels.
     options : dict
         Passed to BirdNETPlayer constructor.
+
+    Notes
+    -----
+    Only one of ``spectrogram_data`` or ``spectrogram_image`` may be provided.
     """
+    if spectrogram_data is not None and spectrogram_image is not None:
+        raise ValueError("Provide spectrogram_data OR spectrogram_image, not both.")
+
     iframe_height = int(options.pop("iframe_height", 620) or 620)
     iframe_height = max(180, min(1600, iframe_height))
-    b64 = base64.b64encode(audio_bytes).decode("ascii")
+    b64_audio = base64.b64encode(audio_bytes).decode("ascii")
     opts = json.dumps(options or {})
+
+    # Build the spectrogram injection JS snippet
+    spect_js = ""
+    if spectrogram_data is not None:
+        b64_data, n_frames, n_mels = _encode_spectrogram_data(spectrogram_data)
+        sr_opt = f", sampleRate: {sample_rate}" if sample_rate else ""
+        spect_js = f"""
+      // Inject pre-computed spectrogram data
+      const specBin = atob('{b64_data}');
+      const specBytes = new Uint8Array(specBin.length);
+      for (let i = 0; i < specBin.length; i++) specBytes[i] = specBin.charCodeAt(i);
+      await player.setSpectrogramData(
+        new Float32Array(specBytes.buffer),
+        {n_frames}, {n_mels},
+        {{ mode: '{spectrogram_mode}'{sr_opt} }}
+      );
+"""
+    elif spectrogram_image is not None:
+        if isinstance(spectrogram_image, bytes):
+            img_b64 = base64.b64encode(spectrogram_image).decode("ascii")
+            img_src = f"data:image/png;base64,{img_b64}"
+        else:
+            img_src = str(spectrogram_image)
+        sr_opt = f", sampleRate: {sample_rate}" if sample_rate else ""
+        spect_js = f"""
+      // Inject pre-rendered spectrogram image
+      await player.setSpectrogramImage('{img_src}', {{{sr_opt.lstrip(', ')}}});
+"""
 
     srcdoc = f"""
 <!DOCTYPE html>
@@ -57,11 +151,11 @@ def render_daw_player(audio_bytes: bytes, **options) -> str:
       const playerRoot = document.getElementById('player');
       const player = new BirdNETPlayerModule.BirdNETPlayer(playerRoot, {opts});
       await player.ready;
-      const binary = atob('{b64}');
+      const binary = atob('{b64_audio}');
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const file = new File([bytes], 'audio.wav', {{ type: 'audio/wav' }});
-      await player.loadFile(file);
+      await player.loadFile(file);{spect_js}
     }})();
   </script>
 </body>
