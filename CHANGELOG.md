@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-02-19
+
+### Added
+- **External spectrogram injection API** — two new modes:
+  - `setSpectrogramData(data, nFrames, nMels, opts)` — inject raw Float32 spectrogram
+    data (or base64-encoded). The player applies its own colorization pipeline.
+  - `setSpectrogramImage(image, opts)` — inject a pre-rendered spectrogram image
+    (data-URL, URL, HTMLImageElement, or HTMLCanvasElement). Bypasses all DSP.
+  - `clearExternalSpectrogram()` — re-enables auto-compute from audio.
+- **Python wrapper: `spectrogram_data` / `spectrogram_image` params** on
+  `render_daw_player()` — pass pre-computed spectrograms from Python directly.
+- **Python `_coerce_image_to_png_bytes()`** — accepts `matplotlib.figure.Figure`,
+  `PIL.Image.Image`, `numpy.ndarray` (uint8), `io.BytesIO`, and raw `bytes`.
+  Drop-in replacement for BirdNET-Analyzer's matplotlib spectrogram displays.
+- **Python wrapper unit tests** (`python-wrapper/tests/test_renderer.py`).
+
+### Fixed
+- `detectMaxFrequency()` now correctly uses linear bin→Hz mapping in Classic
+  mode (was using Mel mapping, yielding wrong frequencies).
+- Mel filterbank now receives power spectrum (mag²) instead of magnitude,
+  matching PCEN's expectation.
+- FFT twiddle factors (cos/sin) are precomputed and cached per FFT size,
+  reducing repeated trigonometric calls.
+- Progressive PCEN smooth-state accumulator is now carried across chunk
+  boundaries, eliminating discontinuity artifacts.
+
 ## [0.0.9] - 2026-02-19
 
 ### Added

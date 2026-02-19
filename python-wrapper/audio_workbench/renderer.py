@@ -102,11 +102,11 @@ def _coerce_image_to_png_bytes(image) -> bytes:
         try:
             from PIL import Image as PILImage
             if image.ndim == 2:
-                pil_img = PILImage.fromarray(image, mode="L")
+                pil_img = PILImage.fromarray(image)
             elif image.ndim == 3 and image.shape[2] == 3:
-                pil_img = PILImage.fromarray(image, mode="RGB")
+                pil_img = PILImage.fromarray(image)
             elif image.ndim == 3 and image.shape[2] == 4:
-                pil_img = PILImage.fromarray(image, mode="RGBA")
+                pil_img = PILImage.fromarray(image)
             else:
                 raise ValueError(f"Unsupported numpy array shape for image: {image.shape}")
             buf = io.BytesIO()
