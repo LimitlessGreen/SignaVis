@@ -826,7 +826,7 @@ function sampleColorMap(stops, t) {
 function getSpectrogramColor(value, colorScheme) {
   const x = Math.max(0, Math.min(1, value));
   if (colorScheme === "grayscale") {
-    const v = Math.round(x * 255);
+    const v = Math.round((1 - x) * 255);
     return { r: v, g: v, b: v };
   }
   if (colorScheme === "viridis") {
