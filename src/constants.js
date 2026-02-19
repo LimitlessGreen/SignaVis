@@ -10,7 +10,7 @@ export const MIN_WAVEFORM_HEIGHT = 64;
 export const MIN_SPECTROGRAM_DISPLAY_HEIGHT = 140;
 export const SEEK_FINE_SEC = 0.5;
 export const SEEK_COARSE_SEC = 5;
-export const SPECTROGRAM_HEIGHT = 512;
+export const SPECTROGRAM_HEIGHT = 160;
 export const MAX_BASE_SPECTROGRAM_WIDTH = 24000;
 export const MIN_WINDOW_NORM = 0.02;
 export const PROGRESSIVE_CHUNK_SECONDS = 10;
@@ -21,3 +21,9 @@ export const PERCH_PCEN_GAIN = 0.8;
 export const PERCH_PCEN_BIAS = 0.01;
 export const PERCH_PCEN_ROOT = 4.0;
 export const PERCH_PCEN_SMOOTHING = 0.025;
+
+// Classic (Xeno-Canto-style) spectrogram defaults
+export const CLASSIC_FRAME_RATE = 100;
+export const CLASSIC_N_MELS = 160;
+export const CLASSIC_DB_FLOOR = -80;   // dB below peak to clip
+export const CLASSIC_DB_REF = 1.0;     // reference power for dB conversion

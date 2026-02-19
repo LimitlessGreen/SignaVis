@@ -1,5 +1,4 @@
 export function computeAmplitudePeak(channelData: any): number;
-export function buildMelFrequencies(sampleRate: any, nMels: any): Float32Array<any>;
 export function updateSpectrogramStats(spectrogramData: any): {
     logMin: number;
     logMax: number;
@@ -31,7 +30,7 @@ export function detectMaxFrequency(spectrogramData: Float32Array, nFrames: numbe
  * Converts PCEN data → 8-bit grayscale image (Uint8Array) using the
  * absolute log-range.  Frame-averaging and mel→y mapping happens here.
  */
-export function buildSpectrogramGrayscale({ spectrogramData, spectrogramFrames, spectrogramMels, sampleRateHz, maxFreq, spectrogramAbsLogMin, spectrogramAbsLogMax, }: {
+export function buildSpectrogramGrayscale({ spectrogramData, spectrogramFrames, spectrogramMels, sampleRateHz, maxFreq, spectrogramAbsLogMin, spectrogramAbsLogMax, spectrogramMode, }: {
     spectrogramData: any;
     spectrogramFrames: any;
     spectrogramMels: any;
@@ -39,6 +38,7 @@ export function buildSpectrogramGrayscale({ spectrogramData, spectrogramFrames, 
     maxFreq: any;
     spectrogramAbsLogMin: any;
     spectrogramAbsLogMax: any;
+    spectrogramMode: any;
 }): {
     gray: Uint8Array<ArrayBuffer>;
     width: number;
@@ -72,7 +72,7 @@ export function renderSpectrogram({ duration, spectrogramCanvas, pixelsPerSecond
     spectrogramFrames: any;
 }): void;
 export function sha256ArrayBuffer(arrayBuffer: any): Promise<string>;
-export function buildSpectrogramCacheKey({ fileHash, fftSize, sampleRate, frameRate, nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing, }: {
+export function buildSpectrogramCacheKey({ fileHash, fftSize, sampleRate, frameRate, nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing, spectrogramMode, }: {
     fileHash: any;
     fftSize: any;
     sampleRate: any;
@@ -82,6 +82,7 @@ export function buildSpectrogramCacheKey({ fileHash, fftSize, sampleRate, frameR
     pcenBias: any;
     pcenRoot: any;
     pcenSmoothing: any;
+    spectrogramMode: any;
 }): string;
 export function getSpectrogramCacheEntry(cacheKey: any): Promise<any>;
 export function putSpectrogramCacheEntry(entry: any): Promise<boolean>;

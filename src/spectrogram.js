@@ -4,6 +4,23 @@
 
 import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
 import { getTimeGridSteps } from './utils.js';
+import { buildMelFrequencies, computeSpectrogram } from './dsp.js';
+
+// Worker constructor — loaded lazily via Vite's ?worker&inline.
+// Dynamic import so Node.js tests (no Vite) don't crash on this module.
+let _WorkerCtor = null;
+let _workerCtorResolved = false;
+async function getWorkerCtor() {
+    if (_workerCtorResolved) return _WorkerCtor;
+    _workerCtorResolved = true;
+    try {
+        const mod = await import(/* @vite-ignore */ './spectrogram.worker.js?worker&inline');
+        _WorkerCtor = mod.default;
+    } catch {
+        _WorkerCtor = null;
+    }
+    return _WorkerCtor;
+}
 
 const CACHE_DB_NAME = 'audio-workbench-cache';
 const CACHE_DB_VERSION = 1;
@@ -18,19 +35,6 @@ export function computeAmplitudePeak(channelData) {
         if (abs > peak) peak = abs;
     }
     return Math.max(1e-6, peak);
-}
-
-export function buildMelFrequencies(sampleRate, nMels) {
-    const melToHz = (mel) => 700 * (Math.pow(10, mel / 2595) - 1);
-    const hzToMel = (hz) => 2595 * Math.log10(1 + hz / 700);
-    const melMin = hzToMel(0);
-    const melMax = hzToMel(sampleRate / 2);
-    const freqs = new Float32Array(nMels);
-    for (let i = 0; i < nMels; i++) {
-        const mel = melMin + (i / Math.max(1, nMels - 1)) * (melMax - melMin);
-        freqs[i] = melToHz(mel);
-    }
-    return freqs;
 }
 
 // ─── Color Maps (private) ───────────────────────────────────────────
@@ -127,6 +131,21 @@ const COLOR_MAPS = {
         [248, 148, 65],
         [253, 195, 40],
         [240, 249, 33],
+    ],
+    // Xeno-Canto inspired warm-body palette:
+    // black → deep brown → warm red → orange → yellow → white
+    xenocanto: [
+        [0, 0, 0],
+        [30, 10, 5],
+        [65, 20, 10],
+        [110, 35, 15],
+        [160, 55, 15],
+        [200, 85, 20],
+        [230, 130, 30],
+        [245, 180, 60],
+        [255, 220, 110],
+        [255, 245, 180],
+        [255, 255, 255],
     ],
 };
 
@@ -325,7 +344,7 @@ export function updateSpectrogramStats(spectrogramData) {
     let maxLog = Number.NEGATIVE_INFINITY;
     const stride = Math.max(1, Math.floor(spectrogramData.length / 120000));
     for (let i = 0; i < spectrogramData.length; i += stride) {
-        const mapped = Math.log1p((spectrogramData[i] || 0) * 12);
+        const mapped = spectrogramData[i] || 0;
         if (mapped < minLog) minLog = mapped;
         if (mapped > maxLog) maxLog = mapped;
     }
@@ -353,7 +372,7 @@ export function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentil
     const stride = Math.max(1, Math.floor(spectrogramData.length / 200000));
     const mapped = [];
     for (let i = 0; i < spectrogramData.length; i += stride) {
-        mapped.push(Math.log1p((spectrogramData[i] || 0) * 12));
+        mapped.push(spectrogramData[i] || 0);
     }
     mapped.sort((a, b) => a - b);
 
@@ -469,25 +488,35 @@ export function buildSpectrogramGrayscale({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq,
     spectrogramAbsLogMin, spectrogramAbsLogMax,
+    spectrogramMode,
 }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
     const width  = Math.max(1, Math.min(spectrogramFrames, MAX_BASE_SPECTROGRAM_WIDTH));
     const height = SPECTROGRAM_HEIGHT;
     const framesPerPixel = spectrogramFrames / width;
+    const isLinear = spectrogramMode === 'classic';
 
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
-    const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
 
-    let maxMelBin = spectrogramMels - 1;
-    for (let i = 0; i < melFreqs.length; i++) {
-        if (melFreqs[i] > boundedMaxFreq) { maxMelBin = Math.max(1, i - 1); break; }
+    // In classic/linear mode, bins map directly to Hz (bin k → k * sr / fftSize).
+    // spectrogramMels == nBins (fftSize/2) in this case.
+    let maxBin = spectrogramMels - 1;
+    if (isLinear) {
+        // bin k corresponds to frequency k / spectrogramMels * (sampleRate / 2)
+        const binHz = (sampleRateHz / 2) / spectrogramMels;
+        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+    } else {
+        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
+        for (let i = 0; i < melFreqs.length; i++) {
+            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+        }
     }
 
-    const yToMel = new Int16Array(height);
+    const yToBin = new Int16Array(height);
     for (let y = 0; y < height; y++) {
-        const freqIndex = Math.floor((height - y) / height * (maxMelBin + 1));
-        yToMel[y] = Math.max(0, Math.min(maxMelBin, freqIndex));
+        const freqIndex = Math.floor((height - y) / height * (maxBin + 1));
+        yToBin[y] = Math.max(0, Math.min(maxBin, freqIndex));
     }
 
     const logRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
@@ -499,20 +528,20 @@ export function buildSpectrogramGrayscale({
         const sampleStep = Math.max(1, Math.floor((frameEnd - frameStart) / 4));
 
         for (let y = 0; y < height; y++) {
-            const melBin = yToMel[y];
+            const bin = yToBin[y];
             let sum = 0, count = 0;
 
             for (let frame = frameStart; frame < frameEnd; frame += sampleStep) {
-                sum += spectrogramData[frame * spectrogramMels + melBin] || 0;
+                sum += spectrogramData[frame * spectrogramMels + bin] || 0;
                 count++;
             }
             if (frameEnd - 1 > frameStart) {
-                sum += spectrogramData[(frameEnd - 1) * spectrogramMels + melBin] || 0;
+                sum += spectrogramData[(frameEnd - 1) * spectrogramMels + bin] || 0;
                 count++;
             }
 
             const magnitude = sum / Math.max(1, count);
-            const normalized = (Math.log1p(magnitude * 12) - spectrogramAbsLogMin) / logRange;
+            const normalized = (magnitude - spectrogramAbsLogMin) / logRange;
             gray[y * width + x] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
         }
     }
@@ -654,9 +683,11 @@ export function buildSpectrogramCacheKey({
     pcenBias,
     pcenRoot,
     pcenSmoothing,
+    spectrogramMode,
 }) {
     return [
         fileHash,
+        `mode=${spectrogramMode || 'perch'}`,
         `fft=${fftSize}`,
         `sr=${sampleRate}`,
         `fr=${frameRate}`,
@@ -701,317 +732,27 @@ export async function putSpectrogramCacheEntry(entry) {
 
 // ─── Worker-based Spectrogram Processor ─────────────────────────────
 
-const WORKER_CODE = `
-self.onmessage = (event) => {
-    const {
-        requestId,
-        channelData,
-        fftSize,
-        sampleRate,
-        frameRate,
-        nMels,
-        pcenGain,
-        pcenBias,
-        pcenRoot,
-        pcenSmoothing,
-    } = event.data;
-
-    const audio = new Float32Array(channelData);
-    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
-    const winLength = 4 * hopSize;
-    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
-
-    const melFilterbank = createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
-    const pcenOutput = new Float32Array(numFrames * nMels);
-    const smooth = new Float32Array(nMels);
-    const pcenPower = 1.0 / pcenRoot;
-
-    for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
-        const offset = frameIdx * hopSize;
-        const magnitudeSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
-        const melSpectrum = applyMelFilterbank(magnitudeSpectrum, melFilterbank);
-
-        const base = frameIdx * nMels;
-        for (let m = 0; m < nMels; m++) {
-            const e = melSpectrum[m];
-            smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
-            const denominator = Math.pow(1e-12 + smooth[m], pcenGain);
-            const normalized = e / denominator;
-            pcenOutput[base + m] = Math.pow(normalized + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
-        }
-    }
-
-    self.postMessage(
-        { requestId, data: pcenOutput.buffer, nFrames: numFrames, nMels },
-        [pcenOutput.buffer]
-    );
-};
-
-function fftPowerSpectrum(audio, offset, winLength, fftSize) {
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
-
-    const maxCopy = Math.min(winLength, fftSize);
-    for (let i = 0; i < maxCopy; i++) {
-        const sample = audio[offset + i] || 0;
-        const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));
-        real[i] = sample * window;
-    }
-
-    iterativeFFT(real, imag);
-
-    const out = new Float32Array(fftSize / 2);
-    for (let i = 0; i < out.length; i++) {
-        // Hoplite/librosa uses melspectrogram(..., power=1): mel energy from magnitude spectrum.
-        out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
-    }
-    return out;
-}
-
-function iterativeFFT(real, imag) {
-    const n = real.length;
-
-    let j = 0;
-    for (let i = 1; i < n; i++) {
-        let bit = n >> 1;
-        while (j & bit) {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j ^= bit;
-
-        if (i < j) {
-            let tmp = real[i];
-            real[i] = real[j];
-            real[j] = tmp;
-            tmp = imag[i];
-            imag[i] = imag[j];
-            imag[j] = tmp;
-        }
-    }
-
-    for (let len = 2; len <= n; len <<= 1) {
-        const halfLen = len >> 1;
-        const angleStep = -2 * Math.PI / len;
-
-        for (let i = 0; i < n; i += len) {
-            for (let k = 0; k < halfLen; k++) {
-                const angle = angleStep * k;
-                const cos = Math.cos(angle);
-                const sin = Math.sin(angle);
-
-                const evenIndex = i + k;
-                const oddIndex = evenIndex + halfLen;
-
-                const tr = cos * real[oddIndex] - sin * imag[oddIndex];
-                const ti = sin * real[oddIndex] + cos * imag[oddIndex];
-
-                real[oddIndex] = real[evenIndex] - tr;
-                imag[oddIndex] = imag[evenIndex] - ti;
-                real[evenIndex] += tr;
-                imag[evenIndex] += ti;
-            }
-        }
-    }
-}
-
-function hzToMel(hz) {
-    return 2595 * Math.log10(1 + hz / 700);
-}
-
-function melToHz(mel) {
-    return 700 * (Math.pow(10, mel / 2595) - 1);
-}
-
-function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
-    const nFftBins = Math.floor(fftSize / 2);
-    const melMin = hzToMel(fMin);
-    const melMax = hzToMel(fMax);
-    const melPoints = [];
-
-    for (let i = 0; i < nMels + 2; i++) {
-        melPoints.push(melMin + (i / (nMels + 1)) * (melMax - melMin));
-    }
-
-    const hzPoints = melPoints.map(melToHz);
-    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));
-
-    const filterbank = [];
-    for (let m = 1; m <= nMels; m++) {
-        const filter = new Float32Array(nFftBins);
-        const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));
-        const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));
-        const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));
-
-        for (let k = left; k < center; k++) {
-            const denom = center - left || 1;
-            filter[k] = (k - left) / denom;
-        }
-        for (let k = center; k < right; k++) {
-            const denom = right - center || 1;
-            filter[k] = (right - k) / denom;
-        }
-
-        filterbank.push(filter);
-    }
-
-    return filterbank;
-}
-
-function applyMelFilterbank(powerSpectrum, melFilterbank) {
-    const melSpectrum = new Float32Array(melFilterbank.length);
-    for (let m = 0; m < melFilterbank.length; m++) {
-        const filter = melFilterbank[m];
-        let sum = 0;
-        for (let k = 0; k < filter.length; k++) {
-            if (filter[k] !== 0) {
-                sum += powerSpectrum[k] * filter[k];
-            }
-        }
-        melSpectrum[m] = sum;
-    }
-    return melSpectrum;
-}
-`;
-
 export function createSpectrogramProcessor() {
     let worker = null;
     let workerFailed = false;
     let requestCounter = 0;
     const pendingRequests = new Map();
 
-    // ── Main-thread fallback (same algorithm as the Worker) ─────────
-    // We build the helper functions once to avoid re-parsing.
-    let _mainThreadFn = null;
-    const getMainThreadFn = () => {
-        if (_mainThreadFn) return _mainThreadFn;
-        // Strip the self.onmessage wrapper and build a plain function
-        // that accepts the same parameter object and returns the result.
-        _mainThreadFn = new Function('params', `
-            const {
-                channelData, fftSize, sampleRate, frameRate,
-                nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
-            } = params;
-
-            const audio = new Float32Array(channelData);
-            const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
-            const winLength = 4 * hopSize;
-            const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
-
-            ${/* inline helpers from WORKER_CODE */ ''}
-            function hzToMel(hz) { return 2595 * Math.log10(1 + hz / 700); }
-            function melToHz(mel) { return 700 * (Math.pow(10, mel / 2595) - 1); }
-
-            function createMelFB(sr, fft, nm, fMin, fMax) {
-                const nBins = Math.floor(fft / 2);
-                const mMin = hzToMel(fMin), mMax = hzToMel(fMax);
-                const mPts = [];
-                for (let i = 0; i < nm + 2; i++) mPts.push(mMin + (i / (nm + 1)) * (mMax - mMin));
-                const hPts = mPts.map(melToHz);
-                const bPts = hPts.map(hz => Math.floor((fft + 1) * hz / sr));
-                const fb = [];
-                for (let m = 1; m <= nm; m++) {
-                    const f = new Float32Array(nBins);
-                    const l = Math.max(0, Math.min(nBins-1, bPts[m-1]));
-                    const c = Math.max(0, Math.min(nBins-1, bPts[m]));
-                    const r = Math.max(0, Math.min(nBins-1, bPts[m+1]));
-                    for (let k = l; k < c; k++) f[k] = (k - l) / (c - l || 1);
-                    for (let k = c; k < r; k++) f[k] = (r - k) / (r - c || 1);
-                    fb.push(f);
-                }
-                return fb;
-            }
-
-            function iterativeFFT(re, im) {
-                const n = re.length;
-                let j = 0;
-                for (let i = 1; i < n; i++) {
-                    let bit = n >> 1;
-                    while (j & bit) { j ^= bit; bit >>= 1; }
-                    j ^= bit;
-                    if (i < j) {
-                        let t = re[i]; re[i] = re[j]; re[j] = t;
-                        t = im[i]; im[i] = im[j]; im[j] = t;
-                    }
-                }
-                for (let len = 2; len <= n; len <<= 1) {
-                    const half = len >> 1, step = -2 * Math.PI / len;
-                    for (let i = 0; i < n; i += len) {
-                        for (let k = 0; k < half; k++) {
-                            const a = step * k, cos = Math.cos(a), sin = Math.sin(a);
-                            const ei = i + k, oi = ei + half;
-                            const tr = cos * re[oi] - sin * im[oi];
-                            const ti = sin * re[oi] + cos * im[oi];
-                            re[oi] = re[ei] - tr; im[oi] = im[ei] - ti;
-                            re[ei] += tr; im[ei] += ti;
-                        }
-                    }
-                }
-            }
-
-            function fftPow(audio, off, wl, fft) {
-                const re = new Float32Array(fft), im = new Float32Array(fft);
-                const mc = Math.min(wl, fft);
-                for (let i = 0; i < mc; i++) {
-                    const s = audio[off + i] || 0;
-                    re[i] = s * 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, wl - 1)));
-                }
-                iterativeFFT(re, im);
-                const o = new Float32Array(fft / 2);
-                for (let i = 0; i < o.length; i++) o[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
-                return o;
-            }
-
-            function applyMel(ps, fb) {
-                const ms = new Float32Array(fb.length);
-                for (let m = 0; m < fb.length; m++) {
-                    let s = 0;
-                    for (let k = 0; k < fb[m].length; k++) if (fb[m][k]) s += ps[k]*fb[m][k];
-                    ms[m] = s;
-                }
-                return ms;
-            }
-
-            const melFB = createMelFB(sampleRate, fftSize, nMels, 0, sampleRate / 2);
-            const out = new Float32Array(numFrames * nMels);
-            const smooth = new Float32Array(nMels);
-            const pcenPower = 1.0 / pcenRoot;
-
-            for (let fi = 0; fi < numFrames; fi++) {
-                const ps = fftPow(audio, fi * hopSize, winLength, fftSize);
-                const ms = applyMel(ps, melFB);
-                const base = fi * nMels;
-                for (let m = 0; m < nMels; m++) {
-                    const e = ms[m];
-                    smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
-                    const den = Math.pow(1e-12 + smooth[m], pcenGain);
-                    out[base + m] = Math.pow(e / den + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
-                }
-            }
-            return { data: out, nFrames: numFrames, nMels };
-        `);
-        return _mainThreadFn;
-    };
-
-    // ── Main-thread compute (sync, blocking) ────────────────────────
+    // ── Main-thread fallback — delegates directly to dsp.js ────────
     const computeMainThread = (channelData, options) => {
-        const fn = getMainThreadFn();
-        return fn({
-            channelData: channelData.buffer.slice(
-                channelData.byteOffset,
-                channelData.byteOffset + channelData.byteLength,
-            ),
+        return computeSpectrogram({
+            channelData: channelData,
             ...options,
         });
     };
 
-    // ── Worker setup ────────────────────────────────────────────────
-    const ensureWorker = () => {
+    // ── Worker setup — uses Vite-inlined module Worker ──────────────
+    const ensureWorker = async () => {
         if (worker || workerFailed) return;
         try {
-            const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            worker = new Worker(url);
+            const Ctor = await getWorkerCtor();
+            if (!Ctor) throw new Error('Worker constructor unavailable');
+            worker = new Ctor();
 
             worker.onmessage = (event) => {
                 const { requestId, data, nFrames, nMels } = event.data;
@@ -1026,7 +767,6 @@ export function createSpectrogramProcessor() {
                 workerFailed = true;
                 worker?.terminate();
                 worker = null;
-                // Reject any pending requests so they can be retried on main thread
                 pendingRequests.forEach(({ reject }) => reject(error));
                 pendingRequests.clear();
             };
@@ -1044,7 +784,7 @@ export function createSpectrogramProcessor() {
             return computeMainThread(channelData, options);
         }
 
-        ensureWorker();
+        await ensureWorker();
 
         // Worker might have failed during creation
         if (workerFailed) {

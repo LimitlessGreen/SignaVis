@@ -42,6 +42,7 @@ export class PlayerState {
         overviewHandleRight: any;
         fileInfo: any;
         sampleRateInfo: any;
+        spectrogramModeSelect: any;
         fftSizeSelect: any;
         zoomSlider: any;
         zoomValue: any;
@@ -260,6 +261,7 @@ export class PlayerState {
         overviewHandleRight: any;
         fileInfo: any;
         sampleRateInfo: any;
+        spectrogramModeSelect: any;
         fftSizeSelect: any;
         zoomSlider: any;
         zoomValue: any;
