@@ -8,7 +8,6 @@ import {
     computeAmplitudePeak,
     updateSpectrogramStats,
     autoContrastStats,
-    buildSpectrogramCacheKey,
 } from '../src/spectrogram.js';
 
 // ─── computeAmplitudePeak ───────────────────────────────────────────
@@ -55,38 +54,4 @@ test('autoContrastStats returns percentile-based logMin and logMax', () => {
     // 2nd percentile of 0..1 → ~0.02, 98th → ~0.98
     assert.ok(logMin < 0.1, `logMin = ${logMin} should be near low end`);
     assert.ok(logMax > 0.9, `logMax = ${logMax} should be near high end`);
-});
-
-// ─── buildSpectrogramCacheKey ───────────────────────────────────────
-
-test('buildSpectrogramCacheKey includes all parameters', () => {
-    const key = buildSpectrogramCacheKey({
-        fileHash: 'abc123',
-        fftSize: 2048,
-        sampleRate: 32000,
-        frameRate: 100,
-        nMels: 128,
-        pcenGain: 0.98,
-        pcenBias: 2,
-        pcenRoot: 2,
-        pcenSmoothing: 0.025,
-        spectrogramMode: 'perch',
-    });
-
-    assert.ok(key.includes('abc123'), 'should include file hash');
-    assert.ok(key.includes('fft=2048'), 'should include fft size');
-    assert.ok(key.includes('sr=32000'), 'should include sample rate');
-    assert.ok(key.includes('mode=perch'), 'should include mode');
-});
-
-test('buildSpectrogramCacheKey differentiates modes', () => {
-    const base = {
-        fileHash: 'hash', fftSize: 2048, sampleRate: 32000, frameRate: 100,
-        nMels: 128, pcenGain: 0.98, pcenBias: 2, pcenRoot: 2, pcenSmoothing: 0.025,
-    };
-
-    const keyPerch = buildSpectrogramCacheKey({ ...base, spectrogramMode: 'perch' });
-    const keyClassic = buildSpectrogramCacheKey({ ...base, spectrogramMode: 'classic' });
-
-    assert.notEqual(keyPerch, keyClassic, 'different modes should produce different keys');
 });

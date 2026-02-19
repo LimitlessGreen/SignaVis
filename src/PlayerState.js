@@ -26,10 +26,6 @@ import {
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
-    sha256ArrayBuffer,
-    buildSpectrogramCacheKey,
-    getSpectrogramCacheEntry,
-    putSpectrogramCacheEntry,
 } from './spectrogram.js';
 
 import {
@@ -100,7 +96,6 @@ export class PlayerState {
         this.spectrogramAbsLogMin = 0;   // absolute range (full data)
         this.spectrogramAbsLogMax = 1;
         this.sampleRateHz = 32000;
-        this.audioHash = null;
         this.amplitudePeakAbs = 1;
         this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
         this.volume = 0.8;
@@ -499,7 +494,6 @@ export class PlayerState {
             const audioBuffer = await decodeArrayBuffer(fileBuffer);
             this.audioBuffer = audioBuffer;
             this.sampleRateHz = audioBuffer.sampleRate;
-            this.audioHash = await sha256ArrayBuffer(fileBuffer).catch(() => null);
             this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
 
@@ -546,7 +540,6 @@ export class PlayerState {
             const audioBuffer = await decodeArrayBuffer(arrayBuffer);
             this.audioBuffer = audioBuffer;
             this.sampleRateHz = audioBuffer.sampleRate;
-            this.audioHash = await sha256ArrayBuffer(arrayBuffer).catch(() => null);
             this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
 
@@ -1129,135 +1122,45 @@ export class PlayerState {
         try {
             const channelData = this.audioBuffer.getChannelData(0);
             let result;
-            let fromCache = false;
-            let cacheEntry = null;
-            const cacheKey = this.audioHash ? buildSpectrogramCacheKey({
-                fileHash: this.audioHash,
-                ...options,
-            }) : null;
-
-            if (cacheKey) {
-                const cached = await getSpectrogramCacheEntry(cacheKey);
-                cacheEntry = cached;
-                if (cached?.spectrogramData && cached?.nFrames && cached?.nMels) {
-                    this._emit('cachehit', { cacheKey });
-                    result = {
-                        data: new Float32Array(cached.spectrogramData),
-                        nFrames: cached.nFrames,
-                        nMels: cached.nMels,
-                    };
-                    fromCache = true;
-                    this.spectrogramAbsLogMin = cached.absLogMin ?? 0;
-                    this.spectrogramAbsLogMax = cached.absLogMax ?? 1;
-                    if (Number.isFinite(cached.floorPct) && Number.isFinite(cached.ceilPct)) {
-                        this.d.floorSlider.value = Math.round(cached.floorPct);
-                        this.d.ceilSlider.value = Math.round(cached.ceilPct);
-                    }
-                    if (Number.isFinite(cached.maxFreq)) {
-                        const optionsList = Array.from(this.d.maxFreqSelect.options);
-                        let best = optionsList[optionsList.length - 1];
-                        for (const opt of optionsList) {
-                            if (parseFloat(opt.value) >= cached.maxFreq) { best = opt; break; }
-                        }
-                        this.d.maxFreqSelect.value = best.value;
-                    }
-                } else {
-                    this._emit('cachemiss', { cacheKey });
-                }
-            }
 
             const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true
                 && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
                 && typeof this.processor.computeProgressive === 'function';
 
-            if (!result) {
-                if (shouldUseProgressive) {
-                    const chunkResults = [];
-                    for await (const progress of this.processor.computeProgressive(channelData, {
-                        ...options,
-                        chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
-                    })) {
-                        chunkResults.push(progress.result);
-                        this._emit('progress', {
-                            chunk: progress.chunk,
-                            totalChunks: progress.totalChunks,
-                            percent: progress.percent,
-                        });
-                    }
-                    result = this._mergeProgressiveResults(chunkResults, options.nMels);
-                } else {
-                    result = await this.processor.compute(channelData, options);
+            if (shouldUseProgressive) {
+                const chunkResults = [];
+                for await (const progress of this.processor.computeProgressive(channelData, {
+                    ...options,
+                    chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
+                })) {
+                    chunkResults.push(progress.result);
+                    this._emit('progress', {
+                        chunk: progress.chunk,
+                        totalChunks: progress.totalChunks,
+                        percent: progress.percent,
+                    });
                 }
+                result = this._mergeProgressiveResults(chunkResults, options.nMels);
+            } else {
+                result = await this.processor.compute(channelData, options);
             }
 
             this.spectrogramData = result.data;
             this.spectrogramFrames = result.nFrames;
             this.spectrogramMels = result.nMels;
 
-            if (!fromCache) {
-                this._updateSpectrogramStats();
-                // Auto-optimize on first load (sets slider values only)
-                this._autoContrast();
-                this._autoFrequency();
-            }
+            this._updateSpectrogramStats();
+            this._autoContrast();
+            this._autoFrequency();
 
-            const cachedGray = cacheEntry?.grayscaleTexture;
-            const selectedMaxFreq = parseFloat(this.d.maxFreqSelect.value);
-            const canReuseGray = fromCache
-                && cachedGray
-                && Number.isFinite(cachedGray.maxFreq)
-                && Math.abs(cachedGray.maxFreq - selectedMaxFreq) < 1e-6
-                && cachedGray.width > 0
-                && cachedGray.height > 0;
-
-            if (canReuseGray) {
-                this.spectrogramGrayInfo = {
-                    gray: new Uint8Array(cachedGray.gray),
-                    width: cachedGray.width,
-                    height: cachedGray.height,
-                };
-                if (this.colorizer.ok) {
-                    const { gray, width, height } = this.spectrogramGrayInfo;
-                    this._gpuReady = this.colorizer.uploadGrayscale(gray, width, height);
-                } else {
-                    this._gpuReady = false;
-                }
-            } else {
-                // Stage 1: build grayscale (expensive, once)
-                this._buildSpectrogramGrayscale();
-            }
+            // Stage 1: build grayscale (expensive, once)
+            this._buildSpectrogramGrayscale();
             // Stage 2: colorize (fast, GPU or JS)
             this._buildSpectrogramBaseImage();
             this._drawSpectrogram();
             this._syncOverviewWindowToViewport();
             this._setTransportState('ready', 'spectrogram-ready');
 
-            if (cacheKey && this.spectrogramData?.length) {
-                const cacheWriteOk = await putSpectrogramCacheEntry({
-                    cacheKey,
-                    createdAt: Date.now(),
-                    nFrames: this.spectrogramFrames,
-                    nMels: this.spectrogramMels,
-                    absLogMin: this.spectrogramAbsLogMin,
-                    absLogMax: this.spectrogramAbsLogMax,
-                    floorPct: parseFloat(this.d.floorSlider.value),
-                    ceilPct: parseFloat(this.d.ceilSlider.value),
-                    maxFreq: parseFloat(this.d.maxFreqSelect.value),
-                    spectrogramData: new Float32Array(this.spectrogramData),
-                    grayscaleTexture: this.spectrogramGrayInfo ? {
-                        gray: new Uint8Array(this.spectrogramGrayInfo.gray),
-                        width: this.spectrogramGrayInfo.width,
-                        height: this.spectrogramGrayInfo.height,
-                        maxFreq: parseFloat(this.d.maxFreqSelect.value),
-                    } : null,
-                    metadata: {
-                        sampleRate: this.audioBuffer.sampleRate,
-                        duration: this.audioBuffer.duration,
-                        fftSize: options.fftSize,
-                    },
-                });
-                if (cacheWriteOk) this._emit('cachewrite', { cacheKey });
-            }
             this._emit('ready', {
                 duration: this.audioBuffer.duration,
                 sampleRate: this.audioBuffer.sampleRate,

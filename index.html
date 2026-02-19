@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Workbench Player – Dev</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f6fa; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin: 0 0 12px; }
+    .card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
+    .demo-toolbar { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .demo-toolbar button { border: 1px solid #c9d3e0; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+    .demo-toolbar button:hover { background: #f3f7ff; }
+    #events { margin-top: 12px; background: #0b1020; color: #cfe7ff; border-radius: 8px; padding: 8px; height: 120px; overflow: auto; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Audio Workbench Player – Dev</h1>
+    <div class="card">
+      <div id="player"></div>
+      <div class="demo-toolbar">
+        <button id="loadDemoAnnotationsBtn">Demo-Annotations laden</button>
+        <button id="loadSpectrogramLabelsBtn">Spektrogramm-Labels laden</button>
+        <button id="clearAnnotationsBtn">Annotations löschen</button>
+        <button id="exportRavenBtn">Raven TXT in Console</button>
+      </div>
+      <div style="margin-top:8px;color:#4f5e7d;font-size:13px">Tipp: Klick auf ein Label im Amplitudenbereich spielt jetzt genau dieses Zeitfenster. Spektrogramm: <b>Shift + Drag</b> zum Erstellen, dann mit Handles anpassen.</div>
+      <pre id="events"></pre>
+    </div>
+  </div>
+
+  <script type="module">
+    // Vite dev mode: import source directly (HMR, no pre-build needed)
+    import { BirdNETPlayer } from './src/BirdNETPlayer.js';
+
+    const playerRoot = document.getElementById('player');
+    const logEl = document.getElementById('events');
+    const player = new BirdNETPlayer(playerRoot, {
+      showFileOpen: true,
+      showTransport: true
+    });
+
+    function log(msg) {
+      logEl.textContent = `${new Date().toLocaleTimeString()}  ${msg}\n` + logEl.textContent;
+    }
+
+    const demoAnnotations = [
+      { start: 0.75, end: 2.10, species: 'Erithacus rubecula', confidence: 0.93, color: 'rgba(255, 99, 132, 0.24)' },
+      { start: 3.00, end: 4.40, species: 'Parus major', confidence: 0.87, color: 'rgba(54, 162, 235, 0.24)' },
+      { start: 5.20, end: 6.70, species: 'Turdus merula', confidence: 0.91, color: 'rgba(255, 206, 86, 0.24)' }
+    ];
+    const demoSpectrogramLabels = [
+      { start: 0.8, end: 2.0, freqMin: 1800, freqMax: 4100, label: 'Robin call', color: 'rgba(239,68,68,0.25)' },
+      { start: 3.2, end: 4.5, freqMin: 900, freqMax: 2500, label: 'Great tit phrase', color: 'rgba(59,130,246,0.25)' },
+      { start: 5.4, end: 6.6, freqMin: 2800, freqMax: 5600, label: 'Blackbird motif', color: 'rgba(234,179,8,0.25)' }
+    ];
+
+    player.ready.then(() => {
+      console.log('BirdNET player ready');
+      log('player.ready');
+    });
+
+    player.on('timeupdate', (e) => {
+      if (Math.random() < 0.05) log(`timeupdate: ${e.detail.currentTime.toFixed(2)}s`);
+    });
+    player.on('selection', (e) => {
+      log(`selection: ${e.detail.start.toFixed(2)}s - ${e.detail.end.toFixed(2)}s`);
+    });
+    player.on('zoomchange', (e) => {
+      log(`zoomchange: ${Math.round(e.detail.pixelsPerSecond)} px/s`);
+    });
+    player.on('error', (e) => {
+      log(`error: ${e.detail.message}`);
+    });
+    player.on('spectrogramlabelcreate', (e) => {
+      const d = e.detail.label;
+      log(`spectrogram label: ${d.label || d.id} (${d.start.toFixed(2)}-${d.end.toFixed(2)}s, ${Math.round(d.freqMin)}-${Math.round(d.freqMax)}Hz)`);
+    });
+    player.on('spectrogramlabelupdate', (e) => {
+      const d = e.detail.label;
+      log(`spectrogram update: ${d.label || d.id} (${d.start.toFixed(2)}-${d.end.toFixed(2)}s, ${Math.round(d.freqMin)}-${Math.round(d.freqMax)}Hz)`);
+    });
+
+    document.getElementById('loadDemoAnnotationsBtn').addEventListener('click', () => {
+      player.setAnnotations(demoAnnotations);
+      log('3 Demo-Annotations geladen');
+    });
+
+    document.getElementById('clearAnnotationsBtn').addEventListener('click', () => {
+      player.clearAnnotations();
+      player.clearSpectrogramLabels();
+      log('Annotations gelöscht');
+    });
+
+    document.getElementById('loadSpectrogramLabelsBtn').addEventListener('click', () => {
+      player.setSpectrogramLabels(demoSpectrogramLabels);
+      log('3 Spektrogramm-Labels geladen');
+    });
+
+    document.getElementById('exportRavenBtn').addEventListener('click', () => {
+      const txt = player.exportAnnotationsRaven();
+      console.log('Raven Export\n' + txt);
+      log('Raven-Export in Console geschrieben');
+    });
+  </script>
+</body>
+</html>

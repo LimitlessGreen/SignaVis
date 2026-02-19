@@ -71,21 +71,6 @@ export function renderSpectrogram({ duration, spectrogramCanvas, pixelsPerSecond
     frameRate: any;
     spectrogramFrames: any;
 }): void;
-export function sha256ArrayBuffer(arrayBuffer: any): Promise<string>;
-export function buildSpectrogramCacheKey({ fileHash, fftSize, sampleRate, frameRate, nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing, spectrogramMode, }: {
-    fileHash: any;
-    fftSize: any;
-    sampleRate: any;
-    frameRate: any;
-    nMels: any;
-    pcenGain: any;
-    pcenBias: any;
-    pcenRoot: any;
-    pcenSmoothing: any;
-    spectrogramMode: any;
-}): string;
-export function getSpectrogramCacheEntry(cacheKey: any): Promise<any>;
-export function putSpectrogramCacheEntry(entry: any): Promise<boolean>;
 export function createSpectrogramProcessor(): {
     compute: (channelData: any, options: any) => Promise<any>;
     computeProgressive: (channelData: any, options: any) => AsyncGenerator<{

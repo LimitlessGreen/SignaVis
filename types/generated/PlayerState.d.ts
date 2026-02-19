@@ -92,16 +92,11 @@ export class PlayerState {
         gray: Uint8Array<ArrayBuffer>;
         width: number;
         height: number;
-    } | {
-        gray: Uint8Array<any>;
-        width: any;
-        height: any;
     };
     _gpuReady: boolean;
     spectrogramAbsLogMin: number;
     spectrogramAbsLogMax: number;
     sampleRateHz: number;
-    audioHash: any;
     amplitudePeakAbs: number;
     currentColorScheme: any;
     volume: number;

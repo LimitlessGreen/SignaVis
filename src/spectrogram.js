@@ -22,10 +22,6 @@ async function getWorkerCtor() {
     return _WorkerCtor;
 }
 
-const CACHE_DB_NAME = 'audio-workbench-cache';
-const CACHE_DB_VERSION = 1;
-const CACHE_STORE = 'spectrograms';
-
 // ─── Signal Utilities ───────────────────────────────────────────────
 
 export function computeAmplitudePeak(channelData) {
@@ -640,94 +636,6 @@ export function renderSpectrogram({
     );
 
     drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond });
-}
-
-// ─── IndexedDB cache helpers ───────────────────────────────────────
-
-function openSpectrogramCacheDb() {
-    return new Promise((resolve, reject) => {
-        if (typeof indexedDB === 'undefined') {
-            reject(new Error('indexedDB unavailable'));
-            return;
-        }
-        const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(CACHE_STORE)) {
-                db.createObjectStore(CACHE_STORE, { keyPath: 'cacheKey' });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error || new Error('Failed to open cache DB'));
-    });
-}
-
-export async function sha256ArrayBuffer(arrayBuffer) {
-    if (!globalThis.crypto?.subtle) {
-        throw new Error('crypto.subtle unavailable');
-    }
-    const digest = await globalThis.crypto.subtle.digest('SHA-256', arrayBuffer);
-    const bytes = new Uint8Array(digest);
-    let out = '';
-    for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, '0');
-    return out;
-}
-
-export function buildSpectrogramCacheKey({
-    fileHash,
-    fftSize,
-    sampleRate,
-    frameRate,
-    nMels,
-    pcenGain,
-    pcenBias,
-    pcenRoot,
-    pcenSmoothing,
-    spectrogramMode,
-}) {
-    return [
-        fileHash,
-        `mode=${spectrogramMode || 'perch'}`,
-        `fft=${fftSize}`,
-        `sr=${sampleRate}`,
-        `fr=${frameRate}`,
-        `mels=${nMels}`,
-        `g=${pcenGain}`,
-        `b=${pcenBias}`,
-        `r=${pcenRoot}`,
-        `s=${pcenSmoothing}`,
-    ].join('|');
-}
-
-export async function getSpectrogramCacheEntry(cacheKey) {
-    try {
-        const db = await openSpectrogramCacheDb();
-        return await new Promise((resolve, reject) => {
-            const tx = db.transaction(CACHE_STORE, 'readonly');
-            const store = tx.objectStore(CACHE_STORE);
-            const req = store.get(cacheKey);
-            req.onsuccess = () => resolve(req.result || null);
-            req.onerror = () => reject(req.error || new Error('Cache read failed'));
-        });
-    } catch {
-        return null;
-    }
-}
-
-export async function putSpectrogramCacheEntry(entry) {
-    try {
-        const db = await openSpectrogramCacheDb();
-        await new Promise((resolve, reject) => {
-            const tx = db.transaction(CACHE_STORE, 'readwrite');
-            const store = tx.objectStore(CACHE_STORE);
-            store.put(entry);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error || new Error('Cache write failed'));
-        });
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 // ─── Worker-based Spectrogram Processor ─────────────────────────────

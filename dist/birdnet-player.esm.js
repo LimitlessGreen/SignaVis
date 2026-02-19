@@ -642,9 +642,6 @@ async function getWorkerCtor() {
   }
   return _WorkerCtor;
 }
-const CACHE_DB_NAME = "audio-workbench-cache";
-const CACHE_DB_VERSION = 1;
-const CACHE_STORE = "spectrograms";
 function computeAmplitudePeak(channelData) {
   let peak = 0;
   for (let i = 0; i < channelData.length; i++) {
@@ -1391,87 +1388,6 @@ function renderSpectrogram({
   );
   drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond });
 }
-function openSpectrogramCacheDb() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      reject(new Error("indexedDB unavailable"));
-      return;
-    }
-    const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(CACHE_STORE)) {
-        db.createObjectStore(CACHE_STORE, { keyPath: "cacheKey" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error("Failed to open cache DB"));
-  });
-}
-async function sha256ArrayBuffer(arrayBuffer) {
-  if (!globalThis.crypto?.subtle) {
-    throw new Error("crypto.subtle unavailable");
-  }
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", arrayBuffer);
-  const bytes = new Uint8Array(digest);
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, "0");
-  return out;
-}
-function buildSpectrogramCacheKey({
-  fileHash,
-  fftSize,
-  sampleRate,
-  frameRate,
-  nMels,
-  pcenGain,
-  pcenBias,
-  pcenRoot,
-  pcenSmoothing,
-  spectrogramMode
-}) {
-  return [
-    fileHash,
-    `mode=${spectrogramMode || "perch"}`,
-    `fft=${fftSize}`,
-    `sr=${sampleRate}`,
-    `fr=${frameRate}`,
-    `mels=${nMels}`,
-    `g=${pcenGain}`,
-    `b=${pcenBias}`,
-    `r=${pcenRoot}`,
-    `s=${pcenSmoothing}`
-  ].join("|");
-}
-async function getSpectrogramCacheEntry(cacheKey) {
-  try {
-    const db = await openSpectrogramCacheDb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(CACHE_STORE, "readonly");
-      const store = tx.objectStore(CACHE_STORE);
-      const req = store.get(cacheKey);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error || new Error("Cache read failed"));
-    });
-  } catch {
-    return null;
-  }
-}
-async function putSpectrogramCacheEntry(entry) {
-  try {
-    const db = await openSpectrogramCacheDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(CACHE_STORE, "readwrite");
-      const store = tx.objectStore(CACHE_STORE);
-      store.put(entry);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error("Cache write failed"));
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
 function createSpectrogramProcessor() {
   let worker = null;
   let workerFailed = false;
@@ -1773,7 +1689,6 @@ class PlayerState {
     this.spectrogramAbsLogMin = 0;
     this.spectrogramAbsLogMax = 1;
     this.sampleRateHz = 32e3;
-    this.audioHash = null;
     this.amplitudePeakAbs = 1;
     this.currentColorScheme = this.d.colorSchemeSelect.value || "grayscale";
     this.volume = 0.8;
@@ -2135,7 +2050,6 @@ class PlayerState {
       const audioBuffer = await decodeArrayBuffer(fileBuffer);
       this.audioBuffer = audioBuffer;
       this.sampleRateHz = audioBuffer.sampleRate;
-      this.audioHash = await sha256ArrayBuffer(fileBuffer).catch(() => null);
       this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
       this._updateAmplitudeLabels();
       this.d.fileInfo.innerHTML = `<span class="statusbar-label">${file.name}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
@@ -2175,7 +2089,6 @@ class PlayerState {
       const audioBuffer = await decodeArrayBuffer(arrayBuffer);
       this.audioBuffer = audioBuffer;
       this.sampleRateHz = audioBuffer.sampleRate;
-      this.audioHash = await sha256ArrayBuffer(arrayBuffer).catch(() => null);
       this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
       this._updateAmplitudeLabels();
       const name = decodeURIComponent(
@@ -2713,120 +2626,35 @@ class PlayerState {
     try {
       const channelData = this.audioBuffer.getChannelData(0);
       let result;
-      let fromCache = false;
-      let cacheEntry = null;
-      const cacheKey = this.audioHash ? buildSpectrogramCacheKey({
-        fileHash: this.audioHash,
-        ...options
-      }) : null;
-      if (cacheKey) {
-        const cached = await getSpectrogramCacheEntry(cacheKey);
-        cacheEntry = cached;
-        if (cached?.spectrogramData && cached?.nFrames && cached?.nMels) {
-          this._emit("cachehit", { cacheKey });
-          result = {
-            data: new Float32Array(cached.spectrogramData),
-            nFrames: cached.nFrames,
-            nMels: cached.nMels
-          };
-          fromCache = true;
-          this.spectrogramAbsLogMin = cached.absLogMin ?? 0;
-          this.spectrogramAbsLogMax = cached.absLogMax ?? 1;
-          if (Number.isFinite(cached.floorPct) && Number.isFinite(cached.ceilPct)) {
-            this.d.floorSlider.value = Math.round(cached.floorPct);
-            this.d.ceilSlider.value = Math.round(cached.ceilPct);
-          }
-          if (Number.isFinite(cached.maxFreq)) {
-            const optionsList = Array.from(this.d.maxFreqSelect.options);
-            let best = optionsList[optionsList.length - 1];
-            for (const opt of optionsList) {
-              if (parseFloat(opt.value) >= cached.maxFreq) {
-                best = opt;
-                break;
-              }
-            }
-            this.d.maxFreqSelect.value = best.value;
-          }
-        } else {
-          this._emit("cachemiss", { cacheKey });
-        }
-      }
       const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC && typeof this.processor.computeProgressive === "function";
-      if (!result) {
-        if (shouldUseProgressive) {
-          const chunkResults = [];
-          for await (const progress of this.processor.computeProgressive(channelData, {
-            ...options,
-            chunkSeconds: PROGRESSIVE_CHUNK_SECONDS
-          })) {
-            chunkResults.push(progress.result);
-            this._emit("progress", {
-              chunk: progress.chunk,
-              totalChunks: progress.totalChunks,
-              percent: progress.percent
-            });
-          }
-          result = this._mergeProgressiveResults(chunkResults, options.nMels);
-        } else {
-          result = await this.processor.compute(channelData, options);
+      if (shouldUseProgressive) {
+        const chunkResults = [];
+        for await (const progress of this.processor.computeProgressive(channelData, {
+          ...options,
+          chunkSeconds: PROGRESSIVE_CHUNK_SECONDS
+        })) {
+          chunkResults.push(progress.result);
+          this._emit("progress", {
+            chunk: progress.chunk,
+            totalChunks: progress.totalChunks,
+            percent: progress.percent
+          });
         }
+        result = this._mergeProgressiveResults(chunkResults, options.nMels);
+      } else {
+        result = await this.processor.compute(channelData, options);
       }
       this.spectrogramData = result.data;
       this.spectrogramFrames = result.nFrames;
       this.spectrogramMels = result.nMels;
-      if (!fromCache) {
-        this._updateSpectrogramStats();
-        this._autoContrast();
-        this._autoFrequency();
-      }
-      const cachedGray = cacheEntry?.grayscaleTexture;
-      const selectedMaxFreq = parseFloat(this.d.maxFreqSelect.value);
-      const canReuseGray = fromCache && cachedGray && Number.isFinite(cachedGray.maxFreq) && Math.abs(cachedGray.maxFreq - selectedMaxFreq) < 1e-6 && cachedGray.width > 0 && cachedGray.height > 0;
-      if (canReuseGray) {
-        this.spectrogramGrayInfo = {
-          gray: new Uint8Array(cachedGray.gray),
-          width: cachedGray.width,
-          height: cachedGray.height
-        };
-        if (this.colorizer.ok) {
-          const { gray, width, height } = this.spectrogramGrayInfo;
-          this._gpuReady = this.colorizer.uploadGrayscale(gray, width, height);
-        } else {
-          this._gpuReady = false;
-        }
-      } else {
-        this._buildSpectrogramGrayscale();
-      }
+      this._updateSpectrogramStats();
+      this._autoContrast();
+      this._autoFrequency();
+      this._buildSpectrogramGrayscale();
       this._buildSpectrogramBaseImage();
       this._drawSpectrogram();
       this._syncOverviewWindowToViewport();
       this._setTransportState("ready", "spectrogram-ready");
-      if (cacheKey && this.spectrogramData?.length) {
-        const cacheWriteOk = await putSpectrogramCacheEntry({
-          cacheKey,
-          createdAt: Date.now(),
-          nFrames: this.spectrogramFrames,
-          nMels: this.spectrogramMels,
-          absLogMin: this.spectrogramAbsLogMin,
-          absLogMax: this.spectrogramAbsLogMax,
-          floorPct: parseFloat(this.d.floorSlider.value),
-          ceilPct: parseFloat(this.d.ceilSlider.value),
-          maxFreq: parseFloat(this.d.maxFreqSelect.value),
-          spectrogramData: new Float32Array(this.spectrogramData),
-          grayscaleTexture: this.spectrogramGrayInfo ? {
-            gray: new Uint8Array(this.spectrogramGrayInfo.gray),
-            width: this.spectrogramGrayInfo.width,
-            height: this.spectrogramGrayInfo.height,
-            maxFreq: parseFloat(this.d.maxFreqSelect.value)
-          } : null,
-          metadata: {
-            sampleRate: this.audioBuffer.sampleRate,
-            duration: this.audioBuffer.duration,
-            fftSize: options.fftSize
-          }
-        });
-        if (cacheWriteOk) this._emit("cachewrite", { cacheKey });
-      }
       this._emit("ready", {
         duration: this.audioBuffer.duration,
         sampleRate: this.audioBuffer.sampleRate,
