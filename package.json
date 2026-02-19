@@ -22,7 +22,12 @@
     "./style": "./dist/birdnet-player.css"
   },
   "peerDependencies": {
-    "wavesurfer": "^7"
+    "wavesurfer.js": "^7"
+  },
+  "peerDependenciesMeta": {
+    "wavesurfer.js": {
+      "optional": true
+    }
   },
   "keywords": [
     "audio",
@@ -38,7 +43,9 @@
     "url": "https://github.com/LimitlessGreen/Audio-Workbench"
   },
   "scripts": {
-    "build": "bash ./scripts/build.sh",
+    "dev": "vite",
+    "build": "vite build && node ./scripts/generate-types.js",
+    "build:legacy": "bash ./scripts/build.sh",
     "types:generate": "node ./scripts/generate-types.js",
     "pack:check": "npm pack",
     "test": "node --test tests/*.test.mjs",
@@ -47,5 +54,8 @@
     "version:sync": "bash ./scripts/sync-version.sh",
     "version:check": "bash ./scripts/check-version-sync.sh",
     "release": "bash ./scripts/release.sh"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }

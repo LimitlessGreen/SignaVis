@@ -12,6 +12,7 @@
 import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
 import { PlayerState } from './PlayerState.js';
 import { AnnotationLayer, SpectrogramLabelLayer } from './annotations.js';
+import './player.css';  // Vite extracts this into birdnet-player.css
 
 const WAVESURFER_CDN = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
 const DEFAULT_LABEL_TAXONOMY = [
