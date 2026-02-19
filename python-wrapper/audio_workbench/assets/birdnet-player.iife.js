@@ -294,7 +294,7 @@ var BirdNETPlayerModule = (() => {
   var MIN_SPECTROGRAM_DISPLAY_HEIGHT = 140;
   var SEEK_FINE_SEC = 0.5;
   var SEEK_COARSE_SEC = 5;
-  var SPECTROGRAM_HEIGHT = 512;
+  var SPECTROGRAM_HEIGHT = 160;
   var MAX_BASE_SPECTROGRAM_WIDTH = 24e3;
   var MIN_WINDOW_NORM = 0.02;
   var PROGRESSIVE_CHUNK_SECONDS = 10;
@@ -1030,7 +1030,7 @@ void main() {
     let maxLog = Number.NEGATIVE_INFINITY;
     const stride = Math.max(1, Math.floor(spectrogramData.length / 12e4));
     for (let i = 0; i < spectrogramData.length; i += stride) {
-      const mapped = Math.log1p((spectrogramData[i] || 0) * 12);
+      const mapped = spectrogramData[i] || 0;
       if (mapped < minLog) minLog = mapped;
       if (mapped > maxLog) maxLog = mapped;
     }
@@ -1044,7 +1044,7 @@ void main() {
     const stride = Math.max(1, Math.floor(spectrogramData.length / 2e5));
     const mapped = [];
     for (let i = 0; i < spectrogramData.length; i += stride) {
-      mapped.push(Math.log1p((spectrogramData[i] || 0) * 12));
+      mapped.push(spectrogramData[i] || 0);
     }
     mapped.sort((a, b) => a - b);
     const loIdx = Math.floor(mapped.length * loPercentile / 100);
@@ -1165,7 +1165,7 @@ void main() {
           count++;
         }
         const magnitude = sum / Math.max(1, count);
-        const normalized = (Math.log1p(magnitude * 12) - spectrogramAbsLogMin) / logRange;
+        const normalized = (magnitude - spectrogramAbsLogMin) / logRange;
         gray[y * width + x] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
       }
     }

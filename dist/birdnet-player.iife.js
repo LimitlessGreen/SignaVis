@@ -1,31 +1,6 @@
-var BirdNETPlayerModule = (() => {
-  var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-  // src/BirdNETPlayer.js
-  var BirdNETPlayer_exports = {};
-  __export(BirdNETPlayer_exports, {
-    BirdNETPlayer: () => BirdNETPlayer,
-    DEFAULT_OPTIONS: () => DEFAULT_OPTIONS
-  });
-
-  // src/template.js
-  var DEFAULT_OPTIONS = {
+var BirdNETPlayerModule = (function(exports) {
+  "use strict";
+  const DEFAULT_OPTIONS = {
     showFileOpen: true,
     // Open-button + file input
     showTransport: true,
@@ -92,91 +67,97 @@ var BirdNETPlayerModule = (() => {
     ].join(" ");
     return `<div class="${shellClass}">
 
-    <!-- \u2550\u2550\u2550 Top Toolbar \u2550\u2550\u2550 -->
-    <div class="toolbar" id="toolbarRoot">
+    <!-- ═══ Top Toolbar ═══ -->
+    <div class="toolbar" data-aw="toolbarRoot">
       <div class="toolbar-primary">
-        <button class="toolbar-btn file-btn" id="openFileBtn" title="Audio-Datei laden"${hide(o.showFileOpen)}>
+        <button class="toolbar-btn file-btn" data-aw="openFileBtn" title="Audio-Datei laden"${hide(o.showFileOpen)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 15v4a2 2 0 002 2h14a2 2 0 002-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Open
         </button>
-        <input type="file" id="audioFile" accept="audio/*" hidden>
+        <input type="file" data-aw="audioFile" accept="audio/*" hidden>
 
         <div class="toolbar-sep"${hide(o.showFileOpen)}></div>
 
         <!-- Transport -->
         <div class="transport"${hide(o.showTransport)}>
-            <button class="transport-btn" id="jumpStartBtn" disabled title="Zum Anfang (Home)">
+            <button class="transport-btn" data-aw="jumpStartBtn" disabled title="Zum Anfang (Home)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="3" height="14"/><polygon points="20 5 10 12 20 19"/></svg>
             </button>
-            <button class="transport-btn" id="backwardBtn" disabled title="-5s (J)">
+            <button class="transport-btn" data-aw="backwardBtn" disabled title="-5s (J)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 5 9 12 19 19"/><polygon points="12 5 2 12 12 19"/></svg>
             </button>
-            <button class="transport-btn play-btn" id="playPauseBtn" disabled title="Play / Pause (Space)">
+            <button class="transport-btn play-btn" data-aw="playPauseBtn" disabled title="Play / Pause (Space)">
                 <svg class="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
             </button>
-            <button class="transport-btn" id="stopBtn" disabled title="Stop">
+            <button class="transport-btn" data-aw="stopBtn" disabled title="Stop">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
             </button>
-            <button class="transport-btn" id="forwardBtn" disabled title="+5s (L)">
+            <button class="transport-btn" data-aw="forwardBtn" disabled title="+5s (L)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 5 15 12 5 19"/><polygon points="12 5 22 12 12 19"/></svg>
             </button>
-            <button class="transport-btn" id="jumpEndBtn" disabled title="Zum Ende (End)">
+            <button class="transport-btn" data-aw="jumpEndBtn" disabled title="Zum Ende (End)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="4 5 14 12 4 19"/><rect x="18" y="5" width="3" height="14"/></svg>
             </button>
         </div>
 
         <!-- Time -->
-        <div class="time-display" id="timeDisplay" role="status" aria-live="polite"${hide(o.showTime)}>
-            <span id="currentTime">00:00.0</span><span class="time-sep">/</span><span id="totalTime">00:00.0</span>
+        <div class="time-display" data-aw="timeDisplay" role="status" aria-live="polite"${hide(o.showTime)}>
+            <span data-aw="currentTime">00:00.0</span><span class="time-sep">/</span><span data-aw="totalTime">00:00.0</span>
         </div>
-        <button class="toolbar-btn compact-more-btn" id="compactMoreBtn" aria-expanded="false" title="Weitere Controls anzeigen">More</button>
+        <button class="toolbar-btn compact-more-btn" data-aw="compactMoreBtn" aria-expanded="false" title="Weitere Controls anzeigen">More</button>
       </div>
 
-      <div class="toolbar-secondary" id="toolbarSecondary">
+      <div class="toolbar-secondary" data-aw="toolbarSecondary">
 
         <div class="toolbar-sep"${hide(o.showVolume)}></div>
 
         <!-- Volume -->
-        <button class="toolbar-btn icon-btn" id="volumeToggleBtn" title="Mute / Unmute"${hide(o.showVolume)}>
-            <svg id="volumeIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <button class="toolbar-btn icon-btn" data-aw="volumeToggleBtn" title="Mute / Unmute"${hide(o.showVolume)}>
+            <svg data-aw="volumeIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="6 9 2 9 2 15 6 15 11 19 11 5"/>
-                <path id="volumeWaves" d="M15 8.5a4 4 0 010 7M18 5a9 9 0 010 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path data-aw="volumeWaves" d="M15 8.5a4 4 0 010 7M18 5a9 9 0 010 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </button>
-        <input type="range" id="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Lautst\xE4rke"${hide(o.showVolume)}>
+        <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Lautstärke"${hide(o.showVolume)}>
 
         <div class="toolbar-sep"${hide(o.showViewToggles)}></div>
 
         <!-- Toggle tools -->
         <span${hide(o.showViewToggles)}>
-            <button class="toolbar-btn toggle-btn active" id="followToggleBtn" disabled title="Free / Follow / Smooth umschalten">Follow</button>
-            <button class="toolbar-btn toggle-btn" id="loopToggleBtn" disabled title="Loop">Loop</button>
-            <button class="toolbar-btn" id="fitViewBtn" disabled title="Fit to view">Fit</button>
-            <button class="toolbar-btn" id="resetViewBtn" disabled title="Reset zoom">Reset</button>
+            <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Free / Follow / Smooth umschalten">Follow</button>
+            <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop">Loop</button>
+            <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit to view">Fit</button>
+            <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset zoom">Reset</button>
         </span>
 
         <div class="toolbar-sep"${hide(o.showZoom)}></div>
 
         <!-- Zoom -->
         <span${hide(o.showZoom)}>
-            <label class="toolbar-label" for="zoomSlider">Zoom</label>
-            <input type="range" id="zoomSlider" class="toolbar-range" min="20" max="600" value="100" step="5">
-            <span class="toolbar-value" id="zoomValue">100 px/s</span>
+            <label class="toolbar-label">Zoom</label>
+            <input type="range" data-aw="zoomSlider" class="toolbar-range" min="20" max="600" value="100" step="5">
+            <span class="toolbar-value" data-aw="zoomValue">100 px/s</span>
         </span>
 
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
 
         <!-- Settings -->
         <span${hide(o.showFFTControls)}>
-            <label class="toolbar-label" for="fftSize">FFT</label>
-            <select id="fftSize" class="toolbar-select">
+            <label class="toolbar-label">Mode</label>
+            <select data-aw="spectrogramModeSelect" class="toolbar-select">
+                <option value="perch" selected>Perch</option>
+                <option value="classic">Classic</option>
+            </select>
+
+            <label class="toolbar-label">FFT</label>
+            <select data-aw="fftSize" class="toolbar-select">
                 <option value="1024">1024</option>
                 <option value="2048" selected>2048</option>
                 <option value="4096">4096</option>
             </select>
 
-            <label class="toolbar-label" for="maxFreqSelect">Freq</label>
-            <select id="maxFreqSelect" class="toolbar-select">
+            <label class="toolbar-label">Freq</label>
+            <select data-aw="maxFreqSelect" class="toolbar-select">
                 <option value="4000">4k</option>
                 <option value="6000">6k</option>
                 <option value="8000">8k</option>
@@ -184,11 +165,12 @@ var BirdNETPlayerModule = (() => {
                 <option value="12000">12k</option>
                 <option value="16000">16k</option>
             </select>
-            <button class="toolbar-btn mini-btn" id="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
+            <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
 
-            <label class="toolbar-label" for="colorSchemeSelect">Color</label>
-            <select id="colorSchemeSelect" class="toolbar-select">
+            <label class="toolbar-label">Color</label>
+            <select data-aw="colorSchemeSelect" class="toolbar-select">
                 <option value="grayscale" selected>B/W</option>
+                <option value="xenocanto">XC</option>
                 <option value="fire">Fire</option>
                 <option value="inferno">Inferno</option>
                 <option value="viridis">Viridis</option>
@@ -202,46 +184,46 @@ var BirdNETPlayerModule = (() => {
         <!-- Display gain: SDR#-style floor / ceiling -->
         <span${hide(o.showDisplayGain)}>
             <label class="toolbar-label">Floor</label>
-            <input type="range" id="floorSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
+            <input type="range" data-aw="floorSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
             <label class="toolbar-label">Ceil</label>
-            <input type="range" id="ceilSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="100" title="Spectrogram Ceiling (Wei\xDFpunkt)">
-            <button class="toolbar-btn mini-btn" id="autoContrastBtn" disabled title="Kontrast automatisch optimieren">AC</button>
+            <input type="range" data-aw="ceilSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="100" title="Spectrogram Ceiling (Weißpunkt)">
+            <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Kontrast automatisch optimieren">AC</button>
         </span>
       </div>
     </div>
 
-    <!-- \u2550\u2550\u2550 Main Content \u2550\u2550\u2550 -->
+    <!-- ═══ Main Content ═══ -->
     <div class="views-panel">
         <!-- Waveform -->
-        <div class="waveform-container" id="waveformContainer">
+        <div class="waveform-container" data-aw="waveformContainer">
             <div class="time-aligned-row">
                 <div class="axis-spacer">
-                    <div class="amplitude-labels" id="amplitudeLabels"></div>
+                    <div class="amplitude-labels" data-aw="amplitudeLabels"></div>
                 </div>
                 <div class="time-pane">
-                    <div class="waveform-wrapper" id="waveformWrapper">
-                        <div class="waveform-content" id="waveformContent">
-                            <canvas id="amplitudeCanvas"></canvas>
-                            <canvas id="waveformTimelineCanvas"></canvas>
+                    <div class="waveform-wrapper" data-aw="waveformWrapper">
+                        <div class="waveform-content" data-aw="waveformContent">
+                            <canvas data-aw="amplitudeCanvas"></canvas>
+                            <canvas data-aw="waveformTimelineCanvas"></canvas>
                         </div>
-                        <div class="playhead playhead-secondary" id="waveformPlayhead"></div>
+                        <div class="playhead playhead-secondary" data-aw="waveformPlayhead"></div>
                     </div>
                 </div>
             </div>
-            <div id="audioEngineHost" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;"></div>
+            <div data-aw="audioEngineHost" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;"></div>
         </div>
 
         <!-- Split handle -->
-        <div class="view-split-handle" id="viewSplitHandle" title="Amplitude/Spektrogramm Verh\xE4ltnis anpassen"></div>
+        <div class="view-split-handle" data-aw="viewSplitHandle" title="Amplitude/Spektrogramm Verhältnis anpassen"></div>
 
         <!-- Spectrogram -->
-        <div class="spectrogram-container" id="spectrogramContainer">
+        <div class="spectrogram-container" data-aw="spectrogramContainer">
             <div class="time-aligned-row">
                 <div class="axis-spacer freq-axis-spacer">
-                    <div class="frequency-labels" id="freqLabels"></div>
+                    <div class="frequency-labels" data-aw="freqLabels"></div>
                 </div>
                 <div class="time-pane">
-                    <div class="canvas-wrapper" id="canvasWrapper"
+                    <div class="canvas-wrapper" data-aw="canvasWrapper"
                          role="slider"
                          aria-label="Playback position"
                          aria-valuemin="0"
@@ -249,64 +231,60 @@ var BirdNETPlayerModule = (() => {
                          aria-valuenow="0"
                          aria-valuetext="00:00.0 of 00:00.0"
                          tabindex="0">
-                        <canvas id="spectrogramCanvas"></canvas>
-                        <div class="playhead" id="playhead"></div>
+                        <canvas data-aw="spectrogramCanvas"></canvas>
+                        <div class="playhead" data-aw="playhead"></div>
                     </div>
                 </div>
             </div>
-            <div class="spectrogram-resize-handle" id="spectrogramResizeHandle" title="Spektrogramm-H\xF6he anpassen"></div>
+            <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Spektrogramm-Höhe anpassen"></div>
         </div>
 
         <!-- Overview -->
-        <div class="overview-container" id="overviewContainer"${hide(o.showOverview)}>
-            <canvas id="overviewCanvas"></canvas>
-            <div class="overview-window" id="overviewWindow">
-                <div class="handle left" id="overviewHandleLeft"></div>
-                <div class="handle right" id="overviewHandleRight"></div>
+        <div class="overview-container" data-aw="overviewContainer"${hide(o.showOverview)}>
+            <canvas data-aw="overviewCanvas"></canvas>
+            <div class="overview-window" data-aw="overviewWindow">
+                <div class="handle left" data-aw="overviewHandleLeft"></div>
+                <div class="handle right" data-aw="overviewHandleRight"></div>
             </div>
         </div>
     </div>
 
-    <!-- \u2550\u2550\u2550 Status Bar \u2550\u2550\u2550 -->
+    <!-- ═══ Status Bar ═══ -->
     <div class="statusbar"${hide(o.showStatusbar)}>
-        <div class="statusbar-section" id="fileInfo">
+        <div class="statusbar-section" data-aw="fileInfo">
             <span class="statusbar-label">No file</span>
         </div>
         <div class="statusbar-section">
-            <span class="statusbar-label" id="sampleRateInfo"></span>
+            <span class="statusbar-label" data-aw="sampleRateInfo"></span>
         </div>
         <div class="statusbar-spacer"></div>
         <div class="statusbar-section">
-            <span id="viewRange"></span>
+            <span data-aw="viewRange"></span>
         </div>
         <div class="statusbar-section">
-            <span id="playState">Idle</span>
+            <span data-aw="playState">Idle</span>
         </div>
     </div>
 </div>`;
   }
-
-  // src/constants.js
-  var DEFAULT_ZOOM_PPS = 100;
-  var DEFAULT_WAVEFORM_HEIGHT = 100;
-  var DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT = DEFAULT_WAVEFORM_HEIGHT * 2;
-  var MIN_WAVEFORM_HEIGHT = 64;
-  var MIN_SPECTROGRAM_DISPLAY_HEIGHT = 140;
-  var SEEK_FINE_SEC = 0.5;
-  var SEEK_COARSE_SEC = 5;
-  var SPECTROGRAM_HEIGHT = 512;
-  var MAX_BASE_SPECTROGRAM_WIDTH = 24e3;
-  var MIN_WINDOW_NORM = 0.02;
-  var PROGRESSIVE_CHUNK_SECONDS = 10;
-  var PROGRESSIVE_MIN_DURATION_SEC = 60;
-  var PERCH_FRAME_RATE = 100;
-  var PERCH_N_MELS = 160;
-  var PERCH_PCEN_GAIN = 0.8;
-  var PERCH_PCEN_BIAS = 0.01;
-  var PERCH_PCEN_ROOT = 4;
-  var PERCH_PCEN_SMOOTHING = 0.025;
-
-  // src/utils.js
+  const DEFAULT_ZOOM_PPS = 100;
+  const DEFAULT_WAVEFORM_HEIGHT = 100;
+  const DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT = DEFAULT_WAVEFORM_HEIGHT * 2;
+  const MIN_WAVEFORM_HEIGHT = 64;
+  const MIN_SPECTROGRAM_DISPLAY_HEIGHT = 140;
+  const SEEK_FINE_SEC = 0.5;
+  const SEEK_COARSE_SEC = 5;
+  const SPECTROGRAM_HEIGHT = 160;
+  const MAX_BASE_SPECTROGRAM_WIDTH = 24e3;
+  const MIN_WINDOW_NORM = 0.02;
+  const PROGRESSIVE_CHUNK_SECONDS = 10;
+  const PROGRESSIVE_MIN_DURATION_SEC = 60;
+  const PERCH_FRAME_RATE = 100;
+  const PERCH_N_MELS = 160;
+  const PERCH_PCEN_GAIN = 0.8;
+  const PERCH_PCEN_BIAS = 0.01;
+  const PERCH_PCEN_ROOT = 4;
+  const PERCH_PCEN_SMOOTHING = 0.025;
   function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = (seconds % 60).toFixed(1);
@@ -323,8 +301,6 @@ var BirdNETPlayerModule = (() => {
     const majorStep = pixelsPerSecond >= 320 ? 0.5 : pixelsPerSecond >= 180 ? 1 : pixelsPerSecond >= 90 ? 2 : pixelsPerSecond >= 45 ? 5 : 10;
     return { majorStep, minorStep: majorStep / 2 };
   }
-
-  // src/gestures.js
   function distance(a, b) {
     const dx = a.clientX - b.clientX;
     const dy = a.clientY - b.clientY;
@@ -336,7 +312,7 @@ var BirdNETPlayerModule = (() => {
       y: (a.clientY + b.clientY) * 0.5
     };
   }
-  var GestureRecognizer = class {
+  class GestureRecognizer {
     constructor(element) {
       this.element = element;
       this.handlers = /* @__PURE__ */ new Map();
@@ -456,10 +432,8 @@ var BirdNETPlayerModule = (() => {
       this.lastPinchDistance = 0;
       this.lastPinchCenter = null;
     }
-  };
-
-  // src/transportState.js
-  var TRANSPORT_STATE_LABELS = {
+  }
+  const TRANSPORT_STATE_LABELS = {
     idle: "Idle",
     loading: "Loading",
     ready: "Ready",
@@ -472,7 +446,7 @@ var BirdNETPlayerModule = (() => {
     stopped: "Stopped",
     error: "Error"
   };
-  var ALLOWED_TRANSITIONS = {
+  const ALLOWED_TRANSITIONS = {
     "": /* @__PURE__ */ new Set(["idle", "loading", "ready", "error"]),
     idle: /* @__PURE__ */ new Set(["loading", "ready", "error"]),
     loading: /* @__PURE__ */ new Set(["ready", "error", "idle"]),
@@ -492,22 +466,13 @@ var BirdNETPlayerModule = (() => {
     const allowed = ALLOWED_TRANSITIONS[fromState] || ALLOWED_TRANSITIONS[""];
     return allowed.has(toState);
   }
-
-  // src/spectrogram.js
-  var CACHE_DB_NAME = "audio-workbench-cache";
-  var CACHE_DB_VERSION = 1;
-  var CACHE_STORE = "spectrograms";
-  function computeAmplitudePeak(channelData) {
-    let peak = 0;
-    for (let i = 0; i < channelData.length; i++) {
-      const abs = Math.abs(channelData[i]);
-      if (abs > peak) peak = abs;
-    }
-    return Math.max(1e-6, peak);
+  function hzToMel(hz) {
+    return 2595 * Math.log10(1 + hz / 700);
+  }
+  function melToHz(mel) {
+    return 700 * (Math.pow(10, mel / 2595) - 1);
   }
   function buildMelFrequencies(sampleRate, nMels) {
-    const melToHz = (mel) => 700 * (Math.pow(10, mel / 2595) - 1);
-    const hzToMel = (hz) => 2595 * Math.log10(1 + hz / 700);
     const melMin = hzToMel(0);
     const melMax = hzToMel(sampleRate / 2);
     const freqs = new Float32Array(nMels);
@@ -517,7 +482,177 @@ var BirdNETPlayerModule = (() => {
     }
     return freqs;
   }
-  var COLOR_MAPS = {
+  function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
+    const nFftBins = Math.floor(fftSize / 2);
+    const melMin = hzToMel(fMin);
+    const melMax = hzToMel(fMax);
+    const melPoints = [];
+    for (let i = 0; i < nMels + 2; i++) {
+      melPoints.push(melMin + i / (nMels + 1) * (melMax - melMin));
+    }
+    const hzPoints = melPoints.map(melToHz);
+    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));
+    const filterbank = [];
+    for (let m = 1; m <= nMels; m++) {
+      const filter = new Float32Array(nFftBins);
+      const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));
+      const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));
+      const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));
+      for (let k = left; k < center; k++) {
+        filter[k] = (k - left) / (center - left || 1);
+      }
+      for (let k = center; k < right; k++) {
+        filter[k] = (right - k) / (right - center || 1);
+      }
+      filterbank.push(filter);
+    }
+    return filterbank;
+  }
+  function applyMelFilterbank(powerSpectrum, melFilterbank) {
+    const melSpectrum = new Float32Array(melFilterbank.length);
+    for (let m = 0; m < melFilterbank.length; m++) {
+      const filter = melFilterbank[m];
+      let sum = 0;
+      for (let k = 0; k < filter.length; k++) {
+        if (filter[k] !== 0) {
+          sum += powerSpectrum[k] * filter[k];
+        }
+      }
+      melSpectrum[m] = sum;
+    }
+    return melSpectrum;
+  }
+  function iterativeFFT(real, imag) {
+    const n = real.length;
+    let j = 0;
+    for (let i = 1; i < n; i++) {
+      let bit = n >> 1;
+      while (j & bit) {
+        j ^= bit;
+        bit >>= 1;
+      }
+      j ^= bit;
+      if (i < j) {
+        let tmp = real[i];
+        real[i] = real[j];
+        real[j] = tmp;
+        tmp = imag[i];
+        imag[i] = imag[j];
+        imag[j] = tmp;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const halfLen = len >> 1;
+      const angleStep = -2 * Math.PI / len;
+      for (let i = 0; i < n; i += len) {
+        for (let k = 0; k < halfLen; k++) {
+          const angle = angleStep * k;
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
+          const evenIndex = i + k;
+          const oddIndex = evenIndex + halfLen;
+          const tr = cos * real[oddIndex] - sin * imag[oddIndex];
+          const ti = sin * real[oddIndex] + cos * imag[oddIndex];
+          real[oddIndex] = real[evenIndex] - tr;
+          imag[oddIndex] = imag[evenIndex] - ti;
+          real[evenIndex] += tr;
+          imag[evenIndex] += ti;
+        }
+      }
+    }
+  }
+  function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+    const maxCopy = Math.min(winLength, fftSize);
+    for (let i = 0; i < maxCopy; i++) {
+      const sample = audio[offset + i] || 0;
+      const window2 = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));
+      real[i] = sample * window2;
+    }
+    iterativeFFT(real, imag);
+    const out = new Float32Array(fftSize / 2);
+    for (let i = 0; i < out.length; i++) {
+      out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
+    }
+    return out;
+  }
+  function computeSpectrogram(params) {
+    const {
+      channelData,
+      fftSize,
+      sampleRate,
+      frameRate,
+      nMels,
+      pcenGain,
+      pcenBias,
+      pcenRoot,
+      pcenSmoothing,
+      spectrogramMode
+    } = params;
+    const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);
+    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
+    const winLength = 4 * hopSize;
+    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
+    const nBins = Math.floor(fftSize / 2);
+    const useLinear = spectrogramMode === "classic";
+    const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+    const outBins = useLinear ? nBins : nMels;
+    const output = new Float32Array(numFrames * outBins);
+    if (useLinear) {
+      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
+        const offset = frameIdx * hopSize;
+        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
+        const base = frameIdx * nBins;
+        for (let k = 0; k < nBins; k++) {
+          const power = mag[k] * mag[k];
+          output[base + k] = 10 * Math.log10(Math.max(1e-10, power));
+        }
+      }
+    } else {
+      const smooth = new Float32Array(nMels);
+      const pcenPower = 1 / pcenRoot;
+      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
+        const offset = frameIdx * hopSize;
+        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
+        const mel = applyMelFilterbank(mag, melFB);
+        const base = frameIdx * nMels;
+        for (let m = 0; m < nMels; m++) {
+          const e = mel[m];
+          smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
+          const denom = Math.pow(1e-12 + smooth[m], pcenGain);
+          const norm = e / denom;
+          output[base + m] = Math.pow(norm + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
+        }
+      }
+    }
+    return { data: output, nFrames: numFrames, nMels: outBins };
+  }
+  let _WorkerCtor = null;
+  let _workerCtorResolved = false;
+  async function getWorkerCtor() {
+    if (_workerCtorResolved) return _WorkerCtor;
+    _workerCtorResolved = true;
+    try {
+      const mod = await Promise.resolve().then(() => spectrogram_worker);
+      _WorkerCtor = mod.default;
+    } catch {
+      _WorkerCtor = null;
+    }
+    return _WorkerCtor;
+  }
+  const CACHE_DB_NAME = "audio-workbench-cache";
+  const CACHE_DB_VERSION = 1;
+  const CACHE_STORE = "spectrograms";
+  function computeAmplitudePeak(channelData) {
+    let peak = 0;
+    for (let i = 0; i < channelData.length; i++) {
+      const abs = Math.abs(channelData[i]);
+      if (abs > peak) peak = abs;
+    }
+    return Math.max(1e-6, peak);
+  }
+  const COLOR_MAPS = {
     inferno: [
       [0, 0, 4],
       [31, 12, 72],
@@ -833,6 +968,21 @@ var BirdNETPlayerModule = (() => {
       [248, 148, 65],
       [253, 195, 40],
       [240, 249, 33]
+    ],
+    // Xeno-Canto inspired warm-body palette:
+    // black → deep brown → warm red → orange → yellow → white
+    xenocanto: [
+      [0, 0, 0],
+      [30, 10, 5],
+      [65, 20, 10],
+      [110, 35, 15],
+      [160, 55, 15],
+      [200, 85, 20],
+      [230, 130, 30],
+      [245, 180, 60],
+      [255, 220, 110],
+      [255, 245, 180],
+      [255, 255, 255]
     ]
   };
   function sampleColorMap(stops, t) {
@@ -869,14 +1019,14 @@ var BirdNETPlayerModule = (() => {
     }
     return sampleColorMap(COLOR_MAPS[colorScheme] || COLOR_MAPS.inferno, x);
   }
-  var _VS = `#version 300 es
+  const _VS = `#version 300 es
 in vec2 a_pos;
 out vec2 v_uv;
 void main() {
     v_uv = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
     gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
-  var _FS = `#version 300 es
+  const _FS = `#version 300 es
 precision mediump float;
 uniform sampler2D u_gray;
 uniform sampler2D u_lut;
@@ -889,7 +1039,7 @@ void main() {
     float t = clamp((g - u_floor) * u_rcpRange, 0.0, 1.0);
     fragColor = texture(u_lut, vec2(t, 0.5));
 }`;
-  var GpuColorizer = class {
+  class GpuColorizer {
     constructor() {
       this._canvas = document.createElement("canvas");
       const gl = this._canvas.getContext("webgl2", {
@@ -1021,7 +1171,7 @@ void main() {
       gl.deleteVertexArray(this._vao);
       this._gl = null;
     }
-  };
+  }
   function updateSpectrogramStats(spectrogramData) {
     if (!spectrogramData || spectrogramData.length === 0) {
       return { logMin: 0, logMax: 1 };
@@ -1030,7 +1180,7 @@ void main() {
     let maxLog = Number.NEGATIVE_INFINITY;
     const stride = Math.max(1, Math.floor(spectrogramData.length / 12e4));
     for (let i = 0; i < spectrogramData.length; i += stride) {
-      const mapped = Math.log1p((spectrogramData[i] || 0) * 12);
+      const mapped = spectrogramData[i] || 0;
       if (mapped < minLog) minLog = mapped;
       if (mapped > maxLog) maxLog = mapped;
     }
@@ -1044,7 +1194,7 @@ void main() {
     const stride = Math.max(1, Math.floor(spectrogramData.length / 2e5));
     const mapped = [];
     for (let i = 0; i < spectrogramData.length; i += stride) {
-      mapped.push(Math.log1p((spectrogramData[i] || 0) * 12));
+      mapped.push(spectrogramData[i] || 0);
     }
     mapped.sort((a, b) => a - b);
     const loIdx = Math.floor(mapped.length * loPercentile / 100);
@@ -1127,25 +1277,32 @@ void main() {
     sampleRateHz,
     maxFreq,
     spectrogramAbsLogMin,
-    spectrogramAbsLogMax
+    spectrogramAbsLogMax,
+    spectrogramMode
   }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
     const width = Math.max(1, Math.min(spectrogramFrames, MAX_BASE_SPECTROGRAM_WIDTH));
     const height = SPECTROGRAM_HEIGHT;
     const framesPerPixel = spectrogramFrames / width;
+    const isLinear = spectrogramMode === "classic";
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
-    const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
-    let maxMelBin = spectrogramMels - 1;
-    for (let i = 0; i < melFreqs.length; i++) {
-      if (melFreqs[i] > boundedMaxFreq) {
-        maxMelBin = Math.max(1, i - 1);
-        break;
+    let maxBin = spectrogramMels - 1;
+    if (isLinear) {
+      const binHz = sampleRateHz / 2 / spectrogramMels;
+      maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+    } else {
+      const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
+      for (let i = 0; i < melFreqs.length; i++) {
+        if (melFreqs[i] > boundedMaxFreq) {
+          maxBin = Math.max(1, i - 1);
+          break;
+        }
       }
     }
-    const yToMel = new Int16Array(height);
+    const yToBin = new Int16Array(height);
     for (let y = 0; y < height; y++) {
-      const freqIndex = Math.floor((height - y) / height * (maxMelBin + 1));
-      yToMel[y] = Math.max(0, Math.min(maxMelBin, freqIndex));
+      const freqIndex = Math.floor((height - y) / height * (maxBin + 1));
+      yToBin[y] = Math.max(0, Math.min(maxBin, freqIndex));
     }
     const logRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
     const gray = new Uint8Array(width * height);
@@ -1154,18 +1311,18 @@ void main() {
       const frameEnd = Math.max(frameStart + 1, Math.min(spectrogramFrames, Math.ceil((x + 1) * framesPerPixel)));
       const sampleStep = Math.max(1, Math.floor((frameEnd - frameStart) / 4));
       for (let y = 0; y < height; y++) {
-        const melBin = yToMel[y];
+        const bin = yToBin[y];
         let sum = 0, count = 0;
         for (let frame = frameStart; frame < frameEnd; frame += sampleStep) {
-          sum += spectrogramData[frame * spectrogramMels + melBin] || 0;
+          sum += spectrogramData[frame * spectrogramMels + bin] || 0;
           count++;
         }
         if (frameEnd - 1 > frameStart) {
-          sum += spectrogramData[(frameEnd - 1) * spectrogramMels + melBin] || 0;
+          sum += spectrogramData[(frameEnd - 1) * spectrogramMels + bin] || 0;
           count++;
         }
         const magnitude = sum / Math.max(1, count);
-        const normalized = (Math.log1p(magnitude * 12) - spectrogramAbsLogMin) / logRange;
+        const normalized = (magnitude - spectrogramAbsLogMin) / logRange;
         gray[y * width + x] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
       }
     }
@@ -1269,10 +1426,12 @@ void main() {
     pcenGain,
     pcenBias,
     pcenRoot,
-    pcenSmoothing
+    pcenSmoothing,
+    spectrogramMode
   }) {
     return [
       fileHash,
+      `mode=${spectrogramMode || "perch"}`,
       `fft=${fftSize}`,
       `sr=${sampleRate}`,
       `fr=${frameRate}`,
@@ -1312,307 +1471,23 @@ void main() {
       return false;
     }
   }
-  var WORKER_CODE = `
-self.onmessage = (event) => {
-    const {
-        requestId,
-        channelData,
-        fftSize,
-        sampleRate,
-        frameRate,
-        nMels,
-        pcenGain,
-        pcenBias,
-        pcenRoot,
-        pcenSmoothing,
-    } = event.data;
-
-    const audio = new Float32Array(channelData);
-    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
-    const winLength = 4 * hopSize;
-    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
-
-    const melFilterbank = createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
-    const pcenOutput = new Float32Array(numFrames * nMels);
-    const smooth = new Float32Array(nMels);
-    const pcenPower = 1.0 / pcenRoot;
-
-    for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
-        const offset = frameIdx * hopSize;
-        const magnitudeSpectrum = fftPowerSpectrum(audio, offset, winLength, fftSize);
-        const melSpectrum = applyMelFilterbank(magnitudeSpectrum, melFilterbank);
-
-        const base = frameIdx * nMels;
-        for (let m = 0; m < nMels; m++) {
-            const e = melSpectrum[m];
-            smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
-            const denominator = Math.pow(1e-12 + smooth[m], pcenGain);
-            const normalized = e / denominator;
-            pcenOutput[base + m] = Math.pow(normalized + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
-        }
-    }
-
-    self.postMessage(
-        { requestId, data: pcenOutput.buffer, nFrames: numFrames, nMels },
-        [pcenOutput.buffer]
-    );
-};
-
-function fftPowerSpectrum(audio, offset, winLength, fftSize) {
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
-
-    const maxCopy = Math.min(winLength, fftSize);
-    for (let i = 0; i < maxCopy; i++) {
-        const sample = audio[offset + i] || 0;
-        const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));
-        real[i] = sample * window;
-    }
-
-    iterativeFFT(real, imag);
-
-    const out = new Float32Array(fftSize / 2);
-    for (let i = 0; i < out.length; i++) {
-        out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
-    }
-    return out;
-}
-
-function iterativeFFT(real, imag) {
-    const n = real.length;
-
-    let j = 0;
-    for (let i = 1; i < n; i++) {
-        let bit = n >> 1;
-        while (j & bit) {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j ^= bit;
-
-        if (i < j) {
-            let tmp = real[i];
-            real[i] = real[j];
-            real[j] = tmp;
-            tmp = imag[i];
-            imag[i] = imag[j];
-            imag[j] = tmp;
-        }
-    }
-
-    for (let len = 2; len <= n; len <<= 1) {
-        const halfLen = len >> 1;
-        const angleStep = -2 * Math.PI / len;
-
-        for (let i = 0; i < n; i += len) {
-            for (let k = 0; k < halfLen; k++) {
-                const angle = angleStep * k;
-                const cos = Math.cos(angle);
-                const sin = Math.sin(angle);
-
-                const evenIndex = i + k;
-                const oddIndex = evenIndex + halfLen;
-
-                const tr = cos * real[oddIndex] - sin * imag[oddIndex];
-                const ti = sin * real[oddIndex] + cos * imag[oddIndex];
-
-                real[oddIndex] = real[evenIndex] - tr;
-                imag[oddIndex] = imag[evenIndex] - ti;
-                real[evenIndex] += tr;
-                imag[evenIndex] += ti;
-            }
-        }
-    }
-}
-
-function hzToMel(hz) {
-    return 2595 * Math.log10(1 + hz / 700);
-}
-
-function melToHz(mel) {
-    return 700 * (Math.pow(10, mel / 2595) - 1);
-}
-
-function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
-    const nFftBins = Math.floor(fftSize / 2);
-    const melMin = hzToMel(fMin);
-    const melMax = hzToMel(fMax);
-    const melPoints = [];
-
-    for (let i = 0; i < nMels + 2; i++) {
-        melPoints.push(melMin + (i / (nMels + 1)) * (melMax - melMin));
-    }
-
-    const hzPoints = melPoints.map(melToHz);
-    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));
-
-    const filterbank = [];
-    for (let m = 1; m <= nMels; m++) {
-        const filter = new Float32Array(nFftBins);
-        const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));
-        const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));
-        const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));
-
-        for (let k = left; k < center; k++) {
-            const denom = center - left || 1;
-            filter[k] = (k - left) / denom;
-        }
-        for (let k = center; k < right; k++) {
-            const denom = right - center || 1;
-            filter[k] = (right - k) / denom;
-        }
-
-        filterbank.push(filter);
-    }
-
-    return filterbank;
-}
-
-function applyMelFilterbank(powerSpectrum, melFilterbank) {
-    const melSpectrum = new Float32Array(melFilterbank.length);
-    for (let m = 0; m < melFilterbank.length; m++) {
-        const filter = melFilterbank[m];
-        let sum = 0;
-        for (let k = 0; k < filter.length; k++) {
-            if (filter[k] !== 0) {
-                sum += powerSpectrum[k] * filter[k];
-            }
-        }
-        melSpectrum[m] = sum;
-    }
-    return melSpectrum;
-}
-`;
   function createSpectrogramProcessor() {
     let worker = null;
     let workerFailed = false;
     let requestCounter = 0;
     const pendingRequests = /* @__PURE__ */ new Map();
-    let _mainThreadFn = null;
-    const getMainThreadFn = () => {
-      if (_mainThreadFn) return _mainThreadFn;
-      _mainThreadFn = new Function("params", `
-            const {
-                channelData, fftSize, sampleRate, frameRate,
-                nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
-            } = params;
-
-            const audio = new Float32Array(channelData);
-            const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
-            const winLength = 4 * hopSize;
-            const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
-
-            ${/* inline helpers from WORKER_CODE */
-      ""}
-            function hzToMel(hz) { return 2595 * Math.log10(1 + hz / 700); }
-            function melToHz(mel) { return 700 * (Math.pow(10, mel / 2595) - 1); }
-
-            function createMelFB(sr, fft, nm, fMin, fMax) {
-                const nBins = Math.floor(fft / 2);
-                const mMin = hzToMel(fMin), mMax = hzToMel(fMax);
-                const mPts = [];
-                for (let i = 0; i < nm + 2; i++) mPts.push(mMin + (i / (nm + 1)) * (mMax - mMin));
-                const hPts = mPts.map(melToHz);
-                const bPts = hPts.map(hz => Math.floor((fft + 1) * hz / sr));
-                const fb = [];
-                for (let m = 1; m <= nm; m++) {
-                    const f = new Float32Array(nBins);
-                    const l = Math.max(0, Math.min(nBins-1, bPts[m-1]));
-                    const c = Math.max(0, Math.min(nBins-1, bPts[m]));
-                    const r = Math.max(0, Math.min(nBins-1, bPts[m+1]));
-                    for (let k = l; k < c; k++) f[k] = (k - l) / (c - l || 1);
-                    for (let k = c; k < r; k++) f[k] = (r - k) / (r - c || 1);
-                    fb.push(f);
-                }
-                return fb;
-            }
-
-            function iterativeFFT(re, im) {
-                const n = re.length;
-                let j = 0;
-                for (let i = 1; i < n; i++) {
-                    let bit = n >> 1;
-                    while (j & bit) { j ^= bit; bit >>= 1; }
-                    j ^= bit;
-                    if (i < j) {
-                        let t = re[i]; re[i] = re[j]; re[j] = t;
-                        t = im[i]; im[i] = im[j]; im[j] = t;
-                    }
-                }
-                for (let len = 2; len <= n; len <<= 1) {
-                    const half = len >> 1, step = -2 * Math.PI / len;
-                    for (let i = 0; i < n; i += len) {
-                        for (let k = 0; k < half; k++) {
-                            const a = step * k, cos = Math.cos(a), sin = Math.sin(a);
-                            const ei = i + k, oi = ei + half;
-                            const tr = cos * re[oi] - sin * im[oi];
-                            const ti = sin * re[oi] + cos * im[oi];
-                            re[oi] = re[ei] - tr; im[oi] = im[ei] - ti;
-                            re[ei] += tr; im[ei] += ti;
-                        }
-                    }
-                }
-            }
-
-            function fftPow(audio, off, wl, fft) {
-                const re = new Float32Array(fft), im = new Float32Array(fft);
-                const mc = Math.min(wl, fft);
-                for (let i = 0; i < mc; i++) {
-                    const s = audio[off + i] || 0;
-                    re[i] = s * 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, wl - 1)));
-                }
-                iterativeFFT(re, im);
-                const o = new Float32Array(fft / 2);
-                for (let i = 0; i < o.length; i++) o[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
-                return o;
-            }
-
-            function applyMel(ps, fb) {
-                const ms = new Float32Array(fb.length);
-                for (let m = 0; m < fb.length; m++) {
-                    let s = 0;
-                    for (let k = 0; k < fb[m].length; k++) if (fb[m][k]) s += ps[k]*fb[m][k];
-                    ms[m] = s;
-                }
-                return ms;
-            }
-
-            const melFB = createMelFB(sampleRate, fftSize, nMels, 0, sampleRate / 2);
-            const out = new Float32Array(numFrames * nMels);
-            const smooth = new Float32Array(nMels);
-            const pcenPower = 1.0 / pcenRoot;
-
-            for (let fi = 0; fi < numFrames; fi++) {
-                const ps = fftPow(audio, fi * hopSize, winLength, fftSize);
-                const ms = applyMel(ps, melFB);
-                const base = fi * nMels;
-                for (let m = 0; m < nMels; m++) {
-                    const e = ms[m];
-                    smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
-                    const den = Math.pow(1e-12 + smooth[m], pcenGain);
-                    out[base + m] = Math.pow(e / den + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
-                }
-            }
-            return { data: out, nFrames: numFrames, nMels };
-        `);
-      return _mainThreadFn;
-    };
     const computeMainThread = (channelData, options) => {
-      const fn = getMainThreadFn();
-      return fn({
-        channelData: channelData.buffer.slice(
-          channelData.byteOffset,
-          channelData.byteOffset + channelData.byteLength
-        ),
+      return computeSpectrogram({
+        channelData,
         ...options
       });
     };
-    const ensureWorker = () => {
+    const ensureWorker = async () => {
       if (worker || workerFailed) return;
       try {
-        const blob = new Blob([WORKER_CODE], { type: "application/javascript" });
-        const url = URL.createObjectURL(blob);
-        worker = new Worker(url);
+        const Ctor = await getWorkerCtor();
+        if (!Ctor) throw new Error("Worker constructor unavailable");
+        worker = new Ctor();
         worker.onmessage = (event) => {
           const { requestId, data, nFrames, nMels } = event.data;
           const pending = pendingRequests.get(requestId);
@@ -1638,7 +1513,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       if (workerFailed) {
         return computeMainThread(channelData, options);
       }
-      ensureWorker();
+      await ensureWorker();
       if (workerFailed) {
         return computeMainThread(channelData, options);
       }
@@ -1695,8 +1570,6 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     };
     return { compute, computeProgressive, dispose };
   }
-
-  // src/waveform.js
   function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }) {
     if (width <= 0) return;
     const css = getComputedStyle(document.documentElement);
@@ -1851,11 +1724,9 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       labelsElement.appendChild(span);
     });
   }
-
-  // src/PlayerState.js
   async function decodeArrayBuffer(arrayBuffer) {
     const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) throw new Error("AudioContext wird von diesem Browser nicht unterst\xFCtzt.");
+    if (!Ctor) throw new Error("AudioContext wird von diesem Browser nicht unterstützt.");
     const ctx = new Ctor();
     try {
       return await ctx.decodeAudioData(arrayBuffer);
@@ -1869,7 +1740,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     if (!Number.isFinite(n)) return fallback;
     return Math.max(min, Math.min(max, n));
   }
-  var PlayerState = class {
+  class PlayerState {
     constructor(container, WaveSurfer, emitHostEvent = null, options = {}) {
       if (!container) throw new Error("PlayerState: container element required");
       if (!WaveSurfer) throw new Error("PlayerState: WaveSurfer reference required");
@@ -2095,7 +1966,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       }
       this.transportState = nextState;
       this._perf.transitionEvents += 1;
-      this._perf.lastTransition = `${fromState || "\u2205"} \u2192 ${nextState}${reason ? ` (${reason})` : ""}`;
+      this._perf.lastTransition = `${fromState || "∅"} → ${nextState}${reason ? ` (${reason})` : ""}`;
       this._setPlayState(TRANSPORT_STATE_LABELS[nextState] || nextState);
       this._emit("transportstatechange", { state: nextState, reason });
     }
@@ -2151,7 +2022,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     //  DOM Query (scoped to container)
     // ═════════════════════════════════════════════════════════════════
     _queryDom(root) {
-      const q = (id) => root.querySelector(`#${id}`);
+      const q = (id) => root.querySelector(`[data-aw="${id}"]`);
       return {
         openFileBtn: q("openFileBtn"),
         toolbarRoot: q("toolbarRoot"),
@@ -2193,6 +2064,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         overviewHandleRight: q("overviewHandleRight"),
         fileInfo: q("fileInfo"),
         sampleRateInfo: q("sampleRateInfo"),
+        spectrogramModeSelect: q("spectrogramModeSelect"),
         fftSizeSelect: q("fftSize"),
         zoomSlider: q("zoomSlider"),
         zoomValue: q("zoomValue"),
@@ -2292,7 +2164,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     //  Load from URL (programmatic)
     // ═════════════════════════════════════════════════════════════════
     async loadUrl(url) {
-      this.d.fileInfo.innerHTML = `<span class="statusbar-label">Loading\u2026</span>`;
+      this.d.fileInfo.innerHTML = `<span class="statusbar-label">Loading…</span>`;
       this.d.fileInfo.classList.add("loading");
       this._setTransportState("loading", "url-load");
       try {
@@ -2825,7 +2697,9 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     async _generateSpectrogram() {
       if (!this.audioBuffer) return;
       this._setTransportState("rendering", "spectrogram-generate");
+      const spectrogramMode = this.d.spectrogramModeSelect?.value || "perch";
       const options = {
+        spectrogramMode,
         fftSize: parseInt(this.d.fftSizeSelect.value, 10),
         sampleRate: this.audioBuffer.sampleRate,
         frameRate: PERCH_FRAME_RATE,
@@ -3073,7 +2947,8 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         sampleRateHz: this.sampleRateHz,
         maxFreq: parseFloat(this.d.maxFreqSelect.value),
         spectrogramAbsLogMin: this.spectrogramAbsLogMin,
-        spectrogramAbsLogMax: this.spectrogramAbsLogMax
+        spectrogramAbsLogMax: this.spectrogramAbsLogMax,
+        spectrogramMode: this.d.spectrogramModeSelect?.value || "perch"
       });
       if (this.spectrogramGrayInfo && this.colorizer.ok) {
         const { gray, width, height } = this.spectrogramGrayInfo;
@@ -3304,7 +3179,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       if (rangeChanged) {
         this._lastViewRangeTextStart = startTime;
         this._lastViewRangeTextEnd = endTime;
-        this.d.viewRangeDisplay.textContent = `${formatSecondsShort(startTime)} \u2013 ${formatSecondsShort(endTime)}`;
+        this.d.viewRangeDisplay.textContent = `${formatSecondsShort(startTime)} – ${formatSecondsShort(endTime)}`;
       }
       const now = performance.now();
       const selectionChanged = !Number.isFinite(this._lastSelectionStart) || Math.abs(startTime - this._lastSelectionStart) > 0.03 || Math.abs(endTime - this._lastSelectionEnd) > 0.03;
@@ -3789,6 +3664,16 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         this._setLinkedScrollLeft(0);
         this._syncOverviewWindowToViewport();
       });
+      on(this.d.spectrogramModeSelect, "change", () => {
+        if (this.d.spectrogramModeSelect.value === "classic") {
+          this.d.colorSchemeSelect.value = "xenocanto";
+          this.currentColorScheme = "xenocanto";
+        } else {
+          this.d.colorSchemeSelect.value = "grayscale";
+          this.currentColorScheme = "grayscale";
+        }
+        if (this.audioBuffer) this._generateSpectrogram();
+      });
       on(this.d.fftSizeSelect, "change", () => {
         if (this.audioBuffer) this._generateSpectrogram();
       });
@@ -3862,8 +3747,6 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
           case "End":
             e.preventDefault();
             this._seekToTime(this.audioBuffer.duration, true);
-            break;
-          default:
             break;
         }
       });
@@ -3980,13 +3863,11 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       bindRecognizer(this.d.waveformWrapper, "waveform");
       bindRecognizer(this.d.canvasWrapper, "spectrogram");
     }
-  };
-
-  // src/annotations.js
+  }
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
-  var _colorCtx = (() => {
+  const _colorCtx = (() => {
     try {
       const canvas = document.createElement("canvas");
       return canvas.getContext("2d");
@@ -4136,7 +4017,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
     input.select();
     renderSuggestions();
   }
-  var AnnotationLayer = class {
+  class AnnotationLayer {
     constructor() {
       this.player = null;
       this.overlay = null;
@@ -4238,7 +4119,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       el.dataset.id = region.id;
       el.dataset.start = String(region.start);
       el.dataset.end = String(region.end);
-      el.title = `${region.species || "Annotation"} (${region.start.toFixed(2)}s\u2013${region.end.toFixed(2)}s)`;
+      el.title = `${region.species || "Annotation"} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)`;
       el.innerHTML = `
             <span class="annotation-label">${region.species || "Annotation"}</span>
             <span class="annotation-confidence">${region.confidence != null ? `${Math.round(region.confidence * 100)}%` : ""}</span>
@@ -4389,8 +4270,8 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         color: String(annotation?.color || "").trim()
       };
     }
-  };
-  var SpectrogramLabelLayer = class {
+  }
+  class SpectrogramLabelLayer {
     constructor() {
       this.player = null;
       this.overlay = null;
@@ -4495,7 +4376,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       el.dataset.id = label.id;
       el.dataset.start = String(label.start);
       el.dataset.end = String(label.end);
-      el.title = `${label.label || "Label"} ${label.start.toFixed(2)}s\u2013${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+      el.title = `${label.label || "Label"} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
       el.innerHTML = `
             <span class="spectrogram-label-text">${label.label || "Label"}</span>
             <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>
@@ -4723,8 +4604,6 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
           next.end = src.end + dt;
           next.freqMin = src.freqMin + df;
           break;
-        default:
-          break;
       }
       next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
       if (this._editing.mode === "move") {
@@ -4749,7 +4628,7 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
       if (this._editing.element) {
         this._editing.element.dataset.start = String(label.start);
         this._editing.element.dataset.end = String(label.end);
-        this._editing.element.title = `${label.label || "Label"} ${label.start.toFixed(2)}s\u2013${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+        this._editing.element.title = `${label.label || "Label"} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
         const geometry = this._toGeometry(label, width, height);
         this._applyGeometryToElement(this._editing.element, geometry);
         const meta = this._editing.element.querySelector(".spectrogram-label-meta");
@@ -4831,17 +4710,15 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         color: String(label?.color || "").trim()
       };
     }
-  };
-
-  // src/BirdNETPlayer.js
-  var WAVESURFER_CDN = "https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js";
-  var DEFAULT_LABEL_TAXONOMY = [
+  }
+  const WAVESURFER_CDN = "https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js";
+  const DEFAULT_LABEL_TAXONOMY = [
     { name: "Bird Call", color: "#0ea5e9", shortcut: "1" },
     { name: "Song", color: "#22c55e", shortcut: "2" },
     { name: "Chirp", color: "#f59e0b", shortcut: "3" },
     { name: "Noise", color: "#ef4444", shortcut: "4" }
   ];
-  var BirdNETPlayer = class {
+  class BirdNETPlayer {
     /**
      * @param {HTMLElement} container — the DOM element to mount the player into
      * @param {Object}      [options]
@@ -5266,6 +5143,37 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
         color: label?.color || tax?.color || ""
       };
     }
-  };
-  return __toCommonJS(BirdNETPlayer_exports);
-})();
+  }
+  const jsContent = '(function() {\n  "use strict";\n  function hzToMel(hz) {\n    return 2595 * Math.log10(1 + hz / 700);\n  }\n  function melToHz(mel) {\n    return 700 * (Math.pow(10, mel / 2595) - 1);\n  }\n  function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {\n    const nFftBins = Math.floor(fftSize / 2);\n    const melMin = hzToMel(fMin);\n    const melMax = hzToMel(fMax);\n    const melPoints = [];\n    for (let i = 0; i < nMels + 2; i++) {\n      melPoints.push(melMin + i / (nMels + 1) * (melMax - melMin));\n    }\n    const hzPoints = melPoints.map(melToHz);\n    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));\n    const filterbank = [];\n    for (let m = 1; m <= nMels; m++) {\n      const filter = new Float32Array(nFftBins);\n      const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));\n      const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));\n      const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));\n      for (let k = left; k < center; k++) {\n        filter[k] = (k - left) / (center - left || 1);\n      }\n      for (let k = center; k < right; k++) {\n        filter[k] = (right - k) / (right - center || 1);\n      }\n      filterbank.push(filter);\n    }\n    return filterbank;\n  }\n  function applyMelFilterbank(powerSpectrum, melFilterbank) {\n    const melSpectrum = new Float32Array(melFilterbank.length);\n    for (let m = 0; m < melFilterbank.length; m++) {\n      const filter = melFilterbank[m];\n      let sum = 0;\n      for (let k = 0; k < filter.length; k++) {\n        if (filter[k] !== 0) {\n          sum += powerSpectrum[k] * filter[k];\n        }\n      }\n      melSpectrum[m] = sum;\n    }\n    return melSpectrum;\n  }\n  function iterativeFFT(real, imag) {\n    const n = real.length;\n    let j = 0;\n    for (let i = 1; i < n; i++) {\n      let bit = n >> 1;\n      while (j & bit) {\n        j ^= bit;\n        bit >>= 1;\n      }\n      j ^= bit;\n      if (i < j) {\n        let tmp = real[i];\n        real[i] = real[j];\n        real[j] = tmp;\n        tmp = imag[i];\n        imag[i] = imag[j];\n        imag[j] = tmp;\n      }\n    }\n    for (let len = 2; len <= n; len <<= 1) {\n      const halfLen = len >> 1;\n      const angleStep = -2 * Math.PI / len;\n      for (let i = 0; i < n; i += len) {\n        for (let k = 0; k < halfLen; k++) {\n          const angle = angleStep * k;\n          const cos = Math.cos(angle);\n          const sin = Math.sin(angle);\n          const evenIndex = i + k;\n          const oddIndex = evenIndex + halfLen;\n          const tr = cos * real[oddIndex] - sin * imag[oddIndex];\n          const ti = sin * real[oddIndex] + cos * imag[oddIndex];\n          real[oddIndex] = real[evenIndex] - tr;\n          imag[oddIndex] = imag[evenIndex] - ti;\n          real[evenIndex] += tr;\n          imag[evenIndex] += ti;\n        }\n      }\n    }\n  }\n  function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {\n    const real = new Float32Array(fftSize);\n    const imag = new Float32Array(fftSize);\n    const maxCopy = Math.min(winLength, fftSize);\n    for (let i = 0; i < maxCopy; i++) {\n      const sample = audio[offset + i] || 0;\n      const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));\n      real[i] = sample * window;\n    }\n    iterativeFFT(real, imag);\n    const out = new Float32Array(fftSize / 2);\n    for (let i = 0; i < out.length; i++) {\n      out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);\n    }\n    return out;\n  }\n  function computeSpectrogram(params) {\n    const {\n      channelData,\n      fftSize,\n      sampleRate,\n      frameRate,\n      nMels,\n      pcenGain,\n      pcenBias,\n      pcenRoot,\n      pcenSmoothing,\n      spectrogramMode\n    } = params;\n    const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);\n    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));\n    const winLength = 4 * hopSize;\n    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);\n    const nBins = Math.floor(fftSize / 2);\n    const useLinear = spectrogramMode === "classic";\n    const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);\n    const outBins = useLinear ? nBins : nMels;\n    const output = new Float32Array(numFrames * outBins);\n    if (useLinear) {\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const base = frameIdx * nBins;\n        for (let k = 0; k < nBins; k++) {\n          const power = mag[k] * mag[k];\n          output[base + k] = 10 * Math.log10(Math.max(1e-10, power));\n        }\n      }\n    } else {\n      const smooth = new Float32Array(nMels);\n      const pcenPower = 1 / pcenRoot;\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const mel = applyMelFilterbank(mag, melFB);\n        const base = frameIdx * nMels;\n        for (let m = 0; m < nMels; m++) {\n          const e = mel[m];\n          smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;\n          const denom = Math.pow(1e-12 + smooth[m], pcenGain);\n          const norm = e / denom;\n          output[base + m] = Math.pow(norm + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);\n        }\n      }\n    }\n    return { data: output, nFrames: numFrames, nMels: outBins };\n  }\n  self.onmessage = (event) => {\n    const { requestId, channelData, ...options } = event.data;\n    const result = computeSpectrogram({\n      channelData: new Float32Array(channelData),\n      ...options\n    });\n    self.postMessage(\n      {\n        requestId,\n        data: result.data.buffer,\n        nFrames: result.nFrames,\n        nMels: result.nMels\n      },\n      [result.data.buffer]\n    );\n  };\n})();\n//# sourceMappingURL=spectrogram.worker-DnrqzrLb.js.map\n';
+  const blob = typeof self !== "undefined" && self.Blob && new Blob(["(self.URL || self.webkitURL).revokeObjectURL(self.location.href);", jsContent], { type: "text/javascript;charset=utf-8" });
+  function WorkerWrapper(options) {
+    let objURL;
+    try {
+      objURL = blob && (self.URL || self.webkitURL).createObjectURL(blob);
+      if (!objURL) throw "";
+      const worker = new Worker(objURL, {
+        name: options?.name
+      });
+      worker.addEventListener("error", () => {
+        (self.URL || self.webkitURL).revokeObjectURL(objURL);
+      });
+      return worker;
+    } catch (e) {
+      return new Worker(
+        "data:text/javascript;charset=utf-8," + encodeURIComponent(jsContent),
+        {
+          name: options?.name
+        }
+      );
+    }
+  }
+  const spectrogram_worker = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+    __proto__: null,
+    default: WorkerWrapper
+  }, Symbol.toStringTag, { value: "Module" }));
+  exports.BirdNETPlayer = BirdNETPlayer;
+  exports.DEFAULT_OPTIONS = DEFAULT_OPTIONS;
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+  return exports;
+})({});
+//# sourceMappingURL=birdnet-player.iife.js.map

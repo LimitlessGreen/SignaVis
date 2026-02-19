@@ -35,18 +35,18 @@
     }
 }
 
-* {
+.daw-shell *,
+.daw-shell *::before,
+.daw-shell *::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-body {
+.daw-shell {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
-    height: 100vh;
-    overflow: hidden;
 }
 
 /* ═══ DAW Shell ═══ */
@@ -488,7 +488,7 @@ body {
     border-radius: 3px;
 }
 
-#spectrogramCanvas {
+[data-aw="spectrogramCanvas"] {
     display: block;
     image-rendering: pixelated;
 }
@@ -894,12 +894,12 @@ body {
     cursor: nwse-resize;
 }
 
-#amplitudeCanvas {
+[data-aw="amplitudeCanvas"] {
     display: block;
     image-rendering: pixelated;
 }
 
-#waveformTimelineCanvas {
+[data-aw="waveformTimelineCanvas"] {
     display: block;
 }
 
@@ -956,7 +956,7 @@ body {
     overflow: hidden;
 }
 
-#overviewCanvas {
+[data-aw="overviewCanvas"] {
     display: block;
     width: 100%;
     height: 100%;
