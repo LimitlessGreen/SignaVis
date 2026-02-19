@@ -520,8 +520,28 @@ function applyMelFilterbank(powerSpectrum, melFilterbank) {
   }
   return melSpectrum;
 }
+const _twiddleCache = /* @__PURE__ */ new Map();
+function getTwiddleFactors(n) {
+  if (_twiddleCache.has(n)) return _twiddleCache.get(n);
+  const table = {};
+  for (let len = 2; len <= n; len <<= 1) {
+    const halfLen = len >> 1;
+    const angleStep = -2 * Math.PI / len;
+    const cos = new Float64Array(halfLen);
+    const sin = new Float64Array(halfLen);
+    for (let k = 0; k < halfLen; k++) {
+      const angle = angleStep * k;
+      cos[k] = Math.cos(angle);
+      sin[k] = Math.sin(angle);
+    }
+    table[len] = { cos, sin };
+  }
+  _twiddleCache.set(n, table);
+  return table;
+}
 function iterativeFFT(real, imag) {
   const n = real.length;
+  const twiddle = getTwiddleFactors(n);
   let j = 0;
   for (let i = 1; i < n; i++) {
     let bit = n >> 1;
@@ -541,16 +561,13 @@ function iterativeFFT(real, imag) {
   }
   for (let len = 2; len <= n; len <<= 1) {
     const halfLen = len >> 1;
-    const angleStep = -2 * Math.PI / len;
+    const { cos, sin } = twiddle[len];
     for (let i = 0; i < n; i += len) {
       for (let k = 0; k < halfLen; k++) {
-        const angle = angleStep * k;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
         const evenIndex = i + k;
         const oddIndex = evenIndex + halfLen;
-        const tr = cos * real[oddIndex] - sin * imag[oddIndex];
-        const ti = sin * real[oddIndex] + cos * imag[oddIndex];
+        const tr = cos[k] * real[oddIndex] - sin[k] * imag[oddIndex];
+        const ti = sin[k] * real[oddIndex] + cos[k] * imag[oddIndex];
         real[oddIndex] = real[evenIndex] - tr;
         imag[oddIndex] = imag[evenIndex] - ti;
         real[evenIndex] += tr;
@@ -586,7 +603,8 @@ function computeSpectrogram(params) {
     pcenBias,
     pcenRoot,
     pcenSmoothing,
-    spectrogramMode
+    spectrogramMode,
+    initialSmooth
   } = params;
   const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);
   const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
@@ -597,6 +615,7 @@ function computeSpectrogram(params) {
   const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
   const outBins = useLinear ? nBins : nMels;
   const output = new Float32Array(numFrames * outBins);
+  let smooth = null;
   if (useLinear) {
     for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
       const offset = frameIdx * hopSize;
@@ -608,12 +627,17 @@ function computeSpectrogram(params) {
       }
     }
   } else {
-    const smooth = new Float32Array(nMels);
+    smooth = new Float32Array(nMels);
+    if (initialSmooth && initialSmooth.length === nMels) {
+      smooth.set(initialSmooth);
+    }
     const pcenPower = 1 / pcenRoot;
     for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
       const offset = frameIdx * hopSize;
       const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
-      const mel = applyMelFilterbank(mag, melFB);
+      const power = new Float32Array(mag.length);
+      for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
+      const mel = applyMelFilterbank(power, melFB);
       const base = frameIdx * nMels;
       for (let m = 0; m < nMels; m++) {
         const e = mel[m];
@@ -624,7 +648,11 @@ function computeSpectrogram(params) {
       }
     }
   }
-  return { data: output, nFrames: numFrames, nMels: outBins };
+  const result = { data: output, nFrames: numFrames, nMels: outBins };
+  if (smooth) {
+    result.smoothState = smooth;
+  }
+  return result;
 }
 let _WorkerCtor = null;
 let _workerCtorResolved = false;
@@ -634,7 +662,7 @@ async function getWorkerCtor() {
   try {
     const mod = await import(
       /* @vite-ignore */
-      "./spectrogram.worker-DSpp0h8Z.js"
+      "./spectrogram.worker-NGR1VQhh.js"
     );
     _WorkerCtor = mod.default;
   } catch {
@@ -1204,7 +1232,7 @@ function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentile = 98)
   }
   return { logMin, logMax };
 }
-function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, energyThreshold = 0.08) {
+function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, spectrogramMode = "perch", energyThreshold = 0.08) {
   if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
   const binEnergy = new Float64Array(nMels);
   const stride = Math.max(1, Math.floor(nFrames / 2e3));
@@ -1230,8 +1258,14 @@ function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, energyT
       break;
     }
   }
-  const melFreqs = buildMelFrequencies(sampleRate, nMels);
-  const detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+  let detectedHz;
+  if (spectrogramMode === "classic") {
+    const binHz = sampleRate / 2 / nMels;
+    detectedHz = Math.min(nMels - 1, highestActiveBin + 2) * binHz;
+  } else {
+    const melFreqs = buildMelFrequencies(sampleRate, nMels);
+    detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+  }
   const withMargin = detectedHz * 1.1;
   const steps = [2e3, 3e3, 4e3, 5e3, 6e3, 8e3, 1e4, 12e3, 16e3, 2e4, 22050];
   const nyquist = sampleRate / 2;
@@ -1406,11 +1440,13 @@ function createSpectrogramProcessor() {
       if (!Ctor) throw new Error("Worker constructor unavailable");
       worker = new Ctor();
       worker.onmessage = (event) => {
-        const { requestId, data, nFrames, nMels } = event.data;
+        const { requestId, data, nFrames, nMels, smoothState } = event.data;
         const pending = pendingRequests.get(requestId);
         if (!pending) return;
         pendingRequests.delete(requestId);
-        pending.resolve({ data: new Float32Array(data), nFrames, nMels });
+        const result = { data: new Float32Array(data), nFrames, nMels };
+        if (smoothState) result.smoothState = new Float32Array(smoothState);
+        pending.resolve(result);
       };
       worker.onerror = (error) => {
         console.warn("Spectrogram Worker failed, using main-thread fallback:", error);
@@ -1465,11 +1501,14 @@ function createSpectrogramProcessor() {
     const chunkSeconds = Math.max(1, options.chunkSeconds || 10);
     const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
     const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
+    let smoothState = null;
     for (let chunk = 0; chunk < totalChunks; chunk++) {
       const startSample = chunk * samplesPerChunk;
       const endSample = Math.min(channelData.length, startSample + samplesPerChunk);
       const chunkData = channelData.subarray(startSample, endSample);
-      const result = await compute(chunkData, options);
+      const chunkOptions = smoothState ? { ...options, initialSmooth: smoothState } : options;
+      const result = await compute(chunkData, chunkOptions);
+      if (result.smoothState) smoothState = result.smoothState;
       yield {
         chunk,
         totalChunks,
@@ -2714,7 +2753,8 @@ class PlayerState {
       this.spectrogramData,
       this.spectrogramFrames,
       this.spectrogramMels,
-      this.sampleRateHz
+      this.sampleRateHz,
+      this.spectrogramMode || "perch"
     );
     const options = Array.from(this.d.maxFreqSelect.options);
     let best = options[options.length - 1];

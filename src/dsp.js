@@ -82,8 +82,31 @@ export function applyMelFilterbank(powerSpectrum, melFilterbank) {
 
 // ─── FFT (iterative Cooley-Tukey, in-place) ─────────────────────────
 
+// Precomputed twiddle factor tables, keyed by FFT size.
+const _twiddleCache = new Map();
+
+function getTwiddleFactors(n) {
+    if (_twiddleCache.has(n)) return _twiddleCache.get(n);
+    const table = {};
+    for (let len = 2; len <= n; len <<= 1) {
+        const halfLen = len >> 1;
+        const angleStep = -2 * Math.PI / len;
+        const cos = new Float64Array(halfLen);
+        const sin = new Float64Array(halfLen);
+        for (let k = 0; k < halfLen; k++) {
+            const angle = angleStep * k;
+            cos[k] = Math.cos(angle);
+            sin[k] = Math.sin(angle);
+        }
+        table[len] = { cos, sin };
+    }
+    _twiddleCache.set(n, table);
+    return table;
+}
+
 export function iterativeFFT(real, imag) {
     const n = real.length;
+    const twiddle = getTwiddleFactors(n);
 
     // Bit-reversal permutation
     let j = 0;
@@ -101,22 +124,18 @@ export function iterativeFFT(real, imag) {
         }
     }
 
-    // Butterfly stages
+    // Butterfly stages with precomputed twiddle factors
     for (let len = 2; len <= n; len <<= 1) {
         const halfLen = len >> 1;
-        const angleStep = -2 * Math.PI / len;
+        const { cos, sin } = twiddle[len];
 
         for (let i = 0; i < n; i += len) {
             for (let k = 0; k < halfLen; k++) {
-                const angle = angleStep * k;
-                const cos = Math.cos(angle);
-                const sin = Math.sin(angle);
-
                 const evenIndex = i + k;
                 const oddIndex  = evenIndex + halfLen;
 
-                const tr = cos * real[oddIndex] - sin * imag[oddIndex];
-                const ti = sin * real[oddIndex] + cos * imag[oddIndex];
+                const tr = cos[k] * real[oddIndex] - sin[k] * imag[oddIndex];
+                const ti = sin[k] * real[oddIndex] + cos[k] * imag[oddIndex];
 
                 real[oddIndex] = real[evenIndex] - tr;
                 imag[oddIndex] = imag[evenIndex] - ti;
@@ -169,14 +188,15 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {
  * @param {number} params.pcenRoot
  * @param {number} params.pcenSmoothing
  * @param {string} [params.spectrogramMode='perch'] — 'perch' or 'classic'
+ * @param {Float32Array} [params.initialSmooth] — carry-over PCEN smooth state from previous chunk
  *
- * @returns {{ data: Float32Array, nFrames: number, nMels: number }}
+ * @returns {{ data: Float32Array, nFrames: number, nMels: number, smoothState?: Float32Array }}
  */
 export function computeSpectrogram(params) {
     const {
         channelData, fftSize, sampleRate, frameRate,
         nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
-        spectrogramMode,
+        spectrogramMode, initialSmooth,
     } = params;
 
     const audio = channelData instanceof Float32Array
@@ -192,6 +212,7 @@ export function computeSpectrogram(params) {
     const melFB      = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
     const outBins    = useLinear ? nBins : nMels;
     const output     = new Float32Array(numFrames * outBins);
+    let smooth       = null; // PCEN smooth accumulator (Perch mode only)
 
     if (useLinear) {
         // ── Classic / Xeno-Canto style: linear power spectrum → dB ──
@@ -205,13 +226,19 @@ export function computeSpectrogram(params) {
             }
         }
     } else {
-        // ── Perch mode: magnitude → mel → PCEN ──
-        const smooth    = new Float32Array(nMels);
+        // ── Perch mode: magnitude² (power) → mel → PCEN ──
+        smooth = new Float32Array(nMels);
+        if (initialSmooth && initialSmooth.length === nMels) {
+            smooth.set(initialSmooth);
+        }
         const pcenPower = 1.0 / pcenRoot;
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
             const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
-            const mel    = applyMelFilterbank(mag, melFB);
+            // Square magnitude to get power spectrum before mel filterbank
+            const power  = new Float32Array(mag.length);
+            for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
+            const mel    = applyMelFilterbank(power, melFB);
             const base   = frameIdx * nMels;
             for (let m = 0; m < nMels; m++) {
                 const e     = mel[m];
@@ -223,5 +250,9 @@ export function computeSpectrogram(params) {
         }
     }
 
-    return { data: output, nFrames: numFrames, nMels: outBins };
+    const result = { data: output, nFrames: numFrames, nMels: outBins };
+    if (smooth) {
+        result.smoothState = smooth;
+    }
+    return result;
 }

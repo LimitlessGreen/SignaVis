@@ -1226,6 +1226,7 @@ export class PlayerState {
             this.spectrogramFrames,
             this.spectrogramMels,
             this.sampleRateHz,
+            this.spectrogramMode || 'perch',
         );
         const options = Array.from(this.d.maxFreqSelect.options);
         let best = options[options.length - 1];

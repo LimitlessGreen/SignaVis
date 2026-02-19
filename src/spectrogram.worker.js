@@ -15,13 +15,16 @@ self.onmessage = (event) => {
         ...options,
     });
 
-    self.postMessage(
-        {
-            requestId,
-            data: result.data.buffer,
-            nFrames: result.nFrames,
-            nMels: result.nMels,
-        },
-        [result.data.buffer],
-    );
+    const msg = {
+        requestId,
+        data: result.data.buffer,
+        nFrames: result.nFrames,
+        nMels: result.nMels,
+    };
+    const transfer = [result.data.buffer];
+    if (result.smoothState) {
+        msg.smoothState = result.smoothState.buffer;
+        transfer.push(result.smoothState.buffer);
+    }
+    self.postMessage(msg, transfer);
 };

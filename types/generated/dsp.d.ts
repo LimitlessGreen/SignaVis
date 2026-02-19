@@ -27,8 +27,9 @@ export function fftMagnitudeSpectrum(audio: any, offset: any, winLength: any, ff
  * @param {number} params.pcenRoot
  * @param {number} params.pcenSmoothing
  * @param {string} [params.spectrogramMode='perch'] — 'perch' or 'classic'
+ * @param {Float32Array} [params.initialSmooth] — carry-over PCEN smooth state from previous chunk
  *
- * @returns {{ data: Float32Array, nFrames: number, nMels: number }}
+ * @returns {{ data: Float32Array, nFrames: number, nMels: number, smoothState?: Float32Array }}
  */
 export function computeSpectrogram(params: {
     channelData: ArrayBuffer | Float32Array;
@@ -41,8 +42,10 @@ export function computeSpectrogram(params: {
     pcenRoot: number;
     pcenSmoothing: number;
     spectrogramMode?: string;
+    initialSmooth?: Float32Array;
 }): {
     data: Float32Array;
     nFrames: number;
     nMels: number;
+    smoothState?: Float32Array;
 };

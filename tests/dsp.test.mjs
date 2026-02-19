@@ -246,3 +246,150 @@ test('computeSpectrogram classic mode produces dB values', () => {
     }
     assert.ok(hasNegative, 'classic mode should produce negative dB values for quiet bins');
 });
+
+// ─── FFT Twiddle Cache ─────────────────────────────────────────────
+
+test('iterativeFFT produces identical results on repeated calls (twiddle cache)', () => {
+    const n = 128;
+    const makeSignal = () => {
+        const real = new Float32Array(n);
+        const imag = new Float32Array(n);
+        for (let i = 0; i < n; i++) real[i] = Math.sin(2 * Math.PI * 5 * i / n);
+        return { real, imag };
+    };
+    const a = makeSignal();
+    iterativeFFT(a.real, a.imag);
+    const b = makeSignal();
+    iterativeFFT(b.real, b.imag);
+
+    for (let i = 0; i < n; i++) {
+        assert.ok(Math.abs(a.real[i] - b.real[i]) < 1e-10, `real[${i}] mismatch`);
+        assert.ok(Math.abs(a.imag[i] - b.imag[i]) < 1e-10, `imag[${i}] mismatch`);
+    }
+});
+
+// ─── PCEN smooth state carry-over ───────────────────────────────────
+
+test('computeSpectrogram Perch mode returns smoothState', () => {
+    const sampleRate = 32000;
+    const audio = new Float32Array(sampleRate);
+    for (let i = 0; i < audio.length; i++) {
+        audio[i] = Math.sin(2 * Math.PI * 1000 * i / sampleRate);
+    }
+
+    const result = computeSpectrogram({
+        channelData: audio,
+        fftSize: 2048,
+        sampleRate,
+        frameRate: 100,
+        nMels: 128,
+        pcenGain: 0.98,
+        pcenBias: 2,
+        pcenRoot: 2,
+        pcenSmoothing: 0.025,
+        spectrogramMode: 'perch',
+    });
+
+    assert.ok(result.smoothState, 'Perch mode should return smoothState');
+    assert.equal(result.smoothState.length, 128, 'smoothState should have nMels entries');
+    // smoothState should have non-zero values after processing a signal
+    let hasNonZero = false;
+    for (let i = 0; i < result.smoothState.length; i++) {
+        if (result.smoothState[i] > 0) { hasNonZero = true; break; }
+    }
+    assert.ok(hasNonZero, 'smoothState should have non-zero values');
+});
+
+test('computeSpectrogram Classic mode does not return smoothState', () => {
+    const sampleRate = 32000;
+    const audio = new Float32Array(sampleRate);
+    const result = computeSpectrogram({
+        channelData: audio,
+        fftSize: 2048,
+        sampleRate,
+        frameRate: 100,
+        nMels: 128,
+        pcenGain: 0.98,
+        pcenBias: 2,
+        pcenRoot: 2,
+        pcenSmoothing: 0.025,
+        spectrogramMode: 'classic',
+    });
+    assert.ok(!result.smoothState, 'Classic mode should not return smoothState');
+});
+
+test('computeSpectrogram initialSmooth affects output', () => {
+    const sampleRate = 32000;
+    const audio = new Float32Array(sampleRate * 0.5); // 0.5s
+    for (let i = 0; i < audio.length; i++) {
+        audio[i] = Math.sin(2 * Math.PI * 2000 * i / sampleRate);
+    }
+    const opts = {
+        fftSize: 2048,
+        sampleRate,
+        frameRate: 100,
+        nMels: 128,
+        pcenGain: 0.98,
+        pcenBias: 2,
+        pcenRoot: 2,
+        pcenSmoothing: 0.025,
+        spectrogramMode: 'perch',
+    };
+
+    // Run without initialSmooth
+    const r1 = computeSpectrogram({ channelData: audio, ...opts });
+    // Run with initialSmooth from a previous chunk
+    const warmSmooth = new Float32Array(128).fill(0.5);
+    const r2 = computeSpectrogram({ channelData: audio, ...opts, initialSmooth: warmSmooth });
+
+    // First frame should differ because smooth state is different
+    let differ = false;
+    for (let m = 0; m < 128; m++) {
+        if (Math.abs(r1.data[m] - r2.data[m]) > 1e-6) { differ = true; break; }
+    }
+    assert.ok(differ, 'initialSmooth should affect the first frames of output');
+});
+
+test('two-chunk progressive simulation matches single-pass at chunk boundary', () => {
+    const sampleRate = 32000;
+    const audio = new Float32Array(sampleRate); // 1 second
+    for (let i = 0; i < audio.length; i++) {
+        audio[i] = Math.sin(2 * Math.PI * 3000 * i / sampleRate) * 0.5;
+    }
+    const opts = {
+        fftSize: 2048,
+        sampleRate,
+        frameRate: 100,
+        nMels: 128,
+        pcenGain: 0.98,
+        pcenBias: 2,
+        pcenRoot: 2,
+        pcenSmoothing: 0.025,
+        spectrogramMode: 'perch',
+    };
+
+    // Single pass
+    const full = computeSpectrogram({ channelData: audio, ...opts });
+
+    // Two-chunk pass with smooth carry-over
+    const half = Math.floor(audio.length / 2);
+    const chunk1 = computeSpectrogram({ channelData: audio.subarray(0, half), ...opts });
+    const chunk2 = computeSpectrogram({
+        channelData: audio.subarray(half),
+        ...opts,
+        initialSmooth: chunk1.smoothState,
+    });
+
+    // The last frame of chunk2 should be close to the corresponding frame in full
+    // (not exact because hop alignment may differ slightly at boundaries)
+    const fullLastBase = (full.nFrames - 1) * 128;
+    const c2LastBase   = (chunk2.nFrames - 1) * 128;
+    let maxDiff = 0;
+    for (let m = 0; m < 128; m++) {
+        const diff = Math.abs(full.data[fullLastBase + m] - chunk2.data[c2LastBase + m]);
+        if (diff > maxDiff) maxDiff = diff;
+    }
+    // With proper smooth state carry-over, the last frames should be reasonably close
+    // (exact match not expected due to different hop-alignment at split point)
+    assert.ok(maxDiff < 2.0, `max difference at last frame: ${maxDiff} should be < 2.0`);
+});

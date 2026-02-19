@@ -387,18 +387,19 @@ export function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentil
 
 /**
  * Detects the effective upper frequency boundary by finding the highest
- * mel-bin that carries meaningful energy above the noise floor.
+ * bin that carries meaningful energy above the noise floor.
  * Returns a frequency in Hz suitable as maxFreq.
  * @param {Float32Array} spectrogramData
  * @param {number} nFrames
  * @param {number} nMels
  * @param {number} sampleRate
+ * @param {string} [spectrogramMode='perch'] – 'perch' (mel) or 'classic' (linear)
  * @param {number} [energyThreshold=0.08] – fraction of peak-bin energy
  */
-export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, energyThreshold = 0.08) {
+export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, spectrogramMode = 'perch', energyThreshold = 0.08) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
 
-    // Accumulate mean energy per mel-bin
+    // Accumulate mean energy per bin
     const binEnergy = new Float64Array(nMels);
     const stride = Math.max(1, Math.floor(nFrames / 2000)); // subsample frames
     let sampledFrames = 0;
@@ -420,7 +421,7 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
 
     const threshold = peakEnergy * energyThreshold;
 
-    // Scan from top mel-bin downward, find highest bin above threshold
+    // Scan from top bin downward, find highest bin above threshold
     let highestActiveBin = 0;
     for (let m = nMels - 1; m >= 0; m--) {
         if (binEnergy[m] > threshold) {
@@ -429,9 +430,17 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
         }
     }
 
-    // Map mel-bin to Hz (add margin of ~10%)
-    const melFreqs = buildMelFrequencies(sampleRate, nMels);
-    const detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+    // Map bin to Hz — different for mel vs linear mode
+    let detectedHz;
+    if (spectrogramMode === 'classic') {
+        // Linear bins: bin k → k / nMels * (sampleRate / 2)
+        const binHz = (sampleRate / 2) / nMels;
+        detectedHz = Math.min(nMels - 1, highestActiveBin + 2) * binHz;
+    } else {
+        // Mel bins: use mel frequency lookup
+        const melFreqs = buildMelFrequencies(sampleRate, nMels);
+        detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+    }
     const withMargin = detectedHz * 1.1;
 
     // Snap to nearest standard step
@@ -663,11 +672,13 @@ export function createSpectrogramProcessor() {
             worker = new Ctor();
 
             worker.onmessage = (event) => {
-                const { requestId, data, nFrames, nMels } = event.data;
+                const { requestId, data, nFrames, nMels, smoothState } = event.data;
                 const pending = pendingRequests.get(requestId);
                 if (!pending) return;
                 pendingRequests.delete(requestId);
-                pending.resolve({ data: new Float32Array(data), nFrames, nMels });
+                const result = { data: new Float32Array(data), nFrames, nMels };
+                if (smoothState) result.smoothState = new Float32Array(smoothState);
+                pending.resolve(result);
             };
 
             worker.onerror = (error) => {
@@ -739,11 +750,18 @@ export function createSpectrogramProcessor() {
         const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
         const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
 
+        let smoothState = null; // carry-over PCEN smooth state between chunks
+
         for (let chunk = 0; chunk < totalChunks; chunk++) {
             const startSample = chunk * samplesPerChunk;
             const endSample = Math.min(channelData.length, startSample + samplesPerChunk);
             const chunkData = channelData.subarray(startSample, endSample);
-            const result = await compute(chunkData, options);
+            const chunkOptions = smoothState
+                ? { ...options, initialSmooth: smoothState }
+                : options;
+            const result = await compute(chunkData, chunkOptions);
+
+            if (result.smoothState) smoothState = result.smoothState;
 
             yield {
                 chunk,

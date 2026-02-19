@@ -8,6 +8,7 @@ import {
     computeAmplitudePeak,
     updateSpectrogramStats,
     autoContrastStats,
+    detectMaxFrequency,
 } from '../src/spectrogram.js';
 
 // ─── computeAmplitudePeak ───────────────────────────────────────────
@@ -54,4 +55,42 @@ test('autoContrastStats returns percentile-based logMin and logMax', () => {
     // 2nd percentile of 0..1 → ~0.02, 98th → ~0.98
     assert.ok(logMin < 0.1, `logMin = ${logMin} should be near low end`);
     assert.ok(logMax > 0.9, `logMax = ${logMax} should be near high end`);
+});
+
+// ─── detectMaxFrequency ─────────────────────────────────────────────
+
+test('detectMaxFrequency returns Nyquist for null data', () => {
+    const sr = 32000;
+    const result = detectMaxFrequency(null, 0, 0, sr, 'perch');
+    assert.equal(result, sr / 2);
+});
+
+test('detectMaxFrequency classic mode uses linear bin mapping', () => {
+    // Create data with energy concentrated in lower bins only
+    const nBins = 512; // fftSize/2 = 1024/2
+    const nFrames = 10;
+    const data = new Float32Array(nFrames * nBins);
+    // Put energy in bins 0-50 (low frequencies only)
+    for (let f = 0; f < nFrames; f++) {
+        for (let b = 0; b < 50; b++) {
+            data[f * nBins + b] = 1.0;
+        }
+    }
+    const sr = 32000;
+    const result = detectMaxFrequency(data, nFrames, nBins, sr, 'classic');
+    // Should detect max around bin 50 → ~50/512 * 16000 ≈ 1562 Hz + 10% margin
+    assert.ok(result < 5000, `classic mode result ${result} should be low frequency`);
+    assert.ok(result > 500, `classic mode result ${result} should be above 500 Hz`);
+});
+
+test('detectMaxFrequency perch mode uses mel mapping', () => {
+    const nMels = 128;
+    const nFrames = 10;
+    const data = new Float32Array(nFrames * nMels);
+    // Energy in all bins → should detect near Nyquist
+    for (let i = 0; i < data.length; i++) data[i] = 1.0;
+    const sr = 32000;
+    const result = detectMaxFrequency(data, nFrames, nMels, sr, 'perch');
+    // With energy everywhere, should be near Nyquist
+    assert.ok(result > 10000, `perch mode result ${result} with full energy should be high`);
 });

@@ -522,8 +522,28 @@ var BirdNETPlayerModule = (function(exports) {
     }
     return melSpectrum;
   }
+  const _twiddleCache = /* @__PURE__ */ new Map();
+  function getTwiddleFactors(n) {
+    if (_twiddleCache.has(n)) return _twiddleCache.get(n);
+    const table = {};
+    for (let len = 2; len <= n; len <<= 1) {
+      const halfLen = len >> 1;
+      const angleStep = -2 * Math.PI / len;
+      const cos = new Float64Array(halfLen);
+      const sin = new Float64Array(halfLen);
+      for (let k = 0; k < halfLen; k++) {
+        const angle = angleStep * k;
+        cos[k] = Math.cos(angle);
+        sin[k] = Math.sin(angle);
+      }
+      table[len] = { cos, sin };
+    }
+    _twiddleCache.set(n, table);
+    return table;
+  }
   function iterativeFFT(real, imag) {
     const n = real.length;
+    const twiddle = getTwiddleFactors(n);
     let j = 0;
     for (let i = 1; i < n; i++) {
       let bit = n >> 1;
@@ -543,16 +563,13 @@ var BirdNETPlayerModule = (function(exports) {
     }
     for (let len = 2; len <= n; len <<= 1) {
       const halfLen = len >> 1;
-      const angleStep = -2 * Math.PI / len;
+      const { cos, sin } = twiddle[len];
       for (let i = 0; i < n; i += len) {
         for (let k = 0; k < halfLen; k++) {
-          const angle = angleStep * k;
-          const cos = Math.cos(angle);
-          const sin = Math.sin(angle);
           const evenIndex = i + k;
           const oddIndex = evenIndex + halfLen;
-          const tr = cos * real[oddIndex] - sin * imag[oddIndex];
-          const ti = sin * real[oddIndex] + cos * imag[oddIndex];
+          const tr = cos[k] * real[oddIndex] - sin[k] * imag[oddIndex];
+          const ti = sin[k] * real[oddIndex] + cos[k] * imag[oddIndex];
           real[oddIndex] = real[evenIndex] - tr;
           imag[oddIndex] = imag[evenIndex] - ti;
           real[evenIndex] += tr;
@@ -588,7 +605,8 @@ var BirdNETPlayerModule = (function(exports) {
       pcenBias,
       pcenRoot,
       pcenSmoothing,
-      spectrogramMode
+      spectrogramMode,
+      initialSmooth
     } = params;
     const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);
     const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));
@@ -599,6 +617,7 @@ var BirdNETPlayerModule = (function(exports) {
     const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
     const outBins = useLinear ? nBins : nMels;
     const output = new Float32Array(numFrames * outBins);
+    let smooth = null;
     if (useLinear) {
       for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
         const offset = frameIdx * hopSize;
@@ -610,12 +629,17 @@ var BirdNETPlayerModule = (function(exports) {
         }
       }
     } else {
-      const smooth = new Float32Array(nMels);
+      smooth = new Float32Array(nMels);
+      if (initialSmooth && initialSmooth.length === nMels) {
+        smooth.set(initialSmooth);
+      }
       const pcenPower = 1 / pcenRoot;
       for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
         const offset = frameIdx * hopSize;
         const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
-        const mel = applyMelFilterbank(mag, melFB);
+        const power = new Float32Array(mag.length);
+        for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
+        const mel = applyMelFilterbank(power, melFB);
         const base = frameIdx * nMels;
         for (let m = 0; m < nMels; m++) {
           const e = mel[m];
@@ -626,7 +650,11 @@ var BirdNETPlayerModule = (function(exports) {
         }
       }
     }
-    return { data: output, nFrames: numFrames, nMels: outBins };
+    const result = { data: output, nFrames: numFrames, nMels: outBins };
+    if (smooth) {
+      result.smoothState = smooth;
+    }
+    return result;
   }
   let _WorkerCtor = null;
   let _workerCtorResolved = false;
@@ -1203,7 +1231,7 @@ void main() {
     }
     return { logMin, logMax };
   }
-  function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, energyThreshold = 0.08) {
+  function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, spectrogramMode = "perch", energyThreshold = 0.08) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
     const binEnergy = new Float64Array(nMels);
     const stride = Math.max(1, Math.floor(nFrames / 2e3));
@@ -1229,8 +1257,14 @@ void main() {
         break;
       }
     }
-    const melFreqs = buildMelFrequencies(sampleRate, nMels);
-    const detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+    let detectedHz;
+    if (spectrogramMode === "classic") {
+      const binHz = sampleRate / 2 / nMels;
+      detectedHz = Math.min(nMels - 1, highestActiveBin + 2) * binHz;
+    } else {
+      const melFreqs = buildMelFrequencies(sampleRate, nMels);
+      detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+    }
     const withMargin = detectedHz * 1.1;
     const steps = [2e3, 3e3, 4e3, 5e3, 6e3, 8e3, 1e4, 12e3, 16e3, 2e4, 22050];
     const nyquist = sampleRate / 2;
@@ -1405,11 +1439,13 @@ void main() {
         if (!Ctor) throw new Error("Worker constructor unavailable");
         worker = new Ctor();
         worker.onmessage = (event) => {
-          const { requestId, data, nFrames, nMels } = event.data;
+          const { requestId, data, nFrames, nMels, smoothState } = event.data;
           const pending = pendingRequests.get(requestId);
           if (!pending) return;
           pendingRequests.delete(requestId);
-          pending.resolve({ data: new Float32Array(data), nFrames, nMels });
+          const result = { data: new Float32Array(data), nFrames, nMels };
+          if (smoothState) result.smoothState = new Float32Array(smoothState);
+          pending.resolve(result);
         };
         worker.onerror = (error) => {
           console.warn("Spectrogram Worker failed, using main-thread fallback:", error);
@@ -1464,11 +1500,14 @@ void main() {
       const chunkSeconds = Math.max(1, options.chunkSeconds || 10);
       const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
       const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
+      let smoothState = null;
       for (let chunk = 0; chunk < totalChunks; chunk++) {
         const startSample = chunk * samplesPerChunk;
         const endSample = Math.min(channelData.length, startSample + samplesPerChunk);
         const chunkData = channelData.subarray(startSample, endSample);
-        const result = await compute(chunkData, options);
+        const chunkOptions = smoothState ? { ...options, initialSmooth: smoothState } : options;
+        const result = await compute(chunkData, chunkOptions);
+        if (result.smoothState) smoothState = result.smoothState;
         yield {
           chunk,
           totalChunks,
@@ -2713,7 +2752,8 @@ void main() {
         this.spectrogramData,
         this.spectrogramFrames,
         this.spectrogramMels,
-        this.sampleRateHz
+        this.sampleRateHz,
+        this.spectrogramMode || "perch"
       );
       const options = Array.from(this.d.maxFreqSelect.options);
       let best = options[options.length - 1];
@@ -4972,7 +5012,7 @@ void main() {
       };
     }
   }
-  const jsContent = '(function() {\n  "use strict";\n  function hzToMel(hz) {\n    return 2595 * Math.log10(1 + hz / 700);\n  }\n  function melToHz(mel) {\n    return 700 * (Math.pow(10, mel / 2595) - 1);\n  }\n  function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {\n    const nFftBins = Math.floor(fftSize / 2);\n    const melMin = hzToMel(fMin);\n    const melMax = hzToMel(fMax);\n    const melPoints = [];\n    for (let i = 0; i < nMels + 2; i++) {\n      melPoints.push(melMin + i / (nMels + 1) * (melMax - melMin));\n    }\n    const hzPoints = melPoints.map(melToHz);\n    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));\n    const filterbank = [];\n    for (let m = 1; m <= nMels; m++) {\n      const filter = new Float32Array(nFftBins);\n      const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));\n      const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));\n      const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));\n      for (let k = left; k < center; k++) {\n        filter[k] = (k - left) / (center - left || 1);\n      }\n      for (let k = center; k < right; k++) {\n        filter[k] = (right - k) / (right - center || 1);\n      }\n      filterbank.push(filter);\n    }\n    return filterbank;\n  }\n  function applyMelFilterbank(powerSpectrum, melFilterbank) {\n    const melSpectrum = new Float32Array(melFilterbank.length);\n    for (let m = 0; m < melFilterbank.length; m++) {\n      const filter = melFilterbank[m];\n      let sum = 0;\n      for (let k = 0; k < filter.length; k++) {\n        if (filter[k] !== 0) {\n          sum += powerSpectrum[k] * filter[k];\n        }\n      }\n      melSpectrum[m] = sum;\n    }\n    return melSpectrum;\n  }\n  function iterativeFFT(real, imag) {\n    const n = real.length;\n    let j = 0;\n    for (let i = 1; i < n; i++) {\n      let bit = n >> 1;\n      while (j & bit) {\n        j ^= bit;\n        bit >>= 1;\n      }\n      j ^= bit;\n      if (i < j) {\n        let tmp = real[i];\n        real[i] = real[j];\n        real[j] = tmp;\n        tmp = imag[i];\n        imag[i] = imag[j];\n        imag[j] = tmp;\n      }\n    }\n    for (let len = 2; len <= n; len <<= 1) {\n      const halfLen = len >> 1;\n      const angleStep = -2 * Math.PI / len;\n      for (let i = 0; i < n; i += len) {\n        for (let k = 0; k < halfLen; k++) {\n          const angle = angleStep * k;\n          const cos = Math.cos(angle);\n          const sin = Math.sin(angle);\n          const evenIndex = i + k;\n          const oddIndex = evenIndex + halfLen;\n          const tr = cos * real[oddIndex] - sin * imag[oddIndex];\n          const ti = sin * real[oddIndex] + cos * imag[oddIndex];\n          real[oddIndex] = real[evenIndex] - tr;\n          imag[oddIndex] = imag[evenIndex] - ti;\n          real[evenIndex] += tr;\n          imag[evenIndex] += ti;\n        }\n      }\n    }\n  }\n  function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {\n    const real = new Float32Array(fftSize);\n    const imag = new Float32Array(fftSize);\n    const maxCopy = Math.min(winLength, fftSize);\n    for (let i = 0; i < maxCopy; i++) {\n      const sample = audio[offset + i] || 0;\n      const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));\n      real[i] = sample * window;\n    }\n    iterativeFFT(real, imag);\n    const out = new Float32Array(fftSize / 2);\n    for (let i = 0; i < out.length; i++) {\n      out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);\n    }\n    return out;\n  }\n  function computeSpectrogram(params) {\n    const {\n      channelData,\n      fftSize,\n      sampleRate,\n      frameRate,\n      nMels,\n      pcenGain,\n      pcenBias,\n      pcenRoot,\n      pcenSmoothing,\n      spectrogramMode\n    } = params;\n    const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);\n    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));\n    const winLength = 4 * hopSize;\n    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);\n    const nBins = Math.floor(fftSize / 2);\n    const useLinear = spectrogramMode === "classic";\n    const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);\n    const outBins = useLinear ? nBins : nMels;\n    const output = new Float32Array(numFrames * outBins);\n    if (useLinear) {\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const base = frameIdx * nBins;\n        for (let k = 0; k < nBins; k++) {\n          const power = mag[k] * mag[k];\n          output[base + k] = 10 * Math.log10(Math.max(1e-10, power));\n        }\n      }\n    } else {\n      const smooth = new Float32Array(nMels);\n      const pcenPower = 1 / pcenRoot;\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const mel = applyMelFilterbank(mag, melFB);\n        const base = frameIdx * nMels;\n        for (let m = 0; m < nMels; m++) {\n          const e = mel[m];\n          smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;\n          const denom = Math.pow(1e-12 + smooth[m], pcenGain);\n          const norm = e / denom;\n          output[base + m] = Math.pow(norm + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);\n        }\n      }\n    }\n    return { data: output, nFrames: numFrames, nMels: outBins };\n  }\n  self.onmessage = (event) => {\n    const { requestId, channelData, ...options } = event.data;\n    const result = computeSpectrogram({\n      channelData: new Float32Array(channelData),\n      ...options\n    });\n    self.postMessage(\n      {\n        requestId,\n        data: result.data.buffer,\n        nFrames: result.nFrames,\n        nMels: result.nMels\n      },\n      [result.data.buffer]\n    );\n  };\n})();\n//# sourceMappingURL=spectrogram.worker-DnrqzrLb.js.map\n';
+  const jsContent = '(function() {\n  "use strict";\n  function hzToMel(hz) {\n    return 2595 * Math.log10(1 + hz / 700);\n  }\n  function melToHz(mel) {\n    return 700 * (Math.pow(10, mel / 2595) - 1);\n  }\n  function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {\n    const nFftBins = Math.floor(fftSize / 2);\n    const melMin = hzToMel(fMin);\n    const melMax = hzToMel(fMax);\n    const melPoints = [];\n    for (let i = 0; i < nMels + 2; i++) {\n      melPoints.push(melMin + i / (nMels + 1) * (melMax - melMin));\n    }\n    const hzPoints = melPoints.map(melToHz);\n    const binPoints = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));\n    const filterbank = [];\n    for (let m = 1; m <= nMels; m++) {\n      const filter = new Float32Array(nFftBins);\n      const left = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));\n      const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));\n      const right = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));\n      for (let k = left; k < center; k++) {\n        filter[k] = (k - left) / (center - left || 1);\n      }\n      for (let k = center; k < right; k++) {\n        filter[k] = (right - k) / (right - center || 1);\n      }\n      filterbank.push(filter);\n    }\n    return filterbank;\n  }\n  function applyMelFilterbank(powerSpectrum, melFilterbank) {\n    const melSpectrum = new Float32Array(melFilterbank.length);\n    for (let m = 0; m < melFilterbank.length; m++) {\n      const filter = melFilterbank[m];\n      let sum = 0;\n      for (let k = 0; k < filter.length; k++) {\n        if (filter[k] !== 0) {\n          sum += powerSpectrum[k] * filter[k];\n        }\n      }\n      melSpectrum[m] = sum;\n    }\n    return melSpectrum;\n  }\n  const _twiddleCache = /* @__PURE__ */ new Map();\n  function getTwiddleFactors(n) {\n    if (_twiddleCache.has(n)) return _twiddleCache.get(n);\n    const table = {};\n    for (let len = 2; len <= n; len <<= 1) {\n      const halfLen = len >> 1;\n      const angleStep = -2 * Math.PI / len;\n      const cos = new Float64Array(halfLen);\n      const sin = new Float64Array(halfLen);\n      for (let k = 0; k < halfLen; k++) {\n        const angle = angleStep * k;\n        cos[k] = Math.cos(angle);\n        sin[k] = Math.sin(angle);\n      }\n      table[len] = { cos, sin };\n    }\n    _twiddleCache.set(n, table);\n    return table;\n  }\n  function iterativeFFT(real, imag) {\n    const n = real.length;\n    const twiddle = getTwiddleFactors(n);\n    let j = 0;\n    for (let i = 1; i < n; i++) {\n      let bit = n >> 1;\n      while (j & bit) {\n        j ^= bit;\n        bit >>= 1;\n      }\n      j ^= bit;\n      if (i < j) {\n        let tmp = real[i];\n        real[i] = real[j];\n        real[j] = tmp;\n        tmp = imag[i];\n        imag[i] = imag[j];\n        imag[j] = tmp;\n      }\n    }\n    for (let len = 2; len <= n; len <<= 1) {\n      const halfLen = len >> 1;\n      const { cos, sin } = twiddle[len];\n      for (let i = 0; i < n; i += len) {\n        for (let k = 0; k < halfLen; k++) {\n          const evenIndex = i + k;\n          const oddIndex = evenIndex + halfLen;\n          const tr = cos[k] * real[oddIndex] - sin[k] * imag[oddIndex];\n          const ti = sin[k] * real[oddIndex] + cos[k] * imag[oddIndex];\n          real[oddIndex] = real[evenIndex] - tr;\n          imag[oddIndex] = imag[evenIndex] - ti;\n          real[evenIndex] += tr;\n          imag[evenIndex] += ti;\n        }\n      }\n    }\n  }\n  function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {\n    const real = new Float32Array(fftSize);\n    const imag = new Float32Array(fftSize);\n    const maxCopy = Math.min(winLength, fftSize);\n    for (let i = 0; i < maxCopy; i++) {\n      const sample = audio[offset + i] || 0;\n      const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));\n      real[i] = sample * window;\n    }\n    iterativeFFT(real, imag);\n    const out = new Float32Array(fftSize / 2);\n    for (let i = 0; i < out.length; i++) {\n      out[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);\n    }\n    return out;\n  }\n  function computeSpectrogram(params) {\n    const {\n      channelData,\n      fftSize,\n      sampleRate,\n      frameRate,\n      nMels,\n      pcenGain,\n      pcenBias,\n      pcenRoot,\n      pcenSmoothing,\n      spectrogramMode,\n      initialSmooth\n    } = params;\n    const audio = channelData instanceof Float32Array ? channelData : new Float32Array(channelData);\n    const hopSize = Math.max(1, Math.floor(sampleRate / frameRate));\n    const winLength = 4 * hopSize;\n    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);\n    const nBins = Math.floor(fftSize / 2);\n    const useLinear = spectrogramMode === "classic";\n    const melFB = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);\n    const outBins = useLinear ? nBins : nMels;\n    const output = new Float32Array(numFrames * outBins);\n    let smooth = null;\n    if (useLinear) {\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const base = frameIdx * nBins;\n        for (let k = 0; k < nBins; k++) {\n          const power = mag[k] * mag[k];\n          output[base + k] = 10 * Math.log10(Math.max(1e-10, power));\n        }\n      }\n    } else {\n      smooth = new Float32Array(nMels);\n      if (initialSmooth && initialSmooth.length === nMels) {\n        smooth.set(initialSmooth);\n      }\n      const pcenPower = 1 / pcenRoot;\n      for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {\n        const offset = frameIdx * hopSize;\n        const mag = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);\n        const power = new Float32Array(mag.length);\n        for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];\n        const mel = applyMelFilterbank(power, melFB);\n        const base = frameIdx * nMels;\n        for (let m = 0; m < nMels; m++) {\n          const e = mel[m];\n          smooth[m] = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;\n          const denom = Math.pow(1e-12 + smooth[m], pcenGain);\n          const norm = e / denom;\n          output[base + m] = Math.pow(norm + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);\n        }\n      }\n    }\n    const result = { data: output, nFrames: numFrames, nMels: outBins };\n    if (smooth) {\n      result.smoothState = smooth;\n    }\n    return result;\n  }\n  self.onmessage = (event) => {\n    const { requestId, channelData, ...options } = event.data;\n    const result = computeSpectrogram({\n      channelData: new Float32Array(channelData),\n      ...options\n    });\n    const msg = {\n      requestId,\n      data: result.data.buffer,\n      nFrames: result.nFrames,\n      nMels: result.nMels\n    };\n    const transfer = [result.data.buffer];\n    if (result.smoothState) {\n      msg.smoothState = result.smoothState.buffer;\n      transfer.push(result.smoothState.buffer);\n    }\n    self.postMessage(msg, transfer);\n  };\n})();\n//# sourceMappingURL=spectrogram.worker-pMERBhcW.js.map\n';
   const blob = typeof self !== "undefined" && self.Blob && new Blob(["(self.URL || self.webkitURL).revokeObjectURL(self.location.href);", jsContent], { type: "text/javascript;charset=utf-8" });
   function WorkerWrapper(options) {
     let objURL;

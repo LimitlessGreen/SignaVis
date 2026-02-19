@@ -16,15 +16,16 @@ export function autoContrastStats(spectrogramData: Float32Array, loPercentile?: 
 };
 /**
  * Detects the effective upper frequency boundary by finding the highest
- * mel-bin that carries meaningful energy above the noise floor.
+ * bin that carries meaningful energy above the noise floor.
  * Returns a frequency in Hz suitable as maxFreq.
  * @param {Float32Array} spectrogramData
  * @param {number} nFrames
  * @param {number} nMels
  * @param {number} sampleRate
+ * @param {string} [spectrogramMode='perch'] – 'perch' (mel) or 'classic' (linear)
  * @param {number} [energyThreshold=0.08] – fraction of peak-bin energy
  */
-export function detectMaxFrequency(spectrogramData: Float32Array, nFrames: number, nMels: number, sampleRate: number, energyThreshold?: number): number;
+export function detectMaxFrequency(spectrogramData: Float32Array, nFrames: number, nMels: number, sampleRate: number, spectrogramMode?: string, energyThreshold?: number): number;
 /**
  * Stage 1 — Expensive, done ONCE per audio / fftSize / maxFreq change.
  * Converts PCEN data → 8-bit grayscale image (Uint8Array) using the
