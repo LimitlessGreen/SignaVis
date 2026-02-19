@@ -5,15 +5,18 @@ DAW-ähnlicher Audio-Player (Waveform + Spektrogramm + Transport Controls) als e
 ## Install
 
 ```bash
-npm i audio-workbench wavesurfer
+npm i audio-workbench
 ```
+
+WaveSurfer.js wird automatisch per CDN geladen — kein extra Install nötig.
 
 ## Paketinhalt
 
-- `dist/birdnet-player.esm.js` (ESM)
-- `dist/birdnet-player.iife.js` (CDN/IIFE)
+- `dist/birdnet-player.esm.js` (ESM, Web Worker als separate Datei)
+- `dist/birdnet-player.iife.js` (CDN/IIFE, Worker inlined)
 - `dist/birdnet-player.css` (Styles)
 - `types/index.d.ts` (TypeScript)
+- `src/dsp.js` (DSP-Kernfunktionen: FFT, Mel-Filterbank, Spektrogramm)
 
 ## Quickstart
 
@@ -102,9 +105,9 @@ onBeforeUnmount(() => player?.destroy())
 
 ### 7) CDN / IIFE (Vanilla)
 ```html
-<script src="https://unpkg.com/wavesurfer@7"></script>
-<script src="https://unpkg.com/audio-workbench@0.0.1/iife"></script>
-<link rel="stylesheet" href="https://unpkg.com/audio-workbench@0.0.1/style" />
+<script src="https://unpkg.com/wavesurfer.js@7"></script>
+<script src="https://unpkg.com/audio-workbench/dist/birdnet-player.iife.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/audio-workbench/dist/birdnet-player.css" />
 <div id="player"></div>
 <script>
   const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
@@ -159,6 +162,17 @@ player.getPlaybackViewportConfig(): object
 player.setPlaybackViewportConfig(config: object): object
 player.destroy(): void
 ```
+
+## Spektrogramm-Modi
+
+Der Player bietet zwei Spektrogramm-Modi, wählbar über das Mode-Dropdown:
+
+| Modus | Frequenzachse | Normalisierung | Farbpalette |
+|-------|---------------|----------------|-------------|
+| **Perch** (Standard) | Mel-Skala (logarithmisch) | PCEN (Per-Channel Energy Normalization) | Grayscale / frei wählbar |
+| **Classic** (XC-Stil) | Linear (direkte FFT-Bins) | Power → dB-Skala | Xeno-Canto Warm-Body / frei wählbar |
+
+Der Classic-Modus erzeugt Spektrogramme die optisch den Darstellungen auf [xeno-canto.org](https://xeno-canto.org) entsprechen.
 
 ## Debug Performance Overlay
 
@@ -216,27 +230,48 @@ const player = new BirdNETPlayer(el, {
 ## Tests
 
 ```bash
-npm test
+npm test          # 25 Tests (DSP, Spectrogram Utils, Transport State)
 ```
 
-## Build / Sync from parent project
+## Build
 
 ```bash
-cd audio-workbench-lib
-bash scripts/build.sh
-npm pack
+npm run build     # Vite build (ESM + IIFE + CSS + Sourcemaps + TypeScript)
+npm run dev       # Vite dev server mit HMR (öffnet http://localhost:5173)
 ```
 
-## Storybook-Style Demo
+Der Build nutzt [Vite](https://vitejs.dev/) im Library-Mode:
+- ESM-Build: Worker als separate Datei
+- IIFE-Build: Worker inlined (kein zusätzlicher Netzwerk-Request)
+- CSS wird automatisch extrahiert
+- Sourcemaps für beide Formate
+- TypeScript Declarations aus JSDoc generiert
 
-```bash
-cd audio-workbench-lib
-python -m http.server 8080
+## Demos
+
+| Demo | Modus | Starten |
+|------|-------|---------|
+| `http://localhost:5173/` | Dev (ESM, HMR) | `npm run dev` |
+| `demo/index.html` | Produktion (IIFE aus dist/) | Datei direkt öffnen |
+| `demo/storybook.html` | Interactive Stories | `npm run dev` |
+
+## Architektur
+
 ```
-
-Dann öffnen:
-- `http://localhost:8080/demo/storybook.html` (kuratierte Interactive Stories)
-- `http://localhost:8080/demo/index.html` (Standard-Demo)
+src/
+├── BirdNETPlayer.js    Public API Facade
+├── PlayerState.js      Zentraler State & Orchestrierung
+├── dsp.js              DSP-Kernfunktionen (FFT, Mel, Filterbank)
+├── spectrogram.js      Pipeline: Compute → Grayscale → GPU-Colorize → Render
+├── spectrogram.worker.js  Web Worker (importiert dsp.js)
+├── template.js         HTML-Template (data-aw Attribute, multi-instance-fähig)
+├── player.css          Styles (CSS Custom Properties, scoped auf .daw-shell)
+├── annotations.js      Amplitude + Spektrogramm Labels
+├── waveform.js         Waveform-Rendering
+├── gestures.js         Touch/Mouse Interaction
+├── utils.js            Hilfsfunktionen
+└── constants.js        Konfiguration & Defaults
+```
 
 ## Release Runbook
 
