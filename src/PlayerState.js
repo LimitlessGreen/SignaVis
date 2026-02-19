@@ -381,7 +381,7 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     _queryDom(root) {
-        const q = (id) => root.querySelector(`#${id}`);
+        const q = (id) => root.querySelector(`[data-aw="${id}"]`);
         return {
             openFileBtn:            q('openFileBtn'),
             toolbarRoot:            q('toolbarRoot'),
@@ -423,6 +423,7 @@ export class PlayerState {
             overviewHandleRight:    q('overviewHandleRight'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
+            spectrogramModeSelect:  q('spectrogramModeSelect'),
             fftSizeSelect:          q('fftSize'),
             zoomSlider:             q('zoomSlider'),
             zoomValue:              q('zoomValue'),
@@ -1112,7 +1113,9 @@ export class PlayerState {
         if (!this.audioBuffer) return;
         this._setTransportState('rendering', 'spectrogram-generate');
 
+        const spectrogramMode = this.d.spectrogramModeSelect?.value || 'perch';
         const options = {
+            spectrogramMode,
             fftSize: parseInt(this.d.fftSizeSelect.value, 10),
             sampleRate: this.audioBuffer.sampleRate,
             frameRate: PERCH_FRAME_RATE,
@@ -1385,6 +1388,7 @@ export class PlayerState {
             maxFreq: parseFloat(this.d.maxFreqSelect.value),
             spectrogramAbsLogMin: this.spectrogramAbsLogMin,
             spectrogramAbsLogMax: this.spectrogramAbsLogMax,
+            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
         });
         // Upload to GPU if available
         if (this.spectrogramGrayInfo && this.colorizer.ok) {
@@ -2198,6 +2202,17 @@ export class PlayerState {
         });
 
         // ── Settings ──
+        on(this.d.spectrogramModeSelect, 'change', () => {
+            // When switching to classic mode, auto-select XC palette for best effect
+            if (this.d.spectrogramModeSelect.value === 'classic') {
+                this.d.colorSchemeSelect.value = 'xenocanto';
+                this.currentColorScheme = 'xenocanto';
+            } else {
+                this.d.colorSchemeSelect.value = 'grayscale';
+                this.currentColorScheme = 'grayscale';
+            }
+            if (this.audioBuffer) this._generateSpectrogram();
+        });
         on(this.d.fftSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.maxFreqSelect, 'change', () => {
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
