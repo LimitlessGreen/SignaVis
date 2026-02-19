@@ -1,5 +1,6 @@
 import base64
 import html
+import io
 import json
 from importlib.resources import files
 from typing import Optional, Union
@@ -54,11 +55,80 @@ def _encode_spectrogram_data(data) -> tuple:
     return b64, n_frames, n_mels
 
 
+def _coerce_image_to_png_bytes(image) -> bytes:
+    """Convert various image types to raw PNG bytes.
+
+    Accepts:
+    - bytes (returned as-is, assumed PNG/JPEG)
+    - str (returned as-is — URL or data-URL, handled by caller)
+    - io.BytesIO / io.BufferedIOBase
+    - matplotlib.figure.Figure
+    - PIL.Image.Image
+    - numpy.ndarray (uint8, HWC or HW)
+    """
+    # bytes pass-through
+    if isinstance(image, bytes):
+        return image
+
+    # io.BytesIO / file-like
+    if isinstance(image, (io.BytesIO, io.BufferedIOBase)):
+        image.seek(0)
+        return image.read()
+
+    # matplotlib Figure
+    try:
+        import matplotlib.figure
+        if isinstance(image, matplotlib.figure.Figure):
+            buf = io.BytesIO()
+            image.savefig(buf, format="png", bbox_inches="tight", pad_inches=0, dpi=150)
+            buf.seek(0)
+            return buf.read()
+    except ImportError:
+        pass
+
+    # PIL Image
+    try:
+        from PIL import Image as PILImage
+        if isinstance(image, PILImage.Image):
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            buf.seek(0)
+            return buf.read()
+    except ImportError:
+        pass
+
+    # numpy uint8 array (HWC or HW grayscale)
+    if _HAS_NUMPY and isinstance(image, np.ndarray):
+        try:
+            from PIL import Image as PILImage
+            if image.ndim == 2:
+                pil_img = PILImage.fromarray(image, mode="L")
+            elif image.ndim == 3 and image.shape[2] == 3:
+                pil_img = PILImage.fromarray(image, mode="RGB")
+            elif image.ndim == 3 and image.shape[2] == 4:
+                pil_img = PILImage.fromarray(image, mode="RGBA")
+            else:
+                raise ValueError(f"Unsupported numpy array shape for image: {image.shape}")
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            buf.seek(0)
+            return buf.read()
+        except ImportError:
+            raise ImportError("Pillow is required for numpy array images: pip install Pillow")
+
+    # Fallback: unknown type
+    raise TypeError(
+        f"spectrogram_image: unsupported type {type(image).__name__}. "
+        "Expected bytes, str, io.BytesIO, matplotlib.figure.Figure, "
+        "PIL.Image.Image, or numpy.ndarray (uint8)."
+    )
+
+
 def render_daw_player(
     audio_bytes: bytes,
     *,
     spectrogram_data=None,
-    spectrogram_image: Optional[Union[str, bytes]] = None,
+    spectrogram_image=None,
     spectrogram_mode: str = "perch",
     sample_rate: Optional[int] = None,
     **options,
@@ -73,11 +143,14 @@ def render_daw_player(
         Pre-computed spectrogram as 2D float32 array (nFrames × nMels).
         The player applies its own colorization (contrast, color map).
         Librosa-style (n_mels × n_frames) arrays are auto-transposed.
-    spectrogram_image : str or bytes, optional
-        Pre-rendered spectrogram image. Can be:
-        - base64 data-URL string ("data:image/png;base64,...")
-        - raw PNG/JPEG bytes (auto-wrapped in data URL)
-        - URL string ("https://...")
+    spectrogram_image : various types, optional
+        Pre-rendered spectrogram image. Accepted types:
+        - ``bytes`` — raw PNG/JPEG bytes
+        - ``str`` — data-URL ("data:image/png;base64,...") or HTTP URL
+        - ``io.BytesIO`` — in-memory buffer with PNG/JPEG
+        - ``matplotlib.figure.Figure`` — rendered to PNG automatically
+        - ``PIL.Image.Image`` — converted to PNG automatically
+        - ``numpy.ndarray`` (uint8, HW or HWC) — converted via Pillow
         Bypasses all DSP + colorization; image is drawn as-is.
     spectrogram_mode : str
         'perch' or 'classic' — affects frequency axis labels. Default: 'perch'.
@@ -115,11 +188,14 @@ def render_daw_player(
       );
 """
     elif spectrogram_image is not None:
-        if isinstance(spectrogram_image, bytes):
-            img_b64 = base64.b64encode(spectrogram_image).decode("ascii")
-            img_src = f"data:image/png;base64,{img_b64}"
+        # Strings (URLs / data-URLs) pass through directly
+        if isinstance(spectrogram_image, str):
+            img_src = spectrogram_image
         else:
-            img_src = str(spectrogram_image)
+            # Everything else → PNG bytes → base64 data-URL
+            png_bytes = _coerce_image_to_png_bytes(spectrogram_image)
+            img_b64 = base64.b64encode(png_bytes).decode("ascii")
+            img_src = f"data:image/png;base64,{img_b64}"
         sr_opt = f", sampleRate: {sample_rate}" if sample_rate else ""
         spect_js = f"""
       // Inject pre-rendered spectrogram image
