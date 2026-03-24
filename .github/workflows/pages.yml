@@ -29,22 +29,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build library
-        run: npm run build
-
-      - name: Assemble demo site
+      - name: Build demo site
         run: |
-          mkdir -p _site/dist _site/demo/samples
-          # Library assets (referenced as ../dist/ from demo/)
-          cp dist/birdnet-player.iife.js _site/dist/
-          cp dist/birdnet-player.iife.js.map _site/dist/ 2>/dev/null || true
-          cp dist/birdnet-player.css _site/dist/
-          # Demo pages and assets
-          cp demo/index.html     _site/demo/
-          cp demo/storybook.html _site/demo/
-          cp demo/stories.js     _site/demo/
-          cp -r demo/samples/    _site/demo/samples/
-          # Root redirect → demo/storybook.html
+          npx vite build --config demo/vite.demo.config.js
+          # Copy sample audio files (not handled by Vite)
+          mkdir -p _site/demo/samples
+          cp demo/samples/*.wav _site/demo/samples/
+          cp demo/samples/README.md _site/demo/samples/ 2>/dev/null || true
+          # Root redirect → storybook
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <meta charset="utf-8">

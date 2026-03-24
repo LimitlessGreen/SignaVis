@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench — Storybook</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
-  <script src="../dist/birdnet-player.iife.js"></script>
-  <link rel="stylesheet" href="../dist/birdnet-player.css" />
+  <!-- Library loaded via ESM in the module script below -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; }
 
@@ -155,7 +154,12 @@
 </div>
 
 <script type="module">
+import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
+import '../src/player.css';
 import { stories, categories } from './stories.js';
+
+/* Expose on globalThis so stories.js can use it without circular import */
+globalThis.BirdNETPlayerModule = { BirdNETPlayer };
 
 /* ── DOM refs ── */
 const sidebar     = document.getElementById('sidebar');

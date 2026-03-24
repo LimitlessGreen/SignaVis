@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench Player Demo</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
-  <script src="https://unpkg.com/wavesurfer@7"></script>
-  <script src="../dist/birdnet-player.iife.js"></script>
-  <link rel="stylesheet" href="../dist/birdnet-player.css" />
+  <!-- Library loaded via ESM in the module script below -->
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f6fa; }
     .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
@@ -35,10 +33,13 @@
     </div>
   </div>
 
-  <script>
+  <script type="module">
+    import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
+    import '../src/player.css';
+
     const playerRoot = document.getElementById('player');
     const logEl = document.getElementById('events');
-    const player = new BirdNETPlayerModule.BirdNETPlayer(playerRoot, {
+    const player = new BirdNETPlayer(playerRoot, {
       showFileOpen: true,
       showTransport: true
     });
