@@ -534,7 +534,7 @@ export function buildSpectrogramGrayscale({
 
     const yToBin = new Int16Array(height);
     for (let y = 0; y < height; y++) {
-        const freqIndex = Math.floor((height - y) / height * (maxBin + 1));
+        const freqIndex = Math.round((height - 1 - y) / (height - 1) * maxBin);
         yToBin[y] = Math.max(0, Math.min(maxBin, freqIndex));
     }
 
@@ -554,7 +554,8 @@ export function buildSpectrogramGrayscale({
                 sum += spectrogramData[frame * spectrogramMels + bin] || 0;
                 count++;
             }
-            if (frameEnd - 1 > frameStart) {
+            // Include last frame only if the stepping loop didn't already visit it
+            if (frameEnd - 1 > frameStart && (frameEnd - 1 - frameStart) % sampleStep !== 0) {
                 sum += spectrogramData[(frameEnd - 1) * spectrogramMels + bin] || 0;
                 count++;
             }
@@ -608,13 +609,14 @@ export function buildSpectrogramBaseImage({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq, currentColorScheme,
     normalizeViews, spectrogramLogMin, spectrogramLogMax,
+    spectrogramMode,
 }) {
     const grayInfo = buildSpectrogramGrayscale({
         spectrogramData, spectrogramFrames, spectrogramMels,
         sampleRateHz, maxFreq,
         spectrogramAbsLogMin: spectrogramLogMin,
         spectrogramAbsLogMax: spectrogramLogMax,
-        spectrogramMode: undefined,
+        spectrogramMode,
     });
     if (!grayInfo) return null;
     return colorizeSpectrogram(grayInfo, 0, 1, currentColorScheme);

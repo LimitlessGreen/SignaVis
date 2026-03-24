@@ -232,6 +232,7 @@ export function computeSpectrogram(params) {
             smooth.set(initialSmooth);
         }
         const pcenPower = 1.0 / pcenRoot;
+        const pcenBiasOffset = Math.pow(pcenBias, pcenPower);
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
             const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
@@ -245,7 +246,7 @@ export function computeSpectrogram(params) {
                 smooth[m]   = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
                 const denom = Math.pow(1e-12 + smooth[m], pcenGain);
                 const norm  = e / denom;
-                output[base + m] = Math.pow(norm + pcenBias, pcenPower) - Math.pow(pcenBias, pcenPower);
+                output[base + m] = Math.pow(norm + pcenBias, pcenPower) - pcenBiasOffset;
             }
         }
     }
