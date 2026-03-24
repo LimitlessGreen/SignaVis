@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// BirdNETPlayer.js — Public API for the BirdNET Audio Player module
+// BirdNETPlayer.js - Public API for the BirdNET Audio Player module
 //
 // Usage:
 //   import { BirdNETPlayer } from './BirdNETPlayer.js';
@@ -26,39 +26,41 @@ export { DEFAULT_OPTIONS };
 
 export class BirdNETPlayer {
     /**
-     * @param {HTMLElement} container — the DOM element to mount the player into
+     * @param {HTMLElement} container - the DOM element to mount the player into
      * @param {Object}      [options]
-     * @param {Object}      [options.WaveSurfer]     — pre-loaded WaveSurfer constructor
-     * @param {boolean}     [options.showFileOpen]    — show Open button (default: true)
-     * @param {boolean}     [options.showTransport]   — show transport controls (default: true)
-     * @param {boolean}     [options.showTime]        — show time display (default: true)
-     * @param {boolean}     [options.showVolume]      — show volume controls (default: true)
-     * @param {boolean}     [options.showViewToggles] — show Follow/Loop/Fit/Reset (default: true)
-     * @param {boolean}     [options.showZoom]        — show zoom slider (default: true)
-     * @param {boolean}     [options.showFFTControls] — show FFT/Freq/Color selects (default: true)
-     * @param {boolean}     [options.showDisplayGain] — show Floor/Ceil sliders (default: true)
-     * @param {boolean}     [options.showStatusbar]   — show bottom status bar (default: true)
-     * @param {boolean}     [options.showOverview]    — show overview navigator (default: true)
-     * @param {'both'|'waveform'|'spectrogram'} [options.viewMode] — visible analysis view(s) (default: both)
-     * @param {'default'|'hero'} [options.transportStyle] — transport button style (default: default)
-     * @param {boolean}     [options.transportOverlay] — centered play overlay without toolbar height (default: false)
-     * @param {boolean}     [options.showWaveformTimeline] — show bottom waveform timeline (default: true)
-     * @param {'auto'|'on'|'off'} [options.compactToolbar] — responsive toolbar compaction mode (default: auto)
-     * @param {number}      [options.followGuardLeftRatio] — left follow guard ratio (default: 0.35)
-     * @param {number}      [options.followGuardRightRatio] — right follow guard ratio (default: 0.65)
-     * @param {number}      [options.followTargetRatio] — target ratio for viewport centering (default: 0.5)
-     * @param {number}      [options.followCatchupDurationMs] — follow catchup tween duration (default: 240)
-     * @param {number}      [options.followCatchupSeekDurationMs] — slower follow tween after manual seek (default: 360)
-     * @param {number}      [options.smoothLerp] — smooth mode lerp factor (default: 0.18)
-     * @param {number}      [options.smoothSeekLerp] — smooth mode lerp after manual seek (default: 0.08)
-     * @param {number}      [options.smoothMinStepRatio] — smooth min step ratio (default: 0.03)
-     * @param {number}      [options.smoothSeekMinStepRatio] — smooth min step ratio after seek (default: 0.008)
-     * @param {number}      [options.smoothSeekFocusMs] — slow-follow window after manual seek (default: 1400)
+     * @param {Object}      [options.WaveSurfer]     - pre-loaded WaveSurfer constructor
+     * @param {boolean}     [options.showFileOpen]    - show Open button (default: true)
+     * @param {boolean}     [options.showTransport]   - show transport controls (default: true)
+     * @param {boolean}     [options.showTime]        - show time display (default: true)
+     * @param {boolean}     [options.showVolume]      - show volume controls (default: true)
+     * @param {boolean}     [options.showViewToggles] - show Follow/Loop/Fit/Reset (default: true)
+     * @param {boolean}     [options.showZoom]        - show zoom slider (default: true)
+     * @param {boolean}     [options.showFFTControls] - show FFT/Freq/Color selects (default: true)
+     * @param {boolean}     [options.showDisplayGain] - show Floor/Ceil sliders (default: true)
+     * @param {boolean}     [options.showStatusbar]   - show bottom status bar (default: true)
+     * @param {boolean}     [options.showOverview]    - show overview navigator (default: true)
+     * @param {'both'|'waveform'|'spectrogram'} [options.viewMode] - visible analysis view(s) (default: both)
+     * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
+     * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
+     * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)
+     * @param {'auto'|'on'|'off'} [options.compactToolbar] - responsive toolbar compaction mode (default: auto)
+     * @param {number}      [options.followGuardLeftRatio] - left follow guard ratio (default: 0.35)
+     * @param {number}      [options.followGuardRightRatio] - right follow guard ratio (default: 0.65)
+     * @param {number}      [options.followTargetRatio] - target ratio for viewport centering (default: 0.5)
+     * @param {number}      [options.followCatchupDurationMs] - follow catchup tween duration (default: 240)
+     * @param {number}      [options.followCatchupSeekDurationMs] - slower follow tween after manual seek (default: 360)
+     * @param {number}      [options.smoothLerp] - smooth mode lerp factor (default: 0.18)
+     * @param {number}      [options.smoothSeekLerp] - smooth mode lerp after manual seek (default: 0.08)
+     * @param {number}      [options.smoothMinStepRatio] - smooth min step ratio (default: 0.03)
+     * @param {number}      [options.smoothSeekMinStepRatio] - smooth min step ratio after seek (default: 0.008)
+     * @param {number}      [options.smoothSeekFocusMs] - slow-follow window after manual seek (default: 1400)
+     * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
      */
     constructor(container, options = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
         this.container = container;
         this.options = options;
+        /** @type {PlayerState | null} */
         this._state = null;
         this._events = new EventTarget();
         this.annotations = new AnnotationLayer();
@@ -87,11 +89,11 @@ export class BirdNETPlayer {
     async _init() {
         // 1. Inject player DOM (pass options for section visibility)
         this.container.innerHTML = createPlayerHTML(this.options);
-        this.root = this.container.querySelector('.daw-shell');
+        this.root = /** @type {HTMLElement} */ (this.container.querySelector('.daw-shell'));
 
         // 2. Resolve WaveSurfer (option → global → CDN import)
         const WaveSurfer = this.options.WaveSurfer
-            || window.WaveSurfer
+            || /** @type {any} */ (window).WaveSurfer
             || (await import(/* @vite-ignore */ WAVESURFER_CDN)).default;
 
         // 3. Create internal state machine
@@ -118,13 +120,13 @@ export class BirdNETPlayer {
     /** Load audio from a URL (http, blob:, data: URLs all supported) */
     async loadUrl(url) {
         await this.ready;
-        return this._state.loadUrl(url);
+        return this._state?.loadUrl(url);
     }
 
     /** Load audio from a File object (e.g. from an <input type="file">) */
     async loadFile(file) {
         await this.ready;
-        return this._state._handleFileSelect({ target: { files: [file] } });
+        return this._state?._handleFileSelect({ target: { files: [file] } });
     }
 
     /** Current playback time in seconds */
@@ -273,30 +275,30 @@ export class BirdNETPlayer {
      * Inject a pre-computed spectrogram as raw data (Float32Array or base64-encoded).
      * The player applies its own colorization pipeline (contrast, color map).
      *
-     * @param {Float32Array|ArrayBuffer|string} data — spectrogram values.
+     * @param {Float32Array|ArrayBuffer|string} data - spectrogram values.
      *   If string, decoded as base64 → Float32 (little-endian).
-     * @param {number} nFrames — number of time frames
-     * @param {number} nMels   — number of frequency bins
+     * @param {number} nFrames - number of time frames
+     * @param {number} nMels   - number of frequency bins
      * @param {Object} [options]
-     * @param {string} [options.mode='perch'] — 'perch'|'classic' (affects freq axis labels)
-     * @param {number} [options.sampleRate]   — sample rate for freq labels (default: from audio)
+     * @param {string} [options.mode='perch'] - 'perch'|'classic' (affects freq axis labels)
+     * @param {number} [options.sampleRate]   - sample rate for freq labels (default: from audio)
      */
     async setSpectrogramData(data, nFrames, nMels, options = {}) {
         await this.ready;
-        return this._state._setExternalSpectrogram(data, nFrames, nMels, options);
+        return this._state?._setExternalSpectrogram(data, nFrames, nMels, options);
     }
 
     /**
      * Inject a pre-rendered spectrogram image (bypasses all DSP + colorization).
      *
-     * @param {string|HTMLImageElement|HTMLCanvasElement} image — base64 data-URL,
+     * @param {string|HTMLImageElement|HTMLCanvasElement} image - base64 data-URL,
      *   regular URL, or an already-loaded Image/Canvas element.
      * @param {Object} [options]
-     * @param {number} [options.sampleRate] — for freq labels
+     * @param {number} [options.sampleRate] - for freq labels
      */
     async setSpectrogramImage(image, options = {}) {
         await this.ready;
-        return this._state._setExternalSpectrogramImage(image, options);
+        return this._state?._setExternalSpectrogramImage(image, options);
     }
 
     /**
@@ -304,6 +306,7 @@ export class BirdNETPlayer {
      */
     async clearExternalSpectrogram() {
         await this.ready;
+        if (!this._state) return;
         this._state._externalSpectrogram = false;
         if (this._state.audioBuffer) this._state._generateSpectrogram();
     }

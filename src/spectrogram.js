@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════
-// spectrogram.js — Spectrogram computation, coloring, and rendering
+// spectrogram.js - Spectrogram computation, coloring, and rendering
 // ═══════════════════════════════════════════════════════════════════════
 
 import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
 import { getTimeGridSteps } from './utils.js';
 import { buildMelFrequencies, computeSpectrogram } from './dsp.js';
 
-// Worker constructor — loaded lazily via Vite's ?worker&inline.
+// Worker constructor - loaded lazily via Vite's ?worker&inline.
 // Dynamic import so Node.js tests (no Vite) don't crash on this module.
 let _WorkerCtor = null;
 let _workerCtorResolved = false;
@@ -227,14 +227,20 @@ export class GpuColorizer {
         gl.linkProgram(p);
         gl.deleteShader(vs); gl.deleteShader(fs);
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { this._gl = null; return; }
+        /** @type {WebGLProgram | null} */
         this._prog = p;
 
+        /** @type {WebGLUniformLocation | null} */
         this._uFloor    = gl.getUniformLocation(p, 'u_floor');
+        /** @type {WebGLUniformLocation | null} */
         this._uRcpRange = gl.getUniformLocation(p, 'u_rcpRange');
+        /** @type {WebGLUniformLocation | null} */
         this._uGray     = gl.getUniformLocation(p, 'u_gray');
+        /** @type {WebGLUniformLocation | null} */
         this._uLut      = gl.getUniformLocation(p, 'u_lut');
 
         // Fullscreen quad VAO
+        /** @type {WebGLVertexArrayObject | null} */
         const vao = gl.createVertexArray();
         gl.bindVertexArray(vao);
         const buf = gl.createBuffer();
@@ -245,14 +251,22 @@ export class GpuColorizer {
         gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
         this._vao = vao;
 
+        /** @type {WebGLTexture | null} */
         this._grayTex = gl.createTexture();
+        /** @type {WebGLTexture | null} */
         this._lutTex  = gl.createTexture();
-        this._w = 0; this._h = 0;
+        /** @type {number} */
+        this._w = 0;
+        /** @type {number} */
+        this._h = 0;
         this._lutScheme = null;
     }
 
     /** @private */ _sh(type, src) {
-        const gl = this._gl, s = gl.createShader(type);
+        const gl = this._gl;
+        if (!gl) return null;
+        const s = gl.createShader(type);
+        if (!s) return null;
         gl.shaderSource(s, src); gl.compileShader(s);
         if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { gl.deleteShader(s); return null; }
         return s;
@@ -301,7 +315,7 @@ export class GpuColorizer {
     /** Render colorized spectrogram. floor01/ceil01 ∈ [0,1]. ~0.1 ms. */
     render(floor01, ceil01) {
         const gl = this._gl;
-        if (!gl || !this._w) return;
+        if (!gl || !this._w || !this._prog || !this._vao) return;
         gl.viewport(0, 0, this._w, this._h);
         gl.useProgram(this._prog);
         gl.bindVertexArray(this._vao);
@@ -321,10 +335,10 @@ export class GpuColorizer {
 
     dispose() {
         const gl = this._gl; if (!gl) return;
-        gl.deleteTexture(this._grayTex);
-        gl.deleteTexture(this._lutTex);
-        gl.deleteProgram(this._prog);
-        gl.deleteVertexArray(this._vao);
+        if (this._grayTex) gl.deleteTexture(this._grayTex);
+        if (this._lutTex) gl.deleteTexture(this._lutTex);
+        if (this._prog) gl.deleteProgram(this._prog);
+        if (this._vao) gl.deleteVertexArray(this._vao);
         this._gl = null;
     }
 }
@@ -364,7 +378,7 @@ export function updateSpectrogramStats(spectrogramData) {
 export function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentile = 98) {
     if (!spectrogramData || spectrogramData.length === 0) return { logMin: 0, logMax: 1 };
 
-    // Sub-sample for speed – max ~200k values
+    // Sub-sample for speed - max ~200k values
     const stride = Math.max(1, Math.floor(spectrogramData.length / 200000));
     const mapped = [];
     for (let i = 0; i < spectrogramData.length; i += stride) {
@@ -393,8 +407,8 @@ export function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentil
  * @param {number} nFrames
  * @param {number} nMels
  * @param {number} sampleRate
- * @param {string} [spectrogramMode='perch'] – 'perch' (mel) or 'classic' (linear)
- * @param {number} [energyThreshold=0.08] – fraction of peak-bin energy
+ * @param {string} [spectrogramMode='perch'] - 'perch' (mel) or 'classic' (linear)
+ * @param {number} [energyThreshold=0.08] - fraction of peak-bin energy
  */
 export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, spectrogramMode = 'perch', energyThreshold = 0.08) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
@@ -430,7 +444,7 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
         }
     }
 
-    // Map bin to Hz — different for mel vs linear mode
+    // Map bin to Hz - different for mel vs linear mode
     let detectedHz;
     if (spectrogramMode === 'classic') {
         // Linear bins: bin k → k / nMels * (sampleRate / 2)
@@ -485,7 +499,7 @@ function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {
 // ─── Base Image Builder (2-stage pipeline) ──────────────────────────
 
 /**
- * Stage 1 — Expensive, done ONCE per audio / fftSize / maxFreq change.
+ * Stage 1 - Expensive, done ONCE per audio / fftSize / maxFreq change.
  * Converts PCEN data → 8-bit grayscale image (Uint8Array) using the
  * absolute log-range.  Frame-averaging and mel→y mapping happens here.
  */
@@ -555,7 +569,7 @@ export function buildSpectrogramGrayscale({
 }
 
 /**
- * Stage 2 — Cheap JS fallback, called on every floor/ceil/colorScheme change.
+ * Stage 2 - Cheap JS fallback, called on every floor/ceil/colorScheme change.
  * Builds a 256-entry RGBA look-up table, then paints the grayscale map.
  */
 export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
@@ -589,7 +603,7 @@ export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     return canvas;
 }
 
-/** Legacy wrapper — builds both stages in one call. */
+/** Legacy wrapper - builds both stages in one call. */
 export function buildSpectrogramBaseImage({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq, currentColorScheme,
@@ -600,6 +614,7 @@ export function buildSpectrogramBaseImage({
         sampleRateHz, maxFreq,
         spectrogramAbsLogMin: spectrogramLogMin,
         spectrogramAbsLogMax: spectrogramLogMax,
+        spectrogramMode: undefined,
     });
     if (!grayInfo) return null;
     return colorizeSpectrogram(grayInfo, 0, 1, currentColorScheme);
@@ -637,12 +652,36 @@ export function renderSpectrogram({
     const x0 = Math.round(frameCenterSec * pixelsPerSecond);   // start pixel
     const drawWidth = Math.round(spectrogramFrames * hopSize / sampleRate * pixelsPerSecond);
 
-    ctx.imageSmoothingEnabled = drawWidth < baseCanvas.width;
-    ctx.drawImage(
-        baseCanvas,
-        0, 0, baseCanvas.width, baseCanvas.height,
-        x0, 0, drawWidth, height,
-    );
+    // Two-pass rendering when we want crisp horizontal pixels (zoomed in)
+    // but the vertical axis needs smooth interpolation (base height ≠ display height).
+    // A single drawImage with imageSmoothingEnabled=false would apply nearest-neighbor
+    // to BOTH axes, creating visible horizontal banding artifacts (160→200px etc.).
+    const wantCrispH = drawWidth >= baseCanvas.width;
+    const needsVerticalScale = height !== baseCanvas.height;
+
+    if (wantCrispH && needsVerticalScale) {
+        // Pass 1: scale vertically with bilinear (smooth frequency axis)
+        const oc = typeof OffscreenCanvas !== 'undefined'
+            ? new OffscreenCanvas(baseCanvas.width, height)
+            : (() => { const c = document.createElement('canvas'); c.width = baseCanvas.width; c.height = height; return c; })();
+        const octx = oc.getContext('2d');
+        if (!octx) return;
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = 'high';
+        octx.drawImage(baseCanvas, 0, 0, baseCanvas.width, baseCanvas.height,
+                                   0, 0, baseCanvas.width, height);
+        // Pass 2: scale horizontally with nearest-neighbor (crisp time axis)
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(oc, 0, 0, baseCanvas.width, height,
+                          x0, 0, drawWidth, height);
+    } else {
+        ctx.imageSmoothingEnabled = !wantCrispH;
+        ctx.drawImage(
+            baseCanvas,
+            0, 0, baseCanvas.width, baseCanvas.height,
+            x0, 0, drawWidth, height,
+        );
+    }
 
     drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond });
 }
@@ -655,7 +694,7 @@ export function createSpectrogramProcessor() {
     let requestCounter = 0;
     const pendingRequests = new Map();
 
-    // ── Main-thread fallback — delegates directly to dsp.js ────────
+    // ── Main-thread fallback - delegates directly to dsp.js ────────
     const computeMainThread = (channelData, options) => {
         return computeSpectrogram({
             channelData: channelData,
@@ -663,7 +702,7 @@ export function createSpectrogramProcessor() {
         });
     };
 
-    // ── Worker setup — uses Vite-inlined module Worker ──────────────
+    // ── Worker setup - uses Vite-inlined module Worker ──────────────
     const ensureWorker = async () => {
         if (worker || workerFailed) return;
         try {
