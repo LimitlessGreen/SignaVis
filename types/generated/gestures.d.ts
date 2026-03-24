@@ -6,7 +6,7 @@ export class GestureRecognizer {
     lastTapTime: number;
     lastTapX: number;
     lastTapY: number;
-    touchMode: string;
+    touchMode: string | null;
     swipeStartX: number;
     swipeStartY: number;
     swipeLastX: number;
@@ -15,7 +15,7 @@ export class GestureRecognizer {
     lastPinchCenter: {
         x: number;
         y: number;
-    };
+    } | null;
     on(event: any, callback: any): () => void;
     off(event: any, callback: any): void;
     emit(event: any, detail: any): void;

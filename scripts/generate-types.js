@@ -38,6 +38,7 @@ try {
             '--target es2020',
             '--lib dom,es2020',
             '--skipLibCheck',
+            '--ignoreConfig',
         ].join(' '),
         { cwd: rootDir, stdio: 'inherit' },
     );

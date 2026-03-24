@@ -1,6 +1,12 @@
 export class PlayerState {
-    constructor(container: any, WaveSurfer: any, emitHostEvent?: any, options?: {});
-    container: any;
+    /**
+     * @param {HTMLElement} container
+     * @param {any} WaveSurfer
+     * @param {((event: string, detail: any) => void) | null} [emitHostEvent]
+     * @param {PlayerOptions} [options]
+     */
+    constructor(container: HTMLElement, WaveSurfer: any, emitHostEvent?: ((event: string, detail: any) => void) | null, options?: PlayerOptions);
+    container: HTMLElement;
     d: {
         openFileBtn: any;
         toolbarRoot: any;
@@ -59,14 +65,14 @@ export class PlayerState {
         autoFreqBtn: any;
     };
     WaveSurfer: any;
-    _emitHostEvent: any;
-    options: {};
-    _viewMode: any;
+    _emitHostEvent: ((event: string, detail: any) => void) | null;
+    options: PlayerOptions;
+    _viewMode: string;
     _showWaveform: boolean;
     _showSpectrogram: boolean;
     _showOverview: boolean;
     _transportOverlay: boolean;
-    _compactToolbarMode: any;
+    _compactToolbarMode: string;
     _compactToolbarOpen: boolean;
     _compactToolbarLayoutRaf: number;
     _showWaveformTimeline: boolean;
@@ -82,17 +88,17 @@ export class PlayerState {
         dispose: () => void;
     };
     colorizer: GpuColorizer;
-    audioBuffer: any;
+    audioBuffer: AudioBuffer | null;
     wavesurfer: any;
     spectrogramData: any;
     spectrogramFrames: number;
     spectrogramMels: number;
-    spectrogramBaseCanvas: HTMLCanvasElement;
+    spectrogramBaseCanvas: HTMLCanvasElement | null;
     spectrogramGrayInfo: {
         gray: Uint8Array<ArrayBuffer>;
         width: number;
         height: number;
-    };
+    } | null;
     _gpuReady: boolean;
     spectrogramAbsLogMin: number;
     spectrogramAbsLogMax: number;
@@ -122,17 +128,18 @@ export class PlayerState {
         type: string;
         freqMinHz: number;
         freqMaxHz: number;
-    };
-    _activeSegmentStart: number;
-    _activeSegmentEnd: number;
+    } | null;
+    _activeSegmentStart: number | null;
+    _activeSegmentEnd: number | null;
     _suppressNextPauseHandler: boolean;
     _segmentPlayToken: number;
     _customSegmentPlayback: {
         token: number;
-        ctx: any;
-        source: any;
-        bandpass: any;
-        gain: any;
+        ctx: AudioContext;
+        /** @type {AudioBufferSourceNode | null} */
+        source: AudioBufferSourceNode | null;
+        bandpass: BiquadFilterNode;
+        gain: GainNode;
         startSec: number;
         endSec: number;
         startAtCtx: number;
@@ -140,7 +147,7 @@ export class PlayerState {
         sourceGeneration: number;
         rafId: number;
         currentTimeSec: number;
-    };
+    } | null;
     _smoothSeekFocusUntil: number;
     _lastTimeupdateEmitAt: number;
     _lastSelectionEmitAt: number;
@@ -157,10 +164,11 @@ export class PlayerState {
         target: number;
         startedAt: number;
         duration: any;
-    };
+    } | null;
     _perf: {
         enabled: boolean;
-        panel: any;
+        /** @type {HTMLDivElement | null} */
+        panel: HTMLDivElement | null;
         intervalId: number;
         frames: number;
         fps: number;
@@ -175,27 +183,11 @@ export class PlayerState {
         blockedTransitions: number;
         lastTransition: string;
     };
-    draggingPlayhead: boolean;
-    draggingPlayheadSource: any;
-    draggingViewport: boolean;
-    viewportPanStartX: number;
-    viewportPanStartScroll: number;
-    suppressSeekClick: boolean;
-    _blockSeekClickUntil: number;
-    overviewMode: any;
-    overviewDragStartX: number;
-    overviewDragStart: number;
-    overviewDragEnd: number;
-    _overviewDragMoved: boolean;
-    _overviewSuppressClickUntil: number;
+    interaction: InteractionState;
     _overviewViewportRafId: number;
     _overviewNeedsFinalRedraw: boolean;
     waveformDisplayHeight: number;
     spectrogramDisplayHeight: number;
-    viewResizeMode: any;
-    viewResizeStartY: number;
-    viewResizeStartWaveformHeight: number;
-    viewResizeStartSpectrogramHeight: number;
     _viewResizeFrameId: number;
     _viewResizeNeedsWaveformRedraw: boolean;
     _viewResizeNeedsSpectrogramRedraw: boolean;
@@ -210,10 +202,10 @@ export class PlayerState {
     _setTransportState(nextState: any, reason?: string): void;
     _scheduleUiUpdate({ time, fromPlayback, centerView, emitSeek, immediate, }?: {
         time?: any;
-        fromPlayback?: boolean;
-        centerView?: boolean;
-        emitSeek?: boolean;
-        immediate?: boolean;
+        fromPlayback?: boolean | undefined;
+        centerView?: boolean | undefined;
+        emitSeek?: boolean | undefined;
+        immediate?: boolean | undefined;
     }): void;
     _flushUiUpdate(_ts: any): void;
     _queryDom(root: any): {
@@ -281,7 +273,7 @@ export class PlayerState {
     _stopPlayback(): void;
     playSegment(startSec: any, endSec: any, options?: {}): void;
     playBandpassedSegment(startSec: any, endSec: any, freqMinHz: any, freqMaxHz: any, options?: {}): void;
-    _startCustomSegmentSource(playback: any, source?: any, startAtSec?: any): void;
+    _startCustomSegmentSource(playback: any, source?: null, startAtSec?: null): void;
     _loopCustomSegmentPlayback(playback: any): void;
     updateActiveSegmentFromLabel(label: any): void;
     _retargetCustomSegmentPlayback({ start, end, freqMinHz, freqMaxHz }: {
@@ -291,7 +283,12 @@ export class PlayerState {
         freqMaxHz: any;
     }): void;
     _restartCustomSegmentSource(playback: any, atSec: any): void;
-    _stopCustomSegmentPlayback(reason?: string, targetTimeSec?: any, options?: {}): void;
+    /**
+     * @param {string} [reason]
+     * @param {number | null} [targetTimeSec]
+     * @param {Object} [options]
+     */
+    _stopCustomSegmentPlayback(reason?: string, targetTimeSec?: number | null, options?: Object): void;
     _clearPlaybackFilter(): void;
     _seekToTime(timeSec: any, centerView?: boolean, options?: {}): void;
     _seekByDelta(deltaSec: any): void;
@@ -310,7 +307,7 @@ export class PlayerState {
      * Mode 2: Pre-rendered image — bypasses entire DSP + colorization pipeline.
      * Contrast/color controls have no effect; the image is drawn as-is.
      */
-    _setExternalSpectrogramImage(image: any, options?: {}): Promise<any>;
+    _setExternalSpectrogramImage(image: any, options?: {}): Promise<void>;
     _mergeProgressiveResults(chunkResults: any, nMels: any): {
         data: Float32Array<ArrayBuffer>;
         nFrames: number;
@@ -329,7 +326,7 @@ export class PlayerState {
     _buildSpectrogramGrayscale(): void;
     /** Stage 2 — fast: grayscale → colored canvas.
      *  GPU path: ~0.1 ms.  JS fallback: ~20-80 ms. */
-    _buildSpectrogramBaseImage(): HTMLCanvasElement;
+    _buildSpectrogramBaseImage(): HTMLCanvasElement | null;
     _drawSpectrogram(): void;
     _requestSpectrogramRedraw(): void;
     _drawMainWaveform(): void;
@@ -371,13 +368,13 @@ export class PlayerState {
     _updateViewResize(clientY: any): void;
     _stopViewResize(): void;
     _queueResizeRedraw({ redrawWaveform, redrawSpectrogram }?: {
-        redrawWaveform?: boolean;
-        redrawSpectrogram?: boolean;
+        redrawWaveform?: boolean | undefined;
+        redrawSpectrogram?: boolean | undefined;
     }): void;
     _flushResizeRedraw(force: any): void;
     _setPlayState(text: any): void;
     _shouldCompactToolbarBeActive(): boolean;
-    _isCompactToolbarActive(): any;
+    _isCompactToolbarActive(): boolean;
     _queueCompactToolbarLayoutRefresh(): void;
     _refreshCompactToolbarLayout(): void;
     _setCompactToolbarOpen(nextOpen: any): void;
@@ -392,4 +389,25 @@ export class PlayerState {
     _bindEvents(): void;
     _bindTouchGestures(): void;
 }
+export type PlayerOptions = {
+    viewMode?: string | undefined;
+    showOverview?: boolean | undefined;
+    transportOverlay?: boolean | undefined;
+    compactToolbar?: string | undefined;
+    showWaveformTimeline?: boolean | undefined;
+    enableTouchGestures?: boolean | undefined;
+    enablePerfOverlay?: boolean | undefined;
+    followGuardLeftRatio?: number | undefined;
+    followGuardRightRatio?: number | undefined;
+    followTargetRatio?: number | undefined;
+    followCatchupDurationMs?: number | undefined;
+    followCatchupSeekDurationMs?: number | undefined;
+    smoothLerp?: number | undefined;
+    smoothSeekLerp?: number | undefined;
+    smoothMinStepRatio?: number | undefined;
+    smoothSeekMinStepRatio?: number | undefined;
+    smoothSeekFocusMs?: number | undefined;
+    enableProgressiveSpectrogram?: boolean | undefined;
+};
 import { GpuColorizer } from './spectrogram.js';
+import { InteractionState } from './interactionState.js';

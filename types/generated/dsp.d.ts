@@ -17,17 +17,17 @@ export function fftMagnitudeSpectrum(audio: any, offset: any, winLength: any, ff
  * Compute a full spectrogram from raw audio samples.
  *
  * @param {Object} params
- * @param {ArrayBuffer|Float32Array} params.channelData — mono audio samples
+ * @param {ArrayBuffer|Float32Array} params.channelData - mono audio samples
  * @param {number} params.fftSize
  * @param {number} params.sampleRate
- * @param {number} params.frameRate      — frames per second
- * @param {number} params.nMels          — mel bins (Perch mode)
+ * @param {number} params.frameRate      - frames per second
+ * @param {number} params.nMels          - mel bins (Perch mode)
  * @param {number} params.pcenGain
  * @param {number} params.pcenBias
  * @param {number} params.pcenRoot
  * @param {number} params.pcenSmoothing
- * @param {string} [params.spectrogramMode='perch'] — 'perch' or 'classic'
- * @param {Float32Array} [params.initialSmooth] — carry-over PCEN smooth state from previous chunk
+ * @param {string} [params.spectrogramMode='perch'] - 'perch' or 'classic'
+ * @param {Float32Array} [params.initialSmooth] - carry-over PCEN smooth state from previous chunk
  *
  * @returns {{ data: Float32Array, nFrames: number, nMels: number, smoothState?: Float32Array }}
  */
@@ -41,8 +41,8 @@ export function computeSpectrogram(params: {
     pcenBias: number;
     pcenRoot: number;
     pcenSmoothing: number;
-    spectrogramMode?: string;
-    initialSmooth?: Float32Array;
+    spectrogramMode?: string | undefined;
+    initialSmooth?: Float32Array<ArrayBufferLike> | undefined;
 }): {
     data: Float32Array;
     nFrames: number;

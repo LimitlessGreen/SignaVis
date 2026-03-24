@@ -22,12 +22,12 @@ export function autoContrastStats(spectrogramData: Float32Array, loPercentile?: 
  * @param {number} nFrames
  * @param {number} nMels
  * @param {number} sampleRate
- * @param {string} [spectrogramMode='perch'] – 'perch' (mel) or 'classic' (linear)
- * @param {number} [energyThreshold=0.08] – fraction of peak-bin energy
+ * @param {string} [spectrogramMode='perch'] - 'perch' (mel) or 'classic' (linear)
+ * @param {number} [energyThreshold=0.08] - fraction of peak-bin energy
  */
 export function detectMaxFrequency(spectrogramData: Float32Array, nFrames: number, nMels: number, sampleRate: number, spectrogramMode?: string, energyThreshold?: number): number;
 /**
- * Stage 1 — Expensive, done ONCE per audio / fftSize / maxFreq change.
+ * Stage 1 - Expensive, done ONCE per audio / fftSize / maxFreq change.
  * Converts PCEN data → 8-bit grayscale image (Uint8Array) using the
  * absolute log-range.  Frame-averaging and mel→y mapping happens here.
  */
@@ -44,13 +44,13 @@ export function buildSpectrogramGrayscale({ spectrogramData, spectrogramFrames, 
     gray: Uint8Array<ArrayBuffer>;
     width: number;
     height: number;
-};
+} | null;
 /**
- * Stage 2 — Cheap JS fallback, called on every floor/ceil/colorScheme change.
+ * Stage 2 - Cheap JS fallback, called on every floor/ceil/colorScheme change.
  * Builds a 256-entry RGBA look-up table, then paints the grayscale map.
  */
-export function colorizeSpectrogram(grayInfo: any, floor01: any, ceil01: any, colorScheme: any): HTMLCanvasElement;
-/** Legacy wrapper — builds both stages in one call. */
+export function colorizeSpectrogram(grayInfo: any, floor01: any, ceil01: any, colorScheme: any): HTMLCanvasElement | null;
+/** Legacy wrapper - builds both stages in one call. */
 export function buildSpectrogramBaseImage({ spectrogramData, spectrogramFrames, spectrogramMels, sampleRateHz, maxFreq, currentColorScheme, normalizeViews, spectrogramLogMin, spectrogramLogMax, }: {
     spectrogramData: any;
     spectrogramFrames: any;
@@ -61,7 +61,7 @@ export function buildSpectrogramBaseImage({ spectrogramData, spectrogramFrames, 
     normalizeViews: any;
     spectrogramLogMin: any;
     spectrogramLogMax: any;
-}): HTMLCanvasElement;
+}): HTMLCanvasElement | null;
 export function renderSpectrogram({ duration, spectrogramCanvas, pixelsPerSecond, canvasHeight, baseCanvas, sampleRate, frameRate, spectrogramFrames, }: {
     duration: any;
     spectrogramCanvas: any;
@@ -84,17 +84,26 @@ export function createSpectrogramProcessor(): {
 };
 export class GpuColorizer {
     _canvas: HTMLCanvasElement;
-    _gl: WebGL2RenderingContext;
+    _gl: WebGL2RenderingContext | null;
     _maxTex: any;
-    _prog: WebGLProgram;
-    _uFloor: WebGLUniformLocation;
-    _uRcpRange: WebGLUniformLocation;
-    _uGray: WebGLUniformLocation;
-    _uLut: WebGLUniformLocation;
-    _vao: WebGLVertexArrayObject;
-    _grayTex: WebGLTexture;
-    _lutTex: WebGLTexture;
+    /** @type {WebGLProgram | null} */
+    _prog: WebGLProgram | null;
+    /** @type {WebGLUniformLocation | null} */
+    _uFloor: WebGLUniformLocation | null;
+    /** @type {WebGLUniformLocation | null} */
+    _uRcpRange: WebGLUniformLocation | null;
+    /** @type {WebGLUniformLocation | null} */
+    _uGray: WebGLUniformLocation | null;
+    /** @type {WebGLUniformLocation | null} */
+    _uLut: WebGLUniformLocation | null;
+    _vao: WebGLVertexArrayObject | undefined;
+    /** @type {WebGLTexture | null} */
+    _grayTex: WebGLTexture | null;
+    /** @type {WebGLTexture | null} */
+    _lutTex: WebGLTexture | null;
+    /** @type {number} */
     _w: number;
+    /** @type {number} */
     _h: number;
     _lutScheme: any;
     /** @private */ private _sh;

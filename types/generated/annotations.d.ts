@@ -9,7 +9,7 @@
  */
 export class AnnotationLayer {
     player: any;
-    overlay: HTMLDivElement;
+    overlay: HTMLDivElement | null;
     annotations: any[];
     _liveLinkedId: any;
     _unsubs: any[];
@@ -23,7 +23,7 @@ export class AnnotationLayer {
         pending: boolean;
         moved: boolean;
         forceSuppressClick: boolean;
-    };
+    } | null;
     _suppressClickUntil: number;
     attach(player: any): void;
     detach(): void;
@@ -32,7 +32,7 @@ export class AnnotationLayer {
     clear(): void;
     remove(id: any): void;
     getAll(): any[];
-    setLiveLinkedId(id?: any): void;
+    setLiveLinkedId(id?: null): void;
     highlightActiveRegion(currentTime: any): void;
     exportRavenFormat(regions?: any[]): string;
     render(): void;
@@ -63,18 +63,18 @@ export class AnnotationLayer {
  */
 export class SpectrogramLabelLayer {
     player: any;
-    overlay: HTMLDivElement;
+    overlay: HTMLDivElement | null;
     labels: any[];
     _liveLinkedId: any;
     _unsubs: any[];
     _domCleanups: any[];
-    _draftEl: HTMLDivElement;
+    _draftEl: HTMLDivElement | null;
     _drawing: {
         startTime: any;
         startFreq: number;
         endTime: any;
         endFreq: number;
-    };
+    } | null;
     _editing: {
         id: any;
         mode: any;
@@ -85,7 +85,7 @@ export class SpectrogramLabelLayer {
         pending: boolean;
         moved: boolean;
         forceSuppressClick: boolean;
-    };
+    } | null;
     _counter: number;
     _suppressClickUntil: number;
     attach(player: any): void;
@@ -95,7 +95,7 @@ export class SpectrogramLabelLayer {
     clear(): void;
     remove(id: any): void;
     getAll(): any[];
-    setLiveLinkedId(id?: any): void;
+    setLiveLinkedId(id?: null): void;
     highlightActiveLabel(currentTime: any): void;
     render(): void;
     _createLabelElement(label: any, canvasWidth: any, canvasHeight: any): HTMLDivElement;
@@ -117,7 +117,7 @@ export class SpectrogramLabelLayer {
         freqMax: number;
         label: any;
         color: string;
-    };
+    } | null;
     _clearDraft(): void;
     _startEditInteraction(labelId: any, mode: any, clientX: any, clientY: any, element: any): void;
     _updateEditInteraction(clientX: any, clientY: any): void;
@@ -137,19 +137,19 @@ export class SpectrogramLabelLayer {
     };
 }
 export type AnnotationRegion = {
-    id?: string;
+    id?: string | undefined;
     start: number;
     end: number;
-    species?: string;
-    confidence?: number;
-    color?: string;
+    species?: string | undefined;
+    confidence?: number | undefined;
+    color?: string | undefined;
 };
 export type SpectrogramLabel = {
-    id?: string;
+    id?: string | undefined;
     start: number;
     end: number;
     freqMin: number;
     freqMax: number;
-    label?: string;
-    color?: string;
+    label?: string | undefined;
+    color?: string | undefined;
 };
