@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  package-check:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,28 +20,40 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build library + types
+        run: npm run build
+
       - name: Check version sync
         run: bash ./scripts/check-version-sync.sh
 
-      - name: Check src/dist sync
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch origin "${{ github.base_ref }}"
-            bash ./scripts/check-dist-sync.sh "origin/${{ github.base_ref }}"
-          else
-            bash ./scripts/check-dist-sync.sh "origin/main"
-          fi
-
       - name: Check npm package archive
         run: npm pack
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/
+            types/
 
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Build Python package
+      - name: Sync & check Python package
         run: |
+          bash ./scripts/sync-assets.sh --no-build
           cd python-wrapper
           python -m pip install --upgrade pip build twine
           python -m build
@@ -49,7 +61,7 @@ jobs:
 
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package-check
+    needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -63,21 +75,20 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
-
-      - name: Setup npm for trusted publishing
-        run: |
-          npm install -g npm@11.5.1
-          node --version
-          npm --version
 
       - name: Publish npm
         run: npm publish --access public
 
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package-check
+    needs: build-and-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -88,19 +99,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
 
-      - name: Build Python package
+      - name: Sync assets & publish Python package
         run: |
+          bash ./scripts/sync-assets.sh --no-build
           cd python-wrapper
           python -m pip install --upgrade pip build twine
           python -m build
           python -m twine check dist/*
-
-      - name: Publish to PyPI
-        run: |
-          cd python-wrapper
           python -m twine upload dist/*
         env:
           TWINE_USERNAME: __token__

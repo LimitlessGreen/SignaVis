@@ -26,9 +26,10 @@ function collectDtsFiles(dir, out = []) {
 }
 
 try {
+    const tscBin = path.join(rootDir, 'node_modules', '.bin', 'tsc');
     execSync(
         [
-            'npx --yes -p typescript tsc',
+            JSON.stringify(tscBin),
             'src/BirdNETPlayer.js',
             '--declaration',
             '--allowJs',

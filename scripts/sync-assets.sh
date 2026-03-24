@@ -9,8 +9,10 @@ cd "${ROOT_DIR}"
 
 ASSETS_DIR="${ROOT_DIR}/python-wrapper/audio_workbench/assets"
 
-echo "▸ Building JS/CSS …"
-npm run build
+if [[ "${1:-}" != "--no-build" ]]; then
+  echo "▸ Building JS/CSS …"
+  npm run build
+fi
 
 echo "▸ Syncing dist → python-wrapper assets …"
 cp dist/birdnet-player.iife.js "${ASSETS_DIR}/birdnet-player.iife.js"
