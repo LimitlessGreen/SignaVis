@@ -86,11 +86,12 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
     `;
     host.appendChild(panel);
 
-    const input = panel.querySelector('.label-name-input');
-    const colorInput = panel.querySelector('.label-color-input');
-    const sugg = panel.querySelector('.label-name-suggestions');
-    const saveBtn = panel.querySelector('.label-name-btn.save');
-    const cancelBtn = panel.querySelector('.label-name-btn.cancel');
+    const input = /** @type {HTMLInputElement} */ (panel.querySelector('.label-name-input'));
+    const colorInput = /** @type {HTMLInputElement} */ (panel.querySelector('.label-color-input'));
+    const sugg = /** @type {HTMLElement | null} */ (panel.querySelector('.label-name-suggestions'));
+    const saveBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.save'));
+    const cancelBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.cancel'));
+    if (!input || !colorInput) return;
     input.value = String(initialValue || '').trim();
     const initialStyle = getOverlayColorStyle(initialColor);
     colorInput.value = initialStyle?.hex || '#0ea5e9';
@@ -127,7 +128,7 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
             seen.add(name);
             names.push(name);
         }
-        sugg.innerHTML = '';
+        if (sugg) sugg.innerHTML = '';
         for (const item of taxonomy) {
             if (!item?.name) continue;
             const chip = document.createElement('button');
@@ -139,7 +140,7 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
                 if (item.color) colorInput.value = getOverlayColorStyle(item.color)?.hex || colorInput.value;
                 submit(item.name);
             });
-            sugg.appendChild(chip);
+            sugg?.appendChild(chip);
         }
         for (const name of names) {
             const chip = document.createElement('button');
@@ -147,22 +148,22 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
             chip.className = 'label-name-chip';
             chip.textContent = name;
             chip.addEventListener('click', () => submit(name));
-            sugg.appendChild(chip);
+            sugg?.appendChild(chip);
         }
     };
 
     input.addEventListener('input', renderSuggestions);
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        if (/** @type {KeyboardEvent} */ (e).key === 'Enter') {
             e.preventDefault();
             submit(input.value);
-        } else if (e.key === 'Escape') {
+        } else if (/** @type {KeyboardEvent} */ (e).key === 'Escape') {
             e.preventDefault();
             close();
         }
     });
-    saveBtn.addEventListener('click', () => submit(input.value));
-    cancelBtn.addEventListener('click', close);
+    saveBtn?.addEventListener('click', () => submit(input.value));
+    cancelBtn?.addEventListener('click', close);
     setTimeout(() => input.focus(), 0);
     input.select();
     renderSuggestions();
@@ -255,8 +256,9 @@ export class AnnotationLayer {
     highlightActiveRegion(currentTime) {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const start = parseFloat(el.dataset.start || '0');
-            const end = parseFloat(el.dataset.end || '0');
+            const h = /** @type {HTMLElement} */ (el);
+            const start = parseFloat(h.dataset.start || '0');
+            const end = parseFloat(h.dataset.end || '0');
             el.classList.toggle('active', currentTime >= start && currentTime <= end);
         }
     }
@@ -325,8 +327,8 @@ export class AnnotationLayer {
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
             this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform' });
-            const handle = event.target?.closest?.('.annotation-handle');
-            const mode = handle?.dataset?.mode || 'move';
+            const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.annotation-handle');
+            const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
             event.preventDefault();
             event.stopPropagation();
@@ -375,7 +377,8 @@ export class AnnotationLayer {
 
     _updateEditInteraction(clientX) {
         if (!this._editing) return;
-        const region = this.annotations.find((a) => a.id === this._editing.id);
+        const editing = this._editing;
+        const region = this.annotations.find((a) => a.id === editing.id);
         if (!region) return;
         const pps = this.player?._state?.pixelsPerSecond || 100;
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -413,10 +416,11 @@ export class AnnotationLayer {
 
     _finishEditInteraction() {
         if (!this._editing) return;
-        const shouldSuppressClick = this._editing.forceSuppressClick || this._editing.moved;
-        this._editing.element?.classList?.remove('editing');
-        const region = this.annotations.find((a) => a.id === this._editing.id);
-        if (region && this._editing.moved) this.player?._emit?.('annotationupdate', { annotation: { ...region } });
+        const editing = this._editing;
+        const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
+        editing.element?.classList?.remove('editing');
+        const region = this.annotations.find((a) => a.id === editing.id);
+        if (region && editing.moved) this.player?._emit?.('annotationupdate', { annotation: { ...region } });
         this._editing = null;
         if (shouldSuppressClick) {
             this._suppressClickUntil = performance.now() + 250;
@@ -556,8 +560,9 @@ export class SpectrogramLabelLayer {
     highlightActiveLabel(currentTime) {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const start = parseFloat(el.dataset.start || '0');
-            const end = parseFloat(el.dataset.end || '0');
+            const h = /** @type {HTMLElement} */ (el);
+            const start = parseFloat(h.dataset.start || '0');
+            const end = parseFloat(h.dataset.end || '0');
             el.classList.toggle('active', currentTime >= start && currentTime <= end);
         }
     }
@@ -633,8 +638,8 @@ export class SpectrogramLabelLayer {
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
             this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram' });
-            const handle = event.target?.closest?.('.label-handle');
-            const mode = handle?.dataset?.mode || 'move';
+            const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.label-handle');
+            const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
             event.preventDefault();
             event.stopPropagation();
@@ -790,7 +795,8 @@ export class SpectrogramLabelLayer {
 
     _updateEditInteraction(clientX, clientY) {
         if (!this._editing) return;
-        const label = this.labels.find((l) => l.id === this._editing.id);
+        const editing = this._editing;
+        const label = this.labels.find((l) => l.id === editing.id);
         if (!label) return;
 
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -884,10 +890,11 @@ export class SpectrogramLabelLayer {
 
     _finishEditInteraction() {
         if (!this._editing) return;
-        const shouldSuppressClick = this._editing.forceSuppressClick || this._editing.moved;
-        this._editing.element?.classList?.remove('editing');
-        const label = this.labels.find((l) => l.id === this._editing.id);
-        if (label && this._editing.moved) this.player?._emit?.('spectrogramlabelupdate', { label });
+        const editing = this._editing;
+        const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
+        editing.element?.classList?.remove('editing');
+        const label = this.labels.find((l) => l.id === editing.id);
+        if (label && editing.moved) this.player?._emit?.('spectrogramlabelupdate', { label });
         this._editing = null;
         if (shouldSuppressClick) {
             this._suppressClickUntil = performance.now() + 250;

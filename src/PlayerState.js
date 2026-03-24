@@ -34,10 +34,32 @@ import {
     renderFrequencyLabels,
 } from './waveform.js';
 
+/**
+ * @typedef {Object} PlayerOptions
+ * @property {string}  [viewMode]
+ * @property {boolean} [showOverview]
+ * @property {boolean} [transportOverlay]
+ * @property {string}  [compactToolbar]
+ * @property {boolean} [showWaveformTimeline]
+ * @property {boolean} [enableTouchGestures]
+ * @property {boolean} [enablePerfOverlay]
+ * @property {number}  [followGuardLeftRatio]
+ * @property {number}  [followGuardRightRatio]
+ * @property {number}  [followTargetRatio]
+ * @property {number}  [followCatchupDurationMs]
+ * @property {number}  [followCatchupSeekDurationMs]
+ * @property {number}  [smoothLerp]
+ * @property {number}  [smoothSeekLerp]
+ * @property {number}  [smoothMinStepRatio]
+ * @property {number}  [smoothSeekMinStepRatio]
+ * @property {number}  [smoothSeekFocusMs]
+ * @property {boolean} [enableProgressiveSpectrogram]
+ */
+
 // ─── Helper ─────────────────────────────────────────────────────────
 
 async function decodeArrayBuffer(arrayBuffer) {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
+    const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
     if (!Ctor) throw new Error('AudioContext wird von diesem Browser nicht unterstützt.');
     const ctx = new Ctor();
     try {
@@ -47,6 +69,13 @@ async function decodeArrayBuffer(arrayBuffer) {
     }
 }
 
+/**
+ * @param {*} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
 function clampNumber(value, min, max, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -56,6 +85,12 @@ function clampNumber(value, min, max, fallback) {
 // ═════════════════════════════════════════════════════════════════════
 
 export class PlayerState {
+    /**
+     * @param {HTMLElement} container
+     * @param {any} WaveSurfer
+     * @param {((event: string, detail: any) => void) | null} [emitHostEvent]
+     * @param {PlayerOptions} [options]
+     */
     constructor(container, WaveSurfer, emitHostEvent = null, options = {}) {
         if (!container) throw new Error('PlayerState: container element required');
         if (!WaveSurfer) throw new Error('PlayerState: WaveSurfer reference required');
@@ -72,7 +107,7 @@ export class PlayerState {
         this._showSpectrogram = this._viewMode !== 'waveform';
         this._showOverview = this.options.showOverview !== false;
         this._transportOverlay = this.options.transportOverlay === true;
-        this._compactToolbarMode = ['auto', 'on', 'off'].includes(this.options.compactToolbar)
+        this._compactToolbarMode = this.options.compactToolbar && ['auto', 'on', 'off'].includes(this.options.compactToolbar)
             ? this.options.compactToolbar
             : 'auto';
         this._compactToolbarOpen = false;
@@ -137,6 +172,7 @@ export class PlayerState {
         this._followCatchupAnim = null;
         this._perf = {
             enabled: false,
+            /** @type {HTMLDivElement | null} */
             panel: null,
             intervalId: 0,
             frames: 0,
@@ -782,7 +818,7 @@ export class PlayerState {
         }
         this._seekToTime(start, false, { allowCustomPlayback: true });
 
-        const Ctor = window.AudioContext || window.webkitAudioContext;
+        const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
         if (!Ctor) {
             this.playSegment(start, end, { labelId: options?.labelId });
             return;
@@ -814,6 +850,7 @@ export class PlayerState {
         const playback = {
             token,
             ctx,
+            /** @type {AudioBufferSourceNode | null} */
             source: null,
             bandpass,
             gain,
@@ -952,6 +989,11 @@ export class PlayerState {
         this._startCustomSegmentSource(playback, null, atSec);
     }
 
+    /**
+     * @param {string} [reason]
+     * @param {number | null} [targetTimeSec]
+     * @param {Object} [options]
+     */
     _stopCustomSegmentPlayback(reason = 'stopped', targetTimeSec = null, options = {}) {
         const active = this._customSegmentPlayback;
         if (!active) return;
@@ -1235,13 +1277,14 @@ export class PlayerState {
      * Contrast/color controls have no effect; the image is drawn as-is.
      */
     _setExternalSpectrogramImage(image, options = {}) {
-        return new Promise((resolve, reject) => {
+        return /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
             const apply = (img) => {
                 // Draw image onto an offscreen canvas for the rendering pipeline
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth || img.width;
                 canvas.height = img.naturalHeight || img.height;
                 const ctx = canvas.getContext('2d');
+                if (!ctx) { reject(new Error('Could not get 2d context')); return; }
                 ctx.drawImage(img, 0, 0);
 
                 this._externalSpectrogram = true;
@@ -1281,7 +1324,7 @@ export class PlayerState {
             } else {
                 reject(new Error('setSpectrogramImage: unsupported image type'));
             }
-        });
+        }));
     }
 
     _mergeProgressiveResults(chunkResults, nMels) {
@@ -1336,7 +1379,7 @@ export class PlayerState {
             this.spectrogramFrames,
             this.spectrogramMels,
             this.sampleRateHz,
-            this.spectrogramMode || 'perch',
+            this.d.spectrogramModeSelect?.value || 'perch',
         );
         const options = Array.from(this.d.maxFreqSelect.options);
         let best = options[options.length - 1];

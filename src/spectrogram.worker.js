@@ -26,5 +26,5 @@ self.onmessage = (event) => {
         msg.smoothState = result.smoothState.buffer;
         transfer.push(result.smoothState.buffer);
     }
-    self.postMessage(msg, transfer);
+    self.postMessage(msg, /** @type {StructuredSerializeOptions} */ ({ transfer }));
 };
