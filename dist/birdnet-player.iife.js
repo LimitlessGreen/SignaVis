@@ -1407,18 +1407,55 @@ void main() {
     const frameCenterSec = 2 * hopSize / sampleRate;
     const x0 = Math.round(frameCenterSec * pixelsPerSecond);
     const drawWidth = Math.round(spectrogramFrames * hopSize / sampleRate * pixelsPerSecond);
-    ctx.imageSmoothingEnabled = drawWidth < baseCanvas.width;
-    ctx.drawImage(
-      baseCanvas,
-      0,
-      0,
-      baseCanvas.width,
-      baseCanvas.height,
-      x0,
-      0,
-      drawWidth,
-      height
-    );
+    const wantCrispH = drawWidth >= baseCanvas.width;
+    const needsVerticalScale = height !== baseCanvas.height;
+    if (wantCrispH && needsVerticalScale) {
+      const oc = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(baseCanvas.width, height) : (() => {
+        const c = document.createElement("canvas");
+        c.width = baseCanvas.width;
+        c.height = height;
+        return c;
+      })();
+      const octx = oc.getContext("2d");
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = "high";
+      octx.drawImage(
+        baseCanvas,
+        0,
+        0,
+        baseCanvas.width,
+        baseCanvas.height,
+        0,
+        0,
+        baseCanvas.width,
+        height
+      );
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        oc,
+        0,
+        0,
+        baseCanvas.width,
+        height,
+        x0,
+        0,
+        drawWidth,
+        height
+      );
+    } else {
+      ctx.imageSmoothingEnabled = !wantCrispH;
+      ctx.drawImage(
+        baseCanvas,
+        0,
+        0,
+        baseCanvas.width,
+        baseCanvas.height,
+        x0,
+        0,
+        drawWidth,
+        height
+      );
+    }
     drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond });
   }
   function createSpectrogramProcessor() {
