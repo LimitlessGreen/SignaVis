@@ -3,120 +3,260 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Audio Workbench Player Stories</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
-  <script src="https://unpkg.com/wavesurfer@7"></script>
+  <title>Audio Workbench — Storybook</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
   <script src="../dist/birdnet-player.iife.js"></script>
   <link rel="stylesheet" href="../dist/birdnet-player.css" />
   <style>
-    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #eef2f8; color: #182235; }
-    .layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
-    .sidebar { border-right: 1px solid #d0d9e6; background: #f8fbff; padding: 16px; overflow: auto; }
-    .main { padding: 20px; }
-    h1 { margin: 0 0 6px; font-size: 20px; }
-    .muted { color: #52617d; font-size: 13px; margin-bottom: 12px; }
-    .story-list { display: grid; gap: 8px; }
-    .story-btn { text-align: left; border: 1px solid #cad5e5; background: #fff; border-radius: 10px; padding: 10px; cursor: pointer; }
-    .story-btn:hover { background: #f2f7ff; }
-    .story-btn.active { border-color: #0f62fe; box-shadow: 0 0 0 2px rgba(15,98,254,.14); }
-    .story-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
-    .story-desc { font-size: 12px; color: #5f6f8e; }
-    .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-    .panel { background: #fff; border: 1px solid #d4deec; border-radius: 14px; box-shadow: 0 4px 22px rgba(15, 32, 58, .06); padding: 14px; }
-    .actions { display: flex; gap: 8px; }
-    .actions button { border: 1px solid #cad5e5; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-    .actions button:hover { background: #f5f8ff; }
-    #stage { min-height: 540px; }
-    #status { margin-top: 10px; font-size: 13px; color: #4f5e7d; }
-    @media (max-width: 980px) {
+    *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+    :root {
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --radius: 10px;
+      --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+      --sidebar-w: 260px;
+    }
+
+    body { font-family: var(--font); background: var(--bg); color: var(--text); }
+
+    /* ── Header ── */
+    .header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 20px; height: 52px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+    }
+
+    .brand { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .badge {
+      font-size: 10px; font-weight: 600;
+      background: var(--accent-soft); color: var(--accent);
+      padding: 2px 7px; border-radius: 99px;
+    }
+
+    .file-bar {
+      margin-left: auto; display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--muted);
+    }
+    .file-name {
+      max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .btn {
+      border: 1px solid var(--border); background: var(--surface);
+      border-radius: 6px; padding: 5px 10px;
+      font: inherit; font-size: 12px; cursor: pointer; color: var(--text);
+      transition: background .1s;
+    }
+    .btn:hover { background: var(--bg); }
+    .btn-ghost { border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--text); background: var(--bg); }
+
+    /* ── Drop overlay ── */
+    .drop-overlay {
+      display: none; position: fixed; inset: 0; z-index: 999;
+      background: rgba(37, 99, 235, 0.06);
+      border: 3px dashed var(--accent);
+      flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+      font-size: 18px; font-weight: 600; color: var(--accent);
+      pointer-events: none;
+    }
+    .drop-overlay.active { display: flex; }
+
+    /* ── Layout ── */
+    .layout { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: calc(100vh - 52px); }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: var(--surface); border-right: 1px solid var(--border);
+      padding: 16px 10px; overflow-y: auto;
+    }
+    .cat-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); padding: 10px 8px 4px;
+    }
+    .cat-label:first-child { padding-top: 0; }
+
+    .story-btn {
+      display: block; width: 100%; text-align: left; border: none; background: none;
+      border-radius: 8px; padding: 7px 10px; cursor: pointer; font-family: inherit;
+      transition: background .1s;
+    }
+    .story-btn:hover { background: var(--bg); }
+    .story-btn.active { background: var(--accent-soft); }
+    .story-btn-title { font-size: 13px; font-weight: 600; }
+    .story-btn.active .story-btn-title { color: var(--accent); }
+    .story-btn-desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    /* ── Content ── */
+    .content { padding: 24px; min-width: 0; }
+    .story-meta { margin-bottom: 16px; }
+    .story-meta h2 { font-size: 20px; font-weight: 700; }
+    .story-meta p { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    .stage-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 4px rgba(0,0,0,.04);
+      padding: 16px;
+    }
+    #stage { min-height: 200px; }
+
+    .error-box {
+      padding: 32px; text-align: center; color: #dc2626;
+    }
+    .error-box p:first-child { font-size: 16px; font-weight: 600; }
+    .error-box p:last-child  { font-size: 13px; opacity: .7; margin-top: 4px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
       .layout { grid-template-columns: 1fr; }
-      .sidebar { border-right: 0; border-bottom: 1px solid #d0d9e6; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 220px; }
     }
   </style>
 </head>
 <body>
-  <div class="layout">
-    <aside class="sidebar">
-      <h1>Stories</h1>
-      <div class="muted">10 interaktive Storybook-Style Demos</div>
-      <div id="storyList" class="story-list"></div>
-    </aside>
-    <main class="main">
-      <div class="header">
-        <div>
-          <h1 id="storyTitle">Loading...</h1>
-          <div id="storyDesc" class="muted"></div>
-        </div>
-        <div class="actions">
-          <button id="reloadBtn">Reload Story</button>
-          <button id="openDefaultDemoBtn">Open demo/index.html</button>
-        </div>
-      </div>
-      <section class="panel">
-        <div id="stage"></div>
-        <div id="status"></div>
-      </section>
-    </main>
+
+<header class="header">
+  <div class="brand">
+    <span>🎵</span> Audio Workbench <span class="badge">v0.1</span>
   </div>
+  <div class="file-bar">
+    <span class="file-name" id="fileLabel">Default samples</span>
+    <button class="btn" id="browseBtn">Browse audio…</button>
+    <button class="btn btn-ghost" id="clearBtn" hidden>✕</button>
+    <input type="file" id="fileInput" accept="audio/*" hidden>
+  </div>
+</header>
 
-  <script type="module">
-    import { stories } from './stories.js';
+<div class="drop-overlay" id="dropOverlay">
+  <span style="font-size:40px">📂</span>
+  Drop audio file to load
+</div>
 
-    const storyListEl = document.getElementById('storyList');
-    const stageEl = document.getElementById('stage');
-    const statusEl = document.getElementById('status');
-    const storyTitleEl = document.getElementById('storyTitle');
-    const storyDescEl = document.getElementById('storyDesc');
-    const reloadBtn = document.getElementById('reloadBtn');
-    const openDefaultDemoBtn = document.getElementById('openDefaultDemoBtn');
+<div class="layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <main class="content">
+    <div class="story-meta">
+      <h2 id="storyTitle">Loading…</h2>
+      <p id="storyDesc"></p>
+    </div>
+    <div class="stage-card">
+      <div id="stage"></div>
+    </div>
+  </main>
+</div>
 
-    let currentIndex = 0;
-    let currentPlayer = null;
+<script type="module">
+import { stories, categories } from './stories.js';
 
-    function setStatus(text) {
-      statusEl.textContent = text;
+/* ── DOM refs ── */
+const sidebar     = document.getElementById('sidebar');
+const stageEl     = document.getElementById('stage');
+const titleEl     = document.getElementById('storyTitle');
+const descEl      = document.getElementById('storyDesc');
+const fileLabel   = document.getElementById('fileLabel');
+const fileInput   = document.getElementById('fileInput');
+const browseBtn   = document.getElementById('browseBtn');
+const clearBtn    = document.getElementById('clearBtn');
+const dropOverlay = document.getElementById('dropOverlay');
+
+/* ── Global audio state ── */
+let globalUrl  = null;
+let currentIdx = 0;
+let currentPlayer = null;
+
+function loadFile(file) {
+  if (!file || !file.type.startsWith('audio/')) return;
+  if (globalUrl) URL.revokeObjectURL(globalUrl);
+  globalUrl = URL.createObjectURL(file);
+  fileLabel.textContent = file.name;
+  fileLabel.title = file.name;
+  clearBtn.hidden = false;
+  runStory(currentIdx);
+}
+
+function clearFile() {
+  if (globalUrl) URL.revokeObjectURL(globalUrl);
+  globalUrl = null;
+  fileLabel.textContent = 'Default samples';
+  fileLabel.title = '';
+  clearBtn.hidden = true;
+  runStory(currentIdx);
+}
+
+browseBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  fileInput.value = '';
+});
+clearBtn.addEventListener('click', clearFile);
+
+/* ── Drag & drop (full page) ── */
+let dragDepth = 0;
+document.addEventListener('dragenter', (e) => { e.preventDefault(); if (++dragDepth === 1) dropOverlay.classList.add('active'); });
+document.addEventListener('dragleave', (e) => { e.preventDefault(); if (--dragDepth === 0) dropOverlay.classList.remove('active'); });
+document.addEventListener('dragover',  (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.remove('active');
+  const f = e.dataTransfer?.files[0];
+  if (f) loadFile(f);
+});
+
+/* ── Sidebar ── */
+function renderSidebar() {
+  sidebar.innerHTML = '';
+  for (const cat of categories) {
+    const label = document.createElement('div');
+    label.className = 'cat-label';
+    label.textContent = cat.label;
+    sidebar.appendChild(label);
+
+    for (const story of stories.filter(s => s.category === cat.id)) {
+      const idx = stories.indexOf(story);
+      const btn = document.createElement('button');
+      btn.className = 'story-btn' + (idx === currentIdx ? ' active' : '');
+      btn.innerHTML = `<div class="story-btn-title">${story.title}</div><div class="story-btn-desc">${story.description}</div>`;
+      btn.addEventListener('click', () => runStory(idx));
+      sidebar.appendChild(btn);
     }
+  }
+}
 
-    function renderStoryButtons() {
-      storyListEl.innerHTML = '';
-      stories.forEach((story, idx) => {
-        const btn = document.createElement('button');
-        btn.className = `story-btn${idx === currentIndex ? ' active' : ''}`;
-        btn.innerHTML = `<div class="story-title">${story.title}</div><div class="story-desc">${story.description}</div>`;
-        btn.addEventListener('click', () => runStory(idx));
-        storyListEl.appendChild(btn);
-      });
-    }
+/* ── Story runner ── */
+async function runStory(index) {
+  currentIdx = index;
+  const story = stories[index];
+  titleEl.textContent = story.title;
+  descEl.textContent  = story.description;
+  location.hash = story.id;
+  renderSidebar();
 
-    async function runStory(index) {
-      currentIndex = index;
-      renderStoryButtons();
-      const story = stories[index];
-      storyTitleEl.textContent = story.title;
-      storyDescEl.textContent = story.description;
-      setStatus('Loading story...');
+  if (currentPlayer) { currentPlayer.destroy?.(); currentPlayer = null; }
+  stageEl.innerHTML = '';
 
-      if (currentPlayer) {
-        currentPlayer.destroy();
-        currentPlayer = null;
-      }
-      stageEl.innerHTML = '';
+  try {
+    currentPlayer = await story.run(stageEl, globalUrl || story.defaultSample);
+  } catch (err) {
+    stageEl.innerHTML = '<div class="error-box"><p>Story failed</p><p>' +
+      err.message.replace(/</g, '&lt;') + '</p></div>';
+    console.error(err);
+  }
+}
 
-      try {
-        currentPlayer = await story.run(stageEl);
-        setStatus(`Running: ${story.title}`);
-      } catch (err) {
-        console.error(err);
-        setStatus(`Story failed: ${err.message || err}`);
-      }
-    }
-
-    reloadBtn.addEventListener('click', () => runStory(currentIndex));
-    openDefaultDemoBtn.addEventListener('click', () => {
-      window.location.href = './index.html';
-    });
-
-    runStory(0);
-  </script>
+/* ── Init ── */
+const hashId   = location.hash.slice(1);
+const startIdx = hashId ? Math.max(0, stories.findIndex(s => s.id === hashId)) : 0;
+runStory(startIdx);
+</script>
 </body>
 </html>

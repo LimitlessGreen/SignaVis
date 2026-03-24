@@ -44,12 +44,12 @@ jobs:
           cp demo/storybook.html _site/demo/
           cp demo/stories.js     _site/demo/
           cp -r demo/samples/    _site/demo/samples/
-          # Root redirect → demo/index.html
+          # Root redirect → demo/storybook.html
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=demo/">
-          <a href="demo/">Audio Workbench Demo</a>
+          <meta http-equiv="refresh" content="0; url=demo/storybook.html">
+          <a href="demo/storybook.html">Audio Workbench Storybook</a>
           EOF
 
       - name: Upload Pages artifact

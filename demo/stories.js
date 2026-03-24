@@ -1,386 +1,300 @@
-const SAMPLE_BIRD = './samples/birdsong.wav';
+/**
+ * Audio Workbench — Storybook Stories
+ *
+ * Each story: { id, title, description, category, defaultSample, run(root, audioUrl) → player | {destroy()} }
+ */
+
+const SAMPLE_BIRD  = './samples/birdsong.wav';
 const SAMPLE_SWEEP = './samples/sweep-200-8000.wav';
 
-function makeBaseContainer(root, height = 520) {
-    root.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.style.height = `${height}px`;
-    wrap.style.width = '100%';
-    wrap.style.maxWidth = '100%';
-    wrap.style.minWidth = '0';
-    wrap.style.border = '1px solid #d5ddea';
-    wrap.style.borderRadius = '12px';
-    wrap.style.background = '#ffffff';
-    wrap.style.overflow = 'hidden';
-    root.appendChild(wrap);
-    return wrap;
+/* ── Categories ── */
+
+export const categories = [
+  { id: 'presets',  label: 'Presets' },
+  { id: 'embeds',   label: 'Embeds' },
+  { id: 'features', label: 'Features' },
+  { id: 'tools',    label: 'Tools' },
+];
+
+/* ── Helpers ── */
+
+function container(root, height = 520) {
+  root.innerHTML = '';
+  const el = document.createElement('div');
+  Object.assign(el.style, {
+    height: `${height}px`, width: '100%',
+    borderRadius: '10px', overflow: 'hidden', background: '#fff',
+  });
+  root.appendChild(el);
+  return el;
 }
 
-async function createStoryPlayer(root, options = {}, audioUrl = null, afterReady = null) {
-    if (!globalThis.BirdNETPlayerModule?.BirdNETPlayer) {
-        throw new Error('BirdNETPlayerModule unavailable. Load dist/birdnet-player.iife.js first.');
-    }
-
-    const container = makeBaseContainer(root, options.height || 520);
-    const player = new globalThis.BirdNETPlayerModule.BirdNETPlayer(container, options);
-    await player.ready;
-    if (audioUrl) await player.loadUrl(audioUrl);
-    if (afterReady) await afterReady(player);
-    return player;
+async function makePlayer(root, opts, audioUrl) {
+  const el = container(root, opts.height || 520);
+  const p = new globalThis.BirdNETPlayerModule.BirdNETPlayer(el, opts);
+  await p.ready;
+  if (audioUrl) await p.loadUrl(audioUrl);
+  return p;
 }
+
+const HERO_OPTS = {
+  showOverview: false, showFileOpen: false, showTime: false,
+  showVolume: false, showViewToggles: false, showZoom: false,
+  showFFTControls: false, showDisplayGain: false, showStatusbar: false,
+  transportStyle: 'hero', transportOverlay: true,
+};
+
+function heroHost(root, width = '560px') {
+  root.innerHTML = '';
+  const host = document.createElement('div');
+  host.style.cssText = `width:${width};max-width:100%`;
+  root.appendChild(host);
+  return host;
+}
+
+/* ── Stories ── */
 
 export const stories = [
-    {
-        id: 'live-controls',
-        title: 'Live Controls Playground',
-        description: 'UI-Sektionen in Echtzeit an/aus schalten (Storybook-Style).',
-        async run(root) {
-            root.innerHTML = '';
-            const shell = document.createElement('div');
-            shell.style.display = 'grid';
-            shell.style.gridTemplateColumns = 'minmax(220px, 280px) minmax(0, 1fr)';
-            shell.style.gap = '12px';
-            shell.style.minWidth = '0';
-            root.appendChild(shell);
 
-            const controls = document.createElement('div');
-            controls.style.border = '1px solid #d5ddea';
-            controls.style.borderRadius = '12px';
-            controls.style.background = '#fff';
-            controls.style.padding = '12px';
-            controls.style.display = 'grid';
-            controls.style.gap = '8px';
-            controls.style.alignContent = 'start';
-            controls.style.minWidth = '0';
-            shell.appendChild(controls);
+  /* ── Presets ── */
 
-            const stage = document.createElement('div');
-            stage.style.minWidth = '0';
-            shell.appendChild(stage);
+  {
+    id: 'full-player',
+    title: 'Full Player',
+    description: 'All controls enabled — the default DAW-like layout.',
+    category: 'presets',
+    defaultSample: SAMPLE_BIRD,
+    run: (root, url) => makePlayer(root, { showFileOpen: true }, url),
+  },
+  {
+    id: 'spectrogram-analysis',
+    title: 'Spectrogram Analysis',
+    description: 'Spectrogram-focused view with a frequency sweep sample.',
+    category: 'presets',
+    defaultSample: SAMPLE_SWEEP,
+    run: (root, url) => makePlayer(root, { viewMode: 'spectrogram' }, url),
+  },
 
-            const options = {
-                showFileOpen: true,
-                showTransport: true,
-                showTime: true,
-                showVolume: true,
-                showViewToggles: true,
-                showZoom: true,
-                showFFTControls: true,
-                showDisplayGain: true,
-                showStatusbar: true,
-                showOverview: true,
-                viewMode: 'both',
-                transportStyle: 'default',
-                transportOverlay: false,
-                compactToolbar: 'auto',
-                height: 520,
-            };
+  /* ── Embeds ── */
 
-            let mountedPlayer = null;
-            const mount = async () => {
-                if (mountedPlayer) mountedPlayer.destroy();
-                mountedPlayer = await createStoryPlayer(stage, options, SAMPLE_BIRD);
-            };
+  {
+    id: 'waveform-hero',
+    title: 'Waveform Hero',
+    description: 'Compact waveform preview with centered play overlay.',
+    category: 'embeds',
+    defaultSample: SAMPLE_BIRD,
+    run: (root, url) =>
+      makePlayer(heroHost(root), { ...HERO_OPTS, height: 220, viewMode: 'waveform' }, url),
+  },
+  {
+    id: 'spectrogram-hero',
+    title: 'Spectrogram Hero',
+    description: 'Compact spectrogram preview with centered play overlay.',
+    category: 'embeds',
+    defaultSample: SAMPLE_SWEEP,
+    run: (root, url) =>
+      makePlayer(heroHost(root), { ...HERO_OPTS, height: 220, viewMode: 'spectrogram' }, url),
+  },
+  {
+    id: 'compact-embed',
+    title: 'Compact Embed',
+    description: 'Ultra-small player for tight embed scenarios.',
+    category: 'embeds',
+    defaultSample: SAMPLE_BIRD,
+    run: (root, url) =>
+      makePlayer(heroHost(root, '340px'), { ...HERO_OPTS, height: 160, viewMode: 'spectrogram' }, url),
+  },
 
-            const title = document.createElement('div');
-            title.textContent = 'Visible Sections';
-            title.style.fontWeight = '700';
-            title.style.marginBottom = '4px';
-            controls.appendChild(title);
+  /* ── Features ── */
 
-            const boolKeys = [
-                'showFileOpen', 'showTransport', 'showTime', 'showVolume',
-                'showViewToggles', 'showZoom', 'showFFTControls',
-                'showDisplayGain', 'showStatusbar', 'showOverview',
-            ];
-            boolKeys.forEach((key) => {
-                const row = document.createElement('label');
-                row.style.display = 'flex';
-                row.style.alignItems = 'center';
-                row.style.gap = '8px';
-                row.style.fontSize = '13px';
-                row.style.cursor = 'pointer';
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.checked = options[key];
-                cb.addEventListener('change', async () => {
-                    options[key] = cb.checked;
-                    await mount();
-                });
-                const text = document.createElement('span');
-                text.textContent = key;
-                row.appendChild(cb);
-                row.appendChild(text);
-                controls.appendChild(row);
-            });
-
-            const makeSelectRow = (labelText, values, value, onChange) => {
-                const row = document.createElement('label');
-                row.style.display = 'grid';
-                row.style.gap = '4px';
-                row.style.fontSize = '13px';
-                const text = document.createElement('span');
-                text.textContent = labelText;
-                const select = document.createElement('select');
-                select.style.height = '30px';
-                select.style.border = '1px solid #d5ddea';
-                select.style.borderRadius = '8px';
-                select.style.padding = '0 8px';
-                values.forEach((item) => {
-                    const opt = document.createElement('option');
-                    opt.value = item;
-                    opt.textContent = item;
-                    select.appendChild(opt);
-                });
-                select.value = value;
-                select.addEventListener('change', async () => {
-                    onChange(select.value);
-                    await mount();
-                });
-                row.appendChild(text);
-                row.appendChild(select);
-                controls.appendChild(row);
-            };
-
-            makeSelectRow('View Mode', ['both', 'waveform', 'spectrogram'], options.viewMode, (value) => {
-                options.viewMode = value;
-            });
-            makeSelectRow('Transport Style', ['default', 'hero'], options.transportStyle, (value) => {
-                options.transportStyle = value;
-            });
-            makeSelectRow('Transport Overlay', ['false', 'true'], String(options.transportOverlay), (value) => {
-                options.transportOverlay = value === 'true';
-            });
-            makeSelectRow('Compact Toolbar', ['auto', 'on', 'off'], options.compactToolbar, (value) => {
-                options.compactToolbar = value;
-            });
-
-            const sizeRow = document.createElement('label');
-            sizeRow.style.display = 'grid';
-            sizeRow.style.gap = '4px';
-            sizeRow.style.fontSize = '13px';
-            const sizeText = document.createElement('span');
-            sizeText.textContent = `Height (${options.height}px)`;
-            const sizeRange = document.createElement('input');
-            sizeRange.type = 'range';
-            sizeRange.min = '220';
-            sizeRange.max = '620';
-            sizeRange.step = '10';
-            sizeRange.value = String(options.height);
-            sizeRange.addEventListener('input', async () => {
-                options.height = Number(sizeRange.value);
-                sizeText.textContent = `Height (${options.height}px)`;
-                await mount();
-            });
-            sizeRow.appendChild(sizeText);
-            sizeRow.appendChild(sizeRange);
-            controls.appendChild(sizeRow);
-
-            await mount();
-            return {
-                destroy() {
-                    mountedPlayer?.destroy();
-                },
-            };
-        },
+  {
+    id: 'annotations',
+    title: 'Annotations',
+    description: 'BirdNET-style annotation regions on the amplitude view.',
+    category: 'features',
+    defaultSample: SAMPLE_BIRD,
+    async run(root, url) {
+      const p = await makePlayer(root, {}, url);
+      p.setAnnotations([
+        { start: 0.7, end: 2.1, species: 'Erithacus rubecula', confidence: 0.93, color: 'rgba(255,99,132,0.22)' },
+        { start: 3.0, end: 4.3, species: 'Parus major',        confidence: 0.87, color: 'rgba(54,162,235,0.22)' },
+        { start: 5.2, end: 6.7, species: 'Turdus merula',      confidence: 0.91, color: 'rgba(255,206,86,0.22)' },
+      ]);
+      return p;
     },
-    {
-        id: 'full',
-        title: 'Full DAW',
-        description: 'Vollständiger Player mit allen Controls.',
-        async run(root) {
-            return createStoryPlayer(root, {}, SAMPLE_BIRD);
-        },
+  },
+  {
+    id: 'spectrogram-labels',
+    title: 'Spectrogram Labels',
+    description: '2-D frequency × time labels drawn on the spectrogram.',
+    category: 'features',
+    defaultSample: SAMPLE_BIRD,
+    async run(root, url) {
+      const p = await makePlayer(root, {}, url);
+      p.setSpectrogramLabels([
+        { start: 0.8, end: 2.0, freqMin: 1800, freqMax: 4100, label: 'Robin call',      color: 'rgba(239,68,68,0.25)' },
+        { start: 3.2, end: 4.5, freqMin: 900,  freqMax: 2500, label: 'Great tit phrase', color: 'rgba(59,130,246,0.25)' },
+        { start: 5.4, end: 6.6, freqMin: 2800, freqMax: 5600, label: 'Blackbird motif',  color: 'rgba(234,179,8,0.25)' },
+      ]);
+      return p;
     },
-    {
-        id: 'spectrogram-focus',
-        title: 'Spectrogram Focus',
-        description: 'Analysefokus mit Sweep-Sample.',
-        async run(root) {
-            return createStoryPlayer(root, {}, SAMPLE_SWEEP, async (player) => {
-                player._state.d.maxFreqSelect.value = '16000';
-                player._state._createFrequencyLabels();
-                player._state._buildSpectrogramGrayscale();
-                player._state._buildSpectrogramBaseImage();
-                player._state._drawSpectrogram();
-            });
-        },
-    },
-    {
-        id: 'preview-waveform-hero',
-        title: 'Preview Waveform Hero',
-        description: 'Kleines Vorschaufenster mit nur Waveform + großem Play-Button.',
-        async run(root) {
-            root.innerHTML = '';
-            const host = document.createElement('div');
-            host.style.width = '560px';
-            host.style.maxWidth = '92vw';
-            root.appendChild(host);
-            return createStoryPlayer(host, {
-                height: 240,
-                viewMode: 'waveform',
-                showOverview: false,
-                showFileOpen: false,
-                showTime: false,
-                showVolume: false,
-                showViewToggles: false,
-                showZoom: false,
-                showFFTControls: false,
-                showDisplayGain: false,
-                showStatusbar: false,
-                transportStyle: 'hero',
-                transportOverlay: true,
-            }, SAMPLE_BIRD, async (player) => {
-                player._state._setPixelsPerSecond(220, true);
-            });
-        },
-    },
-    {
-        id: 'preview-spectrogram-hero',
-        title: 'Preview Spectrogram Hero',
-        description: 'Kleines Vorschaufenster mit nur Spektrogramm + großem Play-Button.',
-        async run(root) {
-            root.innerHTML = '';
-            const host = document.createElement('div');
-            host.style.width = '560px';
-            host.style.maxWidth = '92vw';
-            root.appendChild(host);
-            return createStoryPlayer(host, {
-                height: 240,
-                viewMode: 'spectrogram',
-                showOverview: false,
-                showFileOpen: false,
-                showTime: false,
-                showVolume: false,
-                showViewToggles: false,
-                showZoom: false,
-                showFFTControls: false,
-                showDisplayGain: false,
-                showStatusbar: false,
-                transportStyle: 'hero',
-                transportOverlay: true,
-            }, SAMPLE_SWEEP, async (player) => {
-                player._state._setPixelsPerSecond(220, true);
-            });
-        },
-    },
-    {
-        id: 'preview-ultra-compact-hero',
-        title: 'Preview Ultra Compact Hero',
-        description: 'Sehr kleines Vorschaufenster für enge Embeds.',
-        async run(root) {
-            root.innerHTML = '';
-            const host = document.createElement('div');
-            host.style.width = '360px';
-            host.style.maxWidth = '92vw';
-            root.appendChild(host);
-            return createStoryPlayer(host, {
-                height: 180,
-                viewMode: 'spectrogram',
-                showOverview: false,
-                showFileOpen: false,
-                showTime: false,
-                showVolume: false,
-                showViewToggles: false,
-                showZoom: false,
-                showFFTControls: false,
-                showDisplayGain: false,
-                showStatusbar: false,
-                transportStyle: 'hero',
-                transportOverlay: true,
-            }, SAMPLE_BIRD, async (player) => {
-                player._state._setPixelsPerSecond(260, true);
-            });
-        },
-    },
-    {
-        id: 'annotation-demo',
-        title: 'Annotation Layer',
-        description: 'Demo mit klickbaren BirdNET-artigen Regions.',
-        async run(root) {
-            return createStoryPlayer(root, {}, SAMPLE_BIRD, async (player) => {
-                player.setAnnotations([
-                    { start: 0.7, end: 2.1, species: 'Erithacus rubecula', confidence: 0.93, color: 'rgba(255,99,132,0.22)' },
-                    { start: 3.0, end: 4.3, species: 'Parus major', confidence: 0.87, color: 'rgba(54,162,235,0.22)' },
-                    { start: 5.2, end: 6.7, species: 'Turdus merula', confidence: 0.91, color: 'rgba(255,206,86,0.22)' },
-                ]);
-            });
-        },
-    },
-    {
-        id: 'event-monitor',
-        title: 'Event Monitor',
-        description: 'Zeigt Event-API in Aktion (timeupdate/zoom/selection).',
-        async run(root) {
-            root.innerHTML = '';
-            const shell = document.createElement('div');
-            shell.style.display = 'grid';
-            shell.style.gridTemplateColumns = '1fr 320px';
-            shell.style.gap = '12px';
-            root.appendChild(shell);
+  },
+  {
+    id: 'event-monitor',
+    title: 'Event Monitor',
+    description: 'Live event stream — see every event the player emits.',
+    category: 'features',
+    defaultSample: SAMPLE_BIRD,
+    async run(root, url) {
+      root.innerHTML = '';
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:grid;grid-template-columns:1fr 260px;gap:12px;min-width:0';
+      root.appendChild(wrap);
 
-            const playerHost = document.createElement('div');
-            const log = document.createElement('pre');
-            log.style.margin = '0';
-            log.style.padding = '10px';
-            log.style.borderRadius = '12px';
-            log.style.border = '1px solid #d5ddea';
-            log.style.background = '#0b1020';
-            log.style.color = '#cfe7ff';
-            log.style.font = '12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace';
-            log.style.height = '520px';
-            log.style.overflow = 'auto';
-            shell.appendChild(playerHost);
-            shell.appendChild(log);
+      const playerHost = document.createElement('div');
+      playerHost.style.minWidth = '0';
+      wrap.appendChild(playerHost);
 
-            const player = await createStoryPlayer(playerHost, {}, SAMPLE_BIRD);
-            const write = (line) => {
-                log.textContent = `${new Date().toLocaleTimeString()}  ${line}\n` + log.textContent;
-            };
+      const log = document.createElement('pre');
+      Object.assign(log.style, {
+        margin: '0', padding: '10px', borderRadius: '10px',
+        background: '#0f172a', color: '#94a3b8',
+        font: '12px/1.4 ui-monospace, SFMono-Regular, monospace',
+        height: '520px', overflow: 'auto',
+      });
+      wrap.appendChild(log);
 
-            const unsubs = [
-                player.on('ready', (e) => write(`ready ${JSON.stringify(e.detail)}`)),
-                player.on('selection', (e) => write(`selection ${e.detail.start.toFixed(2)}-${e.detail.end.toFixed(2)}s`)),
-                player.on('zoomchange', (e) => write(`zoom ${Math.round(e.detail.pixelsPerSecond)} px/s`)),
-                player.on('cachehit', () => write('cachehit')),
-                player.on('cachemiss', () => write('cachemiss')),
-                player.on('cachewrite', () => write('cachewrite')),
-            ];
+      const write = (msg) => {
+        log.textContent = new Date().toLocaleTimeString() + '  ' + msg + '\n' + log.textContent;
+      };
 
-            const origDestroy = player.destroy.bind(player);
-            player.destroy = () => {
-                for (const unsub of unsubs) unsub();
-                origDestroy();
-            };
-            return player;
-        },
+      const p = await makePlayer(playerHost, {}, url);
+      write('player ready');
+
+      const unsubs = [
+        p.on('timeupdate',             () => { if (Math.random() < 0.02) write('timeupdate'); }),
+        p.on('selection',              (e) => write(`selection ${e.detail.start.toFixed(2)}–${e.detail.end.toFixed(2)}s`)),
+        p.on('zoomchange',             (e) => write(`zoom ${Math.round(e.detail.pixelsPerSecond)} px/s`)),
+        p.on('spectrogramlabelcreate', (e) => write(`label.create ${e.detail.label?.label || e.detail.label?.id}`)),
+        p.on('spectrogramlabelupdate', (e) => write(`label.update ${e.detail.label?.label || e.detail.label?.id}`)),
+        p.on('annotationcreate',       (e) => write(`ann.create ${e.detail?.id ?? ''}`)),
+        p.on('cachehit',               ()  => write('cache hit')),
+        p.on('cachemiss',              ()  => write('cache miss')),
+        p.on('cachewrite',             ()  => write('cache write')),
+      ];
+
+      const origDestroy = p.destroy.bind(p);
+      p.destroy = () => { unsubs.forEach(u => u()); origDestroy(); };
+      return p;
     },
-    {
-        id: 'cache-demo',
-        title: 'Cache Demo',
-        description: 'Lädt Datei, damit IndexedDB-Cache sichtbar wird.',
-        async run(root) {
-            return createStoryPlayer(root, {}, SAMPLE_SWEEP);
-        },
+  },
+
+  /* ── Tools ── */
+
+  {
+    id: 'playground',
+    title: 'Playground',
+    description: 'Toggle every option in real time and see the result.',
+    category: 'tools',
+    defaultSample: SAMPLE_BIRD,
+    async run(root, audioUrl) {
+      root.innerHTML = '';
+
+      const shell = document.createElement('div');
+      shell.style.cssText = 'display:grid;grid-template-columns:220px 1fr;gap:14px;min-width:0';
+      root.appendChild(shell);
+
+      const panel = document.createElement('div');
+      panel.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:13px;overflow-y:auto;max-height:600px;padding-right:4px';
+      shell.appendChild(panel);
+
+      const stage = document.createElement('div');
+      stage.style.minWidth = '0';
+      shell.appendChild(stage);
+
+      const opts = {
+        showFileOpen: true, showTransport: true, showTime: true, showVolume: true,
+        showViewToggles: true, showZoom: true, showFFTControls: true,
+        showDisplayGain: true, showStatusbar: true, showOverview: true,
+        viewMode: 'both', transportStyle: 'default', transportOverlay: false,
+        compactToolbar: 'auto', height: 520,
+      };
+
+      let mounted = null;
+      const mount = async () => {
+        if (mounted) mounted.destroy();
+        mounted = await makePlayer(stage, opts, audioUrl);
+      };
+
+      /* Panel helpers */
+      const heading = (text) => {
+        const h = document.createElement('div');
+        h.textContent = text;
+        h.style.cssText = 'font-weight:700;padding-top:6px';
+        panel.appendChild(h);
+      };
+
+      const toggle = (key) => {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = opts[key];
+        cb.addEventListener('change', () => { opts[key] = cb.checked; mount(); });
+        lbl.append(cb, key);
+        panel.appendChild(lbl);
+      };
+
+      const select = (key, values) => {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'display:grid;gap:3px';
+        const sel = document.createElement('select');
+        sel.style.cssText = 'height:28px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font:inherit;font-size:12px';
+        for (const v of values) {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = v;
+          sel.appendChild(o);
+        }
+        sel.value = String(opts[key]);
+        sel.addEventListener('change', () => {
+          const val = sel.value;
+          opts[key] = val === 'true' ? true : val === 'false' ? false : val;
+          mount();
+        });
+        lbl.append(key, sel);
+        panel.appendChild(lbl);
+      };
+
+      heading('Sections');
+      for (const k of [
+        'showFileOpen', 'showTransport', 'showTime', 'showVolume',
+        'showViewToggles', 'showZoom', 'showFFTControls',
+        'showDisplayGain', 'showStatusbar', 'showOverview',
+      ]) toggle(k);
+
+      heading('Layout');
+      select('viewMode', ['both', 'waveform', 'spectrogram']);
+      select('transportStyle', ['default', 'hero']);
+      select('transportOverlay', ['false', 'true']);
+      select('compactToolbar', ['auto', 'on', 'off']);
+
+      heading('Size');
+      const sizeLbl = document.createElement('label');
+      sizeLbl.style.cssText = 'display:grid;gap:3px';
+      const sizeText = document.createTextNode(`height: ${opts.height}px`);
+      const sizeRange = document.createElement('input');
+      sizeRange.type = 'range'; sizeRange.min = '160'; sizeRange.max = '620';
+      sizeRange.step = '10'; sizeRange.value = String(opts.height);
+      sizeRange.addEventListener('input', () => {
+        opts.height = Number(sizeRange.value);
+        sizeText.textContent = `height: ${opts.height}px`;
+        mount();
+      });
+      sizeLbl.append(sizeText, sizeRange);
+      panel.appendChild(sizeLbl);
+
+      await mount();
+      return { destroy() { mounted?.destroy(); } };
     },
-    {
-        id: 'touch-disabled',
-        title: 'Touch Disabled',
-        description: 'Gesten deaktiviert (Regression-Test).',
-        async run(root) {
-            return createStoryPlayer(root, {
-                enableTouchGestures: false,
-            }, SAMPLE_BIRD);
-        },
-    },
-    {
-        id: 'progressive-optin',
-        title: 'Progressive Opt-In',
-        description: 'Progressive Spektrogramm-Pipeline explizit aktiviert.',
-        async run(root) {
-            return createStoryPlayer(root, {
-                enableProgressiveSpectrogram: true,
-            }, SAMPLE_SWEEP);
-        },
-    },
+  },
 ];
