@@ -1,0 +1,46 @@
+version: 2
+
+updates:
+  # npm dependencies (root)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "jairuskhan"
+    labels:
+      - "dependencies"
+      - "npm"
+    groups:
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+
+  # pip dependencies (python-wrapper)
+  - package-ecosystem: "pip"
+    directory: "/python-wrapper"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jairuskhan"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jairuskhan"
+    labels:
+      - "dependencies"
+      - "ci"
