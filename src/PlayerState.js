@@ -15,6 +15,7 @@ import {
 import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
+import { InteractionState } from './interactionState.js';
 
 import {
     computeAmplitudePeak,
@@ -189,30 +190,14 @@ export class PlayerState {
             lastTransition: '',
         };
 
-        // ── Drag / interaction state ──
-        this.draggingPlayhead = false;
-        this.draggingPlayheadSource = null;
-        this.draggingViewport = false;
-        this.viewportPanStartX = 0;
-        this.viewportPanStartScroll = 0;
-        this.suppressSeekClick = false;
-        this._blockSeekClickUntil = 0;
-        this.overviewMode = null;
-        this.overviewDragStartX = 0;
-        this.overviewDragStart = 0;
-        this.overviewDragEnd = 1;
-        this._overviewDragMoved = false;
-        this._overviewSuppressClickUntil = 0;
+        // ── Interaction FSM (replaces ~15 loose boolean/string flags) ──
+        this.interaction = new InteractionState();
         this._overviewViewportRafId = 0;
         this._overviewNeedsFinalRedraw = false;
 
-        // ── View resize ──
+        // ── View layout (persistent, not interaction-mode) ──
         this.waveformDisplayHeight = DEFAULT_WAVEFORM_HEIGHT;
         this.spectrogramDisplayHeight = DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT;
-        this.viewResizeMode = null;
-        this.viewResizeStartY = 0;
-        this.viewResizeStartWaveformHeight = DEFAULT_WAVEFORM_HEIGHT;
-        this.viewResizeStartSpectrogramHeight = DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT;
         this._viewResizeFrameId = 0;
         this._viewResizeNeedsWaveformRedraw = false;
         this._viewResizeNeedsSpectrogramRedraw = false;
@@ -1690,7 +1675,7 @@ export class PlayerState {
 
     _syncOverviewWindowToViewport() {
         if (!this._showOverview || !this.audioBuffer) return;
-        if (this.overviewMode) return;
+        if (this.interaction.isOverviewDrag) return;
         const trackWidth = Math.max(
             this.d.spectrogramCanvas.width || 0,
             this.d.amplitudeCanvas.width || 0,
@@ -1756,24 +1741,27 @@ export class PlayerState {
     }
 
     _startOverviewDrag(mode, clientX) {
-        this.overviewMode = mode;
-        this.overviewDragStartX = clientX;
-        this.overviewDragStart = this.windowStartNorm;
-        this.overviewDragEnd = this.windowEndNorm;
-        this._overviewDragMoved = false;
+        /** @type {Record<string, import('./interactionState.js').InteractionMode>} */
+        const modeMap = { move: 'overview-move', left: 'overview-resize-left', right: 'overview-resize-right' };
+        if (!this.interaction.enter(modeMap[mode])) return;
+        this.interaction.ctx.overviewStartX = clientX;
+        this.interaction.ctx.overviewStartNorm = this.windowStartNorm;
+        this.interaction.ctx.overviewEndNorm = this.windowEndNorm;
     }
 
     _updateOverviewDrag(clientX) {
-        if (!this._showOverview || !this.audioBuffer || !this.overviewMode) return;
-        if (Math.abs(clientX - this.overviewDragStartX) > 2) this._overviewDragMoved = true;
+        const sub = this.interaction.overviewSubMode;
+        if (!this._showOverview || !this.audioBuffer || !sub) return;
+        const ctx = this.interaction.ctx;
+        if (Math.abs(clientX - ctx.overviewStartX) > 2) ctx.overviewMoved = true;
 
         const cw = this.d.overviewContainer.clientWidth;
-        const deltaNorm = (clientX - this.overviewDragStartX) / cw;
+        const deltaNorm = (clientX - ctx.overviewStartX) / cw;
         const { minSpanNorm, maxSpanNorm } = this._getOverviewSpanConstraints();
-        const fixedStart = this.overviewDragStart;
-        const fixedEnd = this.overviewDragEnd;
+        const fixedStart = ctx.overviewStartNorm;
+        const fixedEnd = ctx.overviewEndNorm;
 
-        if (this.overviewMode === 'move') {
+        if (sub === 'move') {
             let s = fixedStart + deltaNorm;
             let e = fixedEnd + deltaNorm;
             const span = e - s;
@@ -1781,14 +1769,14 @@ export class PlayerState {
             if (e > 1) { e = 1; s = 1 - span; }
             this.windowStartNorm = s;
             this.windowEndNorm = e;
-        } else if (this.overviewMode === 'left') {
+        } else if (sub === 'left') {
             const nextStart = fixedStart + deltaNorm;
             const right = fixedEnd;
             const minStart = Math.max(0, right - maxSpanNorm);
             const maxStart = Math.max(minStart, right - minSpanNorm);
             this.windowStartNorm = Math.max(minStart, Math.min(maxStart, nextStart));
             this.windowEndNorm = right;
-        } else if (this.overviewMode === 'right') {
+        } else if (sub === 'right') {
             const nextEnd = fixedEnd + deltaNorm;
             const left = fixedStart;
             const minEnd = Math.min(1, left + minSpanNorm);
@@ -1826,31 +1814,28 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     _handleCanvasClick(e) {
-        if (performance.now() < this._blockSeekClickUntil) return;
-        if (this.suppressSeekClick) { this.suppressSeekClick = false; return; }
+        if (this.interaction.isSeekBlocked()) return;
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
         this._seekToTime(this._clientXToTime(e.clientX, 'spectrogram'), false, { userInitiated: true });
     }
 
     _handleWaveformClick(e) {
-        if (performance.now() < this._blockSeekClickUntil) return;
-        if (this.suppressSeekClick) { this.suppressSeekClick = false; return; }
+        if (this.interaction.isSeekBlocked()) return;
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
         this._seekToTime(this._clientXToTime(e.clientX, 'waveform'), false, { userInitiated: true });
     }
 
     _blockSeekClicks(ms = 220) {
-        this._blockSeekClickUntil = Math.max(this._blockSeekClickUntil, performance.now() + ms);
-        this.suppressSeekClick = true;
+        this.interaction.blockSeekClicks(ms);
     }
 
     _startPlayheadDrag(event, source) {
         if (!this.audioBuffer) return;
         event.preventDefault();
-        this.draggingPlayhead = true;
-        this.draggingPlayheadSource = source;
+        if (!this.interaction.enter('playhead-drag')) return;
+        this.interaction.ctx.playheadSource = source;
         this._seekFromClientX(event.clientX, source);
     }
 
@@ -1866,19 +1851,18 @@ export class PlayerState {
         if (event.button !== 0 && event.button !== 1) return;
         if (event.button === 1) event.preventDefault();
 
-        this.draggingViewport = true;
-        this.viewportPanStartX = event.clientX;
-        this.viewportPanStartScroll = source === 'waveform'
+        if (!this.interaction.enter('viewport-pan')) return;
+        this.interaction.ctx.panStartX = event.clientX;
+        this.interaction.ctx.panStartScroll = source === 'waveform'
             ? this.d.waveformWrapper.scrollLeft
             : this.d.canvasWrapper.scrollLeft;
-        this.suppressSeekClick = false;
         document.body.style.cursor = 'grabbing';
     }
 
     _updateViewportPan(clientX) {
-        const dx = clientX - this.viewportPanStartX;
-        this.suppressSeekClick = Math.abs(dx) > 3;
-        this._setLinkedScrollLeft(this.viewportPanStartScroll - dx);
+        const dx = clientX - this.interaction.ctx.panStartX;
+        this.interaction.ctx.panSuppressClick = Math.abs(dx) > 3;
+        this._setLinkedScrollLeft(this.interaction.ctx.panStartScroll - dx);
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -1948,23 +1932,27 @@ export class PlayerState {
     }
 
     _startViewResize(mode, clientY) {
-        this.viewResizeMode = mode;
-        this.viewResizeStartY = clientY;
-        this.viewResizeStartWaveformHeight = this.waveformDisplayHeight;
-        this.viewResizeStartSpectrogramHeight = this.spectrogramDisplayHeight;
+        /** @type {Record<string, import('./interactionState.js').InteractionMode>} */
+        const modeMap = { split: 'view-resize-split', spectrogram: 'view-resize-spectrogram' };
+        if (!this.interaction.enter(modeMap[mode])) return;
+        this.interaction.ctx.resizeStartY = clientY;
+        this.interaction.ctx.resizeStartWaveformH = this.waveformDisplayHeight;
+        this.interaction.ctx.resizeStartSpectrogramH = this.spectrogramDisplayHeight;
         document.body.style.cursor = 'row-resize';
     }
 
     _updateViewResize(clientY) {
-        if (!this.viewResizeMode) return;
-        if ((this.viewResizeMode === 'split' && (!this._showWaveform || !this._showSpectrogram))
-            || (this.viewResizeMode === 'spectrogram' && !this._showSpectrogram)) return;
-        const dy = clientY - this.viewResizeStartY;
+        const sub = this.interaction.viewResizeSubMode;
+        if (!sub) return;
+        if ((sub === 'split' && (!this._showWaveform || !this._showSpectrogram))
+            || (sub === 'spectrogram' && !this._showSpectrogram)) return;
+        const ctx = this.interaction.ctx;
+        const dy = clientY - ctx.resizeStartY;
         let redrawWav = false;
 
-        if (this.viewResizeMode === 'split') {
-            const total = this.viewResizeStartWaveformHeight + this.viewResizeStartSpectrogramHeight;
-            let nextWav = this.viewResizeStartWaveformHeight + dy;
+        if (sub === 'split') {
+            const total = ctx.resizeStartWaveformH + ctx.resizeStartSpectrogramH;
+            let nextWav = ctx.resizeStartWaveformH + dy;
             nextWav = Math.max(MIN_WAVEFORM_HEIGHT, Math.min(total - MIN_SPECTROGRAM_DISPLAY_HEIGHT, nextWav));
             this.waveformDisplayHeight = nextWav;
             this.spectrogramDisplayHeight = total - nextWav;
@@ -1972,7 +1960,7 @@ export class PlayerState {
         } else {
             this.spectrogramDisplayHeight = Math.max(
                 MIN_SPECTROGRAM_DISPLAY_HEIGHT,
-                this.viewResizeStartSpectrogramHeight + dy,
+                ctx.resizeStartSpectrogramH + dy,
             );
         }
 
@@ -1986,9 +1974,9 @@ export class PlayerState {
     }
 
     _stopViewResize() {
-        if (!this.viewResizeMode) return;
+        if (!this.interaction.isViewResize) return;
         this._flushResizeRedraw(true);
-        this.viewResizeMode = null;
+        this.interaction.release();
         document.body.style.cursor = '';
     }
 
@@ -2373,22 +2361,23 @@ export class PlayerState {
 
         // ── Document-level pointer ──
         on(document, 'pointermove', (e) => {
-            if (this.viewResizeMode) { this._updateViewResize(e.clientY); return; }
-            if (this.draggingViewport) this._updateViewportPan(e.clientX);
-            if (this.draggingPlayhead) this._seekFromClientX(e.clientX, this.draggingPlayheadSource);
-            if (this.overviewMode) this._updateOverviewDrag(e.clientX);
+            if (this.interaction.isViewResize) { this._updateViewResize(e.clientY); return; }
+            if (this.interaction.isDraggingViewport) this._updateViewportPan(e.clientX);
+            if (this.interaction.isDraggingPlayhead) this._seekFromClientX(e.clientX, this.interaction.ctx.playheadSource);
+            if (this.interaction.isOverviewDrag) this._updateOverviewDrag(e.clientX);
         });
 
         const releaseAll = () => {
             this._stopViewResize();
-            if (this.draggingViewport) { this.draggingViewport = false; document.body.style.cursor = ''; }
-            this.draggingPlayhead = false;
-            this.draggingPlayheadSource = null;
-            if (this.overviewMode) this._queueOverviewViewportApply(true);
-            if (this.overviewMode && this._overviewDragMoved) {
-                this._overviewSuppressClickUntil = performance.now() + 260;
+            if (this.interaction.isDraggingViewport) {
+                if (this.interaction.ctx.panSuppressClick) this.interaction.blockSeekClicks(50);
+                document.body.style.cursor = '';
             }
-            this.overviewMode = null;
+            if (this.interaction.isOverviewDrag) {
+                this._queueOverviewViewportApply(true);
+                if (this.interaction.ctx.overviewMoved) this.interaction.blockOverviewClicks(260);
+            }
+            this.interaction.release();
         };
         on(document, 'pointerup', releaseAll);
         on(document, 'pointercancel', releaseAll);
@@ -2422,7 +2411,7 @@ export class PlayerState {
             this._startOverviewDrag('move', e.clientX);
         });
         on(this.d.overviewCanvas, 'click', (e) => {
-            if (performance.now() < this._overviewSuppressClickUntil) return;
+            if (this.interaction.isOverviewClickBlocked()) return;
             if (!this._showOverview) return;
             if (!this.audioBuffer) return;
             const rect = this.d.overviewCanvas.getBoundingClientRect();
