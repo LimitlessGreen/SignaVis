@@ -46,6 +46,7 @@
     "dev": "vite",
     "build": "vite build && node ./scripts/generate-types.js",
     "build:legacy": "bash ./scripts/build.sh",
+    "typecheck": "tsc --noEmit",
     "types:generate": "node ./scripts/generate-types.js",
     "pack:check": "npm pack",
     "test": "node --test tests/*.test.mjs",

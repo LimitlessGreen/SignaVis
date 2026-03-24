@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    /* ── Type-checking for existing JS ── */
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    /* ── Strict flags: enable individually (goal: all true) ── */
+    "strict": false,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "noImplicitThis": true,
+    /* Off for now — enable once JSDoc @param annotations are added:
+    "noImplicitAny": true,
+    "strictPropertyInitialization": true,
+    */
+
+    /* ── Module & target (match Vite config) ── */
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "isolatedModules": true,
+
+    /* ── Environment ── */
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
+
+    /* ── Misc ── */
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "types"]
+}
