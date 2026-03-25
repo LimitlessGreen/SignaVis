@@ -2078,6 +2078,7 @@ export class PlayerState {
             this.d.jumpStartBtn, this.d.jumpEndBtn,
             this.d.backwardBtn, this.d.forwardBtn,
             this.d.followToggleBtn, this.d.loopToggleBtn,
+            this.d.crosshairToggleBtn,
             this.d.fitViewBtn, this.d.resetViewBtn,
             this.d.autoContrastBtn, this.d.autoFreqBtn,
         ].forEach((btn) => { btn.disabled = !enabled; });
