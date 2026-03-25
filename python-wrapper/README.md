@@ -24,21 +24,36 @@ pip install "audio-workbench[gradio]"
 pip install -e .
 ```
 
+
 ## Usage
 
 ```python
 from audio_workbench import render_daw_player
 html = render_daw_player(
     audio_bytes,
-    iframe_height=320,
-    viewMode="spectrogram",
-    transportStyle="hero",
-    transportOverlay=True,
-    showOverview=False,
-    showFileOpen=False,
-    showStatusbar=False,
+    # --- Player options (passed to JS) ---
+    viewMode="spectrogram",           # 'both' | 'waveform' | 'spectrogram'
+    transportStyle="hero",            # 'default' | 'hero'
+    transportOverlay=True,             # Centered play overlay
+    showOverview=False,                # Hide overview navigator
+    showFileOpen=False,                # Hide file open button
+    showStatusbar=False,               # Hide status bar
+    # ...any other BirdNETPlayer option
 )
 ```
+
+**Common options:**
+
+| Option | Example | Description |
+|---|---|---|
+| `viewMode` | `'spectrogram'` | Show only the spectrogram |
+| `transportStyle` | `'hero'` | Large centered play button |
+| `showOverview` | `False` | Hide overview navigator |
+| `showFileOpen` | `False` | Hide file open button |
+| `showStatusbar` | `False` | Hide status bar |
+| `labelTaxonomy` | `[{'name': 'Species', 'color': '#0ea5e9'}]` | Custom label presets |
+
+For a full list of options, see the [Web API documentation](https://github.com/LimitlessGreen/Audio-Workbench#player-options).
 
 ## Demo Features
 

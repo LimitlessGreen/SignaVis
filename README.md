@@ -25,7 +25,39 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - [Contributing](#contributing)
 - [License](#license)
 
-## Features
+
+## Player Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `viewMode` | string | `'both'` | `'both'`, `'waveform'`, `'spectrogram'` — visible analysis views |
+| `transportStyle` | string | `'default'` | `'default'`, `'hero'` — transport button style |
+| `transportOverlay` | boolean | `false` | Centered play overlay, no toolbar height |
+| `showFileOpen` | boolean | `true` | Show Open button and file input |
+| `showTransport` | boolean | `true` | Show transport controls (play/pause/stop) |
+| `showTime` | boolean | `true` | Show time display |
+| `showVolume` | boolean | `true` | Show volume controls |
+| `showViewToggles` | boolean | `true` | Show Follow/Loop/Fit/Reset buttons |
+| `showZoom` | boolean | `true` | Show zoom slider |
+| `showFFTControls` | boolean | `true` | Show FFT size, max frequency, color scheme |
+| `showDisplayGain` | boolean | `true` | Show floor/ceiling sliders, auto contrast |
+| `showStatusbar` | boolean | `true` | Show bottom status bar |
+| `showOverview` | boolean | `true` | Show overview navigator |
+| `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
+| `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
+| `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |
+| `followGuardLeftRatio` | number | `0.35` | Follow mode: left guard ratio |
+| `followGuardRightRatio` | number | `0.65` | Follow mode: right guard ratio |
+| `followTargetRatio` | number | `0.5` | Viewport target position for catchup |
+| `followCatchupDurationMs` | number | `240` | Follow catchup animation duration (ms) |
+| `followCatchupSeekDurationMs` | number | `360` | Follow catchup after manual seek (ms) |
+| `smoothLerp` | number | `0.18` | Smooth mode interpolation factor |
+| `smoothSeekLerp` | number | `0.08` | Smooth mode interpolation after seek |
+| `smoothMinStepRatio` | number | `0.03` | Smooth mode minimum step ratio |
+| `smoothSeekMinStepRatio` | number | `0.008` | Smooth mode min step after seek |
+| `smoothSeekFocusMs` | number | `1400` | Slow-follow focus window after seek (ms) |
+
+See the [API section](#api) for usage examples and more details.
 
 - **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
 - **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
