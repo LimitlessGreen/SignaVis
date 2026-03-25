@@ -1,3 +1,4 @@
+
 # audio-workbench
 
 <p align="center">
@@ -20,11 +21,50 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - [Features](#features)
 - [Install](#install)
 - [Quickstart](#quickstart)
-- [Package Contents](#package-contents)
+- [Player Options](#player-options)
+- [Usage Examples](#usage-examples)
+- [API](#api)
+- [Demos](#demos)
 - [Python wrapper](#python-wrapper)
 - [Contributing](#contributing)
 - [License](#license)
 
+## Features
+
+- **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
+- **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
+- **Label annotations** — draw, drag, resize time×frequency boxes on the spectrogram
+- **Label taxonomy** — customizable species presets with colors and keyboard shortcuts
+- **Bandpass-filtered playback** — isolate and play back a specific time×frequency region via Web Audio
+- **External spectrogram injection** — supply pre-computed Float32 data or a rendered image
+- **Settings side-panel** — FFT size, max frequency, color scheme, display gain, auto contrast, zoom
+- **Crosshair overlay** — real-time time + frequency readout
+- **Compact preview modes** — hero transport, overlay mode, small embeds
+- **110+ tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+
+## Install
+
+```bash
+npm i audio-workbench
+```
+
+Or for Python:
+
+```bash
+pip install audio-workbench
+```
+
+See [PyPI](https://pypi.org/project/audio-workbench) and the [python-wrapper/README.md](python-wrapper/README.md) for full Python usage.
+
+## Quickstart
+
+```js
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
+
+const player = new BirdNETPlayer(document.getElementById('player'))
+await player.ready
+```
 
 ## Player Options
 
@@ -46,37 +86,144 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 | `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
 | `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
 | `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |
-| `followGuardLeftRatio` | number | `0.35` | Follow mode: left guard ratio |
-| `followGuardRightRatio` | number | `0.65` | Follow mode: right guard ratio |
-| `followTargetRatio` | number | `0.5` | Viewport target position for catchup |
-| `followCatchupDurationMs` | number | `240` | Follow catchup animation duration (ms) |
-| `followCatchupSeekDurationMs` | number | `360` | Follow catchup after manual seek (ms) |
-| `smoothLerp` | number | `0.18` | Smooth mode interpolation factor |
-| `smoothSeekLerp` | number | `0.08` | Smooth mode interpolation after seek |
-| `smoothMinStepRatio` | number | `0.03` | Smooth mode minimum step ratio |
-| `smoothSeekMinStepRatio` | number | `0.008` | Smooth mode min step after seek |
-| `smoothSeekFocusMs` | number | `1400` | Slow-follow focus window after seek (ms) |
+| ... | ... | ... | ... |
 
 See the [API section](#api) for usage examples and more details.
 
-- **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
-- **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
-- **Label annotations** — draw, drag, resize time×frequency boxes on the spectrogram
-- **Label taxonomy** — customizable species presets with colors and keyboard shortcuts
-- **Bandpass-filtered playback** — isolate and play back a specific time×frequency region via Web Audio
-- **External spectrogram injection** — supply pre-computed Float32 data or a rendered image
-- **Settings side-panel** — FFT size, max frequency, color scheme, display gain, auto contrast, zoom
-- **Crosshair overlay** — real-time time + frequency readout
-- **Compact preview modes** — hero transport, overlay mode, small embeds
-- **110 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+## Usage Examples
 
-## Install
+### ESM (Vite / Vanilla)
+```js
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
 
-```bash
-npm i audio-workbench
+const player = new BirdNETPlayer(document.getElementById('player'))
+await player.ready
 ```
 
-Package (PyPI): https://pypi.org/project/audio-workbench
+### Load from URL
+```js
+await player.loadUrl('/audio/birdsong.mp3')
+player.play()
+```
+
+### File Input
+```js
+const input = document.querySelector('#audio')
+input.addEventListener('change', async () => {
+  const file = input.files?.[0]
+  if (!file) return
+  await player.loadFile(file)
+})
+```
+
+### React
+```jsx
+import { useEffect, useRef } from 'react'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
+
+export default function Player() {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current) return
+    const p = new BirdNETPlayer(ref.current)
+    return () => p.destroy()
+  }, [])
+  return <div ref={ref} />
+}
+```
+
+### Vue
+```js
+import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
+
+const root = ref(null)
+let player
+
+onMounted(() => { player = new BirdNETPlayer(root.value) })
+onBeforeUnmount(() => player?.destroy())
+```
+
+### Svelte
+```svelte
+<script>
+  import { onMount } from 'svelte'
+  import { BirdNETPlayer } from 'audio-workbench'
+  import 'audio-workbench/style'
+
+  let el
+  let player
+  onMount(() => {
+    player = new BirdNETPlayer(el)
+    return () => player.destroy()
+  })
+</script>
+
+<div bind:this={el}></div>
+```
+
+### CDN / IIFE
+```html
+<script src="https://unpkg.com/wavesurfer.js@7"></script>
+<script src="https://unpkg.com/audio-workbench/dist/birdnet-player.iife.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/audio-workbench/dist/birdnet-player.css" />
+<div id="player"></div>
+<script>
+  const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
+</script>
+```
+
+### Streamlit (Python)
+```python
+from audio_workbench import render_daw_player
+import streamlit.components.v1 as components
+
+components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
+```
+
+### Jupyter Notebook
+```python
+from IPython.display import HTML
+from audio_workbench import render_daw_player
+
+HTML(render_daw_player(audio_bytes))
+```
+
+## Demos
+
+- **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/Audio-Workbench/)**
+- **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)**
+- **Streamlit:**
+  ```bash
+  streamlit run python-wrapper/demo_streamlit.py
+  ```
+- **Gradio:**
+  ```bash
+  pip install gradio
+  python python-wrapper/demo_gradio.py
+  ```
+
+## Python wrapper
+
+The Python wrapper allows embedding the player in Streamlit, Jupyter, and Gradio. See [python-wrapper/README.md](python-wrapper/README.md) for full usage, options, and advanced features.
+
+Install:
+```bash
+pip install audio-workbench
+```
+
+Docs & PyPI: https://pypi.org/project/audio-workbench
+
+## Contributing
+
+See the repository on GitHub and open issues/PRs: https://github.com/LimitlessGreen/Audio-Workbench
+
+## License
+
+GNU AGPL-3.0
 
 ## Quickstart
 
