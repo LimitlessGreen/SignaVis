@@ -538,6 +538,15 @@
 .daw-shell.transport-overlay .transport-btn.play-btn.playing {
     opacity: 0;
     transform: scale(0.88);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing:hover {
+    opacity: 0.45;
+    transform: scale(1);
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
 }
 
 .daw-shell.compact-toolbar-active .compact-more-btn {
@@ -580,6 +589,13 @@
     height: 14px;
     border-left: 4px solid #fff;
     border-right: 4px solid #fff;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing::after {
+    width: 24px;
+    height: 28px;
+    border-left: 7px solid #fff;
+    border-right: 7px solid #fff;
 }
 
 /* ═══ Time Display ═══ */
