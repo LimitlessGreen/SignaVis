@@ -128,90 +128,114 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
 
-        <!-- DSP Settings -->
-        <span class="toolbar-group" data-aw="dspGroup"${hide(o.showFFTControls)}>
-            <label class="toolbar-group-label">DSP</label>
-            <label class="toolbar-label">Mode</label>
-            <select data-aw="spectrogramModeSelect" class="toolbar-select">
-                <option value="perch" selected>Perch</option>
-                <option value="classic">Classic</option>
-            </select>
-
-            <label class="toolbar-label">FFT</label>
-            <select data-aw="fftSize" class="toolbar-select">
-                <option value="1024">1024</option>
-                <option value="2048" selected>2048</option>
-                <option value="4096">4096</option>
-            </select>
-
-            <label class="toolbar-label">≡</label>
-            <select data-aw="windowFunction" class="toolbar-select" title="Window Function">
-                <option value="hann" selected>Hann</option>
-                <option value="hamming">Hamming</option>
-                <option value="blackman">Blackman</option>
-            </select>
-
-            <label class="toolbar-label">Win</label>
-            <select data-aw="windowSize" class="toolbar-select">
-                <option value="0">auto</option>
-                <option value="512">512</option>
-                <option value="1024">1024</option>
-                <option value="1280" selected>1280</option>
-                <option value="2048">2048</option>
-                <option value="4096">4096</option>
-            </select>
-
-            <label class="toolbar-label">Hop</label>
-            <select data-aw="hopSize" class="toolbar-select">
-                <option value="0">auto</option>
-                <option value="160">160</option>
-                <option value="256">256</option>
-                <option value="320" selected>320</option>
-                <option value="512">512</option>
-                <option value="1024">1024</option>
-            </select>
-        </span>
-
-        <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
-
-        <!-- Display Settings -->
-        <span class="toolbar-group" data-aw="displayGroup"${hide(o.showFFTControls)}>
-            <label class="toolbar-group-label">Display</label>
-            <label class="toolbar-label">Freq</label>
-            <select data-aw="maxFreqSelect" class="toolbar-select">
-                <option value="4000">4k</option>
-                <option value="6000">6k</option>
-                <option value="8000">8k</option>
-                <option value="10000" selected>10k</option>
-                <option value="12000">12k</option>
-                <option value="16000">16k</option>
-            </select>
-            <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
-
-            <label class="toolbar-label">Color</label>
-            <select data-aw="colorSchemeSelect" class="toolbar-select">
-                <option value="grayscale" selected>B/W</option>
-                <option value="xenocanto">XC</option>
-                <option value="fire">Fire</option>
-                <option value="inferno">Inferno</option>
-                <option value="viridis">Viridis</option>
-                <option value="magma">Magma</option>
-                <option value="plasma">Plasma</option>
-            </select>
-        </span>
-
-        <div class="toolbar-sep"${hide(o.showDisplayGain)}></div>
-
-        <!-- Display gain: SDR#-style floor / ceiling -->
-        <span class="toolbar-group"${hide(o.showDisplayGain)}>
-            <label class="toolbar-group-label">Gain</label>
-            <label class="toolbar-label">Floor</label>
-            <input type="range" data-aw="floorSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
-            <label class="toolbar-label">Ceil</label>
-            <input type="range" data-aw="ceilSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="100" title="Spectrogram Ceiling (Weißpunkt)">
-            <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Kontrast automatisch optimieren">AC</button>
-        </span>
+        <!-- Settings toggle (opens side panel) -->
+        <button class="toolbar-btn settings-toggle-btn" data-aw="settingsToggleBtn" title="Settings-Panel öffnen"${hide(o.showFFTControls)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Settings
+        </button>
       </div>
+    </div>
+
+    <!-- ═══ Settings Side-Panel ═══ -->
+    <div class="settings-panel" data-aw="settingsPanel">
+        <div class="settings-panel-header">
+            <span class="settings-panel-title">Settings</span>
+            <button class="settings-panel-close" data-aw="settingsPanelClose" title="Schließen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">DSP</h3>
+            <div class="settings-row">
+                <label class="settings-label">Mode</label>
+                <select data-aw="spectrogramModeSelect" class="settings-select">
+                    <option value="perch" selected>Perch</option>
+                    <option value="classic">Classic</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">FFT Size</label>
+                <select data-aw="fftSize" class="settings-select">
+                    <option value="1024">1024</option>
+                    <option value="2048" selected>2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Window Fn</label>
+                <select data-aw="windowFunction" class="settings-select" title="Window Function">
+                    <option value="hann" selected>Hann</option>
+                    <option value="hamming">Hamming</option>
+                    <option value="blackman">Blackman</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Win Size</label>
+                <select data-aw="windowSize" class="settings-select">
+                    <option value="0">auto</option>
+                    <option value="512">512</option>
+                    <option value="1024">1024</option>
+                    <option value="1280" selected>1280</option>
+                    <option value="2048">2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Hop Size</label>
+                <select data-aw="hopSize" class="settings-select">
+                    <option value="0">auto</option>
+                    <option value="160">160</option>
+                    <option value="256">256</option>
+                    <option value="320" selected>320</option>
+                    <option value="512">512</option>
+                    <option value="1024">1024</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Display</h3>
+            <div class="settings-row">
+                <label class="settings-label">Max Freq</label>
+                <select data-aw="maxFreqSelect" class="settings-select">
+                    <option value="4000">4 kHz</option>
+                    <option value="6000">6 kHz</option>
+                    <option value="8000">8 kHz</option>
+                    <option value="10000" selected>10 kHz</option>
+                    <option value="12000">12 kHz</option>
+                    <option value="16000">16 kHz</option>
+                </select>
+                <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Color</label>
+                <select data-aw="colorSchemeSelect" class="settings-select">
+                    <option value="grayscale" selected>B/W</option>
+                    <option value="xenocanto">XC</option>
+                    <option value="fire">Fire</option>
+                    <option value="inferno">Inferno</option>
+                    <option value="viridis">Viridis</option>
+                    <option value="magma">Magma</option>
+                    <option value="plasma">Plasma</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Gain</h3>
+            <div class="settings-row">
+                <label class="settings-label">Floor</label>
+                <input type="range" data-aw="floorSlider" class="settings-range" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Ceiling</label>
+                <input type="range" data-aw="ceilSlider" class="settings-range" min="0" max="100" value="100" title="Spectrogram Ceiling (Weißpunkt)">
+            </div>
+            <div class="settings-row">
+                <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Kontrast automatisch optimieren">Auto Contrast</button>
+            </div>
+        </div>
     </div>
 
     <!-- ═══ Main Content ═══ -->

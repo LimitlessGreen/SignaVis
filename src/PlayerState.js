@@ -114,6 +114,7 @@ export class PlayerState {
             ? this.options.compactToolbar
             : 'auto';
         this._compactToolbarOpen = false;
+        this._settingsPanelOpen = false;
         this._compactToolbarLayoutRaf = 0;
         this._showWaveformTimeline = this.options.showWaveformTimeline !== false
             && !(this.options.transportOverlay && this._viewMode === 'waveform');
@@ -470,6 +471,9 @@ export class PlayerState {
             crosshairToggleBtn:     q('crosshairToggleBtn'),
             crosshairCanvas:        q('crosshairCanvas'),
             crosshairReadout:       q('crosshairReadout'),
+            settingsToggleBtn:      q('settingsToggleBtn'),
+            settingsPanel:          q('settingsPanel'),
+            settingsPanelClose:     q('settingsPanelClose'),
         };
     }
 
@@ -2100,6 +2104,19 @@ export class PlayerState {
         if (this.d.compactMoreBtn) this.d.compactMoreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
+    _toggleSettingsPanel() {
+        this._setSettingsPanelOpen(!this._settingsPanelOpen);
+    }
+
+    _setSettingsPanelOpen(open) {
+        this._settingsPanelOpen = !!open;
+        this.container.classList.toggle('settings-panel-open', this._settingsPanelOpen);
+        if (this.d.settingsToggleBtn) {
+            this.d.settingsToggleBtn.classList.toggle('active', this._settingsPanelOpen);
+            this.d.settingsToggleBtn.setAttribute('aria-expanded', this._settingsPanelOpen ? 'true' : 'false');
+        }
+    }
+
     _setTransportEnabled(enabled) {
         [
             this.d.playPauseBtn, this.d.stopBtn,
@@ -2382,6 +2399,8 @@ export class PlayerState {
             e.stopPropagation();
             this._setCompactToolbarOpen(!this._compactToolbarOpen);
         });
+        on(this.d.settingsToggleBtn, 'click', () => this._toggleSettingsPanel());
+        on(this.d.settingsPanelClose, 'click', () => this._setSettingsPanelOpen(false));
         on(this.d.audioFile, 'change', (e) => this._handleFileSelect(e));
         on(this.d.playPauseBtn, 'click', () => this._togglePlayPause());
         on(this.d.stopBtn, 'click', () => this._stopPlayback());
