@@ -229,6 +229,7 @@ export class PlayerState {
             this._bindTouchGestures();
         }
         this._refreshCompactToolbarLayout();
+        this._updatePcenSectionVisibility();
         requestAnimationFrame(() => this._refreshCompactToolbarLayout());
     }
 
@@ -450,7 +451,15 @@ export class PlayerState {
             overviewHandleRight:    q('overviewHandleRight'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
-            spectrogramModeSelect:  q('spectrogramModeSelect'),
+            scaleSelect:            q('scaleSelect'),
+            presetPerchBtn:         q('presetPerchBtn'),
+            presetClassicBtn:       q('presetClassicBtn'),
+            nMelsInput:             q('nMelsInput'),
+            pcenGainInput:          q('pcenGainInput'),
+            pcenBiasInput:          q('pcenBiasInput'),
+            pcenRootInput:          q('pcenRootInput'),
+            pcenSmoothingInput:     q('pcenSmoothingInput'),
+            pcenSection:            q('pcenSection'),
             fftSizeSelect:          q('fftSize'),
             windowFunctionSelect:   q('windowFunction'),
             windowSizeSelect:       q('windowSize'),
@@ -1155,16 +1164,23 @@ export class PlayerState {
         if (this._externalSpectrogram) return; // external data — do not overwrite
         this._setTransportState('rendering', 'spectrogram-generate');
 
-        const spectrogramMode = this.d.spectrogramModeSelect?.value || 'perch';
-        const profile = DSP_PROFILES[spectrogramMode] || DSP_PROFILES.perch;
+        const scale = this.d.scaleSelect?.value || 'mel';
+        const spectrogramMode = scale === 'mel' ? 'perch' : 'classic';
         const windowSize = parseInt(this.d.windowSizeSelect?.value || '0', 10) || 0;
         const hopSize = parseInt(this.d.hopSizeSelect?.value || '0', 10) || 0;
         const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
+        const nMels = parseInt(this.d.nMelsInput?.value || '160', 10) || 160;
         const options = {
-            ...profile,
+            spectrogramMode,
             sampleRate: this.audioBuffer.sampleRate,
             fftSize: parseInt(this.d.fftSizeSelect.value, 10),
             windowFunction,
+            nMels,
+            frameRate: PERCH_FRAME_RATE,
+            pcenGain: parseFloat(this.d.pcenGainInput?.value || '0.8'),
+            pcenBias: parseFloat(this.d.pcenBiasInput?.value || '0.01'),
+            pcenRoot: parseFloat(this.d.pcenRootInput?.value || '4.0'),
+            pcenSmoothing: parseFloat(this.d.pcenSmoothingInput?.value || '0.025'),
             ...(windowSize > 0 ? { windowSize } : {}),
             ...(hopSize > 0 ? { hopSize } : {}),
         };
@@ -1258,8 +1274,8 @@ export class PlayerState {
         this.spectrogramMels = nMels;
 
         if (options.sampleRate) this.sampleRateHz = options.sampleRate;
-        if (options.mode && this.d.spectrogramModeSelect) {
-            this.d.spectrogramModeSelect.value = options.mode;
+        if (options.mode && this.d.scaleSelect) {
+            this.d.scaleSelect.value = options.mode === 'classic' ? 'linear' : 'mel';
         }
 
         this._updateSpectrogramStats();
@@ -1388,7 +1404,7 @@ export class PlayerState {
             this.spectrogramFrames,
             this.spectrogramMels,
             this.sampleRateHz,
-            this.d.spectrogramModeSelect?.value || 'perch',
+            (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
         );
         const options = Array.from(this.d.maxFreqSelect.options);
         let best = options[options.length - 1];
@@ -1455,7 +1471,7 @@ export class PlayerState {
             maxFreq: parseFloat(this.d.maxFreqSelect.value),
             spectrogramAbsLogMin: this.spectrogramAbsLogMin,
             spectrogramAbsLogMax: this.spectrogramAbsLogMax,
-            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
+            spectrogramMode: (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
         });
         // Upload to GPU if available
         if (this.spectrogramGrayInfo && this.colorizer.ok) {
@@ -1967,7 +1983,7 @@ export class PlayerState {
             canvasHeight: this.d.spectrogramCanvas?.height || 0,
             maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
             spectrogramMels: this.spectrogramMels,
-            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
+            spectrogramMode: (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
             frameRate: PERCH_FRAME_RATE,
             hopSize: this.spectrogramHopSize || 0,
         });
@@ -2117,6 +2133,45 @@ export class PlayerState {
         }
     }
 
+    /** Apply a DSP preset (fills all controls, triggers regeneration). */
+    _applyPreset(name) {
+        const p = DSP_PROFILES[name];
+        if (!p) return;
+        // Scale
+        if (this.d.scaleSelect) this.d.scaleSelect.value = p.spectrogramMode === 'classic' ? 'linear' : 'mel';
+        // FFT
+        if (this.d.fftSizeSelect) this.d.fftSizeSelect.value = String(p.fftSize);
+        // Window function
+        if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction;
+        // nMels
+        if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels);
+        // PCEN
+        if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain);
+        if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias);
+        if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot);
+        if (this.d.pcenSmoothingInput) this.d.pcenSmoothingInput.value = String(p.pcenSmoothing);
+        // Color palette
+        const palette = p.spectrogramMode === 'classic' ? 'xenocanto' : 'grayscale';
+        if (this.d.colorSchemeSelect) { this.d.colorSchemeSelect.value = palette; this.currentColorScheme = palette; }
+        // Highlight active preset button
+        this.d.presetPerchBtn?.classList.toggle('active', name === 'perch');
+        this.d.presetClassicBtn?.classList.toggle('active', name === 'classic');
+        this._updatePcenSectionVisibility();
+        if (this.audioBuffer) this._generateSpectrogram();
+    }
+
+    _clearPresetHighlight() {
+        this.d.presetPerchBtn?.classList.remove('active');
+        this.d.presetClassicBtn?.classList.remove('active');
+    }
+
+    _updatePcenSectionVisibility() {
+        if (this.d.pcenSection) {
+            const isMel = (this.d.scaleSelect?.value || 'mel') === 'mel';
+            this.d.pcenSection.style.display = isMel ? '' : 'none';
+        }
+    }
+
     _setTransportEnabled(enabled) {
         [
             this.d.playPauseBtn, this.d.stopBtn,
@@ -2204,7 +2259,8 @@ export class PlayerState {
         const mode = c.spectrogramMode;
         const timeStr = time.toFixed(3) + ' s';
         const freqStr = freq >= 1000 ? (freq / 1000).toFixed(2) + ' kHz' : Math.round(freq) + ' Hz';
-        const ampStr = mode === 'classic'
+        const isLinear = (this.d.scaleSelect?.value || 'mel') === 'linear';
+        const ampStr = isLinear
             ? amplitude.toFixed(1) + ' dB'
             : amplitude.toFixed(4);
         readout.textContent = `${timeStr}  |  ${freqStr}  |  ${ampStr}`;
@@ -2419,17 +2475,27 @@ export class PlayerState {
         });
 
         // ── Settings ──
-        on(this.d.spectrogramModeSelect, 'change', () => {
-            // When switching to classic mode, auto-select XC palette for best effect
-            if (this.d.spectrogramModeSelect.value === 'classic') {
+        on(this.d.scaleSelect, 'change', () => {
+            // Toggle PCEN section visibility
+            this._updatePcenSectionVisibility();
+            // Auto-select matching color palette
+            if (this.d.scaleSelect.value === 'linear') {
                 this.d.colorSchemeSelect.value = 'xenocanto';
                 this.currentColorScheme = 'xenocanto';
             } else {
                 this.d.colorSchemeSelect.value = 'grayscale';
                 this.currentColorScheme = 'grayscale';
             }
+            this._clearPresetHighlight();
             if (this.audioBuffer) this._generateSpectrogram();
         });
+        on(this.d.presetPerchBtn, 'click', () => this._applyPreset('perch'));
+        on(this.d.presetClassicBtn, 'click', () => this._applyPreset('classic'));
+        on(this.d.nMelsInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.pcenGainInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.pcenBiasInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.pcenRootInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.pcenSmoothingInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.fftSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.windowSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.hopSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });

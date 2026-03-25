@@ -146,12 +146,20 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <div class="settings-section">
+            <h3 class="settings-section-title">Presets</h3>
+            <div class="settings-row preset-row">
+                <button class="preset-btn active" data-aw="presetPerchBtn" title="Perch: mel + PCEN">Perch</button>
+                <button class="preset-btn" data-aw="presetClassicBtn" title="Classic: linear + dB">Classic</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
             <h3 class="settings-section-title">DSP</h3>
             <div class="settings-row">
-                <label class="settings-label">Mode</label>
-                <select data-aw="spectrogramModeSelect" class="settings-select">
-                    <option value="perch" selected>Perch</option>
-                    <option value="classic">Classic</option>
+                <label class="settings-label">Scale</label>
+                <select data-aw="scaleSelect" class="settings-select">
+                    <option value="mel" selected>Mel</option>
+                    <option value="linear">Linear</option>
                 </select>
             </div>
             <div class="settings-row">
@@ -191,6 +199,30 @@ export function createPlayerHTML(opts = {}) {
                     <option value="512">512</option>
                     <option value="1024">1024</option>
                 </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Mel Bins</label>
+                <input type="number" data-aw="nMelsInput" class="settings-number" value="160" min="16" max="512" step="16" title="Anzahl Mel-Frequenzbänder">
+            </div>
+        </div>
+
+        <div class="settings-section" data-aw="pcenSection">
+            <h3 class="settings-section-title">PCEN</h3>
+            <div class="settings-row">
+                <label class="settings-label">Gain</label>
+                <input type="number" data-aw="pcenGainInput" class="settings-number" value="0.8" min="0" max="2" step="0.05">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Bias</label>
+                <input type="number" data-aw="pcenBiasInput" class="settings-number" value="0.01" min="0" max="1" step="0.005">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Root</label>
+                <input type="number" data-aw="pcenRootInput" class="settings-number" value="4.0" min="1" max="10" step="0.5">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Smoothing</label>
+                <input type="number" data-aw="pcenSmoothingInput" class="settings-number" value="0.025" min="0" max="0.5" step="0.005">
             </div>
         </div>
 
