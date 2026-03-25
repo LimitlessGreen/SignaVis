@@ -280,7 +280,7 @@ export class PlayerState {
             this._bindTouchGestures();
         }
         this._refreshCompactToolbarLayout();
-        this._updatePcenSectionVisibility();
+        this._updatePcenSectionDimming();
         requestAnimationFrame(() => this._refreshCompactToolbarLayout());
     }
 
@@ -510,6 +510,7 @@ export class PlayerState {
             pcenBiasInput:          q('pcenBiasInput'),
             pcenRootInput:          q('pcenRootInput'),
             pcenSmoothingInput:     q('pcenSmoothingInput'),
+            pcenEnabledCheck:       q('pcenEnabledCheck'),
             pcenSection:            q('pcenSection'),
             fftSizeSelect:          q('fftSize'),
             windowFunctionSelect:   q('windowFunction'),
@@ -1230,6 +1231,7 @@ export class PlayerState {
             windowFunction,
             nMels,
             frameRate: PERCH_FRAME_RATE,
+            usePcen: this.d.pcenEnabledCheck?.checked ?? true,
             pcenGain: parseFloat(this.d.pcenGainInput?.value || '0.8'),
             pcenBias: parseFloat(this.d.pcenBiasInput?.value || '0.01'),
             pcenRoot: parseFloat(this.d.pcenRootInput?.value || '4.0'),
@@ -2250,6 +2252,7 @@ export class PlayerState {
         // nMels
         if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels);
         // PCEN
+        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = !!p.usePcen;
         if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain);
         if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias);
         if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot);
@@ -2260,7 +2263,7 @@ export class PlayerState {
         // Highlight active preset button
         this.d.presetPerchBtn?.classList.toggle('active', name === 'perch');
         this.d.presetClassicBtn?.classList.toggle('active', name === 'classic');
-        this._updatePcenSectionVisibility();
+        this._updatePcenSectionDimming();
         if (this.audioBuffer) this._generateSpectrogram();
     }
 
@@ -2269,10 +2272,17 @@ export class PlayerState {
         this.d.presetClassicBtn?.classList.remove('active');
     }
 
-    _updatePcenSectionVisibility() {
+    _updatePcenSectionDimming() {
         if (this.d.pcenSection) {
-            const isMel = (this.d.scaleSelect?.value || 'mel') === 'mel';
-            this.d.pcenSection.style.display = isMel ? '' : 'none';
+            const enabled = this.d.pcenEnabledCheck?.checked ?? true;
+            this.d.pcenSection.style.opacity = enabled ? '' : '0.45';
+            // Disable/enable the individual inputs
+            for (const el of [
+                this.d.pcenGainInput, this.d.pcenBiasInput,
+                this.d.pcenRootInput, this.d.pcenSmoothingInput,
+            ]) {
+                if (el) el.disabled = !enabled;
+            }
         }
     }
 
@@ -2580,8 +2590,6 @@ export class PlayerState {
 
         // ── Settings ──
         on(this.d.scaleSelect, 'change', () => {
-            // Toggle PCEN section visibility
-            this._updatePcenSectionVisibility();
             // Auto-select matching color palette
             if (this.d.scaleSelect.value === 'linear') {
                 this.d.colorSchemeSelect.value = 'xenocanto';
@@ -2596,6 +2604,7 @@ export class PlayerState {
         on(this.d.presetPerchBtn, 'click', () => this._applyPreset('perch'));
         on(this.d.presetClassicBtn, 'click', () => this._applyPreset('classic'));
         on(this.d.nMelsInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.pcenEnabledCheck, 'change', () => { this._updatePcenSectionDimming(); this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.pcenGainInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.pcenBiasInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.pcenRootInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });

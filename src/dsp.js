@@ -216,6 +216,7 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFu
  * @param {number} params.pcenBias
  * @param {number} params.pcenRoot
  * @param {number} params.pcenSmoothing
+ * @param {boolean} [params.usePcen=true] - apply PCEN normalisation (false → dB even in mel mode)
  * @param {string} [params.spectrogramMode='perch'] - 'perch' or 'classic'
  * @param {Float32Array} [params.initialSmooth] - carry-over PCEN smooth state from previous chunk
  * @param {number} [params.windowSize] - window length in samples (0 or omit = auto: 4×hopSize)
@@ -228,6 +229,7 @@ export function computeSpectrogram(params) {
     const {
         channelData, fftSize, sampleRate, frameRate,
         nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
+        usePcen = true,
         spectrogramMode, initialSmooth,
         windowSize: userWindowSize, hopSize: userHopSize,
         windowFunction = 'hann',
@@ -247,10 +249,10 @@ export function computeSpectrogram(params) {
     const melFB      = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
     const outBins    = useLinear ? nBins : nMels;
     const output     = new Float32Array(numFrames * outBins);
-    let smooth       = null; // PCEN smooth accumulator (Perch mode only)
+    let smooth       = null;
 
     if (useLinear) {
-        // ── Classic / Xeno-Canto style: linear power spectrum → dB ──
+        // ── Linear power spectrum → dB ──
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
             const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
@@ -260,8 +262,21 @@ export function computeSpectrogram(params) {
                 output[base + k] = 10 * Math.log10(Math.max(1e-10, power));
             }
         }
+    } else if (!usePcen) {
+        // ── Mel scale without PCEN: power → mel → dB ──
+        for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
+            const offset = frameIdx * hopSize;
+            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
+            const power  = new Float32Array(mag.length);
+            for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
+            const mel    = applyMelFilterbank(power, melFB);
+            const base   = frameIdx * nMels;
+            for (let m = 0; m < nMels; m++) {
+                output[base + m] = 10 * Math.log10(Math.max(1e-10, mel[m]));
+            }
+        }
     } else {
-        // ── Perch mode: magnitude² (power) → mel → PCEN ──
+        // ── Mel + PCEN: power → mel → PCEN ──
         smooth = new Float32Array(nMels);
         if (initialSmooth && initialSmooth.length === nMels) {
             smooth.set(initialSmooth);
@@ -271,7 +286,6 @@ export function computeSpectrogram(params) {
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
             const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
-            // Square magnitude to get power spectrum before mel filterbank
             const power  = new Float32Array(mag.length);
             for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
             const mel    = applyMelFilterbank(power, melFB);

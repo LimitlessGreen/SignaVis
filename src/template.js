@@ -207,7 +207,12 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <div class="settings-section" data-aw="pcenSection">
-            <h3 class="settings-section-title">PCEN</h3>
+            <h3 class="settings-section-title">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" data-aw="pcenEnabledCheck" checked>
+                    PCEN
+                </label>
+            </h3>
             <div class="settings-row">
                 <label class="settings-label">Gain</label>
                 <input type="number" data-aw="pcenGainInput" class="settings-number" value="0.8" min="0" max="2" step="0.05">
