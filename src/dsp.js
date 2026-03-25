@@ -59,6 +59,13 @@ export function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
             filter[k] = (right - k) / (right - center || 1);
         }
 
+        // Power-normalise so each triangle sums to 1 (matches SV behaviour)
+        let filterSum = 0;
+        for (let k = 0; k < nFftBins; k++) filterSum += filter[k];
+        if (filterSum > 0) {
+            for (let k = 0; k < nFftBins; k++) filter[k] /= filterSum;
+        }
+
         filterbank.push(filter);
     }
 
@@ -293,7 +300,7 @@ export function computeSpectrogram(params) {
             for (let m = 0; m < nMels; m++) {
                 const e     = mel[m];
                 smooth[m]   = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
-                const denom = Math.pow(1e-12 + smooth[m], pcenGain);
+                const denom = Math.pow(1e-10 + smooth[m], pcenGain);
                 const norm  = e / denom;
                 output[base + m] = Math.pow(norm + pcenBias, pcenPower) - pcenBiasOffset;
             }

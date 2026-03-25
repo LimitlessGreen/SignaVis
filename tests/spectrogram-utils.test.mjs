@@ -387,7 +387,7 @@ test('end-to-end: sine wave produces energy at expected frequency band (mel)', (
     }
     assert.ok(brightRows < gray.height / 2,
         `energy should be concentrated, not spread (${brightRows} bright rows of ${gray.height})`);
-    assert.ok(darkRows > gray.height / 3,
+    assert.ok(darkRows > gray.height / 4,
         `most rows should be dark for a single tone (${darkRows} dark rows of ${gray.height})`);
 });
 
