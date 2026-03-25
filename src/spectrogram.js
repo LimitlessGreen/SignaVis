@@ -435,25 +435,27 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
 
     const threshold = peakEnergy * energyThreshold;
 
-    // Scan from top bin downward, find highest bin above threshold
-    let highestActiveBin = 0;
-    for (let m = nMels - 1; m >= 0; m--) {
-        if (binEnergy[m] > threshold) {
-            highestActiveBin = m;
-            break;
-        }
+    // Collect all active bins and use the 95th percentile as the upper bound.
+    // This is more robust than a single top-down scan which can be thrown off
+    // by isolated noise in a single high bin.
+    const activeBins = [];
+    for (let m = 0; m < nMels; m++) {
+        if (binEnergy[m] > threshold) activeBins.push(m);
     }
+    if (activeBins.length === 0) return sampleRate / 2;
 
-    // Map bin to Hz - different for mel vs linear mode
+    const p95Idx = Math.min(activeBins.length - 1,
+        Math.ceil(activeBins.length * 0.95) - 1);
+    const upperBin = activeBins[p95Idx];
+
+    // Map bin to Hz
     let detectedHz;
     if (scale === 'linear') {
-        // Linear bins: bin k → k / nMels * (sampleRate / 2)
         const binHz = (sampleRate / 2) / nMels;
-        detectedHz = Math.min(nMels - 1, highestActiveBin + 2) * binHz;
+        detectedHz = Math.min(nMels - 1, upperBin) * binHz;
     } else {
-        // Mel bins: use mel frequency lookup
         const melFreqs = buildMelFrequencies(sampleRate, nMels);
-        detectedHz = melFreqs[Math.min(nMels - 1, highestActiveBin + 2)] || sampleRate / 2;
+        detectedHz = melFreqs[Math.min(nMels - 1, upperBin)] || sampleRate / 2;
     }
     const withMargin = detectedHz * 1.1;
 
@@ -829,7 +831,6 @@ export function createSpectrogramProcessor() {
         const requestId = ++requestCounter;
         const audioCopy = new Float32Array(channelData);
 
-        // Race: worker result vs timeout fallback (5s)
         const workerPromise = new Promise((resolve, reject) => {
             pendingRequests.set(requestId, { resolve, reject });
         });
@@ -839,11 +840,15 @@ export function createSpectrogramProcessor() {
             [audioCopy.buffer],
         );
 
+        // Timeout scales with audio length: 3s base + 1s per 30s of audio
+        const durationSec = channelData.length / Math.max(1, options.sampleRate || 44100);
+        const timeoutMs = Math.max(3000, 3000 + Math.ceil(durationSec / 30) * 1000);
+
         try {
             const result = await Promise.race([
                 workerPromise,
                 new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Worker timeout')), 8000)
+                    setTimeout(() => reject(new Error('Worker timeout')), timeoutMs)
                 ),
             ]);
             return result;
