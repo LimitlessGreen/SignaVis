@@ -313,6 +313,10 @@ export function createPlayerHTML(opts = {}) {
                         <canvas class="crosshair-overlay" data-aw="crosshairCanvas"></canvas>
                         <div class="crosshair-readout" data-aw="crosshairReadout"></div>
                         <div class="playhead" data-aw="playhead"></div>
+                        <div class="recomputing-overlay" data-aw="recomputingOverlay" aria-live="polite" hidden>
+                            <span class="recomputing-spinner"></span>
+                            <span>Berechne…</span>
+                        </div>
                     </div>
                 </div>
             </div>

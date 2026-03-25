@@ -532,6 +532,7 @@ export class PlayerState {
             crosshairToggleBtn:     q('crosshairToggleBtn'),
             crosshairCanvas:        q('crosshairCanvas'),
             crosshairReadout:       q('crosshairReadout'),
+            recomputingOverlay:     q('recomputingOverlay'),
             settingsToggleBtn:      q('settingsToggleBtn'),
             settingsPanel:          q('settingsPanel'),
             settingsPanelClose:     q('settingsPanelClose'),
@@ -1216,6 +1217,7 @@ export class PlayerState {
     async _generateSpectrogram() {
         if (!this.audioBuffer) return;
         if (this._externalSpectrogram) return; // external data — do not overwrite
+        if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = false;
         this._setTransportState('rendering', 'spectrogram-generate');
 
         const scale = this.d.scaleSelect?.value || 'mel';
@@ -1281,6 +1283,7 @@ export class PlayerState {
             this._buildSpectrogramBaseImage();
             this._drawSpectrogram();
             this._syncOverviewWindowToViewport();
+            if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
             this._setTransportState('ready', 'spectrogram-ready');
 
             this._emit('ready', {
@@ -1290,6 +1293,7 @@ export class PlayerState {
                 nMels: this.spectrogramMels,
             });
         } catch (error) {
+            if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
             this._setTransportState('error', 'spectrogram-error');
             this._emit('error', { message: error?.message || String(error), source: 'spectrogram' });
             throw error;

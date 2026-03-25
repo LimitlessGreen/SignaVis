@@ -650,6 +650,37 @@
     image-rendering: pixelated;
 }
 
+/* ── Recomputing Overlay ─────────────────────────────────── */
+.recomputing-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #e0e0e0;
+    font: 12px/1.4 system-ui, sans-serif;
+    pointer-events: none;
+    z-index: 20;
+    backdrop-filter: blur(2px);
+    transition: opacity 0.15s;
+}
+.recomputing-overlay[hidden] {
+    display: none;
+}
+.recomputing-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #e0e0e0;
+    border-radius: 50%;
+    animation: aw-spin 0.7s linear infinite;
+}
+@keyframes aw-spin {
+    to { transform: rotate(360deg); }
+}
+
 .crosshair-overlay {
     position: absolute;
     left: 0;
