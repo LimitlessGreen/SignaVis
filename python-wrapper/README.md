@@ -144,6 +144,7 @@ See the [Web API](https://github.com/LimitlessGreen/Audio-Workbench#external-spe
 
 ---
 
+
 ## Demos
 
 **Streamlit:**
@@ -158,6 +159,12 @@ streamlit run demo_streamlit.py
 pip install gradio
 python demo_gradio.py
 ```
+
+**Google Colab:**
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)
+
+Try the interactive notebook demo directly in your browser—no setup required!
 
 ---
 
