@@ -1775,6 +1775,7 @@ export class PlayerState {
 
         if (changed) {
             this.pixelsPerSecond = effectivePps;
+            this._updateCoords();
             this.d.zoomSlider.value = String(Math.round(effectivePps / sliderStep) * sliderStep);
             this.d.zoomValue.textContent = `${Math.round(effectivePps)} px/s`;
             this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
