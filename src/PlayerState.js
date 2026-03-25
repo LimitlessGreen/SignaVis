@@ -1286,7 +1286,6 @@ export class PlayerState {
             this._syncOverviewWindowToViewport();
             if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
             this._setTransportState('ready', 'spectrogram-ready');
-            if (this._transportOverlay) this._fitEntireTrackInView();
 
             const computeMs = performance.now() - t0;
             this._emit('computeTime', { durationMs: Math.round(computeMs) });
