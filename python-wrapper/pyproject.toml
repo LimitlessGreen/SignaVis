@@ -8,7 +8,7 @@ version = "0.2.3"
 description = "Python wrapper for Audio Workbench Player (HTML/Streamlit embedding)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
-authors = [{ name = "Perch Contributors" }]
+authors = [{ name = "LimitlessGreen" }]
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 keywords = ["audio", "player", "streamlit", "jupyter", "embed", "waveform", "spectrogram"]
