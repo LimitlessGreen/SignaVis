@@ -24,7 +24,7 @@ export class CoordinateSystem {
      * @param {number} [params.canvasHeight]       Spectrogram canvas height in px (display size)
      * @param {number} [params.maxFreq]            User-selected max frequency in Hz
      * @param {number} [params.spectrogramMels]    Number of mel bins (nMels)
-     * @param {string} [params.spectrogramMode]    'perch' | 'classic'
+     * @param {string} [params.scale]               'mel' | 'linear'
      * @param {number} [params.frameRate]          Spectrogram frame rate (default: PERCH_FRAME_RATE)
      * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
      */
@@ -36,7 +36,7 @@ export class CoordinateSystem {
         canvasHeight = 0,
         maxFreq = 10000,
         spectrogramMels = 128,
-        spectrogramMode = 'perch',
+        scale = 'mel',
         frameRate = PERCH_FRAME_RATE,
         hopSize = 0,
     } = {}) {
@@ -47,13 +47,13 @@ export class CoordinateSystem {
         this.canvasHeight = Math.max(1, canvasHeight);
         this.maxFreq = Math.max(1, maxFreq);
         this.spectrogramMels = Math.max(1, spectrogramMels);
-        this.spectrogramMode = spectrogramMode;
+        this.scale = scale;
         this.frameRate = Math.max(1, frameRate);
 
         // Derived constants (computed once)
         this.nyquist = this.sampleRate / 2;
         this.boundedMaxFreq = Math.min(this.maxFreq, this.nyquist);
-        this.isLinear = this.spectrogramMode === 'classic';
+        this.isLinear = this.scale === 'linear';
         this.hopSize = (hopSize && hopSize > 0) ? hopSize : Math.max(1, Math.floor(this.sampleRate / this.frameRate));
 
         // Mel / linear bin setup

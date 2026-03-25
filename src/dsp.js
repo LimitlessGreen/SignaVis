@@ -211,13 +211,13 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFu
  * @param {number} params.fftSize
  * @param {number} params.sampleRate
  * @param {number} params.frameRate      - frames per second
- * @param {number} params.nMels          - mel bins (Perch mode)
+ * @param {number} params.nMels          - number of mel bins (mel scale)
  * @param {number} params.pcenGain
  * @param {number} params.pcenBias
  * @param {number} params.pcenRoot
  * @param {number} params.pcenSmoothing
  * @param {boolean} [params.usePcen=true] - apply PCEN normalisation (false → dB even in mel mode)
- * @param {string} [params.spectrogramMode='perch'] - 'perch' or 'classic'
+ * @param {string} [params.scale='mel'] - 'mel' or 'linear'
  * @param {Float32Array} [params.initialSmooth] - carry-over PCEN smooth state from previous chunk
  * @param {number} [params.windowSize] - window length in samples (0 or omit = auto: 4×hopSize)
  * @param {number} [params.hopSize] - hop size in samples (0 or omit = auto: sampleRate/frameRate)
@@ -230,7 +230,7 @@ export function computeSpectrogram(params) {
         channelData, fftSize, sampleRate, frameRate,
         nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
         usePcen = true,
-        spectrogramMode, initialSmooth,
+        scale = 'mel', initialSmooth,
         windowSize: userWindowSize, hopSize: userHopSize,
         windowFunction = 'hann',
     } = params;
@@ -245,7 +245,7 @@ export function computeSpectrogram(params) {
     const numFrames  = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
 
     const nBins      = Math.floor(fftSize / 2);
-    const useLinear  = spectrogramMode === 'classic';
+    const useLinear  = scale === 'linear';
     const melFB      = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
     const outBins    = useLinear ? nBins : nMels;
     const output     = new Float32Array(numFrames * outBins);

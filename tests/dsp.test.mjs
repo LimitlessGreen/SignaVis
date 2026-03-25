@@ -167,7 +167,7 @@ test('fftMagnitudeSpectrum values are non-negative', () => {
 
 // ─── computeSpectrogram ─────────────────────────────────────────────
 
-test('computeSpectrogram in Perch mode produces correct shape', () => {
+test('computeSpectrogram in mel scale produces correct shape', () => {
     const sampleRate = 32000;
     const duration = 1; // 1 second
     const audio = new Float32Array(sampleRate * duration);
@@ -186,7 +186,7 @@ test('computeSpectrogram in Perch mode produces correct shape', () => {
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'perch',
+        scale: 'mel',
     });
 
     assert.ok(result.nFrames > 0, 'should have frames');
@@ -194,7 +194,7 @@ test('computeSpectrogram in Perch mode produces correct shape', () => {
     assert.equal(result.data.length, result.nFrames * result.nMels);
 });
 
-test('computeSpectrogram in Classic mode uses linear bins', () => {
+test('computeSpectrogram in linear scale uses linear bins', () => {
     const sampleRate = 32000;
     const audio = new Float32Array(sampleRate); // 1 second
     for (let i = 0; i < audio.length; i++) {
@@ -206,20 +206,20 @@ test('computeSpectrogram in Classic mode uses linear bins', () => {
         fftSize: 2048,
         sampleRate,
         frameRate: 100,
-        nMels: 128, // ignored in classic mode
+        nMels: 128, // ignored in linear scale
         pcenGain: 0.98,
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'classic',
+        scale: 'linear',
     });
 
     assert.ok(result.nFrames > 0, 'should have frames');
-    assert.equal(result.nMels, 1024, 'classic mode should use fftSize/2 bins');
+    assert.equal(result.nMels, 1024, 'linear scale should use fftSize/2 bins');
     assert.equal(result.data.length, result.nFrames * result.nMels);
 });
 
-test('computeSpectrogram classic mode produces dB values', () => {
+test('computeSpectrogram linear scale produces dB values', () => {
     const sampleRate = 32000;
     const audio = new Float32Array(sampleRate);
     for (let i = 0; i < audio.length; i++) {
@@ -236,7 +236,7 @@ test('computeSpectrogram classic mode produces dB values', () => {
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'classic',
+        scale: 'linear',
     });
 
     // dB values should be negative for quiet bins
@@ -244,7 +244,7 @@ test('computeSpectrogram classic mode produces dB values', () => {
     for (let i = 0; i < result.data.length; i++) {
         if (result.data[i] < 0) { hasNegative = true; break; }
     }
-    assert.ok(hasNegative, 'classic mode should produce negative dB values for quiet bins');
+    assert.ok(hasNegative, 'linear scale should produce negative dB values for quiet bins');
 });
 
 // ─── FFT Twiddle Cache ─────────────────────────────────────────────
@@ -270,7 +270,7 @@ test('iterativeFFT produces identical results on repeated calls (twiddle cache)'
 
 // ─── PCEN smooth state carry-over ───────────────────────────────────
 
-test('computeSpectrogram Perch mode returns smoothState', () => {
+test('computeSpectrogram mel+PCEN returns smoothState', () => {
     const sampleRate = 32000;
     const audio = new Float32Array(sampleRate);
     for (let i = 0; i < audio.length; i++) {
@@ -287,10 +287,11 @@ test('computeSpectrogram Perch mode returns smoothState', () => {
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'perch',
+        scale: 'mel',
+        usePcen: true,
     });
 
-    assert.ok(result.smoothState, 'Perch mode should return smoothState');
+    assert.ok(result.smoothState, 'mel+PCEN should return smoothState');
     assert.equal(result.smoothState.length, 128, 'smoothState should have nMels entries');
     // smoothState should have non-zero values after processing a signal
     let hasNonZero = false;
@@ -300,7 +301,7 @@ test('computeSpectrogram Perch mode returns smoothState', () => {
     assert.ok(hasNonZero, 'smoothState should have non-zero values');
 });
 
-test('computeSpectrogram Classic mode does not return smoothState', () => {
+test('computeSpectrogram linear scale does not return smoothState', () => {
     const sampleRate = 32000;
     const audio = new Float32Array(sampleRate);
     const result = computeSpectrogram({
@@ -313,9 +314,9 @@ test('computeSpectrogram Classic mode does not return smoothState', () => {
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'classic',
+        scale: 'linear',
     });
-    assert.ok(!result.smoothState, 'Classic mode should not return smoothState');
+    assert.ok(!result.smoothState, 'linear scale should not return smoothState');
 });
 
 test('computeSpectrogram initialSmooth affects output', () => {
@@ -333,7 +334,8 @@ test('computeSpectrogram initialSmooth affects output', () => {
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'perch',
+        scale: 'mel',
+        usePcen: true,
     };
 
     // Run without initialSmooth
@@ -365,7 +367,8 @@ test('two-chunk progressive simulation matches single-pass at chunk boundary', (
         pcenBias: 2,
         pcenRoot: 2,
         pcenSmoothing: 0.025,
-        spectrogramMode: 'perch',
+        scale: 'mel',
+        usePcen: true,
     };
 
     // Single pass

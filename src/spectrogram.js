@@ -407,10 +407,10 @@ export function autoContrastStats(spectrogramData, loPercentile = 2, hiPercentil
  * @param {number} nFrames
  * @param {number} nMels
  * @param {number} sampleRate
- * @param {string} [spectrogramMode='perch'] - 'perch' (mel) or 'classic' (linear)
+ * @param {string} [scale='mel'] - 'mel' or 'linear'
  * @param {number} [energyThreshold=0.08] - fraction of peak-bin energy
  */
-export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, spectrogramMode = 'perch', energyThreshold = 0.08) {
+export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, scale = 'mel', energyThreshold = 0.08) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
 
     // Accumulate mean energy per bin
@@ -446,7 +446,7 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
 
     // Map bin to Hz - different for mel vs linear mode
     let detectedHz;
-    if (spectrogramMode === 'classic') {
+    if (scale === 'linear') {
         // Linear bins: bin k → k / nMels * (sampleRate / 2)
         const binHz = (sampleRate / 2) / nMels;
         detectedHz = Math.min(nMels - 1, highestActiveBin + 2) * binHz;
@@ -478,13 +478,13 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
  * @param {number} maxFreq        - Currently selected max frequency (Hz)
  * @param {number} sampleRateHz   - Audio sample rate
  * @param {number} spectrogramMels - Number of mel/linear bins
- * @param {string} spectrogramMode - 'perch' (mel) or 'classic' (linear)
+ * @param {string} scale - 'mel' or 'linear'
  * @returns {number} Frequency in Hz
  */
-export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz, spectrogramMels, spectrogramMode) {
+export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz, spectrogramMels, scale) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
 
-    const isLinear = spectrogramMode === 'classic';
+    const isLinear = scale === 'linear';
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
 
     let maxBin = spectrogramMels - 1;
@@ -514,10 +514,10 @@ export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz
 /**
  * Inverse of pixelYToFrequency: maps a frequency (Hz) → display pixel Y.
  */
-export function frequencyToPixelY(freq, displayHeight, maxFreq, sampleRateHz, spectrogramMels, spectrogramMode) {
+export function frequencyToPixelY(freq, displayHeight, maxFreq, sampleRateHz, spectrogramMels, scale) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
 
-    const isLinear = spectrogramMode === 'classic';
+    const isLinear = scale === 'linear';
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
     const clampedFreq = Math.max(0, Math.min(boundedMaxFreq, freq));
 
@@ -593,18 +593,18 @@ export function buildSpectrogramGrayscale({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq,
     spectrogramAbsLogMin, spectrogramAbsLogMax,
-    spectrogramMode,
+    scale = 'mel',
 }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
     const width  = Math.max(1, Math.min(spectrogramFrames, MAX_BASE_SPECTROGRAM_WIDTH));
     const height = SPECTROGRAM_HEIGHT;
     const framesPerPixel = spectrogramFrames / width;
-    const isLinear = spectrogramMode === 'classic';
+    const isLinear = scale === 'linear';
 
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
 
-    // In classic/linear mode, bins map directly to Hz (bin k → k * sr / fftSize).
+    // In linear mode, bins map directly to Hz.
     // spectrogramMels == nBins (fftSize/2) in this case.
     let maxBin = spectrogramMels - 1;
     if (isLinear) {
@@ -695,14 +695,14 @@ export function buildSpectrogramBaseImage({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq, currentColorScheme,
     normalizeViews, spectrogramLogMin, spectrogramLogMax,
-    spectrogramMode,
+    scale = 'mel',
 }) {
     const grayInfo = buildSpectrogramGrayscale({
         spectrogramData, spectrogramFrames, spectrogramMels,
         sampleRateHz, maxFreq,
         spectrogramAbsLogMin: spectrogramLogMin,
         spectrogramAbsLogMax: spectrogramLogMax,
-        spectrogramMode,
+        scale,
     });
     if (!grayInfo) return null;
     return colorizeSpectrogram(grayInfo, 0, 1, currentColorScheme);

@@ -280,7 +280,7 @@ export class BirdNETPlayer {
      * @param {number} nFrames - number of time frames
      * @param {number} nMels   - number of frequency bins
      * @param {Object} [options]
-     * @param {string} [options.mode='perch'] - 'perch'|'classic' (affects freq axis labels)
+     * @param {string} [options.mode='mel'] - 'mel'|'linear' (affects freq axis labels)
      * @param {number} [options.sampleRate]   - sample rate for freq labels (default: from audio)
      */
     async setSpectrogramData(data, nFrames, nMels, options = {}) {

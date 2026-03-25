@@ -1219,13 +1219,12 @@ export class PlayerState {
         this._setTransportState('rendering', 'spectrogram-generate');
 
         const scale = this.d.scaleSelect?.value || 'mel';
-        const spectrogramMode = scale === 'mel' ? 'perch' : 'classic';
         const windowSize = parseInt(this.d.windowSizeSelect?.value || '0', 10) || 0;
         const hopSize = parseInt(this.d.hopSizeSelect?.value || '0', 10) || 0;
         const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
         const nMels = parseInt(this.d.nMelsInput?.value || '160', 10) || 160;
         const options = {
-            spectrogramMode,
+            scale,
             sampleRate: this.audioBuffer.sampleRate,
             fftSize: parseInt(this.d.fftSizeSelect.value, 10),
             windowFunction,
@@ -1332,8 +1331,8 @@ export class PlayerState {
             this.sampleRateHz = options.sampleRate;
             this._updateMaxFreqOptions();
         }
-        if (options.mode && this.d.scaleSelect) {
-            this.d.scaleSelect.value = options.mode === 'classic' ? 'linear' : 'mel';
+        if (options.scale && this.d.scaleSelect) {
+            this.d.scaleSelect.value = options.scale;
         }
 
         this._updateSpectrogramStats();
@@ -1510,7 +1509,7 @@ export class PlayerState {
             this.spectrogramFrames,
             this.spectrogramMels,
             this.sampleRateHz,
-            (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
+            this.d.scaleSelect?.value || 'mel',
         );
         const options = Array.from(this.d.maxFreqSelect.options);
         let best = options[options.length - 1];
@@ -1577,7 +1576,7 @@ export class PlayerState {
             maxFreq: parseFloat(this.d.maxFreqSelect.value),
             spectrogramAbsLogMin: this.spectrogramAbsLogMin,
             spectrogramAbsLogMax: this.spectrogramAbsLogMax,
-            spectrogramMode: (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
+            scale: this.d.scaleSelect?.value || 'mel',
         });
         // Upload to GPU if available
         if (this.spectrogramGrayInfo && this.colorizer.ok) {
@@ -2089,7 +2088,7 @@ export class PlayerState {
             canvasHeight: this.d.spectrogramCanvas?.height || 0,
             maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
             spectrogramMels: this.spectrogramMels,
-            spectrogramMode: (this.d.scaleSelect?.value || 'mel') === 'mel' ? 'perch' : 'classic',
+            scale: this.d.scaleSelect?.value || 'mel',
             frameRate: PERCH_FRAME_RATE,
             hopSize: this.spectrogramHopSize || 0,
         });
@@ -2244,7 +2243,7 @@ export class PlayerState {
         const p = DSP_PROFILES[name];
         if (!p) return;
         // Scale
-        if (this.d.scaleSelect) this.d.scaleSelect.value = p.spectrogramMode === 'classic' ? 'linear' : 'mel';
+        if (this.d.scaleSelect) this.d.scaleSelect.value = p.scale || 'mel';
         // FFT
         if (this.d.fftSizeSelect) this.d.fftSizeSelect.value = String(p.fftSize);
         // Window function
@@ -2258,8 +2257,10 @@ export class PlayerState {
         if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot);
         if (this.d.pcenSmoothingInput) this.d.pcenSmoothingInput.value = String(p.pcenSmoothing);
         // Color palette
-        const palette = p.spectrogramMode === 'classic' ? 'xenocanto' : 'grayscale';
-        if (this.d.colorSchemeSelect) { this.d.colorSchemeSelect.value = palette; this.currentColorScheme = palette; }
+        if (p.colorScheme && this.d.colorSchemeSelect) {
+            this.d.colorSchemeSelect.value = p.colorScheme;
+            this.currentColorScheme = p.colorScheme;
+        }
         // Highlight active preset button
         this.d.presetPerchBtn?.classList.toggle('active', name === 'perch');
         this.d.presetClassicBtn?.classList.toggle('active', name === 'classic');
@@ -2370,7 +2371,6 @@ export class PlayerState {
         });
 
         // Format readout
-        const mode = c.spectrogramMode;
         const timeStr = time.toFixed(3) + ' s';
         const freqStr = freq >= 1000 ? (freq / 1000).toFixed(2) + ' kHz' : Math.round(freq) + ' Hz';
         const isLinear = (this.d.scaleSelect?.value || 'mel') === 'linear';
@@ -2590,14 +2590,6 @@ export class PlayerState {
 
         // ── Settings ──
         on(this.d.scaleSelect, 'change', () => {
-            // Auto-select matching color palette
-            if (this.d.scaleSelect.value === 'linear') {
-                this.d.colorSchemeSelect.value = 'xenocanto';
-                this.currentColorScheme = 'xenocanto';
-            } else {
-                this.d.colorSchemeSelect.value = 'grayscale';
-                this.currentColorScheme = 'grayscale';
-            }
             this._clearPresetHighlight();
             if (this.audioBuffer) this._generateSpectrogram();
         });

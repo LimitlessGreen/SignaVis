@@ -35,7 +35,7 @@ export const CLASSIC_DB_REF = 1.0;     // reference power for dB conversion
 
 export const DSP_PROFILES = {
     perch: {
-        spectrogramMode: 'perch',
+        scale: 'mel',
         fftSize: 2048,
         nMels: PERCH_N_MELS,
         frameRate: PERCH_FRAME_RATE,
@@ -45,9 +45,10 @@ export const DSP_PROFILES = {
         pcenRoot: PERCH_PCEN_ROOT,
         pcenSmoothing: PERCH_PCEN_SMOOTHING,
         windowFunction: 'hann',
+        colorScheme: 'grayscale',
     },
     classic: {
-        spectrogramMode: 'classic',
+        scale: 'linear',
         fftSize: 2048,
         nMels: CLASSIC_N_MELS,
         frameRate: CLASSIC_FRAME_RATE,
@@ -57,5 +58,6 @@ export const DSP_PROFILES = {
         pcenRoot: 1,
         pcenSmoothing: 0,
         windowFunction: 'hann',
+        colorScheme: 'xenocanto',
     },
 };
