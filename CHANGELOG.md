@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-03-25
+
+### Added
+- **CoordinateSystem** — single source of truth for all time↔pixel, frequency↔pixel,
+  frequency↔bin, frame and client→canvas coordinate mappings (`src/coordinateSystem.js`).
+- **Crosshair overlay** with toggleable time/frequency/amplitude readout on the spectrogram.
+- **Non-blocking recomputing overlay** shown during spectrogram recalculation.
+- **`computeTime` event** emitted after the DSP pipeline completes, reporting duration.
+- **Event filter panel** in Storybook event monitor (toggleable per event type).
+- **Subtle pause icon on hover** in compact/hero transport overlay while playing.
+- **Extensibility API** — window functions, DSP profiles, overlap zones, toolbar groups.
+- **Slide-out settings panel** replacing the old toolbar settings groups.
+- **Presets + direct DSP parameters** replacing the former Mode dropdown; PCEN is now
+  independently toggleable.
+- **Label drag uses pixel-space deltas** for perceptually linear feel on mel scale.
+- **InteractionState FSM** (`src/interactionState.js`) replacing scattered interaction flags.
+- **TypeScript `checkJs`** — zero errors across all source files.
+- **Dependabot** for automated dependency updates.
+- **GitHub Pages CI** for demo deployment.
+- **110 tests** (up from 25) — coordinate-system (44), spectrogram pipeline (20),
+  transport/player state, DSP, and more.
+
+### Fixed
+- **Playhead position in waveform-only hero mode** — `_updatePlayhead()` used
+  `spectrogramCanvas.width` (default 300 px) instead of `coords.timeToScrollX()`.
+- **Stale CoordinateSystem after zoom** — `_updateCoords()` now called when
+  `pixelsPerSecond` changes.
+- **All scroll↔time math** routed through `CoordinateSystem` (5 inline calculations removed).
+- **Click-to-seek in hero/transport-overlay** now uses `scrollWidth` and auto-fit-view.
+- **Auto-fit-on-ready removed** in transport-overlay — restores scrolling in compact views.
+- **Mel filterbank power-normalisation** (rows sum to 1) and PCEN epsilon set to 1 × 10⁻¹⁰.
+- **`detectMaxFrequency`** uses 95th-percentile energy; dynamic worker timeout.
+- **Spectrogram shadow artifacts** in `buildSpectrogramGrayscale` eliminated.
+- **Mel-aware frequency↔pixel mapping** for frequency labels, annotation boxes and axis.
+- **Crosshair coordinate mapping** corrected for overlay, readout and mel bins.
+- **Three spectrogram math bugs** fixed; PCEN constant hoisted.
+- **Native sample rate preserved** with dynamic max-frequency options.
+
+### Changed
+- `_clientXToTime()` delegates to `coords.scrollXToTime()` — DOM-independent and testable.
+- `spectrogramMode` removed — Perch / Classic are pure presets only.
+- Deprecated `ui.js` and legacy `buildSpectrogramBaseImage` wrapper removed.
+- README rewritten in English, converted to AsciiDoc with TOC and feature list.
+- Storybook redesigned with global file loading.
+- Vite updated from 7.3.1 to 8.0.2; `actions/checkout` 4→6, `actions/setup-node` 4→6,
+  `actions/setup-python` 5→6.
+- Build artifacts removed from version control.
+
 ## [0.1.0] - 2026-02-19
 
 ### Added
