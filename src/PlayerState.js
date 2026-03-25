@@ -14,6 +14,7 @@ import {
 } from './constants.js';
 
 import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
+import { buildMelFrequencies } from './dsp.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
@@ -2204,7 +2205,7 @@ export class PlayerState {
         let ry = localY - rh - 8;
         if (rx + rw > rect.width) rx = localX - rw - 10;
         if (ry < 0) ry = localY + 18;
-        readout.style.left = rx + 'px';
+        readout.style.left = (wrapper.scrollLeft + rx) + 'px';
         readout.style.top = ry + 'px';
     }
 
@@ -2214,15 +2215,9 @@ export class PlayerState {
             const binHz = (this.sampleRateHz / 2) / this.spectrogramMels;
             maxBin = Math.max(1, Math.min(this.spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
         } else {
-            // Inline mel-frequency lookup (same HTK formula as dsp.js)
-            const nMels = this.spectrogramMels;
-            const sr = this.sampleRateHz;
-            const melMin = 2595 * Math.log10(1);
-            const melMax = 2595 * Math.log10(1 + (sr / 2) / 700);
-            for (let i = 0; i < nMels; i++) {
-                const mel = melMin + (melMax - melMin) * (i + 1) / (nMels + 1);
-                const hz = 700 * (Math.pow(10, mel / 2595) - 1);
-                if (hz > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+            const melFreqs = buildMelFrequencies(this.sampleRateHz, this.spectrogramMels);
+            for (let i = 0; i < melFreqs.length; i++) {
+                if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
             }
         }
         return maxBin;
