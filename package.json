@@ -10,6 +10,7 @@
   "files": [
     "dist/",
     "types/",
+    "docs/img/",
     "README.md",
     "LICENSE"
   ],

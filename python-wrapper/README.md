@@ -2,6 +2,10 @@
 # audio-workbench (Python wrapper)
 
 <p align="center">
+  <img src="https://raw.githubusercontent.com/LimitlessGreen/Audio-Workbench/main/docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
+</p>
+
+<p align="center">
     <a href="https://pypi.org/project/audio-workbench/">
         <img src="https://img.shields.io/pypi/v/audio-workbench.svg" alt="PyPI">
     </a>

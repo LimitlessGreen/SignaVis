@@ -2,6 +2,10 @@
 # audio-workbench
 
 <p align="center">
+  <img src="docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
+</p>
+
+<p align="center">
   <a href="https://limitlessgreen.github.io/Audio-Workbench/">
     <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
   </a>
