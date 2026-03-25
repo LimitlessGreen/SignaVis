@@ -804,12 +804,30 @@ export class SpectrogramLabelLayer {
         const maxFreq = this._getMaxFreq();
         const width = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.width || 1);
         const height = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.height || 1);
+        const c = this.player?._state?.coords;
 
         const dt = (clientX - this._editing.startX) / width * duration;
-        const startFreq = this._clientYToFreq(this._editing.startY);
-        const currentFreq = this._clientYToFreq(clientY);
-        const df = currentFreq - startFreq;
+
+        // Compute frequency changes in pixel space so that on a mel
+        // (logarithmic) scale dragging still feels perceptually linear.
+        // deltaCanvasY is the mouse movement translated to canvas-pixel space.
+        const startCanvasY = this._clientYToCanvasY(this._editing.startY);
+        const currentCanvasY = this._clientYToCanvasY(clientY);
+        const deltaCanvasY = currentCanvasY - startCanvasY;
+
         const src = this._editing.startLabel;
+
+        // Pixel-Y positions of the original label edges (via CoordinateSystem)
+        const srcMaxPy = c ? c.frequencyToPixelY(src.freqMax) : 0;
+        const srcMinPy = c ? c.frequencyToPixelY(src.freqMin) : height;
+
+        /** Shift a frequency edge by deltaCanvasY in pixel space, then convert back to Hz. */
+        const shiftedFreq = (origFreq) => {
+            if (!c) return origFreq;
+            const origPy = c.frequencyToPixelY(origFreq);
+            return c.pixelYToFrequency(origPy + deltaCanvasY);
+        };
+
         if (this._editing.pending) {
             if (Math.abs(clientX - this._editing.startX) < 4 && Math.abs(clientY - this._editing.startY) < 4) return;
             this._editing.pending = false;
@@ -822,8 +840,8 @@ export class SpectrogramLabelLayer {
             case 'move':
                 next.start = src.start + dt;
                 next.end = src.end + dt;
-                next.freqMin = src.freqMin + df;
-                next.freqMax = src.freqMax + df;
+                next.freqMin = shiftedFreq(src.freqMin);
+                next.freqMax = shiftedFreq(src.freqMax);
                 break;
             case 'resize-l':
                 next.start = src.start + dt;
@@ -832,26 +850,26 @@ export class SpectrogramLabelLayer {
                 next.end = src.end + dt;
                 break;
             case 'resize-t':
-                next.freqMax = src.freqMax + df;
+                next.freqMax = shiftedFreq(src.freqMax);
                 break;
             case 'resize-b':
-                next.freqMin = src.freqMin + df;
+                next.freqMin = shiftedFreq(src.freqMin);
                 break;
             case 'resize-tl':
                 next.start = src.start + dt;
-                next.freqMax = src.freqMax + df;
+                next.freqMax = shiftedFreq(src.freqMax);
                 break;
             case 'resize-tr':
                 next.end = src.end + dt;
-                next.freqMax = src.freqMax + df;
+                next.freqMax = shiftedFreq(src.freqMax);
                 break;
             case 'resize-bl':
                 next.start = src.start + dt;
-                next.freqMin = src.freqMin + df;
+                next.freqMin = shiftedFreq(src.freqMin);
                 break;
             case 'resize-br':
                 next.end = src.end + dt;
-                next.freqMin = src.freqMin + df;
+                next.freqMin = shiftedFreq(src.freqMin);
                 break;
             default:
                 break;
@@ -859,12 +877,18 @@ export class SpectrogramLabelLayer {
 
         next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
 
-        // Preserve band thickness on pure move
+        // Preserve band thickness on pure move (in pixel space, not Hz)
         if (this._editing.mode === 'move') {
             const timeSpan = Math.max(0.01, src.end - src.start);
-            const freqSpan = Math.max(1, src.freqMax - src.freqMin);
             next.end = next.start + timeSpan;
-            next.freqMax = next.freqMin + freqSpan;
+
+            // Keep the original pixel height: shift freqMax from freqMin's
+            // new pixel position by the original pixel span.
+            const origPixelSpan = Math.abs(srcMinPy - srcMaxPy);
+            const newMinPy = c ? c.frequencyToPixelY(next.freqMin) : height;
+            const newMaxPy = newMinPy - origPixelSpan;  // top = lower Y
+            next.freqMax = c ? c.pixelYToFrequency(Math.max(0, newMaxPy)) : next.freqMax;
+
             if (next.end > duration) {
                 const shift = next.end - duration;
                 next.start = Math.max(0, next.start - shift);
@@ -928,6 +952,16 @@ export class SpectrogramLabelLayer {
 
     _clientXToTime(clientX) {
         return this.player?._state?._clientXToTime?.(clientX, 'spectrogram') || 0;
+    }
+
+    _clientYToCanvasY(clientY) {
+        const state = this.player?._state;
+        const c = state?.coords;
+        const wrapper = state?.d?.canvasWrapper;
+        if (!wrapper || !c) return 0;
+        const rect = wrapper.getBoundingClientRect();
+        const localY = clamp(clientY - rect.top, 0, rect.height);
+        return localY / Math.max(1, rect.height) * c.canvasHeight;
     }
 
     _clientYToFreq(clientY) {

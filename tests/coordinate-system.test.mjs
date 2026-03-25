@@ -364,3 +364,111 @@ test('simulated _clientXToTime: result independent of scrollWidth vs canvas.widt
     assert.ok(Math.abs(t - 4.2) < 0.01, `expected ~4.2s, got ${t}`);
     // Same result regardless of what scrollWidth or canvas.width would be
 });
+
+// ═════════════════════════════════════════════════════════════════════
+// Pixel-space label dragging on mel scale
+// ═════════════════════════════════════════════════════════════════════
+
+// Simulate the annotations.js shiftedFreq() logic:
+//   origPy = cs.frequencyToPixelY(origFreq)
+//   newFreq = cs.pixelYToFrequency(origPy + deltaCanvasY)
+
+function shiftedFreq(cs, origFreq, deltaCanvasY) {
+    const origPy = cs.frequencyToPixelY(origFreq);
+    return cs.pixelYToFrequency(origPy + deltaCanvasY);
+}
+
+test('mel label drag: pixel delta moves box linearly on screen', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 160, sampleRate: 32000, maxFreq: 16000,
+        scale: 'mel', spectrogramMels: 128,
+    });
+    const freqMin = 2000, freqMax = 4000;
+    const origMinPy = cs.frequencyToPixelY(freqMin);
+    const origMaxPy = cs.frequencyToPixelY(freqMax);
+    const origPixelHeight = origMinPy - origMaxPy;
+
+    const deltaCanvasY = -20; // move 20 canvas-pixels up
+    const newMin = shiftedFreq(cs, freqMin, deltaCanvasY);
+    const newMax = shiftedFreq(cs, freqMax, deltaCanvasY);
+
+    // Both edges moved up → higher frequencies
+    assert.ok(newMin > freqMin, `freqMin should increase when moving up: ${newMin} > ${freqMin}`);
+    assert.ok(newMax > freqMax, `freqMax should increase when moving up: ${newMax} > ${freqMax}`);
+
+    // Pixel height of the shifted box should still be ~same
+    const newMinPy = cs.frequencyToPixelY(newMin);
+    const newMaxPy = cs.frequencyToPixelY(newMax);
+    const newPixelHeight = newMinPy - newMaxPy;
+    assert.ok(Math.abs(newPixelHeight - origPixelHeight) < 2,
+        `pixel height should be preserved: was ${origPixelHeight.toFixed(1)}, now ${newPixelHeight.toFixed(1)}`);
+});
+
+test('mel label drag: Hz span changes when moving up (mel → wider Hz at top)', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 160, sampleRate: 32000, maxFreq: 16000,
+        scale: 'mel', spectrogramMels: 128,
+    });
+    const freqMin = 2000, freqMax = 4000;
+    const origHzSpan = freqMax - freqMin;
+
+    const deltaCanvasY = -40; // move 40px up
+    const newMin = shiftedFreq(cs, freqMin, deltaCanvasY);
+    const newMax = shiftedFreq(cs, freqMax, deltaCanvasY);
+    const newHzSpan = newMax - newMin;
+
+    // On mel scale, moving up should increase Hz span
+    assert.ok(newHzSpan > origHzSpan,
+        `Hz span should grow when moving up on mel: was ${origHzSpan}, now ${Math.round(newHzSpan)}`);
+});
+
+test('mel label drag: Hz span shrinks when moving down', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 160, sampleRate: 32000, maxFreq: 16000,
+        scale: 'mel', spectrogramMels: 128,
+    });
+    const freqMin = 4000, freqMax = 8000;
+    const origHzSpan = freqMax - freqMin;
+
+    const deltaCanvasY = 30; // move 30px down
+    const newMin = shiftedFreq(cs, freqMin, deltaCanvasY);
+    const newMax = shiftedFreq(cs, freqMax, deltaCanvasY);
+    const newHzSpan = newMax - newMin;
+
+    assert.ok(newHzSpan < origHzSpan,
+        `Hz span should shrink when moving down on mel: was ${origHzSpan}, now ${Math.round(newHzSpan)}`);
+});
+
+test('linear label drag: Hz span stays constant regardless of position', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 160, sampleRate: 32000, maxFreq: 16000,
+        scale: 'linear', spectrogramMels: 256,
+    });
+    const freqMin = 4000, freqMax = 6000;
+    const origHzSpan = freqMax - freqMin;
+
+    const deltaCanvasY = -25; // move 25px up
+    const newMin = shiftedFreq(cs, freqMin, deltaCanvasY);
+    const newMax = shiftedFreq(cs, freqMax, deltaCanvasY);
+    const newHzSpan = newMax - newMin;
+
+    // On linear scale, Hz span should stay approximately constant
+    const relDiff = Math.abs(newHzSpan - origHzSpan) / origHzSpan;
+    assert.ok(relDiff < 0.1,
+        `linear Hz span should stay ~constant: was ${origHzSpan}, now ${Math.round(newHzSpan)} (${(relDiff*100).toFixed(1)}% diff)`);
+});
+
+test('mel label drag: zero deltaCanvasY preserves original frequencies', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 160, sampleRate: 32000, maxFreq: 16000,
+        scale: 'mel', spectrogramMels: 128,
+    });
+    const freqMin = 3000, freqMax = 7000;
+    const newMin = shiftedFreq(cs, freqMin, 0);
+    const newMax = shiftedFreq(cs, freqMax, 0);
+
+    const minErr = Math.abs(newMin - freqMin) / freqMin;
+    const maxErr = Math.abs(newMax - freqMax) / freqMax;
+    assert.ok(minErr < 0.05, `freqMin should stay ~same with 0 delta: ${newMin} vs ${freqMin}`);
+    assert.ok(maxErr < 0.05, `freqMax should stay ~same with 0 delta: ${newMax} vs ${freqMax}`);
+});
