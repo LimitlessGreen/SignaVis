@@ -1241,6 +1241,7 @@ export class PlayerState {
             ...(hopSize > 0 ? { hopSize } : {}),
         };
 
+        const t0 = performance.now();
         try {
             const channelData = this.audioBuffer.getChannelData(0);
             let result;
@@ -1286,6 +1287,8 @@ export class PlayerState {
             if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
             this._setTransportState('ready', 'spectrogram-ready');
 
+            const computeMs = performance.now() - t0;
+            this._emit('computeTime', { durationMs: Math.round(computeMs) });
             this._emit('ready', {
                 duration: this.audioBuffer.duration,
                 sampleRate: this.audioBuffer.sampleRate,
