@@ -26,6 +26,7 @@ export class CoordinateSystem {
      * @param {number} [params.spectrogramMels]    Number of mel bins (nMels)
      * @param {string} [params.spectrogramMode]    'perch' | 'classic'
      * @param {number} [params.frameRate]          Spectrogram frame rate (default: PERCH_FRAME_RATE)
+     * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
      */
     constructor({
         duration = 0,
@@ -37,6 +38,7 @@ export class CoordinateSystem {
         spectrogramMels = 128,
         spectrogramMode = 'perch',
         frameRate = PERCH_FRAME_RATE,
+        hopSize = 0,
     } = {}) {
         this.duration = Math.max(0, duration);
         this.sampleRate = Math.max(1, sampleRate);
@@ -52,7 +54,7 @@ export class CoordinateSystem {
         this.nyquist = this.sampleRate / 2;
         this.boundedMaxFreq = Math.min(this.maxFreq, this.nyquist);
         this.isLinear = this.spectrogramMode === 'classic';
-        this.hopSize = Math.max(1, Math.floor(this.sampleRate / this.frameRate));
+        this.hopSize = (hopSize && hopSize > 0) ? hopSize : Math.max(1, Math.floor(this.sampleRate / this.frameRate));
 
         // Mel / linear bin setup
         /** @type {Float32Array | null} */

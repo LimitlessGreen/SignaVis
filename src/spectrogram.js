@@ -719,6 +719,7 @@ export function renderSpectrogram({
     sampleRate,
     frameRate,
     spectrogramFrames,
+    hopSize: userHopSize,
 }) {
     if (!baseCanvas) return;
     const ctx = spectrogramCanvas.getContext('2d');
@@ -735,7 +736,7 @@ export function renderSpectrogram({
     // Align spectrogram frames to correct time positions.
     // Each FFT frame's analysis center is offset by winLength/2 = 2*hopSize
     // from the hop start. Map frame f → pixel (f*hopSize + 2*hopSize)/sr * pps.
-    const hopSize = Math.floor(sampleRate / frameRate);
+    const hopSize = (userHopSize && userHopSize > 0) ? userHopSize : Math.floor(sampleRate / frameRate);
     const frameCenterSec = 2 * hopSize / sampleRate;           // center of first frame
     const x0 = Math.round(frameCenterSec * pixelsPerSecond);   // start pixel
     const drawWidth = Math.round(spectrogramFrames * hopSize / sampleRate * pixelsPerSecond);
@@ -799,11 +800,11 @@ export function createSpectrogramProcessor() {
             worker = new Ctor();
 
             worker.onmessage = (event) => {
-                const { requestId, data, nFrames, nMels, smoothState } = event.data;
+                const { requestId, data, nFrames, nMels, smoothState, hopSize, winLength } = event.data;
                 const pending = pendingRequests.get(requestId);
                 if (!pending) return;
                 pendingRequests.delete(requestId);
-                const result = { data: new Float32Array(data), nFrames, nMels };
+                const result = { data: new Float32Array(data), nFrames, nMels, hopSize, winLength };
                 if (smoothState) result.smoothState = new Float32Array(smoothState);
                 pending.resolve(result);
             };
@@ -871,18 +872,31 @@ export function createSpectrogramProcessor() {
 
     // ── Progressive compute for long recordings ────────────────────
     // Yields per-chunk results and progress metadata.
+    // Each chunk (after the first) is extended backwards by overlapSamples
+    // so the FFT windows at chunk boundaries have proper audio context.
+    // The overlap frames are trimmed from the result before yielding.
     const computeProgressive = async function* (channelData, options) {
         const sampleRate = Math.max(1, options.sampleRate || 0);
         const chunkSeconds = Math.max(1, options.chunkSeconds || 10);
         const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
         const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
 
+        // Overlap = one FFT window worth of samples — enough for windowing context.
+        const overlapSamples = options.windowSize || options.fftSize || 2048;
+
         let smoothState = null; // carry-over PCEN smooth state between chunks
 
         for (let chunk = 0; chunk < totalChunks; chunk++) {
             const startSample = chunk * samplesPerChunk;
             const endSample = Math.min(channelData.length, startSample + samplesPerChunk);
-            const chunkData = channelData.subarray(startSample, endSample);
+
+            // For chunks after the first, prepend overlap samples for FFT context.
+            const actualStart = chunk === 0
+                ? startSample
+                : Math.max(0, startSample - overlapSamples);
+            const prependedSamples = startSample - actualStart;
+
+            const chunkData = channelData.subarray(actualStart, endSample);
             const chunkOptions = smoothState
                 ? { ...options, initialSmooth: smoothState }
                 : options;
@@ -890,11 +904,29 @@ export function createSpectrogramProcessor() {
 
             if (result.smoothState) smoothState = result.smoothState;
 
+            // Trim overlap frames from the beginning of non-first chunks.
+            let trimmedResult = result;
+            if (prependedSamples > 0 && result.nFrames > 0) {
+                const hop = result.hopSize || 1;
+                const overlapFrames = Math.min(
+                    result.nFrames - 1,
+                    Math.ceil(prependedSamples / hop),
+                );
+                if (overlapFrames > 0) {
+                    const nMels = result.nMels;
+                    trimmedResult = {
+                        ...result,
+                        data: result.data.slice(overlapFrames * nMels),
+                        nFrames: result.nFrames - overlapFrames,
+                    };
+                }
+            }
+
             yield {
                 chunk,
                 totalChunks,
                 percent: ((chunk + 1) / totalChunks) * 100,
-                result,
+                result: trimmedResult,
             };
         }
     };

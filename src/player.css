@@ -114,6 +114,27 @@
     flex-shrink: 0;
 }
 
+.toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    position: relative;
+}
+
+.toolbar-group-label {
+    font-size: 0.62rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
 .toolbar-btn {
     display: inline-flex;
     align-items: center;

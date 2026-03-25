@@ -8,9 +8,9 @@ import {
     MIN_WAVEFORM_HEIGHT, MIN_SPECTROGRAM_DISPLAY_HEIGHT,
     SEEK_FINE_SEC, SEEK_COARSE_SEC, MIN_WINDOW_NORM,
     PROGRESSIVE_CHUNK_SECONDS, PROGRESSIVE_MIN_DURATION_SEC,
-    PERCH_FRAME_RATE, PERCH_N_MELS,
-    PERCH_PCEN_GAIN, PERCH_PCEN_BIAS, PERCH_PCEN_ROOT, PERCH_PCEN_SMOOTHING,
+    PERCH_FRAME_RATE,
     SPECTROGRAM_HEIGHT,
+    DSP_PROFILES,
 } from './constants.js';
 
 import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
@@ -451,6 +451,9 @@ export class PlayerState {
             sampleRateInfo:         q('sampleRateInfo'),
             spectrogramModeSelect:  q('spectrogramModeSelect'),
             fftSizeSelect:          q('fftSize'),
+            windowFunctionSelect:   q('windowFunction'),
+            windowSizeSelect:       q('windowSize'),
+            hopSizeSelect:          q('hopSize'),
             zoomSlider:             q('zoomSlider'),
             zoomValue:              q('zoomValue'),
             maxFreqSelect:          q('maxFreqSelect'),
@@ -1149,16 +1152,17 @@ export class PlayerState {
         this._setTransportState('rendering', 'spectrogram-generate');
 
         const spectrogramMode = this.d.spectrogramModeSelect?.value || 'perch';
+        const profile = DSP_PROFILES[spectrogramMode] || DSP_PROFILES.perch;
+        const windowSize = parseInt(this.d.windowSizeSelect?.value || '0', 10) || 0;
+        const hopSize = parseInt(this.d.hopSizeSelect?.value || '0', 10) || 0;
+        const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
         const options = {
-            spectrogramMode,
-            fftSize: parseInt(this.d.fftSizeSelect.value, 10),
+            ...profile,
             sampleRate: this.audioBuffer.sampleRate,
-            frameRate: PERCH_FRAME_RATE,
-            nMels: PERCH_N_MELS,
-            pcenGain: PERCH_PCEN_GAIN,
-            pcenBias: PERCH_PCEN_BIAS,
-            pcenRoot: PERCH_PCEN_ROOT,
-            pcenSmoothing: PERCH_PCEN_SMOOTHING,
+            fftSize: parseInt(this.d.fftSizeSelect.value, 10),
+            windowFunction,
+            ...(windowSize > 0 ? { windowSize } : {}),
+            ...(hopSize > 0 ? { hopSize } : {}),
         };
 
         try {
@@ -1190,6 +1194,8 @@ export class PlayerState {
             this.spectrogramData = result.data;
             this.spectrogramFrames = result.nFrames;
             this.spectrogramMels = result.nMels;
+            this.spectrogramHopSize = result.hopSize || Math.max(1, Math.floor(this.sampleRateHz / PERCH_FRAME_RATE));
+            this.spectrogramWinLength = result.winLength || 4 * this.spectrogramHopSize;
 
             this._updateSpectrogramStats();
             this._autoContrast();
@@ -1335,7 +1341,8 @@ export class PlayerState {
             data.set(chunk.data, frameOffset * nMels);
             frameOffset += chunk.nFrames;
         }
-        return { data, nFrames: totalFrames, nMels };
+        const first = chunkResults[0] || {};
+        return { data, nFrames: totalFrames, nMels, hopSize: first.hopSize, winLength: first.winLength };
     }
 
     _updateSpectrogramStats() {
@@ -1491,6 +1498,7 @@ export class PlayerState {
             sampleRate: this.audioBuffer.sampleRate,
             frameRate: PERCH_FRAME_RATE,
             spectrogramFrames: this.spectrogramFrames,
+            hopSize: this.spectrogramHopSize,
         });
 
         this._updateCoords();
@@ -1957,6 +1965,7 @@ export class PlayerState {
             spectrogramMels: this.spectrogramMels,
             spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
             frameRate: PERCH_FRAME_RATE,
+            hopSize: this.spectrogramHopSize || 0,
         });
     }
 
@@ -2403,6 +2412,9 @@ export class PlayerState {
             if (this.audioBuffer) this._generateSpectrogram();
         });
         on(this.d.fftSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.windowSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.hopSizeSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.windowFunctionSelect, 'change', () => { if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.maxFreqSelect, 'change', () => {
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
                 this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });

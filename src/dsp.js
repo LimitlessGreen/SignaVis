@@ -146,21 +146,50 @@ export function iterativeFFT(real, imag) {
     }
 }
 
+// ─── Window Functions ───────────────────────────────────────────────
+
+/** @param {number} i @param {number} N */
+function hannWindow(i, N) {
+    return 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, N - 1)));
+}
+/** @param {number} i @param {number} N */
+function hammingWindow(i, N) {
+    return 0.54 - 0.46 * Math.cos(2 * Math.PI * i / Math.max(1, N - 1));
+}
+/** @param {number} i @param {number} N */
+function blackmanWindow(i, N) {
+    const a0 = 0.42, a1 = 0.5, a2 = 0.08;
+    return a0 - a1 * Math.cos(2 * Math.PI * i / Math.max(1, N - 1))
+              + a2 * Math.cos(4 * Math.PI * i / Math.max(1, N - 1));
+}
+
+/** @type {Record<string, (i: number, N: number) => number>} */
+const WINDOW_FUNCTIONS = {
+    hann: hannWindow,
+    hamming: hammingWindow,
+    blackman: blackmanWindow,
+};
+
 // ─── Power Spectrum ─────────────────────────────────────────────────
 
 /**
- * Compute the magnitude spectrum of a windowed (Hann) frame via FFT.
+ * Compute the magnitude spectrum of a windowed frame via FFT.
  * Returns a Float32Array of length fftSize/2.
+ * @param {Float32Array} audio
+ * @param {number} offset
+ * @param {number} winLength
+ * @param {number} fftSize
+ * @param {string} [windowFunction='hann'] - 'hann' | 'hamming' | 'blackman'
  */
-export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {
+export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction = 'hann') {
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
+    const wfn = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
     const maxCopy = Math.min(winLength, fftSize);
     for (let i = 0; i < maxCopy; i++) {
         const sample = audio[offset + i] || 0;
-        const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, winLength - 1)));
-        real[i] = sample * window;
+        real[i] = sample * wfn(i, winLength);
     }
 
     iterativeFFT(real, imag);
@@ -189,22 +218,28 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize) {
  * @param {number} params.pcenSmoothing
  * @param {string} [params.spectrogramMode='perch'] - 'perch' or 'classic'
  * @param {Float32Array} [params.initialSmooth] - carry-over PCEN smooth state from previous chunk
+ * @param {number} [params.windowSize] - window length in samples (0 or omit = auto: 4×hopSize)
+ * @param {number} [params.hopSize] - hop size in samples (0 or omit = auto: sampleRate/frameRate)
+ * @param {string} [params.windowFunction='hann'] - 'hann' | 'hamming' | 'blackman'
  *
- * @returns {{ data: Float32Array, nFrames: number, nMels: number, smoothState?: Float32Array }}
+ * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, smoothState?: Float32Array }}
  */
 export function computeSpectrogram(params) {
     const {
         channelData, fftSize, sampleRate, frameRate,
         nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
         spectrogramMode, initialSmooth,
+        windowSize: userWindowSize, hopSize: userHopSize,
+        windowFunction = 'hann',
     } = params;
 
     const audio = channelData instanceof Float32Array
         ? channelData
         : new Float32Array(channelData);
 
-    const hopSize    = Math.max(1, Math.floor(sampleRate / frameRate));
-    const winLength  = 4 * hopSize;
+    const autoHop    = Math.max(1, Math.floor(sampleRate / frameRate));
+    const hopSize    = (userHopSize && userHopSize > 0) ? userHopSize : autoHop;
+    const winLength  = (userWindowSize && userWindowSize > 0) ? userWindowSize : 4 * hopSize;
     const numFrames  = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
 
     const nBins      = Math.floor(fftSize / 2);
@@ -218,7 +253,7 @@ export function computeSpectrogram(params) {
         // ── Classic / Xeno-Canto style: linear power spectrum → dB ──
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
-            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
+            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
             const base   = frameIdx * nBins;
             for (let k = 0; k < nBins; k++) {
                 const power = mag[k] * mag[k];
@@ -235,7 +270,7 @@ export function computeSpectrogram(params) {
         const pcenBiasOffset = Math.pow(pcenBias, pcenPower);
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             const offset = frameIdx * hopSize;
-            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize);
+            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
             // Square magnitude to get power spectrum before mel filterbank
             const power  = new Float32Array(mag.length);
             for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
@@ -251,7 +286,7 @@ export function computeSpectrogram(params) {
         }
     }
 
-    const result = { data: output, nFrames: numFrames, nMels: outBins };
+    const result = { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength };
     if (smooth) {
         result.smoothState = smooth;
     }

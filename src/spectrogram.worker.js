@@ -20,6 +20,8 @@ self.onmessage = (event) => {
         data: result.data.buffer,
         nFrames: result.nFrames,
         nMels: result.nMels,
+        hopSize: result.hopSize,
+        winLength: result.winLength,
     };
     const transfer = [result.data.buffer];
     if (result.smoothState) {

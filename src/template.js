@@ -128,8 +128,9 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
 
-        <!-- Settings -->
-        <span${hide(o.showFFTControls)}>
+        <!-- DSP Settings -->
+        <span class="toolbar-group" data-aw="dspGroup"${hide(o.showFFTControls)}>
+            <label class="toolbar-group-label">DSP</label>
             <label class="toolbar-label">Mode</label>
             <select data-aw="spectrogramModeSelect" class="toolbar-select">
                 <option value="perch" selected>Perch</option>
@@ -143,6 +144,39 @@ export function createPlayerHTML(opts = {}) {
                 <option value="4096">4096</option>
             </select>
 
+            <label class="toolbar-label">≡</label>
+            <select data-aw="windowFunction" class="toolbar-select" title="Window Function">
+                <option value="hann" selected>Hann</option>
+                <option value="hamming">Hamming</option>
+                <option value="blackman">Blackman</option>
+            </select>
+
+            <label class="toolbar-label">Win</label>
+            <select data-aw="windowSize" class="toolbar-select">
+                <option value="0">auto</option>
+                <option value="512">512</option>
+                <option value="1024">1024</option>
+                <option value="1280" selected>1280</option>
+                <option value="2048">2048</option>
+                <option value="4096">4096</option>
+            </select>
+
+            <label class="toolbar-label">Hop</label>
+            <select data-aw="hopSize" class="toolbar-select">
+                <option value="0">auto</option>
+                <option value="160">160</option>
+                <option value="256">256</option>
+                <option value="320" selected>320</option>
+                <option value="512">512</option>
+                <option value="1024">1024</option>
+            </select>
+        </span>
+
+        <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
+
+        <!-- Display Settings -->
+        <span class="toolbar-group" data-aw="displayGroup"${hide(o.showFFTControls)}>
+            <label class="toolbar-group-label">Display</label>
             <label class="toolbar-label">Freq</label>
             <select data-aw="maxFreqSelect" class="toolbar-select">
                 <option value="4000">4k</option>
@@ -169,7 +203,8 @@ export function createPlayerHTML(opts = {}) {
         <div class="toolbar-sep"${hide(o.showDisplayGain)}></div>
 
         <!-- Display gain: SDR#-style floor / ceiling -->
-        <span${hide(o.showDisplayGain)}>
+        <span class="toolbar-group"${hide(o.showDisplayGain)}>
+            <label class="toolbar-group-label">Gain</label>
             <label class="toolbar-label">Floor</label>
             <input type="range" data-aw="floorSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
             <label class="toolbar-label">Ceil</label>

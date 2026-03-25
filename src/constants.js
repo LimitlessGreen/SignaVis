@@ -27,3 +27,33 @@ export const CLASSIC_FRAME_RATE = 100;
 export const CLASSIC_N_MELS = 160;
 export const CLASSIC_DB_FLOOR = -80;   // dB below peak to clip
 export const CLASSIC_DB_REF = 1.0;     // reference power for dB conversion
+
+// ─── DSP Profiles ───────────────────────────────────────────────────
+// Pre-configured parameter sets for quick switching.
+// UI overrides (fftSize, windowSize, hopSize, windowFunction) are
+// merged on top of these when the user changes individual controls.
+
+export const DSP_PROFILES = {
+    perch: {
+        spectrogramMode: 'perch',
+        fftSize: 2048,
+        nMels: PERCH_N_MELS,
+        frameRate: PERCH_FRAME_RATE,
+        pcenGain: PERCH_PCEN_GAIN,
+        pcenBias: PERCH_PCEN_BIAS,
+        pcenRoot: PERCH_PCEN_ROOT,
+        pcenSmoothing: PERCH_PCEN_SMOOTHING,
+        windowFunction: 'hann',
+    },
+    classic: {
+        spectrogramMode: 'classic',
+        fftSize: 2048,
+        nMels: CLASSIC_N_MELS,
+        frameRate: CLASSIC_FRAME_RATE,
+        pcenGain: 0,
+        pcenBias: 0,
+        pcenRoot: 1,
+        pcenSmoothing: 0,
+        windowFunction: 'hann',
+    },
+};
