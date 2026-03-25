@@ -14,10 +14,10 @@ import {
 } from './constants.js';
 
 import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
-import { buildMelFrequencies } from './dsp.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
+import { CoordinateSystem } from './coordinateSystem.js';
 
 import {
     computeAmplitudePeak,
@@ -29,7 +29,6 @@ import {
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
-    pixelYToFrequency,
 } from './spectrogram.js';
 
 import {
@@ -197,6 +196,9 @@ export class PlayerState {
         this.interaction = new InteractionState();
         this._overviewViewportRafId = 0;
         this._overviewNeedsFinalRedraw = false;
+
+        // ── Coordinate system (single source of truth) ──
+        this.coords = new CoordinateSystem();
 
         // ── Crosshair ──
         this._crosshairEnabled = false;
@@ -1384,6 +1386,7 @@ export class PlayerState {
         }
         this.d.maxFreqSelect.value = best.value;
         this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
+        this._updateCoords();
         this._createFrequencyLabels();
         if (redraw) {
             this._buildSpectrogramGrayscale();  // maxFreq changed → Stage 1
@@ -1490,6 +1493,7 @@ export class PlayerState {
             spectrogramFrames: this.spectrogramFrames,
         });
 
+        this._updateCoords();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
     }
 
@@ -1537,10 +1541,7 @@ export class PlayerState {
     _createFrequencyLabels() {
         renderFrequencyLabels({
             labelsElement: this.d.freqLabels,
-            maxFreq: parseFloat(this.d.maxFreqSelect.value),
-            sampleRateHz: this.sampleRateHz,
-            spectrogramMels: this.spectrogramMels,
-            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
+            coords: this.coords,
         });
     }
 
@@ -1944,6 +1945,21 @@ export class PlayerState {
         return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
     }
 
+    /** Rebuild the shared CoordinateSystem whenever any mapping parameter changes. */
+    _updateCoords() {
+        this.coords = new CoordinateSystem({
+            duration: this.audioBuffer?.duration || 0,
+            sampleRate: this.sampleRateHz,
+            pixelsPerSecond: this.pixelsPerSecond,
+            canvasWidth: this.d.spectrogramCanvas?.width || 0,
+            canvasHeight: this.d.spectrogramCanvas?.height || 0,
+            maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
+            spectrogramMels: this.spectrogramMels,
+            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
+            frameRate: PERCH_FRAME_RATE,
+        });
+    }
+
     _startViewResize(mode, clientY) {
         /** @type {Record<string, import('./interactionState.js').InteractionMode>} */
         const modeMap = { split: 'view-resize-split', spectrogram: 'view-resize-spectrogram' };
@@ -2131,14 +2147,14 @@ export class PlayerState {
     _updateCrosshair(e) {
         if (!this._crosshairEnabled || !this.audioBuffer || !this.spectrogramData) return;
         const wrapper = this.d.canvasWrapper;
-        const canvas = this.d.spectrogramCanvas;
         const overlay = this.d.crosshairCanvas;
         const readout = this.d.crosshairReadout;
-        if (!wrapper || !canvas || !overlay || !readout) return;
+        if (!wrapper || !overlay || !readout) return;
 
         const rect = wrapper.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
-        const localY = e.clientY - rect.top;
+        const c = this.coords;
+        const { time, freq, canvasX, canvasY, localX, localY } =
+            c.clientToTimeFreq(e.clientX, e.clientY, rect, wrapper.scrollLeft);
 
         // Out of bounds?
         if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
@@ -2146,52 +2162,20 @@ export class PlayerState {
             return;
         }
 
-        // Canvas pixel coords (account for scroll)
-        const canvasX = wrapper.scrollLeft + localX;
-        const canvasH = canvas.height;
-        const canvasW = canvas.width;
-        const canvasY = (localY / rect.height) * canvasH;
-
-        // Time from pixel X
-        const duration = this.audioBuffer.duration;
-        const time = Math.max(0, Math.min(duration, canvasX / Math.max(1, canvasW) * duration));
-
-        // Frequency from pixel Y
-        const maxFreq = parseFloat(this.d.maxFreqSelect.value);
-        const mode = this.d.spectrogramModeSelect?.value || 'perch';
-        const freq = pixelYToFrequency(canvasY, canvasH, maxFreq, this.sampleRateHz, this.spectrogramMels, mode);
-
-        // Amplitude at this position (look up in spectrogramData)
-        const frameRate = PERCH_FRAME_RATE;
-        const hopSize = Math.max(1, Math.floor(this.sampleRateHz / frameRate));
-        const frameCenterOffset = 2 * hopSize / this.sampleRateHz;
-        const frame = Math.max(0, Math.min(this.spectrogramFrames - 1,
-            Math.round((time - frameCenterOffset) * frameRate)));
-
-        const isLinear = mode === 'classic';
-        const boundedMaxFreq = Math.min(maxFreq, this.sampleRateHz / 2);
-        let bin;
-        if (isLinear) {
-            const binHz = (this.sampleRateHz / 2) / this.spectrogramMels;
-            bin = Math.max(0, Math.min(this.spectrogramMels - 1, Math.round(freq / binHz)));
-        } else {
-            // Reverse lookup: find closest mel bin
-            const internalY = canvasY / canvasH * SPECTROGRAM_HEIGHT;
-            const maxBin = this._getCrosshairMaxBin(boundedMaxFreq, isLinear);
-            bin = Math.round((SPECTROGRAM_HEIGHT - 1 - internalY) / (SPECTROGRAM_HEIGHT - 1) * maxBin);
-            bin = Math.max(0, Math.min(maxBin, bin));
-        }
-
+        // Amplitude at this position
+        const frame = c.timeToFrame(time, this.spectrogramFrames);
+        const bin = c.pixelYToBin(canvasY);
         const amplitude = this.spectrogramData[frame * this.spectrogramMels + bin] || 0;
 
         // Draw crosshair lines on overlay canvas
         if (this._crosshairRafId) cancelAnimationFrame(this._crosshairRafId);
         this._crosshairRafId = requestAnimationFrame(() => {
             this._crosshairRafId = 0;
-            this._drawCrosshairLines(overlay, canvasX, canvasY, canvasW, canvasH);
+            this._drawCrosshairLines(overlay, canvasX, canvasY, c.canvasWidth, c.canvasHeight);
         });
 
         // Format readout
+        const mode = c.spectrogramMode;
         const timeStr = time.toFixed(3) + ' s';
         const freqStr = freq >= 1000 ? (freq / 1000).toFixed(2) + ' kHz' : Math.round(freq) + ' Hz';
         const ampStr = mode === 'classic'
@@ -2209,20 +2193,6 @@ export class PlayerState {
         if (ry < 0) ry = localY + 18;
         readout.style.left = (wrapper.scrollLeft + rx) + 'px';
         readout.style.top = ry + 'px';
-    }
-
-    _getCrosshairMaxBin(boundedMaxFreq, isLinear) {
-        let maxBin = this.spectrogramMels - 1;
-        if (isLinear) {
-            const binHz = (this.sampleRateHz / 2) / this.spectrogramMels;
-            maxBin = Math.max(1, Math.min(this.spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
-        } else {
-            const melFreqs = buildMelFrequencies(this.sampleRateHz, this.spectrogramMels);
-            for (let i = 0; i < melFreqs.length; i++) {
-                if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
-            }
-        }
-        return maxBin;
     }
 
     /**
@@ -2436,6 +2406,7 @@ export class PlayerState {
         on(this.d.maxFreqSelect, 'change', () => {
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
                 this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
+                this._updateCoords();
                 this._createFrequencyLabels();
                 this._buildSpectrogramGrayscale();  // maxFreq affects spatial layout
                 this._buildSpectrogramBaseImage();

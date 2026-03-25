@@ -2,7 +2,7 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
-import { pixelYToFrequency, frequencyToPixelY } from './spectrogram.js';
+
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -657,17 +657,13 @@ export class SpectrogramLabelLayer {
     }
 
     _toGeometry(label, canvasWidth, canvasHeight) {
-        const state = this.player?._state;
-        const duration = Math.max(0.001, this.player?.duration || state?.audioBuffer?.duration || 0.001);
-        const maxFreq = this._getMaxFreq();
-        const sampleRateHz = state?.sampleRateHz || 32000;
-        const nMels = state?.spectrogramMels || 128;
-        const mode = state?.d?.spectrogramModeSelect?.value || 'perch';
+        const c = this.player?._state?.coords;
+        const duration = c?.duration || Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
 
         const x1 = clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
-        const yHigh = clamp(frequencyToPixelY(label.freqMax, canvasHeight, maxFreq, sampleRateHz, nMels, mode), 0, canvasHeight);
-        const yLow = clamp(frequencyToPixelY(label.freqMin, canvasHeight, maxFreq, sampleRateHz, nMels, mode), 0, canvasHeight);
+        const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax), 0, canvasHeight) : 0;
+        const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin), 0, canvasHeight) : canvasHeight;
 
         return {
             left: Math.min(x1, x2),
@@ -936,17 +932,13 @@ export class SpectrogramLabelLayer {
 
     _clientYToFreq(clientY) {
         const state = this.player?._state;
+        const c = state?.coords;
         const wrapper = state?.d?.canvasWrapper;
-        const canvas = state?.d?.spectrogramCanvas;
-        if (!wrapper || !canvas) return 0;
+        if (!wrapper || !c) return 0;
         const rect = wrapper.getBoundingClientRect();
         const localY = clamp(clientY - rect.top, 0, rect.height);
-        const canvasY = localY / Math.max(1, rect.height) * canvas.height;
-        const maxFreq = this._getMaxFreq();
-        const sampleRateHz = state?.sampleRateHz || 32000;
-        const nMels = state?.spectrogramMels || 128;
-        const mode = state?.d?.spectrogramModeSelect?.value || 'perch';
-        return pixelYToFrequency(canvasY, canvas.height, maxFreq, sampleRateHz, nMels, mode);
+        const canvasY = localY / Math.max(1, rect.height) * c.canvasHeight;
+        return c.pixelYToFrequency(canvasY);
     }
 
     _getMaxFreq() {
