@@ -1163,9 +1163,7 @@ export class PlayerState {
     _updatePlayhead(currentTime, fromPlayback) {
         if (!this.audioBuffer) return;
 
-        const duration = Math.max(0.001, this.audioBuffer.duration);
-        const canvasWidth = Math.max(1, this.d.spectrogramCanvas.width || this.d.amplitudeCanvas.width || 0);
-        const position = (currentTime / duration) * canvasWidth;
+        const position = this.coords.timeToScrollX(currentTime);
 
         this.d.playhead.style.transform = `translateX(${position}px)`;
         this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
