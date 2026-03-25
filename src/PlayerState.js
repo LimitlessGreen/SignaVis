@@ -61,10 +61,61 @@ import {
 
 // ─── Helper ─────────────────────────────────────────────────────────
 
+/**
+ * Parse the native sample rate from an audio file header (WAV, FLAC, OGG Vorbis/Opus).
+ * Returns 0 if the format is unrecognised.
+ * @param {ArrayBuffer} buf
+ * @returns {number}
+ */
+function parseNativeSampleRate(buf) {
+    if (buf.byteLength < 44) return 0;
+    const view = new DataView(buf);
+
+    // ── WAV: "RIFF" … "WAVE", sample rate at byte 24 (LE uint32) ──
+    if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
+        return view.getUint32(24, true);
+    }
+
+    // ── FLAC: "fLaC", STREAMINFO sample rate = 20 bits at byte 18 ──
+    if (view.getUint32(0) === 0x664C6143) {
+        return (view.getUint8(18) << 12) | (view.getUint8(19) << 4) | (view.getUint8(20) >> 4);
+    }
+
+    // ── OGG: "OggS", then Vorbis or Opus inside first page ──
+    if (view.getUint32(0) === 0x4F676753 && buf.byteLength >= 64) {
+        const nSegments = view.getUint8(26);
+        const dataOffset = 27 + nSegments;
+        if (buf.byteLength >= dataOffset + 16) {
+            const b0 = view.getUint8(dataOffset);
+            // Vorbis identification header: type 0x01, then "vorbis"
+            if (b0 === 0x01 && view.getUint32(dataOffset + 1) === 0x766F7262 /* "vorb" */) {
+                return view.getUint32(dataOffset + 12, true);
+            }
+            // OpusHead: "OpusHead", sample rate at byte 12 of header
+            if (view.getUint32(dataOffset) === 0x4F707573 /* "Opus" */ &&
+                view.getUint32(dataOffset + 4) === 0x48656164 /* "Head" */) {
+                return view.getUint32(dataOffset + 12, true);
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Decode an ArrayBuffer into an AudioBuffer, preserving the file's native
+ * sample rate when possible (instead of resampling to AudioContext default).
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<AudioBuffer>}
+ */
 async function decodeArrayBuffer(arrayBuffer) {
     const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
     if (!Ctor) throw new Error('AudioContext wird von diesem Browser nicht unterstützt.');
-    const ctx = new Ctor();
+
+    const nativeSr = parseNativeSampleRate(arrayBuffer);
+    /** @type {AudioContextOptions | undefined} */
+    const opts = nativeSr > 0 ? { sampleRate: nativeSr } : undefined;
+    const ctx = new Ctor(opts);
     try {
         return await ctx.decodeAudioData(arrayBuffer);
     } finally {
@@ -547,6 +598,7 @@ export class PlayerState {
             this.sampleRateHz = audioBuffer.sampleRate;
             this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
+            this._updateMaxFreqOptions();
 
             this.d.fileInfo.innerHTML = `<span class="statusbar-label">${file.name}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
             this.d.sampleRateInfo.textContent = `${audioBuffer.sampleRate} Hz`;
@@ -593,6 +645,7 @@ export class PlayerState {
             this.sampleRateHz = audioBuffer.sampleRate;
             this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
+            this._updateMaxFreqOptions();
 
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
@@ -1273,7 +1326,10 @@ export class PlayerState {
         this.spectrogramFrames = nFrames;
         this.spectrogramMels = nMels;
 
-        if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+        if (options.sampleRate) {
+            this.sampleRateHz = options.sampleRate;
+            this._updateMaxFreqOptions();
+        }
         if (options.mode && this.d.scaleSelect) {
             this.d.scaleSelect.value = options.mode === 'classic' ? 'linear' : 'mel';
         }
@@ -1318,7 +1374,10 @@ export class PlayerState {
                 this.spectrogramMels = canvas.height;
                 this.spectrogramGrayInfo = null;
 
-                if (options.sampleRate) this.sampleRateHz = options.sampleRate;
+                if (options.sampleRate) {
+                    this.sampleRateHz = options.sampleRate;
+                    this._updateMaxFreqOptions();
+                }
 
                 this._drawSpectrogram();
                 this._syncOverviewWindowToViewport();
@@ -1391,6 +1450,51 @@ export class PlayerState {
         if (redraw) {
             this._buildSpectrogramBaseImage();
             this._drawSpectrogram();
+        }
+    }
+
+    // ── Max-Frequency Options ────────────────────────────────────────
+
+    /**
+     * Rebuild the max-frequency <select> options so they cover the full
+     * Nyquist range of the currently loaded audio.
+     */
+    _updateMaxFreqOptions() {
+        const nyquist = this.sampleRateHz / 2;
+        const select = this.d.maxFreqSelect;
+        if (!select) return;
+
+        // Candidate steps (Hz) — sparse at the bottom, denser near typical ranges
+        const candidates = [
+            1000, 2000, 4000, 6000, 8000, 10000, 12000,
+            16000, 20000, 24000, 32000, 44100, 48000,
+        ];
+        const prev = parseFloat(select.value) || 10000;
+
+        // Keep only those ≤ Nyquist, always include Nyquist itself
+        const kept = candidates.filter(f => f <= nyquist);
+        if (!kept.length || kept[kept.length - 1] < nyquist) {
+            kept.push(nyquist);
+        }
+
+        select.innerHTML = '';
+        for (const hz of kept) {
+            const opt = document.createElement('option');
+            opt.value = String(hz);
+            opt.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
+            select.appendChild(opt);
+        }
+
+        // Restore previous selection if it still exists, else pick closest
+        const values = kept;
+        if (values.includes(prev)) {
+            select.value = String(prev);
+        } else {
+            let best = values[values.length - 1];
+            for (const v of values) {
+                if (v >= prev) { best = v; break; }
+            }
+            select.value = String(best);
         }
     }
 

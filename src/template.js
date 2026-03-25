@@ -231,12 +231,7 @@ export function createPlayerHTML(opts = {}) {
             <div class="settings-row">
                 <label class="settings-label">Max Freq</label>
                 <select data-aw="maxFreqSelect" class="settings-select">
-                    <option value="4000">4 kHz</option>
-                    <option value="6000">6 kHz</option>
-                    <option value="8000">8 kHz</option>
                     <option value="10000" selected>10 kHz</option>
-                    <option value="12000">12 kHz</option>
-                    <option value="16000">16 kHz</option>
                 </select>
                 <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
             </div>
