@@ -285,62 +285,82 @@ test('timeToFrame and frameToTime are near-inverse', () => {
 
 // ─── Simulated _clientXToTime logic ─────────────────────────────────
 // This mirrors the actual PlayerState._clientXToTime() implementation:
-//   x = clientX - rect.left + scrollLeft
-//   t = (x / scrollWidth) * duration
+//   scrollX = clientX - rect.left + scrollLeft
+//   t = coords.scrollXToTime(scrollX)   → scrollX / pixelsPerSecond
+// Clamped to [0, duration].
 
-function simulateClientXToTime(clientX, rectLeft, scrollLeft, scrollWidth, duration) {
-    const x = clientX - rectLeft + scrollLeft;
-    const t = (x / Math.max(1, scrollWidth)) * duration;
+function simulateClientXToTime(clientX, rectLeft, scrollLeft, pixelsPerSecond, duration) {
+    const scrollX = clientX - rectLeft + scrollLeft;
+    const t = scrollX / pixelsPerSecond;
     return Math.max(0, Math.min(t, duration));
 }
 
 test('simulated _clientXToTime: click at wrapper left edge, no scroll → time 0', () => {
-    assert.equal(simulateClientXToTime(100, 100, 0, 700, 7), 0);
+    // 7s audio at 100pps
+    assert.equal(simulateClientXToTime(100, 100, 0, 100, 7), 0);
 });
 
 test('simulated _clientXToTime: click at wrapper right edge, no scroll', () => {
-    // wrapper starts at 100, is 560px wide → right edge = 660
-    // scrollWidth = 700 (canvas wider than wrapper)
-    const t = simulateClientXToTime(660, 100, 0, 700, 7);
-    // x = 560, t = 560/700 * 7 = 5.6s
+    // wrapper starts at 100, is 560px wide → right edge = 660, 100pps
+    const t = simulateClientXToTime(660, 100, 0, 100, 7);
+    // scrollX = 560, t = 560/100 = 5.6s
     assert.ok(Math.abs(t - 5.6) < 0.01, `expected ~5.6s, got ${t}`);
 });
 
 test('simulated _clientXToTime: scrolled wrapper gives correct offset', () => {
     // wrapper at x=100, scrolled 140px, click at center of 560px wrapper
-    const t = simulateClientXToTime(380, 100, 140, 700, 7);
-    // x = 280 + 140 = 420, t = 420/700 * 7 = 4.2s
+    const t = simulateClientXToTime(380, 100, 140, 100, 7);
+    // scrollX = 280 + 140 = 420, t = 420/100 = 4.2s
     assert.ok(Math.abs(t - 4.2) < 0.01, `expected ~4.2s, got ${t}`);
 });
 
 test('simulated _clientXToTime: fully scrolled to end, click at right edge', () => {
-    // wrapper at 0, 560px visible, scrollLeft=140 (max), scrollWidth=700
-    const t = simulateClientXToTime(560, 0, 140, 700, 7);
-    // x = 560 + 140 = 700, t = 700/700 * 7 = 7.0s
+    // wrapper at 0, 560px visible, scrollLeft=140 (max), 100pps
+    const t = simulateClientXToTime(560, 0, 140, 100, 7);
+    // scrollX = 560 + 140 = 700, t = 700/100 = 7.0s
     assert.ok(Math.abs(t - 7.0) < 0.01, `expected 7.0s, got ${t}`);
 });
 
 test('simulated _clientXToTime: compact view (340px), same canvas', () => {
-    // 340px wrapper showing 700px canvas, scrolled to 200px
-    const t = simulateClientXToTime(170, 0, 200, 700, 7);
-    // x = 170 + 200 = 370, t = 370/700 * 7 = 3.7s
+    // 340px wrapper showing 700px canvas at 100pps, scrolled to 200px
+    const t = simulateClientXToTime(170, 0, 200, 100, 7);
+    // scrollX = 170 + 200 = 370, t = 370/100 = 3.7s
     assert.ok(Math.abs(t - 3.7) < 0.01, `expected ~3.7s, got ${t}`);
 });
 
 test('simulated _clientXToTime: click before wrapper clamps to 0', () => {
-    const t = simulateClientXToTime(50, 100, 0, 700, 7);
-    // x = -50, t = -50/700 * 7 = -0.5 → clamped to 0
+    const t = simulateClientXToTime(50, 100, 0, 100, 7);
+    // scrollX = -50, t = -50/100 = -0.5 → clamped to 0
     assert.equal(t, 0);
 });
 
 test('simulated _clientXToTime: overshoot clamps to duration', () => {
-    const t = simulateClientXToTime(999, 0, 140, 700, 7);
-    // x = 999 + 140 = 1139, t = 1139/700 * 7 = 11.39 → clamped to 7
+    const t = simulateClientXToTime(999, 0, 140, 100, 7);
+    // scrollX = 999 + 140 = 1139, t = 1139/100 = 11.39 → clamped to 7
     assert.equal(t, 7);
 });
 
-test('simulated _clientXToTime: 1px-wide click precision at 1000px canvas', () => {
-    // 10s audio, 1000px canvas → 1px = 0.01s
-    const t = simulateClientXToTime(1, 0, 0, 1000, 10);
+test('simulated _clientXToTime: 1px-wide click precision at 100pps', () => {
+    // 10s audio at 100pps → 1px = 0.01s
+    const t = simulateClientXToTime(1, 0, 0, 100, 10);
     assert.ok(Math.abs(t - 0.01) < 0.001, `1px should map to 0.01s, got ${t}`);
+});
+
+test('simulated _clientXToTime: different pps changes mapping', () => {
+    // 10s audio at 200pps → 1px = 0.005s
+    const t = simulateClientXToTime(100, 0, 0, 200, 10);
+    // scrollX = 100, t = 100/200 = 0.5s
+    assert.ok(Math.abs(t - 0.5) < 0.001, `expected 0.5s at 200pps, got ${t}`);
+});
+
+test('simulated _clientXToTime: result independent of scrollWidth vs canvas.width', () => {
+    // This is exactly the bug that was fixed: using pixelsPerSecond
+    // instead of dividing by scrollWidth or canvas.width makes the
+    // result independent of any DOM layout mismatch.
+    const duration = 7, pps = 100;
+    const clientX = 380, rectLeft = 100, scrollLeft = 140;
+    // scrollX = 280 + 140 = 420, t = 420/100 = 4.2s
+    const t = simulateClientXToTime(clientX, rectLeft, scrollLeft, pps, duration);
+    assert.ok(Math.abs(t - 4.2) < 0.01, `expected ~4.2s, got ${t}`);
+    // Same result regardless of what scrollWidth or canvas.width would be
 });

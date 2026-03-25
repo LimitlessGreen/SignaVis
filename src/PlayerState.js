@@ -1816,10 +1816,9 @@ export class PlayerState {
     _clientXToTime(clientX, source = 'spectrogram') {
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         const rect = wrapper.getBoundingClientRect();
-        const x = clientX - rect.left + wrapper.scrollLeft;
-        const scrollW = wrapper.scrollWidth;
+        const scrollX = clientX - rect.left + wrapper.scrollLeft;
         const dur = this.audioBuffer?.duration || 0;
-        const t = (x / Math.max(1, scrollW)) * dur;
+        const t = this.coords.scrollXToTime(scrollX);
         return Math.max(0, Math.min(t, dur));
     }
 
