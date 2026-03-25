@@ -1,11 +1,11 @@
 # audio-workbench
 
 <p align="center">
-  <a href="demo/">
+  <a href="https://limitlessgreen.github.io/Audio-Workbench/">
     <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
   </a>
   <br />
-  <strong><a href="demo/">▶ Live demo — im Browser öffnen (lokal oder GitHub Pages)</a></strong>
+  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/">▶ Live demo — im Browser öffnen (GitHub Pages)</a></strong>
 </p>
 
 ![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
