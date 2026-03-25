@@ -1,6 +1,6 @@
 # audio-workbench
 
-DAW-ähnlicher Audio-Player (Waveform + Spektrogramm + Transport Controls) als eigenständige Library.
+DAW-like audio player (waveform + spectrogram + transport controls) as a standalone library — built for bioacoustic analysis, annotation, and embedding.
 
 ## Install
 
@@ -8,15 +8,15 @@ DAW-ähnlicher Audio-Player (Waveform + Spektrogramm + Transport Controls) als e
 npm i audio-workbench
 ```
 
-WaveSurfer.js wird automatisch per CDN geladen — kein extra Install nötig.
+WaveSurfer.js is loaded automatically via CDN — no extra install needed.
 
-## Paketinhalt
+### Package Contents
 
-- `dist/birdnet-player.esm.js` (ESM, Web Worker als separate Datei)
-- `dist/birdnet-player.iife.js` (CDN/IIFE, Worker inlined)
-- `dist/birdnet-player.css` (Styles)
-- `types/index.d.ts` (TypeScript)
-- `src/dsp.js` (DSP-Kernfunktionen: FFT, Mel-Filterbank, Spektrogramm)
+- `dist/birdnet-player.esm.js` — ESM build (Web Worker as separate file)
+- `dist/birdnet-player.iife.js` — CDN/IIFE build (Worker inlined)
+- `dist/birdnet-player.css` — Styles
+- `types/` — Auto-generated TypeScript declarations
+- `src/dsp.js` — DSP core (FFT, mel filterbank, spectrogram)
 
 ## Quickstart
 
@@ -28,9 +28,9 @@ const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
 
-## 10 Usage Examples
+## Usage Examples
 
-### 1) ESM (Vite/Vanilla)
+### ESM (Vite / Vanilla)
 ```js
 import { BirdNETPlayer } from 'audio-workbench'
 import 'audio-workbench/style'
@@ -39,13 +39,13 @@ const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
 
-### 2) ESM + URL laden
+### Load from URL
 ```js
 await player.loadUrl('/audio/birdsong.mp3')
 player.play()
 ```
 
-### 3) ESM + File Input
+### File Input
 ```js
 const input = document.querySelector('#audio')
 input.addEventListener('change', async () => {
@@ -55,7 +55,7 @@ input.addEventListener('change', async () => {
 })
 ```
 
-### 4) React
+### React
 ```jsx
 import { useEffect, useRef } from 'react'
 import { BirdNETPlayer } from 'audio-workbench'
@@ -72,7 +72,7 @@ export default function Player() {
 }
 ```
 
-### 5) Vue
+### Vue
 ```js
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { BirdNETPlayer } from 'audio-workbench'
@@ -85,7 +85,7 @@ onMounted(() => { player = new BirdNETPlayer(root.value) })
 onBeforeUnmount(() => player?.destroy())
 ```
 
-### 6) Svelte
+### Svelte
 ```svelte
 <script>
   import { onMount } from 'svelte'
@@ -103,7 +103,7 @@ onBeforeUnmount(() => player?.destroy())
 <div bind:this={el}></div>
 ```
 
-### 7) CDN / IIFE (Vanilla)
+### CDN / IIFE
 ```html
 <script src="https://unpkg.com/wavesurfer.js@7"></script>
 <script src="https://unpkg.com/audio-workbench/dist/birdnet-player.iife.js"></script>
@@ -114,16 +114,15 @@ onBeforeUnmount(() => player?.destroy())
 </script>
 ```
 
-### 8) Streamlit (Python)
+### Streamlit (Python)
 ```python
 from audio_workbench import render_daw_player
-import streamlit as st
 import streamlit.components.v1 as components
 
 components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
 ```
 
-### 9) Jupyter Notebook
+### Jupyter Notebook
 ```python
 from IPython.display import HTML
 from audio_workbench import render_daw_player
@@ -131,7 +130,7 @@ from audio_workbench import render_daw_player
 HTML(render_daw_player(audio_bytes))
 ```
 
-### 10) Electron / Tauri WebView
+### Electron / Tauri WebView
 ```js
 import { BirdNETPlayer } from 'audio-workbench'
 import 'audio-workbench/style'
@@ -153,50 +152,128 @@ player.play(): void
 player.pause(): void
 player.stop(): void
 player.togglePlayPause(): void
-player.playBandpassedSegment(startSec: number, endSec: number, freqMinHz: number, freqMaxHz: number): void
-player.renameLabel(id: string, name: string): boolean
-player.getLabelTaxonomy(): Array<{ name: string; color?: string; shortcut?: string }>
-player.setLabelTaxonomy(items: Array<{ name: string; color?: string; shortcut?: string }>): void
-player.applyTaxonomyToLabel(id: string, shortcutOrIndex: string | number): boolean
-player.getPlaybackViewportConfig(): object
-player.setPlaybackViewportConfig(config: object): object
 player.destroy(): void
 ```
 
-## Spektrogramm-Modi
+### Bandpass-Filtered Segment Playback
 
-Der Player bietet zwei Spektrogramm-Modi, wählbar über das Mode-Dropdown:
+```ts
+player.playBandpassedSegment(
+  startSec: number, endSec: number,
+  freqMinHz: number, freqMaxHz: number
+): void
+```
 
-| Modus | Frequenzachse | Normalisierung | Farbpalette |
-|-------|---------------|----------------|-------------|
-| **Perch** (Standard) | Mel-Skala (logarithmisch) | PCEN (Per-Channel Energy Normalization) | Grayscale / frei wählbar |
-| **Classic** (XC-Stil) | Linear (direkte FFT-Bins) | Power → dB-Skala | Xeno-Canto Warm-Body / frei wählbar |
+Plays back only the audio within the given time and frequency range using a Web Audio bandpass filter. Useful for isolating individual bird calls from a recording.
 
-Der Classic-Modus erzeugt Spektrogramme die optisch den Darstellungen auf [xeno-canto.org](https://xeno-canto.org) entsprechen.
+### Label Taxonomy
 
-## Debug Performance Overlay
+```ts
+player.getLabelTaxonomy(): Array<{ name: string; color?: string; shortcut?: string }>
+player.setLabelTaxonomy(items: Array<{ name: string; color?: string; shortcut?: string }>): void
+player.applyTaxonomyToLabel(id: string, shortcutOrIndex: string | number): boolean
+player.renameLabel(id: string, name: string): boolean
+```
 
-Aktiviere das Laufzeit-Overlay mit:
+Default taxonomy: Bird Call (`1`), Song (`2`), Chirp (`3`), Noise (`4`). Fully customizable — set your own species list with colors and keyboard shortcuts.
 
-- URL: `?perf=1` (z. B. `demo/index.html?perf=1`)
-- oder Option: `new BirdNETPlayer(el, { enablePerfOverlay: true })`
+### External Spectrogram Injection
 
-Das Overlay zeigt u. a. FPS, Long-Frames, Eventraten und Transport-State-Transitions.
+```ts
+// Inject raw Float32 spectrogram data — player applies its own colorization
+player.setSpectrogramData(
+  data: Float32Array | ArrayBuffer | string,  // string = base64
+  nFrames: number, nMels: number,
+  options?: { mode?: 'perch' | 'classic', sampleRate?: number }
+): Promise<void>
+
+// Inject a pre-rendered spectrogram image — bypasses all DSP
+player.setSpectrogramImage(
+  image: string | HTMLImageElement | HTMLCanvasElement,  // string = data-URL or URL
+  options?: { sampleRate?: number }
+): Promise<void>
+
+// Re-enable auto-computation from audio
+player.clearExternalSpectrogram(): Promise<void>
+```
+
+### Viewport Configuration
+
+```ts
+player.getPlaybackViewportConfig(): object
+player.setPlaybackViewportConfig(config: object): object
+```
+
+### Event Listener
+
+```ts
+player.on(event: string, callback: Function): void
+```
+
+## Events
+
+The player emits events via `player.on(event, callback)`:
+
+| Event | Description |
+|-------|-------------|
+| `ready` | Audio decoded and spectrogram rendered |
+| `timeupdate` | Playback position changed |
+| `seek` | User seeked to a new position |
+| `error` | Error during loading or processing |
+| `progress` | Spectrogram computation progress (0–1) |
+| `computeTime` | Spectrogram computation finished (duration in ms) |
+| `selection` | User selected a time range on the spectrogram |
+| `zoomchange` | Zoom level (pixels per second) changed |
+| `viewresize` | Player container was resized |
+| `spectrogramscalechange` | Max frequency or scale changed |
+| `transportstatechange` | Transport state transition (play/pause/stop) |
+| `transporttransitionblocked` | Invalid transport transition attempted |
+| `followmodechange` | Follow mode changed (Free/Follow/Smooth) |
+| `followconfigchange` | Follow configuration updated |
+| `segmentplaystart` | Segment or bandpass playback started |
+| `segmentplayend` | Segment playback ended |
+| `segmentloop` | Segment looped |
+| `labeltaxonomyapply` | Taxonomy preset applied to a label |
+
+## Spectrogram Presets
+
+Two spectrogram presets are available, selectable via the settings panel:
+
+| Preset | Frequency Axis | Normalization | Default Color Scheme |
+|--------|---------------|---------------|----------------------|
+| **Perch** (default) | Mel scale (logarithmic) | PCEN (Per-Channel Energy Normalization) | Grayscale |
+| **Classic** (XC-style) | Linear (direct FFT bins) | Power → dB | Xeno-Canto Warm-Body |
+
+The Classic preset produces spectrograms visually matching [xeno-canto.org](https://xeno-canto.org).
+
+## Settings Panel
+
+A collapsible side panel provides full control over spectrogram rendering:
+
+- **Presets** — Perch / Classic toggle
+- **FFT** — Size (1024 / 2048 / 4096), max frequency (2 kHz–16 kHz), color scheme (6+ options)
+- **Display Gain** — Floor / ceiling sliders, auto contrast
+- **Zoom** — Pixels-per-second slider
+- **Transport** — Volume, loop, fit-to-view controls
+
+## Crosshair
+
+Toggle the crosshair button to show a real-time overlay displaying the exact time and frequency at the mouse position. Coordinates are mel-aware — frequency readout matches the current scale (mel or linear).
 
 ## Label Editing
 
-- Doppelklick auf ein Label öffnet einen Inline-Editor.
-- Vorschläge basieren auf bereits verwendeten Label-Namen (wiederverwendbare Label-Library).
-- Farbe ist im Inline-Editor direkt per Color-Picker editierbar.
-- `Enter` speichert, `Esc` verwirft.
-- Taxonomy-Presets mit `1..9` sind unterstützt:
-  erst Label fokussieren (anklicken), dann Shortcut drücken.
+- Double-click a label to open the inline editor.
+- Suggestions are based on previously used label names (reusable label library).
+- Color is editable directly via a color picker in the inline editor.
+- `Enter` saves, `Esc` discards.
+- Taxonomy shortcuts with `1..9`: click a label to focus it, then press the shortcut key.
+- Label dragging uses pixel-space deltas — dragging feels perceptually linear on both mel and linear scales.
 
 ## Follow Modes
 
-- Follow-Button schaltet zyklisch: `Free` → `Follow` → `Smooth`.
-- `Smooth` fährt kontinuierlich mit, statt in Sprüngen zu zentrieren.
-- Follow/Smooth Verhalten ist konfigurierbar (Constructor + Runtime):
+- The follow button cycles: `Free` → `Follow` → `Smooth`.
+- `Smooth` scrolls continuously instead of jumping to center.
+- Follow/Smooth behavior is configurable (constructor + runtime):
 
 ```js
 const player = new BirdNETPlayer(el, {
@@ -211,13 +288,13 @@ player.setPlaybackViewportConfig({ smoothSeekFocusMs: 1700 })
 
 ## Compact Preview Modes
 
-Für kleine Embeds kannst du den DAW-Look auf ein Vorschaufenster reduzieren:
+For small embeds, reduce the DAW layout to a minimal preview:
 
 ```js
 const player = new BirdNETPlayer(el, {
   viewMode: 'spectrogram', // 'both' | 'waveform' | 'spectrogram'
-  transportStyle: 'hero',  // großer Play-Button
-  transportOverlay: true,  // zentriert, ohne Toolbar-Höhe
+  transportStyle: 'hero',  // large centered play button
+  transportOverlay: true,  // overlayed, no toolbar height
   showWaveformTimeline: false,
   showOverview: false,
   showFileOpen: false,
@@ -227,67 +304,92 @@ const player = new BirdNETPlayer(el, {
 })
 ```
 
+## Debug Performance Overlay
+
+Enable the runtime performance overlay with:
+
+- URL parameter: `?perf=1` (e.g. `demo/index.html?perf=1`)
+- Constructor option: `new BirdNETPlayer(el, { enablePerfOverlay: true })`
+
+Displays FPS, long frames, event rates, and transport state transitions.
+
 ## Tests
 
 ```bash
-npm test          # 25 Tests (DSP, Spectrogram Utils, Transport State)
+npm test          # 110 tests (DSP, Spectrogram Utils, Coordinate System,
+                  #            Interaction State, Transport State)
 ```
+
+Tests use Node.js native test runner (`node:test` + `node:assert/strict`).
 
 ## Build
 
 ```bash
-npm run build     # Vite build (ESM + IIFE + CSS + Sourcemaps + TypeScript)
-npm run dev       # Vite dev server mit HMR (öffnet http://localhost:5173)
+npm run build     # Vite build (ESM + IIFE + CSS + sourcemaps + TypeScript declarations)
+npm run dev       # Vite dev server with HMR (http://localhost:5173)
+npm run typecheck # TypeScript type checking (checkJs)
 ```
 
-Der Build nutzt [Vite](https://vitejs.dev/) im Library-Mode:
-- ESM-Build: Worker als separate Datei
-- IIFE-Build: Worker inlined (kein zusätzlicher Netzwerk-Request)
-- CSS wird automatisch extrahiert
-- Sourcemaps für beide Formate
-- TypeScript Declarations aus JSDoc generiert
+The build uses [Vite](https://vitejs.dev/) in library mode:
+- ESM build: Worker as a separate file
+- IIFE build: Worker inlined (no extra network request)
+- CSS extracted automatically
+- Sourcemaps for both formats
+- TypeScript declarations auto-generated from JSDoc
 
 ## Demos
 
-| Demo | Modus | Starten |
-|------|-------|---------|
+| Demo | Mode | Start |
+|------|------|-------|
 | `http://localhost:5173/` | Dev (ESM, HMR) | `npm run dev` |
-| `demo/index.html` | Produktion (IIFE aus dist/) | Datei direkt öffnen |
+| `demo/index.html` | Production (IIFE from dist/) | Open file directly |
 | `demo/storybook.html` | Interactive Stories | `npm run dev` |
 
-## Architektur
+The Storybook demo is also deployed to **GitHub Pages** on every push to `main`.
+
+## Architecture
 
 ```
 src/
-├── BirdNETPlayer.js    Public API Facade
-├── PlayerState.js      Zentraler State & Orchestrierung
-├── dsp.js              DSP-Kernfunktionen (FFT, Mel, Filterbank)
-├── spectrogram.js      Pipeline: Compute → Grayscale → GPU-Colorize → Render
-├── spectrogram.worker.js  Web Worker (importiert dsp.js)
-├── template.js         HTML-Template (data-aw Attribute, multi-instance-fähig)
-├── player.css          Styles (CSS Custom Properties, scoped auf .daw-shell)
-├── annotations.js      Amplitude + Spektrogramm Labels
-├── waveform.js         Waveform-Rendering
-├── gestures.js         Touch/Mouse Interaction
-├── utils.js            Hilfsfunktionen
-└── constants.js        Konfiguration & Defaults
+├── BirdNETPlayer.js       Public API facade
+├── PlayerState.js         Central state machine & orchestration
+├── dsp.js                 DSP core (FFT, mel filterbank, PCEN, spectrogram)
+├── spectrogram.js         Pipeline: compute → grayscale → GPU-colorize → render
+├── spectrogram.worker.js  Web Worker (imports dsp.js)
+├── coordinateSystem.js    Coordinate conversions (time↔pixel, freq↔pixel, mel-aware)
+├── annotations.js         Spectrogram labels (draw, edit, drag, resize)
+├── interactionState.js    Interaction FSM (idle, pan, drag, resize modes)
+├── transportState.js      Transport FSM (stopped, playing, paused transitions)
+├── template.js            HTML template (data-aw attributes, multi-instance safe)
+├── player.css             Styles (CSS custom properties, scoped to .daw-shell)
+├── waveform.js            Waveform rendering
+├── gestures.js            Touch / mouse interaction layer
+├── app.js                 Dev-mode entry point
+├── constants.js           Configuration & defaults
+├── utils.js               Utility functions
+└── vite-env.d.ts          Vite environment types
 ```
+
+## CI / CD
+
+- **CI** (`.github/workflows/ci.yml`): Typecheck → Tests → Build → Version sync → Python validation (Node 22, Python 3.11)
+- **GitHub Pages** (`.github/workflows/pages.yml`): Deploys `demo/storybook.html` on every push to `main`
+- **Dependabot** (`.github/dependabot.yml`): Weekly updates for npm, pip, and GitHub Actions
 
 ## Release Runbook
 
-Git hooks einmalig installieren:
+Install git hooks (one-time):
 
 ```bash
 npm run hooks:install
 ```
 
-0. Einmalig npm Trusted Publishing einrichten:
-- npm Package `audio-workbench` -> `Settings` -> `Trusted publisher`
-- GitHub owner/org: `limitlessgreen`
-- Repository: `Audio-Workbench`
-- Workflow file: `.github/workflows/ci.yml`
+0. Set up npm Trusted Publishing (one-time):
+   - npm package `audio-workbench` → Settings → Trusted publisher
+   - GitHub owner/org: `limitlessgreen`, Repository: `Audio-Workbench`
+   - Workflow file: `.github/workflows/ci.yml`
 
-1. Version nur in `VERSION` erhöhen (Single Source of Truth):
+1. Bump version in `VERSION` only (single source of truth):
 
 ```bash
 echo "X.Y.Z" > VERSION
@@ -295,7 +397,7 @@ npm run version:sync
 npm run version:check
 ```
 
-2. Build + Packaging lokal prüfen:
+2. Verify build + packaging locally:
 
 ```bash
 npm test
@@ -306,19 +408,19 @@ python -m build
 python -m twine check dist/*
 ```
 
-3. Changelog aktualisieren (`CHANGELOG.md`).
+3. Update `CHANGELOG.md`.
 
-4. Commit + Tag erstellen (automatisiert):
+4. Create commit + tag (automated):
 
 ```bash
 bash ./scripts/release.sh X.Y.Z
 ```
 
-5. Veröffentlichung läuft über GitHub Actions bei Tag `v*`:
-- npm: `publish-npm`
-- PyPI: `publish-pypi`
+5. Publishing runs via GitHub Actions on tag `v*`:
+   - npm: `publish-npm` job
+   - PyPI: `publish-pypi` job
 
-6. Optional manueller Fallback:
+6. Optional manual fallback:
 
 ```bash
 npm publish --access public
