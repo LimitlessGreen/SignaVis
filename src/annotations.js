@@ -2,6 +2,8 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
+import { pixelYToFrequency, frequencyToPixelY } from './spectrogram.js';
+
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -658,11 +660,14 @@ export class SpectrogramLabelLayer {
         const state = this.player?._state;
         const duration = Math.max(0.001, this.player?.duration || state?.audioBuffer?.duration || 0.001);
         const maxFreq = this._getMaxFreq();
+        const sampleRateHz = state?.sampleRateHz || 32000;
+        const nMels = state?.spectrogramMels || 128;
+        const mode = state?.d?.spectrogramModeSelect?.value || 'perch';
 
         const x1 = clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
-        const yHigh = clamp((1 - label.freqMax / maxFreq) * canvasHeight, 0, canvasHeight);
-        const yLow = clamp((1 - label.freqMin / maxFreq) * canvasHeight, 0, canvasHeight);
+        const yHigh = clamp(frequencyToPixelY(label.freqMax, canvasHeight, maxFreq, sampleRateHz, nMels, mode), 0, canvasHeight);
+        const yLow = clamp(frequencyToPixelY(label.freqMin, canvasHeight, maxFreq, sampleRateHz, nMels, mode), 0, canvasHeight);
 
         return {
             left: Math.min(x1, x2),
@@ -805,7 +810,9 @@ export class SpectrogramLabelLayer {
         const height = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.height || 1);
 
         const dt = (clientX - this._editing.startX) / width * duration;
-        const df = -(clientY - this._editing.startY) / height * maxFreq;
+        const startFreq = this._clientYToFreq(this._editing.startY);
+        const currentFreq = this._clientYToFreq(clientY);
+        const df = currentFreq - startFreq;
         const src = this._editing.startLabel;
         if (this._editing.pending) {
             if (Math.abs(clientX - this._editing.startX) < 4 && Math.abs(clientY - this._editing.startY) < 4) return;
@@ -933,9 +940,13 @@ export class SpectrogramLabelLayer {
         const canvas = state?.d?.spectrogramCanvas;
         if (!wrapper || !canvas) return 0;
         const rect = wrapper.getBoundingClientRect();
-        const y = clamp(clientY - rect.top, 0, Math.max(1, canvas.height));
-        const normalized = 1 - (y / Math.max(1, canvas.height));
-        return normalized * this._getMaxFreq();
+        const localY = clamp(clientY - rect.top, 0, rect.height);
+        const canvasY = localY / Math.max(1, rect.height) * canvas.height;
+        const maxFreq = this._getMaxFreq();
+        const sampleRateHz = state?.sampleRateHz || 32000;
+        const nMels = state?.spectrogramMels || 128;
+        const mode = state?.d?.spectrogramModeSelect?.value || 'perch';
+        return pixelYToFrequency(canvasY, canvas.height, maxFreq, sampleRateHz, nMels, mode);
     }
 
     _getMaxFreq() {

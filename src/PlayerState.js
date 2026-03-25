@@ -1539,6 +1539,8 @@ export class PlayerState {
             labelsElement: this.d.freqLabels,
             maxFreq: parseFloat(this.d.maxFreqSelect.value),
             sampleRateHz: this.sampleRateHz,
+            spectrogramMels: this.spectrogramMels,
+            spectrogramMode: this.d.spectrogramModeSelect?.value || 'perch',
         });
     }
 

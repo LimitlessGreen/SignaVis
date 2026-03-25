@@ -511,6 +511,48 @@ export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz
     return melFreqs[clampedBin] || 0;
 }
 
+/**
+ * Inverse of pixelYToFrequency: maps a frequency (Hz) → display pixel Y.
+ */
+export function frequencyToPixelY(freq, displayHeight, maxFreq, sampleRateHz, spectrogramMels, spectrogramMode) {
+    if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
+
+    const isLinear = spectrogramMode === 'classic';
+    const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
+    const clampedFreq = Math.max(0, Math.min(boundedMaxFreq, freq));
+
+    let maxBin = spectrogramMels - 1;
+    let bin;
+
+    if (isLinear) {
+        const binHz = (sampleRateHz / 2) / spectrogramMels;
+        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+        bin = clampedFreq / binHz;
+    } else {
+        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
+        for (let i = 0; i < melFreqs.length; i++) {
+            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+        }
+        // Find fractional bin via linear interpolation between mel edges
+        bin = 0;
+        if (clampedFreq >= melFreqs[maxBin]) {
+            bin = maxBin;
+        } else {
+            for (let i = 0; i < maxBin; i++) {
+                if (melFreqs[i + 1] >= clampedFreq) {
+                    const range = melFreqs[i + 1] - melFreqs[i];
+                    bin = range > 0 ? i + (clampedFreq - melFreqs[i]) / range : i;
+                    break;
+                }
+            }
+        }
+    }
+
+    bin = Math.max(0, Math.min(maxBin, bin));
+    const internalY = SPECTROGRAM_HEIGHT - 1 - (bin / maxBin * (SPECTROGRAM_HEIGHT - 1));
+    return internalY / SPECTROGRAM_HEIGHT * displayHeight;
+}
+
 // ─── Time Grid (private helper) ─────────────────────────────────────
 
 function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {

@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { getTimeGridSteps } from './utils.js';
+import { frequencyToPixelY } from './spectrogram.js';
 
 // ─── Waveform Timeline (private helper) ─────────────────────────────
 
@@ -166,7 +167,7 @@ export function renderOverviewWaveform({
 
 // ─── Frequency Labels ───────────────────────────────────────────────
 
-export function renderFrequencyLabels({ labelsElement, maxFreq, sampleRateHz }) {
+export function renderFrequencyLabels({ labelsElement, maxFreq, sampleRateHz, spectrogramMels, spectrogramMode }) {
     labelsElement.innerHTML = '';
 
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
@@ -180,11 +181,19 @@ export function renderFrequencyLabels({ labelsElement, maxFreq, sampleRateHz }) 
         0,
     ];
 
+    const nMels = spectrogramMels || 128;
+    const mode = spectrogramMode || 'perch';
+
     frequencies.forEach((freq) => {
         const span = document.createElement('span');
         span.textContent = freq >= 1000
             ? `${(freq / 1000).toFixed(freq % 1000 === 0 ? 0 : 1)}k`
             : `${Math.round(freq)}Hz`;
+        // Position each label at its correct Y for the active scale
+        const yFrac = frequencyToPixelY(freq, 1, maxFreq, sampleRateHz, nMels, mode);
+        span.style.position = 'absolute';
+        span.style.top = `${yFrac * 100}%`;
+        span.style.transform = 'translateY(-50%)';
         labelsElement.appendChild(span);
     });
 }
