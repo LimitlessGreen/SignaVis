@@ -20,16 +20,48 @@ Python package to embed the Audio Workbench DAW player in Streamlit, Jupyter, Gr
 
 ```bash
 pip install audio-workbench
-```
 
 Optional for demos:
 
 ```bash
-pip install "audio-workbench[streamlit]"
-pip install "audio-workbench[gradio]"
 ```
 
----
+
+
+
+## Example: Load and Display Your Own Audio
+
+You can load your own audio file (WAV, MP3, etc.) and display it as a spectrogram or waveform in any supported environment. Just read the file as bytes and pass it to `render_daw_player`:
+
+**Jupyter Notebook:**
+
+```python
+from audio_workbench import render_daw_player
+
+with open("your_audio.wav", "rb") as f:
+    audio_bytes = f.read()
+
+html = render_daw_player(audio_bytes, viewMode="spectrogram")
+
+# Display in Jupyter:
+from IPython.display import HTML
+HTML(html)
+```
+
+**Streamlit:**
+
+```python
+import streamlit as st
+from audio_workbench import render_daw_player
+import streamlit.components.v1 as components
+
+uploaded = st.file_uploader("Choose an audio file", type=["wav", "mp3", "ogg", "flac"])
+if uploaded is not None:
+    html = render_daw_player(uploaded.read(), viewMode="spectrogram")
+    components.html(html, height=620, scrolling=False)
+```
+
+You can use all other options as described above to customize the player.
 
 ## Quickstart
 
