@@ -18,12 +18,18 @@ Python package to embed the Audio Workbench DAW player in Streamlit, Jupyter, Gr
 
 ## Installation
 
+
+
+
 ```bash
 pip install audio-workbench
+```
 
 Optional for demos:
 
 ```bash
+pip install "audio-workbench[streamlit]"
+pip install "audio-workbench[gradio]"
 ```
 
 
