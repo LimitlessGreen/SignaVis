@@ -147,42 +147,87 @@ export const stories = [
     defaultSample: SAMPLE_BIRD,
     async run(root, url) {
       root.innerHTML = '';
+
+      /* ── Event definitions ── */
+      const EVENT_DEFS = [
+        { name: 'timeupdate',             on: false, fmt: ()          => 'timeupdate',                                             throttle: true },
+        { name: 'selection',              on: true,  fmt: (e)         => `selection ${e.detail.start.toFixed(2)}–${e.detail.end.toFixed(2)}s` },
+        { name: 'zoomchange',             on: true,  fmt: (e)         => `zoom ${Math.round(e.detail.pixelsPerSecond)} px/s` },
+        { name: 'spectrogramlabelcreate', on: true,  fmt: (e)         => `label.create ${e.detail.label?.label || e.detail.label?.id}` },
+        { name: 'spectrogramlabelupdate', on: true,  fmt: (e)         => `label.update ${e.detail.label?.label || e.detail.label?.id}` },
+        { name: 'annotationcreate',       on: true,  fmt: (e)         => `ann.create ${e.detail?.id ?? ''}` },
+        { name: 'ready',                  on: true,  fmt: (e)         => `ready ${e.detail.nFrames}f × ${e.detail.nMels}bins` },
+        { name: 'computeTime',            on: true,  fmt: (e)         => `compute ${e.detail.durationMs}ms` },
+        { name: 'progress',               on: true,  fmt: (e)         => `progress ${e.detail.percent}%` },
+        { name: 'error',                  on: true,  fmt: (e)         => `error: ${e.detail.message}` },
+      ];
+
+      /* ── Layout: player | sidebar(toggles + log) ── */
       const wrap = document.createElement('div');
-      wrap.style.cssText = 'display:grid;grid-template-columns:1fr 260px;gap:12px;min-width:0';
+      wrap.style.cssText = 'display:grid;grid-template-columns:1fr 280px;gap:12px;min-width:0';
       root.appendChild(wrap);
 
       const playerHost = document.createElement('div');
       playerHost.style.minWidth = '0';
       wrap.appendChild(playerHost);
 
+      const sidebar = document.createElement('div');
+      sidebar.style.cssText = 'display:flex;flex-direction:column;gap:8px;min-width:0';
+      wrap.appendChild(sidebar);
+
+      /* ── Toggle panel ── */
+      const togglePanel = document.createElement('div');
+      Object.assign(togglePanel.style, {
+        padding: '8px 10px', borderRadius: '10px',
+        background: '#1e293b', color: '#94a3b8',
+        font: '11px/1.6 ui-monospace, SFMono-Regular, monospace',
+        display: 'flex', flexWrap: 'wrap', gap: '2px 10px',
+      });
+      const heading = document.createElement('div');
+      heading.textContent = 'Events';
+      heading.style.cssText = 'width:100%;font-weight:600;color:#e2e8f0;margin-bottom:2px';
+      togglePanel.appendChild(heading);
+      sidebar.appendChild(togglePanel);
+
+      const checkboxes = EVENT_DEFS.map((def) => {
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = def.on;
+        cb.style.cssText = 'accent-color:#3b82f6;margin:0';
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(def.name));
+        togglePanel.appendChild(label);
+        return { def, cb };
+      });
+
+      /* ── Log ── */
       const log = document.createElement('pre');
       Object.assign(log.style, {
         margin: '0', padding: '10px', borderRadius: '10px',
         background: '#0f172a', color: '#94a3b8',
         font: '12px/1.4 ui-monospace, SFMono-Regular, monospace',
-        height: '520px', overflow: 'auto',
+        flex: '1 1 0', overflow: 'auto', minHeight: '0',
       });
-      wrap.appendChild(log);
+      sidebar.appendChild(log);
 
       const write = (msg) => {
         log.textContent = new Date().toLocaleTimeString() + '  ' + msg + '\n' + log.textContent;
       };
 
+      /* ── Player + subscriptions ── */
       const p = await makePlayer(playerHost, {}, url);
       write('player ready');
 
-      const unsubs = [
-        p.on('timeupdate',             () => { if (Math.random() < 0.02) write('timeupdate'); }),
-        p.on('selection',              (e) => write(`selection ${e.detail.start.toFixed(2)}–${e.detail.end.toFixed(2)}s`)),
-        p.on('zoomchange',             (e) => write(`zoom ${Math.round(e.detail.pixelsPerSecond)} px/s`)),
-        p.on('spectrogramlabelcreate', (e) => write(`label.create ${e.detail.label?.label || e.detail.label?.id}`)),
-        p.on('spectrogramlabelupdate', (e) => write(`label.update ${e.detail.label?.label || e.detail.label?.id}`)),
-        p.on('annotationcreate',       (e) => write(`ann.create ${e.detail?.id ?? ''}`)),
-        p.on('ready',                  (e) => write(`ready ${e.detail.nFrames}f × ${e.detail.nMels}bins`)),
-        p.on('computeTime',            (e) => write(`compute ${e.detail.durationMs}ms`)),
-        p.on('progress',               (e) => write(`progress ${e.detail.percent}%`)),
-        p.on('error',                  (e) => write(`error: ${e.detail.message}`)),
-      ];
+      const unsubs = EVENT_DEFS.map((def, i) => {
+        const handler = (e) => {
+          if (!checkboxes[i].cb.checked) return;
+          if (def.throttle && Math.random() >= 0.02) return;
+          write(def.fmt(e));
+        };
+        return p.on(def.name, handler);
+      });
 
       const origDestroy = p.destroy.bind(p);
       p.destroy = () => { unsubs.forEach(u => u()); origDestroy(); };
