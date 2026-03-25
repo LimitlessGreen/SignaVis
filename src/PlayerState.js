@@ -1286,6 +1286,7 @@ export class PlayerState {
             this._syncOverviewWindowToViewport();
             if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
             this._setTransportState('ready', 'spectrogram-ready');
+            if (this._transportOverlay) this._fitEntireTrackInView();
 
             const computeMs = performance.now() - t0;
             this._emit('computeTime', { durationMs: Math.round(computeMs) });
@@ -1817,9 +1818,9 @@ export class PlayerState {
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         const rect = wrapper.getBoundingClientRect();
         const x = clientX - rect.left + wrapper.scrollLeft;
-        const refWidth = source === 'waveform' ? this.d.amplitudeCanvas.width : this.d.spectrogramCanvas.width;
+        const scrollW = wrapper.scrollWidth;
         const dur = this.audioBuffer?.duration || 0;
-        const t = (x / Math.max(1, refWidth)) * dur;
+        const t = (x / Math.max(1, scrollW)) * dur;
         return Math.max(0, Math.min(t, dur));
     }
 
