@@ -178,9 +178,10 @@ export const stories = [
         p.on('spectrogramlabelcreate', (e) => write(`label.create ${e.detail.label?.label || e.detail.label?.id}`)),
         p.on('spectrogramlabelupdate', (e) => write(`label.update ${e.detail.label?.label || e.detail.label?.id}`)),
         p.on('annotationcreate',       (e) => write(`ann.create ${e.detail?.id ?? ''}`)),
-        p.on('cachehit',               ()  => write('cache hit')),
-        p.on('cachemiss',              ()  => write('cache miss')),
-        p.on('cachewrite',             ()  => write('cache write')),
+        p.on('ready',                  (e) => write(`ready ${e.detail.nFrames}f × ${e.detail.nMels}bins`)),
+        p.on('computeTime',            (e) => write(`compute ${e.detail.durationMs}ms`)),
+        p.on('progress',               (e) => write(`progress ${e.detail.percent}%`)),
+        p.on('error',                  (e) => write(`error: ${e.detail.message}`)),
       ];
 
       const origDestroy = p.destroy.bind(p);
