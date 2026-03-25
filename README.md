@@ -1,5 +1,13 @@
 # audio-workbench
 
+<p align="center">
+  <a href="demo/">
+    <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
+  </a>
+  <br />
+  <strong><a href="demo/">▶ Live demo — im Browser öffnen (lokal oder GitHub Pages)</a></strong>
+</p>
+
 ![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
 ![NPM](https://img.shields.io/npm/v/audio-workbench.svg)
 ![PyPI](https://img.shields.io/pypi/v/audio-workbench.svg)
