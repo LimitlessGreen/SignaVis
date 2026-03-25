@@ -1763,7 +1763,7 @@ export class PlayerState {
         const clamped = Math.max(minPps, Math.min(maxPps, nextPps));
         const changed = Math.abs(clamped - this.pixelsPerSecond) >= 0.01;
 
-        const fallbackTime = (this._getPrimaryScrollLeft() + vw / 2) / Math.max(this.pixelsPerSecond, 0.01);
+        const fallbackTime = this.coords.scrollXToTime(this._getPrimaryScrollLeft() + vw / 2);
         const aTime = anchorTime ?? fallbackTime;
         const aPixel = anchorPixel ?? (vw / 2);
 
@@ -1800,17 +1800,17 @@ export class PlayerState {
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         const rect = wrapper.getBoundingClientRect();
         const localX = Math.max(0, Math.min(rect.width, centerClientX - rect.left));
-        const anchorTime = (wrapper.scrollLeft + localX) / Math.max(this.pixelsPerSecond, 0.01);
+        const anchorTime = this.coords.scrollXToTime(wrapper.scrollLeft + localX);
         this._setPixelsPerSecond(this.pixelsPerSecond * scale, true, anchorTime, localX);
     }
 
     _centerViewportAtTime(timeSec) {
         if (!this.audioBuffer) return;
         const vw = this._getViewportWidth();
-        const viewDur = vw / this.pixelsPerSecond;
+        const viewDur = this.coords.scrollXToTime(vw);
         let start = timeSec - viewDur / 2;
         start = Math.max(0, Math.min(start, Math.max(0, this.audioBuffer.duration - viewDur)));
-        this._setLinkedScrollLeft(start * this.pixelsPerSecond);
+        this._setLinkedScrollLeft(this.coords.timeToScrollX(start));
     }
 
     _clientXToTime(clientX, source = 'spectrogram') {
@@ -1837,8 +1837,8 @@ export class PlayerState {
         if (trackWidth <= 0) return;
 
         const vw = this._getViewportWidth();
-        const viewTime = vw / this.pixelsPerSecond;
-        const startTime = this._getPrimaryScrollLeft() / this.pixelsPerSecond;
+        const viewTime = this.coords.scrollXToTime(vw);
+        const startTime = this.coords.scrollXToTime(this._getPrimaryScrollLeft());
         const endTime = Math.min(this.audioBuffer.duration, startTime + viewTime);
 
         const nextStartNorm = startTime / this.audioBuffer.duration;
@@ -2029,7 +2029,7 @@ export class PlayerState {
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         const rect = wrapper.getBoundingClientRect();
         const localX = event.clientX - rect.left;
-        const timeAtCursor = (wrapper.scrollLeft + localX) / this.pixelsPerSecond;
+        const timeAtCursor = this.coords.scrollXToTime(wrapper.scrollLeft + localX);
 
         if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
