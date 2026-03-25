@@ -1,5 +1,79 @@
 # audio-workbench
 
+![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
+![NPM](https://img.shields.io/npm/v/audio-workbench.svg)
+![PyPI](https://img.shields.io/pypi/v/audio-workbench.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+DAW-like audio player (waveform + spectrogram + transport controls) as a standalone library — built for bioacoustic analysis, annotation, and embedding.
+
+## Table of contents
+
+- [Features](#features)
+- [Install](#install)
+- [Quickstart](#quickstart)
+- [Package Contents](#package-contents)
+- [Python wrapper](#python-wrapper)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+- **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
+- **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
+- **Label annotations** — draw, drag, resize time×frequency boxes on the spectrogram
+- **Label taxonomy** — customizable species presets with colors and keyboard shortcuts
+- **Bandpass-filtered playback** — isolate and play back a specific time×frequency region via Web Audio
+- **External spectrogram injection** — supply pre-computed Float32 data or a rendered image
+- **Settings side-panel** — FFT size, max frequency, color scheme, display gain, auto contrast, zoom
+- **Crosshair overlay** — real-time time + frequency readout
+- **Compact preview modes** — hero transport, overlay mode, small embeds
+- **110 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+
+## Install
+
+```bash
+npm i audio-workbench
+```
+
+Package (PyPI): https://pypi.org/project/audio-workbench
+
+## Quickstart
+
+```js
+import { BirdNETPlayer } from 'audio-workbench'
+import 'audio-workbench/style'
+
+const player = new BirdNETPlayer(document.getElementById('player'))
+await player.ready
+```
+
+## Package Contents
+
+- `dist/birdnet-player.esm.js` — ESM build
+- `dist/birdnet-player.iife.js` — IIFE build
+- `dist/birdnet-player.css` — Styles
+- `types/` — TypeScript declarations
+
+## Python wrapper
+
+Install via pip:
+
+```bash
+pip install audio-workbench
+```
+
+Docs & PyPI: https://pypi.org/project/audio-workbench
+
+## Contributing
+
+See the repository on GitHub and open issues/PRs: https://github.com/LimitlessGreen/Audio-Workbench
+
+## License
+
+AGPL-3.0-only
+# audio-workbench
+
 DAW-like audio player (waveform + spectrogram + transport controls) as a standalone library — built for bioacoustic analysis, annotation, and embedding.
 
 ## Install

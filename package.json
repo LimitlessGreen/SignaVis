@@ -10,7 +10,7 @@
   "files": [
     "dist/",
     "types/",
-    "README.adoc",
+    "README.md",
     "LICENSE"
   ],
   "exports": {
