@@ -690,24 +690,6 @@ export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     return canvas;
 }
 
-/** Legacy wrapper - builds both stages in one call. */
-export function buildSpectrogramBaseImage({
-    spectrogramData, spectrogramFrames, spectrogramMels,
-    sampleRateHz, maxFreq, currentColorScheme,
-    normalizeViews, spectrogramLogMin, spectrogramLogMax,
-    scale = 'mel',
-}) {
-    const grayInfo = buildSpectrogramGrayscale({
-        spectrogramData, spectrogramFrames, spectrogramMels,
-        sampleRateHz, maxFreq,
-        spectrogramAbsLogMin: spectrogramLogMin,
-        spectrogramAbsLogMax: spectrogramLogMax,
-        scale,
-    });
-    if (!grayInfo) return null;
-    return colorizeSpectrogram(grayInfo, 0, 1, currentColorScheme);
-}
-
 // ─── Render Spectrogram to Canvas ───────────────────────────────────
 
 export function renderSpectrogram({
