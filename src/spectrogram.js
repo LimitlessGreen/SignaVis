@@ -618,35 +618,41 @@ export function buildSpectrogramGrayscale({
         }
     }
 
-    const yToBin = new Int16Array(height);
+    // Y-axis: bilinear interpolation between mel bins (avoids staircase artifacts)
+    const yBinLo   = new Int16Array(height);
+    const yBinHi   = new Int16Array(height);
+    const yBinFrac = new Float32Array(height);
     for (let y = 0; y < height; y++) {
-        const freqIndex = Math.round((height - 1 - y) / (height - 1) * maxBin);
-        yToBin[y] = Math.max(0, Math.min(maxBin, freqIndex));
+        const fracBin = (height - 1 - y) / (height - 1) * maxBin;
+        const lo = Math.max(0, Math.min(maxBin, Math.floor(fracBin)));
+        const hi = Math.min(maxBin, lo + 1);
+        yBinLo[y]   = lo;
+        yBinHi[y]   = hi;
+        yBinFrac[y] = fracBin - lo;
     }
 
     const logRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
     const gray = new Uint8Array(width * height);
 
     for (let x = 0; x < width; x++) {
-        const frameStart = Math.max(0, Math.floor(x * framesPerPixel));
-        const frameEnd   = Math.max(frameStart + 1, Math.min(spectrogramFrames, Math.ceil((x + 1) * framesPerPixel)));
-        const sampleStep = Math.max(1, Math.floor((frameEnd - frameStart) / 4));
+        // Non-overlapping frame ranges: each frame contributes to exactly one pixel
+        const frameStart = Math.round(x * framesPerPixel);
+        const frameEnd   = Math.max(frameStart + 1, Math.round((x + 1) * framesPerPixel));
 
         for (let y = 0; y < height; y++) {
-            const bin = yToBin[y];
-            let sum = 0, count = 0;
+            const binLo = yBinLo[y];
+            const binHi = yBinHi[y];
+            const frac  = yBinFrac[y];
+            let sumLo = 0, sumHi = 0, count = 0;
 
-            for (let frame = frameStart; frame < frameEnd; frame += sampleStep) {
-                sum += spectrogramData[frame * spectrogramMels + bin] || 0;
+            for (let frame = frameStart; frame < frameEnd; frame++) {
+                const base = frame * spectrogramMels;
+                sumLo += spectrogramData[base + binLo] || 0;
+                sumHi += spectrogramData[base + binHi] || 0;
                 count++;
             }
-            // Include last frame only if the stepping loop didn't already visit it
-            if (frameEnd - 1 > frameStart && (frameEnd - 1 - frameStart) % sampleStep !== 0) {
-                sum += spectrogramData[(frameEnd - 1) * spectrogramMels + bin] || 0;
-                count++;
-            }
 
-            const magnitude = sum / Math.max(1, count);
+            const magnitude = (sumLo + (sumHi - sumLo) * frac) / Math.max(1, count);
             const normalized = (magnitude - spectrogramAbsLogMin) / logRange;
             gray[y * width + x] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
         }
