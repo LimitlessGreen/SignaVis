@@ -38,6 +38,10 @@
   ],
   "author": "Dein Name",
   "license": "AGPL-3.0-only",
+  "homepage": "https://www.npmjs.com/package/audio-workbench",
+  "bugs": {
+    "url": "https://github.com/LimitlessGreen/Audio-Workbench/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/LimitlessGreen/Audio-Workbench"

@@ -8,6 +8,9 @@ Python helper package to embed `audio-workbench` in Streamlit, Jupyter, and othe
 pip install audio-workbench
 ```
 
+PyPI: https://pypi.org/project/audio-workbench
+
+
 Optional demo dependencies:
 
 ```bash
