@@ -10,6 +10,7 @@ import {
     PROGRESSIVE_CHUNK_SECONDS, PROGRESSIVE_MIN_DURATION_SEC,
     PERCH_FRAME_RATE, PERCH_N_MELS,
     PERCH_PCEN_GAIN, PERCH_PCEN_BIAS, PERCH_PCEN_ROOT, PERCH_PCEN_SMOOTHING,
+    SPECTROGRAM_HEIGHT,
 } from './constants.js';
 
 import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
@@ -27,6 +28,7 @@ import {
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
+    pixelYToFrequency,
 } from './spectrogram.js';
 
 import {
@@ -194,6 +196,10 @@ export class PlayerState {
         this.interaction = new InteractionState();
         this._overviewViewportRafId = 0;
         this._overviewNeedsFinalRedraw = false;
+
+        // ── Crosshair ──
+        this._crosshairEnabled = false;
+        this._crosshairRafId = 0;
 
         // ── View layout (persistent, not interaction-mode) ──
         this.waveformDisplayHeight = DEFAULT_WAVEFORM_HEIGHT;
@@ -455,6 +461,9 @@ export class PlayerState {
             ceilSlider:             q('ceilSlider'),
             autoContrastBtn:        q('autoContrastBtn'),
             autoFreqBtn:            q('autoFreqBtn'),
+            crosshairToggleBtn:     q('crosshairToggleBtn'),
+            crosshairCanvas:        q('crosshairCanvas'),
+            crosshairReadout:       q('crosshairReadout'),
         };
     }
 
@@ -465,6 +474,7 @@ export class PlayerState {
     dispose() {
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._cancelFollowCatchupAnimation();
+        this._hideCrosshair();
         if (this._viewResizeFrameId) {
             cancelAnimationFrame(this._viewResizeFrameId);
             this._viewResizeFrameId = 0;
@@ -2103,6 +2113,171 @@ export class PlayerState {
         this._emit('followmodechange', { mode: this.followMode });
     }
 
+    // ─── Crosshair ─────────────────────────────────────────────────
+
+    _toggleCrosshair() {
+        this._crosshairEnabled = !this._crosshairEnabled;
+        if (this.d.crosshairToggleBtn) {
+            this.d.crosshairToggleBtn.classList.toggle('active', this._crosshairEnabled);
+        }
+        if (!this._crosshairEnabled) this._hideCrosshair();
+    }
+
+    /** @param {MouseEvent} e */
+    _updateCrosshair(e) {
+        if (!this._crosshairEnabled || !this.audioBuffer || !this.spectrogramData) return;
+        const wrapper = this.d.canvasWrapper;
+        const canvas = this.d.spectrogramCanvas;
+        const overlay = this.d.crosshairCanvas;
+        const readout = this.d.crosshairReadout;
+        if (!wrapper || !canvas || !overlay || !readout) return;
+
+        const rect = wrapper.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const localY = e.clientY - rect.top;
+
+        // Out of bounds?
+        if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
+            this._hideCrosshair();
+            return;
+        }
+
+        // Canvas pixel coords (account for scroll)
+        const canvasX = wrapper.scrollLeft + localX;
+        const canvasH = canvas.height;
+        const canvasW = canvas.width;
+        const canvasY = (localY / rect.height) * canvasH;
+
+        // Time from pixel X
+        const duration = this.audioBuffer.duration;
+        const time = Math.max(0, Math.min(duration, canvasX / Math.max(1, canvasW) * duration));
+
+        // Frequency from pixel Y
+        const maxFreq = parseFloat(this.d.maxFreqSelect.value);
+        const mode = this.d.spectrogramModeSelect?.value || 'perch';
+        const freq = pixelYToFrequency(canvasY, canvasH, maxFreq, this.sampleRateHz, this.spectrogramMels, mode);
+
+        // Amplitude at this position (look up in spectrogramData)
+        const frameRate = PERCH_FRAME_RATE;
+        const hopSize = Math.max(1, Math.floor(this.sampleRateHz / frameRate));
+        const frameCenterOffset = 2 * hopSize / this.sampleRateHz;
+        const frame = Math.max(0, Math.min(this.spectrogramFrames - 1,
+            Math.round((time - frameCenterOffset) * frameRate)));
+
+        const isLinear = mode === 'classic';
+        const boundedMaxFreq = Math.min(maxFreq, this.sampleRateHz / 2);
+        let bin;
+        if (isLinear) {
+            const binHz = (this.sampleRateHz / 2) / this.spectrogramMels;
+            bin = Math.max(0, Math.min(this.spectrogramMels - 1, Math.round(freq / binHz)));
+        } else {
+            // Reverse lookup: find closest mel bin
+            const internalY = canvasY / canvasH * SPECTROGRAM_HEIGHT;
+            const maxBin = this._getCrosshairMaxBin(boundedMaxFreq, isLinear);
+            bin = Math.round((SPECTROGRAM_HEIGHT - 1 - internalY) / (SPECTROGRAM_HEIGHT - 1) * maxBin);
+            bin = Math.max(0, Math.min(maxBin, bin));
+        }
+
+        const amplitude = this.spectrogramData[frame * this.spectrogramMels + bin] || 0;
+
+        // Draw crosshair lines on overlay canvas
+        if (this._crosshairRafId) cancelAnimationFrame(this._crosshairRafId);
+        this._crosshairRafId = requestAnimationFrame(() => {
+            this._crosshairRafId = 0;
+            this._drawCrosshairLines(overlay, canvasX, canvasY, canvasW, canvasH);
+        });
+
+        // Format readout
+        const timeStr = time.toFixed(3) + ' s';
+        const freqStr = freq >= 1000 ? (freq / 1000).toFixed(2) + ' kHz' : Math.round(freq) + ' Hz';
+        const ampStr = mode === 'classic'
+            ? amplitude.toFixed(1) + ' dB'
+            : amplitude.toFixed(4);
+        readout.textContent = `${timeStr}  |  ${freqStr}  |  ${ampStr}`;
+        readout.classList.add('visible');
+
+        // Position readout near cursor but keep inside viewport
+        const rw = readout.offsetWidth || 160;
+        const rh = readout.offsetHeight || 20;
+        let rx = localX + 14;
+        let ry = localY - rh - 8;
+        if (rx + rw > rect.width) rx = localX - rw - 10;
+        if (ry < 0) ry = localY + 18;
+        readout.style.left = rx + 'px';
+        readout.style.top = ry + 'px';
+    }
+
+    _getCrosshairMaxBin(boundedMaxFreq, isLinear) {
+        let maxBin = this.spectrogramMels - 1;
+        if (isLinear) {
+            const binHz = (this.sampleRateHz / 2) / this.spectrogramMels;
+            maxBin = Math.max(1, Math.min(this.spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+        } else {
+            // Inline mel-frequency lookup (same HTK formula as dsp.js)
+            const nMels = this.spectrogramMels;
+            const sr = this.sampleRateHz;
+            const melMin = 2595 * Math.log10(1);
+            const melMax = 2595 * Math.log10(1 + (sr / 2) / 700);
+            for (let i = 0; i < nMels; i++) {
+                const mel = melMin + (melMax - melMin) * (i + 1) / (nMels + 1);
+                const hz = 700 * (Math.pow(10, mel / 2595) - 1);
+                if (hz > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+            }
+        }
+        return maxBin;
+    }
+
+    /**
+     * @param {HTMLCanvasElement} overlay
+     * @param {number} cx - x in canvas coords
+     * @param {number} cy - y in canvas coords
+     * @param {number} w
+     * @param {number} h
+     */
+    _drawCrosshairLines(overlay, cx, cy, w, h) {
+        if (overlay.width !== w || overlay.height !== h) {
+            overlay.width = w;
+            overlay.height = h;
+        }
+        const ctx = overlay.getContext('2d');
+        if (!ctx) return;
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+
+        // Vertical line
+        const x = Math.round(cx) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+
+        // Horizontal line
+        const y = Math.round(cy) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+    }
+
+    _hideCrosshair() {
+        const overlay = this.d.crosshairCanvas;
+        const readout = this.d.crosshairReadout;
+        if (overlay) {
+            const ctx = overlay.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+        }
+        if (readout) readout.classList.remove('visible');
+        if (this._crosshairRafId) {
+            cancelAnimationFrame(this._crosshairRafId);
+            this._crosshairRafId = 0;
+        }
+    }
+
     _cancelFollowCatchupAnimation() {
         if (this._followCatchupRafId) {
             cancelAnimationFrame(this._followCatchupRafId);
@@ -2239,6 +2414,7 @@ export class PlayerState {
         on(this.d.forwardBtn, 'click', () => this._seekByDelta(SEEK_COARSE_SEC));
         on(this.d.followToggleBtn, 'click', () => this._cycleFollowMode());
         on(this.d.loopToggleBtn, 'click', () => { this.loopPlayback = !this.loopPlayback; this._updateToggleButtons(); });
+        on(this.d.crosshairToggleBtn, 'click', () => this._toggleCrosshair());
         on(this.d.fitViewBtn, 'click', () => this._fitEntireTrackInView());
         on(this.d.resetViewBtn, 'click', () => {
             this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, true);
@@ -2303,6 +2479,8 @@ export class PlayerState {
 
         // ── Canvas interaction ──
         on(this.d.canvasWrapper, 'click', (e) => this._handleCanvasClick(e));
+        on(this.d.canvasWrapper, 'mousemove', (e) => this._updateCrosshair(e));
+        on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
         on(this.d.waveformWrapper, 'click', (e) => this._handleWaveformClick(e));
         on(this.d.canvasWrapper, 'scroll', () => {
             if (this.scrollSyncLock) return;

@@ -112,6 +112,7 @@ export function createPlayerHTML(opts = {}) {
         <span${hide(o.showViewToggles)}>
             <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Free / Follow / Smooth umschalten">Follow</button>
             <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop">Loop</button>
+            <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Crosshair ein/aus">Crosshair</button>
             <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit to view">Fit</button>
             <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset zoom">Reset</button>
         </span>
@@ -218,6 +219,8 @@ export function createPlayerHTML(opts = {}) {
                          aria-valuetext="00:00.0 of 00:00.0"
                          tabindex="0">
                         <canvas data-aw="spectrogramCanvas"></canvas>
+                        <canvas class="crosshair-overlay" data-aw="crosshairCanvas"></canvas>
+                        <div class="crosshair-readout" data-aw="crosshairReadout"></div>
                         <div class="playhead" data-aw="playhead"></div>
                     </div>
                 </div>

@@ -467,6 +467,50 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
     return best;
 }
 
+// ─── Pixel → Frequency mapping ──────────────────────────────────────
+
+/**
+ * Converts a display-space Y pixel to a frequency in Hz.
+ * Mirrors the bin mapping used by buildSpectrogramGrayscale so the
+ * crosshair readout matches the rendered image exactly.
+ * @param {number} displayY       - Y pixel in the rendered canvas (0 = top)
+ * @param {number} displayHeight  - Total rendered canvas height (e.g. 200)
+ * @param {number} maxFreq        - Currently selected max frequency (Hz)
+ * @param {number} sampleRateHz   - Audio sample rate
+ * @param {number} spectrogramMels - Number of mel/linear bins
+ * @param {string} spectrogramMode - 'perch' (mel) or 'classic' (linear)
+ * @returns {number} Frequency in Hz
+ */
+export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz, spectrogramMels, spectrogramMode) {
+    if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
+
+    const isLinear = spectrogramMode === 'classic';
+    const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
+
+    let maxBin = spectrogramMels - 1;
+    if (isLinear) {
+        const binHz = (sampleRateHz / 2) / spectrogramMels;
+        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+    } else {
+        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
+        for (let i = 0; i < melFreqs.length; i++) {
+            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+        }
+    }
+
+    // Map display Y → internal Y (SPECTROGRAM_HEIGHT domain)
+    const internalY = displayY / displayHeight * SPECTROGRAM_HEIGHT;
+    const bin = Math.round((SPECTROGRAM_HEIGHT - 1 - internalY) / (SPECTROGRAM_HEIGHT - 1) * maxBin);
+    const clampedBin = Math.max(0, Math.min(maxBin, bin));
+
+    if (isLinear) {
+        const binHz = (sampleRateHz / 2) / spectrogramMels;
+        return clampedBin * binHz;
+    }
+    const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
+    return melFreqs[clampedBin] || 0;
+}
+
 // ─── Time Grid (private helper) ─────────────────────────────────────
 
 function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {

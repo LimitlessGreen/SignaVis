@@ -493,6 +493,35 @@
     image-rendering: pixelated;
 }
 
+.crosshair-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.crosshair-readout {
+    position: absolute;
+    pointer-events: none;
+    z-index: 15;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font: 11px/1.4 monospace;
+    white-space: nowrap;
+    background: rgba(0, 0, 0, 0.78);
+    color: #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.crosshair-readout.visible {
+    opacity: 1;
+}
+
 .playhead {
     position: absolute;
     left: 0;
