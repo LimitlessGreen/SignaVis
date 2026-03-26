@@ -22,9 +22,13 @@ from .renderer import (
     _encode_spectrogram_data,
 )
 
-_WIDGET_ESM = (
+_WIDGET_JS = (
     pathlib.Path(__file__).parent / "assets" / "widget.js"
 ).read_text(encoding="utf-8")
+
+# Compose ESM: IIFE bundle (creates module-scoped BirdNETPlayerModule) +
+# widget logic.  No eval() or script injection — works under strict CSP.
+_WIDGET_ESM = _PLAYER_JS + "\n\n" + _WIDGET_JS
 
 
 class AudioWorkbenchWidget(anywidget.AnyWidget):
@@ -159,7 +163,6 @@ class AudioWorkbenchWidget(anywidget.AnyWidget):
 
         super().__init__(
             _esm=_WIDGET_ESM,
-            _player_js=_PLAYER_JS,
             _player_css=_PLAYER_CSS,
             _player_options=json.dumps(options or {}),
             _audio_b64=audio_b64,

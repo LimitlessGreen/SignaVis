@@ -194,23 +194,19 @@ class TestWidgetEvents(unittest.TestCase):
 
 
 class TestWidgetTraits(unittest.TestCase):
-    def test_player_js_loaded(self):
+    def test_iife_inlined_in_esm(self):
         from audio_workbench.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
-        self.assertIn("BirdNETPlayer", w._player_js)
+        # IIFE bundle is prepended to the ESM — both must be present
+        self.assertIn("BirdNETPlayerModule", w._esm)
+        self.assertIn("export async function render", w._esm)
 
     def test_player_css_loaded(self):
         from audio_workbench.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         self.assertGreater(len(w._player_css), 0)
-
-    def test_esm_loaded(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
-
-        w = AudioWorkbenchWidget(_make_wav_bytes())
-        self.assertIn("export async function render", w._esm)
 
     def test_accepts_file_path(self):
         """Widget should accept a pathlib.Path and read the file."""

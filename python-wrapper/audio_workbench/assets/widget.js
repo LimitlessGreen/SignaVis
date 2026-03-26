@@ -10,45 +10,11 @@
  * Custom messages (model.send / model.on("msg:custom")):
  *   Python → JS:  { type: "call", method, args }
  *   JS → Python:  { type: "event", event, detail }
+ *
+ * The IIFE bundle is prepended to this file by Python at import time,
+ * so BirdNETPlayerModule is available as a module-scoped variable — no
+ * eval() or script injection needed (works under strict CSP / Colab).
  */
-
-// The IIFE bundle and CSS are injected as raw strings by the Python side
-// via _esm / _css trait replacement.  We receive them through the model
-// traits _player_js and _player_css at init time, but anywidget gives us
-// a cleaner path: we just inline them into the template.
-
-let _playerScriptLoaded = false;
-
-async function _ensurePlayerScript(playerJS) {
-  if (_playerScriptLoaded) return;
-
-  // Try indirect eval first — runs in global scope, fast & synchronous.
-  try {
-    (0, eval)(playerJS);
-    if (window.BirdNETPlayerModule) {
-      _playerScriptLoaded = true;
-      return;
-    }
-  } catch (_) {
-    /* CSP may block eval — fall through to blob approach */
-  }
-
-  // Fallback: load via blob-URL <script src="…"> (works under stricter CSPs).
-  const blob = new Blob([playerJS], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = url;
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-  _playerScriptLoaded = true;
-}
 
 function _ensureWaveSurfer() {
   return new Promise((resolve, reject) => {
@@ -124,8 +90,6 @@ function _syncToModel(player, model) {
 export async function initialize({ model }) {
   // Load WaveSurfer from CDN (once)
   await _ensureWaveSurfer();
-  // Evaluate the player IIFE bundle (once)
-  await _ensurePlayerScript(model.get("_player_js"));
 }
 
 export async function render({ model, el }) {
@@ -143,8 +107,8 @@ export async function render({ model, el }) {
   // ── Player options ──
   const playerOpts = JSON.parse(model.get("_player_options") || "{}");
 
-  // ── Create player ──
-  const BirdNETPlayer = window.BirdNETPlayerModule?.BirdNETPlayer;
+  // ── Create player (BirdNETPlayerModule is module-scoped, prepended by Python) ──
+  const BirdNETPlayer = BirdNETPlayerModule?.BirdNETPlayer;
   if (!BirdNETPlayer) {
     el.innerHTML =
       '<pre style="padding:12px;color:#b91c1c">BirdNETPlayer failed to load</pre>';
