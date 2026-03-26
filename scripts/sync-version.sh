@@ -49,5 +49,18 @@ if not updated:
     raise SystemExit("Could not find project.version in python-wrapper/pyproject.toml")
 
 pyproject.write_text("".join(lines), encoding="utf-8")
+
+# Sync storybook badge
+import re
+storybook = root / "demo" / "storybook.html"
+if storybook.exists():
+    html = storybook.read_text(encoding="utf-8")
+    html = re.sub(
+        r'<span class="badge">v[^<]*</span>',
+        f'<span class="badge">v{version}</span>',
+        html,
+    )
+    storybook.write_text(html, encoding="utf-8")
+
 print(f"Synced package versions to {version}")
 PY

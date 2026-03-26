@@ -25,6 +25,15 @@ if pkg_version != version:
 if py_version != version:
     errors.append(f"python-wrapper/pyproject.toml version ({py_version}) does not match VERSION ({version})")
 
+# Check storybook badge
+import re
+storybook = root / "demo" / "storybook.html"
+if storybook.exists():
+    html = storybook.read_text(encoding="utf-8")
+    m = re.search(r'<span class="badge">v([^<]*)</span>', html)
+    if m and m.group(1) != version:
+        errors.append(f"demo/storybook.html badge (v{m.group(1)}) does not match VERSION ({version})")
+
 # On GitHub tag builds, ensure tag and version match exactly: vX.Y.Z <-> X.Y.Z
 gh_ref_type = os.getenv("GITHUB_REF_TYPE", "")
 gh_ref_name = os.getenv("GITHUB_REF_NAME", "")
