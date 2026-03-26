@@ -257,7 +257,7 @@ class AudioWorkbenchWidget(anywidget.AnyWidget):
         """
         self._event_callbacks.setdefault(event, []).append(callback)
 
-    def _handle_custom_msg(self, widget, msg, buffers):
+    def _handle_custom_msg(self, msg, buffers):
         """Dispatch incoming custom messages from JS."""
         if not isinstance(msg, dict):
             return

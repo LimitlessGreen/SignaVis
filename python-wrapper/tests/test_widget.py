@@ -167,7 +167,7 @@ class TestWidgetEvents(unittest.TestCase):
 
         # Simulate incoming message
         msg = {"type": "event", "event": "annotationcreate", "detail": {"id": "a1"}}
-        w._handle_custom_msg(w, msg, [])
+        w._handle_custom_msg(msg, [])
 
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0]["id"], "a1")
@@ -180,7 +180,7 @@ class TestWidgetEvents(unittest.TestCase):
         w.on_event("annotationcreate", lambda e, d: received.append(d))
 
         msg = {"type": "event", "event": "other", "detail": {}}
-        w._handle_custom_msg(w, msg, [])
+        w._handle_custom_msg(msg, [])
 
         self.assertEqual(len(received), 0)
 
@@ -189,8 +189,8 @@ class TestWidgetEvents(unittest.TestCase):
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         # Should not raise
-        w._handle_custom_msg(w, "not a dict", [])
-        w._handle_custom_msg(w, 42, [])
+        w._handle_custom_msg("not a dict", [])
+        w._handle_custom_msg(42, [])
 
 
 class TestWidgetTraits(unittest.TestCase):
