@@ -20,7 +20,7 @@ if git rev-parse "${TAG}" >/dev/null 2>&1; then
   exit 1
 fi
 
-git add VERSION package.json python-wrapper/pyproject.toml
+git add VERSION package.json python-wrapper/pyproject.toml demo/storybook.html
 git commit -m "release: ${TAG}"
 git tag "${TAG}"
 git push origin main --tags
