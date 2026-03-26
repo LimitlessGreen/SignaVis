@@ -22,6 +22,7 @@ classifiers = [
 urls = { "Homepage" = "https://github.com/LimitlessGreen/Audio-Workbench", "Repository" = "https://github.com/LimitlessGreen/Audio-Workbench", "Issues" = "https://github.com/LimitlessGreen/Audio-Workbench/issues" }
 
 [project.optional-dependencies]
+widget = ["anywidget>=0.9", "traitlets>=5.0"]
 streamlit = ["streamlit>=1.30"]
 gradio = ["gradio>=4.0"]
 

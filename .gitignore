@@ -32,3 +32,10 @@ dist-tmp/
 tmp/
 _site/
 types/generated/
+
+# Downloaded sample audio (notebooks)
+python-wrapper/sample_audio.*
+python-wrapper/XC*.wav
+python-wrapper/XC*.mp3
+python-wrapper/XC*.ogg
+python-wrapper/XC*.flac
