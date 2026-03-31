@@ -292,7 +292,7 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <!-- Split handle -->
-        <div class="view-split-handle" data-aw="viewSplitHandle" title="Amplitude/Spektrogramm Verhältnis anpassen"></div>
+        <div class="view-split-handle" data-aw="viewSplitHandle" title="Adjust amplitude/spectrogram ratio"></div>
 
         <!-- Spectrogram -->
         <div class="spectrogram-container" data-aw="spectrogramContainer">
@@ -315,12 +315,12 @@ export function createPlayerHTML(opts = {}) {
                         <div class="playhead" data-aw="playhead"></div>
                         <div class="recomputing-overlay" data-aw="recomputingOverlay" aria-live="polite" hidden>
                             <span class="recomputing-spinner"></span>
-                            <span>Berechne…</span>
+                            <span>Computing…</span>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Spektrogramm-Höhe anpassen"></div>
+            <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Adjust spectrogram height"></div>
         </div>
 
         <!-- Overview -->
