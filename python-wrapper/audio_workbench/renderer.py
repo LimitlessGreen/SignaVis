@@ -124,6 +124,120 @@ def _coerce_image_to_png_bytes(image) -> bytes:
     )
 
 
+def generate_spectrogram_image(
+    audio_bytes: bytes,
+    *,
+    sr: int = 22050,
+    n_fft: int = 2048,
+    hop_length: int = 512,
+    n_mels: int = 128,
+    fmin: float = 0.0,
+    fmax: Optional[float] = None,
+    cmap: str = "inferno",
+    power_to_db: bool = True,
+    figsize: Optional[tuple] = None,
+    dpi: int = 150,
+) -> tuple:
+    """Generate a spectrogram image from audio bytes using librosa + matplotlib.
+
+    This is a convenience helper that produces a PNG image ready to be
+    passed to ``render_daw_player(spectrogram_image=...)``.
+
+    Parameters
+    ----------
+    audio_bytes : bytes
+        Raw audio file bytes (WAV, MP3, FLAC, etc.).
+    sr : int
+        Target sample rate.  Passed to ``librosa.load()``.
+    n_fft : int
+        FFT window size.
+    hop_length : int
+        Hop length in samples.
+    n_mels : int
+        Number of mel bands.
+    fmin : float
+        Lowest frequency (Hz) of the mel filterbank.
+    fmax : float or None
+        Highest frequency (Hz).  ``None`` → ``sr / 2``.
+    cmap : str
+        Matplotlib colormap name (e.g. 'inferno', 'viridis', 'magma').
+    power_to_db : bool
+        Convert power spectrogram to dB scale (default ``True``).
+    figsize : tuple or None
+        ``(width, height)`` in inches.  ``None`` → auto-sized to data.
+    dpi : int
+        Image resolution.
+
+    Returns
+    -------
+    image_bytes : bytes
+        Raw PNG image bytes.
+    meta : dict
+        Metadata dict with keys:
+        - ``sample_rate`` (int)
+        - ``freq_range``  (tuple of float) — ``(fmin, fmax)``
+        - ``freq_scale``  (str) — ``'mel'``
+
+    Example
+    -------
+    >>> img, meta = generate_spectrogram_image(audio, sr=32000, n_mels=128)
+    >>> html = render_daw_player(audio, spectrogram_image=img, **meta)
+    """
+    try:
+        import librosa
+    except ImportError:
+        raise ImportError(
+            "librosa is required for generate_spectrogram_image(). "
+            "Install with: pip install librosa"
+        )
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError(
+            "matplotlib is required for generate_spectrogram_image(). "
+            "Install with: pip install matplotlib"
+        )
+    if not _HAS_NUMPY:
+        raise ImportError("numpy is required. Install with: pip install numpy")
+
+    import numpy as np
+
+    y, sr_actual = librosa.load(io.BytesIO(audio_bytes), sr=sr)
+    effective_fmax = fmax if fmax is not None else sr_actual / 2.0
+
+    S = librosa.feature.melspectrogram(
+        y=y, sr=sr_actual,
+        n_fft=n_fft, hop_length=hop_length,
+        n_mels=n_mels, fmin=fmin, fmax=effective_fmax,
+    )
+    if power_to_db:
+        S = librosa.power_to_db(S, ref=np.max)
+
+    if figsize is None:
+        # Width proportional to duration, height proportional to mels
+        w = max(4, S.shape[1] / 100)
+        h = max(2, n_mels / 60)
+        figsize = (w, h)
+
+    fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
+    ax.imshow(S, aspect="auto", origin="lower", cmap=cmap, interpolation="nearest")
+    ax.axis("off")
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0, dpi=dpi)
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf.read(), {
+        "sample_rate": sr_actual,
+        "freq_range": (fmin, effective_fmax),
+        "freq_scale": "mel",
+    }
+
+
 def render_daw_player(
     audio_bytes: bytes,
     *,
@@ -131,6 +245,8 @@ def render_daw_player(
     spectrogram_image=None,
     spectrogram_mode: str = "perch",
     sample_rate: Optional[int] = None,
+    freq_range: Optional[tuple] = None,
+    freq_scale: Optional[str] = None,
     **options,
 ) -> str:
     """Return an embeddable HTML iframe string with BirdNET DAW player.
@@ -156,6 +272,16 @@ def render_daw_player(
         'perch' or 'classic' — affects frequency axis labels. Default: 'perch'.
     sample_rate : int, optional
         Override sample rate for frequency axis labels.
+    freq_range : tuple of (float, float), optional
+        Frequency range ``(fmin_hz, fmax_hz)`` that the spectrogram image
+        covers along its vertical axis. Required for correct frequency labels
+        and crosshair readout when using ``spectrogram_image``.
+    freq_scale : {'linear', 'mel', 'log'}, optional
+        Frequency axis mapping of the spectrogram image.
+        ``'linear'`` — uniform spacing from *fmin* to *fmax*.
+        ``'mel'``    — mel-scale spacing.
+        ``'log'``    — logarithmic spacing.
+        Used together with ``freq_range`` for correct pixel↔Hz conversion.
     options : dict
         Passed to BirdNETPlayer constructor.
 
@@ -196,10 +322,20 @@ def render_daw_player(
             png_bytes = _coerce_image_to_png_bytes(spectrogram_image)
             img_b64 = base64.b64encode(png_bytes).decode("ascii")
             img_src = f"data:image/png;base64,{img_b64}"
-        sr_opt = f", sampleRate: {sample_rate}" if sample_rate else ""
+
+        # Build options object for setSpectrogramImage
+        img_opts_parts = []
+        if sample_rate:
+            img_opts_parts.append(f"sampleRate: {sample_rate}")
+        if freq_range is not None:
+            img_opts_parts.append(f"freqRange: [{freq_range[0]}, {freq_range[1]}]")
+        if freq_scale is not None:
+            img_opts_parts.append(f"freqScale: '{freq_scale}'")
+        img_opts_str = ", ".join(img_opts_parts)
+
         spect_js = f"""
       // Inject pre-rendered spectrogram image
-      await player.setSpectrogramImage('{img_src}', {{{sr_opt.lstrip(', ')}}});
+      await player.setSpectrogramImage('{img_src}', {{{img_opts_str}}});
 """
 
     srcdoc = f"""

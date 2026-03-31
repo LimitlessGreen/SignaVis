@@ -294,7 +294,9 @@ export class BirdNETPlayer {
      * @param {string|HTMLImageElement|HTMLCanvasElement} image - base64 data-URL,
      *   regular URL, or an already-loaded Image/Canvas element.
      * @param {Object} [options]
-     * @param {number} [options.sampleRate] - for freq labels
+     * @param {number}   [options.sampleRate]  - sample rate for frequency axis labels
+     * @param {number[]} [options.freqRange]   - [fMin, fMax] in Hz the image covers
+     * @param {string}   [options.freqScale]   - frequency axis mapping: 'linear' | 'mel' | 'log'
      */
     async setSpectrogramImage(image, options = {}) {
         await this.ready;
@@ -308,6 +310,8 @@ export class BirdNETPlayer {
         await this.ready;
         if (!this._state) return;
         this._state._externalSpectrogram = false;
+        this._state._externalImageConfig = null;
+        this._state._setDspControlsEnabled(true);
         if (this._state.audioBuffer) this._state._generateSpectrogram();
     }
 

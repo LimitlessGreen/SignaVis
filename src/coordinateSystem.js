@@ -27,6 +27,8 @@ export class CoordinateSystem {
      * @param {string} [params.scale]               'mel' | 'linear'
      * @param {number} [params.frameRate]          Spectrogram frame rate (default: PERCH_FRAME_RATE)
      * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
+     * @param {number[]} [params.freqRange]        [fMin, fMax] in Hz — explicit frequency range (for external images)
+     * @param {string} [params.freqScale]          Frequency axis mapping: 'mel' | 'linear' | 'log' (for external images)
      */
     constructor({
         duration = 0,
@@ -39,6 +41,8 @@ export class CoordinateSystem {
         scale = 'mel',
         frameRate = PERCH_FRAME_RATE,
         hopSize = 0,
+        freqRange = null,
+        freqScale = null,
     } = {}) {
         this.duration = Math.max(0, duration);
         this.sampleRate = Math.max(1, sampleRate);
@@ -50,10 +54,20 @@ export class CoordinateSystem {
         this.scale = scale;
         this.frameRate = Math.max(1, frameRate);
 
+        // External image frequency range override
+        /** @type {number[] | null} */
+        this.freqRange = freqRange; // [fMin, fMax] in Hz
+        /** @type {string | null} */
+        this.freqScale = freqScale; // 'linear' | 'mel' | 'log'
+
         // Derived constants (computed once)
         this.nyquist = this.sampleRate / 2;
-        this.boundedMaxFreq = Math.min(this.maxFreq, this.nyquist);
-        this.isLinear = this.scale === 'linear';
+        this.boundedMaxFreq = this.freqRange
+            ? Math.max(1, this.freqRange[1])
+            : Math.min(this.maxFreq, this.nyquist);
+        this.isLinear = this.freqScale
+            ? this.freqScale === 'linear'
+            : this.scale === 'linear';
         this.hopSize = (hopSize && hopSize > 0) ? hopSize : Math.max(1, Math.floor(this.sampleRate / this.frameRate));
 
         // Mel / linear bin setup
@@ -125,9 +139,15 @@ export class CoordinateSystem {
 
     /**
      * Frequency (Hz) → display pixel Y (0 = top).
-     * Correctly handles mel and linear modes.
+     * Correctly handles mel, linear, and log modes.
+     * When freqRange is set (external image), uses direct mapping over that range.
      */
     frequencyToPixelY(freq) {
+        // External image with explicit frequency range
+        if (this.freqRange) {
+            return this._freqToPixelY_external(freq);
+        }
+
         const cf = Math.max(0, Math.min(this.boundedMaxFreq, freq));
         let bin;
 
@@ -159,6 +179,11 @@ export class CoordinateSystem {
      * Display pixel Y (0 = top) → frequency (Hz).
      */
     pixelYToFrequency(displayY) {
+        // External image with explicit frequency range
+        if (this.freqRange) {
+            return this._pixelYToFreq_external(displayY);
+        }
+
         const internalY = displayY / this.canvasHeight * SPECTROGRAM_HEIGHT;
         const bin = Math.round(((SPECTROGRAM_HEIGHT - 1) - internalY) / (SPECTROGRAM_HEIGHT - 1) * this._maxBin);
         const clampedBin = Math.max(0, Math.min(this._maxBin, bin));
@@ -168,6 +193,52 @@ export class CoordinateSystem {
             return clampedBin * binHz;
         }
         return this.melFreqs[clampedBin] || 0;
+    }
+
+    // ── External image frequency mapping helpers ─────────────────────
+
+    /** @private Map frequency → pixel Y for an external image with known freqRange + freqScale. */
+    _freqToPixelY_external(freq) {
+        const [fMin, fMax] = this.freqRange;
+        const cf = Math.max(fMin, Math.min(fMax, freq));
+        const scale = this.freqScale || 'linear';
+        let fraction; // 0 = fMin (bottom) … 1 = fMax (top)
+
+        if (scale === 'log') {
+            const safeMin = Math.max(1, fMin);
+            fraction = Math.log(cf / safeMin) / Math.log(fMax / safeMin);
+        } else if (scale === 'mel') {
+            const melMin = 2595 * Math.log10(1 + fMin / 700);
+            const melMax = 2595 * Math.log10(1 + fMax / 700);
+            const melF   = 2595 * Math.log10(1 + cf / 700);
+            fraction = (melMax > melMin) ? (melF - melMin) / (melMax - melMin) : 0;
+        } else { // 'linear'
+            fraction = (fMax > fMin) ? (cf - fMin) / (fMax - fMin) : 0;
+        }
+
+        fraction = Math.max(0, Math.min(1, fraction));
+        // fraction=0 → bottom → canvasHeight, fraction=1 → top → 0
+        return (1 - fraction) * this.canvasHeight;
+    }
+
+    /** @private Map pixel Y → frequency for an external image with known freqRange + freqScale. */
+    _pixelYToFreq_external(displayY) {
+        const [fMin, fMax] = this.freqRange;
+        // pixel 0 = top = fMax, pixel canvasHeight = bottom = fMin
+        const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+        const scale = this.freqScale || 'linear';
+
+        if (scale === 'log') {
+            const safeMin = Math.max(1, fMin);
+            return safeMin * Math.pow(fMax / safeMin, fraction);
+        } else if (scale === 'mel') {
+            const melMin = 2595 * Math.log10(1 + fMin / 700);
+            const melMax = 2595 * Math.log10(1 + fMax / 700);
+            const mel = melMin + fraction * (melMax - melMin);
+            return 700 * (Math.pow(10, mel / 2595) - 1);
+        } else { // 'linear'
+            return fMin + fraction * (fMax - fMin);
+        }
     }
 
     /**

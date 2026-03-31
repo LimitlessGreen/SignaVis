@@ -1,6 +1,6 @@
 import pathlib
 
-from .renderer import render_daw_player
+from .renderer import render_daw_player, generate_spectrogram_image
 
 
 class Player:

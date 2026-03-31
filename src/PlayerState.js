@@ -187,6 +187,7 @@ export class PlayerState {
         this.spectrogramAbsLogMax = 1;
         this.sampleRateHz = 32000;
         this._externalSpectrogram = false; // true when externally-injected data/image
+        this._externalImageConfig = null; // { freqRange, freqScale } for external images
         this.amplitudePeakAbs = 1;
         this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
         this.volume = 0.8;
@@ -1380,10 +1381,23 @@ export class PlayerState {
                 this.spectrogramMels = canvas.height;
                 this.spectrogramGrayInfo = null;
 
+                // Store frequency mapping metadata for CoordinateSystem
+                if (options.freqRange || options.freqScale) {
+                    this._externalImageConfig = {
+                        freqRange: options.freqRange || null,
+                        freqScale: options.freqScale || null,
+                    };
+                } else {
+                    this._externalImageConfig = null;
+                }
+
                 if (options.sampleRate) {
                     this.sampleRateHz = options.sampleRate;
                     this._updateMaxFreqOptions();
                 }
+
+                // Disable DSP controls that have no effect on pre-rendered images
+                this._setDspControlsEnabled(false);
 
                 this._drawSpectrogram();
                 this._syncOverviewWindowToViewport();
@@ -1396,6 +1410,8 @@ export class PlayerState {
                     nMels: this.spectrogramMels,
                     external: true,
                     externalImage: true,
+                    freqRange: options.freqRange || null,
+                    freqScale: options.freqScale || null,
                 });
                 resolve();
             };
@@ -1414,6 +1430,38 @@ export class PlayerState {
                 reject(new Error('setSpectrogramImage: unsupported image type'));
             }
         }));
+    }
+
+    /**
+     * Enable or disable DSP/display controls that have no effect on
+     * pre-rendered spectrogram images.
+     * @param {boolean} enabled
+     */
+    _setDspControlsEnabled(enabled) {
+        const settingsRows = [
+            this.d.scaleSelect, this.d.fftSizeSelect,
+            this.d.windowFunctionSelect, this.d.windowSizeSelect,
+            this.d.hopSizeSelect, this.d.nMelsInput,
+            this.d.floorSlider, this.d.ceilSlider,
+            this.d.colorSchemeSelect, this.d.maxFreqSelect,
+        ];
+        for (const el of settingsRows) {
+            if (!el) continue;
+            el.disabled = !enabled;
+            const row = el.closest('.settings-row');
+            if (row) row.style.opacity = enabled ? '' : '0.35';
+        }
+        // Buttons
+        for (const btn of [this.d.autoContrastBtn, this.d.autoFreqBtn]) {
+            if (btn) btn.disabled = !enabled;
+        }
+        // PCEN section
+        const pcen = this.d.pcenSection || this.container.querySelector('[data-aw="pcenSection"]');
+        if (pcen) pcen.style.display = enabled ? '' : 'none';
+        // Presets
+        for (const btn of [this.d.presetPerchBtn, this.d.presetClassicBtn]) {
+            if (btn) btn.disabled = !enabled;
+        }
     }
 
     _mergeProgressiveResults(chunkResults, nMels) {
@@ -1873,8 +1921,12 @@ export class PlayerState {
     _updateOverviewWindowElement() {
         if (!this._showOverview) return;
         const cw = this.d.overviewContainer.clientWidth;
-        const left = this.windowStartNorm * cw;
-        const width = Math.max(8, this.windowEndNorm * cw - left);
+        if (cw <= 0) return;
+        const minW = 8;
+        let left = this.windowStartNorm * cw;
+        let width = Math.max(minW, this.windowEndNorm * cw - left);
+        // Prevent min-width from pushing the window beyond the container
+        if (left + width > cw) left = Math.max(0, cw - width);
         this.d.overviewWindow.style.left = `${left}px`;
         this.d.overviewWindow.style.width = `${width}px`;
     }
@@ -2085,6 +2137,7 @@ export class PlayerState {
 
     /** Rebuild the shared CoordinateSystem whenever any mapping parameter changes. */
     _updateCoords() {
+        const extCfg = this._externalImageConfig;
         this.coords = new CoordinateSystem({
             duration: this.audioBuffer?.duration || 0,
             sampleRate: this.sampleRateHz,
@@ -2096,6 +2149,8 @@ export class PlayerState {
             scale: this.d.scaleSelect?.value || 'mel',
             frameRate: PERCH_FRAME_RATE,
             hopSize: this.spectrogramHopSize || 0,
+            freqRange: extCfg?.freqRange || null,
+            freqScale: extCfg?.freqScale || null,
         });
     }
 
