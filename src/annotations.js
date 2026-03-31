@@ -952,6 +952,9 @@ export class SpectrogramLabelLayer {
             mode,
             startX: clientX,
             startY: clientY,
+            startTime: this._clientXToTime(clientX),
+            startFreq: this._clientYToFreq(clientY),
+            startCanvasY: this._clientYToCanvasY(clientY),
             startLabel: { ...label },
             element,
             pending: mode === 'move',
@@ -973,14 +976,14 @@ export class SpectrogramLabelLayer {
         const height = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.height || 1);
         const c = this.player?._state?.coords;
 
-        const dt = (clientX - this._editing.startX) / width * duration;
+        // Use CoordinateSystem for time delta
+        const currentTime = this._clientXToTime(clientX);
+        const dt = currentTime - editing.startTime;
 
         // Compute frequency changes in pixel space so that on a mel
         // (logarithmic) scale dragging still feels perceptually linear.
-        // deltaCanvasY is the mouse movement translated to canvas-pixel space.
-        const startCanvasY = this._clientYToCanvasY(this._editing.startY);
         const currentCanvasY = this._clientYToCanvasY(clientY);
-        const deltaCanvasY = currentCanvasY - startCanvasY;
+        const deltaCanvasY = currentCanvasY - editing.startCanvasY;
 
         const src = this._editing.startLabel;
 
