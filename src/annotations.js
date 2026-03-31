@@ -68,7 +68,18 @@ function getOverlayColorStyle(color) {
     };
 }
 
-function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, existingLabels, title, onSubmit, onDelete }) {
+/**
+ * @param {Object} opts
+ * @param {*} opts.player
+ * @param {Element|null} [opts.anchorEl]
+ * @param {string} opts.initialValue
+ * @param {string|null} opts.initialColor
+ * @param {string[]|null} [opts.existingLabels]
+ * @param {string|null} [opts.title]
+ * @param {function({name:string, color:string}):void} opts.onSubmit
+ * @param {(function():void)|null} [opts.onDelete]
+ */
+function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, existingLabels = null, title = null, onSubmit, onDelete = null }) {
     const host = player?.root || player?.container || document.body;
     if (!host || typeof onSubmit !== 'function') return;
 

@@ -27,8 +27,8 @@ export class CoordinateSystem {
      * @param {string} [params.scale]               'mel' | 'linear'
      * @param {number} [params.frameRate]          Spectrogram frame rate (default: PERCH_FRAME_RATE)
      * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
-     * @param {number[]} [params.freqRange]        [fMin, fMax] in Hz — explicit frequency range (for external images)
-     * @param {string} [params.freqScale]          Frequency axis mapping: 'mel' | 'linear' | 'log' (for external images)
+     * @param {number[] | null} [params.freqRange]  [fMin, fMax] in Hz — explicit frequency range (for external images)
+     * @param {string | null} [params.freqScale]    Frequency axis mapping: 'mel' | 'linear' | 'log' (for external images)
      */
     constructor({
         duration = 0,
@@ -199,7 +199,7 @@ export class CoordinateSystem {
 
     /** @private Map frequency → pixel Y for an external image with known freqRange + freqScale. */
     _freqToPixelY_external(freq) {
-        const [fMin, fMax] = this.freqRange;
+        const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
         const cf = Math.max(fMin, Math.min(fMax, freq));
         const scale = this.freqScale || 'linear';
         let fraction; // 0 = fMin (bottom) … 1 = fMax (top)
@@ -223,7 +223,7 @@ export class CoordinateSystem {
 
     /** @private Map pixel Y → frequency for an external image with known freqRange + freqScale. */
     _pixelYToFreq_external(displayY) {
-        const [fMin, fMax] = this.freqRange;
+        const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
         // pixel 0 = top = fMax, pixel canvasHeight = bottom = fMin
         const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
         const scale = this.freqScale || 'linear';
