@@ -68,28 +68,37 @@ function getOverlayColorStyle(color) {
     };
 }
 
-function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onSubmit }) {
+function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, existingLabels, title, onSubmit, onDelete }) {
     const host = player?.root || player?.container || document.body;
-    if (!host || !anchorEl || typeof onSubmit !== 'function') return;
+    if (!host || typeof onSubmit !== 'function') return;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'label-editor-backdrop';
 
     const panel = document.createElement('div');
     panel.className = 'label-name-editor';
     panel.innerHTML = `
-        <input class="label-name-input" type="text" maxlength="96" />
+        <div class="label-editor-title">${title || 'Edit Label'}</div>
+        <input class="label-name-input" type="text" maxlength="96" placeholder="Label name…" />
         <div class="label-name-color">
             <span>Color</span>
             <input class="label-color-input" type="color" />
         </div>
+        <div class="label-name-existing"></div>
         <div class="label-name-suggestions"></div>
         <div class="label-name-actions">
+            ${onDelete ? '<button type="button" class="label-name-btn delete">Delete</button>' : ''}
+            <span style="flex:1"></span>
             <button type="button" class="label-name-btn cancel">Cancel</button>
             <button type="button" class="label-name-btn save">Save</button>
         </div>
     `;
-    host.appendChild(panel);
+    backdrop.appendChild(panel);
+    host.appendChild(backdrop);
 
     const input = /** @type {HTMLInputElement} */ (panel.querySelector('.label-name-input'));
     const colorInput = /** @type {HTMLInputElement} */ (panel.querySelector('.label-color-input'));
+    const existingContainer = /** @type {HTMLElement | null} */ (panel.querySelector('.label-name-existing'));
     const sugg = /** @type {HTMLElement | null} */ (panel.querySelector('.label-name-suggestions'));
     const saveBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.save'));
     const cancelBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.cancel'));
@@ -98,14 +107,13 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
     const initialStyle = getOverlayColorStyle(initialColor);
     colorInput.value = initialStyle?.hex || '#0ea5e9';
 
-    const anchorRect = anchorEl.getBoundingClientRect();
-    const hostRect = host.getBoundingClientRect();
-    panel.style.left = `${Math.max(4, anchorRect.left - hostRect.left)}px`;
-    panel.style.top = `${Math.max(4, anchorRect.bottom - hostRect.top + 6)}px`;
-
     const close = () => {
-        if (panel.parentNode) panel.parentNode.removeChild(panel);
+        if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
     };
+
+    backdrop.addEventListener('pointerdown', (e) => {
+        if (e.target === backdrop) close();
+    });
 
     const submit = (value) => {
         const trimmed = String(value || '').trim();
@@ -113,6 +121,18 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
         onSubmit({ name: trimmed, color: colorInput.value });
         close();
     };
+
+    // Render existing label names as quick-pick chips
+    if (existingContainer && existingLabels?.length) {
+        for (const name of existingLabels) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'label-name-chip existing';
+            chip.textContent = name;
+            chip.addEventListener('click', () => submit(name));
+            existingContainer.appendChild(chip);
+        }
+    }
 
     const renderSuggestions = () => {
         const taxonomy = player?.getLabelTaxonomy?.() || [];
@@ -164,8 +184,13 @@ function openLabelNameEditor({ player, anchorEl, initialValue, initialColor, onS
             close();
         }
     });
+    const deleteBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.delete'));
     saveBtn?.addEventListener('click', () => submit(input.value));
     cancelBtn?.addEventListener('click', close);
+    deleteBtn?.addEventListener('click', () => {
+        close();
+        onDelete?.();
+    });
     setTimeout(() => input.focus(), 0);
     input.select();
     renderSuggestions();
@@ -335,6 +360,18 @@ export class AnnotationLayer {
             event.preventDefault();
             event.stopPropagation();
         });
+        el.addEventListener('pointerenter', (event) => {
+            this._lastPointerX = event.clientX;
+            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform' });
+        });
+        el.addEventListener('pointerleave', () => {
+            if (!this._grabbing && !this._editing) {
+                this.player?._emit?.('labelfocus', { id: null, source: 'waveform' });
+            }
+        });
+        el.addEventListener('pointermove', (event) => {
+            this._lastPointerX = event.clientX;
+        });
         return el;
     }
 
@@ -428,6 +465,66 @@ export class AnnotationLayer {
             this._suppressClickUntil = performance.now() + 250;
             this.render();
         }
+    }
+
+    /**
+     * Blender-style grab for waveform annotations (horizontal only).
+     */
+    startGrab(annotationId) {
+        const region = this.annotations.find((a) => a.id === annotationId);
+        if (!region || this._grabbing) return;
+        const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
+        if (!el) return;
+
+        const snapshot = { ...region };
+        el.classList.add('editing');
+        const startX = this._lastPointerX ?? 0;
+
+        this._editing = {
+            id: annotationId,
+            mode: 'move',
+            startX,
+            startRegion: snapshot,
+            element: el,
+            pending: false,
+            moved: true,
+            forceSuppressClick: true,
+        };
+        this._grabbing = true;
+
+        const onMove = (e) => {
+            this._updateEditInteraction(e.clientX);
+        };
+        const confirm = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            cleanup();
+            this._finishEditInteraction();
+        };
+        const cancel = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            cleanup();
+            Object.assign(region, snapshot);
+            el.classList.remove('editing');
+            this._editing = null;
+            this._suppressClickUntil = performance.now() + 250;
+            this.render();
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') cancel(e);
+            if (e.key === 'g') confirm(e);
+        };
+        const cleanup = () => {
+            this._grabbing = false;
+            document.removeEventListener('pointermove', onMove, true);
+            document.removeEventListener('pointerdown', confirm, true);
+            document.removeEventListener('keydown', onKey, true);
+        };
+
+        document.addEventListener('pointermove', onMove, true);
+        document.addEventListener('pointerdown', confirm, true);
+        document.addEventListener('keydown', onKey, true);
     }
 
     _renameRegionPrompt(id) {
@@ -607,6 +704,16 @@ export class SpectrogramLabelLayer {
         el.innerHTML = `
             <span class="spectrogram-label-text">${label.label || 'Label'}</span>
             <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>
+            <button class="label-edit-btn" type="button" title="Edit label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                </svg>
+            </button>
+            <button class="label-delete-btn" type="button" title="Delete label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+            </button>
             <span class="label-handle handle-tl" data-mode="resize-tl"></span>
             <span class="label-handle handle-tr" data-mode="resize-tr"></span>
             <span class="label-handle handle-bl" data-mode="resize-bl"></span>
@@ -616,6 +723,33 @@ export class SpectrogramLabelLayer {
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
         `;
+
+        const editBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-edit-btn'));
+        if (editBtn) {
+            editBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._suppressClickUntil = performance.now() + 250;
+                this._renameSpectrogramLabelPrompt(label.id);
+            });
+            editBtn.addEventListener('pointerdown', (event) => {
+                event.stopPropagation();
+            });
+        }
+
+        const deleteBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-delete-btn'));
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._suppressClickUntil = performance.now() + 250;
+                this.remove(label.id);
+                this.player?._emit?.('spectrogramlabelremove', { label: { ...label } });
+            });
+            deleteBtn.addEventListener('pointerdown', (event) => {
+                event.stopPropagation();
+            });
+        }
 
         el.addEventListener('click', (event) => {
             if (performance.now() < this._suppressClickUntil) return;
@@ -645,6 +779,20 @@ export class SpectrogramLabelLayer {
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
             event.preventDefault();
             event.stopPropagation();
+        });
+        el.addEventListener('pointerenter', (event) => {
+            this._lastPointerX = event.clientX;
+            this._lastPointerY = event.clientY;
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram' });
+        });
+        el.addEventListener('pointerleave', () => {
+            if (!this._grabbing && !this._editing) {
+                this.player?._emit?.('labelfocus', { id: null, source: 'spectrogram' });
+            }
+        });
+        el.addEventListener('pointermove', (event) => {
+            this._lastPointerX = event.clientX;
+            this._lastPointerY = event.clientY;
         });
         return el;
     }
@@ -713,8 +861,10 @@ export class SpectrogramLabelLayer {
             }
             if (this._drawing) {
                 const region = this._finalizeDraft();
-                if (region) this.add(region);
                 this._clearDraft();
+                if (region) {
+                    this._openNewLabelPicker(region);
+                }
                 e.preventDefault();
                 e.stopPropagation();
             }
@@ -775,6 +925,23 @@ export class SpectrogramLabelLayer {
         this._drawing = null;
         if (this._draftEl?.parentNode) this._draftEl.parentNode.removeChild(this._draftEl);
         this._draftEl = null;
+    }
+
+    _openNewLabelPicker(region) {
+        // Collect unique names from existing labels for quick pick
+        const existingNames = [...new Set(this.labels.map((l) => l.label).filter(Boolean))];
+        openLabelNameEditor({
+            player: this.player,
+            initialValue: '',
+            initialColor: null,
+            existingLabels: existingNames,
+            title: 'New Label',
+            onSubmit: ({ name, color }) => {
+                region.label = name;
+                region.color = color;
+                this.add(region);
+            },
+        });
     }
 
     _startEditInteraction(labelId, mode, clientX, clientY, element) {
@@ -929,6 +1096,74 @@ export class SpectrogramLabelLayer {
         }
     }
 
+    /**
+     * Blender-style grab: label follows the mouse until click (confirm) or Escape (cancel).
+     */
+    startGrab(labelId) {
+        const label = this.labels.find((l) => l.id === labelId);
+        if (!label || this._grabbing) return;
+        const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
+        if (!el) return;
+
+        const snapshot = { ...label };
+        el.classList.add('editing');
+
+        // Use the last known pointer position so the label doesn't jump.
+        const startX = this._lastPointerX ?? 0;
+        const startY = this._lastPointerY ?? 0;
+
+        this._editing = {
+            id: labelId,
+            mode: 'move',
+            startX,
+            startY,
+            startTime: this._clientXToTime(startX),
+            startFreq: this._clientYToFreq(startY),
+            startCanvasY: this._clientYToCanvasY(startY),
+            startLabel: snapshot,
+            element: el,
+            pending: false,
+            moved: true,
+            forceSuppressClick: true,
+        };
+        this._grabbing = true;
+
+        const onMove = (e) => {
+            this._updateEditInteraction(e.clientX, e.clientY);
+        };
+        const confirm = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            cleanup();
+            this._finishEditInteraction();
+        };
+        const cancel = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            cleanup();
+            // Restore original position
+            Object.assign(label, snapshot);
+            el.classList.remove('editing');
+            this._editing = null;
+            this._suppressClickUntil = performance.now() + 250;
+            this.render();
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') cancel(e);
+            if (e.key === 'g') confirm(e);
+        };
+        const cleanup = () => {
+            this._grabbing = false;
+            document.removeEventListener('pointermove', onMove, true);
+            document.removeEventListener('pointerdown', confirm, true);
+            document.removeEventListener('keydown', onKey, true);
+        };
+
+        document.addEventListener('pointermove', onMove, true);
+        document.addEventListener('pointerdown', confirm, true);
+        document.addEventListener('keydown', onKey, true);
+    }
+
     _renameSpectrogramLabelPrompt(id) {
         const label = this.labels.find((l) => l.id === id);
         if (!label) return;
@@ -946,6 +1181,10 @@ export class SpectrogramLabelLayer {
                 label.color = color;
                 this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
                 this.render();
+            },
+            onDelete: () => {
+                this.remove(id);
+                this.player?._emit?.('spectrogramlabelremove', { label: { ...label } });
             },
         });
     }

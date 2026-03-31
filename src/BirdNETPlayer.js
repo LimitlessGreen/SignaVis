@@ -346,6 +346,8 @@ export class BirdNETPlayer {
         this.on('annotationupdate', (e) => this._upsertFromAnnotationEvent(e.detail.annotation));
         this.on('spectrogramlabelcreate', (e) => this._upsertFromSpectrogramEvent(e.detail.label));
         this.on('spectrogramlabelupdate', (e) => this._upsertFromSpectrogramEvent(e.detail.label));
+        this.on('spectrogramlabelremove', (e) => this._removeFromLinkedLabels(e.detail.label));
+        this.on('annotationremove', (e) => this._removeFromLinkedLabels(e.detail.annotation));
     }
 
     _bindGlobalHotkeys() {
@@ -355,6 +357,35 @@ export class BirdNETPlayer {
             const typing = tag === 'input' || tag === 'textarea' || event?.target?.isContentEditable;
             if (typing) return;
             const key = String(event.key || '');
+            if (key === 'Delete' || key === 'Backspace' || key === 'x') {
+                event.preventDefault();
+                const id = this._activeLabelId;
+                // Try spectrogram labels first, then waveform annotations
+                const sLabel = this.spectrogramLabels?.labels?.find((l) => l.id === id);
+                if (sLabel) {
+                    this.spectrogramLabels.remove(id);
+                    this._emit?.('spectrogramlabelremove', { label: { ...sLabel } });
+                } else {
+                    const ann = this.annotations?.annotations?.find((a) => a.id === id);
+                    if (ann) {
+                        this.annotations.remove(id);
+                        this._emit?.('annotationremove', { annotation: { ...ann } });
+                    }
+                }
+                this._activeLabelId = null;
+                return;
+            }
+            if (key === 'g') {
+                event.preventDefault();
+                // Try spectrogram labels first, then waveform annotations
+                const sLabel = this.spectrogramLabels?.labels?.find((l) => l.id === this._activeLabelId);
+                if (sLabel) {
+                    this.spectrogramLabels.startGrab(this._activeLabelId);
+                } else {
+                    this.annotations?.startGrab(this._activeLabelId);
+                }
+                return;
+            }
             if (!/^[1-9]$/.test(key)) return;
             const idx = Number(key) - 1;
             if (idx >= this._labelTaxonomy.length) return;
@@ -410,6 +441,14 @@ export class BirdNETPlayer {
         });
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
+        this.annotations.setLiveLinkedId(null);
+        this.spectrogramLabels.setLiveLinkedId(null);
+        this._syncLinkedLabelsToLayers();
+    }
+
+    _removeFromLinkedLabels(label) {
+        if (this._isSyncingLabels || !label?.id) return;
+        this._linkedLabels.delete(label.id);
         this.annotations.setLiveLinkedId(null);
         this.spectrogramLabels.setLiveLinkedId(null);
         this._syncLinkedLabelsToLayers();
