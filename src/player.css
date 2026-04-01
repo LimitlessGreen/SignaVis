@@ -1275,35 +1275,31 @@
 }
 
 .overview-label-row {
-    display: flex;
-    align-items: center;
-    height: 14px;
-    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    position: relative;
+    height: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.10);
 }
 
 .overview-label-row-name {
-    flex: 0 0 auto;
-    padding: 0 5px 0 3px;
-    font-size: 9px;
+    position: absolute;
+    left: 3px;
+    top: 0;
+    z-index: 2;
+    padding: 0 4px;
+    font-size: 8.5px;
     font-weight: 700;
-    line-height: 14px;
+    line-height: 12px;
     white-space: nowrap;
-    color: #f1f5f9;
-    text-align: right;
-    background: rgba(2, 6, 23, 0.72);
+    color: #f8fafc;
+    background: rgba(15, 23, 42, 0.82);
     border-radius: 2px;
-    margin: 1px 2px 1px 1px;
-    -webkit-text-stroke: 0.3px rgba(0, 0, 0, 0.6);
-    text-shadow:
-        0 0 3px rgba(0, 0, 0, 1),
-        0 0 1px rgba(0, 0, 0, 1),
-        0 1px 0 rgba(0, 0, 0, 0.9);
+    pointer-events: none;
 }
 
 .overview-label-row-track {
-    flex: 1 1 0%;
-    position: relative;
-    height: 100%;
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
 }
 
 .overview-label-segment {
@@ -1320,10 +1316,6 @@
 .overview-label-segment:hover {
     opacity: 0.85;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
-}
-
-.overview-label-row-track {
-    cursor: pointer;
 }
 
 /* ═══ Amplitude Labels ═══ */
