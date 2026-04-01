@@ -506,7 +506,7 @@ export class BirdNETPlayer {
         if (duration <= 0) { container.innerHTML = ''; return; }
 
         // Group labels by name
-        /** @type {Map<string, {color: string, segments: {start: number, end: number}[]}>} */
+        /** @type {Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>} */
         const groups = new Map();
         for (const item of this._linkedLabels.values()) {
             const name = String(item?.label || item?.species || '').trim();
@@ -514,10 +514,10 @@ export class BirdNETPlayer {
             if (!groups.has(name)) {
                 groups.set(name, { color: item.color || '', segments: [] });
             }
-            const g = /** @type {{color: string, segments: {start: number, end: number}[]}} */ (groups.get(name));
+            const g = /** @type {{color: string, segments: {id: string, start: number, end: number}[]}} */ (groups.get(name));
             // Use first non-empty color found
             if (!g.color && item.color) g.color = item.color;
-            g.segments.push({ start: item.start, end: item.end });
+            g.segments.push({ id: item.id || '', start: item.start, end: item.end });
         }
 
         if (groups.size === 0) { container.innerHTML = ''; return; }
@@ -542,11 +542,26 @@ export class BirdNETPlayer {
             for (const seg of segments) {
                 const s = document.createElement('span');
                 s.className = 'overview-label-segment';
+                s.dataset.start = String(seg.start);
+                s.dataset.end = String(seg.end);
+                s.dataset.id = seg.id || '';
                 const leftPct = (seg.start / duration) * 100;
                 const widthPct = ((seg.end - seg.start) / duration) * 100;
                 s.style.left = `${leftPct}%`;
                 s.style.width = `${Math.max(0.3, widthPct)}%`;
                 if (color) s.style.background = color;
+                s.addEventListener('pointerenter', () => {
+                    if (seg.id) this._activeLabelId = seg.id;
+                    this._emit?.('labelfocus', { id: seg.id || null, source: 'overview' });
+                });
+                s.addEventListener('pointerleave', () => {
+                    this._emit?.('labelfocus', { id: null, source: 'overview' });
+                });
+                s.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const midTime = (seg.start + seg.end) / 2;
+                    this._state?._seekToTime(midTime, true);
+                });
                 track.appendChild(s);
             }
             row.appendChild(track);

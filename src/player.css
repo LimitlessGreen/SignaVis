@@ -1283,17 +1283,14 @@
 
 .overview-label-row-name {
     flex: 0 0 auto;
-    width: 72px;
-    min-width: 0;
-    padding: 0 4px;
+    padding: 0 5px;
     font-size: 9px;
     font-weight: 600;
     line-height: 14px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #94a3b8;
+    color: #e2e8f0;
     text-align: right;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.7);
 }
 
 .overview-label-row-track {
@@ -1309,6 +1306,17 @@
     border-radius: 1px;
     background: rgba(56, 189, 248, 0.7);
     min-width: 2px;
+    cursor: pointer;
+    transition: opacity 0.1s;
+}
+
+.overview-label-segment:hover {
+    opacity: 0.85;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.overview-label-row-track {
+    cursor: pointer;
 }
 
 /* ═══ Amplitude Labels ═══ */
