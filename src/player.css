@@ -1276,8 +1276,8 @@
 
 .overview-label-row {
     position: relative;
-    height: 12px;
-    border-top: 1px solid rgba(148, 163, 184, 0.10);
+    height: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.15);
 }
 
 .overview-label-row-name {
@@ -1285,24 +1285,22 @@
     left: 2px;
     top: 0;
     z-index: 2;
-    padding: 0;
-    font-size: 8.5px;
+    padding: 0 1px;
+    font-size: 9.5px;
     font-weight: 800;
-    line-height: 12px;
+    line-height: 14px;
     white-space: nowrap;
     color: #ffffff;
     background: none;
     pointer-events: none;
-    /* Subtitle-style outline: readable on any background */
     text-shadow:
-        -1px -1px 0 #000,
-         1px -1px 0 #000,
-        -1px  1px 0 #000,
-         1px  1px 0 #000,
-         0   -1px 0 #000,
-         0    1px 0 #000,
-        -1px  0   0 #000,
-         1px  0   0 #000;
+        -1px -1px 0 rgba(255,255,255,0.6),
+         1px -1px 0 rgba(255,255,255,0.6),
+        -1px  1px 0 rgba(255,255,255,0.6),
+         1px  1px 0 rgba(255,255,255,0.6),
+         0    0   3px rgba(255,255,255,0.9),
+         0    0   6px rgba(0,0,0,0.5);
+    -webkit-text-stroke: 0.5px rgba(255, 255, 255, 0.5);
 }
 
 .overview-label-row-track {
