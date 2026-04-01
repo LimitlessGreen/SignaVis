@@ -1282,18 +1282,27 @@
 
 .overview-label-row-name {
     position: absolute;
-    left: 3px;
+    left: 2px;
     top: 0;
     z-index: 2;
-    padding: 0 4px;
+    padding: 0;
     font-size: 8.5px;
-    font-weight: 700;
+    font-weight: 800;
     line-height: 12px;
     white-space: nowrap;
-    color: #f8fafc;
-    background: rgba(15, 23, 42, 0.82);
-    border-radius: 2px;
+    color: #ffffff;
+    background: none;
     pointer-events: none;
+    /* Subtitle-style outline: readable on any background */
+    text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000,
+         0   -1px 0 #000,
+         0    1px 0 #000,
+        -1px  0   0 #000,
+         1px  0   0 #000;
 }
 
 .overview-label-row-track {
