@@ -1261,6 +1261,56 @@
 .overview-window .handle.left { left: -4px; }
 .overview-window .handle.right { right: -4px; }
 
+/* ═══ Overview Label Tracks ═══ */
+
+.overview-label-tracks {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-secondary);
+    overflow: hidden;
+}
+
+.overview-label-tracks:empty {
+    display: none;
+}
+
+.overview-label-row {
+    display: flex;
+    align-items: center;
+    height: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.overview-label-row-name {
+    flex: 0 0 auto;
+    width: 72px;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #94a3b8;
+    text-align: right;
+}
+
+.overview-label-row-track {
+    flex: 1 1 0%;
+    position: relative;
+    height: 100%;
+}
+
+.overview-label-segment {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    border-radius: 1px;
+    background: rgba(56, 189, 248, 0.7);
+    min-width: 2px;
+}
+
 /* ═══ Amplitude Labels ═══ */
 
 .amplitude-labels {

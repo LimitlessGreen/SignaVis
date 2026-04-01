@@ -501,6 +501,7 @@ export class PlayerState {
             overviewWindow:         q('overviewWindow'),
             overviewHandleLeft:     q('overviewHandleLeft'),
             overviewHandleRight:    q('overviewHandleRight'),
+            overviewLabelTracks:    q('overviewLabelTracks'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
             scaleSelect:            q('scaleSelect'),

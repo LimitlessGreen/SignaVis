@@ -479,6 +479,7 @@ export class BirdNETPlayer {
             this.annotations.set(this._toAnnotationList());
             this.spectrogramLabels.set(this._toSpectrogramLabelList());
             this._rebuildLabelLibrary();
+            this._renderOverviewLabelTracks();
         } finally {
             this._isSyncingLabels = false;
         }
@@ -492,6 +493,65 @@ export class BirdNETPlayer {
             next.set(label, (next.get(label) || 0) + 1);
         }
         this._labelLibrary = next;
+    }
+
+    /**
+     * Render one row per unique label name below the overview bar,
+     * each showing colored segments where that label occurs.
+     */
+    _renderOverviewLabelTracks() {
+        const container = this._state?.d?.overviewLabelTracks;
+        if (!container) return;
+        const duration = this._state?.audioBuffer?.duration || 0;
+        if (duration <= 0) { container.innerHTML = ''; return; }
+
+        // Group labels by name
+        /** @type {Map<string, {color: string, segments: {start: number, end: number}[]}>} */
+        const groups = new Map();
+        for (const item of this._linkedLabels.values()) {
+            const name = String(item?.label || item?.species || '').trim();
+            if (!name) continue;
+            if (!groups.has(name)) {
+                groups.set(name, { color: item.color || '', segments: [] });
+            }
+            const g = /** @type {{color: string, segments: {start: number, end: number}[]}} */ (groups.get(name));
+            // Use first non-empty color found
+            if (!g.color && item.color) g.color = item.color;
+            g.segments.push({ start: item.start, end: item.end });
+        }
+
+        if (groups.size === 0) { container.innerHTML = ''; return; }
+
+        // Sort group names alphabetically
+        const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+        container.innerHTML = '';
+        for (const [name, { color, segments }] of sorted) {
+            const row = document.createElement('div');
+            row.className = 'overview-label-row';
+            row.title = name;
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'overview-label-row-name';
+            nameEl.textContent = name;
+            if (color) nameEl.style.color = color;
+            row.appendChild(nameEl);
+
+            const track = document.createElement('div');
+            track.className = 'overview-label-row-track';
+            for (const seg of segments) {
+                const s = document.createElement('span');
+                s.className = 'overview-label-segment';
+                const leftPct = (seg.start / duration) * 100;
+                const widthPct = ((seg.end - seg.start) / duration) * 100;
+                s.style.left = `${leftPct}%`;
+                s.style.width = `${Math.max(0.3, widthPct)}%`;
+                if (color) s.style.background = color;
+                track.appendChild(s);
+            }
+            row.appendChild(track);
+            container.appendChild(row);
+        }
     }
 
     _normalizeTaxonomy(taxonomy) {

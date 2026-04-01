@@ -331,6 +331,7 @@ export function createPlayerHTML(opts = {}) {
                 <div class="handle right" data-aw="overviewHandleRight"></div>
             </div>
         </div>
+        <div class="overview-label-tracks" data-aw="overviewLabelTracks"${hide(o.showOverview)}></div>
     </div>
 
     <!-- ═══ Status Bar ═══ -->
