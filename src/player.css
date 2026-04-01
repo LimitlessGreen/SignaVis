@@ -1277,30 +1277,29 @@
 .overview-label-row {
     position: relative;
     height: 14px;
-    border-top: 1px solid rgba(148, 163, 184, 0.15);
+    border-top: 1px solid rgba(0, 0, 0, 0.25);
+    /* Row background tint set via inline --label-color */
+    background: var(--label-tint, rgba(30, 41, 59, 0.6));
 }
 
 .overview-label-row-name {
     position: absolute;
-    left: 2px;
+    left: 3px;
     top: 0;
     z-index: 2;
-    padding: 0 1px;
+    padding: 0 2px;
     font-size: 9.5px;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 14px;
     white-space: nowrap;
+    letter-spacing: 0.02em;
     color: #ffffff;
     background: none;
     pointer-events: none;
     text-shadow:
-        -1px -1px 0 rgba(255,255,255,0.6),
-         1px -1px 0 rgba(255,255,255,0.6),
-        -1px  1px 0 rgba(255,255,255,0.6),
-         1px  1px 0 rgba(255,255,255,0.6),
-         0    0   3px rgba(255,255,255,0.9),
-         0    0   6px rgba(0,0,0,0.5);
-    -webkit-text-stroke: 0.5px rgba(255, 255, 255, 0.5);
+        0 0 2px rgba(0, 0, 0, 0.95),
+        0 0 4px rgba(0, 0, 0, 0.8),
+        0 1px 1px rgba(0, 0, 0, 0.9);
 }
 
 .overview-label-row-track {
@@ -1311,18 +1310,17 @@
 
 .overview-label-segment {
     position: absolute;
-    top: 1px;
-    bottom: 1px;
-    border-radius: 1px;
-    background: rgba(56, 189, 248, 0.7);
+    top: 0;
+    bottom: 0;
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.35);
     min-width: 2px;
     cursor: pointer;
-    transition: opacity 0.1s;
+    transition: background 0.1s;
 }
 
 .overview-label-segment:hover {
-    opacity: 0.85;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.55);
 }
 
 /* ═══ Amplitude Labels ═══ */

@@ -530,11 +530,16 @@ export class BirdNETPlayer {
             const row = document.createElement('div');
             row.className = 'overview-label-row';
             row.title = name;
+            if (color) {
+                const rgb = this._parseLabelColorRgb(color);
+                if (rgb) {
+                    row.style.setProperty('--label-tint', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`);
+                }
+            }
 
             const nameEl = document.createElement('span');
             nameEl.className = 'overview-label-row-name';
             nameEl.textContent = name;
-            if (color) nameEl.style.color = color;
             row.appendChild(nameEl);
 
             const track = document.createElement('div');
@@ -549,7 +554,6 @@ export class BirdNETPlayer {
                 const widthPct = ((seg.end - seg.start) / duration) * 100;
                 s.style.left = `${leftPct}%`;
                 s.style.width = `${Math.max(0.3, widthPct)}%`;
-                if (color) s.style.background = color;
                 s.addEventListener('pointerenter', () => {
                     if (seg.id) this._activeLabelId = seg.id;
                     this._emit?.('labelfocus', { id: seg.id || null, source: 'overview' });
@@ -567,6 +571,21 @@ export class BirdNETPlayer {
             row.appendChild(track);
             container.appendChild(row);
         }
+    }
+
+    /** @param {string} color @returns {{r:number,g:number,b:number}|null} */
+    _parseLabelColorRgb(color) {
+        if (!color) return null;
+        const s = String(color).trim();
+        const hexMatch = s.match(/^#?([0-9a-f]{3,6})$/i);
+        if (hexMatch) {
+            let h = hexMatch[1];
+            if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+            return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
+        }
+        const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (rgbMatch) return { r: +rgbMatch[1], g: +rgbMatch[2], b: +rgbMatch[3] };
+        return null;
     }
 
     _normalizeTaxonomy(taxonomy) {
