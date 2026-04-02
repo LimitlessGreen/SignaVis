@@ -29,6 +29,15 @@ export {
     XenoCantoApiError,
     buildXenoCantoAnnotationSet,
 } from './xenoCantoApi.js';
+export {
+    DEFAULT_XC_RECORDINGS_ENDPOINT,
+    normalizeXcId,
+    getRecordingScientificName,
+    fetchXenoCantoRecording,
+    extractXenoCantoRawLabels,
+    mapXenoCantoLabelsToSpectrogram,
+    importXenoCantoSpectrogramLabels,
+} from './xenoCantoRecordingsApi.js';
 
 export class BirdNETPlayer {
     /**
