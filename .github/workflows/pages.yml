@@ -36,6 +36,9 @@ jobs:
           mkdir -p _site/demo/samples
           cp demo/samples/*.wav _site/demo/samples/
           cp demo/samples/README.md _site/demo/samples/ 2>/dev/null || true
+          # Copy generated taxonomy data
+          mkdir -p _site/demo/data
+          cp demo/data/*.json _site/demo/data/ 2>/dev/null || true
           # Root redirect → storybook
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>

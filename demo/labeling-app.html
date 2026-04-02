@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Workbench — Labeling App Prototype</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --panel-2: #172238;
+      --line: #2a3a58;
+      --text: #e6edf8;
+      --muted: #98aac8;
+      --accent: #39b5ff;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(1200px 800px at 15% 15%, #1c2a45 0%, var(--bg) 45%);
+      color: var(--text);
+      font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+    }
+    .app {
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      width: 100%;
+      height: 100%;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 16, 30, 0.8);
+      backdrop-filter: blur(6px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 99px;
+      background: linear-gradient(135deg, #7fe8ff, #39b5ff);
+      box-shadow: 0 0 14px rgba(57, 181, 255, 0.8);
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .file-label {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      min-height: 0;
+    }
+    .stage {
+      min-width: 0;
+      min-height: 0;
+      padding: 10px;
+    }
+    #playerRoot {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #f7fafc;
+    }
+    .sidebar {
+      border-left: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      padding: 10px;
+      display: grid;
+      grid-template-rows: auto auto auto auto 1fr;
+      gap: 10px;
+      min-height: 0;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: rgba(9, 16, 30, 0.55);
+    }
+    .title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .grid {
+      display: grid;
+      gap: 8px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #10203a;
+      color: var(--text);
+      font-size: 12px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: #42608f; background: #152948; }
+    .btn.accent {
+      border-color: #2770b8;
+      background: #133962;
+      color: #d7eeff;
+    }
+    .btn.danger {
+      border-color: #7c2d37;
+      background: #3f1920;
+      color: #ffd7d7;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .input, .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d172b;
+      color: var(--text);
+      padding: 7px 9px;
+      font-size: 12px;
+    }
+    .textarea {
+      resize: vertical;
+      min-height: 90px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      line-height: 1.4;
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .list {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 7px;
+    }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px;
+      background: #0d172b;
+      display: grid;
+      gap: 2px;
+      font-size: 12px;
+    }
+    .item strong {
+      font-size: 12px;
+      color: #d9ebff;
+    }
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d172b;
+      color: var(--text);
+      padding: 7px 9px;
+      font-size: 12px;
+    }
+    .suggestions {
+      margin-top: 6px;
+      max-height: 160px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0a1325;
+      display: none;
+    }
+    .suggestions.show { display: block; }
+    .suggestion-item {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid rgba(66, 96, 143, 0.25);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      padding: 7px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .suggestion-item:last-child { border-bottom: 0; }
+    .suggestion-item:hover {
+      background: rgba(57, 181, 255, 0.12);
+    }
+    .suggestion-sub {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 1px;
+    }
+    @media (max-width: 1050px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        grid-template-rows: auto auto auto auto 280px;
+      }
+      #playerRoot { min-height: 62vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="dot"></span> Labeling App Prototype</div>
+      <div class="top-actions">
+        <span class="file-label" id="fileLabel">No custom file loaded</span>
+        <button class="btn" id="loadSampleBtn" type="button">Load Demo Sample</button>
+        <button class="btn" id="browseBtn" type="button">Browse Audio</button>
+        <input id="fileInput" type="file" accept="audio/*" hidden />
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage">
+        <div id="playerRoot"></div>
+      </section>
+
+      <aside class="sidebar">
+        <section class="card">
+          <div class="title">Selection</div>
+          <div class="meta" id="selectionMeta">No active selection</div>
+          <div class="row" style="margin-top: 8px">
+            <select id="taxonomyLangSelect" class="select">
+              <option value="en_uk">en_uk</option>
+            </select>
+          </div>
+          <div class="meta" id="taxonomyMeta">Taxonomy loading…</div>
+          <div class="row" style="margin-top: 8px">
+            <input id="labelNameInput" class="input" placeholder="Label name (e.g. Robin call)" />
+          </div>
+          <div class="suggestions" id="speciesSuggestions"></div>
+          <div class="row">
+            <button id="addLabelBtn" class="btn accent" type="button" disabled>Add Spectrogram Label</button>
+            <button id="clearAllBtn" class="btn danger" type="button">Clear All Labels</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="title">Taxonomy</div>
+          <textarea id="taxonomyInput" class="textarea">1|Bird Call|#0ea5e9
+2|Song|#22c55e
+3|Chirp|#f59e0b
+4|Noise|#ef4444</textarea>
+          <div class="row" style="margin-top: 8px">
+            <button id="applyTaxonomyBtn" class="btn" type="button">Apply Taxonomy</button>
+            <button id="seedLabelsBtn" class="btn" type="button">Seed Demo Labels</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="title">Export</div>
+          <div class="row">
+            <button id="exportJsonBtn" class="btn" type="button">Export Labels JSON</button>
+            <button id="copyJsonBtn" class="btn" type="button">Copy JSON</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="title">Roadmap Slot</div>
+          <div class="meta">Hier kann als Nächstes folgen: Dataset Browser, Keyboard-Workflow, Review Queue, XC-Upload.</div>
+        </section>
+
+        <section class="card" style="min-height: 0; display: grid; grid-template-rows: auto 1fr;">
+          <div class="title">Labels</div>
+          <div class="list" id="labelsList"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module">
+    import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
+    import '../src/player.css';
+
+    const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
+      showFileOpen: false,
+      enableProgressiveSpectrogram: true,
+      showOverview: true,
+      showTransport: true,
+    });
+    await player.ready;
+
+    const fileLabel = document.getElementById('fileLabel');
+    const fileInput = document.getElementById('fileInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const loadSampleBtn = document.getElementById('loadSampleBtn');
+    const addLabelBtn = document.getElementById('addLabelBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const applyTaxonomyBtn = document.getElementById('applyTaxonomyBtn');
+    const seedLabelsBtn = document.getElementById('seedLabelsBtn');
+    const exportJsonBtn = document.getElementById('exportJsonBtn');
+    const copyJsonBtn = document.getElementById('copyJsonBtn');
+    const taxonomyInput = document.getElementById('taxonomyInput');
+    const selectionMeta = document.getElementById('selectionMeta');
+    const labelsList = document.getElementById('labelsList');
+    const labelNameInput = document.getElementById('labelNameInput');
+    const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
+    const taxonomyMeta = document.getElementById('taxonomyMeta');
+    const speciesSuggestions = document.getElementById('speciesSuggestions');
+
+    const state = {
+      labels: [],
+      selected: null,
+      sampleRate: 32000,
+      activeObjectUrl: null,
+      taxonomy: null,
+      taxonomyLang: 'en_uk',
+      speciesChoice: null,
+    };
+
+    function fmt(sec) {
+      return Number(sec).toFixed(2) + 's';
+    }
+
+    function renderLabels() {
+      labelsList.innerHTML = '';
+      if (!state.labels.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No labels yet. Select a time range and add one.';
+        labelsList.appendChild(empty);
+        return;
+      }
+      state.labels
+        .slice()
+        .sort((a, b) => a.start - b.start)
+        .forEach((lbl) => {
+          const item = document.createElement('div');
+          item.className = 'item';
+          const main = document.createElement('strong');
+          main.textContent = lbl.label || 'Label';
+          const t = document.createElement('div');
+          t.textContent = `${fmt(lbl.start)} - ${fmt(lbl.end)}`;
+          const f = document.createElement('div');
+          f.textContent = `${Math.round(lbl.freqMin)}-${Math.round(lbl.freqMax)} Hz`;
+          const sci = document.createElement('div');
+          if (lbl.scientificName) sci.textContent = lbl.scientificName;
+          item.append(main, t, f);
+          if (lbl.scientificName) item.append(sci);
+          labelsList.appendChild(item);
+        });
+    }
+
+    function syncToPlayer() {
+      player.setSpectrogramLabels(state.labels);
+      renderLabels();
+    }
+
+    function parseTaxonomyText(text) {
+      const out = [];
+      for (const line of String(text || '').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const [shortcut, name, color] = trimmed.split('|').map((s) => String(s || '').trim());
+        if (!name) continue;
+        out.push({
+          name,
+          shortcut: /^[1-9]$/.test(shortcut) ? shortcut : '',
+          color: color || '',
+        });
+      }
+      return out;
+    }
+
+    function seedDemoLabels() {
+      state.labels = [
+        { id: 'seed1', start: 0.65, end: 1.45, freqMin: 1700, freqMax: 3800, label: 'Call A', color: '#0ea5e9' },
+        { id: 'seed2', start: 2.25, end: 3.15, freqMin: 900, freqMax: 2200, label: 'Phrase B', color: '#22c55e' },
+        { id: 'seed3', start: 4.40, end: 5.35, freqMin: 2600, freqMax: 5200, label: 'Motif C', color: '#f59e0b' },
+      ];
+      syncToPlayer();
+    }
+
+    function toLabelExport() {
+      return state.labels.map((l) => ({
+        id: l.id,
+        label: l.label,
+        scientificName: l.scientificName || '',
+        start: l.start,
+        end: l.end,
+        freqMin: l.freqMin,
+        freqMax: l.freqMax,
+        color: l.color || '',
+      }));
+    }
+
+    function getLangParam() {
+      const p = new URLSearchParams(window.location.search || '');
+      return p.get('lang') || p.get('LANG') || '';
+    }
+
+    function resolveCommonName(record, lang) {
+      if (!record || !record.n) return '';
+      return record.n[lang] || record.n.en_uk || Object.values(record.n)[0] || '';
+    }
+
+    function resetSpeciesChoice() {
+      state.speciesChoice = null;
+      delete labelNameInput.dataset.scientificName;
+    }
+
+    function renderSpeciesSuggestions(query) {
+      speciesSuggestions.innerHTML = '';
+      const q = String(query || '').trim().toLowerCase();
+      if (!state.taxonomy || !q) {
+        speciesSuggestions.classList.remove('show');
+        return;
+      }
+
+      const matches = [];
+      for (const rec of state.taxonomy.records) {
+        const common = resolveCommonName(rec, state.taxonomyLang);
+        const hay = `${common} ${rec.s}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+        matches.push({ rec, common });
+        if (matches.length >= 24) break;
+      }
+
+      if (!matches.length) {
+        speciesSuggestions.classList.remove('show');
+        return;
+      }
+
+      for (const m of matches) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'suggestion-item';
+        btn.innerHTML = `${m.common || m.rec.s}<span class="suggestion-sub">${m.rec.s}</span>`;
+        btn.addEventListener('click', () => {
+          const label = m.common || m.rec.s;
+          state.speciesChoice = { scientificName: m.rec.s, label };
+          labelNameInput.value = label;
+          labelNameInput.dataset.scientificName = m.rec.s;
+          speciesSuggestions.classList.remove('show');
+        });
+        speciesSuggestions.appendChild(btn);
+      }
+      speciesSuggestions.classList.add('show');
+    }
+
+    async function loadBirdnetTaxonomy() {
+      try {
+        taxonomyMeta.textContent = 'Taxonomy loading…';
+        const res = await fetch('./data/birdnet-taxonomy.v2.4.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!Array.isArray(data?.records) || !Array.isArray(data?.languages)) {
+          throw new Error('Invalid taxonomy format.');
+        }
+        state.taxonomy = data;
+        const langs = data.languages.slice().sort((a, b) => a.localeCompare(b));
+        taxonomyLangSelect.innerHTML = '';
+        for (const lang of langs) {
+          const opt = document.createElement('option');
+          opt.value = lang;
+          opt.textContent = lang;
+          taxonomyLangSelect.appendChild(opt);
+        }
+        const langParam = getLangParam();
+        state.taxonomyLang = langs.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
+        taxonomyLangSelect.value = state.taxonomyLang;
+        taxonomyMeta.textContent = `BirdNET ${data.modelVersion} · ${data.speciesCount} species · lang=${state.taxonomyLang}`;
+      } catch (err) {
+        state.taxonomy = null;
+        taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
+      }
+    }
+
+    async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
+      if (state.activeObjectUrl) {
+        try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+        state.activeObjectUrl = null;
+      }
+
+      const blob = new Blob([arrayBuffer], { type: mimeType });
+      try {
+        const file = new File([blob], filename, { type: mimeType });
+        await player.loadFile(file);
+      } catch {
+        // Fallback for environments without File constructor support
+        const objectUrl = URL.createObjectURL(blob);
+        state.activeObjectUrl = objectUrl;
+        await player.loadUrl(objectUrl);
+      }
+      fileLabel.textContent = filename;
+    }
+
+    function normalizeXcId(raw) {
+      const digits = String(raw || '').replace(/\D+/g, '');
+      return digits ? String(Number(digits)) : '';
+    }
+
+    async function fetchXenoCantoAudio(xcId) {
+      const clean = normalizeXcId(xcId);
+      if (!clean) throw new Error('Invalid Xeno-canto ID.');
+
+      const directUrl = `https://xeno-canto.org/${clean}/download`;
+      const candidates = [
+        { name: 'Direct', url: directUrl },
+        { name: 'CodeTabs', url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
+        { name: 'CorsProxy', url: `https://corsproxy.io/?${encodeURIComponent(directUrl)}` },
+        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}` },
+      ];
+
+      let lastError = null;
+      for (const c of candidates) {
+        fileLabel.textContent = `Loading XC${clean} (${c.name})...`;
+        try {
+          const res = await fetch(c.url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const buf = await res.arrayBuffer();
+          if (!buf || buf.byteLength < 10_000) throw new Error('Response too small to be valid audio.');
+          return { xcId: clean, buffer: buf };
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw new Error(`Could not download XC${clean}: ${lastError?.message || 'unknown error'}`);
+    }
+
+    function readStartupParams() {
+      const p = new URLSearchParams(window.location.search || '');
+      const xcid = p.get('xcid') || p.get('XCID') || p.get('xc') || p.get('XC');
+      const lang = p.get('lang') || p.get('LANG') || '';
+      return { xcid, lang };
+    }
+
+    async function autoLoadFromParams() {
+      const { xcid } = readStartupParams();
+      if (!xcid) return;
+      try {
+        const audio = await fetchXenoCantoAudio(xcid);
+        await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+      } catch (err) {
+        fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
+      }
+    }
+
+    browseBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      await player.loadFile(file);
+      fileLabel.textContent = file.name;
+      fileInput.value = '';
+    });
+
+    loadSampleBtn.addEventListener('click', async () => {
+      await player.loadUrl('./samples/birdsong.wav');
+      fileLabel.textContent = 'birdsong.wav';
+    });
+
+    player.on('ready', (e) => {
+      if (e.detail?.sampleRate) state.sampleRate = e.detail.sampleRate;
+    });
+
+    player.on('selection', (e) => {
+      const start = Number(e.detail?.start ?? 0);
+      const end = Number(e.detail?.end ?? start);
+      state.selected = { start, end };
+      selectionMeta.textContent = `Selected: ${fmt(start)} - ${fmt(end)}`;
+      addLabelBtn.disabled = !(end > start);
+    });
+
+    addLabelBtn.addEventListener('click', () => {
+      if (!state.selected || !(state.selected.end > state.selected.start)) return;
+      const nyquist = Math.max(1000, Math.floor(state.sampleRate / 2));
+      const label = labelNameInput.value.trim() || 'Label';
+      const scientificName = String(labelNameInput.dataset.scientificName || '').trim();
+      const id = 'lbl_' + Math.random().toString(36).slice(2, 9);
+      const item = {
+        id,
+        start: state.selected.start,
+        end: state.selected.end,
+        freqMin: 0,
+        freqMax: nyquist,
+        label,
+        scientificName,
+      };
+      state.labels.push(item);
+      syncToPlayer();
+      labelNameInput.value = '';
+      resetSpeciesChoice();
+    });
+
+    clearAllBtn.addEventListener('click', () => {
+      state.labels = [];
+      state.selected = null;
+      selectionMeta.textContent = 'No active selection';
+      addLabelBtn.disabled = true;
+      player.clearSpectrogramLabels();
+      renderLabels();
+    });
+
+    applyTaxonomyBtn.addEventListener('click', () => {
+      const taxonomy = parseTaxonomyText(taxonomyInput.value);
+      player.setLabelTaxonomy(taxonomy);
+    });
+
+    seedLabelsBtn.addEventListener('click', seedDemoLabels);
+
+    exportJsonBtn.addEventListener('click', () => {
+      const data = JSON.stringify(toLabelExport(), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'labels.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    });
+
+    copyJsonBtn.addEventListener('click', async () => {
+      const data = JSON.stringify(toLabelExport(), null, 2);
+      try {
+        await navigator.clipboard.writeText(data);
+        copyJsonBtn.textContent = 'Copied';
+        setTimeout(() => { copyJsonBtn.textContent = 'Copy JSON'; }, 900);
+      } catch {
+        copyJsonBtn.textContent = 'Copy failed';
+        setTimeout(() => { copyJsonBtn.textContent = 'Copy JSON'; }, 1200);
+      }
+    });
+
+    player.on('spectrogramlabelcreate', (e) => {
+      const label = e.detail?.label;
+      if (!label?.id) return;
+      const idx = state.labels.findIndex((l) => l.id === label.id);
+      if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
+      else state.labels.push({ ...label });
+      renderLabels();
+    });
+
+    player.on('spectrogramlabelupdate', (e) => {
+      const label = e.detail?.label;
+      if (!label?.id) return;
+      const idx = state.labels.findIndex((l) => l.id === label.id);
+      if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
+      else state.labels.push({ ...label });
+      renderLabels();
+    });
+
+    player.on('spectrogramlabelremove', (e) => {
+      const id = e.detail?.label?.id;
+      if (!id) return;
+      state.labels = state.labels.filter((l) => l.id !== id);
+      renderLabels();
+    });
+
+    taxonomyLangSelect.addEventListener('change', () => {
+      state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
+      if (state.taxonomy) {
+        taxonomyMeta.textContent = `BirdNET ${state.taxonomy.modelVersion} · ${state.taxonomy.speciesCount} species · lang=${state.taxonomyLang}`;
+      }
+      renderSpeciesSuggestions(labelNameInput.value);
+    });
+
+    labelNameInput.addEventListener('input', () => {
+      resetSpeciesChoice();
+      renderSpeciesSuggestions(labelNameInput.value);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (e.target === labelNameInput || speciesSuggestions.contains(e.target)) return;
+      speciesSuggestions.classList.remove('show');
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (state.activeObjectUrl) {
+        try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+        state.activeObjectUrl = null;
+      }
+    });
+
+    renderLabels();
+    await loadBirdnetTaxonomy();
+    autoLoadFromParams();
+  </script>
+</body>
+</html>

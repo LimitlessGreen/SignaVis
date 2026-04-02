@@ -2,6 +2,7 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
+import { escapeHtml } from './utils.js';
 
 
 function clamp(value, min, max) {
@@ -89,7 +90,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     const panel = document.createElement('div');
     panel.className = 'label-name-editor';
     panel.innerHTML = `
-        <div class="label-editor-title">${title || 'Edit Label'}</div>
+        <div class="label-editor-title">${escapeHtml(title || 'Edit Label')}</div>
         <input class="label-name-input" type="text" maxlength="96" placeholder="Label name…" />
         <div class="label-name-color">
             <span>Color</span>
@@ -342,7 +343,7 @@ export class AnnotationLayer {
         el.dataset.end = String(region.end);
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)`;
         el.innerHTML = `
-            <span class="annotation-label">${region.species || 'Annotation'}</span>
+            <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
             <span class="annotation-confidence">${region.confidence != null ? `${Math.round(region.confidence * 100)}%` : ''}</span>
             <span class="annotation-handle handle-l" data-mode="resize-l"></span>
             <span class="annotation-handle handle-r" data-mode="resize-r"></span>
@@ -713,7 +714,7 @@ export class SpectrogramLabelLayer {
         el.dataset.end = String(label.end);
         el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
         el.innerHTML = `
-            <span class="spectrogram-label-text">${label.label || 'Label'}</span>
+            <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
             <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>
             <button class="label-edit-btn" type="button" title="Edit label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

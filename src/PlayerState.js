@@ -13,7 +13,7 @@ import {
     DSP_PROFILES,
 } from './constants.js';
 
-import { formatTime, formatSecondsShort, isTypingContext } from './utils.js';
+import { formatTime, formatSecondsShort, isTypingContext, escapeHtml } from './utils.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
@@ -591,7 +591,7 @@ export class PlayerState {
         const file = e?.target?.files?.[0];
         if (!file) return;
 
-        this.d.fileInfo.innerHTML = `<span class="statusbar-label">${file.name}</span>`;
+        this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
         this.d.fileInfo.classList.add('loading');
         this._setTransportState('loading', 'file-load');
 
@@ -604,7 +604,7 @@ export class PlayerState {
             this._updateAmplitudeLabels();
             this._updateMaxFreqOptions();
 
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${file.name}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
+            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
             this.d.sampleRateInfo.textContent = `${audioBuffer.sampleRate} Hz`;
             this.d.totalTimeDisplay.textContent = formatTime(audioBuffer.duration);
             this.d.currentTimeDisplay.textContent = formatTime(0);
@@ -654,7 +654,7 @@ export class PlayerState {
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${name}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
+            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(name)}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
             this.d.sampleRateInfo.textContent = `${audioBuffer.sampleRate} Hz`;
             this.d.totalTimeDisplay.textContent = formatTime(audioBuffer.duration);
             this.d.currentTimeDisplay.textContent = formatTime(0);

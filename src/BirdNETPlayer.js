@@ -23,6 +23,12 @@ const DEFAULT_LABEL_TAXONOMY = [
 ];
 
 export { DEFAULT_OPTIONS };
+export {
+    DEFAULT_XC_ENDPOINT,
+    XenoCantoApiClient,
+    XenoCantoApiError,
+    buildXenoCantoAnnotationSet,
+} from './xenoCantoApi.js';
 
 export class BirdNETPlayer {
     /**

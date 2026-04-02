@@ -37,3 +37,12 @@ export function getTimeGridSteps(pixelsPerSecond) {
         pixelsPerSecond >= 45  ? 5 : 10;
     return { majorStep, minorStep: majorStep / 2 };
 }
+
+export function escapeHtml(value) {
+    return String(value ?? '')
+        .split('&').join('&amp;')
+        .split('<').join('&lt;')
+        .split('>').join('&gt;')
+        .split('"').join('&quot;')
+        .split("'").join('&#39;');
+}

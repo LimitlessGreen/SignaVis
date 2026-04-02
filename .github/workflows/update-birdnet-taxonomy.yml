@@ -1,0 +1,48 @@
+name: Update BirdNET Taxonomy
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-taxonomy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Clone BirdNET-Analyzer labels
+        run: |
+          git clone --depth 1 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream
+
+      - name: Build taxonomy JSON
+        run: |
+          node ./scripts/build-birdnet-taxonomy.js \
+            --source ./_birdnet_upstream/birdnet_analyzer/labels/V2.4 \
+            --output ./demo/data/birdnet-taxonomy.v2.4.json \
+            --model V2.4 \
+            --source-url https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4
+
+      - name: Cleanup upstream clone
+        run: rm -rf _birdnet_upstream
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- demo/data/birdnet-taxonomy.v2.4.json; then
+            echo "No taxonomy updates."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add demo/data/birdnet-taxonomy.v2.4.json
+          git commit -m "chore: update BirdNET taxonomy dataset"
+          git push
