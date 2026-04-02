@@ -534,6 +534,125 @@
       return digits ? String(Number(digits)) : '';
     }
 
+    function firstNonEmpty(values) {
+      for (const v of values) {
+        const s = String(v ?? '').trim();
+        if (s) return s;
+      }
+      return '';
+    }
+
+    function toFiniteNumber(value) {
+      if (value == null) return NaN;
+      const n = Number(String(value).replace(',', '.').trim());
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    function getRecordingScientificName(rec) {
+      if (!rec || typeof rec !== 'object') return '';
+      const sci = firstNonEmpty([
+        rec.scientific_name,
+        rec.scientificName,
+        rec.sci,
+        rec.species,
+      ]);
+      if (sci) return sci;
+      const gen = firstNonEmpty([rec.gen, rec.genus]);
+      const sp = firstNonEmpty([rec.sp, rec.species_epithet]);
+      return (gen && sp) ? `${gen} ${sp}` : '';
+    }
+
+    async function fetchXenoCantoRecording(xcId) {
+      const clean = normalizeXcId(xcId);
+      if (!clean) throw new Error('Invalid Xeno-canto ID.');
+      const url = `https://xeno-canto.org/api/3/recordings?query=nr:${clean}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`XC API HTTP ${res.status}`);
+      const data = await res.json();
+      const rec =
+        (Array.isArray(data?.recordings) ? data.recordings[0] : null)
+        || (Array.isArray(data?.results) ? data.results[0] : null)
+        || (Array.isArray(data) ? data[0] : null)
+        || null;
+      if (!rec) throw new Error(`No XC recording found for ${clean}.`);
+      return { xcId: clean, recording: rec };
+    }
+
+    function extractXenoCantoRawLabels(recording) {
+      if (!recording || typeof recording !== 'object') return [];
+      const candidate = recording.labels
+        ?? recording.label_annotations
+        ?? recording.labelAnnotations
+        ?? recording.annotations
+        ?? recording.annotation
+        ?? recording.sound_labels
+        ?? recording.soundLabels
+        ?? null;
+
+      if (Array.isArray(candidate)) return candidate;
+      if (candidate && typeof candidate === 'object') {
+        if (Array.isArray(candidate.items)) return candidate.items;
+        if (Array.isArray(candidate.labels)) return candidate.labels;
+        if (Array.isArray(candidate.annotations)) return candidate.annotations;
+      }
+      return [];
+    }
+
+    function mapXenoCantoLabelsToSpectrogram(rawLabels, xcId, recording) {
+      const nyquist = Math.max(1000, Math.floor(state.sampleRate / 2));
+      const scientificName = getRecordingScientificName(recording);
+      const out = [];
+
+      for (let i = 0; i < rawLabels.length; i += 1) {
+        const src = rawLabels[i] || {};
+        const start = toFiniteNumber(src.start ?? src.begin ?? src.from ?? src.t0 ?? src.start_time ?? src.startTime);
+        const end = toFiniteNumber(src.end ?? src.stop ?? src.to ?? src.t1 ?? src.end_time ?? src.endTime);
+        if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) continue;
+
+        const freqMinRaw = toFiniteNumber(src.freq_min ?? src.low_freq ?? src.f_low ?? src.min_freq ?? src.frequency_low);
+        const freqMaxRaw = toFiniteNumber(src.freq_max ?? src.high_freq ?? src.f_high ?? src.max_freq ?? src.frequency_high);
+        const freqMin = Number.isFinite(freqMinRaw) ? Math.max(0, freqMinRaw) : 0;
+        const freqMax = Number.isFinite(freqMaxRaw) ? Math.min(nyquist, freqMaxRaw) : nyquist;
+        if (!(freqMax > freqMin)) continue;
+
+        const label = firstNonEmpty([
+          src.label,
+          src.name,
+          src.value,
+          src.sound_type,
+          src.soundType,
+          src.type,
+          src.event,
+          src.comment,
+          src.description,
+          'XC label',
+        ]);
+
+        out.push({
+          id: `xc${xcId}_lbl_${i + 1}`,
+          start,
+          end,
+          freqMin,
+          freqMax,
+          label,
+          scientificName,
+        });
+      }
+
+      return out;
+    }
+
+    async function importXenoCantoLabels(xcId) {
+      const { xcId: clean, recording } = await fetchXenoCantoRecording(xcId);
+      const rawLabels = extractXenoCantoRawLabels(recording);
+      if (!rawLabels.length) return { xcId: clean, imported: 0 };
+      const mapped = mapXenoCantoLabelsToSpectrogram(rawLabels, clean, recording);
+      if (!mapped.length) return { xcId: clean, imported: 0 };
+      state.labels = mapped;
+      syncToPlayer();
+      return { xcId: clean, imported: mapped.length };
+    }
+
     async function fetchXenoCantoAudio(xcId) {
       const clean = normalizeXcId(xcId);
       if (!clean) throw new Error('Invalid Xeno-canto ID.');
@@ -575,6 +694,12 @@
       try {
         const audio = await fetchXenoCantoAudio(xcid);
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        const labelResult = await importXenoCantoLabels(audio.xcId);
+        if (labelResult.imported > 0) {
+          selectionMeta.textContent = `Imported ${labelResult.imported} XC labels`;
+        } else {
+          selectionMeta.textContent = `No XC labels found for XC${labelResult.xcId}`;
+        }
       } catch (err) {
         fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
       }
