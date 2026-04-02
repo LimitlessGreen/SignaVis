@@ -231,6 +231,32 @@
       font-size: 11px;
       margin-top: 1px;
     }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 8, 18, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: min(540px, 92vw);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: linear-gradient(180deg, #10203a, #0f1a2f);
+      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.5);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .modal-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
     @media (max-width: 1050px) {
       .layout { grid-template-columns: 1fr; }
       .sidebar {
@@ -248,6 +274,7 @@
       <div class="brand"><span class="dot"></span> Labeling App Prototype</div>
       <div class="top-actions">
         <span class="file-label" id="fileLabel">No custom file loaded</span>
+        <button class="btn" id="xcApiBtn" type="button">XC API</button>
         <button class="btn" id="loadSampleBtn" type="button">Load Demo Sample</button>
         <button class="btn" id="browseBtn" type="button">Browse Audio</button>
         <input id="fileInput" type="file" accept="audio/*" hidden />
@@ -311,6 +338,17 @@
       </aside>
     </main>
   </div>
+  <div class="modal-backdrop" id="xcApiModalBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="xcApiModalTitle">
+      <div class="modal-title" id="xcApiModalTitle">Xeno-canto API Settings</div>
+      <input id="xcApiKeyInput" class="input" placeholder="API key (optional)" />
+      <div class="meta">Nur für XC-API-Requests zum Label-Import. Wird lokal im Browser gespeichert.</div>
+      <div class="row">
+        <button class="btn" id="xcApiCancelBtn" type="button">Cancel</button>
+        <button class="btn accent" id="xcApiSaveBtn" type="button">Save</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module">
     import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
@@ -328,6 +366,7 @@
     const fileLabel = document.getElementById('fileLabel');
     const fileInput = document.getElementById('fileInput');
     const browseBtn = document.getElementById('browseBtn');
+    const xcApiBtn = document.getElementById('xcApiBtn');
     const loadSampleBtn = document.getElementById('loadSampleBtn');
     const addLabelBtn = document.getElementById('addLabelBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
@@ -342,6 +381,10 @@
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
     const taxonomyMeta = document.getElementById('taxonomyMeta');
     const speciesSuggestions = document.getElementById('speciesSuggestions');
+    const xcApiModalBackdrop = document.getElementById('xcApiModalBackdrop');
+    const xcApiKeyInput = document.getElementById('xcApiKeyInput');
+    const xcApiCancelBtn = document.getElementById('xcApiCancelBtn');
+    const xcApiSaveBtn = document.getElementById('xcApiSaveBtn');
 
     const state = {
       labels: [],
@@ -351,7 +394,59 @@
       taxonomy: null,
       taxonomyLang: 'en_uk',
       speciesChoice: null,
+      xcApiKey: '',
     };
+
+    const XC_API_KEY_STORAGE = 'audio-workbench.xc-api-key.v1';
+
+    try {
+      state.xcApiKey = String(localStorage.getItem(XC_API_KEY_STORAGE) || '');
+    } catch {}
+
+    function updateXcApiButtonState() {
+      if (!xcApiBtn) return;
+      xcApiBtn.textContent = state.xcApiKey ? 'XC API ✓' : 'XC API';
+    }
+
+    function openXcApiModal() {
+      xcApiKeyInput.value = state.xcApiKey || '';
+      xcApiModalBackdrop.classList.add('show');
+      xcApiModalBackdrop.setAttribute('aria-hidden', 'false');
+      setTimeout(() => { xcApiKeyInput.focus(); }, 0);
+    }
+
+    function closeXcApiModal() {
+      xcApiModalBackdrop.classList.remove('show');
+      xcApiModalBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    if (xcApiBtn) {
+      updateXcApiButtonState();
+      xcApiBtn.addEventListener('click', () => openXcApiModal());
+    }
+
+    xcApiCancelBtn.addEventListener('click', () => closeXcApiModal());
+    xcApiSaveBtn.addEventListener('click', () => {
+      state.xcApiKey = String(xcApiKeyInput.value || '').trim();
+      try {
+        localStorage.setItem(XC_API_KEY_STORAGE, state.xcApiKey);
+      } catch {}
+      updateXcApiButtonState();
+      closeXcApiModal();
+    });
+    xcApiModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === xcApiModalBackdrop) closeXcApiModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && xcApiModalBackdrop.classList.contains('show')) closeXcApiModal();
+    });
+
+    function getXcRequestAuthOptions() {
+      if (!state.xcApiKey) return {};
+      return {
+        apiKey: state.xcApiKey,
+      };
+    }
 
     function fmt(sec) {
       return Number(sec).toFixed(2) + 's';
@@ -533,6 +628,7 @@
     async function importXenoCantoLabels(xcId) {
       const result = await importXenoCantoSpectrogramLabels(xcId, {
         sampleRate: state.sampleRate,
+        ...getXcRequestAuthOptions(),
       });
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
       state.labels = result.labels;

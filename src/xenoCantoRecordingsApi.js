@@ -50,8 +50,32 @@ export async function fetchXenoCantoRecording(xcId, options = {}) {
     const fetchFn = resolveFetch(options.fetchImpl);
     const endpoint = String(options.endpoint || DEFAULT_XC_RECORDINGS_ENDPOINT).trim();
     const url = `${endpoint}?query=nr:${clean}`;
-    const res = await fetchFn(url);
-    if (!res.ok) throw new Error(`XC API HTTP ${res.status}`);
+    const apiKey = String(options.apiKey || '').trim();
+    const keyHeaderName = String(options.keyHeaderName || 'key').trim() || 'key';
+    /** @type {Array<Record<string,string>|undefined>} */
+    const headerVariants = !apiKey
+        ? [undefined]
+        : [
+            { [keyHeaderName]: apiKey },
+            { Authorization: `Bearer ${apiKey}` },
+            { 'x-api-key': apiKey },
+            undefined,
+        ];
+
+    let res = null;
+    let lastStatus = 0;
+    for (const headers of headerVariants) {
+        const candidate = await fetchFn(url, {
+            headers,
+        });
+        res = candidate;
+        lastStatus = Number(candidate?.status || 0);
+        if (candidate.ok) break;
+        // Try the next auth variant only for auth-related responses.
+        if (lastStatus !== 401 && lastStatus !== 403) break;
+    }
+
+    if (!res || !res.ok) throw new Error(`XC API HTTP ${lastStatus || 0}`);
 
     const data = await res.json();
     const recording =
@@ -143,4 +167,3 @@ export async function importXenoCantoSpectrogramLabels(xcId, options = {}) {
     });
     return { xcId: clean, recording, rawLabels, labels };
 }
-
