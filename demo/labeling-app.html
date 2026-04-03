@@ -288,7 +288,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="birdnetModalTitle">
       <div class="modal-title" id="birdnetModalTitle">BirdNET Inference</div>
       <label class="meta" for="birdnetModelUrl">Model URL (TF.js Layers-Format — Ordner mit model.json + labels.json)</label>
-      <input id="birdnetModelUrl" class="input" placeholder="models/birdnet-v2.4/" />
+      <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
       <div class="birdnet-slider-row">
         <label class="meta" for="birdnetConfidence">Min. Confidence</label>
         <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" />
@@ -895,7 +895,7 @@
     // ── BirdNET Inference ──────────────────────────────────────────────
 
     const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v1';
-    const BIRDNET_DEFAULT_MODEL_URL = 'models/birdnet-v2.4/';
+    const BIRDNET_DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
     const BIRDNET_DETECTION_COLOR = '#f59e0b'; // amber
 
     try {
