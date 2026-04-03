@@ -131,13 +131,15 @@
       padding: 4px 10px;
       border-bottom: 1px solid rgba(30, 45, 71, 0.4);
     }
-    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | × */
+    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | Origin | Author | × */
     .label-table .col-dot   { width: 32px; }
     .label-table .col-name  { width: auto; }
-    .label-table .col-sci   { width: 24%; }
+    .label-table .col-sci   { width: 20%; }
     .label-table .col-time  { width: 110px; }
     .label-table .col-freq  { width: 110px; }
     .label-table .col-conf  { width: 52px; }
+    .label-table .col-origin { width: 68px; }
+    .label-table .col-author { width: 90px; }
     .label-table .col-del   { width: 32px; }
     .label-table tbody tr { cursor: pointer; transition: background 0.1s; }
     .label-table tbody tr:hover td { background: rgba(57, 181, 255, 0.06); }
@@ -225,6 +227,10 @@
       .label-table td:nth-child(5) { display: none; }
       .label-table .col-conf,
       .label-table td:nth-child(6) { display: none; }
+      .label-table .col-origin,
+      .label-table td:nth-child(7) { display: none; }
+      .label-table .col-author,
+      .label-table td:nth-child(8) { display: none; }
     }
   </style>
 </head>
@@ -261,7 +267,7 @@
       </div>
       <div class="label-table-wrap" id="labelTableWrap">
         <table class="label-table">
-          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-del"></th></tr></thead>
+          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-origin">Origin</th><th class="col-author">Author</th><th class="col-del"></th></tr></thead>
           <tbody id="labelsList"></tbody>
         </table>
         <div class="labels-empty" id="labelsEmpty">
@@ -304,6 +310,15 @@
           <option value="2">2 s</option>
           <option value="2.5">2.5 s</option>
         </select>
+      </div>
+      <div class="row" style="align-items:center">
+        <label class="meta" style="cursor:pointer;display:flex;align-items:center;gap:6px;margin:0">
+          <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
+        </label>
+      </div>
+      <div class="row">
+        <label class="meta" for="birdnetAuthor">Author</label>
+        <input id="birdnetAuthor" class="input" style="flex:1" placeholder="(optional)" />
       </div>
       <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
         <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
@@ -356,6 +371,8 @@
     const birdnetConfidenceInput = document.getElementById('birdnetConfidence');
     const birdnetConfidenceVal = document.getElementById('birdnetConfidenceVal');
     const birdnetOverlapSelect = document.getElementById('birdnetOverlap');
+    const birdnetMergeCheckbox = document.getElementById('birdnetMerge');
+    const birdnetAuthorInput = document.getElementById('birdnetAuthor');
     const birdnetProgressWrap = document.getElementById('birdnetProgressWrap');
     const birdnetProgressBar = document.getElementById('birdnetProgressBar');
     const birdnetStatus = document.getElementById('birdnetStatus');
@@ -510,6 +527,16 @@
         tdConf.textContent = lbl.confidence != null ? Number(lbl.confidence).toFixed(2) : '';
         tr.appendChild(tdConf);
 
+        // Origin
+        const tdOrigin = document.createElement('td');
+        tdOrigin.textContent = lbl.origin || '';
+        tr.appendChild(tdOrigin);
+
+        // Author
+        const tdAuthor = document.createElement('td');
+        tdAuthor.textContent = lbl.author || '';
+        tr.appendChild(tdAuthor);
+
         // Delete button
         const tdDel = document.createElement('td');
         const delBtn = document.createElement('button');
@@ -586,6 +613,9 @@
         freqMin: l.freqMin,
         freqMax: l.freqMax,
         color: l.color || '',
+        confidence: l.confidence != null ? l.confidence : '',
+        origin: l.origin || '',
+        author: l.author || '',
       }));
     }
 
@@ -862,7 +892,7 @@
       if (!label?.id) return;
       const idx = state.labels.findIndex((l) => l.id === label.id);
       if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
-      else state.labels.push({ ...label });
+      else state.labels.push({ ...label, origin: label.origin || 'manual' });
       renderLabels();
     }
 
@@ -897,6 +927,37 @@
     const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v2';
     const BIRDNET_DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
     const BIRDNET_DETECTION_COLOR = '#f59e0b'; // amber
+
+    /**
+     * Merge labels of the same species whose time ranges overlap.
+     * Keeps the highest confidence and extends the time range.
+     */
+    function mergeOverlappingLabels(labels) {
+      const bySpecies = new Map();
+      for (const lbl of labels) {
+        const key = lbl.scientificName || lbl.label;
+        if (!bySpecies.has(key)) bySpecies.set(key, []);
+        bySpecies.get(key).push(lbl);
+      }
+      const merged = [];
+      for (const group of bySpecies.values()) {
+        group.sort((a, b) => a.start - b.start);
+        let current = { ...group[0] };
+        for (let i = 1; i < group.length; i++) {
+          const next = group[i];
+          if (next.start <= current.end) {
+            // overlap — extend range, keep best confidence
+            current.end = Math.max(current.end, next.end);
+            if (next.confidence > current.confidence) current.confidence = next.confidence;
+          } else {
+            merged.push(current);
+            current = { ...next };
+          }
+        }
+        merged.push(current);
+      }
+      return merged;
+    }
 
     try {
       const stored = localStorage.getItem(BIRDNET_MODEL_URL_STORAGE);
@@ -982,12 +1043,15 @@
         });
 
         // Resolve common names via loaded taxonomy + selected language
+        const author = birdnetAuthorInput.value.trim();
+        const mergeOverlapping = birdnetMergeCheckbox.checked;
+        const newLabels = [];
         for (const det of detections) {
           const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
           const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : null;
           const displayName = localized || det.common || det.scientific;
 
-          state.labels.push({
+          newLabels.push({
             id: `bn_${Math.random().toString(36).slice(2, 10)}`,
             label: displayName,
             scientificName: det.scientific,
@@ -998,11 +1062,17 @@
             freqMax: 15000,
             color: BIRDNET_DETECTION_COLOR,
             confidence: det.confidence,
+            origin: 'BirdNET',
+            author: author || '',
           });
         }
 
+        // Merge overlapping detections of the same species
+        const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
+        for (const lbl of labelsToAdd) state.labels.push(lbl);
+
         syncToPlayer();
-        birdnetStatus.textContent = `Done — ${detections.length} detection${detections.length === 1 ? '' : 's'} added.`;
+        birdnetStatus.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
       } catch (err) {
         birdnetStatus.textContent = `Error: ${err?.message || String(err)}`;
         birdnet.dispose(); // allow retry with fresh worker
