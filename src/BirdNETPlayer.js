@@ -38,6 +38,8 @@ export {
     mapXenoCantoLabelsToSpectrogram,
     importXenoCantoSpectrogramLabels,
 } from './xenoCantoRecordingsApi.js';
+export { TaxonomyResolver } from './taxonomyResolver.js';
+export { BirdNETInference }  from './birdnetInference.js';
 
 export class BirdNETPlayer {
     /**
@@ -83,6 +85,8 @@ export class BirdNETPlayer {
         this._linkedLabels = new Map();
         this._isSyncingLabels = false;
         this._labelLibrary = new Map();
+        this._labelSuggestionProvider = null;
+        this._labelEditorSuggestionMode = 'merge';
         this._labelTaxonomy = this._normalizeTaxonomy(options.labelTaxonomy || DEFAULT_LABEL_TAXONOMY);
         this._activeLabelId = null;
         this._globalKeyHandler = null;
@@ -254,6 +258,42 @@ export class BirdNETPlayer {
             .slice(0, Math.max(1, limit))
             .map(([name]) => name);
         return ranked;
+    }
+    setLabelSuggestionProvider(provider = null) {
+        this._labelSuggestionProvider = typeof provider === 'function' ? provider : null;
+    }
+    setLabelEditorSuggestionMode(mode = 'merge') {
+        const m = String(mode || '').trim().toLowerCase();
+        this._labelEditorSuggestionMode = (m === 'custom-only') ? 'custom-only' : 'merge';
+    }
+    getLabelEditorSuggestionMode() {
+        return this._labelEditorSuggestionMode || 'merge';
+    }
+    getLabelEditorSuggestions(query = '', limit = 12) {
+        if (!this._labelSuggestionProvider) return [];
+        try {
+            const out = this._labelSuggestionProvider(String(query || ''), Math.max(1, Number(limit) || 12));
+            if (!Array.isArray(out)) return [];
+            return out
+                .map((item) => {
+                    if (typeof item === 'string') {
+                        const name = item.trim();
+                        return name ? { name } : null;
+                    }
+                    const name = String(item?.name || '').trim();
+                    if (!name) return null;
+                    const color = String(item?.color || '').trim();
+                    const scientificName = String(item?.scientificName || '').trim();
+                    return {
+                        name,
+                        color: color || '',
+                        scientificName: scientificName || '',
+                    };
+                })
+                .filter(Boolean);
+        } catch {
+            return [];
+        }
     }
     getLabelTaxonomy() {
         return this._labelTaxonomy.map((item) => ({ ...item }));
