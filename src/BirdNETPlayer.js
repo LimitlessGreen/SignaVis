@@ -39,7 +39,7 @@ export {
     importXenoCantoSpectrogramLabels,
 } from './xenoCantoRecordingsApi.js';
 export { TaxonomyResolver } from './taxonomyResolver.js';
-export { BirdNETInference }  from './birdnetInference.js';
+export { BirdNETInference, BIRDNET_MODEL_URL } from './birdnetInference.js';
 
 export class BirdNETPlayer {
     /**

@@ -20,7 +20,8 @@
       "types": "./types/index.d.ts"
     },
     "./iife": "./dist/birdnet-player.iife.js",
-    "./style": "./dist/birdnet-player.css"
+    "./style": "./dist/birdnet-player.css",
+    "./models/birdnet-v2.4": "./models/birdnet-v2.4/model.json"
   },
   "peerDependencies": {
     "wavesurfer.js": "^7"

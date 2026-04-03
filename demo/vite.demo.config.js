@@ -8,6 +8,19 @@
  */
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { cpSync } from 'fs';
+
+/** Rollup plugin that copies static asset directories into the build output. */
+function copyStaticPlugin(pairs) {
+  return {
+    name: 'copy-static',
+    closeBundle() {
+      for (const { src, dest } of pairs) {
+        cpSync(src, dest, { recursive: true });
+      }
+    },
+  };
+}
 
 export default defineConfig({
   root: resolve(__dirname, '..'),   // project root so ../src/ imports resolve
@@ -23,6 +36,14 @@ export default defineConfig({
       },
     },
   },
+  plugins: [
+    copyStaticPlugin([
+      {
+        src:  resolve(__dirname, '..', 'models'),
+        dest: resolve(__dirname, '..', '_site', 'models'),
+      },
+    ]),
+  ],
   // Copy sample audio files into the output
   publicDir: false,
 });

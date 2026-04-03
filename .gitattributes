@@ -1,0 +1,2 @@
+# Mark model weight shards as binary (no diff, no merge)
+models/**/*.bin binary

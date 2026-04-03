@@ -2,7 +2,8 @@
  * BirdNET browser inference via TensorFlow.js Web Worker.
  *
  * - TF.js is loaded from CDN at runtime (not bundled).
- * - The BirdNET model (TF.js Layers format) is fetched from a user-supplied URL.
+ * - The BirdNET model (TF.js Layers format) is fetched from a user-supplied URL
+ *   or from the bundled model shipped with the GitHub Pages demo.
  * - Audio is resampled to 48 kHz and split into 3-second chunks for prediction.
  */
 
@@ -10,6 +11,13 @@ const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TARGET_SR = 48000;
 const CHUNK_SECONDS = 3;
 const CHUNK_SAMPLES = TARGET_SR * CHUNK_SECONDS; // 144 000
+
+/**
+ * Default model URL pointing to the bundled BirdNET v2.4 TF.js model
+ * on the GitHub Pages demo site.  npm users can use this as a convenient
+ * fallback or host the model themselves.
+ */
+export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/Audio-Workbench/models/birdnet-v2.4/';
 
 // ---------------------------------------------------------------------------
 // Worker source — runs in a dedicated thread with WebGL-accelerated TF.js
