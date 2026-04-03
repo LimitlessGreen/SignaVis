@@ -955,6 +955,16 @@
         0 4px 14px rgba(0,0,0,0.5);
 }
 
+.spectrogram-label-region.highlighted {
+    border-color: #ffffff;
+    outline-color: rgba(0,0,0,1);
+    box-shadow:
+        inset 0 0 0 1px rgba(0,0,0,0.55),
+        0 0 0 1px rgba(255,255,255,0.45),
+        0 4px 12px rgba(0,0,0,0.42);
+    z-index: 5;
+}
+
 .spectrogram-label-region.editing {
     border-color: #ffffff;
     outline: 2px solid #020617;
@@ -1459,36 +1469,182 @@
     color: #38bdf8;
 }
 
-/* ── Label editor modal ── */
+/* ── Label editor modal (search palette) ── */
 .label-editor-backdrop {
     position: absolute;
     inset: 0;
     z-index: 40;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
+    padding-top: 12%;
+    background: rgba(0, 0, 0, 0.45);
 }
 
 .label-name-editor {
     position: relative;
     z-index: 41;
-    min-width: 260px;
-    max-width: 340px;
-    width: 90%;
-    padding: 12px 14px;
-    border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.45);
-    background: rgba(2, 6, 23, 0.97);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.06);
+    min-width: 280px;
+    max-width: 380px;
+    width: 92%;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(2, 6, 23, 0.98);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    overflow: hidden;
 }
 
-.label-editor-title {
+.label-search-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 8px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.label-search-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: #f8fafc;
+    font-size: 14px;
+    outline: none;
+    padding: 4px 0;
+}
+
+.label-search-input::placeholder {
+    color: #64748b;
+}
+
+.label-search-color {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    border: 2px solid rgba(148, 163, 184, 0.5);
+    border-radius: 50%;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.label-search-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.label-search-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+}
+
+.label-search-results {
+    max-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.label-search-results:empty::after {
+    content: 'Type to search\2026';
+    display: block;
+    padding: 12px 14px;
+    color: #475569;
     font-size: 12px;
-    font-weight: 600;
-    color: #94a3b8;
-    margin-bottom: 8px;
-    letter-spacing: 0.02em;
+}
+
+.label-search-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    background: transparent;
+    color: #e2e8f0;
+    text-align: left;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.08s;
+}
+
+.label-search-item:last-child {
+    border-bottom: none;
+}
+
+.label-search-item:hover,
+.label-search-item.active {
+    background: rgba(56, 189, 248, 0.14);
+}
+
+.label-search-item.active {
+    background: rgba(56, 189, 248, 0.22);
+}
+
+.label-search-dot {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    border-radius: 50%;
+}
+
+.label-search-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.label-search-sci {
+    color: #64748b;
+    font-size: 11px;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.label-search-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.label-search-hints {
+    color: #475569;
+    font-size: 10px;
+    letter-spacing: 0.01em;
+}
+
+.label-search-delete {
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    background: transparent;
+    color: #f87171;
+    border-radius: 4px;
+    font-size: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.label-search-delete:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.8);
+}
+
+.label-search-confirm {
+    margin-left: auto;
+    border: 1px solid rgba(57, 181, 255, 0.5);
+    background: transparent;
+    color: #7dd3fc;
+    border-radius: 4px;
+    font-size: 10px;
+    padding: 2px 10px;
+    cursor: pointer;
+}
+
+.label-search-confirm:hover {
+    background: rgba(57, 181, 255, 0.2);
+    border-color: rgba(57, 181, 255, 0.8);
 }
 
 /* ── Label edit button on hover ── */
@@ -1557,123 +1713,3 @@
     color: #fca5a5;
 }
 
-.label-name-input {
-    width: 100%;
-    border: 1px solid rgba(148, 163, 184, 0.55);
-    background: rgba(15, 23, 42, 0.95);
-    color: #f8fafc;
-    border-radius: 6px;
-    padding: 6px 8px;
-    font-size: 12px;
-    outline: none;
-}
-
-.label-name-input:focus {
-    border-color: rgba(56, 189, 248, 0.95);
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
-}
-
-.label-name-color {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 8px;
-    color: #cbd5e1;
-    font-size: 11px;
-}
-
-.label-color-input {
-    width: 34px;
-    height: 24px;
-    border: 1px solid rgba(148, 163, 184, 0.55);
-    border-radius: 6px;
-    background: rgba(15, 23, 42, 0.95);
-    padding: 0;
-    cursor: pointer;
-}
-
-.label-name-existing {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 8px;
-    max-height: 120px;
-    overflow: auto;
-}
-
-.label-name-existing:empty {
-    display: none;
-}
-
-.label-name-chip.existing {
-    border-color: rgba(74, 222, 128, 0.55);
-    background: rgba(22, 101, 52, 0.35);
-    color: #bbf7d0;
-}
-
-.label-name-chip.existing:hover {
-    border-color: rgba(74, 222, 128, 0.9);
-    background: rgba(22, 101, 52, 0.55);
-    color: #dcfce7;
-}
-
-.label-name-suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-    max-height: 96px;
-    overflow: auto;
-}
-
-.label-name-chip {
-    border: 1px solid rgba(148, 163, 184, 0.48);
-    background: rgba(30, 41, 59, 0.9);
-    color: #e2e8f0;
-    border-radius: 999px;
-    padding: 3px 8px;
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.label-name-chip:hover {
-    border-color: rgba(56, 189, 248, 0.9);
-    color: #bae6fd;
-}
-
-.label-name-chip.taxonomy {
-    border-color: var(--chip-color, #38bdf8);
-    box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.55);
-}
-
-.label-name-actions {
-    margin-top: 8px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-}
-
-.label-name-btn {
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    background: rgba(15, 23, 42, 0.92);
-    color: #e2e8f0;
-    border-radius: 6px;
-    font-size: 11px;
-    padding: 4px 8px;
-    cursor: pointer;
-}
-
-.label-name-btn.save {
-    border-color: rgba(56, 189, 248, 0.85);
-    color: #bae6fd;
-}
-
-.label-name-btn.delete {
-    border-color: rgba(239, 68, 68, 0.7);
-    color: #fca5a5;
-}
-
-.label-name-btn.delete:hover {
-    background: rgba(239, 68, 68, 0.3);
-    border-color: rgba(239, 68, 68, 0.9);
-}

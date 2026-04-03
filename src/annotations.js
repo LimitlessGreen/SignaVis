@@ -77,7 +77,7 @@ function getOverlayColorStyle(color) {
  * @param {string|null} opts.initialColor
  * @param {string[]|null} [opts.existingLabels]
  * @param {string|null} [opts.title]
- * @param {function({name:string, color:string}):void} opts.onSubmit
+ * @param {function({name:string, color:string, scientificName?:string}):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]
  */
 function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, existingLabels = null, title = null, onSubmit, onDelete = null }) {
@@ -89,35 +89,67 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
 
     const panel = document.createElement('div');
     panel.className = 'label-name-editor';
-    panel.innerHTML = `
-        <div class="label-editor-title">${escapeHtml(title || 'Edit Label')}</div>
-        <input class="label-name-input" type="text" maxlength="96" placeholder="Label name…" />
-        <div class="label-name-color">
-            <span>Color</span>
-            <input class="label-color-input" type="color" />
-        </div>
-        <div class="label-name-existing"></div>
-        <div class="label-name-suggestions"></div>
-        <div class="label-name-actions">
-            ${onDelete ? '<button type="button" class="label-name-btn delete">Delete</button>' : ''}
-            <span style="flex:1"></span>
-            <button type="button" class="label-name-btn cancel">Cancel</button>
-            <button type="button" class="label-name-btn save">Save</button>
-        </div>
-    `;
+
+    // Search row: input + color swatch
+    const searchRow = document.createElement('div');
+    searchRow.className = 'label-search-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 96;
+    input.className = 'label-search-input';
+    input.placeholder = title || 'Search species or label\u2026';
+    input.value = String(initialValue || '').trim();
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.className = 'label-search-color';
+    const initialStyle = getOverlayColorStyle(initialColor);
+    colorInput.value = initialStyle?.hex || '#0ea5e9';
+
+    searchRow.append(input, colorInput);
+
+    // Results list
+    const results = document.createElement('div');
+    results.className = 'label-search-results';
+
+    // Footer with keyboard hints + optional delete
+    const footer = document.createElement('div');
+    footer.className = 'label-search-footer';
+    const hints = document.createElement('span');
+    hints.className = 'label-search-hints';
+    hints.textContent = '\u2191\u2193 navigate \u00b7 \u21b5 select \u00b7 esc close';
+    footer.appendChild(hints);
+
+    if (onDelete) {
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'label-search-delete';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', () => { close(); onDelete(); });
+        footer.appendChild(delBtn);
+    }
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'label-search-confirm';
+    confirmBtn.textContent = 'OK';
+    confirmBtn.addEventListener('click', () => {
+        if (activeIndex >= 0 && resultItems[activeIndex]) {
+            resultItems[activeIndex].click();
+        } else {
+            submit(input.value);
+        }
+    });
+    footer.appendChild(confirmBtn);
+
+    panel.append(searchRow, results, footer);
     backdrop.appendChild(panel);
     host.appendChild(backdrop);
 
-    const input = /** @type {HTMLInputElement} */ (panel.querySelector('.label-name-input'));
-    const colorInput = /** @type {HTMLInputElement} */ (panel.querySelector('.label-color-input'));
-    const existingContainer = /** @type {HTMLElement | null} */ (panel.querySelector('.label-name-existing'));
-    const sugg = /** @type {HTMLElement | null} */ (panel.querySelector('.label-name-suggestions'));
-    const saveBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.save'));
-    const cancelBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.cancel'));
-    if (!input || !colorInput) return;
-    input.value = String(initialValue || '').trim();
-    const initialStyle = getOverlayColorStyle(initialColor);
-    colorInput.value = initialStyle?.hex || '#0ea5e9';
+    let activeIndex = -1;
+    let resultItems = [];
+    let selectedScientificName = '';
 
     const close = () => {
         if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
@@ -127,85 +159,146 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         if (e.target === backdrop) close();
     });
 
-    const submit = (value) => {
+    const submit = (value, opts = {}) => {
         const trimmed = String(value || '').trim();
         if (!trimmed) return;
-        onSubmit({ name: trimmed, color: colorInput.value });
+        const scientificName = String(opts?.scientificName || selectedScientificName || '').trim();
+        onSubmit({ name: trimmed, color: colorInput.value, scientificName });
         close();
     };
 
-    // Render existing label names as quick-pick chips
-    if (existingContainer && existingLabels?.length) {
-        for (const name of existingLabels) {
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'label-name-chip existing';
-            chip.textContent = name;
-            chip.addEventListener('click', () => submit(name));
-            existingContainer.appendChild(chip);
+    const updateHighlight = () => {
+        for (let i = 0; i < resultItems.length; i++) {
+            resultItems[i].classList.toggle('active', i === activeIndex);
         }
-    }
-
-    const renderSuggestions = () => {
-        const taxonomy = player?.getLabelTaxonomy?.() || [];
-        const recent = player?.getLabelSuggestions?.('', 8) || [];
-        const filtered = player?.getLabelSuggestions?.(input.value, 8) || [];
-        const names = [];
-        const seen = new Set();
-        for (const name of recent) {
-            if (!name || seen.has(name)) continue;
-            seen.add(name);
-            names.push(name);
-        }
-        for (const name of filtered) {
-            if (!name || seen.has(name)) continue;
-            seen.add(name);
-            names.push(name);
-        }
-        if (sugg) sugg.innerHTML = '';
-        for (const item of taxonomy) {
-            if (!item?.name) continue;
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'label-name-chip taxonomy';
-            chip.textContent = item.shortcut ? `${item.shortcut}: ${item.name}` : item.name;
-            if (item.color) chip.style.setProperty('--chip-color', item.color);
-            chip.addEventListener('click', () => {
-                if (item.color) colorInput.value = getOverlayColorStyle(item.color)?.hex || colorInput.value;
-                submit(item.name);
-            });
-            sugg?.appendChild(chip);
-        }
-        for (const name of names) {
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'label-name-chip';
-            chip.textContent = name;
-            chip.addEventListener('click', () => submit(name));
-            sugg?.appendChild(chip);
+        if (activeIndex >= 0 && resultItems[activeIndex]) {
+            resultItems[activeIndex].scrollIntoView({ block: 'nearest' });
         }
     };
 
-    input.addEventListener('input', renderSuggestions);
+    const renderResults = () => {
+        const suggestionMode = player?.getLabelEditorSuggestionMode?.() || 'merge';
+        const customOnly = suggestionMode === 'custom-only';
+        const taxonomy = player?.getLabelTaxonomy?.() || [];
+        const recent = player?.getLabelSuggestions?.('', 8) || [];
+        const filtered = player?.getLabelSuggestions?.(input.value, 8) || [];
+        const custom = player?.getLabelEditorSuggestions?.(input.value, 14) || [];
+        const seen = new Set();
+        results.innerHTML = '';
+        resultItems = [];
+        activeIndex = -1;
+
+        const addResult = ({ name, scientificName = '', color = '' }) => {
+            const label = String(name || '').trim();
+            if (!label) return;
+            const key = label.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'label-search-item';
+
+            if (color) {
+                const dot = document.createElement('span');
+                dot.className = 'label-search-dot';
+                const dotHex = getOverlayColorStyle(color)?.hex || color;
+                dot.style.background = dotHex;
+                row.appendChild(dot);
+            }
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'label-search-name';
+            nameSpan.textContent = label;
+            row.appendChild(nameSpan);
+
+            if (scientificName) {
+                const sub = document.createElement('span');
+                sub.className = 'label-search-sci';
+                sub.textContent = scientificName;
+                row.appendChild(sub);
+            }
+
+            row.addEventListener('click', () => {
+                if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
+                submit(label, { scientificName: String(scientificName || '').trim() });
+            });
+            row.addEventListener('pointerenter', () => {
+                activeIndex = resultItems.indexOf(row);
+                updateHighlight();
+            });
+
+            results.appendChild(row);
+            resultItems.push(row);
+        };
+
+        // Existing labels first (quick re-use)
+        if (existingLabels?.length) {
+            for (const item of existingLabels) {
+                if (typeof item === 'string') {
+                    addResult({ name: item });
+                } else {
+                    addResult({ name: item.name, color: item.color || '', scientificName: item.scientificName || '' });
+                }
+            }
+        }
+
+        // Custom provider results (e.g. taxonomy-aware labeling app suggestions)
+        for (const item of custom) {
+            addResult({
+                name: item?.name,
+                scientificName: item?.scientificName || '',
+                color: item?.color || '',
+            });
+        }
+
+        if (!customOnly) {
+            for (const item of taxonomy) {
+                addResult({
+                    name: item?.shortcut ? `${item.shortcut}: ${item.name}` : item?.name,
+                    color: item?.color || '',
+                });
+            }
+            for (const name of recent) addResult({ name });
+            for (const name of filtered) addResult({ name });
+        }
+    };
+
+    input.addEventListener('input', () => {
+        selectedScientificName = '';
+        renderResults();
+    });
+
     input.addEventListener('keydown', (e) => {
-        if (/** @type {KeyboardEvent} */ (e).key === 'Enter') {
+        const key = /** @type {KeyboardEvent} */ (e).key;
+        if (key === 'ArrowDown') {
             e.preventDefault();
-            submit(input.value);
-        } else if (/** @type {KeyboardEvent} */ (e).key === 'Escape') {
+            if (resultItems.length) {
+                activeIndex = (activeIndex + 1) % resultItems.length;
+                updateHighlight();
+            }
+        } else if (key === 'ArrowUp') {
+            e.preventDefault();
+            if (resultItems.length) {
+                activeIndex = activeIndex <= 0 ? resultItems.length - 1 : activeIndex - 1;
+                updateHighlight();
+            }
+        } else if (key === 'Enter') {
+            e.preventDefault();
+            if (activeIndex >= 0 && resultItems[activeIndex]) {
+                resultItems[activeIndex].click();
+            } else {
+                submit(input.value);
+            }
+        } else if (key === 'Escape') {
             e.preventDefault();
             close();
         }
     });
-    const deleteBtn = /** @type {HTMLButtonElement | null} */ (panel.querySelector('.label-name-btn.delete'));
-    saveBtn?.addEventListener('click', () => submit(input.value));
-    cancelBtn?.addEventListener('click', close);
-    deleteBtn?.addEventListener('click', () => {
-        close();
-        onDelete?.();
-    });
+
     setTimeout(() => input.focus(), 0);
     input.select();
-    renderSuggestions();
+    renderResults();
 }
 
 /**
@@ -940,17 +1033,27 @@ export class SpectrogramLabelLayer {
     }
 
     _openNewLabelPicker(region) {
-        // Collect unique names from existing labels for quick pick
-        const existingNames = [...new Set(this.labels.map((l) => l.label).filter(Boolean))];
+        // Collect unique labels with their colors for quick pick
+        const seen = new Set();
+        const existingLabels = [];
+        for (const l of this.labels) {
+            const name = (l.label || '').trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '' });
+        }
         openLabelNameEditor({
             player: this.player,
             initialValue: '',
             initialColor: null,
-            existingLabels: existingNames,
+            existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color }) => {
+            onSubmit: ({ name, color, scientificName = '' }) => {
                 region.label = name;
                 region.color = color;
+                region.scientificName = String(scientificName || '').trim();
                 this.add(region);
             },
         });
@@ -1189,11 +1292,22 @@ export class SpectrogramLabelLayer {
             anchorEl: el || this.overlay,
             initialValue: current,
             initialColor: label.color,
-            onSubmit: ({ name, color }) => {
+            onSubmit: ({ name, color, scientificName = '' }) => {
                 const currentHex = getOverlayColorStyle(label.color)?.hex || '';
-                if (name === current && color === currentHex) return;
+                const nextSci = String(scientificName || '').trim();
+                const prevSci = String(label.scientificName || '').trim();
+                if (name === current && color === currentHex && nextSci === prevSci) return;
                 label.label = name;
                 label.color = color;
+                if (nextSci) label.scientificName = nextSci;
+                // Apply color to all labels with the same name
+                const labelKey = name.toLowerCase();
+                for (const other of this.labels) {
+                    if (other.id !== label.id && (other.label || '').toLowerCase() === labelKey) {
+                        other.color = color;
+                        this.player?._emit?.('spectrogramlabelupdate', { label: { ...other } });
+                    }
+                }
                 this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
                 this.render();
             },
@@ -1258,6 +1372,8 @@ export class SpectrogramLabelLayer {
             freqMax: Math.max(f0 + 1, f1),
             label: label?.label || '',
             color: String(label?.color || '').trim(),
+            scientificName: String(label?.scientificName || '').trim(),
+            commonName: String(label?.commonName || '').trim(),
         };
     }
 }
