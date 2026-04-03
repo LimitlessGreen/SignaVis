@@ -2,6 +2,11 @@
 // xenoCantoApi.js — Xeno-canto API client and payload helpers
 // ═══════════════════════════════════════════════════════════════════════
 
+import {
+    sleep, safeArray, safeString, safeField,
+    parseJsonSafe, resolveFetch,
+} from './xcHelpers.js';
+
 export const DEFAULT_XC_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotation-set';
 
 /**
@@ -43,36 +48,8 @@ export const DEFAULT_XC_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotati
  * @property {string[]} errors
  */
 
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function safeArray(value) {
-    return Array.isArray(value) ? value : [];
-}
-
-function safeString(value) {
-    if (value === 0 || value === false) return String(value);
-    return value == null ? '' : String(value).trim();
-}
-
-function safeField(value) {
-    return (value === 0 || value === false) ? value : (value != null && value !== '' ? value : '');
-}
-
-function parseJsonSafe(text) {
-    if (!text) return null;
-    try { return JSON.parse(text); } catch { return null; }
-}
-
 function isRetryableStatus(status) {
     return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
-}
-
-function resolveFetch(fetchImpl) {
-    if (typeof fetchImpl === 'function') return fetchImpl;
-    if (typeof globalThis.fetch === 'function') return globalThis.fetch.bind(globalThis);
-    return null;
 }
 
 function encodeBasicAuth(credential) {

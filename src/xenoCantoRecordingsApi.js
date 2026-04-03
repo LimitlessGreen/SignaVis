@@ -2,32 +2,13 @@
 // xenoCantoRecordingsApi.js — Xeno-canto recordings API helpers
 // ═══════════════════════════════════════════════════════════════════════
 
+import {
+    firstNonEmpty, toFiniteNumber, normalizeXcId, resolveFetch,
+} from './xcHelpers.js';
+
+export { normalizeXcId } from './xcHelpers.js';
+
 export const DEFAULT_XC_RECORDINGS_ENDPOINT = 'https://xeno-canto.org/api/3/recordings';
-
-function firstNonEmpty(values) {
-    for (const v of values) {
-        const s = String(v ?? '').trim();
-        if (s) return s;
-    }
-    return '';
-}
-
-function toFiniteNumber(value) {
-    if (value == null) return NaN;
-    const n = Number(String(value).replace(',', '.').trim());
-    return Number.isFinite(n) ? n : NaN;
-}
-
-function resolveFetch(fetchImpl) {
-    if (typeof fetchImpl === 'function') return fetchImpl;
-    if (typeof globalThis.fetch === 'function') return globalThis.fetch.bind(globalThis);
-    throw new Error('No fetch implementation available.');
-}
-
-export function normalizeXcId(raw) {
-    const digits = String(raw || '').replace(/\D+/g, '');
-    return digits ? String(Number(digits)) : '';
-}
 
 export function getRecordingScientificName(rec) {
     if (!rec || typeof rec !== 'object') return '';
@@ -48,6 +29,7 @@ export async function fetchXenoCantoRecording(xcId, options = {}) {
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
 
     const fetchFn = resolveFetch(options.fetchImpl);
+    if (!fetchFn) throw new Error('No fetch implementation available.');
     const endpoint = String(options.endpoint || DEFAULT_XC_RECORDINGS_ENDPOINT).trim();
     const url = `${endpoint}?query=nr:${clean}`;
     const apiKey = String(options.apiKey || '').trim();
