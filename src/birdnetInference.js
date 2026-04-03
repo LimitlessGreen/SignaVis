@@ -187,6 +187,11 @@ export class BirdNETInference {
    */
   async load({ modelUrl, onProgress }) {
     if (!modelUrl) throw new Error('modelUrl is required');
+
+    // Resolve relative URLs against the page origin so the Blob-based Worker
+    // (which has no meaningful base URL) can fetch the model files.
+    const absoluteModelUrl = new URL(modelUrl, globalThis.location?.href).href;
+
     this.dispose();
 
     const blob = new Blob([WORKER_SOURCE], { type: 'text/javascript' });
@@ -209,7 +214,7 @@ export class BirdNETInference {
       }
     };
 
-    const result = await this.#send('load', { modelUrl });
+    const result = await this.#send('load', { modelUrl: absoluteModelUrl });
     this.#onLoadProgress = null;
     if (result.type === 'error') throw new Error(result.message);
     this.#loaded = true;
