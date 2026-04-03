@@ -894,12 +894,13 @@
 
     // ── BirdNET Inference ──────────────────────────────────────────────
 
-    const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v1';
+    const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v2';
     const BIRDNET_DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
     const BIRDNET_DETECTION_COLOR = '#f59e0b'; // amber
 
     try {
-      birdnetModelUrlInput.value = String(localStorage.getItem(BIRDNET_MODEL_URL_STORAGE) || BIRDNET_DEFAULT_MODEL_URL);
+      const stored = localStorage.getItem(BIRDNET_MODEL_URL_STORAGE);
+      birdnetModelUrlInput.value = stored || BIRDNET_DEFAULT_MODEL_URL;
     } catch {
       birdnetModelUrlInput.value = BIRDNET_DEFAULT_MODEL_URL;
     }
