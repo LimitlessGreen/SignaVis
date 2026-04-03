@@ -392,6 +392,10 @@
       sampleRate: 32000,
       activeObjectUrl: null,
       taxonomy: null,
+      taxonomyByScientific: new Map(),
+      taxonomyByScientificNorm: new Map(),
+      taxonomyByGenus: new Map(),
+      taxonomyResolveCache: new Map(),
       taxonomyLang: 'en_uk',
       speciesChoice: null,
       xcApiKey: '',
@@ -468,7 +472,9 @@
           const item = document.createElement('div');
           item.className = 'item';
           const main = document.createElement('strong');
-          main.textContent = lbl.label || 'Label';
+          const record = lbl.scientificName ? resolveTaxonomyRecordForScientificName(lbl.scientificName) : null;
+          const localized = resolveCommonName(record, state.taxonomyLang);
+          main.textContent = localized || lbl.commonName || lbl.label || 'Label';
           const t = document.createElement('div');
           t.textContent = `${fmt(lbl.start)} - ${fmt(lbl.end)}`;
           const f = document.createElement('div');
@@ -516,6 +522,7 @@
         id: l.id,
         label: l.label,
         scientificName: l.scientificName || '',
+        commonName: l.commonName || '',
         start: l.start,
         end: l.end,
         freqMin: l.freqMin,
@@ -532,6 +539,88 @@
     function resolveCommonName(record, lang) {
       if (!record || !record.n) return '';
       return record.n[lang] || record.n.en_uk || Object.values(record.n)[0] || '';
+    }
+
+    function normalizeScientificName(raw) {
+      const s = String(raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[()]/g, ' ')
+        .replace(/[^a-z\\s-]/g, ' ')
+        .replace(/\\s+/g, ' ')
+        .trim();
+      if (!s) return '';
+      const parts = s.split(' ');
+      return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
+    }
+
+    function getGenusAndEpithet(raw) {
+      const n = normalizeScientificName(raw);
+      if (!n) return { genus: '', epithet: '' };
+      const parts = n.split(' ');
+      return { genus: parts[0] || '', epithet: parts[1] || '' };
+    }
+
+    function levenshtein(a, b) {
+      const s = String(a || '');
+      const t = String(b || '');
+      if (s === t) return 0;
+      if (!s) return t.length;
+      if (!t) return s.length;
+      const m = s.length;
+      const n = t.length;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i += 1) dp[i][0] = i;
+      for (let j = 0; j <= n; j += 1) dp[0][j] = j;
+      for (let i = 1; i <= m; i += 1) {
+        for (let j = 1; j <= n; j += 1) {
+          const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            dp[i][j - 1] + 1,
+            dp[i - 1][j - 1] + cost,
+          );
+        }
+      }
+      return dp[m][n];
+    }
+
+    function resolveTaxonomyRecordForScientificName(scientificName) {
+      const raw = String(scientificName || '').trim();
+      if (!raw) return null;
+
+      if (state.taxonomyResolveCache.has(raw)) {
+        return state.taxonomyResolveCache.get(raw);
+      }
+
+      let rec = state.taxonomyByScientific.get(raw) || null;
+      if (!rec) {
+        const norm = normalizeScientificName(raw);
+        if (norm) rec = state.taxonomyByScientificNorm.get(norm) || null;
+      }
+
+      if (!rec) {
+        const { genus, epithet } = getGenusAndEpithet(raw);
+        const genusCandidates = state.taxonomyByGenus.get(genus) || [];
+        if (epithet && genusCandidates.length) {
+          let best = null;
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (const c of genusCandidates) {
+            const { epithet: candidateEpithet } = getGenusAndEpithet(c?.s || '');
+            if (!candidateEpithet) continue;
+            const d = levenshtein(epithet, candidateEpithet);
+            if (d < bestDist) {
+              bestDist = d;
+              best = c;
+            }
+          }
+          const threshold = Math.max(1, Math.floor(epithet.length * 0.34));
+          if (best && bestDist <= threshold) rec = best;
+        }
+      }
+
+      state.taxonomyResolveCache.set(raw, rec || null);
+      return rec || null;
     }
 
     function resetSpeciesChoice() {
@@ -588,6 +677,20 @@
           throw new Error('Invalid taxonomy format.');
         }
         state.taxonomy = data;
+        state.taxonomyByScientific = new Map((data.records || []).map((r) => [r.s, r]));
+        state.taxonomyByScientificNorm = new Map();
+        state.taxonomyByGenus = new Map();
+        state.taxonomyResolveCache = new Map();
+        for (const rec of (data.records || [])) {
+          const norm = normalizeScientificName(rec?.s || '');
+          if (norm && !state.taxonomyByScientificNorm.has(norm)) {
+            state.taxonomyByScientificNorm.set(norm, rec);
+          }
+          const { genus } = getGenusAndEpithet(rec?.s || '');
+          if (!genus) continue;
+          if (!state.taxonomyByGenus.has(genus)) state.taxonomyByGenus.set(genus, []);
+          state.taxonomyByGenus.get(genus).push(rec);
+        }
         const langs = data.languages.slice().sort((a, b) => a.localeCompare(b));
         taxonomyLangSelect.innerHTML = '';
         for (const lang of langs) {
@@ -600,8 +703,13 @@
         state.taxonomyLang = langs.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
         taxonomyLangSelect.value = state.taxonomyLang;
         taxonomyMeta.textContent = `BirdNET ${data.modelVersion} · ${data.speciesCount} species · lang=${state.taxonomyLang}`;
+        renderLabels();
       } catch (err) {
         state.taxonomy = null;
+        state.taxonomyByScientific = new Map();
+        state.taxonomyByScientificNorm = new Map();
+        state.taxonomyByGenus = new Map();
+        state.taxonomyResolveCache = new Map();
         taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
       }
     }
@@ -642,10 +750,10 @@
 
       const directUrl = `https://xeno-canto.org/${clean}/download`;
       const candidates = [
-        { name: 'Direct', url: directUrl },
         { name: 'CodeTabs', url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
         { name: 'CorsProxy', url: `https://corsproxy.io/?${encodeURIComponent(directUrl)}` },
         { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}` },
+        { name: 'ThingProxy', url: `https://thingproxy.freeboard.io/fetch/${directUrl}` },
       ];
 
       let lastError = null;
@@ -677,11 +785,15 @@
       try {
         const audio = await fetchXenoCantoAudio(xcid);
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
-        const labelResult = await importXenoCantoLabels(audio.xcId);
-        if (labelResult.imported > 0) {
-          selectionMeta.textContent = `Imported ${labelResult.imported} XC labels`;
-        } else {
-          selectionMeta.textContent = `No XC labels found for XC${labelResult.xcId}`;
+        try {
+          const labelResult = await importXenoCantoLabels(audio.xcId);
+          if (labelResult.imported > 0) {
+            selectionMeta.textContent = `Imported ${labelResult.imported} XC labels`;
+          } else {
+            selectionMeta.textContent = `No XC labels found for XC${labelResult.xcId}`;
+          }
+        } catch (err) {
+          selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
         }
       } catch (err) {
         fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
@@ -806,6 +918,7 @@
       if (state.taxonomy) {
         taxonomyMeta.textContent = `BirdNET ${state.taxonomy.modelVersion} · ${state.taxonomy.speciesCount} species · lang=${state.taxonomyLang}`;
       }
+      renderLabels();
       renderSpeciesSuggestions(labelNameInput.value);
     });
 

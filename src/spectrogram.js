@@ -14,7 +14,7 @@ async function getWorkerCtor() {
     if (_workerCtorResolved) return _WorkerCtor;
     _workerCtorResolved = true;
     try {
-        const mod = await import(/* @vite-ignore */ './spectrogram.worker.js?worker&inline');
+        const mod = await import('./spectrogram.worker.js?worker&inline');
         _WorkerCtor = mod.default;
     } catch {
         _WorkerCtor = null;

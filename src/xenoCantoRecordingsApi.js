@@ -51,31 +51,17 @@ export async function fetchXenoCantoRecording(xcId, options = {}) {
     const endpoint = String(options.endpoint || DEFAULT_XC_RECORDINGS_ENDPOINT).trim();
     const url = `${endpoint}?query=nr:${clean}`;
     const apiKey = String(options.apiKey || '').trim();
-    const keyHeaderName = String(options.keyHeaderName || 'key').trim() || 'key';
-    /** @type {Array<Record<string,string>|undefined>} */
-    const headerVariants = !apiKey
-        ? [undefined]
-        : [
-            { [keyHeaderName]: apiKey },
-            { Authorization: `Bearer ${apiKey}` },
-            { 'x-api-key': apiKey },
-            undefined,
-        ];
-
-    let res = null;
-    let lastStatus = 0;
-    for (const headers of headerVariants) {
-        const candidate = await fetchFn(url, {
-            headers,
-        });
-        res = candidate;
-        lastStatus = Number(candidate?.status || 0);
-        if (candidate.ok) break;
-        // Try the next auth variant only for auth-related responses.
-        if (lastStatus !== 401 && lastStatus !== 403) break;
+    if (!apiKey) throw new Error('XC API key missing. Open "XC API" and paste your key.');
+    const requestUrl = `${url}&key=${encodeURIComponent(apiKey)}`;
+    const res = await fetchFn(requestUrl);
+    if (!res.ok) {
+        let msg = '';
+        try {
+            const body = await res.json();
+            msg = firstNonEmpty([body?.message, body?.error]);
+        } catch {}
+        throw new Error(msg || `XC API HTTP ${Number(res.status) || 0}`);
     }
-
-    if (!res || !res.ok) throw new Error(`XC API HTTP ${lastStatus || 0}`);
 
     const data = await res.json();
     const recording =
@@ -90,6 +76,9 @@ export async function fetchXenoCantoRecording(xcId, options = {}) {
 
 export function extractXenoCantoRawLabels(recording) {
     if (!recording || typeof recording !== 'object') return [];
+    const annotationSet = recording['annotation-set'] ?? recording.annotationSet ?? null;
+    if (annotationSet && Array.isArray(annotationSet.annotations)) return annotationSet.annotations;
+
     const candidate = recording.labels
         ?? recording.label_annotations
         ?? recording.labelAnnotations
@@ -112,6 +101,11 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
     const arr = Array.isArray(rawLabels) ? rawLabels : [];
     const xcId = normalizeXcId(options.xcId || '');
     const scientificName = getRecordingScientificName(options.recording || {});
+    const recordingCommonName = firstNonEmpty([
+        options?.recording?.en,
+        options?.recording?.common_name,
+        options?.recording?.commonName,
+    ]);
     const sampleRate = Number(options.sampleRate);
     const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : 32000) / 2));
     const idPrefix = String(options.idPrefix || 'xc').trim() || 'xc';
@@ -130,26 +124,31 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         if (!(freqMax > freqMin)) continue;
 
         const label = firstNonEmpty([
+            src.sound_type,
+            src.soundType,
+            recordingCommonName,
+            src.scientific_name,
+            src.scientificName,
             src.label,
             src.name,
             src.value,
-            src.sound_type,
-            src.soundType,
             src.type,
             src.event,
             src.comment,
             src.description,
             'XC label',
         ]);
+        const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, i + 1]);
 
         labels.push({
-            id: `${idPrefix}${xcId}_lbl_${i + 1}`,
+            id: `${idPrefix}${xcId}_lbl_${annotationId}`,
             start,
             end,
             freqMin,
             freqMax,
             label,
             scientificName,
+            commonName: recordingCommonName,
         });
     }
 
