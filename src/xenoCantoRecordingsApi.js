@@ -88,6 +88,11 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         options?.recording?.common_name,
         options?.recording?.commonName,
     ]);
+    const recordist = firstNonEmpty([
+        options?.recording?.rec,
+        options?.recording?.recorder,
+        options?.recording?.recordist,
+    ]);
     const sampleRate = Number(options.sampleRate);
     const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : 32000) / 2));
     const idPrefix = String(options.idPrefix || 'xc').trim() || 'xc';
@@ -131,6 +136,8 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
             label,
             scientificName,
             commonName: recordingCommonName,
+            origin: 'xeno-canto',
+            author: recordist || '',
         });
     }
 
