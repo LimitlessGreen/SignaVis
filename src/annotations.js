@@ -75,7 +75,7 @@ function getOverlayColorStyle(color) {
  * @param {Element|null} [opts.anchorEl]
  * @param {string} opts.initialValue
  * @param {string|null} opts.initialColor
- * @param {string[]|null} [opts.existingLabels]
+ * @param {(string|{name:string, color?:string, scientificName?:string})[]|null} [opts.existingLabels]
  * @param {string|null} [opts.title]
  * @param {function({name:string, color:string, scientificName?:string}):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]

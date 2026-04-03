@@ -3,349 +3,316 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Audio Workbench — Labeling App Prototype</title>
+  <title>Audio Workbench — Labeling App</title>
   <style>
     :root {
       --bg: #0b1220;
-      --panel: #121a2b;
-      --panel-2: #172238;
-      --line: #2a3a58;
+      --panel: #0f1829;
+      --line: #1e2d47;
       --text: #e6edf8;
-      --muted: #98aac8;
+      --muted: #6b7f9e;
       --accent: #39b5ff;
       --danger: #f87171;
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; }
     html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      background: radial-gradient(1200px 800px at 15% 15%, #1c2a45 0%, var(--bg) 45%);
+      width: 100%; height: 100%;
+      background: var(--bg);
       color: var(--text);
       font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+      font-size: 13px;
     }
     .app {
       display: grid;
-      grid-template-rows: 56px 1fr;
-      width: 100%;
-      height: 100%;
+      grid-template-rows: 40px 1fr auto;
+      width: 100%; height: 100%;
     }
+
+    /* ── Topbar ── */
     .topbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 0 14px;
+      gap: 8px;
+      padding: 0 12px;
+      background: var(--panel);
       border-bottom: 1px solid var(--line);
-      background: rgba(10, 16, 30, 0.8);
-      backdrop-filter: blur(6px);
+      font-size: 12px;
     }
     .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-    .dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 99px;
-      background: linear-gradient(135deg, #7fe8ff, #39b5ff);
-      box-shadow: 0 0 14px rgba(57, 181, 255, 0.8);
-    }
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-    .file-label {
-      font-size: 12px;
-      color: var(--muted);
-      max-width: 280px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      display: flex; align-items: center; gap: 7px;
+      font-weight: 700; letter-spacing: 0.03em;
       white-space: nowrap;
     }
-    .layout {
-      display: grid;
-      grid-template-columns: 1fr 340px;
-      min-height: 0;
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: linear-gradient(135deg, #7fe8ff, #39b5ff);
+      box-shadow: 0 0 10px rgba(57, 181, 255, 0.7);
     }
-    .stage {
-      min-width: 0;
-      min-height: 0;
-      padding: 10px;
+    .file-label {
+      color: var(--muted); max-width: 200px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 11px;
     }
+    .tb-btn {
+      border: 1px solid var(--line); border-radius: 5px;
+      background: transparent; color: var(--text);
+      font-size: 11px; padding: 3px 8px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .tb-btn:hover { border-color: #3a5580; background: rgba(57, 181, 255, 0.08); }
+    .tb-btn.danger { border-color: #5c2020; color: var(--danger); }
+    .tb-btn.danger:hover { background: rgba(248, 113, 113, 0.1); }
+    .tb-select {
+      border: 1px solid var(--line); border-radius: 5px;
+      background: transparent; color: var(--text);
+      font-size: 11px; padding: 3px 6px;
+    }
+    .tb-meta {
+      color: var(--muted); font-size: 11px; white-space: nowrap;
+    }
+    .tb-sep { width: 1px; height: 18px; background: var(--line); }
+    .tb-spacer { flex: 1; }
+
+    /* ── Stage ── */
+    .stage { min-height: 0; min-width: 0; overflow: hidden; padding: 5px; }
     #playerRoot {
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
-      background: #f7fafc;
+      width: 100%; height: 100%;
+      min-width: 0; min-height: 0;
+      border: 1px solid var(--line); border-radius: 8px;
+      overflow: hidden; background: #0a0f1a;
     }
-    .sidebar {
-      border-left: 1px solid var(--line);
-      background: linear-gradient(180deg, var(--panel), var(--panel-2));
-      padding: 10px;
+
+    /* ── Label Panel ── */
+    .label-panel {
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      max-height: 38vh;
       display: grid;
-      grid-template-rows: auto auto auto auto 1fr;
-      gap: 10px;
-      min-height: 0;
+      grid-template-rows: auto 1fr;
     }
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      background: rgba(9, 16, 30, 0.55);
+    .label-panel-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 12px;
+      border-bottom: 1px solid var(--line);
     }
-    .title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      margin-bottom: 8px;
+    .label-panel-title { font-weight: 600; font-size: 12px; white-space: nowrap; }
+    .label-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; border-radius: 9px;
+      background: rgba(57, 181, 255, 0.15); color: var(--accent);
+      font-size: 10px; font-weight: 700; padding: 0 5px;
     }
-    .grid {
-      display: grid;
-      gap: 8px;
+    .label-panel-hints {
+      color: var(--muted); font-size: 11px; white-space: nowrap;
     }
-    .row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .btn {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #10203a;
-      color: var(--text);
-      font-size: 12px;
-      padding: 7px 10px;
-      cursor: pointer;
-    }
-    .btn:hover { border-color: #42608f; background: #152948; }
-    .btn.accent {
-      border-color: #2770b8;
-      background: #133962;
-      color: #d7eeff;
-    }
-    .btn.danger {
-      border-color: #7c2d37;
-      background: #3f1920;
-      color: #ffd7d7;
-    }
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .input, .textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #0d172b;
-      color: var(--text);
-      padding: 7px 9px;
-      font-size: 12px;
-    }
-    .textarea {
-      resize: vertical;
-      min-height: 90px;
+    .label-panel-hints kbd {
+      border: 1px solid #2a3d5c; border-bottom-width: 2px;
+      border-radius: 4px; padding: 0 4px;
+      background: #0d172b; color: #c8daf0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      line-height: 1.4;
+      font-size: 10px;
     }
-    .meta {
-      font-size: 12px;
-      color: var(--muted);
+    .label-table-wrap { overflow: auto; min-height: 0; }
+    .label-table {
+      width: 100%; max-width: 960px; margin: 0 auto;
+      border-collapse: collapse; font-size: 12px;
+      table-layout: fixed;
+    }
+    .label-table thead { position: sticky; top: 0; z-index: 1; }
+    .label-table th, .label-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .label-table th {
+      background: rgba(15, 24, 41, 0.98);
+      color: var(--muted); font-weight: 500;
+      padding: 4px 10px; text-align: left;
+      border-bottom: 1px solid var(--line);
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .label-table td {
+      padding: 4px 10px;
+      border-bottom: 1px solid rgba(30, 45, 71, 0.4);
+    }
+    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | × */
+    .label-table .col-dot   { width: 32px; }
+    .label-table .col-name  { width: auto; }
+    .label-table .col-sci   { width: 24%; }
+    .label-table .col-time  { width: 110px; }
+    .label-table .col-freq  { width: 110px; }
+    .label-table .col-conf  { width: 52px; }
+    .label-table .col-del   { width: 32px; }
+    .label-table tbody tr { cursor: pointer; transition: background 0.1s; }
+    .label-table tbody tr:hover td { background: rgba(57, 181, 255, 0.06); }
+    .label-table tbody tr.highlighted td { background: rgba(57, 181, 255, 0.14); }
+    .label-table tbody tr.selected td { background: rgba(57, 181, 255, 0.22); box-shadow: inset 2px 0 0 var(--accent); }
+    .label-table .color-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; vertical-align: middle;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .label-table .del-btn {
+      border: none; background: transparent; color: var(--muted);
+      cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px;
+    }
+    .label-table .del-btn:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
+    .label-table .name-cell { font-weight: 600; color: #dce8f8; }
+    .label-table .sci-cell { color: var(--muted); font-style: italic; font-size: 11px; }
+    .label-table .mono-cell {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px; color: #8fa4c0;
     }
-    .list {
-      min-height: 0;
-      overflow: auto;
-      display: grid;
-      gap: 7px;
+    .labels-empty {
+      padding: 20px 12px; color: var(--muted); font-size: 12px; text-align: center;
     }
-    .item {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 7px;
-      background: #0d172b;
-      display: grid;
-      gap: 2px;
-      font-size: 12px;
-    }
-    .item strong {
-      font-size: 12px;
-      color: #d9ebff;
-    }
-    .empty {
-      border: 1px dashed var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .select {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #0d172b;
-      color: var(--text);
-      padding: 7px 9px;
-      font-size: 12px;
-    }
-    .suggestions {
-      margin-top: 6px;
-      max-height: 160px;
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #0a1325;
-      display: none;
-    }
-    .suggestions.show { display: block; }
-    .suggestion-item {
-      width: 100%;
-      border: 0;
-      border-bottom: 1px solid rgba(66, 96, 143, 0.25);
-      background: transparent;
-      color: var(--text);
-      text-align: left;
-      padding: 7px 8px;
-      cursor: pointer;
-      font-size: 12px;
-    }
-    .suggestion-item:last-child { border-bottom: 0; }
-    .suggestion-item:hover {
-      background: rgba(57, 181, 255, 0.12);
-    }
-    .suggestion-sub {
-      display: block;
-      color: var(--muted);
+    .labels-empty kbd {
+      border: 1px solid #2a3d5c; border-bottom-width: 2px;
+      border-radius: 4px; padding: 0 4px;
+      background: #0d172b; color: #c8daf0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 11px;
-      margin-top: 1px;
     }
+
+    /* ── Modal ── */
     .modal-backdrop {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
       background: rgba(3, 8, 18, 0.72);
-      display: none;
-      align-items: center;
-      justify-content: center;
+      display: none; align-items: center; justify-content: center;
       z-index: 1000;
     }
     .modal-backdrop.show { display: flex; }
     .modal {
-      width: min(540px, 92vw);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: linear-gradient(180deg, #10203a, #0f1a2f);
-      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.5);
-      padding: 12px;
-      display: grid;
-      gap: 10px;
+      width: min(420px, 92vw);
+      border: 1px solid var(--line); border-radius: 10px;
+      background: var(--panel);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      padding: 14px; display: grid; gap: 10px;
     }
     .modal-title {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted);
     }
-    @media (max-width: 1050px) {
-      .layout { grid-template-columns: 1fr; }
-      .sidebar {
-        border-left: 0;
-        border-top: 1px solid var(--line);
-        grid-template-rows: auto auto auto auto 280px;
-      }
-      #playerRoot { min-height: 62vh; }
+    .input {
+      width: 100%;
+      border: 1px solid var(--line); border-radius: 6px;
+      background: #0d172b; color: var(--text);
+      padding: 7px 9px; font-size: 12px;
+    }
+    .meta { font-size: 11px; color: var(--muted); }
+    .row { display: flex; gap: 8px; align-items: center; }
+
+    /* ── BirdNET ── */
+    .birdnet-progress {
+      height: 4px; background: var(--line); border-radius: 2px;
+      overflow: hidden;
+    }
+    .birdnet-progress-bar {
+      height: 100%; width: 0%; background: var(--accent);
+      transition: width 0.15s ease;
+    }
+    .birdnet-slider-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .birdnet-slider-row input[type="range"] {
+      flex: 1; accent-color: var(--accent);
+    }
+    .birdnet-slider-val {
+      min-width: 32px; text-align: right;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px; color: var(--text);
+    }
+
+    @media (max-width: 700px) {
+      .label-panel-hints { display: none; }
+      .label-table .col-freq,
+      .label-table td:nth-child(5) { display: none; }
+      .label-table .col-conf,
+      .label-table td:nth-child(6) { display: none; }
     }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="dot"></span> Labeling App Prototype</div>
-      <div class="top-actions">
-        <span class="file-label" id="fileLabel">No custom file loaded</span>
-        <button class="btn" id="xcApiBtn" type="button">XC API</button>
-        <button class="btn" id="loadSampleBtn" type="button">Load Demo Sample</button>
-        <button class="btn" id="browseBtn" type="button">Browse Audio</button>
-        <input id="fileInput" type="file" accept="audio/*" hidden />
-      </div>
+      <div class="brand"><span class="dot"></span> Labeling App</div>
+      <span class="tb-sep"></span>
+      <span class="file-label" id="fileLabel">No file loaded</span>
+      <button class="tb-btn" id="browseBtn" type="button">Browse</button>
+      <button class="tb-btn" id="loadSampleBtn" type="button">Demo</button>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
+      <span class="tb-spacer"></span>
+      <span class="tb-meta" id="selectionMeta"></span>
+      <button class="tb-btn" id="birdnetBtn" type="button">BirdNET</button>
+      <button class="tb-btn" id="xcApiBtn" type="button">XC API</button>
     </header>
 
-    <main class="layout">
-      <section class="stage">
-        <div id="playerRoot"></div>
-      </section>
-
-      <aside class="sidebar">
-        <section class="card">
-          <div class="title">Selection</div>
-          <div class="meta" id="selectionMeta">No active selection</div>
-          <div class="row" style="margin-top: 8px">
-            <select id="taxonomyLangSelect" class="select">
-              <option value="en_uk">en_uk</option>
-            </select>
-          </div>
-          <div class="meta" id="taxonomyMeta">Taxonomy loading…</div>
-          <div class="row" style="margin-top: 8px">
-            <input id="labelNameInput" class="input" placeholder="Label name (e.g. Robin call)" />
-          </div>
-          <div class="suggestions" id="speciesSuggestions"></div>
-          <div class="row">
-            <button id="addLabelBtn" class="btn accent" type="button" disabled>Add Spectrogram Label</button>
-            <button id="clearAllBtn" class="btn danger" type="button">Clear All Labels</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="title">Taxonomy</div>
-          <textarea id="taxonomyInput" class="textarea">1|Bird Call|#0ea5e9
-2|Song|#22c55e
-3|Chirp|#f59e0b
-4|Noise|#ef4444</textarea>
-          <div class="row" style="margin-top: 8px">
-            <button id="applyTaxonomyBtn" class="btn" type="button">Apply Taxonomy</button>
-            <button id="seedLabelsBtn" class="btn" type="button">Seed Demo Labels</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="title">Export</div>
-          <div class="row">
-            <button id="exportJsonBtn" class="btn" type="button">Export Labels JSON</button>
-            <button id="copyJsonBtn" class="btn" type="button">Copy JSON</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="title">Roadmap Slot</div>
-          <div class="meta">Hier kann als Nächstes folgen: Dataset Browser, Keyboard-Workflow, Review Queue, XC-Upload.</div>
-        </section>
-
-        <section class="card" style="min-height: 0; display: grid; grid-template-rows: auto 1fr;">
-          <div class="title">Labels</div>
-          <div class="list" id="labelsList"></div>
-        </section>
-      </aside>
+    <main class="stage">
+      <div id="playerRoot"></div>
     </main>
+
+    <footer class="label-panel">
+      <div class="label-panel-header">
+        <span class="label-panel-title">Labels <span class="label-count" id="labelCount">0</span></span>
+        <span class="label-panel-hints"><kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · double-click edit</span>
+        <span class="tb-spacer"></span>
+        <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
+        <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
+        <span class="tb-sep"></span>
+        <button class="tb-btn" id="exportJsonBtn" type="button">Export JSON</button>
+        <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
+        <button class="tb-btn danger" id="clearAllBtn" type="button">Clear All</button>
+      </div>
+      <div class="label-table-wrap" id="labelTableWrap">
+        <table class="label-table">
+          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-del"></th></tr></thead>
+          <tbody id="labelsList"></tbody>
+        </table>
+        <div class="labels-empty" id="labelsEmpty">
+          No labels yet — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.
+        </div>
+      </div>
+    </footer>
   </div>
+
   <div class="modal-backdrop" id="xcApiModalBackdrop" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="xcApiModalTitle">
       <div class="modal-title" id="xcApiModalTitle">Xeno-canto API Settings</div>
       <input id="xcApiKeyInput" class="input" placeholder="API key (optional)" />
       <div class="meta">Nur für XC-API-Requests zum Label-Import. Wird lokal im Browser gespeichert.</div>
       <div class="row">
-        <button class="btn" id="xcApiCancelBtn" type="button">Cancel</button>
-        <button class="btn accent" id="xcApiSaveBtn" type="button">Save</button>
+        <button class="tb-btn" id="xcApiCancelBtn" type="button">Cancel</button>
+        <button class="tb-btn" id="xcApiSaveBtn" type="button" style="border-color:#2770b8;color:#d7eeff;">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BirdNET Inference Modal -->
+  <div class="modal-backdrop" id="birdnetModalBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="birdnetModalTitle">
+      <div class="modal-title" id="birdnetModalTitle">BirdNET Inference</div>
+      <label class="meta" for="birdnetModelUrl">Model URL (TF.js Layers-Format — Ordner mit model.json + labels.json)</label>
+      <input id="birdnetModelUrl" class="input" placeholder="https://example.com/birdnet_v2.4/" />
+      <div class="birdnet-slider-row">
+        <label class="meta" for="birdnetConfidence">Min. Confidence</label>
+        <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" />
+        <span class="birdnet-slider-val" id="birdnetConfidenceVal">0.25</span>
+      </div>
+      <div class="row">
+        <label class="meta" for="birdnetOverlap">Overlap</label>
+        <select id="birdnetOverlap" class="tb-select">
+          <option value="0">0 s</option>
+          <option value="0.5">0.5 s</option>
+          <option value="1">1 s</option>
+          <option value="1.5">1.5 s</option>
+          <option value="2">2 s</option>
+          <option value="2.5">2.5 s</option>
+        </select>
+      </div>
+      <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
+        <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
+      </div>
+      <span id="birdnetStatus" class="meta"></span>
+      <div class="row">
+        <button class="tb-btn" id="birdnetCancelBtn" type="button">Cancel</button>
+        <span style="flex:1"></span>
+        <button class="tb-btn" id="birdnetAnalyzeBtn" type="button" style="border-color:#2770b8;color:#d7eeff;">Analyze</button>
       </div>
     </div>
   </div>
@@ -353,6 +320,8 @@
   <script type="module">
     import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
     import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../src/xenoCantoRecordingsApi.js';
+    import { TaxonomyResolver } from '../src/taxonomyResolver.js';
+    import { BirdNETInference } from '../src/birdnetInference.js';
     import '../src/player.css';
 
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -368,36 +337,43 @@
     const browseBtn = document.getElementById('browseBtn');
     const xcApiBtn = document.getElementById('xcApiBtn');
     const loadSampleBtn = document.getElementById('loadSampleBtn');
-    const addLabelBtn = document.getElementById('addLabelBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
-    const applyTaxonomyBtn = document.getElementById('applyTaxonomyBtn');
-    const seedLabelsBtn = document.getElementById('seedLabelsBtn');
     const exportJsonBtn = document.getElementById('exportJsonBtn');
     const copyJsonBtn = document.getElementById('copyJsonBtn');
-    const taxonomyInput = document.getElementById('taxonomyInput');
     const selectionMeta = document.getElementById('selectionMeta');
     const labelsList = document.getElementById('labelsList');
-    const labelNameInput = document.getElementById('labelNameInput');
+    const labelsEmpty = document.getElementById('labelsEmpty');
+    const labelCount = document.getElementById('labelCount');
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
     const taxonomyMeta = document.getElementById('taxonomyMeta');
-    const speciesSuggestions = document.getElementById('speciesSuggestions');
     const xcApiModalBackdrop = document.getElementById('xcApiModalBackdrop');
     const xcApiKeyInput = document.getElementById('xcApiKeyInput');
     const xcApiCancelBtn = document.getElementById('xcApiCancelBtn');
     const xcApiSaveBtn = document.getElementById('xcApiSaveBtn');
+    const birdnetBtn = document.getElementById('birdnetBtn');
+    const birdnetModalBackdrop = document.getElementById('birdnetModalBackdrop');
+    const birdnetModelUrlInput = document.getElementById('birdnetModelUrl');
+    const birdnetConfidenceInput = document.getElementById('birdnetConfidence');
+    const birdnetConfidenceVal = document.getElementById('birdnetConfidenceVal');
+    const birdnetOverlapSelect = document.getElementById('birdnetOverlap');
+    const birdnetProgressWrap = document.getElementById('birdnetProgressWrap');
+    const birdnetProgressBar = document.getElementById('birdnetProgressBar');
+    const birdnetStatus = document.getElementById('birdnetStatus');
+    const birdnetCancelBtn = document.getElementById('birdnetCancelBtn');
+    const birdnetAnalyzeBtn = document.getElementById('birdnetAnalyzeBtn');
+
+    const taxonomy = new TaxonomyResolver();
+    const birdnet = new BirdNETInference();
 
     const state = {
       labels: [],
+      xcLabelPool: [],
       selected: null,
+      selectedLabelId: null,
+      _rowMap: new Map(),
       sampleRate: 32000,
       activeObjectUrl: null,
-      taxonomy: null,
-      taxonomyByScientific: new Map(),
-      taxonomyByScientificNorm: new Map(),
-      taxonomyByGenus: new Map(),
-      taxonomyResolveCache: new Map(),
       taxonomyLang: 'en_uk',
-      speciesChoice: null,
       xcApiKey: '',
     };
 
@@ -458,63 +434,145 @@
 
     function renderLabels() {
       labelsList.innerHTML = '';
-      if (!state.labels.length) {
-        const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = 'No labels yet. Select a time range and add one.';
-        labelsList.appendChild(empty);
-        return;
-      }
-      state.labels
-        .slice()
-        .sort((a, b) => a.start - b.start)
-        .forEach((lbl) => {
-          const item = document.createElement('div');
-          item.className = 'item';
-          const main = document.createElement('strong');
-          const record = lbl.scientificName ? resolveTaxonomyRecordForScientificName(lbl.scientificName) : null;
-          const localized = resolveCommonName(record, state.taxonomyLang);
-          main.textContent = localized || lbl.commonName || lbl.label || 'Label';
-          const t = document.createElement('div');
-          t.textContent = `${fmt(lbl.start)} - ${fmt(lbl.end)}`;
-          const f = document.createElement('div');
-          f.textContent = `${Math.round(lbl.freqMin)}-${Math.round(lbl.freqMax)} Hz`;
-          const sci = document.createElement('div');
-          if (lbl.scientificName) sci.textContent = lbl.scientificName;
-          item.append(main, t, f);
-          if (lbl.scientificName) item.append(sci);
-          labelsList.appendChild(item);
+      state._rowMap = new Map();
+      const sorted = state.labels.slice().sort((a, b) => a.start - b.start);
+      labelCount.textContent = String(sorted.length);
+      labelsEmpty.style.display = sorted.length ? 'none' : '';
+
+      for (const lbl of sorted) {
+        const record = lbl.scientificName ? resolveTaxonomyRecordForScientificName(lbl.scientificName) : null;
+        const localized = resolveCommonName(record, state.taxonomyLang);
+        const displayName = localized || lbl.commonName || lbl.label || 'Label';
+        const sci = lbl.scientificName || '';
+
+        const tr = document.createElement('tr');
+        tr.dataset.labelId = lbl.id;
+        state._rowMap.set(lbl.id, tr);
+
+        // Click → seek + select
+        tr.addEventListener('click', () => {
+          if (player?.currentTime != null) player.currentTime = lbl.start;
+          highlightTableRow(lbl.id);
+          player._emit?.('labelfocus', { id: lbl.id, source: 'table' });
         });
+
+        // Double-click → open label editor
+        tr.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(lbl.id);
+        });
+
+        // Hover → highlight spectrogram label
+        tr.addEventListener('pointerenter', () => {
+          highlightSpectrogramLabel(lbl.id, true);
+        });
+        tr.addEventListener('pointerleave', () => {
+          highlightSpectrogramLabel(lbl.id, false);
+        });
+
+        // Color dot
+        const tdColor = document.createElement('td');
+        if (lbl.color) {
+          const dot = document.createElement('span');
+          dot.className = 'color-dot';
+          dot.style.background = lbl.color;
+          tdColor.appendChild(dot);
+        }
+        tr.appendChild(tdColor);
+
+        // Label name
+        const tdName = document.createElement('td');
+        tdName.className = 'name-cell';
+        tdName.textContent = displayName;
+        tr.appendChild(tdName);
+
+        // Scientific name
+        const tdSci = document.createElement('td');
+        tdSci.className = 'sci-cell';
+        tdSci.textContent = sci;
+        tr.appendChild(tdSci);
+
+        // Time range
+        const tdTime = document.createElement('td');
+        tdTime.className = 'mono-cell';
+        tdTime.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
+        tr.appendChild(tdTime);
+
+        // Frequency range
+        const tdFreq = document.createElement('td');
+        tdFreq.className = 'mono-cell';
+        tdFreq.textContent = `${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
+        tr.appendChild(tdFreq);
+
+        // Confidence (optional)
+        const tdConf = document.createElement('td');
+        tdConf.className = 'mono-cell';
+        tdConf.textContent = lbl.confidence != null ? Number(lbl.confidence).toFixed(2) : '';
+        tr.appendChild(tdConf);
+
+        // Delete button
+        const tdDel = document.createElement('td');
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del-btn';
+        delBtn.textContent = '×';
+        delBtn.title = 'Remove label';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          state.labels = state.labels.filter((l) => l.id !== lbl.id);
+          syncToPlayer();
+        });
+        tdDel.appendChild(delBtn);
+        tr.appendChild(tdDel);
+
+        labelsList.appendChild(tr);
+      }
+
+      // Restore selection state
+      if (state.selectedLabelId) highlightTableRow(state.selectedLabelId);
     }
+
+    // ── Table ↔ Spectrogram linking ───────────────────────────────────
+
+    function highlightTableRow(labelId) {
+      state.selectedLabelId = labelId || null;
+      for (const row of labelsList.querySelectorAll('tr.selected')) {
+        row.classList.remove('selected');
+      }
+      if (labelId && state._rowMap) {
+        const tr = state._rowMap.get(labelId);
+        if (tr) {
+          tr.classList.add('selected');
+          tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    }
+
+    function highlightSpectrogramLabel(labelId, on) {
+      const overlay = player.spectrogramLabels?.overlay;
+      if (!overlay) return;
+      const el = overlay.querySelector(`.spectrogram-label-region[data-id="${labelId}"]`);
+      if (el) el.classList.toggle('highlighted', on);
+    }
+
+    // Listen for labelfocus from the spectrogram → highlight table row
+    player.on('labelfocus', (e) => {
+      const id = e.detail?.id || null;
+      // Highlight table row
+      for (const row of labelsList.querySelectorAll('tr.highlighted')) {
+        row.classList.remove('highlighted');
+      }
+      if (id && state._rowMap) {
+        const tr = state._rowMap.get(id);
+        if (tr) {
+          tr.classList.add('highlighted');
+          tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    });
 
     function syncToPlayer() {
       player.setSpectrogramLabels(state.labels);
       renderLabels();
-    }
-
-    function parseTaxonomyText(text) {
-      const out = [];
-      for (const line of String(text || '').split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const [shortcut, name, color] = trimmed.split('|').map((s) => String(s || '').trim());
-        if (!name) continue;
-        out.push({
-          name,
-          shortcut: /^[1-9]$/.test(shortcut) ? shortcut : '',
-          color: color || '',
-        });
-      }
-      return out;
-    }
-
-    function seedDemoLabels() {
-      state.labels = [
-        { id: 'seed1', start: 0.65, end: 1.45, freqMin: 1700, freqMax: 3800, label: 'Call A', color: '#0ea5e9' },
-        { id: 'seed2', start: 2.25, end: 3.15, freqMin: 900, freqMax: 2200, label: 'Phrase B', color: '#22c55e' },
-        { id: 'seed3', start: 4.40, end: 5.35, freqMin: 2600, freqMax: 5200, label: 'Motif C', color: '#f59e0b' },
-      ];
-      syncToPlayer();
     }
 
     function toLabelExport() {
@@ -536,135 +594,95 @@
       return p.get('lang') || p.get('LANG') || '';
     }
 
-    function resolveCommonName(record, lang) {
-      if (!record || !record.n) return '';
-      return record.n[lang] || record.n.en_uk || Object.values(record.n)[0] || '';
-    }
-
-    function normalizeScientificName(raw) {
-      const s = String(raw || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[()]/g, ' ')
-        .replace(/[^a-z\\s-]/g, ' ')
-        .replace(/\\s+/g, ' ')
-        .trim();
-      if (!s) return '';
-      const parts = s.split(' ');
-      return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
-    }
-
-    function getGenusAndEpithet(raw) {
-      const n = normalizeScientificName(raw);
-      if (!n) return { genus: '', epithet: '' };
-      const parts = n.split(' ');
-      return { genus: parts[0] || '', epithet: parts[1] || '' };
-    }
-
-    function levenshtein(a, b) {
-      const s = String(a || '');
-      const t = String(b || '');
-      if (s === t) return 0;
-      if (!s) return t.length;
-      if (!t) return s.length;
-      const m = s.length;
-      const n = t.length;
-      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-      for (let i = 0; i <= m; i += 1) dp[i][0] = i;
-      for (let j = 0; j <= n; j += 1) dp[0][j] = j;
-      for (let i = 1; i <= m; i += 1) {
-        for (let j = 1; j <= n; j += 1) {
-          const cost = s[i - 1] === t[j - 1] ? 0 : 1;
-          dp[i][j] = Math.min(
-            dp[i - 1][j] + 1,
-            dp[i][j - 1] + 1,
-            dp[i - 1][j - 1] + cost,
-          );
-        }
-      }
-      return dp[m][n];
-    }
-
     function resolveTaxonomyRecordForScientificName(scientificName) {
-      const raw = String(scientificName || '').trim();
-      if (!raw) return null;
+      return taxonomy.resolve(scientificName);
+    }
 
-      if (state.taxonomyResolveCache.has(raw)) {
-        return state.taxonomyResolveCache.get(raw);
+    function resolveCommonName(record, lang) {
+      return taxonomy.resolveCommonName(record, lang);
+    }
+
+    function getTrackLabelSuggestions(query, limit = 14) {
+      const q = String(query || '').trim().toLowerCase();
+      const dedupe = new Map();
+
+      // Default entries always available
+      dedupe.set('name:noise', { name: 'Noise', scientificName: '' });
+
+      for (const item of state.xcLabelPool) {
+        const name = String(item?.name || '').trim();
+        const sci = String(item?.scientificName || '').trim();
+        if (!name) continue;
+        const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
+        if (!dedupe.has(key)) {
+          dedupe.set(key, { name, scientificName: sci });
+        }
       }
-
-      let rec = state.taxonomyByScientific.get(raw) || null;
-      if (!rec) {
-        const norm = normalizeScientificName(raw);
-        if (norm) rec = state.taxonomyByScientificNorm.get(norm) || null;
+      for (const lbl of state.labels) {
+        const sci = String(lbl?.scientificName || '').trim();
+        const record = sci ? resolveTaxonomyRecordForScientificName(sci) : null;
+        const localized = resolveCommonName(record, state.taxonomyLang);
+        const name = String(localized || lbl?.commonName || lbl?.label || sci).trim();
+        if (!name) continue;
+        const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
+        if (!dedupe.has(key)) {
+          dedupe.set(key, {
+            name,
+            scientificName: sci,
+          });
+        }
       }
-
-      if (!rec) {
-        const { genus, epithet } = getGenusAndEpithet(raw);
-        const genusCandidates = state.taxonomyByGenus.get(genus) || [];
-        if (epithet && genusCandidates.length) {
-          let best = null;
-          let bestDist = Number.POSITIVE_INFINITY;
-          for (const c of genusCandidates) {
-            const { epithet: candidateEpithet } = getGenusAndEpithet(c?.s || '');
-            if (!candidateEpithet) continue;
-            const d = levenshtein(epithet, candidateEpithet);
-            if (d < bestDist) {
-              bestDist = d;
-              best = c;
-            }
+      // Search full BirdNET taxonomy when the user is typing a query
+      if (q && taxonomy.data) {
+        for (const rec of taxonomy.records) {
+          const common = resolveCommonName(rec, state.taxonomyLang);
+          const hay = `${common} ${rec.s}`.toLowerCase();
+          if (!hay.includes(q)) continue;
+          const key = `sci:${rec.s}`;
+          if (!dedupe.has(key)) {
+            dedupe.set(key, { name: common || rec.s, scientificName: rec.s });
           }
-          const threshold = Math.max(1, Math.floor(epithet.length * 0.34));
-          if (best && bestDist <= threshold) rec = best;
+          if (dedupe.size >= limit * 3) break;
         }
       }
 
-      state.taxonomyResolveCache.set(raw, rec || null);
-      return rec || null;
+      const out = [];
+      for (const item of dedupe.values()) {
+        if (q) {
+          const hay = `${item.name} ${item.scientificName || ''}`.toLowerCase();
+          if (!hay.includes(q)) continue;
+        }
+        out.push(item);
+      }
+      out.sort((a, b) => a.name.localeCompare(b.name));
+      return out.slice(0, Math.max(1, limit));
     }
 
-    function resetSpeciesChoice() {
-      state.speciesChoice = null;
-      delete labelNameInput.dataset.scientificName;
-    }
+    function rebuildXcLabelPoolFromImport(result) {
+      const pool = new Map();
+      const add = (name, scientificName = '') => {
+        const n = String(name || '').trim();
+        const s = String(scientificName || '').trim();
+        if (!n) return;
+        const key = s ? `sci:${s}` : `name:${n.toLowerCase()}`;
+        if (!pool.has(key)) pool.set(key, { name: n, scientificName: s });
+      };
 
-    function renderSpeciesSuggestions(query) {
-      speciesSuggestions.innerHTML = '';
-      const q = String(query || '').trim().toLowerCase();
-      if (!state.taxonomy || !q) {
-        speciesSuggestions.classList.remove('show');
-        return;
+      const recording = result?.recording || {};
+      const recSci = String(recording?.gen && recording?.sp ? `${recording.gen} ${recording.sp}` : '').trim();
+      add(recording?.en, recSci);
+      add(recSci, recSci);
+      add(recording?.type, recSci);
+
+      for (const raw of (result?.rawLabels || [])) {
+        const sci = String(raw?.scientific_name || raw?.scientificName || recSci).trim();
+        add(raw?.sound_type || raw?.soundType, sci);
+        add(raw?.annotation_remarks || raw?.comment || raw?.description, sci);
+        add(raw?.label || raw?.name || raw?.value, sci);
+        if (sci) add(sci, sci);
       }
 
-      const matches = [];
-      for (const rec of state.taxonomy.records) {
-        const common = resolveCommonName(rec, state.taxonomyLang);
-        const hay = `${common} ${rec.s}`.toLowerCase();
-        if (!hay.includes(q)) continue;
-        matches.push({ rec, common });
-        if (matches.length >= 24) break;
-      }
-
-      if (!matches.length) {
-        speciesSuggestions.classList.remove('show');
-        return;
-      }
-
-      for (const m of matches) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'suggestion-item';
-        btn.innerHTML = `${m.common || m.rec.s}<span class="suggestion-sub">${m.rec.s}</span>`;
-        btn.addEventListener('click', () => {
-          const label = m.common || m.rec.s;
-          state.speciesChoice = { scientificName: m.rec.s, label };
-          labelNameInput.value = label;
-          labelNameInput.dataset.scientificName = m.rec.s;
-          speciesSuggestions.classList.remove('show');
-        });
-        speciesSuggestions.appendChild(btn);
-      }
-      speciesSuggestions.classList.add('show');
+      state.xcLabelPool = Array.from(pool.values());
     }
 
     async function loadBirdnetTaxonomy() {
@@ -673,25 +691,8 @@
         const res = await fetch('./data/birdnet-taxonomy.v2.4.json');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!Array.isArray(data?.records) || !Array.isArray(data?.languages)) {
-          throw new Error('Invalid taxonomy format.');
-        }
-        state.taxonomy = data;
-        state.taxonomyByScientific = new Map((data.records || []).map((r) => [r.s, r]));
-        state.taxonomyByScientificNorm = new Map();
-        state.taxonomyByGenus = new Map();
-        state.taxonomyResolveCache = new Map();
-        for (const rec of (data.records || [])) {
-          const norm = normalizeScientificName(rec?.s || '');
-          if (norm && !state.taxonomyByScientificNorm.has(norm)) {
-            state.taxonomyByScientificNorm.set(norm, rec);
-          }
-          const { genus } = getGenusAndEpithet(rec?.s || '');
-          if (!genus) continue;
-          if (!state.taxonomyByGenus.has(genus)) state.taxonomyByGenus.set(genus, []);
-          state.taxonomyByGenus.get(genus).push(rec);
-        }
-        const langs = data.languages.slice().sort((a, b) => a.localeCompare(b));
+        taxonomy.load(data);
+        const langs = taxonomy.languages.slice().sort((a, b) => a.localeCompare(b));
         taxonomyLangSelect.innerHTML = '';
         for (const lang of langs) {
           const opt = document.createElement('option');
@@ -702,14 +703,10 @@
         const langParam = getLangParam();
         state.taxonomyLang = langs.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
         taxonomyLangSelect.value = state.taxonomyLang;
-        taxonomyMeta.textContent = `BirdNET ${data.modelVersion} · ${data.speciesCount} species · lang=${state.taxonomyLang}`;
+        taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
         renderLabels();
       } catch (err) {
-        state.taxonomy = null;
-        state.taxonomyByScientific = new Map();
-        state.taxonomyByScientificNorm = new Map();
-        state.taxonomyByGenus = new Map();
-        state.taxonomyResolveCache = new Map();
+        taxonomy.clear();
         taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
       }
     }
@@ -738,6 +735,7 @@
         sampleRate: state.sampleRate,
         ...getXcRequestAuthOptions(),
       });
+      rebuildXcLabelPoolFromImport(result);
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
       state.labels = result.labels;
       syncToPlayer();
@@ -804,12 +802,14 @@
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      state.xcLabelPool = [];
       await player.loadFile(file);
       fileLabel.textContent = file.name;
       fileInput.value = '';
     });
 
     loadSampleBtn.addEventListener('click', async () => {
+      state.xcLabelPool = [];
       await player.loadUrl('./samples/birdsong.wav');
       fileLabel.textContent = 'birdsong.wav';
     });
@@ -822,46 +822,16 @@
       const start = Number(e.detail?.start ?? 0);
       const end = Number(e.detail?.end ?? start);
       state.selected = { start, end };
-      selectionMeta.textContent = `Selected: ${fmt(start)} - ${fmt(end)}`;
-      addLabelBtn.disabled = !(end > start);
-    });
-
-    addLabelBtn.addEventListener('click', () => {
-      if (!state.selected || !(state.selected.end > state.selected.start)) return;
-      const nyquist = Math.max(1000, Math.floor(state.sampleRate / 2));
-      const label = labelNameInput.value.trim() || 'Label';
-      const scientificName = String(labelNameInput.dataset.scientificName || '').trim();
-      const id = 'lbl_' + Math.random().toString(36).slice(2, 9);
-      const item = {
-        id,
-        start: state.selected.start,
-        end: state.selected.end,
-        freqMin: 0,
-        freqMax: nyquist,
-        label,
-        scientificName,
-      };
-      state.labels.push(item);
-      syncToPlayer();
-      labelNameInput.value = '';
-      resetSpeciesChoice();
+      if (end > start) selectionMeta.textContent = `${fmt(start)} – ${fmt(end)}`;
     });
 
     clearAllBtn.addEventListener('click', () => {
       state.labels = [];
       state.selected = null;
-      selectionMeta.textContent = 'No active selection';
-      addLabelBtn.disabled = true;
+      selectionMeta.textContent = '';
       player.clearSpectrogramLabels();
       renderLabels();
     });
-
-    applyTaxonomyBtn.addEventListener('click', () => {
-      const taxonomy = parseTaxonomyText(taxonomyInput.value);
-      player.setLabelTaxonomy(taxonomy);
-    });
-
-    seedLabelsBtn.addEventListener('click', seedDemoLabels);
 
     exportJsonBtn.addEventListener('click', () => {
       const data = JSON.stringify(toLabelExport(), null, 2);
@@ -888,23 +858,16 @@
       }
     });
 
-    player.on('spectrogramlabelcreate', (e) => {
-      const label = e.detail?.label;
+    function upsertLabel(label) {
       if (!label?.id) return;
       const idx = state.labels.findIndex((l) => l.id === label.id);
       if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
       else state.labels.push({ ...label });
       renderLabels();
-    });
+    }
 
-    player.on('spectrogramlabelupdate', (e) => {
-      const label = e.detail?.label;
-      if (!label?.id) return;
-      const idx = state.labels.findIndex((l) => l.id === label.id);
-      if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
-      else state.labels.push({ ...label });
-      renderLabels();
-    });
+    player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
+    player.on('spectrogramlabelupdate', (e) => upsertLabel(e.detail?.label));
 
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;
@@ -915,21 +878,10 @@
 
     taxonomyLangSelect.addEventListener('change', () => {
       state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
-      if (state.taxonomy) {
-        taxonomyMeta.textContent = `BirdNET ${state.taxonomy.modelVersion} · ${state.taxonomy.speciesCount} species · lang=${state.taxonomyLang}`;
+      if (taxonomy.data) {
+        taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
       }
       renderLabels();
-      renderSpeciesSuggestions(labelNameInput.value);
-    });
-
-    labelNameInput.addEventListener('input', () => {
-      resetSpeciesChoice();
-      renderSpeciesSuggestions(labelNameInput.value);
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target === labelNameInput || speciesSuggestions.contains(e.target)) return;
-      speciesSuggestions.classList.remove('show');
     });
 
     window.addEventListener('beforeunload', () => {
@@ -937,7 +889,128 @@
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
         state.activeObjectUrl = null;
       }
+      birdnet.dispose();
     });
+
+    // ── BirdNET Inference ──────────────────────────────────────────────
+
+    const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v1';
+    const BIRDNET_DETECTION_COLOR = '#f59e0b'; // amber
+
+    try {
+      birdnetModelUrlInput.value = String(localStorage.getItem(BIRDNET_MODEL_URL_STORAGE) || '');
+    } catch {}
+
+    birdnetConfidenceInput.addEventListener('input', () => {
+      birdnetConfidenceVal.textContent = birdnetConfidenceInput.value;
+    });
+
+    function openBirdnetModal() {
+      birdnetStatus.textContent = '';
+      birdnetProgressWrap.style.display = 'none';
+      birdnetProgressBar.style.width = '0%';
+      birdnetAnalyzeBtn.disabled = false;
+      birdnetModalBackdrop.classList.add('show');
+      birdnetModalBackdrop.setAttribute('aria-hidden', 'false');
+      setTimeout(() => { birdnetModelUrlInput.focus(); }, 0);
+    }
+
+    function closeBirdnetModal() {
+      birdnetModalBackdrop.classList.remove('show');
+      birdnetModalBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    birdnetBtn.addEventListener('click', () => openBirdnetModal());
+    birdnetCancelBtn.addEventListener('click', () => closeBirdnetModal());
+    birdnetModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === birdnetModalBackdrop) closeBirdnetModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && birdnetModalBackdrop.classList.contains('show')) closeBirdnetModal();
+    });
+
+    birdnetAnalyzeBtn.addEventListener('click', async () => {
+      const audioBuffer = player._state?.audioBuffer;
+      if (!audioBuffer) {
+        birdnetStatus.textContent = 'No audio loaded.';
+        return;
+      }
+
+      const modelUrl = String(birdnetModelUrlInput.value || '').trim();
+      if (!modelUrl) {
+        birdnetStatus.textContent = 'Please enter a model URL.';
+        return;
+      }
+
+      try { localStorage.setItem(BIRDNET_MODEL_URL_STORAGE, modelUrl); } catch {}
+
+      const confidence = parseFloat(birdnetConfidenceInput.value) || 0.25;
+      const overlap = parseFloat(birdnetOverlapSelect.value) || 0;
+
+      birdnetAnalyzeBtn.disabled = true;
+      birdnetProgressWrap.style.display = '';
+      birdnetProgressBar.style.width = '0%';
+
+      try {
+        // Load model if not already loaded (or URL changed)
+        if (!birdnet.loaded) {
+          birdnetStatus.textContent = 'Loading TF.js + model…';
+          await birdnet.load({
+            modelUrl,
+            onProgress: (msg, pct) => {
+              birdnetStatus.textContent = msg;
+              birdnetProgressBar.style.width = pct + '%';
+            },
+          });
+        }
+
+        birdnetStatus.textContent = 'Analyzing…';
+        birdnetProgressBar.style.width = '0%';
+
+        const channelData = audioBuffer.getChannelData(0);
+        const detections = await birdnet.analyze(channelData, {
+          sampleRate: audioBuffer.sampleRate,
+          overlap,
+          minConfidence: confidence,
+          onProgress: (pct) => {
+            birdnetProgressBar.style.width = pct + '%';
+          },
+        });
+
+        // Resolve common names via loaded taxonomy + selected language
+        for (const det of detections) {
+          const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
+          const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : null;
+          const displayName = localized || det.common || det.scientific;
+
+          state.labels.push({
+            id: `bn_${Math.random().toString(36).slice(2, 10)}`,
+            label: displayName,
+            scientificName: det.scientific,
+            commonName: det.common,
+            start: det.start,
+            end: det.end,
+            freqMin: 0,
+            freqMax: 15000,
+            color: BIRDNET_DETECTION_COLOR,
+            confidence: det.confidence,
+          });
+        }
+
+        syncToPlayer();
+        birdnetStatus.textContent = `Done — ${detections.length} detection${detections.length === 1 ? '' : 's'} added.`;
+      } catch (err) {
+        birdnetStatus.textContent = `Error: ${err?.message || String(err)}`;
+        birdnet.dispose(); // allow retry with fresh worker
+      } finally {
+        birdnetAnalyzeBtn.disabled = false;
+      }
+    });
+
+    // Keep shift+drag suggestions track-local by default.
+    player.setLabelTaxonomy([]);
+    player.setLabelEditorSuggestionMode('custom-only');
+    player.setLabelSuggestionProvider((query, limit) => getTrackLabelSuggestions(query, limit));
 
     renderLabels();
     await loadBirdnetTaxonomy();
