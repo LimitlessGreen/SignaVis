@@ -633,6 +633,7 @@
     }
 
     function resolveCommonName(record, lang) {
+      if (lang === 'scientific') return record?.s || '';
       return taxonomy.resolveCommonName(record, lang);
     }
 
@@ -789,6 +790,10 @@
         taxonomy.load(data);
         const langs = taxonomy.languages.slice().sort((a, b) => a.localeCompare(b));
         taxonomyLangSelect.innerHTML = '';
+        const sciOpt = document.createElement('option');
+        sciOpt.value = 'scientific';
+        sciOpt.textContent = '🔬 Scientific';
+        taxonomyLangSelect.appendChild(sciOpt);
         for (const lang of langs) {
           const opt = document.createElement('option');
           opt.value = lang;
@@ -796,7 +801,8 @@
           taxonomyLangSelect.appendChild(opt);
         }
         const langParam = getLangParam();
-        state.taxonomyLang = langs.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
+        const allOpts = ['scientific', ...langs];
+        state.taxonomyLang = allOpts.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
         taxonomyLangSelect.value = state.taxonomyLang;
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
         renderLabels();
@@ -979,9 +985,13 @@
       // Re-resolve label display names for the new language
       for (const lbl of state.labels) {
         if (!lbl.scientificName) continue;
-        const record = resolveTaxonomyRecordForScientificName(lbl.scientificName);
-        const localized = resolveCommonName(record, state.taxonomyLang);
-        if (localized) lbl.label = localized;
+        if (state.taxonomyLang === 'scientific') {
+          lbl.label = lbl.scientificName;
+        } else {
+          const record = resolveTaxonomyRecordForScientificName(lbl.scientificName);
+          const localized = resolveCommonName(record, state.taxonomyLang);
+          if (localized) lbl.label = localized;
+        }
       }
       syncToPlayer();
     });
@@ -1120,7 +1130,7 @@
         const newLabels = [];
         for (const det of detections) {
           const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
-          const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : null;
+          const localized = record ? resolveCommonName(record, state.taxonomyLang) : null;
           const displayName = localized || det.common || det.scientific;
 
           newLabels.push({
