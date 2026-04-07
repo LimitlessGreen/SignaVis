@@ -673,6 +673,7 @@ export class BirdNETPlayer {
             species: l.species || l.label || '',
             confidence: l.confidence,
             color: l.color,
+            scientificName: l.scientificName || '',
         }));
     }
 
@@ -685,6 +686,7 @@ export class BirdNETPlayer {
             freqMax: l.freqMax,
             label: l.label || l.species || '',
             color: l.color,
+            scientificName: l.scientificName || '',
         }));
     }
 
@@ -715,6 +717,7 @@ export class BirdNETPlayer {
             label: label?.label || label?.species || '',
             confidence: label?.confidence,
             color: label?.color || tax?.color || '',
+            scientificName: label?.scientificName || '',
         };
     }
 }
