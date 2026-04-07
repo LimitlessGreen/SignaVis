@@ -285,10 +285,12 @@ export class BirdNETPlayer {
                     if (!name) return null;
                     const color = String(item?.color || '').trim();
                     const scientificName = String(item?.scientificName || '').trim();
+                    const detail = String(item?.detail || '').trim();
                     return {
                         name,
                         color: color || '',
                         scientificName: scientificName || '',
+                        detail: detail || '',
                     };
                 })
                 .filter(Boolean);

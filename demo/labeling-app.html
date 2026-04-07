@@ -632,6 +632,42 @@
       return taxonomy.resolveCommonName(record, lang);
     }
 
+    /** Map BirdNET language codes to Unicode flag emoji. */
+    const LANG_FLAGS = {
+      af: '\u{1F1FF}\u{1F1E6}', ar: '\u{1F1F8}\u{1F1E6}', bg: '\u{1F1E7}\u{1F1EC}',
+      ca: '\u{1F3F4}\u{E0065}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', cs: '\u{1F1E8}\u{1F1FF}',
+      da: '\u{1F1E9}\u{1F1F0}', de: '\u{1F1E9}\u{1F1EA}', el: '\u{1F1EC}\u{1F1F7}',
+      en_uk: '\u{1F1EC}\u{1F1E7}', es: '\u{1F1EA}\u{1F1F8}', fi: '\u{1F1EB}\u{1F1EE}',
+      fr: '\u{1F1EB}\u{1F1F7}', he: '\u{1F1EE}\u{1F1F1}', hr: '\u{1F1ED}\u{1F1F7}',
+      hu: '\u{1F1ED}\u{1F1FA}', in: '\u{1F1EE}\u{1F1E9}', is: '\u{1F1EE}\u{1F1F8}',
+      it: '\u{1F1EE}\u{1F1F9}', ja: '\u{1F1EF}\u{1F1F5}', ko: '\u{1F1F0}\u{1F1F7}',
+      lt: '\u{1F1F1}\u{1F1F9}', ml: '\u{1F1EE}\u{1F1F3}', nl: '\u{1F1F3}\u{1F1F1}',
+      no: '\u{1F1F3}\u{1F1F4}', pl: '\u{1F1F5}\u{1F1F1}', pt_BR: '\u{1F1E7}\u{1F1F7}',
+      pt_PT: '\u{1F1F5}\u{1F1F9}', ro: '\u{1F1F7}\u{1F1F4}', ru: '\u{1F1F7}\u{1F1FA}',
+      sk: '\u{1F1F8}\u{1F1F0}', sl: '\u{1F1F8}\u{1F1EE}', sr: '\u{1F1F7}\u{1F1F8}',
+      sv: '\u{1F1F8}\u{1F1EA}', th: '\u{1F1F9}\u{1F1ED}', tr: '\u{1F1F9}\u{1F1F7}',
+      uk: '\u{1F1FA}\u{1F1E6}', zh: '\u{1F1E8}\u{1F1F3}',
+    };
+
+    /**
+     * Build a detail string with flags of languages that matched the query.
+     * Returns e.g. "🇩🇪 Kohlmeise · 🇫🇷 Mésange charbonnière" for a hit on both.
+     * The display-language match is excluded (it's already the main name).
+     */
+    function buildMatchDetail(record, query, displayLang) {
+      if (!query || !record?.n) return '';
+      const q = query.toLowerCase();
+      const parts = [];
+      for (const [lang, name] of Object.entries(record.n)) {
+        if (lang === displayLang) continue;
+        if (!name.toLowerCase().includes(q)) continue;
+        const flag = LANG_FLAGS[lang] || lang;
+        parts.push(`${flag}\u00a0${name}`);
+        if (parts.length >= 3) break; // keep it compact
+      }
+      return parts.join(' \u00b7 ');
+    }
+
     function getTrackLabelSuggestions(query, limit = 14) {
       const q = String(query || '').trim().toLowerCase();
       const dedupe = new Map();
@@ -662,15 +698,21 @@
           });
         }
       }
-      // Search full BirdNET taxonomy when the user is typing a query
+      // Search full BirdNET taxonomy across ALL languages
       if (q && taxonomy.data) {
         for (const rec of taxonomy.records) {
-          const common = resolveCommonName(rec, state.taxonomyLang);
-          const hay = `${common} ${rec.s}`.toLowerCase();
+          // Build search hay from all common names + scientific name
+          const allNames = rec.n ? Object.values(rec.n) : [];
+          const hay = `${allNames.join(' ')} ${rec.s}`.toLowerCase();
           if (!hay.includes(q)) continue;
           const key = `sci:${rec.s}`;
+          const displayName = resolveCommonName(rec, state.taxonomyLang);
           if (!dedupe.has(key)) {
-            dedupe.set(key, { name: common || rec.s, scientificName: rec.s });
+            dedupe.set(key, {
+              name: displayName || rec.s,
+              scientificName: rec.s,
+              detail: buildMatchDetail(rec, q, state.taxonomyLang),
+            });
           }
           if (dedupe.size >= limit * 3) break;
         }
@@ -679,8 +721,16 @@
       const out = [];
       for (const item of dedupe.values()) {
         if (q) {
-          const hay = `${item.name} ${item.scientificName || ''}`.toLowerCase();
-          if (!hay.includes(q)) continue;
+          // For taxonomy entries (with scientificName), the taxonomy search already filtered,
+          // but xcLabelPool/existing labels need re-filtering against the query.
+          if (!item.scientificName) {
+            const hay = `${item.name}`.toLowerCase();
+            if (!hay.includes(q)) continue;
+          } else {
+            // Also match display name + scientific name for pool/existing entries
+            const hay = `${item.name} ${item.scientificName}`.toLowerCase();
+            if (!hay.includes(q)) continue;
+          }
         }
         out.push(item);
       }

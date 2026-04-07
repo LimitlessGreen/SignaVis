@@ -185,7 +185,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         resultItems = [];
         activeIndex = -1;
 
-        const addResult = ({ name, scientificName = '', color = '' }) => {
+        const addResult = ({ name, scientificName = '', color = '', detail = '' }) => {
             const label = String(name || '').trim();
             if (!label) return;
             const key = label.toLowerCase();
@@ -214,6 +214,13 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
                 sub.className = 'label-search-sci';
                 sub.textContent = scientificName;
                 row.appendChild(sub);
+            }
+
+            if (detail) {
+                const detailSpan = document.createElement('span');
+                detailSpan.className = 'label-search-detail';
+                detailSpan.textContent = detail;
+                row.appendChild(detailSpan);
             }
 
             row.addEventListener('click', () => {
@@ -246,6 +253,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
                 name: item?.name,
                 scientificName: item?.scientificName || '',
                 color: item?.color || '',
+                detail: item?.detail || '',
             });
         }
 
