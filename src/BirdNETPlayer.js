@@ -410,11 +410,27 @@ export class BirdNETPlayer {
 
     _bindGlobalHotkeys() {
         this._globalKeyHandler = (event) => {
-            if (!this._activeLabelId) return;
             const tag = event?.target?.tagName?.toLowerCase?.() || '';
             const typing = tag === 'input' || tag === 'textarea' || event?.target?.isContentEditable;
             if (typing) return;
             const key = String(event.key || '');
+            const ctrl = event.ctrlKey || event.metaKey;
+
+            // Ctrl+C — copy focused label
+            if (ctrl && key === 'c' && this._activeLabelId) {
+                event.preventDefault();
+                this.spectrogramLabels?.copyLabel(this._activeLabelId);
+                return;
+            }
+            // Ctrl+V — paste at current playhead position
+            if (ctrl && key === 'v') {
+                event.preventDefault();
+                const pasted = this.spectrogramLabels?.pasteLabel();
+                if (pasted) this._emit?.('spectrogramlabelcreate', { label: { ...pasted } });
+                return;
+            }
+
+            if (!this._activeLabelId) return;
             if (key === 'Delete' || key === 'Backspace' || key === 'x') {
                 event.preventDefault();
                 const id = this._activeLabelId;

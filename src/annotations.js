@@ -803,6 +803,8 @@ export class SpectrogramLabelLayer {
         this._editing = null;
         this._counter = 1;
         this._suppressClickUntil = 0;
+        this._focusedLabelId = null;
+        this._clipboard = null;
     }
 
     attach(player) {
@@ -820,6 +822,9 @@ export class SpectrogramLabelLayer {
         this._unsubs.push(this.player.on('viewresize', () => this.render()));
         this._unsubs.push(this.player.on('spectrogramscalechange', () => this.render()));
         this._unsubs.push(this.player.on('timeupdate', (e) => this.highlightActiveLabel(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('labelfocus', (e) => {
+            this._focusedLabelId = e?.detail?.id || null;
+        }));
         this._bindDrawingInteractions(root);
         this.render();
     }
@@ -866,6 +871,43 @@ export class SpectrogramLabelLayer {
 
     setLiveLinkedId(id = null) {
         this._liveLinkedId = id || null;
+    }
+
+    copyLabel(id) {
+        const label = this.labels.find((l) => l.id === id);
+        if (!label) return;
+        this._clipboard = { ...label };
+    }
+
+    pasteLabel(atTime = null) {
+        if (!this._clipboard) return null;
+        const src = this._clipboard;
+        const duration = src.end - src.start;
+        const t = atTime ?? (this.player?.currentTime ?? src.start);
+        const region = this._normalize({
+            start: t,
+            end: t + duration,
+            freqMin: src.freqMin,
+            freqMax: src.freqMax,
+            label: src.label,
+            color: src.color,
+            scientificName: src.scientificName,
+            commonName: src.commonName,
+            origin: src.origin,
+            author: src.author,
+            tags: src.tags ? { ...src.tags } : {},
+        });
+        this.add(region);
+        return region;
+    }
+
+    /** Returns the focused label, falling back to the most recently added label. */
+    _getReferenceLabelForDefaults() {
+        if (this._focusedLabelId) {
+            const focused = this.labels.find((l) => l.id === this._focusedLabelId);
+            if (focused) return focused;
+        }
+        return this.labels.length ? this.labels[this.labels.length - 1] : null;
     }
 
     highlightActiveLabel(currentTime) {
@@ -1201,10 +1243,13 @@ export class SpectrogramLabelLayer {
             seen.add(key);
             existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: l.tags || {} });
         }
+        // Pre-fill from focused/last label
+        const ref = this._getReferenceLabelForDefaults();
         openLabelNameEditor({
             player: this.player,
-            initialValue: '',
-            initialColor: null,
+            initialValue: ref?.label || '',
+            initialColor: ref?.color || null,
+            initialTags: ref?.tags || null,
             existingLabels,
             title: 'New Label',
             onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
