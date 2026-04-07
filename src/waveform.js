@@ -200,15 +200,7 @@ export function renderFrequencyLabels({ labelsElement, coords }) {
         const yFrac = coords.frequencyToYFraction(freq);
         span.style.position = 'absolute';
         span.style.top = `${yFrac * 100}%`;
-        // Prevent clipping: align top labels downward, bottom labels upward
-        if (yFrac < 0.08) {
-            span.style.transform = 'translateY(1px)';
-        } else if (yFrac > 0.92) {
-            span.style.transform = 'translateY(-100%)';
-            span.style.top = `calc(${yFrac * 100}% - 1px)`;
-        } else {
-            span.style.transform = 'translateY(-50%)';
-        }
+        span.style.transform = 'translateY(-50%)';
         labelsElement.appendChild(span);
     });
 }

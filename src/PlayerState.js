@@ -1737,26 +1737,13 @@ export class PlayerState {
 
         // Generate 5 evenly-spaced labels: +peak, +half, 0, -half, -peak
         const values = [peak, peak / 2, 0, -peak / 2, -peak];
-        const positions = values.map((v, i) => {
-            const frac = i / (values.length - 1);
-            // Clamp top/bottom to prevent clipping
-            if (i === 0) return 1;
-            if (i === values.length - 1) return Math.max(1, ampH - 1);
-            return frac * ampH;
-        });
 
         values.forEach((value, i) => {
+            const frac = i / (values.length - 1);
             const span = document.createElement('span');
             span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
-            span.style.top = `${positions[i]}px`;
-            // Prevent clipping at edges
-            if (i === 0) {
-                span.style.transform = 'translateY(0)';
-            } else if (i === values.length - 1) {
-                span.style.transform = 'translateY(-100%)';
-            } else {
-                span.style.transform = 'translateY(-50%)';
-            }
+            span.style.top = `${frac * ampH}px`;
+            span.style.transform = 'translateY(-50%)';
             el.appendChild(span);
         });
     }
