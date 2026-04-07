@@ -63,6 +63,11 @@
     display: none;
 }
 
+.daw-shell.view-mode-waveform .waveform-container {
+    flex: 1;
+    min-height: var(--waveform-height);
+}
+
 .daw-shell.view-mode-spectrogram .waveform-container,
 .daw-shell.view-mode-spectrogram .view-split-handle {
     display: none;
@@ -635,7 +640,8 @@
     position: relative;
     background: var(--color-bg-secondary);
     overflow: hidden;
-    height: var(--spectrogram-height);
+    flex: 1;
+    min-height: var(--spectrogram-height);
     border-top: 1px solid var(--color-border);
 }
 
@@ -1627,6 +1633,11 @@
     background: rgba(56, 189, 248, 0.22);
 }
 
+.label-search-item.selected {
+    background: rgba(56, 189, 248, 0.18);
+    box-shadow: inset 2px 0 0 rgba(56, 189, 248, 0.8);
+}
+
 .label-search-dot {
     width: 8px;
     height: 8px;
@@ -1689,18 +1700,21 @@
 
 .label-search-confirm {
     margin-left: auto;
-    border: 1px solid rgba(57, 181, 255, 0.5);
-    background: transparent;
+    border: 1px solid rgba(57, 181, 255, 0.6);
+    background: rgba(57, 181, 255, 0.15);
     color: #7dd3fc;
-    border-radius: 4px;
-    font-size: 10px;
-    padding: 2px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 14px;
     cursor: pointer;
+    letter-spacing: 0.02em;
 }
 
 .label-search-confirm:hover {
-    background: rgba(57, 181, 255, 0.2);
-    border-color: rgba(57, 181, 255, 0.8);
+    background: rgba(57, 181, 255, 0.3);
+    border-color: rgba(57, 181, 255, 0.9);
+    color: #bae6fd;
 }
 
 /* ── Tag editor row ── */

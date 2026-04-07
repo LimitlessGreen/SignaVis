@@ -2096,36 +2096,40 @@ export class PlayerState {
     _applyLocalViewHeights() {
         const overlaySingleWaveform = this._transportOverlay && this._showWaveform && !this._showSpectrogram;
         const overlaySingleSpectrogram = this._transportOverlay && this._showSpectrogram && !this._showWaveform;
+        const waveformFlexes = this._showWaveform && !this._showSpectrogram;
 
         if (this._showWaveform) {
-            if (overlaySingleWaveform) {
-                this.d.waveformContainer.style.height = 'auto';
+            if (overlaySingleWaveform || waveformFlexes) {
+                this.d.waveformContainer.style.height = '';
+                this.d.waveformContainer.style.minHeight = waveformFlexes
+                    ? `${Math.round(this.waveformDisplayHeight)}px` : '0';
             } else {
-            this.d.waveformContainer.style.height = `${Math.round(this.waveformDisplayHeight)}px`;
+                this.d.waveformContainer.style.minHeight = '';
+                this.d.waveformContainer.style.height = `${Math.round(this.waveformDisplayHeight)}px`;
             }
         }
         if (this._showSpectrogram) {
             if (overlaySingleSpectrogram) {
-                this.d.spectrogramContainer.style.height = 'auto';
+                this.d.spectrogramContainer.style.height = '';
+                this.d.spectrogramContainer.style.minHeight = '0';
             } else {
-            this.d.spectrogramContainer.style.height = `${Math.round(this.spectrogramDisplayHeight)}px`;
+                this.d.spectrogramContainer.style.height = '';
+                this.d.spectrogramContainer.style.minHeight = `${Math.round(this.spectrogramDisplayHeight)}px`;
             }
         }
     }
 
     _getEffectiveWaveformHeight() {
-        if (this._transportOverlay && this._showWaveform && !this._showSpectrogram) {
-            const h = this.d.waveformContainer?.clientHeight || 0;
-            return Math.max(MIN_WAVEFORM_HEIGHT, Math.floor(h || this.waveformDisplayHeight));
+        if (this._showWaveform && !this._showSpectrogram) {
+            const h = this.d.waveformContainer?.clientHeight;
+            if (h > 0) return Math.max(MIN_WAVEFORM_HEIGHT, h);
         }
         return Math.max(MIN_WAVEFORM_HEIGHT, Math.floor(this.waveformDisplayHeight));
     }
 
     _getEffectiveSpectrogramHeight() {
-        if (this._transportOverlay && this._showSpectrogram && !this._showWaveform) {
-            const h = this.d.spectrogramContainer?.clientHeight || 0;
-            return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(h || this.spectrogramDisplayHeight));
-        }
+        const h = this.d.spectrogramContainer?.clientHeight;
+        if (h > 0) return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, h);
         return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
     }
 

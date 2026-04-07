@@ -380,6 +380,11 @@ export class BirdNETPlayer {
         return this._state?.getPlaybackViewportConfig?.() || null;
     }
 
+    /** Notify the player that its container was resized externally. */
+    resize() {
+        this._state?._requestSpectrogramRedraw();
+    }
+
     /** Tear down the player and free resources */
     destroy() {
         if (this._globalKeyHandler) {

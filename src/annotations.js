@@ -67,6 +67,69 @@ function getOverlayColorStyle(color) {
 }
 
 /**
+ * Generate a perceptually distinct color using golden-angle hue rotation.
+ * Avoids hues already used by existing labels (min distance in hue space).
+ * @param {Array<{color?:string}>} existingLabels
+ * @returns {string} hex color
+ */
+function _autoAssignColor(existingLabels) {
+    // Extract existing hues
+    const usedHues = [];
+    for (const lbl of existingLabels) {
+        const rgb = _parseColorToRgb(lbl.color);
+        if (!rgb) continue;
+        const r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        if (max === min) continue; // achromatic
+        let h;
+        const d = max - min;
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        else if (max === g) h = ((b - r) / d + 2) / 6;
+        else h = ((r - g) / d + 4) / 6;
+        usedHues.push(h * 360);
+    }
+
+    // Golden-angle rotation: try N candidates, pick the one farthest from existing hues
+    const GOLDEN_ANGLE = 137.508;
+    const S = 65, L = 58; // vivid but readable on dark bg
+    const n = existingLabels.length;
+
+    if (usedHues.length === 0) {
+        // First label — start with a pleasant blue-cyan
+        const h = (n * GOLDEN_ANGLE) % 360;
+        return _hslToHex(h, S, L);
+    }
+
+    let bestHue = 0, bestDist = -1;
+    for (let i = 0; i < 32; i++) {
+        const candidateHue = ((n + i) * GOLDEN_ANGLE) % 360;
+        let minDist = 360;
+        for (const used of usedHues) {
+            const diff = Math.abs(candidateHue - used);
+            minDist = Math.min(minDist, diff, 360 - diff);
+        }
+        if (minDist > bestDist) {
+            bestDist = minDist;
+            bestHue = candidateHue;
+        }
+    }
+
+    return _hslToHex(bestHue, S, L);
+}
+
+function _hslToHex(h, s, l) {
+    s /= 100;
+    l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+        const k = (n + h / 30) % 12;
+        const color = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        return Math.round(255 * Math.max(0, Math.min(1, color)));
+    };
+    return _rgbToHex({ r: f(0), g: f(8), b: f(4) });
+}
+
+/**
  * @param {Object} opts
  * @param {*} opts.player
  * @param {Element|null} [opts.anchorEl]
@@ -185,7 +248,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     footer.className = 'label-search-footer';
     const hints = document.createElement('span');
     hints.className = 'label-search-hints';
-    hints.textContent = '\u2191\u2193 navigate \u00b7 \u21b5 select \u00b7 esc close';
+    hints.textContent = '\u2191\u2193 navigate \u00b7 click select \u00b7 dblclick confirm \u00b7 esc close';
     footer.appendChild(hints);
 
     if (onDelete) {
@@ -200,13 +263,9 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
     confirmBtn.className = 'label-search-confirm';
-    confirmBtn.textContent = 'OK';
+    confirmBtn.textContent = 'Save';
     confirmBtn.addEventListener('click', () => {
-        if (activeIndex >= 0 && resultItems[activeIndex]) {
-            resultItems[activeIndex].click();
-        } else {
-            submit(input.value);
-        }
+        submit(input.value);
     });
     footer.appendChild(confirmBtn);
 
@@ -298,8 +357,34 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             }
 
             row.addEventListener('click', () => {
+                // Fill fields — don't close yet so user can adjust tags/color
+                input.value = label;
                 if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
-                submit(label, { scientificName: String(scientificName || '').trim(), tags });
+                selectedScientificName = String(scientificName || '').trim();
+                // Merge suggestion tags into current tag state
+                if (tags && typeof tags === 'object') {
+                    for (const [k, v] of Object.entries(tags)) {
+                        if (v) currentTags[k] = v;
+                    }
+                    renderTags();
+                }
+                // Visual feedback: highlight selected row
+                for (const item of resultItems) item.classList.remove('selected');
+                row.classList.add('selected');
+                // Enable the Save button visually
+                confirmBtn.disabled = false;
+            });
+            row.addEventListener('dblclick', () => {
+                // Double-click: select + immediately submit
+                input.value = label;
+                if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
+                selectedScientificName = String(scientificName || '').trim();
+                if (tags && typeof tags === 'object') {
+                    for (const [k, v] of Object.entries(tags)) {
+                        if (v) currentTags[k] = v;
+                    }
+                }
+                submit(label);
             });
             row.addEventListener('pointerenter', () => {
                 activeIndex = resultItems.indexOf(row);
@@ -364,9 +449,11 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             }
         } else if (key === 'Enter') {
             e.preventDefault();
-            if (activeIndex >= 0 && resultItems[activeIndex]) {
+            if (activeIndex >= 0 && resultItems[activeIndex] && !resultItems[activeIndex].classList.contains('selected')) {
+                // First Enter: select the item (fills fields)
                 resultItems[activeIndex].click();
             } else {
+                // Second Enter or no selection: confirm and close
                 submit(input.value);
             }
         } else if (key === 'Escape') {
@@ -1245,10 +1332,11 @@ export class SpectrogramLabelLayer {
         }
         // Pre-fill from focused/last label
         const ref = this._getReferenceLabelForDefaults();
+        const autoColor = _autoAssignColor(this.labels);
         openLabelNameEditor({
             player: this.player,
             initialValue: ref?.label || '',
-            initialColor: ref?.color || null,
+            initialColor: autoColor,
             initialTags: ref?.tags || null,
             existingLabels,
             title: 'New Label',
