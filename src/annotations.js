@@ -415,8 +415,36 @@ export class AnnotationLayer {
         this.overlay.style.width = `${width}px`;
         this.overlay.innerHTML = '';
 
+        // Swimlane row assignment: stack overlapping regions into rows
+        const sorted = [...this.annotations].sort((a, b) => a.start - b.start || a.end - b.end);
+        const rowEnds = []; // rowEnds[i] = end time of last region in row i
+        const rowMap = new Map();
+        for (const region of sorted) {
+            let row = -1;
+            for (let r = 0; r < rowEnds.length; r++) {
+                if (region.start >= rowEnds[r]) {
+                    row = r;
+                    rowEnds[r] = region.end;
+                    break;
+                }
+            }
+            if (row < 0) {
+                row = rowEnds.length;
+                rowEnds.push(region.end);
+            }
+            rowMap.set(region.id, row);
+        }
+        const totalRows = Math.max(1, rowEnds.length);
+
         for (const region of this.annotations) {
             const el = this._createRegionElement(region, pps);
+            if (totalRows > 1) {
+                const row = rowMap.get(region.id) || 0;
+                const pct = 100 / totalRows;
+                el.style.top = `${row * pct}%`;
+                el.style.height = `${pct}%`;
+                el.style.bottom = 'auto';
+            }
             this.overlay.appendChild(el);
         }
     }
@@ -786,9 +814,59 @@ export class SpectrogramLabelLayer {
         this.overlay.style.height = `${height}px`;
         this.overlay.innerHTML = '';
 
+        const elements = [];
+        const geometries = [];
         for (const label of this.labels) {
             const el = this._createLabelElement(label, width, height);
+            const geo = this._toGeometry(label, width, height);
             this.overlay.appendChild(el);
+            elements.push(el);
+            geometries.push(geo);
+        }
+        // Resolve overlapping text badges
+        this._resolveTextCollisions(elements, geometries);
+    }
+
+    /**
+     * Detect overlapping text badges and nudge colliding ones to bottom-left.
+     * Uses a simple greedy approach: first label keeps top-left, subsequent
+     * labels that would collide get moved to bottom-left of their box.
+     * @param {HTMLElement[]} elements
+     * @param {Array<{left: number, top: number, width: number, height: number}>} geometries
+     */
+    _resolveTextCollisions(elements, geometries) {
+        const TEXT_H = 16;
+        const occupiedRects = [];
+
+        for (let i = 0; i < elements.length; i++) {
+            const geo = geometries[i];
+            const textEl = elements[i].querySelector('.spectrogram-label-text');
+            if (!textEl) continue;
+
+            const textWidth = Math.min(Math.max(geo.width * 0.7, 100), 200);
+            let rect = {
+                left: geo.left,
+                top: geo.top,
+                right: geo.left + textWidth,
+                bottom: geo.top + TEXT_H,
+            };
+
+            const collides = occupiedRects.some((r) =>
+                rect.left < r.right && rect.right > r.left &&
+                rect.top < r.bottom && rect.bottom > r.top,
+            );
+
+            if (collides) {
+                textEl.classList.add('label-text-bottom');
+                rect = {
+                    left: geo.left,
+                    top: geo.top + geo.height - TEXT_H,
+                    right: geo.left + textWidth,
+                    bottom: geo.top + geo.height,
+                };
+            }
+
+            occupiedRects.push(rect);
         }
     }
 

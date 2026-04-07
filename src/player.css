@@ -880,6 +880,10 @@
 }
 
 /* Subtle visual indicator on hover */
+.annotation-region:hover {
+    z-index: 2;
+}
+
 .annotation-region:hover .annotation-handle {
     background: linear-gradient(180deg, transparent 5%, rgba(255,255,255,0.5) 25%, rgba(255,255,255,0.5) 75%, transparent 95%);
 }
@@ -930,6 +934,7 @@
 }
 
 .spectrogram-label-region:hover {
+    z-index: 10;
     border-color: #ffffff;
     outline-color: rgba(0, 0, 0, 1);
     box-shadow:
@@ -962,7 +967,7 @@
         inset 0 0 0 1px rgba(0,0,0,0.55),
         0 0 0 1px rgba(255,255,255,0.45),
         0 4px 12px rgba(0,0,0,0.42);
-    z-index: 5;
+    z-index: 8;
 }
 
 .spectrogram-label-region.editing {
@@ -1019,13 +1024,23 @@
     border-right: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 0 0 3px 0;
     padding: 0 5px 1px;
-    max-width: 70%;
+    max-width: max(70%, 100px);
     pointer-events: auto;
     line-height: 1.4;
     text-shadow:
         0 1px 0 rgba(0,0,0,0.95),
         0 0 2px rgba(0,0,0,0.85);
     -webkit-text-stroke: 0.2px rgba(0, 0, 0, 0.7);
+    z-index: 1;
+}
+
+/* Text badge nudged to bottom-left when colliding with another label */
+.spectrogram-label-text.label-text-bottom {
+    top: auto;
+    bottom: 0;
+    border-radius: 0 3px 0 0;
+    border-bottom: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .spectrogram-label-meta {
