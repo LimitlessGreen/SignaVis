@@ -2,6 +2,7 @@
 // constants.js — Shared configuration constants
 // ═══════════════════════════════════════════════════════════════════════
 
+export const DEFAULT_SAMPLE_RATE = 32000;
 export const DEFAULT_AXIS_WIDTH = 64;
 export const DEFAULT_ZOOM_PPS = 100;
 export const DEFAULT_WAVEFORM_HEIGHT = 100;

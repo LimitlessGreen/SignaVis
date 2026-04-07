@@ -5,6 +5,7 @@
 import {
     firstNonEmpty, toFiniteNumber, normalizeXcId, resolveFetch,
 } from './xcHelpers.js';
+import { DEFAULT_SAMPLE_RATE } from './constants.js';
 
 export { normalizeXcId } from './xcHelpers.js';
 
@@ -94,7 +95,7 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         options?.recording?.recordist,
     ]);
     const sampleRate = Number(options.sampleRate);
-    const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : 32000) / 2));
+    const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : DEFAULT_SAMPLE_RATE) / 2));
     const idPrefix = String(options.idPrefix || 'xc').trim() || 'xc';
     const labels = [];
 

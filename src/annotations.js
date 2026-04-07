@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { escapeHtml } from './utils.js';
+import { DEFAULT_SAMPLE_RATE } from './constants.js';
 
 
 function clamp(value, min, max) {
@@ -1346,7 +1347,7 @@ export class SpectrogramLabelLayer {
     _getMaxFreq() {
         const state = this.player?._state;
         const selected = parseFloat(state?.d?.maxFreqSelect?.value || '10000');
-        const nyquist = (state?.sampleRateHz || 32000) / 2;
+        const nyquist = (state?.sampleRateHz || DEFAULT_SAMPLE_RATE) / 2;
         return Math.max(1, Math.min(selected, nyquist));
     }
 

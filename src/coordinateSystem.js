@@ -3,7 +3,7 @@
 // mappings between time, frequency, pixel, and bin domains.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { SPECTROGRAM_HEIGHT, PERCH_FRAME_RATE } from './constants.js';
+import { SPECTROGRAM_HEIGHT, PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE } from './constants.js';
 import { buildMelFrequencies } from './dsp.js';
 
 /**
@@ -32,7 +32,7 @@ export class CoordinateSystem {
      */
     constructor({
         duration = 0,
-        sampleRate = 32000,
+        sampleRate = DEFAULT_SAMPLE_RATE,
         pixelsPerSecond = 100,
         canvasWidth = 0,
         canvasHeight = 0,

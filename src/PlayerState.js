@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
+    DEFAULT_SAMPLE_RATE,
     DEFAULT_ZOOM_PPS,
     DEFAULT_WAVEFORM_HEIGHT, DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
     MIN_WAVEFORM_HEIGHT, MIN_SPECTROGRAM_DISPLAY_HEIGHT,
@@ -185,7 +186,7 @@ export class PlayerState {
         this._gpuReady = false;
         this.spectrogramAbsLogMin = 0;   // absolute range (full data)
         this.spectrogramAbsLogMax = 1;
-        this.sampleRateHz = 32000;
+        this.sampleRateHz = DEFAULT_SAMPLE_RATE;
         this._externalSpectrogram = false; // true when externally-injected data/image
         this._externalImageConfig = null; // { freqRange, freqScale } for external images
         this.amplitudePeakAbs = 1;

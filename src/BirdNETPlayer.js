@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
+import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import { PlayerState } from './PlayerState.js';
 import { AnnotationLayer, SpectrogramLabelLayer } from './annotations.js';
 import './player.css';  // Vite extracts this into birdnet-player.css
@@ -687,7 +688,7 @@ export class BirdNETPlayer {
 
     _normalizeLinkedLabel(label) {
         const duration = Math.max(0.001, this.duration || this._state?.audioBuffer?.duration || 0.001);
-        const nyquist = (this._state?.sampleRateHz || 32000) / 2;
+        const nyquist = (this._state?.sampleRateHz || DEFAULT_SAMPLE_RATE) / 2;
         const selected = parseFloat(this._state?.d?.maxFreqSelect?.value || `${nyquist}`);
         const maxFreq = Math.max(1, Math.min(selected, nyquist));
 
