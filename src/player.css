@@ -1363,7 +1363,7 @@
 .amplitude-labels span {
     position: absolute;
     right: 6px;
-    transform: translateY(-50%);
+    --tick-pos: 50%;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-size: 0.62rem;
     line-height: 1;
@@ -1375,17 +1375,12 @@
     content: '';
     position: absolute;
     right: -6px;
-    top: 50%;
+    top: var(--tick-pos);
     width: 5px;
     height: 1px;
     background: var(--color-text-secondary);
     opacity: 0.6;
 }
-
-.amplitude-labels span.axis-label-top  { transform: translateY(0); }
-.amplitude-labels span.axis-label-top::after  { top: 0; }
-.amplitude-labels span.axis-label-bottom  { transform: translateY(-100%); }
-.amplitude-labels span.axis-label-bottom::after  { top: auto; bottom: 0; }
 
 /* ═══ Frequency Labels ═══ */
 
@@ -1409,24 +1404,19 @@
     right: 6px;
     width: auto;
     text-align: right;
-    transform: translateY(-50%);
+    --tick-pos: 50%;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-size: 0.62rem;
     line-height: 1;
     white-space: nowrap;
 }
 
-.frequency-labels span.axis-label-top  { transform: translateY(0); }
-.frequency-labels span.axis-label-top::after  { top: 0; }
-.frequency-labels span.axis-label-bottom  { transform: translateY(-100%); }
-.frequency-labels span.axis-label-bottom::after  { top: auto; bottom: 0; }
-
 /* Tick marks for frequency axis */
 .frequency-labels span::after {
     content: '';
     position: absolute;
     right: -6px;
-    top: 50%;
+    top: var(--tick-pos);
     width: 5px;
     height: 1px;
     background: var(--color-text-secondary);

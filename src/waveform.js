@@ -200,12 +200,8 @@ export function renderFrequencyLabels({ labelsElement, coords }) {
         const yFrac = coords.frequencyToYFraction(freq);
         span.style.position = 'absolute';
         span.style.top = `${yFrac * 100}%`;
-        // Edge-aware placement: text shifts away from edge, tick stays exact
-        if (yFrac < 0.06) {
-            span.classList.add('axis-label-top');
-        } else if (yFrac > 0.94) {
-            span.classList.add('axis-label-bottom');
-        }
+        span.style.transform = `translateY(${-yFrac * 100}%)`;
+        span.style.setProperty('--tick-pos', `${yFrac * 100}%`);
         labelsElement.appendChild(span);
     });
 }

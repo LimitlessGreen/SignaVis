@@ -1743,12 +1743,8 @@ export class PlayerState {
             const span = document.createElement('span');
             span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
             span.style.top = `${frac * ampH}px`;
-            // Edge-aware placement: text shifts away from edge, tick stays exact
-            if (i === 0) {
-                span.classList.add('axis-label-top');
-            } else if (i === values.length - 1) {
-                span.classList.add('axis-label-bottom');
-            }
+            span.style.transform = `translateY(${-frac * 100}%)`;
+            span.style.setProperty('--tick-pos', `${frac * 100}%`);
             el.appendChild(span);
         });
     }
