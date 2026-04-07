@@ -2,6 +2,31 @@
 // utils.js — Shared utility functions
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Clamp `value` to the range [min, max].
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+export function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Parse `value` as a finite number, clamp to [min, max], or return `fallback`.
+ * @param {*} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
+export function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+}
+
 export function getAxisWidth(fallback) {
     return parseInt(
         getComputedStyle(document.documentElement).getPropertyValue('--axis-width'),

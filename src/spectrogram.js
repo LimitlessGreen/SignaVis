@@ -5,6 +5,7 @@
 import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
 import { getTimeGridSteps } from './utils.js';
 import { buildMelFrequencies, computeSpectrogram } from './dsp.js';
+import { CoordinateSystem, computeMaxBin } from './coordinateSystem.js';
 
 // Worker constructor - loaded lazily via Vite's ?worker&inline.
 // Dynamic import so Node.js tests (no Vite) don't crash on this module.
@@ -485,32 +486,11 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
  */
 export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz, spectrogramMels, scale) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
-
-    const isLinear = scale === 'linear';
-    const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
-
-    let maxBin = spectrogramMels - 1;
-    if (isLinear) {
-        const binHz = (sampleRateHz / 2) / spectrogramMels;
-        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
-    } else {
-        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
-        for (let i = 0; i < melFreqs.length; i++) {
-            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
-        }
-    }
-
-    // Map display Y → internal Y (SPECTROGRAM_HEIGHT domain)
-    const internalY = displayY / displayHeight * SPECTROGRAM_HEIGHT;
-    const bin = Math.round((SPECTROGRAM_HEIGHT - 1 - internalY) / (SPECTROGRAM_HEIGHT - 1) * maxBin);
-    const clampedBin = Math.max(0, Math.min(maxBin, bin));
-
-    if (isLinear) {
-        const binHz = (sampleRateHz / 2) / spectrogramMels;
-        return clampedBin * binHz;
-    }
-    const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
-    return melFreqs[clampedBin] || 0;
+    const cs = new CoordinateSystem({
+        canvasHeight: displayHeight, maxFreq, sampleRate: sampleRateHz,
+        spectrogramMels, scale,
+    });
+    return cs.pixelYToFrequency(displayY);
 }
 
 /**
@@ -518,41 +498,11 @@ export function pixelYToFrequency(displayY, displayHeight, maxFreq, sampleRateHz
  */
 export function frequencyToPixelY(freq, displayHeight, maxFreq, sampleRateHz, spectrogramMels, scale) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
-
-    const isLinear = scale === 'linear';
-    const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
-    const clampedFreq = Math.max(0, Math.min(boundedMaxFreq, freq));
-
-    let maxBin = spectrogramMels - 1;
-    let bin;
-
-    if (isLinear) {
-        const binHz = (sampleRateHz / 2) / spectrogramMels;
-        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
-        bin = clampedFreq / binHz;
-    } else {
-        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
-        for (let i = 0; i < melFreqs.length; i++) {
-            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
-        }
-        // Find fractional bin via linear interpolation between mel edges
-        bin = 0;
-        if (clampedFreq >= melFreqs[maxBin]) {
-            bin = maxBin;
-        } else {
-            for (let i = 0; i < maxBin; i++) {
-                if (melFreqs[i + 1] >= clampedFreq) {
-                    const range = melFreqs[i + 1] - melFreqs[i];
-                    bin = range > 0 ? i + (clampedFreq - melFreqs[i]) / range : i;
-                    break;
-                }
-            }
-        }
-    }
-
-    bin = Math.max(0, Math.min(maxBin, bin));
-    const internalY = SPECTROGRAM_HEIGHT - 1 - (bin / maxBin * (SPECTROGRAM_HEIGHT - 1));
-    return internalY / SPECTROGRAM_HEIGHT * displayHeight;
+    const cs = new CoordinateSystem({
+        canvasHeight: displayHeight, maxFreq, sampleRate: sampleRateHz,
+        spectrogramMels, scale,
+    });
+    return cs.frequencyToPixelY(freq);
 }
 
 // ─── Time Grid (private helper) ─────────────────────────────────────
@@ -606,19 +556,14 @@ export function buildSpectrogramGrayscale({
 
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
 
-    // In linear mode, bins map directly to Hz.
-    // spectrogramMels == nBins (fftSize/2) in this case.
-    let maxBin = spectrogramMels - 1;
-    if (isLinear) {
-        // bin k corresponds to frequency k / spectrogramMels * (sampleRate / 2)
-        const binHz = (sampleRateHz / 2) / spectrogramMels;
-        maxBin = Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
-    } else {
-        const melFreqs = buildMelFrequencies(sampleRateHz, spectrogramMels);
-        for (let i = 0; i < melFreqs.length; i++) {
-            if (melFreqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
-        }
-    }
+    const melFreqs = isLinear ? null : buildMelFrequencies(sampleRateHz, spectrogramMels);
+    const maxBin = computeMaxBin({
+        isLinear,
+        nyquist: sampleRateHz / 2,
+        spectrogramMels,
+        boundedMaxFreq,
+        melFreqs,
+    });
 
     // Y-axis: bilinear interpolation between mel bins (avoids staircase artifacts)
     const yBinLo   = new Int16Array(height);

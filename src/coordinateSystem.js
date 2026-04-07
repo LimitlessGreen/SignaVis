@@ -4,7 +4,27 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { SPECTROGRAM_HEIGHT, PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE } from './constants.js';
-import { buildMelFrequencies } from './dsp.js';
+import { buildMelFrequencies, hzToMel, melToHz } from './dsp.js';
+
+/**
+ * Compute the highest visible bin index for a given frequency ceiling.
+ * Shared by CoordinateSystem and spectrogram rendering.
+ *
+ * @param {{ isLinear: boolean, nyquist: number, spectrogramMels: number, boundedMaxFreq: number, melFreqs: Float32Array | null }} p
+ * @returns {number}
+ */
+export function computeMaxBin({ isLinear, nyquist, spectrogramMels, boundedMaxFreq, melFreqs }) {
+    if (isLinear) {
+        const binHz = nyquist / spectrogramMels;
+        return Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+    }
+    let maxBin = spectrogramMels - 1;
+    const freqs = /** @type {Float32Array} */ (melFreqs);
+    for (let i = 0; i < freqs.length; i++) {
+        if (freqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
+    }
+    return maxBin;
+}
 
 /**
  * Centralises every coordinate‐space conversion so that all consumers
@@ -94,16 +114,13 @@ export class CoordinateSystem {
 
     /** Compute maxBin for the current bounded max frequency. */
     _computeMaxBin() {
-        if (this.isLinear) {
-            const binHz = this.nyquist / this.spectrogramMels;
-            return Math.max(1, Math.min(this.spectrogramMels - 1, Math.floor(this.boundedMaxFreq / binHz)));
-        }
-        const freqs = this.melFreqs;
-        let maxBin = this.spectrogramMels - 1;
-        for (let i = 0; i < freqs.length; i++) {
-            if (freqs[i] > this.boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
-        }
-        return maxBin;
+        return computeMaxBin({
+            isLinear: this.isLinear,
+            nyquist: this.nyquist,
+            spectrogramMels: this.spectrogramMels,
+            boundedMaxFreq: this.boundedMaxFreq,
+            melFreqs: this.melFreqs,
+        });
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -208,9 +225,9 @@ export class CoordinateSystem {
             const safeMin = Math.max(1, fMin);
             fraction = Math.log(cf / safeMin) / Math.log(fMax / safeMin);
         } else if (scale === 'mel') {
-            const melMin = 2595 * Math.log10(1 + fMin / 700);
-            const melMax = 2595 * Math.log10(1 + fMax / 700);
-            const melF   = 2595 * Math.log10(1 + cf / 700);
+            const melMin = hzToMel(fMin);
+            const melMax = hzToMel(fMax);
+            const melF   = hzToMel(cf);
             fraction = (melMax > melMin) ? (melF - melMin) / (melMax - melMin) : 0;
         } else { // 'linear'
             fraction = (fMax > fMin) ? (cf - fMin) / (fMax - fMin) : 0;
@@ -232,10 +249,10 @@ export class CoordinateSystem {
             const safeMin = Math.max(1, fMin);
             return safeMin * Math.pow(fMax / safeMin, fraction);
         } else if (scale === 'mel') {
-            const melMin = 2595 * Math.log10(1 + fMin / 700);
-            const melMax = 2595 * Math.log10(1 + fMax / 700);
+            const melMin = hzToMel(fMin);
+            const melMax = hzToMel(fMax);
             const mel = melMin + fraction * (melMax - melMin);
-            return 700 * (Math.pow(10, mel / 2595) - 1);
+            return melToHz(mel);
         } else { // 'linear'
             return fMin + fraction * (fMax - fMin);
         }

@@ -14,7 +14,7 @@ import {
     DSP_PROFILES,
 } from './constants.js';
 
-import { formatTime, formatSecondsShort, isTypingContext, escapeHtml } from './utils.js';
+import { formatTime, formatSecondsShort, isTypingContext, escapeHtml, clampNumber } from './utils.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
@@ -122,19 +122,6 @@ async function decodeArrayBuffer(arrayBuffer) {
     } finally {
         ctx.close?.().catch(() => {});
     }
-}
-
-/**
- * @param {*} value
- * @param {number} min
- * @param {number} max
- * @param {number} fallback
- * @returns {number}
- */
-function clampNumber(value, min, max, fallback) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.max(min, Math.min(max, n));
 }
 
 // ═════════════════════════════════════════════════════════════════════

@@ -2,13 +2,9 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
-import { escapeHtml } from './utils.js';
+import { escapeHtml, clamp } from './utils.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
 
-
-function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-}
 
 const _colorCtx = (() => {
     try {
