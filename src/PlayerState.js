@@ -1743,7 +1743,12 @@ export class PlayerState {
             const span = document.createElement('span');
             span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
             span.style.top = `${frac * ampH}px`;
-            span.style.transform = 'translateY(-50%)';
+            // Edge-aware placement: text shifts away from edge, tick stays exact
+            if (i === 0) {
+                span.classList.add('axis-label-top');
+            } else if (i === values.length - 1) {
+                span.classList.add('axis-label-bottom');
+            }
             el.appendChild(span);
         });
     }

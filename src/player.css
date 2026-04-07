@@ -1382,6 +1382,11 @@
     opacity: 0.6;
 }
 
+.amplitude-labels span.axis-label-top  { transform: translateY(0); }
+.amplitude-labels span.axis-label-top::after  { top: 0; }
+.amplitude-labels span.axis-label-bottom  { transform: translateY(-100%); }
+.amplitude-labels span.axis-label-bottom::after  { top: auto; bottom: 0; }
+
 /* ═══ Frequency Labels ═══ */
 
 .freq-axis-spacer {
@@ -1404,11 +1409,17 @@
     right: 6px;
     width: auto;
     text-align: right;
+    transform: translateY(-50%);
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-size: 0.62rem;
     line-height: 1;
     white-space: nowrap;
 }
+
+.frequency-labels span.axis-label-top  { transform: translateY(0); }
+.frequency-labels span.axis-label-top::after  { top: 0; }
+.frequency-labels span.axis-label-bottom  { transform: translateY(-100%); }
+.frequency-labels span.axis-label-bottom::after  { top: auto; bottom: 0; }
 
 /* Tick marks for frequency axis */
 .frequency-labels span::after {
