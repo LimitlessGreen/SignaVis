@@ -972,7 +972,14 @@
       if (taxonomy.data) {
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
       }
-      renderLabels();
+      // Re-resolve label display names for the new language
+      for (const lbl of state.labels) {
+        if (!lbl.scientificName) continue;
+        const record = resolveTaxonomyRecordForScientificName(lbl.scientificName);
+        const localized = resolveCommonName(record, state.taxonomyLang);
+        if (localized) lbl.label = localized;
+      }
+      syncToPlayer();
     });
 
     window.addEventListener('beforeunload', () => {
