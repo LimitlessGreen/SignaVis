@@ -649,6 +649,11 @@
       uk: '\u{1F1FA}\u{1F1E6}', zh: '\u{1F1E8}\u{1F1F3}',
     };
 
+    /** Normalize text for search: lowercase + strip diacritics (ü→u, é→e, etc.) */
+    function normalizeSearch(text) {
+      return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
     /**
      * Build a detail string with flags of languages that matched the query.
      * Returns e.g. "🇩🇪 Kohlmeise · 🇫🇷 Mésange charbonnière" for a hit on both.
@@ -656,11 +661,11 @@
      */
     function buildMatchDetail(record, query, displayLang) {
       if (!query || !record?.n) return '';
-      const q = query.toLowerCase();
+      const q = normalizeSearch(query);
       const parts = [];
       for (const [lang, name] of Object.entries(record.n)) {
         if (lang === displayLang) continue;
-        if (!name.toLowerCase().includes(q)) continue;
+        if (!normalizeSearch(name).includes(q)) continue;
         const flag = LANG_FLAGS[lang] || lang;
         parts.push(`${flag}\u00a0${name}`);
         if (parts.length >= 3) break; // keep it compact
@@ -669,7 +674,7 @@
     }
 
     function getTrackLabelSuggestions(query, limit = 14) {
-      const q = String(query || '').trim().toLowerCase();
+      const q = normalizeSearch(query);
       const dedupe = new Map();
 
       // Default entries always available
@@ -703,7 +708,7 @@
         for (const rec of taxonomy.records) {
           // Build search hay from all common names + scientific name
           const allNames = rec.n ? Object.values(rec.n) : [];
-          const hay = `${allNames.join(' ')} ${rec.s}`.toLowerCase();
+          const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
           if (!hay.includes(q)) continue;
           const key = `sci:${rec.s}`;
           const displayName = resolveCommonName(rec, state.taxonomyLang);
@@ -721,14 +726,20 @@
       const out = [];
       for (const item of dedupe.values()) {
         if (q) {
-          // For taxonomy entries (with scientificName), the taxonomy search already filtered,
-          // but xcLabelPool/existing labels need re-filtering against the query.
-          if (!item.scientificName) {
-            const hay = `${item.name}`.toLowerCase();
+          const sci = item.scientificName;
+          // For items with a scientific name, resolve the taxonomy record and
+          // search across ALL languages (same as the taxonomy loop above).
+          const rec = sci ? resolveTaxonomyRecordForScientificName(sci) : null;
+          if (rec?.n) {
+            const allNames = Object.values(rec.n);
+            const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
             if (!hay.includes(q)) continue;
+            // Enrich existing pool/label entries with flag detail
+            if (!item.detail) {
+              item.detail = buildMatchDetail(rec, q, state.taxonomyLang);
+            }
           } else {
-            // Also match display name + scientific name for pool/existing entries
-            const hay = `${item.name} ${item.scientificName}`.toLowerCase();
+            const hay = normalizeSearch(`${item.name} ${sci || ''}`);
             if (!hay.includes(q)) continue;
           }
         }
