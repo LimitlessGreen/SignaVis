@@ -1703,6 +1703,73 @@
     border-color: rgba(57, 181, 255, 0.8);
 }
 
+/* ── Tag editor row ── */
+.label-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.label-tag-select {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.9);
+    color: #e2e8f0;
+    font-size: 11px;
+    padding: 2px 4px;
+    cursor: pointer;
+    outline: none;
+}
+
+.label-tag-select:focus {
+    border-color: rgba(56, 189, 248, 0.6);
+}
+
+.label-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(56, 189, 248, 0.12);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    white-space: nowrap;
+}
+
+.label-tag-badge-del {
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 1px;
+    line-height: 1;
+}
+
+.label-tag-badge-del:hover {
+    color: #f87171;
+}
+
+.label-tag-add {
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    background: transparent;
+    color: #64748b;
+    font-size: 10px;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+
+.label-tag-add:hover {
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #94a3b8;
+}
+
 /* ── Label edit button on hover ── */
 .label-edit-btn {
     position: absolute;

@@ -97,6 +97,13 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
     const sampleRate = Number(options.sampleRate);
     const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : DEFAULT_SAMPLE_RATE) / 2));
     const idPrefix = String(options.idPrefix || 'xc').trim() || 'xc';
+
+    // Recording-level tags from XC metadata
+    const rec = options.recording || {};
+    const recSex = firstNonEmpty([rec.sex, rec.Sex]) || '';
+    const recType = firstNonEmpty([rec.type, rec.sound_type, rec.soundType]) || '';
+    const recStage = firstNonEmpty([rec.stage, rec.life_stage, rec.lifeStage, rec.age]) || '';
+
     const labels = [];
 
     for (let i = 0; i < arr.length; i += 1) {
@@ -128,6 +135,15 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         ]);
         const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, i + 1]);
 
+        // Build tags: per-annotation values override recording-level values
+        const tags = {};
+        const sex = firstNonEmpty([src.sex, src.Sex, recSex]);
+        const soundType = firstNonEmpty([src.sound_type, src.soundType, src.type, recType]);
+        const lifeStage = firstNonEmpty([src.stage, src.life_stage, src.lifeStage, src.age, recStage]);
+        if (sex) tags.sex = sex;
+        if (soundType) tags.soundType = soundType;
+        if (lifeStage) tags.lifeStage = lifeStage;
+
         labels.push({
             id: `${idPrefix}${xcId}_lbl_${annotationId}`,
             start,
@@ -139,6 +155,7 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
             commonName: recordingCommonName,
             origin: 'xeno-canto',
             author: recordist || '',
+            tags,
         });
     }
 

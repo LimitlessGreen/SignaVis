@@ -674,6 +674,10 @@ export class BirdNETPlayer {
             confidence: l.confidence,
             color: l.color,
             scientificName: l.scientificName || '',
+            commonName: l.commonName || '',
+            origin: l.origin || '',
+            author: l.author || '',
+            tags: l.tags || {},
         }));
     }
 
@@ -687,6 +691,10 @@ export class BirdNETPlayer {
             label: l.label || l.species || '',
             color: l.color,
             scientificName: l.scientificName || '',
+            commonName: l.commonName || '',
+            origin: l.origin || '',
+            author: l.author || '',
+            tags: l.tags || {},
         }));
     }
 
@@ -718,6 +726,10 @@ export class BirdNETPlayer {
             confidence: label?.confidence,
             color: label?.color || tax?.color || '',
             scientificName: label?.scientificName || '',
+            commonName: label?.commonName || '',
+            origin: label?.origin || '',
+            author: label?.author || '',
+            tags: (label?.tags && typeof label.tags === 'object') ? { ...label.tags } : {},
         };
     }
 }

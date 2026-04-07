@@ -135,7 +135,7 @@
       padding: 4px 10px;
       border-bottom: 1px solid rgba(30, 45, 71, 0.4);
     }
-    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | Origin | Author | × */
+    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | Origin | Author | Tags | × */
     .label-table .col-dot   { width: 32px; }
     .label-table .col-name  { width: auto; }
     .label-table .col-sci   { width: 20%; }
@@ -144,6 +144,7 @@
     .label-table .col-conf  { width: 52px; }
     .label-table .col-origin { width: 68px; }
     .label-table .col-author { width: 90px; }
+    .label-table .col-tags  { width: 140px; }
     .label-table .col-del   { width: 32px; }
     .label-table tbody tr { cursor: pointer; transition: background 0.1s; }
     .label-table tbody tr:hover td { background: rgba(57, 181, 255, 0.06); }
@@ -165,6 +166,13 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 11px; color: #8fa4c0;
     }
+    .tag-badge {
+      display: inline-block; font-size: 10px; padding: 1px 5px;
+      border-radius: 3px; background: #1a2a44; color: #8fa4c0;
+      border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .tag-badge .tag-key { color: #5b8cb8; }
     .labels-empty {
       padding: 20px 12px; color: var(--muted); font-size: 12px; text-align: center;
     }
@@ -235,6 +243,8 @@
       .label-table td:nth-child(7) { display: none; }
       .label-table .col-author,
       .label-table td:nth-child(8) { display: none; }
+      .label-table .col-tags,
+      .label-table td:nth-child(9) { display: none; }
     }
   </style>
 </head>
@@ -271,7 +281,7 @@
       </div>
       <div class="label-table-wrap" id="labelTableWrap">
         <table class="label-table">
-          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-origin">Origin</th><th class="col-author">Author</th><th class="col-del"></th></tr></thead>
+          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-origin">Origin</th><th class="col-author">Author</th><th class="col-tags">Tags</th><th class="col-del"></th></tr></thead>
           <tbody id="labelsList"></tbody>
         </table>
         <div class="labels-empty" id="labelsEmpty">
@@ -541,6 +551,21 @@
         tdAuthor.textContent = lbl.author || '';
         tr.appendChild(tdAuthor);
 
+        // Tags
+        const tdTags = document.createElement('td');
+        const tags = lbl.tags || {};
+        const tagKeys = Object.keys(tags);
+        if (tagKeys.length) {
+          for (const k of tagKeys) {
+            const badge = document.createElement('span');
+            badge.className = 'tag-badge';
+            badge.textContent = `${k}: ${tags[k]}`;
+            badge.title = `${k}: ${tags[k]}`;
+            tdTags.appendChild(badge);
+          }
+        }
+        tr.appendChild(tdTags);
+
         // Delete button
         const tdDel = document.createElement('td');
         const delBtn = document.createElement('button');
@@ -620,6 +645,7 @@
         confidence: l.confidence != null ? l.confidence : '',
         origin: l.origin || '',
         author: l.author || '',
+        tags: l.tags || {},
       }));
     }
 

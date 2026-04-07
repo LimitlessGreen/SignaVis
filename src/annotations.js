@@ -72,12 +72,13 @@ function getOverlayColorStyle(color) {
  * @param {Element|null} [opts.anchorEl]
  * @param {string} opts.initialValue
  * @param {string|null} opts.initialColor
- * @param {(string|{name:string, color?:string, scientificName?:string})[]|null} [opts.existingLabels]
+ * @param {Record<string,string>|null} [opts.initialTags]
+ * @param {(string|{name:string, color?:string, scientificName?:string, tags?:Record<string,string>})[]|null} [opts.existingLabels]
  * @param {string|null} [opts.title]
- * @param {function({name:string, color:string, scientificName?:string}):void} opts.onSubmit
+ * @param {function({name:string, color:string, scientificName?:string, tags?:Record<string,string>}):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]
  */
-function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, existingLabels = null, title = null, onSubmit, onDelete = null }) {
+function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, initialTags = null, existingLabels = null, title = null, onSubmit, onDelete = null }) {
     const host = player?.root || player?.container || document.body;
     if (!host || typeof onSubmit !== 'function') return;
 
@@ -105,6 +106,75 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     colorInput.value = initialStyle?.hex || '#0ea5e9';
 
     searchRow.append(input, colorInput);
+
+    // ── Tags row ──
+    const TAG_PRESETS = [
+        { key: 'sex', label: 'Sex', options: ['male', 'female', 'unknown'] },
+        { key: 'lifeStage', label: 'Life stage', options: ['adult', 'juvenile', 'immature', 'subadult'] },
+        { key: 'soundType', label: 'Sound type', options: ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming', 'nocturnal flight call'] },
+    ];
+    const currentTags = { ...(initialTags || {}) };
+
+    const tagsRow = document.createElement('div');
+    tagsRow.className = 'label-tags-row';
+
+    /** renders preset selects and the custom tag input */
+    const renderTags = () => {
+        tagsRow.innerHTML = '';
+
+        // Preset dropdowns
+        for (const preset of TAG_PRESETS) {
+            const sel = document.createElement('select');
+            sel.className = 'label-tag-select';
+            sel.title = preset.label;
+            const emptyOpt = document.createElement('option');
+            emptyOpt.value = '';
+            emptyOpt.textContent = preset.label;
+            sel.appendChild(emptyOpt);
+            for (const opt of preset.options) {
+                const optEl = document.createElement('option');
+                optEl.value = opt;
+                optEl.textContent = opt;
+                if (currentTags[preset.key] === opt) optEl.selected = true;
+                sel.appendChild(optEl);
+            }
+            sel.addEventListener('change', () => {
+                if (sel.value) currentTags[preset.key] = sel.value;
+                else delete currentTags[preset.key];
+            });
+            tagsRow.appendChild(sel);
+        }
+
+        // Show current custom tags as badges + add-button
+        const customKeys = Object.keys(currentTags).filter((k) => !TAG_PRESETS.some((p) => p.key === k));
+        for (const key of customKeys) {
+            const badge = document.createElement('span');
+            badge.className = 'label-tag-badge';
+            badge.textContent = `${key}: ${currentTags[key]}`;
+            const delBtn = document.createElement('span');
+            delBtn.className = 'label-tag-badge-del';
+            delBtn.textContent = '\u00d7';
+            delBtn.addEventListener('click', () => { delete currentTags[key]; renderTags(); });
+            badge.appendChild(delBtn);
+            tagsRow.appendChild(badge);
+        }
+
+        // "+" button to add custom tag
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'label-tag-add';
+        addBtn.textContent = '+ Tag';
+        addBtn.addEventListener('click', () => {
+            const key = prompt('Tag name (e.g. territoryStatus):');
+            if (!key?.trim()) return;
+            const val = prompt(`Value for "${key.trim()}":`);
+            if (val == null) return;
+            currentTags[key.trim()] = val.trim();
+            renderTags();
+        });
+        tagsRow.appendChild(addBtn);
+    };
+    renderTags();
 
     // Results list
     const results = document.createElement('div');
@@ -140,7 +210,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     });
     footer.appendChild(confirmBtn);
 
-    panel.append(searchRow, results, footer);
+    panel.append(searchRow, tagsRow, results, footer);
     backdrop.appendChild(panel);
     host.appendChild(backdrop);
 
@@ -160,7 +230,11 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         const trimmed = String(value || '').trim();
         if (!trimmed) return;
         const scientificName = String(opts?.scientificName || selectedScientificName || '').trim();
-        onSubmit({ name: trimmed, color: colorInput.value, scientificName });
+        // Merge preset tags with any tags passed from a suggestion
+        const tags = { ...currentTags, ...(opts?.tags || {}) };
+        // Remove empty-valued tags
+        for (const k of Object.keys(tags)) { if (!tags[k]) delete tags[k]; }
+        onSubmit({ name: trimmed, color: colorInput.value, scientificName, tags });
         close();
     };
 
@@ -185,7 +259,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         resultItems = [];
         activeIndex = -1;
 
-        const addResult = ({ name, scientificName = '', color = '', detail = '' }) => {
+        const addResult = ({ name, scientificName = '', color = '', detail = '', tags = {} }) => {
             const label = String(name || '').trim();
             if (!label) return;
             const key = label.toLowerCase();
@@ -225,7 +299,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
 
             row.addEventListener('click', () => {
                 if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
-                submit(label, { scientificName: String(scientificName || '').trim() });
+                submit(label, { scientificName: String(scientificName || '').trim(), tags });
             });
             row.addEventListener('pointerenter', () => {
                 activeIndex = resultItems.indexOf(row);
@@ -242,7 +316,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
                 if (typeof item === 'string') {
                     addResult({ name: item });
                 } else {
-                    addResult({ name: item.name, color: item.color || '', scientificName: item.scientificName || '' });
+                    addResult({ name: item.name, color: item.color || '', scientificName: item.scientificName || '', tags: item.tags || {} });
                 }
             }
         }
@@ -1125,7 +1199,7 @@ export class SpectrogramLabelLayer {
             const key = name.toLowerCase();
             if (seen.has(key)) continue;
             seen.add(key);
-            existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '' });
+            existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: l.tags || {} });
         }
         openLabelNameEditor({
             player: this.player,
@@ -1133,10 +1207,11 @@ export class SpectrogramLabelLayer {
             initialColor: null,
             existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color, scientificName = '' }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
                 region.label = name;
                 region.color = color;
                 region.scientificName = String(scientificName || '').trim();
+                region.tags = tags;
                 this.add(region);
             },
         });
@@ -1375,13 +1450,15 @@ export class SpectrogramLabelLayer {
             anchorEl: el || this.overlay,
             initialValue: current,
             initialColor: label.color,
-            onSubmit: ({ name, color, scientificName = '' }) => {
+            initialTags: label.tags || {},
+            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
                 const currentHex = getOverlayColorStyle(label.color)?.hex || '';
                 const nextSci = String(scientificName || '').trim();
                 const prevSci = String(label.scientificName || '').trim();
-                if (name === current && color === currentHex && nextSci === prevSci) return;
+                if (name === current && color === currentHex && nextSci === prevSci && JSON.stringify(tags) === JSON.stringify(label.tags || {})) return;
                 label.label = name;
                 label.color = color;
+                label.tags = tags;
                 if (nextSci) label.scientificName = nextSci;
                 // Apply color to all labels with the same name
                 const labelKey = name.toLowerCase();
@@ -1457,6 +1534,9 @@ export class SpectrogramLabelLayer {
             color: String(label?.color || '').trim(),
             scientificName: String(label?.scientificName || '').trim(),
             commonName: String(label?.commonName || '').trim(),
+            origin: String(label?.origin || '').trim(),
+            author: String(label?.author || '').trim(),
+            tags: (label?.tags && typeof label.tags === 'object') ? { ...label.tags } : {},
         };
     }
 }
