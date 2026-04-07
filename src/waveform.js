@@ -170,26 +170,45 @@ export function renderFrequencyLabels({ labelsElement, coords }) {
     labelsElement.innerHTML = '';
 
     const boundedMaxFreq = Math.min(coords.maxFreq, coords.sampleRate / 2);
-    const frequencies = [
-        boundedMaxFreq,
-        boundedMaxFreq * 0.8,
-        boundedMaxFreq * 0.6,
-        boundedMaxFreq * 0.4,
-        boundedMaxFreq * 0.2,
-        1000,
-        0,
-    ];
+    const minFreq = (coords.freqRange && coords.freqRange[0]) || 0;
+    const range = boundedMaxFreq - minFreq;
+
+    // Choose a "nice" tick step based on the frequency range
+    const niceSteps = [100, 200, 500, 1000, 2000, 2500, 5000, 10000, 20000];
+    const targetTicks = 6;
+    const rawStep = range / targetTicks;
+    const step = niceSteps.reduce((best, s) =>
+        Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best
+    );
+
+    // Generate frequencies at nice round intervals
+    const frequencies = [];
+    const startFreq = Math.ceil(minFreq / step) * step;
+    for (let f = startFreq; f <= boundedMaxFreq + 1; f += step) {
+        frequencies.push(f);
+    }
+    // Ensure 0 Hz is included if visible
+    if (minFreq === 0 && (frequencies.length === 0 || frequencies[0] !== 0)) {
+        frequencies.unshift(0);
+    }
 
     frequencies.forEach((freq) => {
         const span = document.createElement('span');
         span.textContent = freq >= 1000
-            ? `${(freq / 1000).toFixed(freq % 1000 === 0 ? 0 : 1)}k`
-            : `${Math.round(freq)}Hz`;
-        // Position each label at its correct Y for the active scale
+            ? `${(freq / 1000).toFixed(freq % 1000 === 0 ? 0 : 1)} kHz`
+            : `${Math.round(freq)} Hz`;
         const yFrac = coords.frequencyToYFraction(freq);
         span.style.position = 'absolute';
         span.style.top = `${yFrac * 100}%`;
-        span.style.transform = 'translateY(-50%)';
+        // Prevent clipping: align top labels downward, bottom labels upward
+        if (yFrac < 0.08) {
+            span.style.transform = 'translateY(1px)';
+        } else if (yFrac > 0.92) {
+            span.style.transform = 'translateY(-100%)';
+            span.style.top = `calc(${yFrac * 100}% - 1px)`;
+        } else {
+            span.style.transform = 'translateY(-50%)';
+        }
         labelsElement.appendChild(span);
     });
 }

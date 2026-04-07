@@ -1,5 +1,5 @@
 :root {
-    --axis-width: 52px;
+    --axis-width: 56px;
     --waveform-height: 100px;
     --spectrogram-height: 200px;
     --toolbar-height: 40px;
@@ -772,6 +772,7 @@
     flex: 0 0 var(--axis-width);
     border-right: 1px solid var(--color-border);
     background: var(--color-bg-secondary);
+    overflow: visible;
 }
 
 .time-pane {
@@ -1356,16 +1357,29 @@
     font-size: 0.68rem;
     color: var(--color-text-secondary);
     pointer-events: none;
+    overflow: visible;
 }
 
 .amplitude-labels span {
     position: absolute;
-    right: 4px;
+    right: 6px;
     transform: translateY(-50%);
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     line-height: 1;
     white-space: nowrap;
+}
+
+/* Tick marks for amplitude axis */
+.amplitude-labels span::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    width: 5px;
+    height: 1px;
+    background: var(--color-text-secondary);
+    opacity: 0.6;
 }
 
 /* ═══ Frequency Labels ═══ */
@@ -1378,19 +1392,34 @@
 .frequency-labels {
     position: absolute;
     inset: 0;
-    padding: 0 4px 0 2px;
+    padding: 0;
     font-size: 0.68rem;
     color: var(--color-text-secondary);
     pointer-events: none;
+    overflow: visible;
 }
 
 .frequency-labels span {
-    width: 100%;
+    position: absolute;
+    right: 6px;
+    width: auto;
     text-align: right;
-    padding-right: 2px;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    font-size: 0.65rem;
+    font-size: 0.62rem;
+    line-height: 1;
     white-space: nowrap;
+}
+
+/* Tick marks for frequency axis */
+.frequency-labels span::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    width: 5px;
+    height: 1px;
+    background: var(--color-text-secondary);
+    opacity: 0.6;
 }
 
 /* ═══ Status Bar ═══ */
