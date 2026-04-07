@@ -118,12 +118,12 @@
     }
     .label-table-wrap { overflow: auto; min-height: 0; }
     .label-table {
-      width: 100%; max-width: 960px; margin: 0 auto;
+      width: 100%; max-width: 1060px; margin: 0 auto;
       border-collapse: collapse; font-size: 12px;
       table-layout: fixed;
     }
     .label-table thead { position: sticky; top: 0; z-index: 1; }
-    .label-table th, .label-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .label-table th, .label-table td { overflow: hidden; text-overflow: ellipsis; }
     .label-table th {
       background: rgba(15, 24, 41, 0.98);
       color: var(--muted); font-weight: 500;
@@ -132,20 +132,17 @@
       font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
     }
     .label-table td {
-      padding: 4px 10px;
+      padding: 5px 10px;
       border-bottom: 1px solid rgba(30, 45, 71, 0.4);
+      vertical-align: top;
     }
-    /* Column widths: dot | Label | Scientific | Time | Freq | Conf | Origin | Author | Tags | × */
-    .label-table .col-dot   { width: 32px; }
-    .label-table .col-name  { width: auto; }
-    .label-table .col-sci   { width: 20%; }
-    .label-table .col-time  { width: 110px; }
-    .label-table .col-freq  { width: 110px; }
-    .label-table .col-conf  { width: 52px; }
-    .label-table .col-origin { width: 68px; }
-    .label-table .col-author { width: 90px; }
-    .label-table .col-tags  { width: 140px; }
-    .label-table .col-del   { width: 32px; }
+    /* Column widths: dot | Label | Range | Tags | Info | Actions */
+    .label-table .col-dot     { width: 28px; }
+    .label-table .col-label   { width: auto; }
+    .label-table .col-range   { width: 130px; }
+    .label-table .col-tags    { width: 200px; }
+    .label-table .col-info    { width: 90px; }
+    .label-table .col-actions { width: 52px; }
     .label-table tbody tr { cursor: pointer; transition: background 0.1s; }
     .label-table tbody tr:hover td { background: rgba(57, 181, 255, 0.06); }
     .label-table tbody tr.highlighted td { background: rgba(57, 181, 255, 0.14); }
@@ -155,24 +152,82 @@
       border-radius: 50%; vertical-align: middle;
       border: 1px solid rgba(255,255,255,0.15);
     }
-    .label-table .del-btn {
-      border: none; background: transparent; color: var(--muted);
-      cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px;
+    /* Stacked label cell: name + scientific */
+    .label-cell { white-space: normal !important; }
+    .label-cell .label-name {
+      display: block; font-weight: 600; color: #dce8f8;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      cursor: text; line-height: 1.35;
     }
-    .label-table .del-btn:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
-    .label-table .name-cell { font-weight: 600; color: #dce8f8; }
-    .label-table .sci-cell { color: var(--muted); font-style: italic; font-size: 11px; }
-    .label-table .mono-cell {
+    .label-cell .label-name:hover {
+      text-decoration: underline; text-decoration-style: dashed;
+      text-underline-offset: 2px; text-decoration-color: #3a5580;
+    }
+    .label-cell .label-sci {
+      display: block; color: var(--muted); font-style: italic; font-size: 11px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .inline-name-input {
+      width: 100%; border: 1px solid var(--accent); border-radius: 3px;
+      background: #0d172b; color: #dce8f8; font-size: 12px; font-weight: 600;
+      padding: 1px 4px; outline: none;
+    }
+    /* Stacked range cell */
+    .range-cell {
+      white-space: normal !important;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 11px; color: #8fa4c0;
     }
+    .range-cell span { display: block; white-space: nowrap; }
+    .range-cell .range-freq { color: #5e7b9e; font-size: 10px; }
+    /* Info cell */
+    .info-cell { white-space: normal !important; font-size: 11px; color: var(--muted); }
+    .info-cell span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .info-cell .conf-val {
+      color: #8fa4c0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    /* Tags cell — inline editable */
+    .tags-cell { white-space: normal !important; overflow: visible !important; position: relative; }
     .tag-badge {
-      display: inline-block; font-size: 10px; padding: 1px 5px;
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; padding: 1px 5px;
       border-radius: 3px; background: #1a2a44; color: #8fa4c0;
       border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
     .tag-badge .tag-key { color: #5b8cb8; }
+    .tag-badge .tag-del {
+      border: none; background: transparent; color: #4b6380;
+      cursor: pointer; font-size: 11px; padding: 0; line-height: 1;
+    }
+    .tag-badge .tag-del:hover { color: var(--danger); }
+    .tag-add-btn {
+      display: inline-block; border: 1px dashed #253a56; border-radius: 3px;
+      background: transparent; color: #4b6380; font-size: 10px; padding: 1px 5px;
+      cursor: pointer; vertical-align: middle;
+    }
+    .tag-add-btn:hover { border-color: #3a7db8; color: #8fa4c0; }
+    .tag-popover {
+      position: absolute; z-index: 50; top: 100%; left: 0;
+      background: rgba(2, 6, 23, 0.98); border: 1px solid #253a56;
+      border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5); min-width: 180px;
+    }
+    .tag-popover select, .tag-popover input {
+      border: 1px solid #253a56; border-radius: 4px;
+      background: #0d172b; color: var(--text); font-size: 11px; padding: 3px 5px;
+    }
+    .tag-popover .tag-pop-row { display: flex; gap: 4px; align-items: center; }
+    .tag-popover .tag-pop-label { font-size: 11px; color: #8fa4c0; min-width: 65px; }
+    /* Action buttons */
+    .actions-cell { white-space: nowrap !important; text-align: center; vertical-align: middle !important; }
+    .act-btn {
+      border: none; background: transparent; color: var(--muted);
+      cursor: pointer; font-size: 13px; padding: 2px 3px; border-radius: 3px;
+    }
+    .act-btn:hover { color: var(--text); background: rgba(57,181,255,0.1); }
+    .act-btn.danger:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
     .labels-empty {
       padding: 20px 12px; color: var(--muted); font-size: 12px; text-align: center;
     }
@@ -235,16 +290,10 @@
 
     @media (max-width: 700px) {
       .label-panel-hints { display: none; }
-      .label-table .col-freq,
-      .label-table td:nth-child(5) { display: none; }
-      .label-table .col-conf,
-      .label-table td:nth-child(6) { display: none; }
-      .label-table .col-origin,
-      .label-table td:nth-child(7) { display: none; }
-      .label-table .col-author,
-      .label-table td:nth-child(8) { display: none; }
       .label-table .col-tags,
-      .label-table td:nth-child(9) { display: none; }
+      .label-table td:nth-child(4) { display: none; }
+      .label-table .col-info,
+      .label-table td:nth-child(5) { display: none; }
     }
   </style>
 </head>
@@ -281,7 +330,7 @@
       </div>
       <div class="label-table-wrap" id="labelTableWrap">
         <table class="label-table">
-          <thead><tr><th class="col-dot"></th><th class="col-name">Label</th><th class="col-sci">Scientific Name</th><th class="col-time">Time</th><th class="col-freq">Frequency</th><th class="col-conf">Conf.</th><th class="col-origin">Origin</th><th class="col-author">Author</th><th class="col-tags">Tags</th><th class="col-del"></th></tr></thead>
+          <thead><tr><th class="col-dot"></th><th class="col-label">Label</th><th class="col-range">Range</th><th class="col-tags">Tags</th><th class="col-info">Info</th><th class="col-actions"></th></tr></thead>
           <tbody id="labelsList"></tbody>
         </table>
         <div class="labels-empty" id="labelsEmpty">
@@ -487,89 +536,90 @@
           player._emit?.('labelfocus', { id: lbl.id, source: 'table' });
         });
 
-        // Double-click → open label editor
-        tr.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(lbl.id);
-        });
-
         // Hover → highlight spectrogram label
-        tr.addEventListener('pointerenter', () => {
-          highlightSpectrogramLabel(lbl.id, true);
-        });
-        tr.addEventListener('pointerleave', () => {
-          highlightSpectrogramLabel(lbl.id, false);
-        });
+        tr.addEventListener('pointerenter', () => highlightSpectrogramLabel(lbl.id, true));
+        tr.addEventListener('pointerleave', () => highlightSpectrogramLabel(lbl.id, false));
 
-        // Color dot
-        const tdColor = document.createElement('td');
+        // 1) Color dot
+        const tdDot = document.createElement('td');
         if (lbl.color) {
           const dot = document.createElement('span');
           dot.className = 'color-dot';
           dot.style.background = lbl.color;
-          tdColor.appendChild(dot);
+          tdDot.appendChild(dot);
         }
-        tr.appendChild(tdColor);
+        tr.appendChild(tdDot);
 
-        // Label name
-        const tdName = document.createElement('td');
-        tdName.className = 'name-cell';
-        tdName.textContent = displayName;
-        tr.appendChild(tdName);
+        // 2) Label — name + scientific stacked
+        const tdLabel = document.createElement('td');
+        tdLabel.className = 'label-cell';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'label-name';
+        nameSpan.textContent = displayName;
+        nameSpan.title = 'Click to edit';
+        nameSpan.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startInlineNameEdit(nameSpan, lbl, displayName);
+        });
+        tdLabel.appendChild(nameSpan);
+        if (sci) {
+          const sciSpan = document.createElement('span');
+          sciSpan.className = 'label-sci';
+          sciSpan.textContent = sci;
+          tdLabel.appendChild(sciSpan);
+        }
+        tr.appendChild(tdLabel);
 
-        // Scientific name
-        const tdSci = document.createElement('td');
-        tdSci.className = 'sci-cell';
-        tdSci.textContent = sci;
-        tr.appendChild(tdSci);
+        // 3) Range — time + freq stacked
+        const tdRange = document.createElement('td');
+        tdRange.className = 'range-cell';
+        const timeSpan = document.createElement('span');
+        timeSpan.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
+        tdRange.appendChild(timeSpan);
+        const freqSpan = document.createElement('span');
+        freqSpan.className = 'range-freq';
+        freqSpan.textContent = `${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
+        tdRange.appendChild(freqSpan);
+        tr.appendChild(tdRange);
 
-        // Time range
-        const tdTime = document.createElement('td');
-        tdTime.className = 'mono-cell';
-        tdTime.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
-        tr.appendChild(tdTime);
-
-        // Frequency range
-        const tdFreq = document.createElement('td');
-        tdFreq.className = 'mono-cell';
-        tdFreq.textContent = `${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
-        tr.appendChild(tdFreq);
-
-        // Confidence (optional)
-        const tdConf = document.createElement('td');
-        tdConf.className = 'mono-cell';
-        tdConf.textContent = lbl.confidence != null ? Number(lbl.confidence).toFixed(2) : '';
-        tr.appendChild(tdConf);
-
-        // Origin
-        const tdOrigin = document.createElement('td');
-        tdOrigin.textContent = lbl.origin || '';
-        tr.appendChild(tdOrigin);
-
-        // Author
-        const tdAuthor = document.createElement('td');
-        tdAuthor.textContent = lbl.author || '';
-        tr.appendChild(tdAuthor);
-
-        // Tags
+        // 4) Tags — inline editable badges
         const tdTags = document.createElement('td');
-        const tags = lbl.tags || {};
-        const tagKeys = Object.keys(tags);
-        if (tagKeys.length) {
-          for (const k of tagKeys) {
-            const badge = document.createElement('span');
-            badge.className = 'tag-badge';
-            badge.textContent = `${k}: ${tags[k]}`;
-            badge.title = `${k}: ${tags[k]}`;
-            tdTags.appendChild(badge);
-          }
-        }
+        tdTags.className = 'tags-cell';
+        renderInlineTags(tdTags, lbl);
         tr.appendChild(tdTags);
 
-        // Delete button
-        const tdDel = document.createElement('td');
+        // 5) Info — confidence + origin/author
+        const tdInfo = document.createElement('td');
+        tdInfo.className = 'info-cell';
+        if (lbl.confidence != null) {
+          const conf = document.createElement('span');
+          conf.className = 'conf-val';
+          conf.textContent = Number(lbl.confidence).toFixed(2);
+          tdInfo.appendChild(conf);
+        }
+        const source = [lbl.origin, lbl.author].filter(Boolean).join(' · ');
+        if (source) {
+          const src = document.createElement('span');
+          src.textContent = source;
+          src.title = source;
+          tdInfo.appendChild(src);
+        }
+        tr.appendChild(tdInfo);
+
+        // 6) Actions — edit + delete
+        const tdActions = document.createElement('td');
+        tdActions.className = 'actions-cell';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'act-btn';
+        editBtn.textContent = '✎';
+        editBtn.title = 'Edit (taxonomy search)';
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(lbl.id);
+        });
+        tdActions.appendChild(editBtn);
         const delBtn = document.createElement('button');
-        delBtn.className = 'del-btn';
+        delBtn.className = 'act-btn danger';
         delBtn.textContent = '×';
         delBtn.title = 'Remove label';
         delBtn.addEventListener('click', (e) => {
@@ -577,14 +627,168 @@
           state.labels = state.labels.filter((l) => l.id !== lbl.id);
           syncToPlayer();
         });
-        tdDel.appendChild(delBtn);
-        tr.appendChild(tdDel);
+        tdActions.appendChild(delBtn);
+        tr.appendChild(tdActions);
 
         labelsList.appendChild(tr);
       }
 
-      // Restore selection state
       if (state.selectedLabelId) highlightTableRow(state.selectedLabelId);
+    }
+
+    // ── Inline editing ────────────────────────────────────────────────
+
+    function startInlineNameEdit(nameSpan, lbl, displayName) {
+      if (nameSpan.querySelector('input')) return;
+      const input = document.createElement('input');
+      input.className = 'inline-name-input';
+      input.value = lbl.label || displayName;
+      nameSpan.textContent = '';
+      nameSpan.appendChild(input);
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        const val = input.value.trim();
+        if (val && val !== lbl.label) {
+          lbl.label = val;
+          lbl.scientificName = '';
+          lbl.commonName = '';
+          syncToPlayer();
+        } else {
+          nameSpan.textContent = displayName;
+        }
+      };
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { e.preventDefault(); nameSpan.textContent = displayName; }
+      });
+      input.addEventListener('blur', commit);
+      input.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    const TAG_PRESETS_TABLE = [
+      { key: 'sex', options: ['male', 'female', 'unknown'] },
+      { key: 'lifeStage', options: ['adult', 'juvenile', 'immature', 'subadult'] },
+      { key: 'soundType', options: ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming', 'nocturnal flight call'] },
+    ];
+
+    function renderInlineTags(td, lbl) {
+      td.innerHTML = '';
+      const tags = lbl.tags || {};
+      for (const [k, v] of Object.entries(tags)) {
+        const badge = document.createElement('span');
+        badge.className = 'tag-badge';
+        const keySpan = document.createElement('span');
+        keySpan.className = 'tag-key';
+        keySpan.textContent = k;
+        badge.appendChild(keySpan);
+        badge.appendChild(document.createTextNode(': ' + v + ' '));
+        const del = document.createElement('button');
+        del.className = 'tag-del';
+        del.textContent = '×';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!lbl.tags) return;
+          delete lbl.tags[k];
+          renderInlineTags(td, lbl);
+          syncToPlayer();
+        });
+        badge.appendChild(del);
+        td.appendChild(badge);
+      }
+      const addBtn = document.createElement('button');
+      addBtn.className = 'tag-add-btn';
+      addBtn.textContent = '+';
+      addBtn.title = 'Add tag';
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showTagPopover(td, lbl, addBtn);
+      });
+      td.appendChild(addBtn);
+    }
+
+    function showTagPopover(td, lbl, anchorBtn) {
+      td.querySelector('.tag-popover')?.remove();
+      const pop = document.createElement('div');
+      pop.className = 'tag-popover';
+      pop.addEventListener('click', (e) => e.stopPropagation());
+
+      for (const preset of TAG_PRESETS_TABLE) {
+        if (lbl.tags?.[preset.key]) continue;
+        const row = document.createElement('div');
+        row.className = 'tag-pop-row';
+        const label = document.createElement('span');
+        label.className = 'tag-pop-label';
+        label.textContent = preset.key;
+        row.appendChild(label);
+        const sel = document.createElement('select');
+        sel.style.flex = '1';
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '—';
+        sel.appendChild(emptyOpt);
+        for (const val of preset.options) {
+          const opt = document.createElement('option');
+          opt.value = val;
+          opt.textContent = val;
+          sel.appendChild(opt);
+        }
+        sel.addEventListener('change', () => {
+          if (!sel.value) return;
+          if (!lbl.tags) lbl.tags = {};
+          lbl.tags[preset.key] = sel.value;
+          pop.remove();
+          renderInlineTags(td, lbl);
+          syncToPlayer();
+        });
+        row.appendChild(sel);
+        pop.appendChild(row);
+      }
+
+      const customRow = document.createElement('div');
+      customRow.className = 'tag-pop-row';
+      const keyInput = document.createElement('input');
+      keyInput.placeholder = 'key';
+      keyInput.style.width = '60px';
+      const valInput = document.createElement('input');
+      valInput.placeholder = 'value';
+      valInput.style.flex = '1';
+      const addCustom = document.createElement('button');
+      addCustom.className = 'tag-add-btn';
+      addCustom.textContent = '✓';
+      const commitCustom = () => {
+        const k = keyInput.value.trim();
+        const v = valInput.value.trim();
+        if (k && v) {
+          if (!lbl.tags) lbl.tags = {};
+          lbl.tags[k] = v;
+          pop.remove();
+          renderInlineTags(td, lbl);
+          syncToPlayer();
+        }
+      };
+      addCustom.addEventListener('click', (e) => { e.stopPropagation(); commitCustom(); });
+      valInput.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); commitCustom(); }
+      });
+      keyInput.addEventListener('keydown', (e) => e.stopPropagation());
+      customRow.appendChild(keyInput);
+      customRow.appendChild(valInput);
+      customRow.appendChild(addCustom);
+      pop.appendChild(customRow);
+
+      const closeHandler = (e) => {
+        if (!pop.contains(e.target) && e.target !== anchorBtn) {
+          pop.remove();
+          document.removeEventListener('pointerdown', closeHandler, true);
+        }
+      };
+      setTimeout(() => document.addEventListener('pointerdown', closeHandler, true), 0);
+
+      td.appendChild(pop);
     }
 
     // ── Table ↔ Spectrogram linking ───────────────────────────────────
