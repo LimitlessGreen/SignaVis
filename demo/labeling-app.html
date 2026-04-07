@@ -118,7 +118,7 @@
     }
     .label-table-wrap { overflow: auto; min-height: 0; }
     .label-table {
-      width: 100%; max-width: 1060px; margin: 0 auto;
+      width: 100%; max-width: 1200px; margin: 0 auto;
       border-collapse: collapse; font-size: 12px;
       table-layout: fixed;
     }
@@ -189,25 +189,51 @@
     }
     /* Tags cell — inline editable */
     .tags-cell { white-space: normal !important; overflow: visible !important; position: relative; }
-    .tag-badge {
-      display: inline-flex; align-items: center; gap: 3px;
-      font-size: 10px; padding: 1px 5px;
-      border-radius: 3px; background: #1a2a44; color: #8fa4c0;
-      border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .tags-cell .tag-grid {
+      display: grid; grid-template-columns: auto 1fr auto;
+      gap: 1px 6px; align-items: center;
     }
-    .tag-badge .tag-key { color: #5b8cb8; }
-    .tag-badge .tag-del {
-      border: none; background: transparent; color: #4b6380;
-      cursor: pointer; font-size: 11px; padding: 0; line-height: 1;
+    .tags-cell .tag-grid .tag-key {
+      font-size: 11px; color: #5b8cb8; text-align: right;
+      white-space: nowrap; user-select: none;
     }
-    .tag-badge .tag-del:hover { color: var(--danger); }
+    .tags-cell .tag-grid .tag-val {
+      font-size: 11px; color: #8fa4c0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tags-cell .tag-grid .tag-del {
+      border: none; background: transparent; color: #2e4560;
+      cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1;
+      visibility: hidden;
+    }
+    .tags-cell .tag-grid:hover .tag-del { visibility: visible; }
+    .tags-cell .tag-grid .tag-del:hover { color: var(--danger); }
     .tag-add-btn {
       display: inline-block; border: 1px dashed #253a56; border-radius: 3px;
       background: transparent; color: #4b6380; font-size: 10px; padding: 1px 5px;
-      cursor: pointer; vertical-align: middle;
+      cursor: pointer; vertical-align: middle; margin-top: 2px;
     }
     .tag-add-btn:hover { border-color: #3a7db8; color: #8fa4c0; }
+    /* Compact badge fallback for narrow screens */
+    .tag-badge {
+      display: none; /* hidden on wide, shown via media query */
+    }
+    @media (max-width: 900px) {
+      .tags-cell .tag-grid { display: none; }
+      .tag-badge {
+        display: inline-flex; align-items: center; gap: 3px;
+        font-size: 10px; padding: 1px 5px;
+        border-radius: 3px; background: #1a2a44; color: #8fa4c0;
+        border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .tag-badge .tag-key { color: #5b8cb8; }
+      .tag-badge .tag-del {
+        border: none; background: transparent; color: #4b6380;
+        cursor: pointer; font-size: 11px; padding: 0; line-height: 1;
+      }
+      .tag-badge .tag-del:hover { color: var(--danger); }
+    }
     .tag-popover {
       position: absolute; z-index: 50; top: 100%; left: 0;
       background: rgba(2, 6, 23, 0.98); border: 1px solid #253a56;
@@ -677,14 +703,9 @@
     function renderInlineTags(td, lbl) {
       td.innerHTML = '';
       const tags = lbl.tags || {};
-      for (const [k, v] of Object.entries(tags)) {
-        const badge = document.createElement('span');
-        badge.className = 'tag-badge';
-        const keySpan = document.createElement('span');
-        keySpan.className = 'tag-key';
-        keySpan.textContent = k;
-        badge.appendChild(keySpan);
-        badge.appendChild(document.createTextNode(': ' + v + ' '));
+      const entries = Object.entries(tags);
+
+      const makeDelBtn = (k) => {
         const del = document.createElement('button');
         del.className = 'tag-del';
         del.textContent = '×';
@@ -695,9 +716,40 @@
           renderInlineTags(td, lbl);
           syncToPlayer();
         });
-        badge.appendChild(del);
+        return del;
+      };
+
+      // Grid layout (wide screens)
+      if (entries.length) {
+        const grid = document.createElement('div');
+        grid.className = 'tag-grid';
+        for (const [k, v] of entries) {
+          const keyEl = document.createElement('span');
+          keyEl.className = 'tag-key';
+          keyEl.textContent = k;
+          const valEl = document.createElement('span');
+          valEl.className = 'tag-val';
+          valEl.textContent = v;
+          grid.appendChild(keyEl);
+          grid.appendChild(valEl);
+          grid.appendChild(makeDelBtn(k));
+        }
+        td.appendChild(grid);
+      }
+
+      // Badge layout (narrow screens — CSS toggles visibility)
+      for (const [k, v] of entries) {
+        const badge = document.createElement('span');
+        badge.className = 'tag-badge';
+        const keySpan = document.createElement('span');
+        keySpan.className = 'tag-key';
+        keySpan.textContent = k;
+        badge.appendChild(keySpan);
+        badge.appendChild(document.createTextNode(': ' + v + ' '));
+        badge.appendChild(makeDelBtn(k));
         td.appendChild(badge);
       }
+
       const addBtn = document.createElement('button');
       addBtn.className = 'tag-add-btn';
       addBtn.textContent = '+';
