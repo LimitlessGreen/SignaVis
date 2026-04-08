@@ -810,3 +810,43 @@ test('computeReassignedSpectrogram detects sine frequency (linear)', () => {
     assert.ok(Math.abs(peakBin - expectedBin) <= 3,
         `peak at bin ${peakBin}, expected ~${expectedBin} (2kHz)`);
 });
+
+test('computeSpectrogram with scale=cqt uses CQT filterbank', () => {
+    const sr = 16000, len = sr;
+    const audio = new Float32Array(len);
+    for (let i = 0; i < len; i++) audio[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+
+    const nMels = 96; // 4 octaves × 24 bpo
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 1024, sampleRate: sr,
+        frameRate: 100, nMels, scale: 'cqt', usePcen: false,
+    });
+    assert.ok(result.nFrames > 0);
+    assert.equal(result.nMels, nMels);
+    assert.equal(result.data.length, result.nFrames * nMels);
+
+    // Energy should be concentrated in the CQT bin nearest 1kHz
+    // CQT bin k has center freq = 32.7 * 2^(k/24)
+    // 1000 Hz → k = 24 * log2(1000/32.7) ≈ 24 * 4.93 ≈ 118 — but we only have 96 bins
+    // With fMin=32.7 and 96 bins: max freq = 32.7 * 2^(96/24) = 32.7 * 16 = 523 Hz
+    // So 1kHz is above our CQT range → energy lands in highest bins
+    // Let's use a lower frequency instead
+    const audio2 = new Float32Array(len);
+    for (let i = 0; i < len; i++) audio2[i] = Math.sin(2 * Math.PI * 200 * i / sr);
+    const result2 = computeSpectrogram({
+        channelData: audio2, fftSize: 1024, sampleRate: sr,
+        frameRate: 100, nMels, scale: 'cqt', usePcen: false,
+    });
+    // 200 Hz → k = 24 * log2(200/32.7) ≈ 24 * 2.61 ≈ 63
+    const expectedBinCQT = Math.round(24 * Math.log2(200 / 32.7));
+    const avgE = new Float32Array(nMels);
+    for (let f = 0; f < result2.nFrames; f++) {
+        for (let b = 0; b < nMels; b++) avgE[b] += result2.data[f * nMels + b];
+    }
+    let peak = 0, peakV = -Infinity;
+    for (let b = 0; b < nMels; b++) {
+        if (avgE[b] > peakV) { peakV = avgE[b]; peak = b; }
+    }
+    assert.ok(Math.abs(peak - expectedBinCQT) <= 3,
+        `CQT peak at bin ${peak}, expected ~${expectedBinCQT} (200 Hz)`);
+});

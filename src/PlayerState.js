@@ -1270,13 +1270,12 @@ export class PlayerState {
         const useReassigned = this.d.reassignedCheck?.checked ?? false;
 
         // CQT: compute nMels from octave range if CQT scale is selected
-        const effectiveScale = scale === 'cqt' ? 'mel' : scale; // CQT uses mel pipeline with CQT filterbank
         const effectiveNMels = scale === 'cqt'
             ? Math.ceil(Math.log2((this.audioBuffer.sampleRate / 2) / CQT_FMIN) * CQT_BINS_PER_OCTAVE)
             : nMels;
 
         const options = {
-            scale: effectiveScale,
+            scale,
             colourScale,
             sampleRate: this.audioBuffer.sampleRate,
             fftSize,
@@ -2182,21 +2181,29 @@ export class PlayerState {
 
         if (this._showWaveform) {
             if (overlaySingleWaveform || waveformFlexes) {
-                this.d.waveformContainer.style.height = '';
-                this.d.waveformContainer.style.minHeight = waveformFlexes
-                    ? `${Math.round(this.waveformDisplayHeight)}px` : '0';
+                if (this.d.waveformContainer) {
+                    this.d.waveformContainer.style.height = '';
+                    this.d.waveformContainer.style.minHeight = waveformFlexes
+                        ? `${Math.round(this.waveformDisplayHeight)}px` : '0';
+                }
             } else {
-                this.d.waveformContainer.style.minHeight = '';
-                this.d.waveformContainer.style.height = `${Math.round(this.waveformDisplayHeight)}px`;
+                if (this.d.waveformContainer) {
+                    this.d.waveformContainer.style.minHeight = '';
+                    this.d.waveformContainer.style.height = `${Math.round(this.waveformDisplayHeight)}px`;
+                }
             }
         }
         if (this._showSpectrogram) {
             if (overlaySingleSpectrogram) {
-                this.d.spectrogramContainer.style.height = '';
-                this.d.spectrogramContainer.style.minHeight = '0';
+                if (this.d.spectrogramContainer) {
+                    this.d.spectrogramContainer.style.height = '';
+                    this.d.spectrogramContainer.style.minHeight = '0';
+                }
             } else {
-                this.d.spectrogramContainer.style.height = '';
-                this.d.spectrogramContainer.style.minHeight = `${Math.round(this.spectrogramDisplayHeight)}px`;
+                if (this.d.spectrogramContainer) {
+                    this.d.spectrogramContainer.style.height = '';
+                    this.d.spectrogramContainer.style.minHeight = `${Math.round(this.spectrogramDisplayHeight)}px`;
+                }
             }
         }
     }
@@ -2757,10 +2764,14 @@ export class PlayerState {
     }
 
     _setInitialPlayheadPositions() {
-        this.d.playhead.style.left = '0px';
-        this.d.waveformPlayhead.style.left = '0px';
-        this.d.playhead.style.transform = 'translateX(0px)';
-        this.d.waveformPlayhead.style.transform = 'translateX(0px)';
+        if (this.d.playhead) {
+            this.d.playhead.style.left = '0px';
+            this.d.playhead.style.transform = 'translateX(0px)';
+        }
+        if (this.d.waveformPlayhead) {
+            this.d.waveformPlayhead.style.left = '0px';
+            this.d.waveformPlayhead.style.transform = 'translateX(0px)';
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════

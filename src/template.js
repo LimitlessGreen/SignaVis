@@ -221,7 +221,6 @@ export function createPlayerHTML(opts = {}) {
                     <input type="checkbox" data-aw="reassignedCheck"> Reassigned
                 </label>
             </div>
-            </div>
             <div class="settings-row">
                 <label class="settings-label">Overlap</label>
                 <select data-aw="overlapSelect" class="settings-select" title="Window Overlap — higher = smoother time axis">

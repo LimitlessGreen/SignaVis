@@ -397,6 +397,7 @@ export function computeSpectrogram(params) {
 
     const nBins      = Math.floor(fftSize / 2);
     const useLinear  = scale === 'linear';
+    const useCQT     = scale === 'cqt';
     const isPhase    = colourScale === 'phase';
     const outBins    = useLinear ? nBins : nMels;
     const output     = new Float32Array(numFrames * outBins);
@@ -411,8 +412,10 @@ export function computeSpectrogram(params) {
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
-    // ── Sparse mel filterbank (skip zero-weight bins) ──
-    const sparseFB = useLinear ? null : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+    // ── Sparse filterbank: CQT or Mel (skip zero-weight bins) ──
+    const sparseFB = useLinear ? null
+        : useCQT ? createCQTFilterbank(sampleRate, fftSize, nMels)
+        : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
     // Keep dense filterbank only for phase (needs sin/cos weighting)
     const denseFB  = isPhase && !useLinear ? createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2) : null;
 
@@ -637,6 +640,7 @@ export function computeReassignedSpectrogram(params) {
     const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
     const nBins     = Math.floor(fftSize / 2);
     const useLinear = scale === 'linear';
+    const useCQT    = scale === 'cqt';
     const outBins   = useLinear ? nBins : nMels;
     const output    = new Float32Array(numFrames * outBins);
 
@@ -659,7 +663,9 @@ export function computeReassignedSpectrogram(params) {
     const realDH = new Float32Array(fftSize), imagDH = new Float32Array(fftSize);
 
     // ── Sparse filterbank for mel/CQT ──
-    const sparseFB = useLinear ? null : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+    const sparseFB = useLinear ? null
+        : useCQT ? createCQTFilterbank(sampleRate, fftSize, nMels)
+        : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
 
     // ── Accumulation grid: energy placed at reassigned coordinates ──
     // We accumulate into (numFrames × outBins) and let overlapping
