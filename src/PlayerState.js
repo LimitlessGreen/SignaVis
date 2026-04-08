@@ -13,6 +13,7 @@ import {
     DSP_PROFILES,
     SPECTROGRAM_ENGINES,
     QUALITY_LEVELS,
+    CQT_FMIN, CQT_BINS_PER_OCTAVE,
     windowHopFromOverlap,
     fftSizeFromOversampling,
 } from './constants.js';
@@ -34,6 +35,8 @@ import {
     renderSpectrogram,
     createSpectrogramProcessor,
 } from './spectrogram.js';
+
+import { computeReassignedSpectrogram } from './dsp.js';
 
 import { createSpectrolipiProcessor } from './spectrolipiEngine.js';
 
@@ -515,6 +518,9 @@ export class PlayerState {
             windowFunctionSelect:   q('windowFunction'),
             overlapSelect:          q('overlapSelect'),
             oversamplingSelect:     q('oversamplingSelect'),
+            reassignedCheck:        q('reassignedCheck'),
+            noiseReductionCheck:    q('noiseReductionCheck'),
+            claheCheck:             q('claheCheck'),
             qualitySlider:          q('qualitySlider'),
             qualityLevelDisplay:    q('qualityLevelDisplay'),
             zoomSlider:             q('zoomSlider'),
@@ -1261,13 +1267,21 @@ export class PlayerState {
         const fftSize = fftSizeFromOversampling(windowSize, oversamplingLevel);
         const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
         const nMels = parseInt(this.d.nMelsInput?.value || '160', 10) || 160;
+        const useReassigned = this.d.reassignedCheck?.checked ?? false;
+
+        // CQT: compute nMels from octave range if CQT scale is selected
+        const effectiveScale = scale === 'cqt' ? 'mel' : scale; // CQT uses mel pipeline with CQT filterbank
+        const effectiveNMels = scale === 'cqt'
+            ? Math.ceil(Math.log2((this.audioBuffer.sampleRate / 2) / CQT_FMIN) * CQT_BINS_PER_OCTAVE)
+            : nMels;
+
         const options = {
-            scale,
+            scale: effectiveScale,
             colourScale,
             sampleRate: this.audioBuffer.sampleRate,
             fftSize,
             windowFunction,
-            nMels,
+            nMels: effectiveNMels,
             frameRate: PERCH_FRAME_RATE,
             usePcen: this.d.pcenEnabledCheck?.checked ?? true,
             pcenGain: parseFloat(this.d.pcenGainInput?.value || '0.8'),
@@ -1278,11 +1292,21 @@ export class PlayerState {
             hopSize,
         };
 
+        // Remember actual scale for grayscale / coordinate system
+        this._activeScale = scale;
+
         const t0 = performance.now();
         try {
             const channelData = this.audioBuffer.getChannelData(0);
             let result;
 
+            if (useReassigned) {
+                // Reassigned spectrogram runs synchronously on main thread
+                result = computeReassignedSpectrogram({
+                    channelData,
+                    ...options,
+                });
+            } else {
             const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true
                 && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
                 && typeof this.processor.computeProgressive === 'function';
@@ -1304,6 +1328,7 @@ export class PlayerState {
             } else {
                 result = await this.processor.compute(channelData, options);
             }
+            } // end if(useReassigned) else
 
             this.spectrogramData = result.data;
             this.spectrogramFrames = result.nFrames;
@@ -1662,7 +1687,7 @@ export class PlayerState {
         btn.classList.toggle('muted', vol < 0.01);
     }
 
-    /** Stage 1 — expensive: spectrogram data → 8-bit grayscale. Run once per audio/fft/freq change. */
+    /** Stage 1 — expensive: spectrogram data → float32 grayscale. Run once per audio/fft/freq change. */
     _buildSpectrogramGrayscale() {
         this.spectrogramGrayInfo = buildSpectrogramGrayscale({
             spectrogramData: this.spectrogramData,
@@ -1672,8 +1697,10 @@ export class PlayerState {
             maxFreq: parseFloat(this.d.maxFreqSelect.value),
             spectrogramAbsLogMin: this.spectrogramAbsLogMin,
             spectrogramAbsLogMax: this.spectrogramAbsLogMax,
-            scale: this.d.scaleSelect?.value || 'mel',
+            scale: this._activeScale || this.d.scaleSelect?.value || 'mel',
             colourScale: this._colourScale || this.d.colourScaleSelect?.value || 'dbSquared',
+            noiseReduction: this.d.noiseReductionCheck?.checked ?? false,
+            clahe: this.d.claheCheck?.checked ?? false,
         });
         // Upload to GPU if available
         if (this.spectrogramGrayInfo && this.colorizer.ok) {
@@ -2382,6 +2409,8 @@ export class PlayerState {
             this.d.colorSchemeSelect.value = p.colorScheme;
             this.currentColorScheme = p.colorScheme;
         }
+        // Reassignment
+        if (this.d.reassignedCheck) this.d.reassignedCheck.checked = !!p.reassigned;
         // Sync dropdown
         if (this.d.presetSelect) this.d.presetSelect.value = name;
         this._syncQualitySlider();
@@ -2839,6 +2868,14 @@ export class PlayerState {
         on(this.d.overlapSelect, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.oversamplingSelect, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
         on(this.d.windowFunctionSelect, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        on(this.d.reassignedCheck, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
+        // Noise reduction and CLAHE only need Stage 1 rebuild (no new FFT)
+        on(this.d.noiseReductionCheck, 'change', () => {
+            if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
+        });
+        on(this.d.claheCheck, 'change', () => {
+            if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
+        });
         on(this.d.maxFreqSelect, 'change', () => {
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
                 this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });

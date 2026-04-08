@@ -3,8 +3,8 @@
 // mappings between time, frequency, pixel, and bin domains.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE } from './constants.js';
-import { buildMelFrequencies, hzToMel, melToHz } from './dsp.js';
+import { PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE, CQT_FMIN, CQT_BINS_PER_OCTAVE } from './constants.js';
+import { buildMelFrequencies, buildCQTFrequencies, hzToMel, melToHz } from './dsp.js';
 
 /**
  * Compute the highest visible bin index for a given frequency ceiling.
@@ -44,7 +44,7 @@ export class CoordinateSystem {
      * @param {number} [params.canvasHeight]       Spectrogram canvas height in px (display size)
      * @param {number} [params.maxFreq]            User-selected max frequency in Hz
      * @param {number} [params.spectrogramMels]    Number of mel bins (nMels)
-     * @param {string} [params.scale]               'mel' | 'linear'
+     * @param {string} [params.scale]               'mel' | 'linear' | 'cqt'
      * @param {number} [params.frameRate]          Spectrogram frame rate (default: PERCH_FRAME_RATE)
      * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
      * @param {number[] | null} [params.freqRange]  [fMin, fMax] in Hz — explicit frequency range (for external images)
@@ -103,7 +103,9 @@ export class CoordinateSystem {
     /** @returns {Float32Array} */
     get melFreqs() {
         if (!this._melFreqs) {
-            this._melFreqs = buildMelFrequencies(this.sampleRate, this.spectrogramMels);
+            this._melFreqs = this.scale === 'cqt'
+                ? buildCQTFrequencies(this.spectrogramMels, CQT_FMIN, CQT_BINS_PER_OCTAVE)
+                : buildMelFrequencies(this.sampleRate, this.spectrogramMels);
         }
         return this._melFreqs;
     }

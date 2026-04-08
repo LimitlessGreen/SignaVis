@@ -15,6 +15,10 @@ import {
     fftMagnitudePhaseSpectrum,
     iecDbToFader,
     computeSpectrogram,
+    WINDOW_FUNCTION_KEYS,
+    createCQTFilterbank,
+    buildCQTFrequencies,
+    computeReassignedSpectrogram,
 } from '../src/dsp.js';
 import { windowHopFromOverlap, fftSizeFromOversampling } from '../src/constants.js';
 
@@ -662,4 +666,147 @@ test('fftSizeFromOversampling level 2 returns 4× windowSize', () => {
 test('fftSizeFromOversampling level 3 returns 8× windowSize', () => {
     assert.equal(fftSizeFromOversampling(1024, 3), 8192);
     assert.equal(fftSizeFromOversampling(2048, 3), 16384);
+});
+
+// ─── Window Functions ───────────────────────────────────────────────
+
+test('WINDOW_FUNCTION_KEYS contains all 6 window types', () => {
+    const expected = ['hann', 'hamming', 'blackman', 'blackmanHarris', 'flatTop', 'kaiser'];
+    for (const key of expected) {
+        assert.ok(WINDOW_FUNCTION_KEYS.includes(key), `missing window: ${key}`);
+    }
+    assert.equal(WINDOW_FUNCTION_KEYS.length, expected.length);
+});
+
+test('all window functions work in fftMagnitudeSpectrum', () => {
+    const sr = 16000, len = sr; // 1 second
+    const audio = new Float32Array(len);
+    // 1kHz sine
+    for (let i = 0; i < len; i++) audio[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+
+    for (const wf of WINDOW_FUNCTION_KEYS) {
+        const spec = fftMagnitudeSpectrum(audio, 0, 1024, 1024, wf);
+        assert.equal(spec.length, 512, `${wf}: should return fftSize/2 bins`);
+        // Energy should be non-negative and the peak should be near bin 64 (1kHz)
+        let maxBin = 0, maxVal = -Infinity;
+        for (let i = 0; i < spec.length; i++) {
+            assert.ok(spec[i] >= 0, `${wf}: negative value at bin ${i}`);
+            if (spec[i] > maxVal) { maxVal = spec[i]; maxBin = i; }
+        }
+        assert.ok(Math.abs(maxBin - 64) <= 2, `${wf}: peak at ${maxBin}, expected ~64`);
+    }
+});
+
+// ─── CQT Filterbank ────────────────────────────────────────────────
+
+test('createCQTFilterbank returns correct number of bins', () => {
+    const nBins = 96; // 4 octaves × 24 bpo
+    const fb = createCQTFilterbank(16000, 1024, nBins, 32.7, 24);
+    assert.equal(fb.length, nBins);
+});
+
+test('createCQTFilterbank each filter has positive weights and start index', () => {
+    const fb = createCQTFilterbank(16000, 2048, 48, 100, 24);
+    for (let k = 0; k < fb.length; k++) {
+        assert.ok(fb[k].start >= 0, `filter ${k}: start should be ≥ 0`);
+        assert.ok(fb[k].weights.length >= 1, `filter ${k}: should have at least 1 weight`);
+        let sum = 0;
+        for (const w of fb[k].weights) {
+            assert.ok(w >= 0, `filter ${k}: weight should be ≥ 0`);
+            sum += w;
+        }
+        assert.ok(sum > 0, `filter ${k}: total weight should be > 0`);
+    }
+});
+
+test('createCQTFilterbank weights are normalised to sum ≈ 1', () => {
+    const fb = createCQTFilterbank(16000, 2048, 48, 100, 24);
+    for (let k = 0; k < fb.length; k++) {
+        let sum = 0;
+        for (const w of fb[k].weights) sum += w;
+        assert.ok(Math.abs(sum - 1) < 0.01, `filter ${k}: sum=${sum}, expected ~1`);
+    }
+});
+
+test('buildCQTFrequencies returns correct length and log spacing', () => {
+    const nBins = 48, fMin = 100, bpo = 24;
+    const freqs = buildCQTFrequencies(nBins, fMin, bpo);
+    assert.equal(freqs.length, nBins);
+    assert.ok(Math.abs(freqs[0] - fMin) < 0.01, `first bin should be fMin (${freqs[0]})`);
+
+    // Check log spacing: each bin should be 2^(1/bpo) times the previous
+    const ratio = Math.pow(2, 1 / bpo);
+    for (let k = 1; k < nBins; k++) {
+        const expected = fMin * Math.pow(2, k / bpo);
+        assert.ok(Math.abs(freqs[k] - expected) < 0.01,
+            `bin ${k}: got ${freqs[k]}, expected ${expected}`);
+    }
+});
+
+test('buildCQTFrequencies is monotonically increasing', () => {
+    const freqs = buildCQTFrequencies(96, 32.7, 24);
+    for (let k = 1; k < freqs.length; k++) {
+        assert.ok(freqs[k] > freqs[k - 1], `bin ${k} (${freqs[k]}) should be > bin ${k - 1} (${freqs[k - 1]})`);
+    }
+});
+
+// ─── Reassigned Spectrogram ─────────────────────────────────────────
+
+test('computeReassignedSpectrogram returns correct shape (linear)', () => {
+    const sr = 16000, duration = 0.5;
+    const len = sr * duration;
+    const audio = new Float32Array(len);
+    for (let i = 0; i < len; i++) audio[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+
+    const result = computeReassignedSpectrogram({
+        channelData: audio, fftSize: 1024, sampleRate: sr,
+        frameRate: 100, nMels: 128, scale: 'linear',
+    });
+    assert.ok(result.nFrames > 0, 'should produce frames');
+    assert.equal(result.nMels, 512, 'linear: nMels should be fftSize/2');
+    assert.equal(result.data.length, result.nFrames * result.nMels);
+    assert.equal(result.colourScale, 'dbSquared');
+});
+
+test('computeReassignedSpectrogram returns correct shape (mel)', () => {
+    const sr = 16000, len = sr;
+    const audio = new Float32Array(len);
+    for (let i = 0; i < len; i++) audio[i] = Math.sin(2 * Math.PI * 2000 * i / sr);
+
+    const result = computeReassignedSpectrogram({
+        channelData: audio, fftSize: 1024, sampleRate: sr,
+        frameRate: 100, nMels: 64, scale: 'mel',
+    });
+    assert.ok(result.nFrames > 0);
+    assert.equal(result.nMels, 64);
+    assert.equal(result.data.length, result.nFrames * result.nMels);
+});
+
+test('computeReassignedSpectrogram detects sine frequency (linear)', () => {
+    const sr = 16000, len = sr;
+    const audio = new Float32Array(len);
+    const freq = 2000;
+    for (let i = 0; i < len; i++) audio[i] = Math.sin(2 * Math.PI * freq * i / sr);
+
+    const result = computeReassignedSpectrogram({
+        channelData: audio, fftSize: 1024, sampleRate: sr,
+        frameRate: 100, nMels: 128, scale: 'linear',
+        colourScale: 'linear',
+    });
+
+    // Find bin with maximum energy — should be near the 2kHz bin
+    const nBins = result.nMels;
+    const avgEnergy = new Float32Array(nBins);
+    for (let f = 0; f < result.nFrames; f++) {
+        for (let b = 0; b < nBins; b++) {
+            avgEnergy[b] += result.data[f * nBins + b];
+        }
+    }
+    let peakBin = 0, peakVal = -Infinity;
+    for (let b = 0; b < nBins; b++) {
+        if (avgEnergy[b] > peakVal) { peakVal = avgEnergy[b]; peakBin = b; }
+    }
+    const expectedBin = Math.round(freq * 1024 / sr);
+    assert.ok(Math.abs(peakBin - expectedBin) <= 3,
+        `peak at bin ${peakBin}, expected ~${expectedBin} (2kHz)`);
 });

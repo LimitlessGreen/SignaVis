@@ -276,7 +276,7 @@ export class GpuColorizer {
     get ok()     { return !!this._gl; }
     get canvas() { return this._canvas; }
 
-    /** Upload 8-bit grayscale map as a RED channel texture. Returns success. */
+    /** Upload Float32 grayscale map (values 0-1) as a R32F texture. Returns success. */
     uploadGrayscale(gray, width, height) {
         const gl = this._gl;
         if (!gl || width > this._maxTex || height > this._maxTex) return false;
@@ -284,8 +284,8 @@ export class GpuColorizer {
         this._canvas.width = width; this._canvas.height = height;
 
         gl.bindTexture(gl.TEXTURE_2D, this._grayTex);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);  // R8 = 1 byte/pixel, no row padding
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, gray);
+        // Float32Array → R32F (full precision, no 8-bit quantisation)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, gray);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -552,6 +552,8 @@ export function buildSpectrogramGrayscale({
     spectrogramAbsLogMin, spectrogramAbsLogMax,
     scale = 'mel',
     colourScale = 'dbSquared',
+    noiseReduction = false,
+    clahe = false,
 }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
@@ -584,24 +586,20 @@ export function buildSpectrogramGrayscale({
         yBinFrac[y] = fracBin - lo;
     }
 
-    const dataRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
-    const gray = new Uint8Array(width * height);
-
-    // Precompute IEC meter LUT (256 entries) for the meter colour scale
-    let meterLut = null;
-    if (colourScale === 'meter') {
-        meterLut = new Uint8Array(256);
-        // The meter curve maps dB proportions through the IEC fader law.
-        // We map normalised proportion (0-1) → dB in range [-70, 0] → IEC → pixel.
-        const IEC_MAX = iecDbToFader(0); // 100
-        for (let i = 0; i < 256; i++) {
-            const proportion = i / 255;
-            // Map proportion to dB: -70 for silence, 0 for full scale
-            const db = proportion <= 0 ? -80 : 20 * Math.log10(proportion);
-            const meterVal = iecDbToFader(Math.max(-70, db)) / IEC_MAX;
-            meterLut[i] = Math.max(0, Math.min(255, Math.round(meterVal * 255)));
-        }
+    // ── Spectral subtraction (median noise floor estimation) ──
+    // For each mel bin, estimate the noise floor as the median value
+    // across all frames, then subtract it.
+    let cleanData = spectrogramData;
+    if (noiseReduction && colourScale !== 'phase') {
+        cleanData = spectralSubtract(spectrogramData, spectrogramFrames, spectrogramMels);
     }
+
+    const dataRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
+    // ── Float32 grayscale (0.0 – 1.0) for full precision ──
+    const gray = new Float32Array(width * height);
+
+    // Precompute IEC meter mapping factor
+    const IEC_MAX = colourScale === 'meter' ? iecDbToFader(0) : 0;
 
     for (let x = 0; x < width; x++) {
         const frameStart = Math.round(x * framesPerPixel);
@@ -615,8 +613,8 @@ export function buildSpectrogramGrayscale({
 
             for (let frame = frameStart; frame < frameEnd; frame++) {
                 const base = frame * spectrogramMels;
-                sumLo += spectrogramData[base + binLo] || 0;
-                sumHi += spectrogramData[base + binHi] || 0;
+                sumLo += cleanData[base + binLo] || 0;
+                sumHi += cleanData[base + binHi] || 0;
                 count++;
             }
 
@@ -624,29 +622,152 @@ export function buildSpectrogramGrayscale({
             let pixel;
 
             if (colourScale === 'phase') {
-                // Phase: −π…+π → 0…255
-                pixel = Math.round(((value + Math.PI) / (2 * Math.PI)) * 255);
-            } else if (colourScale === 'linear' || colourScale === 'meter') {
-                // Raw magnitude range → proportional mapping
+                pixel = (value + Math.PI) / (2 * Math.PI);
+            } else if (colourScale === 'meter') {
                 const normalized = (value - spectrogramAbsLogMin) / dataRange;
-                const raw = Math.max(0, Math.min(255, Math.round(normalized * 255)));
-                pixel = colourScale === 'meter' ? meterLut[raw] : raw;
+                const raw = Math.max(0, Math.min(1, normalized));
+                const db = raw <= 0 ? -80 : 20 * Math.log10(raw);
+                pixel = iecDbToFader(Math.max(-70, db)) / IEC_MAX;
             } else {
-                // dB / dB² / PCEN: linear range mapping (original behavior)
-                const normalized = (value - spectrogramAbsLogMin) / dataRange;
-                pixel = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+                pixel = (value - spectrogramAbsLogMin) / dataRange;
             }
 
-            gray[y * width + x] = Math.max(0, Math.min(255, pixel));
+            gray[y * width + x] = Math.max(0, Math.min(1, pixel));
         }
+    }
+
+    // ── CLAHE (Contrast Limited Adaptive Histogram Equalization) ──
+    if (clahe && colourScale !== 'phase') {
+        applyCLAHE(gray, width, height);
     }
 
     return { gray, width, height };
 }
 
+// ─── Spectral Subtraction (Median Noise Floor) ─────────────────────
+
+/**
+ * Estimate per-bin noise floor via median across all frames,
+ * then subtract it so stationary noise is suppressed.
+ * Returns a new Float32Array with the same layout.
+ */
+export function spectralSubtract(spectrogramData, nFrames, nMels) {
+    const result = new Float32Array(spectrogramData.length);
+
+    for (let m = 0; m < nMels; m++) {
+        // Sample up to 2000 frames for median estimation (speed)
+        const stride = Math.max(1, Math.floor(nFrames / 2000));
+        const vals = [];
+        for (let f = 0; f < nFrames; f += stride) {
+            vals.push(spectrogramData[f * nMels + m]);
+        }
+        vals.sort((a, b) => a - b);
+        const median = vals[Math.floor(vals.length / 2)] || 0;
+
+        // Subtract median (half-wave rectification)
+        for (let f = 0; f < nFrames; f++) {
+            const idx = f * nMels + m;
+            result[idx] = Math.max(0, spectrogramData[idx] - median);
+        }
+    }
+    return result;
+}
+
+// ─── CLAHE (Contrast Limited Adaptive Histogram Equalization) ───────
+
+/**
+ * Apply CLAHE in-place on a Float32Array grayscale image (values 0-1).
+ * Divides the image into tiles, computes clipped histograms per tile,
+ * and bilinearly interpolates between tile mappings for smooth results.
+ *
+ * @param {Float32Array} gray   - image data [0,1], modified in place
+ * @param {number} width
+ * @param {number} height
+ * @param {number} [nTilesX=8]  - number of horizontal tiles
+ * @param {number} [nTilesY=4]  - number of vertical tiles
+ * @param {number} [clipLimit=2.5] - contrast limit (higher = more contrast, 1 = no enhancement)
+ */
+export function applyCLAHE(gray, width, height, nTilesX = 8, nTilesY = 4, clipLimit = 2.5) {
+    const nBins = 256;
+    const tilesX = Math.min(nTilesX, width);
+    const tilesY = Math.min(nTilesY, height);
+    if (tilesX < 1 || tilesY < 1) return;
+
+    const tileW = width / tilesX;
+    const tileH = height / tilesY;
+
+    // Build CDF for each tile
+    const cdfs = new Array(tilesY * tilesX);
+    for (let ty = 0; ty < tilesY; ty++) {
+        for (let tx = 0; tx < tilesX; tx++) {
+            const x0 = Math.floor(tx * tileW);
+            const x1 = Math.min(width, Math.floor((tx + 1) * tileW));
+            const y0 = Math.floor(ty * tileH);
+            const y1 = Math.min(height, Math.floor((ty + 1) * tileH));
+            const nPixels = (x1 - x0) * (y1 - y0);
+            if (nPixels === 0) { cdfs[ty * tilesX + tx] = new Float32Array(nBins); continue; }
+
+            // Build histogram
+            const hist = new Float64Array(nBins);
+            for (let yy = y0; yy < y1; yy++) {
+                for (let xx = x0; xx < x1; xx++) {
+                    const bin = Math.min(nBins - 1, Math.floor(gray[yy * width + xx] * (nBins - 1)));
+                    hist[bin]++;
+                }
+            }
+
+            // Clip histogram & redistribute
+            const limit = Math.max(1, Math.floor(clipLimit * nPixels / nBins));
+            let excess = 0;
+            for (let i = 0; i < nBins; i++) {
+                if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; }
+            }
+            const perBin = excess / nBins;
+            for (let i = 0; i < nBins; i++) hist[i] += perBin;
+
+            // Build CDF (normalized 0-1)
+            const cdf = new Float32Array(nBins);
+            cdf[0] = hist[0];
+            for (let i = 1; i < nBins; i++) cdf[i] = cdf[i - 1] + hist[i];
+            const cdfMin = cdf[0];
+            const cdfRange = Math.max(1, cdf[nBins - 1] - cdfMin);
+            for (let i = 0; i < nBins; i++) cdf[i] = (cdf[i] - cdfMin) / cdfRange;
+            cdfs[ty * tilesX + tx] = cdf;
+        }
+    }
+
+    // Apply with bilinear interpolation between tile CDFs
+    for (let y = 0; y < height; y++) {
+        // Tile center coordinate
+        const tyF = (y + 0.5) / tileH - 0.5;
+        const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(tyF)));
+        const ty1 = Math.min(tilesY - 1, ty0 + 1);
+        const fy = tyF - ty0;
+
+        for (let x = 0; x < width; x++) {
+            const txF = (x + 0.5) / tileW - 0.5;
+            const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(txF)));
+            const tx1 = Math.min(tilesX - 1, tx0 + 1);
+            const fx = txF - tx0;
+
+            const val = gray[y * width + x];
+            const bin = Math.min(nBins - 1, Math.max(0, Math.floor(val * (nBins - 1))));
+
+            // Bilinear interpolation of 4 surrounding tile CDFs
+            const c00 = cdfs[ty0 * tilesX + tx0][bin];
+            const c10 = cdfs[ty0 * tilesX + tx1][bin];
+            const c01 = cdfs[ty1 * tilesX + tx0][bin];
+            const c11 = cdfs[ty1 * tilesX + tx1][bin];
+            const top = c00 + (c10 - c00) * fx;
+            const bot = c01 + (c11 - c01) * fx;
+            gray[y * width + x] = Math.max(0, Math.min(1, top + (bot - top) * fy));
+        }
+    }
+}
+
 /**
  * Stage 2 - Cheap JS fallback, called on every floor/ceil/colorScheme change.
- * Builds a 256-entry RGBA look-up table, then paints the grayscale map.
+ * Builds a 256-entry RGBA look-up table, then paints the Float32 grayscale map.
  */
 export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     if (!grayInfo) return null;
@@ -672,7 +793,9 @@ export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     const pixels = new Uint32Array(imageData.data.buffer);
     const len = width * height;
     for (let i = 0; i < len; i++) {
-        pixels[i] = lut[gray[i]];
+        // Float32 gray [0,1] → LUT index [0,255]
+        const idx = Math.min(255, Math.max(0, Math.round(gray[i] * 255)));
+        pixels[i] = lut[idx];
     }
 
     ctx.putImageData(imageData, 0, 0);

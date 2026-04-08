@@ -12,6 +12,8 @@ import {
     buildSpectrogramGrayscale,
     pixelYToFrequency,
     frequencyToPixelY,
+    spectralSubtract,
+    applyCLAHE,
 } from '../src/spectrogram.js';
 import { computeSpectrogram, buildMelFrequencies } from '../src/dsp.js';
 import { MAX_BASE_SPECTROGRAM_WIDTH } from '../src/constants.js';
@@ -170,7 +172,7 @@ test('buildSpectrogramGrayscale uniform data produces uniform gray', () => {
     assert.ok(allSame, `uniform input should produce uniform output (got ${expected})`);
 });
 
-test('buildSpectrogramGrayscale minimum data maps to 0, maximum to 255', () => {
+test('buildSpectrogramGrayscale minimum data maps to 0, maximum to 1', () => {
     const nFrames = 10, nMels = 8;
     const logMin = -4, logMax = 4;
     // Fill with logMin → should all be 0
@@ -181,9 +183,9 @@ test('buildSpectrogramGrayscale minimum data maps to 0, maximum to 255', () => {
         spectrogramAbsLogMin: logMin, spectrogramAbsLogMax: logMax,
     });
     for (let i = 0; i < rMin.gray.length; i++) {
-        assert.equal(rMin.gray[i], 0, 'min data should map to 0');
+        assert.ok(Math.abs(rMin.gray[i]) < 1e-6, 'min data should map to 0');
     }
-    // Fill with logMax → should all be 255
+    // Fill with logMax → should all be 1
     const dataMax = new Float32Array(nFrames * nMels).fill(logMax);
     const rMax = buildSpectrogramGrayscale({
         spectrogramData: dataMax, spectrogramFrames: nFrames, spectrogramMels: nMels,
@@ -191,7 +193,7 @@ test('buildSpectrogramGrayscale minimum data maps to 0, maximum to 255', () => {
         spectrogramAbsLogMin: logMin, spectrogramAbsLogMax: logMax,
     });
     for (let i = 0; i < rMax.gray.length; i++) {
-        assert.equal(rMax.gray[i], 255, 'max data should map to 255');
+        assert.ok(Math.abs(rMax.gray[i] - 1) < 1e-6, 'max data should map to 1');
     }
 });
 
@@ -240,8 +242,8 @@ test('buildSpectrogramGrayscale bilinear Y interpolation produces smooth gradien
         if (diff > maxJump) maxJump = diff;
     }
     // With bilinear interpolation, max single-step jump should be small
-    // (160 pixels mapping 32 bins ≈ 5px per bin → ~8 gray levels per step max)
-    assert.ok(maxJump <= 12, `max Y jump is ${maxJump}, should be smooth (≤12)`);
+    // (height pixels mapping 32 bins → small fractional step per pixel)
+    assert.ok(maxJump <= 0.05, `max Y jump is ${maxJump}, should be smooth (≤0.05)`);
 });
 
 test('buildSpectrogramGrayscale linear scale respects maxFreq', () => {
@@ -487,10 +489,10 @@ test('buildSpectrogramGrayscale colourScale=linear maps raw magnitudes', () => {
         scale: 'linear', colourScale: 'linear',
     });
     assert.ok(result !== null);
-    // Uniform 0.5 with range [0,1] → ~128
+    // Uniform 0.5 with range [0,1] → ~0.5
     const expected = result.gray[0];
-    assert.ok(expected > 100 && expected < 160,
-        `uniform 0.5 should map to ~128 (got ${expected})`);
+    assert.ok(expected > 0.4 && expected < 0.6,
+        `uniform 0.5 should map to ~0.5 (got ${expected})`);
 });
 
 test('buildSpectrogramGrayscale colourScale=meter applies IEC curve', () => {
@@ -509,9 +511,9 @@ test('buildSpectrogramGrayscale colourScale=meter applies IEC curve', () => {
         spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
         scale: 'linear', colourScale: 'meter',
     });
-    // At full scale (0 dB), both should be 255
-    assert.equal(linearResult.gray[0], 255);
-    assert.equal(meterResult.gray[0], 255);
+    // At full scale (0 dB), both should be 1
+    assert.ok(Math.abs(linearResult.gray[0] - 1) < 1e-6);
+    assert.ok(Math.abs(meterResult.gray[0] - 1) < 1e-6);
 
     // Now test mid-level: meter should be different from linear
     const dataMid = new Float32Array(nFrames * nBins).fill(0.1); // quiet
@@ -570,8 +572,164 @@ test('buildSpectrogramGrayscale all colourScales produce values in [0, 255]', ()
         });
         assert.ok(result !== null, `${cs} should return a result`);
         for (let i = 0; i < result.gray.length; i++) {
-            assert.ok(result.gray[i] >= 0 && result.gray[i] <= 255,
-                `${cs}: gray[${i}] = ${result.gray[i]} out of range`);
+            assert.ok(result.gray[i] >= 0 && result.gray[i] <= 1,
+                `${cs}: gray[${i}] = ${result.gray[i]} out of [0,1] range`);
         }
     }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Float32 Grayscale output format
+// ═══════════════════════════════════════════════════════════════════════
+
+test('buildSpectrogramGrayscale returns Float32Array', () => {
+    const nFrames = 10, nMels = 8;
+    const data = new Float32Array(nFrames * nMels).fill(0);
+    const result = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nMels,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -4, spectrogramAbsLogMax: 4,
+    });
+    assert.ok(result.gray instanceof Float32Array, 'gray should be Float32Array');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Spectral Subtraction
+// ═══════════════════════════════════════════════════════════════════════
+
+test('spectralSubtract returns same-length Float32Array', () => {
+    const nFrames = 20, nMels = 8;
+    const data = new Float32Array(nFrames * nMels);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 10;
+    const result = spectralSubtract(data, nFrames, nMels);
+    assert.ok(result instanceof Float32Array);
+    assert.equal(result.length, data.length);
+});
+
+test('spectralSubtract produces non-negative values', () => {
+    const nFrames = 50, nMels = 16;
+    const data = new Float32Array(nFrames * nMels);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 10 - 5;
+    const result = spectralSubtract(data, nFrames, nMels);
+    for (let i = 0; i < result.length; i++) {
+        assert.ok(result[i] >= 0, `value at ${i} should be ≥ 0 (got ${result[i]})`);
+    }
+});
+
+test('spectralSubtract reduces uniform noise to near-zero', () => {
+    const nFrames = 100, nMels = 8;
+    // Uniform signal: median = 5, so after subtraction everything becomes 0
+    const data = new Float32Array(nFrames * nMels).fill(5);
+    const result = spectralSubtract(data, nFrames, nMels);
+    for (let i = 0; i < result.length; i++) {
+        assert.ok(Math.abs(result[i]) < 1e-6, `uniform noise should subtract to ~0 (got ${result[i]})`);
+    }
+});
+
+test('spectralSubtract preserves signal above noise floor', () => {
+    const nFrames = 100, nMels = 4;
+    // Noise floor at 2 everywhere, with a spike at frame 50
+    const data = new Float32Array(nFrames * nMels).fill(2);
+    data[50 * nMels + 0] = 10; // spike in mel bin 0
+    const result = spectralSubtract(data, nFrames, nMels);
+    // The spike should be preserved (10 - 2 = 8)
+    assert.ok(result[50 * nMels + 0] > 5, `spike should be preserved (got ${result[50 * nMels + 0]})`);
+    // Noise frames should be near 0
+    assert.ok(result[0 * nMels + 0] < 0.1, `noise should be near 0 (got ${result[0 * nMels + 0]})`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// CLAHE
+// ═══════════════════════════════════════════════════════════════════════
+
+test('applyCLAHE keeps values in [0, 1]', () => {
+    const w = 32, h = 16;
+    const gray = new Float32Array(w * h);
+    for (let i = 0; i < gray.length; i++) gray[i] = Math.random();
+    applyCLAHE(gray, w, h, 4, 2, 2.5);
+    for (let i = 0; i < gray.length; i++) {
+        assert.ok(gray[i] >= 0 && gray[i] <= 1,
+            `out-of-range at ${i}: ${gray[i]}`);
+    }
+});
+
+test('applyCLAHE enhances low-contrast image', () => {
+    const w = 64, h = 32;
+    // Low-contrast: all values in [0.4, 0.6]
+    const gray = new Float32Array(w * h);
+    for (let i = 0; i < gray.length; i++) gray[i] = 0.4 + 0.2 * (i / gray.length);
+    const before = new Float32Array(gray);
+    applyCLAHE(gray, w, h, 4, 2, 3.0);
+    // After CLAHE, range should be expanded
+    let min = 1, max = 0;
+    for (let i = 0; i < gray.length; i++) {
+        if (gray[i] < min) min = gray[i];
+        if (gray[i] > max) max = gray[i];
+    }
+    const origRange = 0.2;
+    const newRange = max - min;
+    assert.ok(newRange > origRange + 0.1,
+        `CLAHE should expand range: ${origRange.toFixed(3)} → ${newRange.toFixed(3)}`);
+});
+
+test('applyCLAHE is idempotent on uniform images', () => {
+    const w = 16, h = 8;
+    const gray = new Float32Array(w * h).fill(0.5);
+    applyCLAHE(gray, w, h, 4, 2, 2.5);
+    for (let i = 0; i < gray.length; i++) {
+        // Uniform image: CDF maps 0.5 → 0 or 1 depending on implementation
+        // but all pixels should have the same value
+        assert.ok(Math.abs(gray[i] - gray[0]) < 1e-6,
+            `uniform image should remain uniform after CLAHE`);
+    }
+});
+
+test('buildSpectrogramGrayscale with noiseReduction option', () => {
+    const nFrames = 50, nMels = 16;
+    const data = new Float32Array(nFrames * nMels).fill(5);
+    data[25 * nMels + 4] = 20; // spike
+
+    const withNR = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nMels,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 25,
+        noiseReduction: true,
+    });
+    const withoutNR = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nMels,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 25,
+        noiseReduction: false,
+    });
+    // With noise reduction, the uniform noise floor should be suppressed
+    // The result should differ from without
+    let totalDiff = 0;
+    for (let i = 0; i < withNR.gray.length; i++) {
+        totalDiff += Math.abs(withNR.gray[i] - withoutNR.gray[i]);
+    }
+    assert.ok(totalDiff > 0, 'noise reduction should change the output');
+});
+
+test('buildSpectrogramGrayscale with CLAHE option', () => {
+    const nFrames = 50, nMels = 32;
+    const data = new Float32Array(nFrames * nMels);
+    for (let i = 0; i < data.length; i++) data[i] = -3 + 0.5 * (i / data.length);
+
+    const withCLAHE = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nMels,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -4, spectrogramAbsLogMax: 4,
+        clahe: true,
+    });
+    const withoutCLAHE = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nMels,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -4, spectrogramAbsLogMax: 4,
+        clahe: false,
+    });
+    let totalDiff = 0;
+    for (let i = 0; i < withCLAHE.gray.length; i++) {
+        totalDiff += Math.abs(withCLAHE.gray[i] - withoutCLAHE.gray[i]);
+    }
+    assert.ok(totalDiff > 0, 'CLAHE should change the output');
 });

@@ -181,6 +181,7 @@ export function createPlayerHTML(opts = {}) {
                 <select data-aw="scaleSelect" class="settings-select">
                     <option value="mel" selected>Mel</option>
                     <option value="linear">Linear</option>
+                    <option value="cqt">CQT</option>
                 </select>
             </div>
             <div class="settings-row">
@@ -210,7 +211,16 @@ export function createPlayerHTML(opts = {}) {
                     <option value="hann" selected>Hann</option>
                     <option value="hamming">Hamming</option>
                     <option value="blackman">Blackman</option>
+                    <option value="blackmanHarris">Blackman-Harris</option>
+                    <option value="kaiser">Kaiser (β=6)</option>
+                    <option value="flatTop">Flat Top</option>
                 </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Time-frequency reassignment sharpens spectral peaks">
+                    <input type="checkbox" data-aw="reassignedCheck"> Reassigned
+                </label>
+            </div>
             </div>
             <div class="settings-row">
                 <label class="settings-label">Overlap</label>
@@ -283,6 +293,16 @@ export function createPlayerHTML(opts = {}) {
                     <option value="magma">Magma</option>
                     <option value="plasma">Plasma</option>
                 </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Median-based spectral noise floor subtraction">
+                    <input type="checkbox" data-aw="noiseReductionCheck"> Noise Reduction
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
+                    <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast
+                </label>
             </div>
         </div>
 

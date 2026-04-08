@@ -63,6 +63,7 @@ export const DSP_PROFILES = {
         pcenSmoothing: PERCH_PCEN_SMOOTHING,
         windowFunction: 'hann',
         colorScheme: 'grayscale',
+        reassigned: false,
     },
     classic: {
         scale: 'linear',
@@ -78,8 +79,13 @@ export const DSP_PROFILES = {
         pcenSmoothing: 0,
         windowFunction: 'hann',
         colorScheme: 'xenocanto',
+        reassigned: false,
     },
 };
+
+// ─── CQT Defaults ──────────────────────────────────────────────────
+export const CQT_FMIN = 32.7;           // C1
+export const CQT_BINS_PER_OCTAVE = 24;
 
 // ─── Quality Levels (NVIDIA-style Performance ↔ Quality slider) ────
 // Each level fully determines DSP parameters.  The slider index (0-4)

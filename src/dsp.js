@@ -216,13 +216,58 @@ function blackmanWindow(i, N) {
     return a0 - a1 * Math.cos(2 * Math.PI * i / Math.max(1, N - 1))
               + a2 * Math.cos(4 * Math.PI * i / Math.max(1, N - 1));
 }
+/** Blackman-Harris 4-term — excellent sidelobe suppression (−92 dB). */
+function blackmanHarrisWindow(i, N) {
+    const a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
+    const t = 2 * Math.PI * i / Math.max(1, N - 1);
+    return a0 - a1 * Math.cos(t) + a2 * Math.cos(2 * t) - a3 * Math.cos(3 * t);
+}
+/** Flat-top — near-unity amplitude accuracy at the cost of wider main lobe. */
+function flatTopWindow(i, N) {
+    const a0 = 0.21557895, a1 = 0.41663158, a2 = 0.277263158;
+    const a3 = 0.083578947, a4 = 0.006947368;
+    const t = 2 * Math.PI * i / Math.max(1, N - 1);
+    return a0 - a1 * Math.cos(t) + a2 * Math.cos(2 * t)
+              - a3 * Math.cos(3 * t) + a4 * Math.cos(4 * t);
+}
+/**
+ * Kaiser window — adjustable via β parameter.
+ * Higher β → narrower main lobe, lower sidelobes.
+ * β≈5: similar to Hamming, β≈8.6: similar to Blackman-Harris.
+ * Uses rational Bessel I₀ approximation (no factorial overflow).
+ */
+function kaiserWindow(i, N, beta = 6) {
+    const M = Math.max(1, N - 1);
+    const alpha = M / 2;
+    const arg = beta * Math.sqrt(1 - ((i - alpha) / alpha) ** 2);
+    return _besselI0(arg) / _besselI0(beta);
+}
+/** Modified Bessel function I₀(x) — polynomial approximation (Abramowitz & Stegun). */
+function _besselI0(x) {
+    const ax = Math.abs(x);
+    if (ax < 3.75) {
+        const t = (ax / 3.75) ** 2;
+        return 1 + t * (3.5156229 + t * (3.0899424 + t * (1.2067492
+            + t * (0.2659732 + t * (0.0360768 + t * 0.0045813)))));
+    }
+    const t = 3.75 / ax;
+    return (Math.exp(ax) / Math.sqrt(ax)) * (0.39894228 + t * (0.01328592
+        + t * (0.00225319 + t * (-0.00157565 + t * (0.00916281 + t * (-0.02057706
+        + t * (0.02635537 + t * (-0.01647633 + t * 0.00392377))))))));
+}
 
 /** @type {Record<string, (i: number, N: number) => number>} */
 const WINDOW_FUNCTIONS = {
     hann: hannWindow,
     hamming: hammingWindow,
     blackman: blackmanWindow,
+    blackmanHarris: blackmanHarrisWindow,
+    flatTop: flatTopWindow,
+    kaiser: kaiserWindow,
 };
+
+/** Available window function keys (for UI enumeration). */
+export const WINDOW_FUNCTION_KEYS = Object.keys(WINDOW_FUNCTIONS);
 
 // ─── Power Spectrum ─────────────────────────────────────────────────
 
@@ -480,4 +525,225 @@ export function computeSpectrogram(params) {
         result.smoothState = smooth;
     }
     return result;
+}
+
+// ─── Constant-Q Filterbank ──────────────────────────────────────────
+
+/**
+ * Build a CQT (Constant-Q) filterbank that maps STFT bins to
+ * log-spaced frequency bins with constant Q factor.
+ * Returns a sparse filterbank compatible with applySparseMelFilterbank.
+ *
+ * @param {number} sampleRate
+ * @param {number} fftSize
+ * @param {number} nBinsOut        - desired number of output bins
+ * @param {number} [fMin=32.7]     - lowest frequency (Hz), default C1
+ * @param {number} [binsPerOctave=24]
+ */
+export function createCQTFilterbank(sampleRate, fftSize, nBinsOut, fMin = 32.7, binsPerOctave = 24) {
+    const nFftBins = Math.floor(fftSize / 2);
+    const nyquist = sampleRate / 2;
+    const Q = 1 / (Math.pow(2, 1 / binsPerOctave) - 1);
+    const sparse = new Array(nBinsOut);
+
+    for (let k = 0; k < nBinsOut; k++) {
+        const fCenter = fMin * Math.pow(2, k / binsPerOctave);
+        if (fCenter >= nyquist) {
+            // Above Nyquist — point filter on last bin
+            sparse[k] = { start: nFftBins - 1, weights: new Float32Array([1]) };
+            continue;
+        }
+        const bw = fCenter / Q;               // bandwidth
+        const fLo = Math.max(0, fCenter - bw / 2);
+        const fHi = Math.min(nyquist, fCenter + bw / 2);
+        const binLo = Math.max(0, Math.floor(fLo * fftSize / sampleRate));
+        const binHi = Math.min(nFftBins - 1, Math.ceil(fHi * fftSize / sampleRate));
+
+        const len = binHi - binLo + 1;
+        const weights = new Float32Array(len);
+        let sum = 0;
+        for (let b = 0; b < len; b++) {
+            const fBin = (binLo + b) * sampleRate / fftSize;
+            // Triangular weighting around center frequency
+            const dist = Math.abs(fBin - fCenter) / (bw / 2 + 1e-12);
+            weights[b] = Math.max(0, 1 - dist);
+            sum += weights[b];
+        }
+        // Normalise
+        if (sum > 0) for (let b = 0; b < len; b++) weights[b] /= sum;
+        else if (len > 0) weights[0] = 1;
+
+        sparse[k] = { start: binLo, weights };
+    }
+    return sparse;
+}
+
+/**
+ * Build CQT frequency array (Hz) for each output bin.
+ * @param {number} nBins
+ * @param {number} [fMin=32.7]
+ * @param {number} [binsPerOctave=24]
+ * @returns {Float32Array}
+ */
+export function buildCQTFrequencies(nBins, fMin = 32.7, binsPerOctave = 24) {
+    const freqs = new Float32Array(nBins);
+    for (let k = 0; k < nBins; k++) {
+        freqs[k] = fMin * Math.pow(2, k / binsPerOctave);
+    }
+    return freqs;
+}
+
+// ─── Reassigned Spectrogram ─────────────────────────────────────────
+
+/**
+ * Compute a reassigned spectrogram for sharper time-frequency localization.
+ * Uses three parallel STFTs with:
+ *   1. h(n) — standard window
+ *   2. (n - N/2) · h(n) — time-ramped window (for time correction)
+ *   3. h'(n) — derivative window (for frequency correction)
+ *
+ * The corrected coordinates allow energy to be placed at its "true"
+ * center of gravity in time-frequency space.
+ *
+ * @param {Object} params  - Same as computeSpectrogram plus:
+ * @param {ArrayBuffer|Float32Array} params.channelData
+ * @param {number} params.fftSize
+ * @param {number} params.sampleRate
+ * @param {number} params.frameRate
+ * @param {number} params.nMels
+ * @param {string} [params.scale='mel']
+ * @param {string} [params.colourScale='dbSquared']
+ * @param {number} [params.windowSize]
+ * @param {number} [params.hopSize]
+ * @param {string} [params.windowFunction='hann']
+ * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, colourScale: string }}
+ */
+export function computeReassignedSpectrogram(params) {
+    const {
+        channelData, fftSize, sampleRate, frameRate,
+        nMels, scale = 'mel',
+        colourScale = 'dbSquared',
+        windowSize: userWindowSize, hopSize: userHopSize,
+        windowFunction = 'hann',
+    } = params;
+
+    const audio = channelData instanceof Float32Array
+        ? channelData
+        : new Float32Array(channelData);
+
+    const autoHop   = Math.max(1, Math.floor(sampleRate / frameRate));
+    const hopSize   = (userHopSize && userHopSize > 0) ? userHopSize : autoHop;
+    const winLength = (userWindowSize && userWindowSize > 0) ? userWindowSize : 4 * hopSize;
+    const numFrames = Math.max(1, Math.floor((audio.length - winLength) / hopSize) + 1);
+    const nBins     = Math.floor(fftSize / 2);
+    const useLinear = scale === 'linear';
+    const outBins   = useLinear ? nBins : nMels;
+    const output    = new Float32Array(numFrames * outBins);
+
+    // ── Build three windows ──
+    const wfn    = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
+    const maxCopy = Math.min(winLength, fftSize);
+    const winH   = new Float32Array(maxCopy);  // standard
+    const winTH  = new Float32Array(maxCopy);  // time-ramped: (n - N/2) · h(n)
+    const winDH  = new Float32Array(maxCopy);  // derivative: h'(n) via finite differences
+    for (let i = 0; i < maxCopy; i++) winH[i] = wfn(i, winLength);
+    for (let i = 0; i < maxCopy; i++) winTH[i] = (i - winLength / 2) * winH[i];
+    // Derivative via central finite differences
+    for (let i = 1; i < maxCopy - 1; i++) winDH[i] = 0.5 * (winH[i + 1] - winH[i - 1]);
+    winDH[0] = winH[1] - winH[0];
+    if (maxCopy > 1) winDH[maxCopy - 1] = winH[maxCopy - 1] - winH[maxCopy - 2];
+
+    // ── Reusable FFT buffers (3 pairs) ──
+    const realH = new Float32Array(fftSize), imagH = new Float32Array(fftSize);
+    const realTH = new Float32Array(fftSize), imagTH = new Float32Array(fftSize);
+    const realDH = new Float32Array(fftSize), imagDH = new Float32Array(fftSize);
+
+    // ── Sparse filterbank for mel/CQT ──
+    const sparseFB = useLinear ? null : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+
+    // ── Accumulation grid: energy placed at reassigned coordinates ──
+    // We accumulate into (numFrames × outBins) and let overlapping
+    // contributions average naturally.
+    const counts = new Float32Array(numFrames * outBins);
+
+    for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
+        const offset = frameIdx * hopSize;
+
+        // Fill and run 3 FFTs
+        realH.fill(0); imagH.fill(0);
+        realTH.fill(0); imagTH.fill(0);
+        realDH.fill(0); imagDH.fill(0);
+        for (let i = 0; i < maxCopy; i++) {
+            const s = audio[offset + i] || 0;
+            realH[i]  = s * winH[i];
+            realTH[i] = s * winTH[i];
+            realDH[i] = s * winDH[i];
+        }
+        iterativeFFT(realH, imagH);
+        iterativeFFT(realTH, imagTH);
+        iterativeFFT(realDH, imagDH);
+
+        if (useLinear) {
+            // Reassign each STFT bin
+            for (let k = 0; k < nBins; k++) {
+                const magSq = realH[k] * realH[k] + imagH[k] * imagH[k];
+                if (magSq < 1e-30) continue;
+
+                // Time correction: Δt = Re(X_th / X_h) in samples
+                const dtSamples = (realTH[k] * realH[k] + imagTH[k] * imagH[k]) / magSq;
+                // Frequency correction: Δω = -Im(X_dh / X_h)
+                const dOmega = -(imagDH[k] * realH[k] - realDH[k] * imagH[k]) / magSq;
+                const correctedBin = k + dOmega * fftSize / (2 * Math.PI);
+                const correctedFrame = frameIdx + dtSamples / hopSize;
+
+                const cBin   = Math.max(0, Math.min(nBins - 1, Math.round(correctedBin)));
+                const cFrame = Math.max(0, Math.min(numFrames - 1, Math.round(correctedFrame)));
+                const idx = cFrame * nBins + cBin;
+
+                const value = colourScale === 'linear' || colourScale === 'meter'
+                    ? Math.sqrt(magSq)
+                    : 10 * Math.log10(Math.max(1e-20, magSq));
+
+                output[idx] += value;
+                counts[idx] += 1;
+            }
+        } else {
+            // Mel-reassigned: compute per-bin, determine which mel filter it lands in
+            for (let k = 0; k < nBins; k++) {
+                const magSq = realH[k] * realH[k] + imagH[k] * imagH[k];
+                if (magSq < 1e-30) continue;
+
+                const dtSamples = (realTH[k] * realH[k] + imagTH[k] * imagH[k]) / magSq;
+                const dOmega = -(imagDH[k] * realH[k] - realDH[k] * imagH[k]) / magSq;
+                const correctedBin = k + dOmega * fftSize / (2 * Math.PI);
+                const correctedFrame = frameIdx + dtSamples / hopSize;
+
+                const cFrame = Math.max(0, Math.min(numFrames - 1, Math.round(correctedFrame)));
+                const cBinInt = Math.max(0, Math.min(nBins - 1, Math.round(correctedBin)));
+
+                // Find which mel bin this corrected FFT bin lands in (weighted)
+                for (let m = 0; m < nMels; m++) {
+                    const { start, weights } = sparseFB[m];
+                    if (cBinInt < start || cBinInt >= start + weights.length) continue;
+                    const w = weights[cBinInt - start];
+                    if (w <= 0) continue;
+
+                    const value = colourScale === 'linear' || colourScale === 'meter'
+                        ? Math.sqrt(magSq) * w
+                        : 10 * Math.log10(Math.max(1e-20, magSq)) * w;
+
+                    const idx = cFrame * nMels + m;
+                    output[idx] += value;
+                    counts[idx] += w;
+                }
+            }
+        }
+    }
+
+    // Average accumulated values
+    for (let i = 0; i < output.length; i++) {
+        if (counts[i] > 0) output[i] /= counts[i];
+    }
+
+    return { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength, colourScale };
 }
