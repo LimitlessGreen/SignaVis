@@ -615,12 +615,37 @@ export class AnnotationLayer {
         }
         const totalRows = Math.max(1, rowEnds.length);
 
+        // For each region compute its local overlap group: the set of rows
+        // actually occupied in its time span.  This gives a local depth and
+        // a dense local-row index so that non-overlapping regions keep full
+        // height while only genuinely stacked areas shrink.
+        /** @type {Map<string, {depth: number, localRow: number}>} */
+        const localLayout = new Map();
+        if (totalRows > 1) {
+            for (const region of sorted) {
+                const myRow = rowMap.get(region.id) ?? 0;
+                /** @type {Set<number>} */
+                const activeRows = new Set([myRow]);
+                for (const other of sorted) {
+                    if (other === region) continue;
+                    // Does 'other' overlap with 'region' in time?
+                    if (other.start < region.end && other.end > region.start) {
+                        activeRows.add(rowMap.get(other.id) ?? 0);
+                    }
+                }
+                // Dense local index: sort the active rows and find our position
+                const rowsSorted = [...activeRows].sort((a, b) => a - b);
+                const localRow = rowsSorted.indexOf(myRow);
+                localLayout.set(region.id, { depth: activeRows.size, localRow });
+            }
+        }
+
         for (const region of this.annotations) {
             const el = this._createRegionElement(region, pps);
-            if (totalRows > 1) {
-                const row = rowMap.get(region.id) || 0;
-                const pct = 100 / totalRows;
-                el.style.top = `${row * pct}%`;
+            const layout = localLayout.get(region.id);
+            if (layout && layout.depth > 1) {
+                const pct = 100 / layout.depth;
+                el.style.top = `${layout.localRow * pct}%`;
                 el.style.height = `${pct}%`;
                 el.style.bottom = 'auto';
             }
