@@ -1349,11 +1349,11 @@ export class SpectrogramLabelLayer {
         }
         // Pre-fill from focused/last label
         const ref = this._getReferenceLabelForDefaults();
-        const autoColor = _autoAssignColor(this.labels);
+        const initialColor = ref?.color || _autoAssignColor(this.labels);
         openLabelNameEditor({
             player: this.player,
             initialValue: ref?.label || '',
-            initialColor: autoColor,
+            initialColor,
             initialTags: ref?.tags || null,
             existingLabels,
             title: 'New Label',
