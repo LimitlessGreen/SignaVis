@@ -180,20 +180,6 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         if (setName) tags.setName = setName;
         if (setCreator) tags.setCreator = setCreator;
 
-        // Recording-level context (shared across all labels)
-        if (recCountry) tags.country = recCountry;
-        if (recLocality) tags.locality = recLocality;
-        if (recDate) tags.recordingDate = recDate;
-        if (recTime) tags.recordingTime = recTime;
-        if (recQuality) tags.quality = recQuality;
-        if (recLicense) tags.license = recLicense;
-        if (recMethod) tags.method = recMethod;
-        if (recRemarks) tags.recordingRemarks = recRemarks;
-        if (recLat) tags.lat = recLat;
-        if (recLng) tags.lng = recLng;
-        if (recAlt) tags.alt = recAlt;
-        if (recAlso) tags.backgroundSpecies = recAlso;
-
         labels.push({
             id: `${idPrefix}${xcId}_lbl_${annotationId}`,
             start,
@@ -209,17 +195,35 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         });
     }
 
-    return labels;
+    // Recording-level metadata (shared, not duplicated per label)
+    const recordingMeta = {};
+    if (recCountry) recordingMeta.country = recCountry;
+    if (recLocality) recordingMeta.locality = recLocality;
+    if (recDate) recordingMeta.date = recDate;
+    if (recTime) recordingMeta.time = recTime;
+    if (recQuality) recordingMeta.quality = recQuality;
+    if (recLicense) recordingMeta.license = recLicense;
+    if (recMethod) recordingMeta.method = recMethod;
+    if (recRemarks) recordingMeta.remarks = recRemarks;
+    if (recLat) recordingMeta.lat = recLat;
+    if (recLng) recordingMeta.lng = recLng;
+    if (recAlt) recordingMeta.alt = recAlt;
+    if (recAnimalSeen) recordingMeta.animalSeen = recAnimalSeen;
+    if (recPlaybackUsed) recordingMeta.playbackUsed = recPlaybackUsed;
+    if (recAlso) recordingMeta.backgroundSpecies = recAlso;
+    if (recordist) recordingMeta.recordist = recordist;
+
+    return { labels, recordingMeta };
 }
 
 export async function importXenoCantoSpectrogramLabels(xcId, options = {}) {
     const { recording, xcId: clean } = await fetchXenoCantoRecording(xcId, options);
     const rawLabels = extractXenoCantoRawLabels(recording);
-    const labels = mapXenoCantoLabelsToSpectrogram(rawLabels, {
+    const { labels, recordingMeta } = mapXenoCantoLabelsToSpectrogram(rawLabels, {
         xcId: clean,
         recording,
         sampleRate: options.sampleRate,
         idPrefix: options.idPrefix,
     });
-    return { xcId: clean, recording, rawLabels, labels };
+    return { xcId: clean, recording, rawLabels, labels, recordingMeta };
 }
