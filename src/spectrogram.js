@@ -428,13 +428,18 @@ export function detectMaxFrequency(spectrogramData, nFrames, nMels, sampleRate, 
     for (let m = 0; m < nMels; m++) binEnergy[m] /= sampledFrames;
 
     // Find peak energy value
-    let peakEnergy = 0;
+    let peakEnergy = -Infinity;
     for (let m = 0; m < nMels; m++) {
         if (binEnergy[m] > peakEnergy) peakEnergy = binEnergy[m];
     }
-    if (peakEnergy < 1e-12) return sampleRate / 2;
+    if (!isFinite(peakEnergy)) return sampleRate / 2;
+    // For positive data (PCEN/linear): zero-check + multiplicative fraction
+    // For negative data (dB scale):    dB offset below peak
+    if (peakEnergy >= 0 && peakEnergy < 1e-12) return sampleRate / 2;
 
-    const threshold = peakEnergy * energyThreshold;
+    const threshold = peakEnergy < 0
+        ? peakEnergy + 10 * Math.log10(Math.max(1e-10, energyThreshold))
+        : peakEnergy * energyThreshold;
 
     // Collect all active bins and use the 95th percentile as the upper bound.
     // This is more robust than a single top-down scan which can be thrown off

@@ -102,6 +102,24 @@ test('detectMaxFrequency mel scale uses mel mapping', () => {
     assert.ok(result > 10000, `mel scale result ${result} with full energy should be high`);
 });
 
+test('detectMaxFrequency handles dB (negative) values correctly', () => {
+    // Simulate linear-scale dB data: 10·log₁₀(power)
+    // Low bins (0-50) have signal at -30 dB, rest is silence at -200 dB
+    const nBins = 512;
+    const nFrames = 10;
+    const data = new Float32Array(nFrames * nBins);
+    for (let f = 0; f < nFrames; f++) {
+        for (let b = 0; b < nBins; b++) {
+            data[f * nBins + b] = b < 50 ? -30 : -200;
+        }
+    }
+    const sr = 32000;
+    const result = detectMaxFrequency(data, nFrames, nBins, sr, 'linear');
+    // Should detect signal in bins 0-50 → ~50/512 * 16000 ≈ 1562 Hz + margin
+    assert.ok(result < 5000, `dB data result ${result} should detect low-freq signal`);
+    assert.ok(result > 500, `dB data result ${result} should be above 500 Hz`);
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // buildSpectrogramGrayscale
 // ═══════════════════════════════════════════════════════════════════════

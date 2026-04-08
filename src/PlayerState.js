@@ -2852,12 +2852,12 @@ export class PlayerState {
         // ── Settings ──
         on(this.d.scaleSelect, 'change', () => {
             this._clearPresetHighlight();
-            if (this.audioBuffer) this._generateSpectrogram();
+            if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
         });
         on(this.d.colourScaleSelect, 'change', () => {
             this._clearPresetHighlight();
             this._updateColourScaleConstraints();
-            if (this.audioBuffer) this._generateSpectrogram();
+            if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
         });
         on(this.d.presetSelect, 'change', () => {
             const val = this.d.presetSelect?.value;
