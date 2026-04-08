@@ -2674,7 +2674,7 @@ export class PlayerState {
 
         this._pmBackdrop = backdrop;
         this._pmList = list;
-        this.hostEl.appendChild(backdrop);
+        this.container.appendChild(backdrop);
         this._renderPresetManagerList();
     }
 
