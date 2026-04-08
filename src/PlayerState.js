@@ -539,6 +539,7 @@ export class PlayerState {
             volumeIcon:             q('volumeIcon'),
             volumeWaves:            q('volumeWaves'),
             volumeSlider:           q('volumeSlider'),
+            gainModeSelect:         q('gainModeSelect'),
             floorSlider:            q('floorSlider'),
             ceilSlider:             q('ceilSlider'),
             autoContrastBtn:        q('autoContrastBtn'),
@@ -1369,7 +1370,8 @@ export class PlayerState {
 
             this._updateSpectrogramStats();
             if (autoAdjust) {
-                this._autoContrast();
+                const gainMode = this.d.gainModeSelect?.value || 'auto';
+                if (gainMode === 'auto') this._autoContrast();
                 this._autoFrequency();
             }
 
@@ -2459,12 +2461,19 @@ export class PlayerState {
         if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
         if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
         if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
+        // Gain mode
+        const gainMode = p.gainMode || 'auto';
+        if (this.d.gainModeSelect) this.d.gainModeSelect.value = gainMode;
+        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
+            if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
+            if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
+        }
         // Sync dropdown
         if (this.d.presetSelect) this.d.presetSelect.value = name;
         this._updatePresetButtons();
         this._syncQualitySlider();
         this._updatePcenSectionDimming();
-        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
+        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: gainMode === 'auto' });
     }
 
     _clearPresetHighlight() {
@@ -2499,7 +2508,8 @@ export class PlayerState {
 
     /** Snapshot current DSP controls into a preset object. */
     _getCurrentPresetSettings() {
-        return {
+        const gainMode = this.d.gainModeSelect?.value || 'auto';
+        const preset = {
             scale:             this.d.scaleSelect?.value || 'mel',
             colourScale:       this.d.colourScaleSelect?.value || 'dbSquared',
             windowSize:        parseInt(this.d.windowSizeSelect?.value || '1024', 10),
@@ -2516,7 +2526,13 @@ export class PlayerState {
             reassigned:        this.d.reassignedCheck?.checked ?? false,
             noiseReduction:    this.d.noiseReductionCheck?.checked ?? false,
             clahe:             this.d.claheCheck?.checked ?? false,
+            gainMode,
         };
+        if (gainMode === 'fixed') {
+            preset.gainFloor = parseInt(this.d.floorSlider?.value || '0', 10);
+            preset.gainCeil  = parseInt(this.d.ceilSlider?.value || '100', 10);
+        }
+        return preset;
     }
 
     _promptSaveUserPreset() {
@@ -2615,6 +2631,13 @@ export class PlayerState {
         if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
         if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
         if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
+        // Gain mode
+        const gainMode = p.gainMode || 'auto';
+        if (this.d.gainModeSelect) this.d.gainModeSelect.value = gainMode;
+        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
+            if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
+            if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
+        }
         this._updatePresetButtons();
     }
 
@@ -3118,6 +3141,11 @@ export class PlayerState {
             this._buildSpectrogramBaseImage();
             this._drawSpectrogram();
         };
+        on(this.d.gainModeSelect, 'change', () => {
+            if (this.d.gainModeSelect.value === 'auto' && this.spectrogramData) {
+                this._autoContrast(true);
+            }
+        });
         on(this.d.floorSlider, 'input', rebuildDisplay);
         on(this.d.ceilSlider, 'input', rebuildDisplay);
         on(this.d.autoContrastBtn, 'click', () => this._autoContrast(true));

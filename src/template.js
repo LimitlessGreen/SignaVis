@@ -311,6 +311,13 @@ export function createPlayerHTML(opts = {}) {
         <div class="settings-section">
             <h3 class="settings-section-title">Gain</h3>
             <div class="settings-row">
+                <label class="settings-label">Mode</label>
+                <select data-aw="gainModeSelect" class="settings-select" title="Auto: percentile-based contrast on each file. Fixed: use saved floor/ceil values.">
+                    <option value="auto" selected>Auto</option>
+                    <option value="fixed">Fixed</option>
+                </select>
+            </div>
+            <div class="settings-row">
                 <label class="settings-label">Floor</label>
                 <input type="range" data-aw="floorSlider" class="settings-range" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
             </div>
