@@ -81,6 +81,28 @@ export const DSP_PROFILES = {
         colorScheme: 'xenocanto',
         reassigned: false,
     },
+    birder: {
+        scale: 'linear',
+        colourScale: 'dbSquared',
+        windowSize: 2048,
+        overlapLevel: 4,       // 93.75 %
+        oversamplingLevel: 0,  // 1× → fft 2048
+        nMels: 200,
+        usePcen: true,
+        pcenGain: 0.8,
+        pcenBias: 0.01,
+        pcenRoot: 4,
+        pcenSmoothing: 0.025,
+        windowFunction: 'blackmanHarris',
+        colorScheme: 'inferno',
+        reassigned: false,
+        noiseReduction: false,
+        clahe: true,
+        gainMode: 'fixed',
+        gainFloor: 49,
+        gainCeil: 100,
+        maxFreqMode: 'nyquist',
+    },
 };
 
 // ─── CQT Defaults ──────────────────────────────────────────────────

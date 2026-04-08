@@ -592,7 +592,7 @@ export class PlayerState {
         if (fav && Array.from(sel.options).some(o => o.value === fav)) {
             sel.value = fav;
         } else {
-            sel.value = 'perch';
+            sel.value = 'birder';
         }
     }
 
