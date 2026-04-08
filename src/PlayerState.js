@@ -532,6 +532,7 @@ export class PlayerState {
             qualityLevelDisplay:    q('qualityLevelDisplay'),
             zoomSlider:             q('zoomSlider'),
             zoomValue:              q('zoomValue'),
+            maxFreqModeSelect:      q('maxFreqModeSelect'),
             maxFreqSelect:          q('maxFreqSelect'),
             colorSchemeSelect:      q('colorSchemeSelect'),
             freqLabels:             q('freqLabels'),
@@ -1372,7 +1373,13 @@ export class PlayerState {
             if (autoAdjust) {
                 const gainMode = this.d.gainModeSelect?.value || 'auto';
                 if (gainMode === 'auto') this._autoContrast();
-                this._autoFrequency();
+                const freqMode = this.d.maxFreqModeSelect?.value || 'auto';
+                if (freqMode === 'auto') {
+                    this._autoFrequency();
+                } else if (freqMode === 'nyquist') {
+                    this._setMaxFreqToNyquist();
+                }
+                // 'fixed' → keep current maxFreqSelect value
             }
 
             // Recompute coordinate system & frequency axis (scale/maxFreq may have changed)
@@ -1683,6 +1690,18 @@ export class PlayerState {
             this._buildSpectrogramBaseImage();
             this._drawSpectrogram();
         }
+    }
+
+    /** Set maxFreq dropdown to the Nyquist frequency. */
+    _setMaxFreqToNyquist() {
+        const nyquist = this.sampleRateHz / 2;
+        const options = Array.from(this.d.maxFreqSelect.options);
+        // Pick the last option (always Nyquist)
+        const last = options[options.length - 1];
+        if (last) this.d.maxFreqSelect.value = last.value;
+        this._emit('spectrogramscalechange', { maxFreq: nyquist });
+        this._updateCoords();
+        this._createFrequencyLabels();
     }
 
     // ── Volume ──────────────────────────────────────────────────────
@@ -2473,12 +2492,18 @@ export class PlayerState {
             if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
             if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
         }
+        // Max frequency mode
+        const maxFreqMode = p.maxFreqMode || 'auto';
+        if (this.d.maxFreqModeSelect) this.d.maxFreqModeSelect.value = maxFreqMode;
+        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && this.d.maxFreqSelect) {
+            this.d.maxFreqSelect.value = String(p.maxFreqHz);
+        }
         // Sync dropdown
         if (this.d.presetSelect) this.d.presetSelect.value = name;
         this._updatePresetButtons();
         this._syncQualitySlider();
         this._updatePcenSectionDimming();
-        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: gainMode === 'auto' });
+        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
     }
 
     _clearPresetHighlight() {
@@ -2532,10 +2557,14 @@ export class PlayerState {
             noiseReduction:    this.d.noiseReductionCheck?.checked ?? false,
             clahe:             this.d.claheCheck?.checked ?? false,
             gainMode,
+            maxFreqMode:       this.d.maxFreqModeSelect?.value || 'auto',
         };
         if (gainMode === 'fixed') {
             preset.gainFloor = parseInt(this.d.floorSlider?.value || '0', 10);
             preset.gainCeil  = parseInt(this.d.ceilSlider?.value || '100', 10);
+        }
+        if (preset.maxFreqMode === 'fixed') {
+            preset.maxFreqHz = parseFloat(this.d.maxFreqSelect?.value || '10000');
         }
         return preset;
     }
@@ -2642,6 +2671,12 @@ export class PlayerState {
         if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
             if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
             if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
+        }
+        // Max-freq mode
+        const maxFreqMode = p.maxFreqMode || 'auto';
+        if (this.d.maxFreqModeSelect) this.d.maxFreqModeSelect.value = maxFreqMode;
+        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && this.d.maxFreqSelect) {
+            this.d.maxFreqSelect.value = String(p.maxFreqHz);
         }
         this._updatePresetButtons();
     }
@@ -3150,6 +3185,12 @@ export class PlayerState {
             if (this.d.gainModeSelect.value === 'auto' && this.spectrogramData) {
                 this._autoContrast(true);
             }
+        });
+        on(this.d.maxFreqModeSelect, 'change', () => {
+            if (!this.audioBuffer) return;
+            const mode = this.d.maxFreqModeSelect.value;
+            if (mode === 'auto') this._autoFrequency(true);
+            else if (mode === 'nyquist') { this._setMaxFreqToNyquist(); this._generateSpectrogram(); }
         });
         on(this.d.floorSlider, 'input', rebuildDisplay);
         on(this.d.ceilSlider, 'input', rebuildDisplay);

@@ -279,6 +279,11 @@ export function createPlayerHTML(opts = {}) {
             <h3 class="settings-section-title">Display</h3>
             <div class="settings-row">
                 <label class="settings-label">Max Freq</label>
+                <select data-aw="maxFreqModeSelect" class="settings-select" title="Auto: detect from content. Nyquist: full bandwidth. Fixed: use selected value.">
+                    <option value="auto" selected>Auto</option>
+                    <option value="nyquist">Nyquist</option>
+                    <option value="fixed">Fixed</option>
+                </select>
                 <select data-aw="maxFreqSelect" class="settings-select">
                     <option value="10000" selected>10 kHz</option>
                 </select>
