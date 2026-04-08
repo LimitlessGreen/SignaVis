@@ -67,6 +67,23 @@ function getOverlayColorStyle(color) {
 }
 
 /**
+ * Deterministic color for a label name — same name always produces the same
+ * color.  Uses a simple string hash mapped onto a golden-angle hue wheel.
+ * @param {string} name
+ * @returns {string} hex color
+ */
+export function colorForName(name) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return _hslToHex(0, 0, 55); // grey fallback
+    let h = 0;
+    for (let i = 0; i < key.length; i++) {
+        h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+    }
+    const hue = ((h % 360) + 360) % 360;
+    return _hslToHex(hue, 65, 58);
+}
+
+/**
  * Generate a perceptually distinct color using golden-angle hue rotation.
  * Avoids hues already used by existing labels (min distance in hue space).
  * @param {Array<{color?:string}>} existingLabels
@@ -1657,14 +1674,16 @@ export class SpectrogramLabelLayer {
         const e = Math.min(duration, Math.max(0, Math.max(start, end)));
         const f0 = clamp(Math.min(freqMin, freqMax), 0, maxFreq);
         const f1 = clamp(Math.max(freqMin, freqMax), 0, maxFreq);
+        const labelName = label?.label || '';
+        const explicitColor = String(label?.color || '').trim();
         return {
             id: label?.id || `slabel_${Math.random().toString(36).slice(2, 10)}`,
             start: s,
             end: Math.max(s + 0.01, e),
             freqMin: f0,
             freqMax: Math.max(f0 + 1, f1),
-            label: label?.label || '',
-            color: String(label?.color || '').trim(),
+            label: labelName,
+            color: explicitColor || colorForName(labelName),
             scientificName: String(label?.scientificName || '').trim(),
             commonName: String(label?.commonName || '').trim(),
             origin: String(label?.origin || '').trim(),

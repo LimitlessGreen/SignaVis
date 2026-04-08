@@ -12,7 +12,7 @@
 import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import { PlayerState } from './PlayerState.js';
-import { AnnotationLayer, SpectrogramLabelLayer } from './annotations.js';
+import { AnnotationLayer, SpectrogramLabelLayer, colorForName } from './annotations.js';
 import './player.css';  // Vite extracts this into birdnet-player.css
 
 const WAVESURFER_CDN = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
@@ -746,6 +746,7 @@ export class BirdNETPlayer {
         const tax = labelName
             ? this._labelTaxonomy.find((t) => t.name.toLowerCase() === labelName.toLowerCase())
             : null;
+        const explicitColor = String(label?.color || '').trim();
 
         return {
             id: label?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`,
@@ -756,7 +757,7 @@ export class BirdNETPlayer {
             species: label?.species || '',
             label: label?.label || label?.species || '',
             confidence: label?.confidence,
-            color: label?.color || tax?.color || '',
+            color: explicitColor || tax?.color || colorForName(labelName),
             scientificName: label?.scientificName || '',
             commonName: label?.commonName || '',
             origin: label?.origin || '',
