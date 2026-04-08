@@ -1351,6 +1351,8 @@ export class SpectrogramLabelLayer {
         // Pre-fill from focused/last label
         const ref = this._getReferenceLabelForDefaults();
         const initialColor = ref?.color || _autoAssignColor(this.labels);
+        const refName = (ref?.label || '').trim().toLowerCase();
+        const initialHex = (getOverlayColorStyle(initialColor)?.hex || '').toLowerCase();
         openLabelNameEditor({
             player: this.player,
             initialValue: ref?.label || '',
@@ -1359,8 +1361,12 @@ export class SpectrogramLabelLayer {
             existingLabels,
             title: 'New Label',
             onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
+                // If user typed a different name but didn't manually change color,
+                // auto-assign a deterministic color for the new name.
+                const nameChanged = name.trim().toLowerCase() !== refName;
+                const colorUntouched = (color || '').toLowerCase() === initialHex;
                 region.label = name;
-                region.color = color;
+                region.color = (nameChanged && colorUntouched) ? colorForName(name) : color;
                 region.scientificName = String(scientificName || '').trim();
                 region.tags = tags;
                 this.add(region);
