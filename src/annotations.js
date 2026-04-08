@@ -615,28 +615,52 @@ export class AnnotationLayer {
         }
         const totalRows = Math.max(1, rowEnds.length);
 
-        // For each region compute its local overlap group: the set of rows
-        // actually occupied in its time span.  This gives a local depth and
-        // a dense local-row index so that non-overlapping regions keep full
-        // height while only genuinely stacked areas shrink.
+        // Local overlap clusters via union-find: regions that overlap in time
+        // (directly or transitively) form a cluster and share a uniform depth
+        // so their top/height positioning never conflicts visually.
+        // Isolated regions or non-overlapping clusters keep independent sizing.
         /** @type {Map<string, {depth: number, localRow: number}>} */
         const localLayout = new Map();
         if (totalRows > 1) {
-            for (const region of sorted) {
-                const myRow = rowMap.get(region.id) ?? 0;
-                /** @type {Set<number>} */
-                const activeRows = new Set([myRow]);
-                for (const other of sorted) {
-                    if (other === region) continue;
-                    // Does 'other' overlap with 'region' in time?
-                    if (other.start < region.end && other.end > region.start) {
-                        activeRows.add(rowMap.get(other.id) ?? 0);
-                    }
+            /** @type {Map<string, string>} */
+            const par = new Map();
+            /** @param {string} x */
+            const find = (x) => {
+                while (par.get(x) !== x) {
+                    par.set(x, /** @type {string} */ (par.get(/** @type {string} */ (par.get(x)) || x) || x));
+                    x = /** @type {string} */ (par.get(x));
                 }
-                // Dense local index: sort the active rows and find our position
-                const rowsSorted = [...activeRows].sort((a, b) => a - b);
-                const localRow = rowsSorted.indexOf(myRow);
-                localLayout.set(region.id, { depth: activeRows.size, localRow });
+                return x;
+            };
+            for (const r of sorted) par.set(r.id, r.id);
+
+            // Union overlapping pairs (sorted by start → early break)
+            for (let i = 0; i < sorted.length; i++) {
+                for (let j = i + 1; j < sorted.length; j++) {
+                    if (sorted[j].start >= sorted[i].end) break;
+                    const ra = find(sorted[i].id), rb = find(sorted[j].id);
+                    if (ra !== rb) par.set(ra, rb);
+                }
+            }
+
+            // Group regions by cluster root
+            /** @type {Map<string, Array<{id: string, row: number}>>} */
+            const clusters = new Map();
+            for (const r of sorted) {
+                const root = find(r.id);
+                if (!clusters.has(root)) clusters.set(root, []);
+                /** @type {Array<{id: string, row: number}>} */ (clusters.get(root)).push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
+            }
+
+            for (const [, members] of clusters) {
+                if (members.length < 2) continue;
+                const rowSet = new Set(members.map(m => m.row));
+                const rowsSorted = [...rowSet].sort((a, b) => a - b);
+                const depth = rowsSorted.length;
+                if (depth < 2) continue;
+                for (const m of members) {
+                    localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
+                }
             }
         }
 
