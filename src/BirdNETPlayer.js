@@ -593,7 +593,8 @@ export class BirdNETPlayer {
         const container = this._state?.d?.overviewLabelTracks;
         if (!container) return;
         const duration = this._state?.audioBuffer?.duration || 0;
-        if (duration <= 0) { container.innerHTML = ''; return; }
+        const prevRowCount = container.childElementCount;
+        if (duration <= 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
         // Group labels by name
         /** @type {Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>} */
@@ -610,7 +611,7 @@ export class BirdNETPlayer {
             g.segments.push({ id: item.id || '', start: item.start, end: item.end });
         }
 
-        if (groups.size === 0) { container.innerHTML = ''; return; }
+        if (groups.size === 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
         // Sort group names alphabetically
         const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
@@ -660,6 +661,18 @@ export class BirdNETPlayer {
             }
             row.appendChild(track);
             container.appendChild(row);
+        }
+        this._afterOverviewRowChange(prevRowCount, container.childElementCount);
+    }
+
+    /**
+     * When the overview label track row count changes, the spectrogram container
+     * shrinks/grows (flexbox). Schedule a resize-aware redraw so canvas, coords,
+     * AND label overlay layers all stay in sync.
+     */
+    _afterOverviewRowChange(prevCount, nextCount) {
+        if (prevCount !== nextCount) {
+            this._state?._queueResizeRedraw({ redrawSpectrogram: true });
         }
     }
 
