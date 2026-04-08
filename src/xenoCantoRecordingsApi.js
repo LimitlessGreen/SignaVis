@@ -98,11 +98,25 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
     const nyquist = Math.max(1000, Math.floor((Number.isFinite(sampleRate) ? sampleRate : DEFAULT_SAMPLE_RATE) / 2));
     const idPrefix = String(options.idPrefix || 'xc').trim() || 'xc';
 
-    // Recording-level tags from XC metadata
+    // Recording-level metadata from XC
     const rec = options.recording || {};
     const recSex = firstNonEmpty([rec.sex, rec.Sex]) || '';
     const recType = firstNonEmpty([rec.type, rec.sound_type, rec.soundType]) || '';
     const recStage = firstNonEmpty([rec.stage, rec.life_stage, rec.lifeStage, rec.age]) || '';
+    const recCountry = firstNonEmpty([rec.cnt, rec.country]) || '';
+    const recLocality = firstNonEmpty([rec.loc, rec.locality, rec.location]) || '';
+    const recDate = firstNonEmpty([rec.date, rec.recording_date]) || '';
+    const recTime = firstNonEmpty([rec.time, rec.recording_time]) || '';
+    const recQuality = firstNonEmpty([rec.q, rec.quality]) || '';
+    const recLicense = firstNonEmpty([rec.lic, rec.license]) || '';
+    const recMethod = firstNonEmpty([rec.method]) || '';
+    const recRemarks = firstNonEmpty([rec.rmk, rec.remarks]) || '';
+    const recLat = firstNonEmpty([rec.lat, rec.latitude]) || '';
+    const recLng = firstNonEmpty([rec.lon, rec.lng, rec.longitude]) || '';
+    const recAlt = firstNonEmpty([rec.alt, rec.altitude]) || '';
+    const recAnimalSeen = firstNonEmpty([rec['animal-seen'], rec.animal_seen, rec.animalSeen]) || '';
+    const recPlaybackUsed = firstNonEmpty([rec['playback-used'], rec.playback_used, rec.playbackUsed]) || '';
+    const recAlso = Array.isArray(rec.also) ? rec.also.filter(Boolean).join(', ') : '';
 
     const labels = [];
 
@@ -144,6 +158,42 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
         if (soundType) tags.soundType = soundType;
         if (lifeStage) tags.lifeStage = lifeStage;
 
+        // Per-annotation scientific name overrides recording-level
+        const annSciName = firstNonEmpty([src.scientific_name, src.scientificName]) || '';
+
+        // Per-annotation fields
+        const annotator = firstNonEmpty([src.annotator, src.annotator_name]) || '';
+        const animalSeen = firstNonEmpty([src.animal_seen, src.animalSeen, recAnimalSeen]) || '';
+        const playbackUsed = firstNonEmpty([src.playback_used, src.playbackUsed, recPlaybackUsed]) || '';
+        const remarks = firstNonEmpty([src.annotation_remarks, src.remarks, src.notes]) || '';
+        if (annotator) tags.annotator = annotator;
+        if (animalSeen) tags.animalSeen = animalSeen;
+        if (playbackUsed) tags.playbackUsed = playbackUsed;
+        if (remarks) tags.remarks = remarks;
+
+        // Original annotation set metadata
+        const setMeta = src.original_set_metadata || {};
+        const setLicense = firstNonEmpty([setMeta.set_license, setMeta.license]) || '';
+        const setName = firstNonEmpty([setMeta.set_name, setMeta.name]) || '';
+        const setCreator = firstNonEmpty([setMeta.set_creator, setMeta.creator]) || '';
+        if (setLicense) tags.setLicense = setLicense;
+        if (setName) tags.setName = setName;
+        if (setCreator) tags.setCreator = setCreator;
+
+        // Recording-level context (shared across all labels)
+        if (recCountry) tags.country = recCountry;
+        if (recLocality) tags.locality = recLocality;
+        if (recDate) tags.recordingDate = recDate;
+        if (recTime) tags.recordingTime = recTime;
+        if (recQuality) tags.quality = recQuality;
+        if (recLicense) tags.license = recLicense;
+        if (recMethod) tags.method = recMethod;
+        if (recRemarks) tags.recordingRemarks = recRemarks;
+        if (recLat) tags.lat = recLat;
+        if (recLng) tags.lng = recLng;
+        if (recAlt) tags.alt = recAlt;
+        if (recAlso) tags.backgroundSpecies = recAlso;
+
         labels.push({
             id: `${idPrefix}${xcId}_lbl_${annotationId}`,
             start,
@@ -151,10 +201,10 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
             freqMin,
             freqMax,
             label,
-            scientificName,
+            scientificName: annSciName || scientificName,
             commonName: recordingCommonName,
             origin: 'xeno-canto',
-            author: recordist || '',
+            author: annotator || recordist || '',
             tags,
         });
     }
