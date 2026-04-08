@@ -1635,7 +1635,12 @@ export class PlayerState {
         for (const hz of kept) {
             const opt = document.createElement('option');
             opt.value = String(hz);
-            opt.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
+            if (hz === nyquist) {
+                const label = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
+                opt.textContent = `${label} (Nyquist)`;
+            } else {
+                opt.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
+            }
             select.appendChild(opt);
         }
 
