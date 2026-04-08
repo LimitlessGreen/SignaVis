@@ -1868,3 +1868,152 @@
     color: #fca5a5;
 }
 
+/* ── Preset Manager Modal ────────────────────────────────── */
+
+.preset-manager-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 8%;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.preset-manager {
+    position: relative;
+    z-index: 51;
+    min-width: 320px;
+    max-width: 440px;
+    width: 94%;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(2, 6, 23, 0.98);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 80%;
+}
+
+.preset-manager-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.preset-manager-header h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.preset-manager-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.preset-manager-close:hover {
+    color: #f8fafc;
+}
+
+.preset-manager-list {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: 320px;
+}
+
+.preset-manager-empty {
+    padding: 20px 14px;
+    text-align: center;
+    color: #475569;
+    font-size: 0.78rem;
+}
+
+.preset-manager-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    font-size: 0.78rem;
+    color: #e2e8f0;
+}
+
+.preset-manager-item:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.preset-manager-item .pm-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.preset-manager-item .pm-builtin {
+    color: #64748b;
+    font-size: 0.68rem;
+    margin-left: 4px;
+}
+
+.preset-manager-item .pm-fav {
+    color: #eab308;
+    font-size: 0.72rem;
+}
+
+.preset-manager-item button {
+    background: none;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 4px;
+    color: #94a3b8;
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+
+.preset-manager-item button:hover {
+    background: rgba(148, 163, 184, 0.15);
+    color: #e2e8f0;
+}
+
+.preset-manager-item button.pm-delete:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+}
+
+.preset-manager-footer {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.preset-manager-footer button {
+    flex: 1;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(148, 163, 184, 0.08);
+    color: #e2e8f0;
+    transition: background 0.12s;
+}
+
+.preset-manager-footer button:hover {
+    background: rgba(148, 163, 184, 0.2);
+}
+
