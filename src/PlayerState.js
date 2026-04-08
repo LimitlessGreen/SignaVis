@@ -42,6 +42,7 @@ import { createSpectrolipiProcessor } from './spectrolipiEngine.js';
 
 const LS_USER_PRESETS = 'aw-user-presets';
 const LS_FAV_PRESET   = 'aw-favourite-preset';
+const LS_LAST_SETTINGS = 'aw-last-settings';
 
 import {
     renderMainWaveform,
@@ -2510,6 +2511,7 @@ export class PlayerState {
     _clearPresetHighlight() {
         if (this.d.presetSelect) this.d.presetSelect.value = '';
         this._updatePresetButtons();
+        this._persistCurrentSettings();
     }
 
     // ── User Presets (localStorage) ─────────────────────────────────
@@ -2527,6 +2529,26 @@ export class PlayerState {
 
     _saveUserPresetsToStorage(presets) {
         try { localStorage.setItem(LS_USER_PRESETS, JSON.stringify(presets)); } catch { /* quota */ }
+    }
+
+    /** Persist current control state so it survives page reload / new file load. */
+    _persistCurrentSettings() {
+        try {
+            const s = this._getCurrentPresetSettings();
+            localStorage.setItem(LS_LAST_SETTINGS, JSON.stringify(s));
+        } catch { /* quota */ }
+    }
+
+    /** Load last-used settings from localStorage (returns null if none). */
+    _loadLastSettings() {
+        try {
+            const raw = localStorage.getItem(LS_LAST_SETTINGS);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+            }
+        } catch { /* corrupt */ }
+        return null;
     }
 
     _getFavouritePreset() {
@@ -2864,16 +2886,23 @@ export class PlayerState {
         input.click();
     }
 
-    /** Apply favourite preset controls (without generating spectrogram — no audio yet). */
+    /** Apply favourite preset or last-used settings on init (no spectrogram yet). */
     _applyFavouritePresetControls() {
         const fav = this._getFavouritePreset();
-        if (!fav) return;
         let p;
-        if (fav.startsWith('user:')) {
-            const userPresets = this._loadUserPresets();
-            p = userPresets[fav.slice(5)];
-        } else {
-            p = DSP_PROFILES[fav];
+        if (fav) {
+            if (fav.startsWith('user:')) {
+                const userPresets = this._loadUserPresets();
+                p = userPresets[fav.slice(5)];
+            } else {
+                p = DSP_PROFILES[fav];
+            }
+        }
+        // Fall back to last-used custom settings
+        if (!p) {
+            p = this._loadLastSettings();
+            // Show "Custom" in dropdown when restoring last-used settings
+            if (p && this.d.presetSelect) this.d.presetSelect.value = '';
         }
         if (!p) return;
         // Set all controls to preset values (same as _applyPreset but skip regeneration)
@@ -3351,6 +3380,7 @@ export class PlayerState {
             const val = this.d.presetSelect?.value;
             if (val) this._applyPreset(val);
             this._updatePresetButtons();
+            this._persistCurrentSettings();
         });
         on(this.d.presetSaveBtn, 'click', () => this._promptSaveUserPreset());
         on(this.d.presetFavBtn, 'click', () => this._toggleFavouritePreset());
@@ -3375,9 +3405,11 @@ export class PlayerState {
         on(this.d.reassignedCheck, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
         // Noise reduction and CLAHE only need Stage 1 rebuild (no new FFT)
         on(this.d.noiseReductionCheck, 'change', () => {
+            this._persistCurrentSettings();
             if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
         });
         on(this.d.claheCheck, 'change', () => {
+            this._persistCurrentSettings();
             if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
         });
         on(this.d.maxFreqSelect, 'change', () => {
@@ -3392,6 +3424,7 @@ export class PlayerState {
         });
         on(this.d.colorSchemeSelect, 'change', () => {
             this.currentColorScheme = this.d.colorSchemeSelect.value;
+            this._persistCurrentSettings();
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
                 this._buildSpectrogramBaseImage();
                 this._drawSpectrogram();
@@ -3419,18 +3452,20 @@ export class PlayerState {
             this._drawSpectrogram();
         };
         on(this.d.gainModeSelect, 'change', () => {
+            this._persistCurrentSettings();
             if (this.d.gainModeSelect.value === 'auto' && this.spectrogramData) {
                 this._autoContrast(true);
             }
         });
         on(this.d.maxFreqModeSelect, 'change', () => {
+            this._persistCurrentSettings();
             if (!this.audioBuffer) return;
             const mode = this.d.maxFreqModeSelect.value;
             if (mode === 'auto') this._autoFrequency(true);
             else if (mode === 'nyquist') { this._setMaxFreqToNyquist(); this._generateSpectrogram(); }
         });
-        on(this.d.floorSlider, 'input', rebuildDisplay);
-        on(this.d.ceilSlider, 'input', rebuildDisplay);
+        on(this.d.floorSlider, 'input', () => { this._persistCurrentSettings(); rebuildDisplay(); });
+        on(this.d.ceilSlider, 'input', () => { this._persistCurrentSettings(); rebuildDisplay(); });
         on(this.d.autoContrastBtn, 'click', () => this._autoContrast(true));
         on(this.d.autoFreqBtn, 'click', () => this._autoFrequency(true));
 
