@@ -587,9 +587,10 @@ export class AnnotationLayer {
     render() {
         if (!this.overlay || !this.player) return;
 
+        const coords = this.player._state?.coords;
         const pps = this.player._state?.pixelsPerSecond || 100;
         const duration = this.player.duration || this.player._state?.audioBuffer?.duration || 0;
-        const width = Math.max(1, Math.floor(duration * pps));
+        const width = Math.max(1, Math.floor(coords ? coords.timeToScrollX(duration) : duration * pps));
         this.overlay.style.width = `${width}px`;
         this.overlay.innerHTML = '';
 
@@ -628,13 +629,16 @@ export class AnnotationLayer {
     }
 
     _createRegionElement(region, pixelsPerSecond) {
+        const coords = this.player?._state?.coords;
         const el = document.createElement('div');
         el.className = 'annotation-region';
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
-        el.style.left = `${Math.max(0, region.start * pixelsPerSecond)}px`;
-        el.style.width = `${Math.max(1, (region.end - region.start) * pixelsPerSecond)}px`;
+        const left = coords ? coords.timeToScrollX(region.start) : region.start * pixelsPerSecond;
+        const right = coords ? coords.timeToScrollX(region.end) : region.end * pixelsPerSecond;
+        el.style.left = `${Math.max(0, left)}px`;
+        el.style.width = `${Math.max(1, right - left)}px`;
         const colorStyle = getOverlayColorStyle(region.color);
         if (colorStyle) {
             el.style.setProperty('--annotation-color-fill', colorStyle.fill);
@@ -764,8 +768,11 @@ export class AnnotationLayer {
         if (el) {
             el.dataset.start = String(region.start);
             el.dataset.end = String(region.end);
-            el.style.left = `${Math.max(0, region.start * pps)}px`;
-            el.style.width = `${Math.max(1, (region.end - region.start) * pps)}px`;
+            const coords = this.player?._state?.coords;
+            const left = coords ? coords.timeToScrollX(region.start) : region.start * pps;
+            const right = coords ? coords.timeToScrollX(region.end) : region.end * pps;
+            el.style.left = `${Math.max(0, left)}px`;
+            el.style.width = `${Math.max(1, right - left)}px`;
         }
     }
 
@@ -1027,9 +1034,10 @@ export class SpectrogramLabelLayer {
     render() {
         if (!this.overlay || !this.player) return;
         const state = this.player._state;
+        const c = state?.coords;
         const duration = this.player.duration || state?.audioBuffer?.duration || 0;
         const pps = state?.pixelsPerSecond || 100;
-        const width = Math.max(1, Math.floor(duration * pps));
+        const width = Math.max(1, Math.floor(c ? c.timeToScrollX(duration) : duration * pps));
         const height = Math.max(1, state?.d?.spectrogramCanvas?.height || 1);
         this.overlay.style.width = `${width}px`;
         this.overlay.style.height = `${height}px`;
@@ -1217,8 +1225,8 @@ export class SpectrogramLabelLayer {
         const c = this.player?._state?.coords;
         const duration = c?.duration || Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
 
-        const x1 = clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
-        const x2 = clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
+        const x1 = c ? clamp(c.timeToPixelX(label.start), 0, canvasWidth) : clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
+        const x2 = c ? clamp(c.timeToPixelX(label.end), 0, canvasWidth) : clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
         const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax), 0, canvasHeight) : 0;
         const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin), 0, canvasHeight) : canvasHeight;
 

@@ -1920,7 +1920,7 @@ export class PlayerState {
         this.scrollSyncLock = true;
 
         const vw = this._getViewportWidth();
-        const tw = this.audioBuffer ? Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond)) : 0;
+        const tw = this.audioBuffer ? Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration))) : 0;
         const maxScroll = Math.max(0, tw - vw);
         const bounded = Math.max(0, Math.min(nextLeft, maxScroll));
 
@@ -1950,7 +1950,7 @@ export class PlayerState {
         const effectivePps = changed ? clamped : this.pixelsPerSecond;
         const estWidth = duration ? Math.max(1, Math.floor(duration * effectivePps)) : 0;
         const maxScroll = Math.max(0, estWidth - vw);
-        const nextScroll = aTime * effectivePps - aPixel;
+        const nextScroll = duration ? aTime * effectivePps - aPixel : 0;
         const bounded = Math.max(0, Math.min(maxScroll, nextScroll));
 
         if (changed) {
@@ -2017,7 +2017,7 @@ export class PlayerState {
         const trackWidth = Math.max(
             this.d.spectrogramCanvas.width || 0,
             this.d.amplitudeCanvas.width || 0,
-            Math.floor(this.audioBuffer.duration * this.pixelsPerSecond),
+            Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration)),
         );
         if (trackWidth <= 0) return;
 
@@ -3231,7 +3231,7 @@ export class PlayerState {
     _animateFollowCatchupTo(targetScrollLeft) {
         if (!this.audioBuffer) return;
         const vw = this._getViewportWidth();
-        const tw = Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond));
+        const tw = Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration)));
         const maxScroll = Math.max(0, tw - vw);
         const target = Math.max(0, Math.min(maxScroll, targetScrollLeft));
         const start = this._getPrimaryScrollLeft();
@@ -3271,7 +3271,7 @@ export class PlayerState {
 
     _applySmoothFollow(position, viewportWidth) {
         const vw = Math.max(1, viewportWidth || this._getViewportWidth());
-        const totalWidth = this.audioBuffer ? Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond)) : 0;
+        const totalWidth = this.audioBuffer ? Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration))) : 0;
         const maxScroll = Math.max(0, totalWidth - vw);
         const target = Math.max(0, Math.min(maxScroll, position - vw * this._playbackViewportConfig.followTargetRatio));
         const current = this._getPrimaryScrollLeft();
