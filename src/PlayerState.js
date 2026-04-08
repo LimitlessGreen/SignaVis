@@ -1955,16 +1955,20 @@ export class PlayerState {
 
         if (changed) {
             this.pixelsPerSecond = effectivePps;
-            this._updateCoords();
             this.d.zoomSlider.value = String(Math.round(effectivePps / sliderStep) * sliderStep);
             this.d.zoomValue.textContent = `${Math.round(effectivePps)} px/s`;
-            this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
 
             if (this.wavesurfer) this.wavesurfer.zoom(effectivePps);
             if (this.audioBuffer && redraw) {
+                // Redraw BEFORE emitting zoomchange so that canvas dimensions
+                // and coords are up-to-date when listeners (e.g. label layers) run.
                 if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
                 this._drawMainWaveform();
+            } else {
+                this._updateCoords();
             }
+
+            this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
         }
 
         this._setLinkedScrollLeft(bounded);

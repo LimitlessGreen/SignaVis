@@ -1028,7 +1028,8 @@ export class SpectrogramLabelLayer {
         if (!this.overlay || !this.player) return;
         const state = this.player._state;
         const duration = this.player.duration || state?.audioBuffer?.duration || 0;
-        const width = Math.max(1, state?.d?.spectrogramCanvas?.width || Math.floor(duration * (state?.pixelsPerSecond || 100)));
+        const pps = state?.pixelsPerSecond || 100;
+        const width = Math.max(1, Math.floor(duration * pps));
         const height = Math.max(1, state?.d?.spectrogramCanvas?.height || 1);
         this.overlay.style.width = `${width}px`;
         this.overlay.style.height = `${height}px`;
