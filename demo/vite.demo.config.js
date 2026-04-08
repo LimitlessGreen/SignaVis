@@ -8,7 +8,8 @@
  */
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { cpSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { createHash } from 'crypto';
 
 /** Rollup plugin that copies static asset directories into the build output. */
 function copyStaticPlugin(pairs) {
@@ -18,6 +19,43 @@ function copyStaticPlugin(pairs) {
       for (const { src, dest } of pairs) {
         cpSync(src, dest, { recursive: true });
       }
+    },
+  };
+}
+
+/**
+ * Vite plugin: content-hash the BirdNET taxonomy JSON for long-term caching.
+ * - In build: rewrites fetch URLs in HTML, copies hashed file to output.
+ * - In dev: no-op (original filename works via dev server).
+ */
+function taxonomyHashPlugin() {
+  const ORIGINAL = 'birdnet-taxonomy.v2.4.json';
+  const taxonomySrc = resolve(__dirname, 'data', ORIGINAL);
+  let isBuild = false;
+  let hashedName = '';
+
+  return {
+    name: 'taxonomy-hash',
+    configResolved(config) {
+      isBuild = config.command === 'build';
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (!isBuild || !existsSync(taxonomySrc)) return html;
+        if (!hashedName) {
+          const content = readFileSync(taxonomySrc);
+          const hash = createHash('md5').update(content).digest('hex').slice(0, 8);
+          hashedName = ORIGINAL.replace('.json', `.${hash}.json`);
+        }
+        return html.replaceAll(ORIGINAL, hashedName);
+      },
+    },
+    closeBundle() {
+      if (!hashedName || !existsSync(taxonomySrc)) return;
+      const outDir = resolve(__dirname, '..', '_site', 'demo', 'data');
+      mkdirSync(outDir, { recursive: true });
+      cpSync(taxonomySrc, resolve(outDir, hashedName));
     },
   };
 }
@@ -37,6 +75,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    taxonomyHashPlugin(),
     copyStaticPlugin([
       {
         src:  resolve(__dirname, '..', 'models'),

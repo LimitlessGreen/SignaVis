@@ -90,7 +90,7 @@ function main() {
     };
 
     fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-    fs.writeFileSync(outputFile, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(outputFile, JSON.stringify(payload), 'utf8');
     console.log(`Wrote ${payload.speciesCount} species (${payload.languages.length} languages) to ${outputFile}`);
 }
 
