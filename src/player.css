@@ -365,33 +365,51 @@
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-.preset-row {
+/* ─── Quality Slider ─── */
+
+.quality-slider-section {
+    padding-bottom: 6px;
+}
+
+.quality-slider-row {
+    display: flex;
+    align-items: center;
     gap: 6px;
 }
 
-.preset-btn {
+.quality-end-label {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.quality-range {
     flex: 1;
-    height: 30px;
-    border: 1px solid var(--color-border);
-    border-radius: 5px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 0.76rem;
-    font-weight: 600;
+    height: 6px;
+    accent-color: var(--color-accent);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.preset-btn:hover {
-    border-color: var(--color-accent);
-    color: var(--color-text-primary);
+.quality-label-bar {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    color: var(--color-text-secondary);
+    padding: 2px 22px 0;
+    opacity: 0.7;
+    user-select: none;
 }
 
-.preset-btn.active {
-    background: var(--color-accent);
-    color: #fff;
-    border-color: transparent;
+.quality-level-display {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin-top: 2px;
+    letter-spacing: 0.03em;
 }
+
+
 
 /* ═══ Transport ═══ */
 

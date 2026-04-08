@@ -29,15 +29,31 @@ export const CLASSIC_N_MELS = 160;
 export const CLASSIC_DB_FLOOR = -80;   // dB below peak to clip
 export const CLASSIC_DB_REF = 1.0;     // reference power for dB conversion
 
+// ─── Window Overlap / Oversampling (SV-style) ──────────────────────
+// Overlap level → hop size (matches Sonic Visualiser getWindowIncrement)
+// Level 0 = none, 1 = 25%, 2 = 50%, 3 = 75%, 4 = 87.5%, 5 = 93.75%
+export function windowHopFromOverlap(windowSize, overlapLevel) {
+    if (overlapLevel <= 0) return windowSize;
+    if (overlapLevel === 1) return (windowSize * 3) >> 2;  // 75% of window
+    return windowSize >> (overlapLevel - 1);                // 2^(level-1)
+}
+
+// Oversampling level → fft size (zero-padding)
+// Level 0 = 1×, 1 = 2×, 2 = 4×, 3 = 8×
+export function fftSizeFromOversampling(windowSize, oversamplingLevel) {
+    return windowSize << oversamplingLevel;
+}
+
 // ─── DSP Profiles ───────────────────────────────────────────────────
 // Pre-configured parameter sets for quick switching.
-// UI overrides (fftSize, windowSize, hopSize, windowFunction) are
-// merged on top of these when the user changes individual controls.
+// windowSize + overlapLevel + oversamplingLevel determine hop and FFT.
 
 export const DSP_PROFILES = {
     perch: {
         scale: 'mel',
-        fftSize: 2048,
+        windowSize: 1024,
+        overlapLevel: 2,       // 50 %
+        oversamplingLevel: 1,  // 2× → fft 2048
         nMels: PERCH_N_MELS,
         frameRate: PERCH_FRAME_RATE,
         usePcen: true,
@@ -50,7 +66,9 @@ export const DSP_PROFILES = {
     },
     classic: {
         scale: 'linear',
-        fftSize: 2048,
+        windowSize: 2048,
+        overlapLevel: 2,       // 50 %
+        oversamplingLevel: 0,  // 1× → fft 2048
         nMels: CLASSIC_N_MELS,
         frameRate: CLASSIC_FRAME_RATE,
         usePcen: false,
@@ -60,5 +78,49 @@ export const DSP_PROFILES = {
         pcenSmoothing: 0,
         windowFunction: 'hann',
         colorScheme: 'xenocanto',
+    },
+};
+
+// ─── Quality Levels (NVIDIA-style Performance ↔ Quality slider) ────
+// Each level fully determines DSP parameters.  The slider index (0-4)
+// maps directly into this array.
+
+export const QUALITY_LEVELS = [
+    { label: 'Performance', windowSize: 256,  overlapLevel: 1, oversamplingLevel: 0, nMels: 80  },
+    { label: 'Balanced',    windowSize: 512,  overlapLevel: 2, oversamplingLevel: 0, nMels: 128 },
+    { label: 'Quality',     windowSize: 1024, overlapLevel: 2, oversamplingLevel: 1, nMels: 160 },
+    { label: 'High',        windowSize: 2048, overlapLevel: 3, oversamplingLevel: 1, nMels: 200 },
+    { label: 'Ultra',       windowSize: 4096, overlapLevel: 3, oversamplingLevel: 2, nMels: 256 },
+];
+
+// ─── Colour Scales (SV-style amplitude mapping) ────────────────────
+// Determines how raw FFT magnitude/power values map to pixel brightness.
+// Modelled after Sonic Visualiser's ColourScaleType.
+
+export const COLOUR_SCALES = {
+    linear:  { label: 'Linear',  description: 'Raw magnitude (|X|), proportional pixel mapping' },
+    meter:   { label: 'Meter',   description: 'IEC 60268-18 meter law (perceptual loudness)' },
+    dbSquared: { label: 'dB²',   description: '10·log₁₀(|X|²) — power spectrum in dB' },
+    db:      { label: 'dB',      description: '20·log₁₀(|X|) — voltage/amplitude in dB' },
+    phase:   { label: 'Phase',   description: 'atan2(imag, real) — phase angle (−π … +π)' },
+};
+
+// ─── Spectrogram Engines ────────────────────────────────────────────
+// Available rendering engine identifiers for A/B comparison.
+
+export const SPECTROGRAM_ENGINES = {
+    workbench: {
+        label: 'Workbench',
+        description: 'Mel/linear + PCEN, Web Worker, GPU colorizer',
+        supportsScales: ['mel', 'linear'],
+        supportsPcen: true,
+        supportsColourScales: ['linear', 'meter', 'dbSquared', 'db', 'phase'],
+    },
+    spectrolipi: {
+        label: 'Spectrolipi',
+        description: 'Linear FFT, Hann window, dB only',
+        supportsScales: ['linear'],
+        supportsPcen: false,
+        supportsColourScales: ['dbSquared'],
     },
 };

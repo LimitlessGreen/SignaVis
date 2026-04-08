@@ -1,0 +1,198 @@
+/**
+ * BirdNET inference modal — opens a dialog, runs TF.js BirdNET analysis,
+ * and returns detected labels.
+ *
+ * Usage:
+ *   import { BirdNETPanel } from './lib/birdnet-panel.js';
+ *   const panel = new BirdNETPanel({
+ *     backdrop:     document.getElementById('birdnetModalBackdrop'),
+ *     modelUrlInput: document.getElementById('birdnetModelUrl'),
+ *     confidenceInput: document.getElementById('birdnetConfidence'),
+ *     confidenceVal:   document.getElementById('birdnetConfidenceVal'),
+ *     overlapSelect:   document.getElementById('birdnetOverlap'),
+ *     mergeCheckbox:   document.getElementById('birdnetMerge'),
+ *     authorInput:     document.getElementById('birdnetAuthor'),
+ *     progressWrap:    document.getElementById('birdnetProgressWrap'),
+ *     progressBar:     document.getElementById('birdnetProgressBar'),
+ *     statusEl:        document.getElementById('birdnetStatus'),
+ *     analyzeBtn:      document.getElementById('birdnetAnalyzeBtn'),
+ *     cancelBtn:       document.getElementById('birdnetCancelBtn'),
+ *     openBtn:         document.getElementById('birdnetBtn'),
+ *     birdnet:         birdnetInstance,
+ *     getAudioBuffer:  () => player._state?.audioBuffer,
+ *     resolveLabel:    (det) => ({ ... }),
+ *     onResults:       (labels) => { ... },
+ *   });
+ */
+
+const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
+const STORAGE_KEY = 'audio-workbench.birdnet-model-url.v2';
+const DETECTION_COLOR = '#f59e0b';
+
+/**
+ * Merge labels of the same species whose time ranges overlap.
+ * Keeps the highest confidence and extends the time range.
+ */
+export function mergeOverlappingLabels(labels) {
+  const bySpecies = new Map();
+  for (const lbl of labels) {
+    const key = lbl.scientificName || lbl.label;
+    if (!bySpecies.has(key)) bySpecies.set(key, []);
+    bySpecies.get(key).push(lbl);
+  }
+  const merged = [];
+  for (const group of bySpecies.values()) {
+    group.sort((a, b) => a.start - b.start);
+    let current = { ...group[0] };
+    for (let i = 1; i < group.length; i++) {
+      const next = group[i];
+      if (next.start <= current.end) {
+        current.end = Math.max(current.end, next.end);
+        if (next.confidence > current.confidence) current.confidence = next.confidence;
+      } else {
+        merged.push(current);
+        current = { ...next };
+      }
+    }
+    merged.push(current);
+  }
+  return merged;
+}
+
+export class BirdNETPanel {
+  /**
+   * @param {object} opts
+   * @param {HTMLElement} opts.backdrop
+   * @param {HTMLInputElement} opts.modelUrlInput
+   * @param {HTMLInputElement} opts.confidenceInput
+   * @param {HTMLElement} opts.confidenceVal
+   * @param {HTMLSelectElement} opts.overlapSelect
+   * @param {HTMLInputElement} opts.mergeCheckbox
+   * @param {HTMLInputElement} opts.authorInput
+   * @param {HTMLElement} opts.progressWrap
+   * @param {HTMLElement} opts.progressBar
+   * @param {HTMLElement} opts.statusEl
+   * @param {HTMLButtonElement} opts.analyzeBtn
+   * @param {HTMLButtonElement} opts.cancelBtn
+   * @param {HTMLButtonElement} [opts.openBtn]
+   * @param {import('../../src/birdnetInference.js').BirdNETInference} opts.birdnet
+   * @param {() => AudioBuffer|null} opts.getAudioBuffer
+   * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
+   * @param {(labels: any[]) => void} opts.onResults
+   */
+  constructor(opts) {
+    Object.assign(this, opts);
+    this._restoreModelUrl();
+    this._bindEvents();
+  }
+
+  open() {
+    this.statusEl.textContent = '';
+    this.progressWrap.style.display = 'none';
+    this.progressBar.style.width = '0%';
+    this.analyzeBtn.disabled = false;
+    this.backdrop.classList.add('show');
+    this.backdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => this.modelUrlInput.focus(), 0);
+  }
+
+  close() {
+    this.backdrop.classList.remove('show');
+    this.backdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  _restoreModelUrl() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      this.modelUrlInput.value = stored || DEFAULT_MODEL_URL;
+    } catch {
+      this.modelUrlInput.value = DEFAULT_MODEL_URL;
+    }
+  }
+
+  _bindEvents() {
+    this.openBtn?.addEventListener('click', () => this.open());
+    this.cancelBtn.addEventListener('click', () => this.close());
+    this.backdrop.addEventListener('click', (e) => {
+      if (e.target === this.backdrop) this.close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.backdrop.classList.contains('show')) this.close();
+    });
+    this.confidenceInput.addEventListener('input', () => {
+      this.confidenceVal.textContent = this.confidenceInput.value;
+    });
+    this.analyzeBtn.addEventListener('click', () => this._analyze());
+  }
+
+  async _analyze() {
+    const audioBuffer = this.getAudioBuffer();
+    if (!audioBuffer) {
+      this.statusEl.textContent = 'No audio loaded.';
+      return;
+    }
+
+    const modelUrl = String(this.modelUrlInput.value || '').trim();
+    if (!modelUrl) {
+      this.statusEl.textContent = 'Please enter a model URL.';
+      return;
+    }
+
+    try { localStorage.setItem(STORAGE_KEY, modelUrl); } catch { /* ignore */ }
+
+    const confidence = parseFloat(this.confidenceInput.value) || 0.25;
+    const overlap = parseFloat(this.overlapSelect.value) || 0;
+
+    this.analyzeBtn.disabled = true;
+    this.progressWrap.style.display = '';
+    this.progressBar.style.width = '0%';
+
+    try {
+      if (!this.birdnet.loaded) {
+        this.statusEl.textContent = 'Loading TF.js + model…';
+        await this.birdnet.load({
+          modelUrl,
+          onProgress: (msg, pct) => {
+            this.statusEl.textContent = msg;
+            this.progressBar.style.width = pct + '%';
+          },
+        });
+      }
+
+      this.statusEl.textContent = 'Analyzing…';
+      this.progressBar.style.width = '0%';
+
+      const channelData = audioBuffer.getChannelData(0);
+      const detections = await this.birdnet.analyze(channelData, {
+        sampleRate: audioBuffer.sampleRate,
+        overlap,
+        minConfidence: confidence,
+        onProgress: (pct) => { this.progressBar.style.width = pct + '%'; },
+      });
+
+      const author = this.authorInput.value.trim();
+      const mergeOverlapping = this.mergeCheckbox.checked;
+      const newLabels = detections.map((det) => ({
+        ...this.resolveLabel(det, audioBuffer),
+        id: `bn_${Math.random().toString(36).slice(2, 10)}`,
+        start: det.start,
+        end: det.end,
+        freqMin: 0,
+        freqMax: audioBuffer.sampleRate / 2,
+        color: DETECTION_COLOR,
+        confidence: det.confidence,
+        origin: 'BirdNET',
+        author: author || '',
+      }));
+
+      const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
+      this.onResults(labelsToAdd);
+      this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
+    } catch (err) {
+      this.statusEl.textContent = `Error: ${err?.message || String(err)}`;
+      this.birdnet.dispose();
+    } finally {
+      this.analyzeBtn.disabled = false;
+    }
+  }
+}

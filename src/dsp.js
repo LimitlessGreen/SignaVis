@@ -59,17 +59,64 @@ export function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
             filter[k] = (right - k) / (right - center || 1);
         }
 
-        // Power-normalise so each triangle sums to 1 (matches SV behaviour)
+        // If the triangular filter is degenerate (e.g. center == right, or
+        // left == center == right), it can end up all-zero.  Fall back to a
+        // point filter on the center bin so the band isn't silent (white stripe).
         let filterSum = 0;
         for (let k = 0; k < nFftBins; k++) filterSum += filter[k];
-        if (filterSum > 0) {
-            for (let k = 0; k < nFftBins; k++) filter[k] /= filterSum;
+        if (filterSum === 0) {
+            filter[center] = 1;
+            filterSum = 1;
         }
+
+        // Power-normalise so each triangle sums to 1 (matches SV behaviour)
+        for (let k = 0; k < nFftBins; k++) filter[k] /= filterSum;
 
         filterbank.push(filter);
     }
 
     return filterbank;
+}
+
+/**
+ * Build a sparse mel filterbank for fast application.
+ * Instead of iterating all nFftBins per filter, stores only
+ * the non-zero (startBin, weights[]) ranges.
+ */
+export function createSparseMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
+    const dense = createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax);
+    const sparse = new Array(nMels);
+    for (let m = 0; m < nMels; m++) {
+        const f = dense[m];
+        let start = -1, end = 0;
+        for (let k = 0; k < f.length; k++) {
+            if (f[k] !== 0) {
+                if (start < 0) start = k;
+                end = k + 1;
+            }
+        }
+        if (start < 0) start = 0;
+        const weights = f.subarray(start, end);
+        sparse[m] = { start, weights };
+    }
+    return sparse;
+}
+
+/**
+ * Apply sparse mel filterbank — only iterates non-zero ranges.
+ */
+export function applySparseMelFilterbank(powerSpectrum, sparseFilterbank) {
+    const nMels = sparseFilterbank.length;
+    const melSpectrum = new Float32Array(nMels);
+    for (let m = 0; m < nMels; m++) {
+        const { start, weights } = sparseFilterbank[m];
+        let sum = 0;
+        for (let k = 0; k < weights.length; k++) {
+            sum += powerSpectrum[start + k] * weights[k];
+        }
+        melSpectrum[m] = sum;
+    }
+    return melSpectrum;
 }
 
 export function applyMelFilterbank(powerSpectrum, melFilterbank) {
@@ -208,6 +255,56 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFu
     return out;
 }
 
+/**
+ * Compute magnitude + phase spectrum from a windowed frame via FFT.
+ * Returns { magnitude: Float32Array, phase: Float32Array } each of length fftSize/2.
+ */
+export function fftMagnitudePhaseSpectrum(audio, offset, winLength, fftSize, windowFunction = 'hann') {
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
+    const wfn = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
+    const maxCopy = Math.min(winLength, fftSize);
+    for (let i = 0; i < maxCopy; i++) {
+        const sample = audio[offset + i] || 0;
+        real[i] = sample * wfn(i, winLength);
+    }
+
+    iterativeFFT(real, imag);
+
+    const nBins = fftSize / 2;
+    const magnitude = new Float32Array(nBins);
+    const phase = new Float32Array(nBins);
+    for (let i = 0; i < nBins; i++) {
+        magnitude[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
+        phase[i] = Math.atan2(imag[i], real[i]);
+    }
+    return { magnitude, phase };
+}
+
+// ─── IEC 60268-18 Meter Scale ───────────────────────────────────────
+// Attempt faithful port of SV's AudioLevel / ColourScale meter mapping.
+
+/**
+ * IEC 60268-18 fader law: map dB → meter deflection percentage.
+ * Used by the "Meter" colour scale to produce perceptually-even brightness.
+ */
+export function iecDbToFader(db) {
+    if (db < -70) return 0;
+    if (db < -60) return (db + 70) * 0.25;
+    if (db < -50) return (db + 60) * 0.5 + 2.5;
+    if (db < -40) return (db + 50) * 0.75 + 7.5;
+    if (db < -30) return (db + 40) * 1.5 + 15;
+    if (db < -20) return (db + 30) * 2.0 + 30;
+    return (db + 20) * 2.5 + 50;
+}
+
+/**
+ * Maximum meter deflection for 0dB (used to normalise the meter range).
+ * @constant {number}
+ */
+const IEC_MAX_PERCENT = iecDbToFader(0);  // 100
+
 // ─── Spectrogram Computation ────────────────────────────────────────
 
 /**
@@ -225,6 +322,7 @@ export function fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFu
  * @param {number} params.pcenSmoothing
  * @param {boolean} [params.usePcen=true] - apply PCEN normalisation (false → dB even in mel mode)
  * @param {string} [params.scale='mel'] - 'mel' or 'linear'
+ * @param {string} [params.colourScale='dbSquared'] - 'linear'|'meter'|'dbSquared'|'db'|'phase'
  * @param {Float32Array} [params.initialSmooth] - carry-over PCEN smooth state from previous chunk
  * @param {number} [params.windowSize] - window length in samples (0 or omit = auto: 4×hopSize)
  * @param {number} [params.hopSize] - hop size in samples (0 or omit = auto: sampleRate/frameRate)
@@ -238,6 +336,7 @@ export function computeSpectrogram(params) {
         nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
         usePcen = true,
         scale = 'mel', initialSmooth,
+        colourScale = 'dbSquared',
         windowSize: userWindowSize, hopSize: userHopSize,
         windowFunction = 'hann',
     } = params;
@@ -253,37 +352,103 @@ export function computeSpectrogram(params) {
 
     const nBins      = Math.floor(fftSize / 2);
     const useLinear  = scale === 'linear';
-    const melFB      = useLinear ? null : createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+    const isPhase    = colourScale === 'phase';
     const outBins    = useLinear ? nBins : nMels;
     const output     = new Float32Array(numFrames * outBins);
-    let smooth       = null;
 
-    if (useLinear) {
-        // ── Linear power spectrum → dB ──
+    // ── Precompute window function (once, not per frame) ──
+    const wfn = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
+    const maxCopy = Math.min(winLength, fftSize);
+    const windowLUT = new Float32Array(maxCopy);
+    for (let i = 0; i < maxCopy; i++) windowLUT[i] = wfn(i, winLength);
+
+    // ── Reusable FFT buffers (avoid per-frame allocation) ──
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
+    // ── Sparse mel filterbank (skip zero-weight bins) ──
+    const sparseFB = useLinear ? null : createSparseMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2);
+    // Keep dense filterbank only for phase (needs sin/cos weighting)
+    const denseFB  = isPhase && !useLinear ? createMelFilterbank(sampleRate, fftSize, nMels, 0, sampleRate / 2) : null;
+
+    // ── Reusable power buffer for mel paths ──
+    const powerBuf = (!useLinear && !isPhase) ? new Float32Array(nBins) : null;
+
+    /** Apply windowed frame into reusable buffers and run FFT in-place. */
+    function runFFT(offset) {
+        real.fill(0);
+        imag.fill(0);
+        for (let i = 0; i < maxCopy; i++) {
+            real[i] = (audio[offset + i] || 0) * windowLUT[i];
+        }
+        iterativeFFT(real, imag);
+    }
+
+    let smooth = null;
+
+    if (isPhase) {
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
-            const offset = frameIdx * hopSize;
-            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
-            const base   = frameIdx * nBins;
-            for (let k = 0; k < nBins; k++) {
-                const power = mag[k] * mag[k];
-                output[base + k] = 10 * Math.log10(Math.max(1e-10, power));
+            runFFT(frameIdx * hopSize);
+            const base = frameIdx * outBins;
+            if (useLinear) {
+                for (let k = 0; k < nBins; k++) output[base + k] = Math.atan2(imag[k], real[k]);
+            } else {
+                for (let m = 0; m < nMels; m++) {
+                    const f = denseFB[m];
+                    let sumSin = 0, sumCos = 0;
+                    for (let k = 0; k < f.length; k++) {
+                        if (f[k] > 0) {
+                            const ph = Math.atan2(imag[k], real[k]);
+                            sumSin += f[k] * Math.sin(ph);
+                            sumCos += f[k] * Math.cos(ph);
+                        }
+                    }
+                    output[base + m] = Math.atan2(sumSin, sumCos);
+                }
+            }
+        }
+    } else if (useLinear) {
+        const wantRaw = colourScale === 'linear' || colourScale === 'meter';
+        for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
+            runFFT(frameIdx * hopSize);
+            const base = frameIdx * nBins;
+            if (wantRaw) {
+                for (let k = 0; k < nBins; k++) {
+                    output[base + k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+                }
+            } else {
+                for (let k = 0; k < nBins; k++) {
+                    // 20·log₁₀(mag) = 10·log₁₀(mag²) — compute from power directly
+                    const p = real[k] * real[k] + imag[k] * imag[k];
+                    output[base + k] = 10 * Math.log10(Math.max(1e-20, p));
+                }
             }
         }
     } else if (!usePcen) {
-        // ── Mel scale without PCEN: power → mel → dB ──
+        const wantRaw = colourScale === 'linear' || colourScale === 'meter';
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
-            const offset = frameIdx * hopSize;
-            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
-            const power  = new Float32Array(mag.length);
-            for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
-            const mel    = applyMelFilterbank(power, melFB);
-            const base   = frameIdx * nMels;
+            runFFT(frameIdx * hopSize);
+            // Compute power spectrum directly (skip sqrt + re-squaring)
+            for (let k = 0; k < nBins; k++) {
+                powerBuf[k] = real[k] * real[k] + imag[k] * imag[k];
+            }
+            const base = frameIdx * nMels;
+            // Apply sparse mel filterbank on power
             for (let m = 0; m < nMels; m++) {
-                output[base + m] = 10 * Math.log10(Math.max(1e-10, mel[m]));
+                const { start, weights } = sparseFB[m];
+                let sum = 0;
+                for (let k = 0; k < weights.length; k++) {
+                    sum += powerBuf[start + k] * weights[k];
+                }
+                if (wantRaw) {
+                    output[base + m] = Math.sqrt(Math.max(0, sum));
+                } else {
+                    output[base + m] = 10 * Math.log10(Math.max(1e-10, sum));
+                }
             }
         }
     } else {
-        // ── Mel + PCEN: power → mel → PCEN ──
+        // ── Mel + PCEN ──
         smooth = new Float32Array(nMels);
         if (initialSmooth && initialSmooth.length === nMels) {
             smooth.set(initialSmooth);
@@ -291,14 +456,17 @@ export function computeSpectrogram(params) {
         const pcenPower = 1.0 / pcenRoot;
         const pcenBiasOffset = Math.pow(pcenBias, pcenPower);
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
-            const offset = frameIdx * hopSize;
-            const mag    = fftMagnitudeSpectrum(audio, offset, winLength, fftSize, windowFunction);
-            const power  = new Float32Array(mag.length);
-            for (let k = 0; k < mag.length; k++) power[k] = mag[k] * mag[k];
-            const mel    = applyMelFilterbank(power, melFB);
-            const base   = frameIdx * nMels;
+            runFFT(frameIdx * hopSize);
+            for (let k = 0; k < nBins; k++) {
+                powerBuf[k] = real[k] * real[k] + imag[k] * imag[k];
+            }
+            const base = frameIdx * nMels;
             for (let m = 0; m < nMels; m++) {
-                const e     = mel[m];
+                const { start, weights } = sparseFB[m];
+                let e = 0;
+                for (let k = 0; k < weights.length; k++) {
+                    e += powerBuf[start + k] * weights[k];
+                }
                 smooth[m]   = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
                 const denom = Math.pow(1e-10 + smooth[m], pcenGain);
                 const norm  = e / denom;
@@ -307,7 +475,7 @@ export function computeSpectrogram(params) {
         }
     }
 
-    const result = { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength };
+    const result = { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength, colourScale };
     if (smooth) {
         result.smoothState = smooth;
     }

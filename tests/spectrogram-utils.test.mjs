@@ -14,7 +14,7 @@ import {
     frequencyToPixelY,
 } from '../src/spectrogram.js';
 import { computeSpectrogram, buildMelFrequencies } from '../src/dsp.js';
-import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from '../src/constants.js';
+import { MAX_BASE_SPECTROGRAM_WIDTH } from '../src/constants.js';
 
 // ─── computeAmplitudePeak ───────────────────────────────────────────
 
@@ -122,7 +122,7 @@ test('buildSpectrogramGrayscale returns correct dimensions', () => {
     });
     assert.ok(result !== null);
     assert.equal(result.width, nFrames); // nFrames < MAX_BASE_SPECTROGRAM_WIDTH
-    assert.equal(result.height, SPECTROGRAM_HEIGHT);
+    assert.equal(result.height, nMels);
     assert.equal(result.gray.length, result.width * result.height);
 });
 
@@ -449,4 +449,129 @@ test('end-to-end: linear vs mel produce different grayscale for same audio', () 
     }
     assert.ok(diffCount > minLen * 0.1,
         `mel and linear should differ substantially (${diffCount}/${minLen} pixels differ)`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// buildSpectrogramGrayscale — colourScale modes
+// ═══════════════════════════════════════════════════════════════════════
+
+test('buildSpectrogramGrayscale colourScale=phase maps [-π, +π] to [0, 255]', () => {
+    const nFrames = 10, nBins = 16;
+    // Fill with known phase values: −π to +π
+    const data = new Float32Array(nFrames * nBins);
+    for (let f = 0; f < nFrames; f++) {
+        for (let b = 0; b < nBins; b++) {
+            data[f * nBins + b] = -Math.PI + (2 * Math.PI * b / (nBins - 1));
+        }
+    }
+    const result = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -Math.PI, spectrogramAbsLogMax: Math.PI,
+        scale: 'linear', colourScale: 'phase',
+    });
+    assert.ok(result !== null);
+    for (let i = 0; i < result.gray.length; i++) {
+        assert.ok(result.gray[i] >= 0 && result.gray[i] <= 255,
+            `phase gray[${i}] = ${result.gray[i]} out of range`);
+    }
+});
+
+test('buildSpectrogramGrayscale colourScale=linear maps raw magnitudes', () => {
+    const nFrames = 10, nBins = 8;
+    const data = new Float32Array(nFrames * nBins).fill(0.5);
+    const result = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
+        scale: 'linear', colourScale: 'linear',
+    });
+    assert.ok(result !== null);
+    // Uniform 0.5 with range [0,1] → ~128
+    const expected = result.gray[0];
+    assert.ok(expected > 100 && expected < 160,
+        `uniform 0.5 should map to ~128 (got ${expected})`);
+});
+
+test('buildSpectrogramGrayscale colourScale=meter applies IEC curve', () => {
+    const nFrames = 10, nBins = 8;
+    // Full-scale values (max) should map to 255 for both linear and meter
+    const dataMax = new Float32Array(nFrames * nBins).fill(1);
+    const linearResult = buildSpectrogramGrayscale({
+        spectrogramData: dataMax, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
+        scale: 'linear', colourScale: 'linear',
+    });
+    const meterResult = buildSpectrogramGrayscale({
+        spectrogramData: dataMax, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
+        scale: 'linear', colourScale: 'meter',
+    });
+    // At full scale (0 dB), both should be 255
+    assert.equal(linearResult.gray[0], 255);
+    assert.equal(meterResult.gray[0], 255);
+
+    // Now test mid-level: meter should be different from linear
+    const dataMid = new Float32Array(nFrames * nBins).fill(0.1); // quiet
+    const linMid = buildSpectrogramGrayscale({
+        spectrogramData: dataMid, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
+        scale: 'linear', colourScale: 'linear',
+    });
+    const meterMid = buildSpectrogramGrayscale({
+        spectrogramData: dataMid, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
+        scale: 'linear', colourScale: 'meter',
+    });
+    // Meter should compress quiet signals (map them differently from linear)
+    assert.notEqual(linMid.gray[0], meterMid.gray[0],
+        `meter (${meterMid.gray[0]}) should differ from linear (${linMid.gray[0]}) at quiet levels`);
+});
+
+test('buildSpectrogramGrayscale colourScale=db and dbSquared produce same output for dB data', () => {
+    const nFrames = 10, nBins = 8;
+    const data = new Float32Array(nFrames * nBins);
+    for (let i = 0; i < data.length; i++) data[i] = -40 + (80 * i / data.length);
+
+    const dbResult = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -40, spectrogramAbsLogMax: 40,
+        scale: 'linear', colourScale: 'db',
+    });
+    const db2Result = buildSpectrogramGrayscale({
+        spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
+        sampleRateHz: 32000, maxFreq: 16000,
+        spectrogramAbsLogMin: -40, spectrogramAbsLogMax: 40,
+        scale: 'linear', colourScale: 'dbSquared',
+    });
+    // Both use the same linear range mapping code path
+    for (let i = 0; i < dbResult.gray.length; i++) {
+        assert.equal(dbResult.gray[i], db2Result.gray[i],
+            `db and dbSquared should produce identical grayscale at pixel ${i}`);
+    }
+});
+
+test('buildSpectrogramGrayscale all colourScales produce values in [0, 255]', () => {
+    const nFrames = 20, nBins = 16;
+    const data = new Float32Array(nFrames * nBins);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() - 0.5) * 10;
+
+    for (const cs of ['linear', 'meter', 'dbSquared', 'db', 'phase']) {
+        const result = buildSpectrogramGrayscale({
+            spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
+            sampleRateHz: 32000, maxFreq: 16000,
+            spectrogramAbsLogMin: -5, spectrogramAbsLogMax: 5,
+            scale: 'linear', colourScale: cs,
+        });
+        assert.ok(result !== null, `${cs} should return a result`);
+        for (let i = 0; i < result.gray.length; i++) {
+            assert.ok(result.gray[i] >= 0 && result.gray[i] <= 255,
+                `${cs}: gray[${i}] = ${result.gray[i]} out of range`);
+        }
+    }
 });

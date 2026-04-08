@@ -22,6 +22,7 @@ self.onmessage = (event) => {
         nMels: result.nMels,
         hopSize: result.hopSize,
         winLength: result.winLength,
+        colourScale: result.colourScale,
     };
     const transfer = [result.data.buffer];
     if (result.smoothState) {

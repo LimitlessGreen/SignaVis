@@ -382,7 +382,18 @@ export class BirdNETPlayer {
 
     /** Notify the player that its container was resized externally. */
     resize() {
-        this._state?._requestSpectrogramRedraw();
+        const s = this._state;
+        if (!s) return;
+        s._queueCompactToolbarLayoutRefresh?.();
+        if (!s.audioBuffer) return;
+        s._drawMainWaveform();
+        s._drawOverviewWaveform();
+        s._syncOverviewWindowToViewport();
+        if (s.spectrogramData && s.spectrogramFrames > 0) s._drawSpectrogram();
+        s._emit('viewresize', {
+            waveformHeight: s.waveformDisplayHeight,
+            spectrogramHeight: s.spectrogramDisplayHeight,
+        });
     }
 
     /** Tear down the player and free resources */

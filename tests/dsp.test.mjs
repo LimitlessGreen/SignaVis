@@ -12,8 +12,11 @@ import {
     applyMelFilterbank,
     iterativeFFT,
     fftMagnitudeSpectrum,
+    fftMagnitudePhaseSpectrum,
+    iecDbToFader,
     computeSpectrogram,
 } from '../src/dsp.js';
+import { windowHopFromOverlap, fftSizeFromOversampling } from '../src/constants.js';
 
 // ─── Mel Scale ──────────────────────────────────────────────────────
 
@@ -100,6 +103,18 @@ test('applyMelFilterbank with flat spectrum produces positive values', () => {
     const mel = applyMelFilterbank(spectrum, fb);
     for (let i = 0; i < mel.length; i++) {
         assert.ok(mel[i] > 0, `mel[${i}] = ${mel[i]} should be > 0`);
+    }
+});
+
+test('createMelFilterbank degenerate filters produce non-zero output with flat spectrum', () => {
+    // Small FFT (256 → 128 bins) with 128 mel bands causes many degenerate
+    // filters in the low frequencies. The point-filter fallback must ensure
+    // every mel band picks up energy from a flat spectrum (no white stripes).
+    const fb = createMelFilterbank(32000, 256, 128, 0, 16000);
+    const spectrum = new Float32Array(128).fill(1);
+    const mel = applyMelFilterbank(spectrum, fb);
+    for (let i = 0; i < mel.length; i++) {
+        assert.ok(mel[i] > 0, `mel[${i}] = ${mel[i]} should be > 0 (degenerate filter?)`);
     }
 });
 
@@ -395,4 +410,256 @@ test('two-chunk progressive simulation matches single-pass at chunk boundary', (
     // With proper smooth state carry-over, the last frames should be reasonably close
     // (exact match not expected due to different hop-alignment at split point)
     assert.ok(maxDiff < 2.0, `max difference at last frame: ${maxDiff} should be < 2.0`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// fftMagnitudePhaseSpectrum
+// ═══════════════════════════════════════════════════════════════════════
+
+test('fftMagnitudePhaseSpectrum returns magnitude and phase arrays', () => {
+    const n = 2048;
+    const audio = new Float32Array(n);
+    for (let i = 0; i < n; i++) audio[i] = Math.sin(2 * Math.PI * 5 * i / n);
+    const { magnitude, phase } = fftMagnitudePhaseSpectrum(audio, 0, n, n);
+    assert.equal(magnitude.length, n / 2, 'magnitude should have fftSize/2 bins');
+    assert.equal(phase.length, n / 2, 'phase should have fftSize/2 bins');
+});
+
+test('fftMagnitudePhaseSpectrum phase values are in [-π, +π]', () => {
+    const n = 1024;
+    const audio = new Float32Array(n);
+    for (let i = 0; i < n; i++) audio[i] = Math.sin(2 * Math.PI * 10 * i / n) + 0.5 * Math.cos(2 * Math.PI * 50 * i / n);
+    const { phase } = fftMagnitudePhaseSpectrum(audio, 0, n, n);
+    for (let k = 0; k < phase.length; k++) {
+        assert.ok(phase[k] >= -Math.PI - 1e-6 && phase[k] <= Math.PI + 1e-6,
+            `phase[${k}] = ${phase[k]} should be in [-π, π]`);
+    }
+});
+
+test('fftMagnitudePhaseSpectrum magnitude matches fftMagnitudeSpectrum', () => {
+    const n = 2048;
+    const audio = new Float32Array(n);
+    for (let i = 0; i < n; i++) audio[i] = Math.sin(2 * Math.PI * 100 * i / n);
+    const mag = fftMagnitudeSpectrum(audio, 0, n, n);
+    const { magnitude } = fftMagnitudePhaseSpectrum(audio, 0, n, n);
+    for (let k = 0; k < mag.length; k++) {
+        assert.ok(Math.abs(mag[k] - magnitude[k]) < 1e-6,
+            `magnitude[${k}] should match fftMagnitudeSpectrum (${magnitude[k]} vs ${mag[k]})`);
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// iecDbToFader — IEC 60268-18 meter law
+// ═══════════════════════════════════════════════════════════════════════
+
+test('iecDbToFader returns 0 for values ≤ -70 dB', () => {
+    assert.equal(iecDbToFader(-70), 0);
+    assert.equal(iecDbToFader(-80), 0);
+    assert.equal(iecDbToFader(-100), 0);
+});
+
+test('iecDbToFader returns 100 for 0 dB', () => {
+    assert.ok(Math.abs(iecDbToFader(0) - 100) < 1e-6,
+        `iecDbToFader(0) = ${iecDbToFader(0)} should be 100`);
+});
+
+test('iecDbToFader known IEC breakpoint values', () => {
+    // At -60 dB: 0.25 * (-60 - (-70)) + 0 = 2.5
+    assert.ok(Math.abs(iecDbToFader(-60) - 2.5) < 1e-6, '-60 dB → 2.5');
+    // At -50 dB: 0.5 * (-50 - (-60)) + 2.5 = 7.5
+    assert.ok(Math.abs(iecDbToFader(-50) - 7.5) < 1e-6, '-50 dB → 7.5');
+    // At -40 dB: 0.75 * (-40 - (-50)) + 7.5 = 15
+    assert.ok(Math.abs(iecDbToFader(-40) - 15) < 1e-6, '-40 dB → 15');
+    // At -30 dB: 1.5 * (-30 - (-40)) + 15 = 30
+    assert.ok(Math.abs(iecDbToFader(-30) - 30) < 1e-6, '-30 dB → 30');
+    // At -20 dB: 2.0 * (-20 - (-30)) + 30 = 50
+    assert.ok(Math.abs(iecDbToFader(-20) - 50) < 1e-6, '-20 dB → 50');
+});
+
+test('iecDbToFader is monotonically increasing', () => {
+    let prev = iecDbToFader(-70);
+    for (let db = -69; db <= 0; db++) {
+        const curr = iecDbToFader(db);
+        assert.ok(curr >= prev, `iecDbToFader(${db}) = ${curr} should be >= iecDbToFader(${db - 1}) = ${prev}`);
+        prev = curr;
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// computeSpectrogram — colourScale modes
+// ═══════════════════════════════════════════════════════════════════════
+
+test('computeSpectrogram colourScale=linear produces non-negative values', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear', colourScale: 'linear',
+    });
+    assert.equal(result.colourScale, 'linear');
+    for (let i = 0; i < result.data.length; i++) {
+        assert.ok(result.data[i] >= 0, `data[${i}] = ${result.data[i]} should be >= 0 (raw magnitude)`);
+    }
+});
+
+test('computeSpectrogram colourScale=meter produces non-negative values', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = 0.8 * Math.sin(2 * Math.PI * 440 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear', colourScale: 'meter',
+    });
+    assert.equal(result.colourScale, 'meter');
+    for (let i = 0; i < result.data.length; i++) {
+        assert.ok(result.data[i] >= 0, `data[${i}] should be >= 0 (raw magnitude for meter)`);
+    }
+});
+
+test('computeSpectrogram colourScale=db produces negative dB values for quiet bins', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = 0.01 * Math.sin(2 * Math.PI * 1000 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear', colourScale: 'db',
+    });
+    assert.equal(result.colourScale, 'db');
+    let hasNeg = false;
+    for (let i = 0; i < result.data.length; i++) {
+        if (result.data[i] < 0) { hasNeg = true; break; }
+    }
+    assert.ok(hasNeg, 'dB scale should have negative values for quiet bins');
+});
+
+test('computeSpectrogram colourScale=dbSquared backward compatible with default', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(2 * Math.PI * 2000 * i / sr);
+    const explicit = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear', colourScale: 'dbSquared',
+    });
+    const implicit = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear',
+    });
+    assert.equal(explicit.colourScale, 'dbSquared');
+    assert.equal(implicit.colourScale, 'dbSquared');
+    for (let i = 0; i < explicit.data.length; i++) {
+        assert.ok(Math.abs(explicit.data[i] - implicit.data[i]) < 1e-10,
+            `dbSquared explicit vs implicit mismatch at [${i}]`);
+    }
+});
+
+test('computeSpectrogram colourScale=phase produces values in [-π, +π]', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(2 * Math.PI * 500 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'linear', colourScale: 'phase',
+    });
+    assert.equal(result.colourScale, 'phase');
+    for (let i = 0; i < result.data.length; i++) {
+        assert.ok(result.data[i] >= -Math.PI - 1e-6 && result.data[i] <= Math.PI + 1e-6,
+            `phase data[${i}] = ${result.data[i]} should be in [-π, π]`);
+    }
+});
+
+test('computeSpectrogram colourScale=phase mel scale produces values in [-π, +π]', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'mel', colourScale: 'phase',
+    });
+    assert.equal(result.colourScale, 'phase');
+    assert.equal(result.nMels, 128);
+    for (let i = 0; i < result.data.length; i++) {
+        assert.ok(result.data[i] >= -Math.PI - 1e-6 && result.data[i] <= Math.PI + 1e-6,
+            `mel phase data[${i}] = ${result.data[i]} should be in [-π, π]`);
+    }
+});
+
+test('computeSpectrogram colourScale=linear mel without PCEN produces non-negative values', () => {
+    const sr = 32000;
+    const audio = new Float32Array(sr * 0.5);
+    for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(2 * Math.PI * 3000 * i / sr);
+    const result = computeSpectrogram({
+        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
+        nMels: 128, scale: 'mel', usePcen: false, colourScale: 'linear',
+    });
+    assert.equal(result.colourScale, 'linear');
+    for (let i = 0; i < result.data.length; i++) {
+        assert.ok(result.data[i] >= 0, `mel linear data[${i}] = ${result.data[i]} should be >= 0`);
+    }
+});
+
+test('computeSpectrogram result includes colourScale field', () => {
+    const sr = 16000;
+    const audio = new Float32Array(sr * 0.2);
+    for (const cs of ['linear', 'meter', 'dbSquared', 'db', 'phase']) {
+        const result = computeSpectrogram({
+            channelData: audio, fftSize: 1024, sampleRate: sr, frameRate: 50,
+            nMels: 64, scale: 'linear', colourScale: cs,
+        });
+        assert.equal(result.colourScale, cs, `result should include colourScale=${cs}`);
+    }
+});
+
+// ── windowHopFromOverlap (SV getWindowIncrement port) ──────────────
+
+test('windowHopFromOverlap level 0 returns windowSize (no overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 0), 1024);
+    assert.equal(windowHopFromOverlap(2048, 0), 2048);
+});
+
+test('windowHopFromOverlap level 1 returns 3/4 windowSize (25% overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 1), 768);
+    assert.equal(windowHopFromOverlap(2048, 1), 1536);
+});
+
+test('windowHopFromOverlap level 2 returns 1/2 windowSize (50% overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 2), 512);
+    assert.equal(windowHopFromOverlap(2048, 2), 1024);
+});
+
+test('windowHopFromOverlap level 3 returns 1/4 windowSize (75% overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 3), 256);
+    assert.equal(windowHopFromOverlap(2048, 3), 512);
+});
+
+test('windowHopFromOverlap level 4 returns 1/8 windowSize (87.5% overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 4), 128);
+    assert.equal(windowHopFromOverlap(2048, 4), 256);
+});
+
+test('windowHopFromOverlap level 5 returns 1/16 windowSize (93.75% overlap)', () => {
+    assert.equal(windowHopFromOverlap(1024, 5), 64);
+    assert.equal(windowHopFromOverlap(2048, 5), 128);
+});
+
+// ── fftSizeFromOversampling ────────────────────────────────────────
+
+test('fftSizeFromOversampling level 0 returns windowSize (1×)', () => {
+    assert.equal(fftSizeFromOversampling(1024, 0), 1024);
+    assert.equal(fftSizeFromOversampling(2048, 0), 2048);
+});
+
+test('fftSizeFromOversampling level 1 returns 2× windowSize', () => {
+    assert.equal(fftSizeFromOversampling(1024, 1), 2048);
+    assert.equal(fftSizeFromOversampling(2048, 1), 4096);
+});
+
+test('fftSizeFromOversampling level 2 returns 4× windowSize', () => {
+    assert.equal(fftSizeFromOversampling(1024, 2), 4096);
+    assert.equal(fftSizeFromOversampling(2048, 2), 8192);
+});
+
+test('fftSizeFromOversampling level 3 returns 8× windowSize', () => {
+    assert.equal(fftSizeFromOversampling(1024, 3), 8192);
+    assert.equal(fftSizeFromOversampling(2048, 3), 16384);
 });

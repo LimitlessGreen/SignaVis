@@ -4,395 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench — Labeling App</title>
-  <style>
-    :root {
-      --bg: #0b1220;
-      --panel: #0f1829;
-      --line: #1e2d47;
-      --text: #e6edf8;
-      --muted: #6b7f9e;
-      --accent: #39b5ff;
-      --danger: #f87171;
-      --panel-height: 220px;
-    }
-    * { box-sizing: border-box; margin: 0; }
-    html, body {
-      width: 100%; height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      color-scheme: dark;
-      font-family: "Segoe UI", "Inter", system-ui, sans-serif;
-      font-size: 13px;
-    }
-    .app {
-      display: grid;
-      grid-template-rows: 40px 1fr 6px var(--panel-height);
-      width: 100%; height: 100%;
-    }
-
-    /* ── Topbar ── */
-    .topbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 12px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-      font-size: 12px;
-    }
-    .brand {
-      display: flex; align-items: center; gap: 7px;
-      font-weight: 700; letter-spacing: 0.03em;
-      white-space: nowrap;
-    }
-    .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: linear-gradient(135deg, #7fe8ff, #39b5ff);
-      box-shadow: 0 0 10px rgba(57, 181, 255, 0.7);
-    }
-    .file-label {
-      color: var(--muted); max-width: 200px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-size: 11px;
-    }
-    .tb-btn {
-      border: 1px solid var(--line); border-radius: 5px;
-      background: transparent; color: var(--text);
-      font-size: 11px; padding: 3px 8px; cursor: pointer;
-      white-space: nowrap;
-    }
-    .tb-btn:hover { border-color: #3a5580; background: rgba(57, 181, 255, 0.08); }
-    .tb-btn.danger { border-color: #5c2020; color: var(--danger); }
-    .tb-btn.danger:hover { background: rgba(248, 113, 113, 0.1); }
-    .tb-select {
-      border: 1px solid var(--line); border-radius: 5px;
-      background: var(--panel); color: var(--text);
-      font-size: 11px; padding: 3px 6px;
-    }
-    .tb-select option {
-      background: var(--panel); color: var(--text);
-    }
-    .tb-meta {
-      color: var(--muted); font-size: 11px; white-space: nowrap;
-    }
-    .tb-sep { width: 1px; height: 18px; background: var(--line); }
-    .tb-spacer { flex: 1; }
-
-    /* ── Stage ── */
-    .stage { min-height: 0; min-width: 0; overflow: hidden; padding: 5px; }
-    #playerRoot {
-      width: 100%; height: 100%;
-      min-width: 0; min-height: 0;
-      border: 1px solid var(--line); border-radius: 8px;
-      overflow: hidden; background: #0a0f1a;
-    }
-
-    /* ── Resize Handle ── */
-    .resize-handle {
-      background: var(--line);
-      cursor: ns-resize;
-      display: flex; align-items: center; justify-content: center;
-      user-select: none; touch-action: none;
-      transition: background 0.15s;
-    }
-    .resize-handle:hover, .resize-handle.dragging {
-      background: var(--accent);
-    }
-    .resize-handle::after {
-      content: '';
-      width: 32px; height: 3px; border-radius: 2px;
-      background: rgba(255,255,255,0.2);
-    }
-    .resize-handle:hover::after, .resize-handle.dragging::after {
-      background: rgba(255,255,255,0.5);
-    }
-
-    /* ── Label Panel ── */
-    .label-panel {
-      border-top: 1px solid var(--line);
-      background: var(--panel);
-      display: grid;
-      grid-template-rows: auto auto 1fr;
-      min-height: 0;
-      overflow: hidden;
-    }
-    /* Tab bar */
-    .tab-bar {
-      display: flex; align-items: stretch;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
-      padding: 0 4px;
-      gap: 0;
-    }
-    .tab-btn {
-      border: none; background: transparent;
-      color: var(--muted); font-size: 11px; font-weight: 500;
-      padding: 6px 14px; cursor: pointer;
-      border-bottom: 2px solid transparent;
-      white-space: nowrap;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .tab-btn:hover { color: var(--text); }
-    .tab-btn.active {
-      color: var(--accent); border-bottom-color: var(--accent);
-      font-weight: 600;
-    }
-    .tab-btn .tab-badge {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 16px; height: 16px; border-radius: 8px;
-      background: rgba(57, 181, 255, 0.15); color: var(--accent);
-      font-size: 9px; font-weight: 700; padding: 0 4px;
-      margin-left: 5px; vertical-align: middle;
-    }
-    .tab-content { display: none; overflow: auto; min-height: 0; }
-    .tab-content.active { display: block; }
-    .label-panel-header {
-      display: flex; align-items: center; gap: 8px;
-      padding: 4px 12px;
-      border-bottom: 1px solid var(--line);
-    }
-    .label-panel-hints {
-      color: var(--muted); font-size: 11px; white-space: nowrap;
-    }
-    .label-panel-hints kbd {
-      border: 1px solid #2a3d5c; border-bottom-width: 2px;
-      border-radius: 4px; padding: 0 4px;
-      background: #0d172b; color: #c8daf0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 10px;
-    }
-    .label-table-wrap { overflow: auto; min-height: 0; }
-    .label-table {
-      width: 100%; max-width: 1500px; margin: 0 auto;
-      border-collapse: collapse; font-size: 12px;
-      table-layout: fixed;
-    }
-    .label-table thead { position: sticky; top: 0; z-index: 1; }
-    .label-table th, .label-table td { overflow: hidden; text-overflow: ellipsis; }
-    .label-table th {
-      background: rgba(15, 24, 41, 0.98);
-      color: var(--muted); font-weight: 500;
-      padding: 4px 10px; text-align: left;
-      border-bottom: 1px solid var(--line);
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    .label-table td {
-      padding: 5px 10px;
-      border-bottom: 1px solid rgba(30, 45, 71, 0.4);
-      vertical-align: top;
-    }
-    /* Column widths: dot | Label | Range | Sex | LifeStage | SoundType | Tags | Info | Actions */
-    .label-table .col-dot       { width: 28px; }
-    .label-table .col-label     { width: auto; }
-    .label-table .col-range     { width: 130px; }
-    .label-table .col-sex       { width: 80px; }
-    .label-table .col-stage     { width: 90px; }
-    .label-table .col-sound     { width: 110px; }
-    .label-table .col-tags      { width: 140px; }
-    .label-table .col-info      { width: 90px; }
-    .label-table .col-actions   { width: 52px; }
-    .label-table tbody tr { cursor: pointer; transition: background 0.1s; }
-    .label-table tbody tr:hover td { background: rgba(57, 181, 255, 0.06); }
-    .label-table tbody tr.highlighted td { background: rgba(57, 181, 255, 0.14); }
-    .label-table tbody tr.selected td { background: rgba(57, 181, 255, 0.22); box-shadow: inset 2px 0 0 var(--accent); }
-    .label-table .color-dot {
-      display: inline-block; width: 10px; height: 10px;
-      border-radius: 50%; vertical-align: middle;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-    /* Stacked label cell: name + scientific */
-    .label-cell { white-space: normal !important; }
-    .label-cell .label-name {
-      display: block; font-weight: 600; color: #dce8f8;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      cursor: text; line-height: 1.35;
-    }
-    .label-cell .label-name:hover {
-      text-decoration: underline; text-decoration-style: dashed;
-      text-underline-offset: 2px; text-decoration-color: #3a5580;
-    }
-    .label-cell .label-sci {
-      display: block; color: var(--muted); font-style: italic; font-size: 11px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .inline-name-input {
-      width: 100%; border: 1px solid var(--accent); border-radius: 3px;
-      background: #0d172b; color: #dce8f8; font-size: 12px; font-weight: 600;
-      padding: 1px 4px; outline: none;
-    }
-    /* Stacked range cell */
-    .range-cell {
-      white-space: normal !important;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px; color: #8fa4c0;
-    }
-    .range-cell span { display: block; white-space: nowrap; }
-    .range-cell .range-freq { color: #5e7b9e; font-size: 10px; }
-    /* Info cell */
-    .info-cell { white-space: normal !important; font-size: 11px; color: var(--muted); }
-    .info-cell span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .info-cell .conf-val {
-      color: #8fa4c0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-    /* Inline tag select dropdowns */
-    .tag-select-cell { vertical-align: middle !important; }
-    .tag-select {
-      width: 100%; border: 1px solid transparent; border-radius: 4px;
-      background: transparent; color: #8fa4c0; font-size: 11px;
-      padding: 2px 4px; cursor: pointer; appearance: none;
-      -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%234b6380'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 4px center;
-      padding-right: 14px;
-    }
-    .tag-select:hover { border-color: #253a56; background-color: rgba(57,181,255,0.06); }
-    .tag-select:focus { border-color: var(--accent); outline: none; background-color: #0d172b; }
-    .tag-select option { background: #0d172b; color: var(--text); }
-    .tag-select.has-value { color: #dce8f8; }
-    /* Custom tags cell — compact badges */
-    .tags-cell { white-space: normal !important; overflow: visible !important; position: relative; }
-    .tag-badge {
-      display: inline-flex; align-items: center; gap: 3px;
-      font-size: 10px; padding: 1px 5px;
-      border-radius: 3px; background: #1a2a44; color: #8fa4c0;
-      border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-    .tag-badge .tag-key { color: #5b8cb8; }
-    .tag-badge .tag-del {
-      border: none; background: transparent; color: #4b6380;
-      cursor: pointer; font-size: 11px; padding: 0; line-height: 1;
-    }
-    .tag-badge .tag-del:hover { color: var(--danger); }
-    .tag-add-btn {
-      display: inline-block; border: 1px dashed #253a56; border-radius: 3px;
-      background: transparent; color: #4b6380; font-size: 10px; padding: 1px 5px;
-      cursor: pointer; vertical-align: middle; margin-top: 2px;
-    }
-    .tag-add-btn:hover { border-color: #3a7db8; color: #8fa4c0; }
-    .tag-popover {
-      position: fixed; z-index: 9999;
-      background: rgba(2, 6, 23, 0.98); border: 1px solid #253a56;
-      border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.5); min-width: 180px;
-    }
-    .tag-popover input {
-      border: 1px solid #253a56; border-radius: 4px;
-      background: #0d172b; color: var(--text); font-size: 11px; padding: 3px 5px;
-    }
-    .tag-popover .tag-pop-row { display: flex; gap: 4px; align-items: center; }
-    /* Action buttons */
-    .actions-cell { white-space: nowrap !important; text-align: center; vertical-align: middle !important; }
-    .act-btn {
-      border: none; background: transparent; color: var(--muted);
-      cursor: pointer; font-size: 13px; padding: 2px 3px; border-radius: 3px;
-    }
-    .act-btn:hover { color: var(--text); background: rgba(57,181,255,0.1); }
-    .act-btn.danger:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
-    .labels-empty {
-      padding: 20px 12px; color: var(--muted); font-size: 12px; text-align: center;
-    }
-    .labels-empty kbd {
-      border: 1px solid #2a3d5c; border-bottom-width: 2px;
-      border-radius: 4px; padding: 0 4px;
-      background: #0d172b; color: #c8daf0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px;
-    }
-
-    /* ── Help tab ── */
-    .help-content {
-      padding: 12px 16px; max-width: 800px; margin: 0 auto;
-    }
-    .help-section { margin-bottom: 14px; }
-    .help-section h3 {
-      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--accent); margin: 0 0 6px; font-weight: 600;
-    }
-    .shortcut-grid {
-      display: grid; grid-template-columns: auto 1fr;
-      gap: 3px 14px; font-size: 12px;
-    }
-    .shortcut-grid kbd {
-      border: 1px solid #2a3d5c; border-bottom-width: 2px;
-      border-radius: 4px; padding: 1px 5px;
-      background: #0d172b; color: #c8daf0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 10px; white-space: nowrap; text-align: center;
-    }
-    .shortcut-grid .sc-desc { color: var(--muted); }
-    .help-section p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
-
-    /* ── Modal ── */
-    .modal-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(3, 8, 18, 0.72);
-      display: none; align-items: center; justify-content: center;
-      z-index: 1000;
-    }
-    .modal-backdrop.show { display: flex; }
-    .modal {
-      width: min(420px, 92vw);
-      border: 1px solid var(--line); border-radius: 10px;
-      background: var(--panel);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-      padding: 14px; display: grid; gap: 10px;
-    }
-    .modal-title {
-      font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--muted);
-    }
-    .input {
-      width: 100%;
-      border: 1px solid var(--line); border-radius: 6px;
-      background: #0d172b; color: var(--text);
-      padding: 7px 9px; font-size: 12px;
-    }
-    .meta { font-size: 11px; color: var(--muted); }
-    .row { display: flex; gap: 8px; align-items: center; }
-
-    /* ── BirdNET ── */
-    .birdnet-progress {
-      height: 4px; background: var(--line); border-radius: 2px;
-      overflow: hidden;
-    }
-    .birdnet-progress-bar {
-      height: 100%; width: 0%; background: var(--accent);
-      transition: width 0.15s ease;
-    }
-    .birdnet-slider-row {
-      display: flex; align-items: center; gap: 8px;
-    }
-    .birdnet-slider-row input[type="range"] {
-      flex: 1; accent-color: var(--accent);
-    }
-    .birdnet-slider-val {
-      min-width: 32px; text-align: right;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px; color: var(--text);
-    }
-
-    @media (max-width: 700px) {
-      .label-panel-hints { display: none; }
-      .label-table .col-sex,
-      .label-table td:nth-child(4),
-      .label-table .col-stage,
-      .label-table td:nth-child(5),
-      .label-table .col-sound,
-      .label-table td:nth-child(6),
-      .label-table .col-tags,
-      .label-table td:nth-child(7),
-      .label-table .col-info,
-      .label-table td:nth-child(8) { display: none; }
-    }
-    @media (max-width: 1000px) and (min-width: 701px) {
-      .label-table .col-tags,
-      .label-table td:nth-child(7),
-      .label-table .col-info,
-      .label-table td:nth-child(8) { display: none; }
-    }
-  </style>
+  <link rel="stylesheet" href="labeling-app.css" />
 </head>
 <body>
   <div class="app">
@@ -554,11 +166,17 @@
 
   <script type="module">
     import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
-    import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../src/xenoCantoRecordingsApi.js';
     import { TaxonomyResolver } from '../src/taxonomyResolver.js';
     import { BirdNETInference } from '../src/birdnetInference.js';
     import '../src/player.css';
 
+    import { initResizeHandle } from './lib/resize-handle.js';
+    import { populateLanguageSelect, createSuggestionProvider } from './lib/taxonomy-ui.js';
+    import { LabelTable } from './lib/label-table.js';
+    import { BirdNETPanel } from './lib/birdnet-panel.js';
+    import { XenoCantoPanel } from './lib/xc-panel.js';
+
+    // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
       showFileOpen: false,
       enableProgressiveSpectrogram: true,
@@ -567,43 +185,23 @@
     });
     await player.ready;
 
-    const fileLabel = document.getElementById('fileLabel');
-    const fileInput = document.getElementById('fileInput');
-    const browseBtn = document.getElementById('browseBtn');
-    const xcApiBtn = document.getElementById('xcApiBtn');
-    const loadSampleBtn = document.getElementById('loadSampleBtn');
-    const clearAllBtn = document.getElementById('clearAllBtn');
-    const exportJsonBtn = document.getElementById('exportJsonBtn');
-    const copyJsonBtn = document.getElementById('copyJsonBtn');
-    const selectionMeta = document.getElementById('selectionMeta');
-    const labelsList = document.getElementById('labelsList');
-    const labelsEmpty = document.getElementById('labelsEmpty');
-    const labelCount = document.getElementById('labelCount');
+    // ── DOM refs ──────────────────────────────────────────────────────
+    const fileLabel       = document.getElementById('fileLabel');
+    const fileInput       = document.getElementById('fileInput');
+    const browseBtn       = document.getElementById('browseBtn');
+    const loadSampleBtn   = document.getElementById('loadSampleBtn');
+    const clearAllBtn     = document.getElementById('clearAllBtn');
+    const exportJsonBtn   = document.getElementById('exportJsonBtn');
+    const copyJsonBtn     = document.getElementById('copyJsonBtn');
+    const selectionMeta   = document.getElementById('selectionMeta');
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
-    const taxonomyMeta = document.getElementById('taxonomyMeta');
-    const xcApiModalBackdrop = document.getElementById('xcApiModalBackdrop');
-    const xcApiKeyInput = document.getElementById('xcApiKeyInput');
-    const xcApiCancelBtn = document.getElementById('xcApiCancelBtn');
-    const xcApiSaveBtn = document.getElementById('xcApiSaveBtn');
-    const birdnetBtn = document.getElementById('birdnetBtn');
-    const birdnetModalBackdrop = document.getElementById('birdnetModalBackdrop');
-    const birdnetModelUrlInput = document.getElementById('birdnetModelUrl');
-    const birdnetConfidenceInput = document.getElementById('birdnetConfidence');
-    const birdnetConfidenceVal = document.getElementById('birdnetConfidenceVal');
-    const birdnetOverlapSelect = document.getElementById('birdnetOverlap');
-    const birdnetMergeCheckbox = document.getElementById('birdnetMerge');
-    const birdnetAuthorInput = document.getElementById('birdnetAuthor');
-    const birdnetProgressWrap = document.getElementById('birdnetProgressWrap');
-    const birdnetProgressBar = document.getElementById('birdnetProgressBar');
-    const birdnetStatus = document.getElementById('birdnetStatus');
-    const birdnetCancelBtn = document.getElementById('birdnetCancelBtn');
-    const birdnetAnalyzeBtn = document.getElementById('birdnetAnalyzeBtn');
+    const taxonomyMeta    = document.getElementById('taxonomyMeta');
 
     const taxonomy = new TaxonomyResolver();
-    const birdnet = new BirdNETInference();
+    const birdnet  = new BirdNETInference();
 
     // ── Tab switching ─────────────────────────────────────────────────
-    const panelTabBar = document.getElementById('panelTabBar');
+    const panelTabBar   = document.getElementById('panelTabBar');
     const labelsToolbar = document.getElementById('labelsToolbar');
     panelTabBar.addEventListener('click', (e) => {
       const btn = /** @type {HTMLElement} */ (e.target).closest('.tab-btn');
@@ -615,473 +213,119 @@
       labelsToolbar.style.display = tabId === 'labels' ? '' : 'none';
     });
 
-    // ── Resize handle (drag to resize panel / spectrogram) ────────────
-    {
-      const handle = document.getElementById('resizeHandle');
-      const app = document.querySelector('.app');
-      const PANEL_KEY = 'audio-workbench.panel-height.v1';
-      const MIN_PANEL = 80;
-      const MIN_STAGE = 120;
+    // ── Resize handle ─────────────────────────────────────────────────
+    initResizeHandle({
+      handle: document.getElementById('resizeHandle'),
+      container: document.querySelector('.app'),
+      cssProp: '--panel-height',
+      storageKey: 'audio-workbench.panel-height.v1',
+      minPanel: 80,
+      minStage: 120,
+      fixedOverhead: 46,
+      onResizeEnd: () => player?.resize?.(),
+    });
 
-      // Restore saved height
-      try {
-        const saved = localStorage.getItem(PANEL_KEY);
-        if (saved) {
-          const h = Math.max(MIN_PANEL, parseInt(saved, 10));
-          document.documentElement.style.setProperty('--panel-height', h + 'px');
-        }
-      } catch {}
-
-      let startY = 0, startH = 0, dragging = false;
-
-      const onPointerMove = (e) => {
-        if (!dragging) return;
-        const dy = startY - e.clientY;
-        const appH = app.getBoundingClientRect().height;
-        const newH = Math.min(
-          Math.max(MIN_PANEL, startH + dy),
-          appH - 40 - 6 - MIN_STAGE  // topbar + handle + min stage
-        );
-        document.documentElement.style.setProperty('--panel-height', newH + 'px');
-      };
-
-      const onPointerUp = () => {
-        if (!dragging) return;
-        dragging = false;
-        handle.classList.remove('dragging');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('pointermove', onPointerMove);
-        document.removeEventListener('pointerup', onPointerUp);
-        // Persist
-        try {
-          const val = getComputedStyle(document.documentElement).getPropertyValue('--panel-height').trim();
-          localStorage.setItem(PANEL_KEY, parseInt(val, 10).toString());
-        } catch {}
-        // Notify player of resize
-        player?.resize?.();
-      };
-
-      handle.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        dragging = true;
-        startY = e.clientY;
-        startH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--panel-height'), 10) || 220;
-        handle.classList.add('dragging');
-        document.body.style.cursor = 'ns-resize';
-        document.body.style.userSelect = 'none';
-        document.addEventListener('pointermove', onPointerMove);
-        document.addEventListener('pointerup', onPointerUp);
-      });
-    }
-
+    // ── App state ─────────────────────────────────────────────────────
     const state = {
       labels: [],
       xcLabelPool: [],
       selected: null,
       selectedLabelId: null,
-      _rowMap: new Map(),
       sampleRate: 32000,
       activeObjectUrl: null,
       taxonomyLang: 'en_uk',
-      xcApiKey: '',
     };
 
-    const XC_API_KEY_STORAGE = 'audio-workbench.xc-api-key.v1';
-
-    try {
-      state.xcApiKey = String(localStorage.getItem(XC_API_KEY_STORAGE) || '');
-    } catch {}
-
-    function updateXcApiButtonState() {
-      if (!xcApiBtn) return;
-      xcApiBtn.textContent = state.xcApiKey ? 'XC API ✓' : 'XC API';
-    }
-
-    function openXcApiModal() {
-      xcApiKeyInput.value = state.xcApiKey || '';
-      xcApiModalBackdrop.classList.add('show');
-      xcApiModalBackdrop.setAttribute('aria-hidden', 'false');
-      setTimeout(() => { xcApiKeyInput.focus(); }, 0);
-    }
-
-    function closeXcApiModal() {
-      xcApiModalBackdrop.classList.remove('show');
-      xcApiModalBackdrop.setAttribute('aria-hidden', 'true');
-    }
-
-    if (xcApiBtn) {
-      updateXcApiButtonState();
-      xcApiBtn.addEventListener('click', () => openXcApiModal());
-    }
-
-    xcApiCancelBtn.addEventListener('click', () => closeXcApiModal());
-    xcApiSaveBtn.addEventListener('click', () => {
-      state.xcApiKey = String(xcApiKeyInput.value || '').trim();
-      try {
-        localStorage.setItem(XC_API_KEY_STORAGE, state.xcApiKey);
-      } catch {}
-      updateXcApiButtonState();
-      closeXcApiModal();
-    });
-    xcApiModalBackdrop.addEventListener('click', (e) => {
-      if (e.target === xcApiModalBackdrop) closeXcApiModal();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && xcApiModalBackdrop.classList.contains('show')) closeXcApiModal();
+    // ── Xeno-canto panel ──────────────────────────────────────────────
+    const xcPanel = new XenoCantoPanel({
+      backdrop:  document.getElementById('xcApiModalBackdrop'),
+      keyInput:  document.getElementById('xcApiKeyInput'),
+      saveBtn:   document.getElementById('xcApiSaveBtn'),
+      cancelBtn: document.getElementById('xcApiCancelBtn'),
+      openBtn:   document.getElementById('xcApiBtn'),
     });
 
-    function getXcRequestAuthOptions() {
-      if (!state.xcApiKey) return {};
+    // ── Helpers ───────────────────────────────────────────────────────
+    function fmt(sec) { return Number(sec).toFixed(2) + 's'; }
+
+    function resolveName(lbl) {
+      const record = lbl.scientificName ? taxonomy.resolve(lbl.scientificName) : null;
+      const lang = state.taxonomyLang;
+      const localized = record
+        ? (lang === 'scientific' ? record.s : taxonomy.resolveCommonName(record, lang))
+        : '';
       return {
-        apiKey: state.xcApiKey,
+        display: localized || lbl.commonName || lbl.label || 'Label',
+        scientific: lbl.scientificName || '',
       };
-    }
-
-    function fmt(sec) {
-      return Number(sec).toFixed(2) + 's';
-    }
-
-    function renderLabels() {
-      labelsList.innerHTML = '';
-      state._rowMap = new Map();
-      const sorted = state.labels.slice().sort((a, b) => a.start - b.start);
-      labelCount.textContent = String(sorted.length);
-      labelsEmpty.style.display = sorted.length ? 'none' : '';
-
-      for (const lbl of sorted) {
-        const record = lbl.scientificName ? resolveTaxonomyRecordForScientificName(lbl.scientificName) : null;
-        const localized = resolveCommonName(record, state.taxonomyLang);
-        const displayName = localized || lbl.commonName || lbl.label || 'Label';
-        const sci = lbl.scientificName || '';
-
-        const tr = document.createElement('tr');
-        tr.dataset.labelId = lbl.id;
-        state._rowMap.set(lbl.id, tr);
-
-        // Click → seek + select
-        tr.addEventListener('click', () => {
-          if (player?.currentTime != null) player.currentTime = lbl.start;
-          highlightTableRow(lbl.id);
-          player._emit?.('labelfocus', { id: lbl.id, source: 'table' });
-        });
-
-        // Hover → highlight spectrogram label
-        tr.addEventListener('pointerenter', () => highlightSpectrogramLabel(lbl.id, true));
-        tr.addEventListener('pointerleave', () => highlightSpectrogramLabel(lbl.id, false));
-
-        // 1) Color dot
-        const tdDot = document.createElement('td');
-        if (lbl.color) {
-          const dot = document.createElement('span');
-          dot.className = 'color-dot';
-          dot.style.background = lbl.color;
-          tdDot.appendChild(dot);
-        }
-        tr.appendChild(tdDot);
-
-        // 2) Label — name + scientific stacked
-        const tdLabel = document.createElement('td');
-        tdLabel.className = 'label-cell';
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'label-name';
-        nameSpan.textContent = displayName;
-        nameSpan.title = 'Click to edit';
-        nameSpan.addEventListener('click', (e) => {
-          e.stopPropagation();
-          startInlineNameEdit(nameSpan, lbl, displayName);
-        });
-        tdLabel.appendChild(nameSpan);
-        if (sci) {
-          const sciSpan = document.createElement('span');
-          sciSpan.className = 'label-sci';
-          sciSpan.textContent = sci;
-          tdLabel.appendChild(sciSpan);
-        }
-        tr.appendChild(tdLabel);
-
-        // 3) Range — time + freq stacked
-        const tdRange = document.createElement('td');
-        tdRange.className = 'range-cell';
-        const timeSpan = document.createElement('span');
-        timeSpan.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
-        tdRange.appendChild(timeSpan);
-        const freqSpan = document.createElement('span');
-        freqSpan.className = 'range-freq';
-        freqSpan.textContent = `${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
-        tdRange.appendChild(freqSpan);
-        tr.appendChild(tdRange);
-
-        // 4-6) Preset tag columns — inline selects
-        for (const preset of TAG_PRESETS_TABLE) {
-          const tdTag = document.createElement('td');
-          tdTag.className = 'tag-select-cell';
-          const sel = document.createElement('select');
-          sel.className = 'tag-select';
-          const emptyOpt = document.createElement('option');
-          emptyOpt.value = '';
-          emptyOpt.textContent = '—';
-          sel.appendChild(emptyOpt);
-          for (const val of preset.options) {
-            const opt = document.createElement('option');
-            opt.value = val;
-            opt.textContent = val;
-            sel.appendChild(opt);
-          }
-          sel.value = lbl.tags?.[preset.key] || '';
-          if (sel.value) sel.classList.add('has-value');
-          sel.addEventListener('change', (e) => {
-            e.stopPropagation();
-            if (!lbl.tags) lbl.tags = {};
-            if (sel.value) {
-              lbl.tags[preset.key] = sel.value;
-            } else {
-              delete lbl.tags[preset.key];
-            }
-            sel.classList.toggle('has-value', !!sel.value);
-            syncToPlayer();
-          });
-          sel.addEventListener('click', (e) => e.stopPropagation());
-          tdTag.appendChild(sel);
-          tr.appendChild(tdTag);
-        }
-
-        // 7) Custom tags — compact badges for non-preset keys
-        const tdTags = document.createElement('td');
-        tdTags.className = 'tags-cell';
-        renderCustomTags(tdTags, lbl);
-        tr.appendChild(tdTags);
-
-        // 8) Info — confidence + origin/author
-        const tdInfo = document.createElement('td');
-        tdInfo.className = 'info-cell';
-        if (lbl.confidence != null) {
-          const conf = document.createElement('span');
-          conf.className = 'conf-val';
-          conf.textContent = Number(lbl.confidence).toFixed(2);
-          tdInfo.appendChild(conf);
-        }
-        const source = [lbl.origin, lbl.author].filter(Boolean).join(' · ');
-        if (source) {
-          const src = document.createElement('span');
-          src.textContent = source;
-          src.title = source;
-          tdInfo.appendChild(src);
-        }
-        tr.appendChild(tdInfo);
-
-        // 9) Actions — edit + delete
-        const tdActions = document.createElement('td');
-        tdActions.className = 'actions-cell';
-        const editBtn = document.createElement('button');
-        editBtn.className = 'act-btn';
-        editBtn.textContent = '✎';
-        editBtn.title = 'Edit (taxonomy search)';
-        editBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(lbl.id);
-        });
-        tdActions.appendChild(editBtn);
-        const delBtn = document.createElement('button');
-        delBtn.className = 'act-btn danger';
-        delBtn.textContent = '×';
-        delBtn.title = 'Remove label';
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          state.labels = state.labels.filter((l) => l.id !== lbl.id);
-          syncToPlayer();
-        });
-        tdActions.appendChild(delBtn);
-        tr.appendChild(tdActions);
-
-        labelsList.appendChild(tr);
-      }
-
-      if (state.selectedLabelId) highlightTableRow(state.selectedLabelId);
-    }
-
-    // ── Inline editing ────────────────────────────────────────────────
-
-    function startInlineNameEdit(nameSpan, lbl, displayName) {
-      if (nameSpan.querySelector('input')) return;
-      const input = document.createElement('input');
-      input.className = 'inline-name-input';
-      input.value = lbl.label || displayName;
-      nameSpan.textContent = '';
-      nameSpan.appendChild(input);
-      input.focus();
-      input.select();
-
-      const commit = () => {
-        const val = input.value.trim();
-        if (val && val !== lbl.label) {
-          lbl.label = val;
-          lbl.scientificName = '';
-          lbl.commonName = '';
-          syncToPlayer();
-        } else {
-          nameSpan.textContent = displayName;
-        }
-      };
-      input.addEventListener('keydown', (e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        if (e.key === 'Escape') { e.preventDefault(); nameSpan.textContent = displayName; }
-      });
-      input.addEventListener('blur', commit);
-      input.addEventListener('click', (e) => e.stopPropagation());
-    }
-
-    const TAG_PRESETS_TABLE = [
-      { key: 'sex', options: ['male', 'female', 'unknown'] },
-      { key: 'lifeStage', options: ['adult', 'juvenile', 'immature', 'subadult'] },
-      { key: 'soundType', options: ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming', 'nocturnal flight call'] },
-    ];
-
-    const PRESET_KEYS = new Set(TAG_PRESETS_TABLE.map(p => p.key));
-
-    function renderCustomTags(td, lbl) {
-      td.innerHTML = '';
-      const tags = lbl.tags || {};
-      const customEntries = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k));
-
-      for (const [k, v] of customEntries) {
-        const badge = document.createElement('span');
-        badge.className = 'tag-badge';
-        const keySpan = document.createElement('span');
-        keySpan.className = 'tag-key';
-        keySpan.textContent = k;
-        badge.appendChild(keySpan);
-        badge.appendChild(document.createTextNode(': ' + v + ' '));
-        const del = document.createElement('button');
-        del.className = 'tag-del';
-        del.textContent = '×';
-        del.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (!lbl.tags) return;
-          delete lbl.tags[k];
-          renderCustomTags(td, lbl);
-          syncToPlayer();
-        });
-        badge.appendChild(del);
-        td.appendChild(badge);
-      }
-
-      const addBtn = document.createElement('button');
-      addBtn.className = 'tag-add-btn';
-      addBtn.textContent = '+';
-      addBtn.title = 'Add custom tag';
-      addBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showCustomTagPopover(td, lbl, addBtn);
-      });
-      td.appendChild(addBtn);
-    }
-
-    function showCustomTagPopover(td, lbl, anchorBtn) {
-      document.querySelector('.tag-popover')?.remove();
-      const pop = document.createElement('div');
-      pop.className = 'tag-popover';
-      pop.addEventListener('click', (e) => e.stopPropagation());
-
-      // Position fixed relative to the anchor button
-      const rect = anchorBtn.getBoundingClientRect();
-      pop.style.left = rect.left + 'px';
-      pop.style.top = (rect.bottom + 4) + 'px';
-      // Adjust if it would overflow the viewport
-      requestAnimationFrame(() => {
-        const pr = pop.getBoundingClientRect();
-        if (pr.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - pr.width - 8) + 'px';
-        if (pr.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, rect.top - pr.height - 4) + 'px';
-      });
-
-      const customRow = document.createElement('div');
-      customRow.className = 'tag-pop-row';
-      const keyInput = document.createElement('input');
-      keyInput.placeholder = 'key';
-      keyInput.style.width = '60px';
-      const valInput = document.createElement('input');
-      valInput.placeholder = 'value';
-      valInput.style.flex = '1';
-      const addCustom = document.createElement('button');
-      addCustom.className = 'tag-add-btn';
-      addCustom.textContent = '✓';
-      const commitCustom = () => {
-        const k = keyInput.value.trim();
-        const v = valInput.value.trim();
-        if (k && v) {
-          if (!lbl.tags) lbl.tags = {};
-          lbl.tags[k] = v;
-          pop.remove();
-          renderCustomTags(td, lbl);
-          syncToPlayer();
-        }
-      };
-      addCustom.addEventListener('click', (e) => { e.stopPropagation(); commitCustom(); });
-      valInput.addEventListener('keydown', (e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') { e.preventDefault(); commitCustom(); }
-      });
-      keyInput.addEventListener('keydown', (e) => e.stopPropagation());
-      customRow.appendChild(keyInput);
-      customRow.appendChild(valInput);
-      customRow.appendChild(addCustom);
-      pop.appendChild(customRow);
-
-      const closeHandler = (e) => {
-        if (!pop.contains(e.target) && e.target !== anchorBtn) {
-          pop.remove();
-          document.removeEventListener('pointerdown', closeHandler, true);
-        }
-      };
-      setTimeout(() => document.addEventListener('pointerdown', closeHandler, true), 0);
-
-      document.body.appendChild(pop);
-      keyInput.focus();
-    }
-
-    // ── Table ↔ Spectrogram linking ───────────────────────────────────
-
-    function highlightTableRow(labelId) {
-      state.selectedLabelId = labelId || null;
-      for (const row of labelsList.querySelectorAll('tr.selected')) {
-        row.classList.remove('selected');
-      }
-      if (labelId && state._rowMap) {
-        const tr = state._rowMap.get(labelId);
-        if (tr) {
-          tr.classList.add('selected');
-          tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-      }
     }
 
     function highlightSpectrogramLabel(labelId, on) {
       const overlay = player.spectrogramLabels?.overlay;
       if (!overlay) return;
-      const el = overlay.querySelector(`.spectrogram-label-region[data-id="${labelId}"]`);
+      const el = overlay.querySelector(`.spectrogram-label-region[data-id="${CSS.escape(labelId)}"]`);
       if (el) el.classList.toggle('highlighted', on);
     }
 
-    // Listen for labelfocus from the spectrogram → highlight table row
+    // ── Label table ───────────────────────────────────────────────────
+    const labelTable = new LabelTable({
+      tbody:   document.getElementById('labelsList'),
+      emptyEl: document.getElementById('labelsEmpty'),
+      badgeEl: document.getElementById('labelCount'),
+      resolveName,
+      onSync:  () => syncToPlayer(),
+      onSeek:  (lbl) => { if (player?.currentTime != null) player.currentTime = lbl.start; },
+      onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
+      onFocus: (id) => player._emit?.('labelfocus', { id, source: 'table' }),
+      onHover: highlightSpectrogramLabel,
+    });
+    labelTable.onRemove = (lbl) => {
+      state.labels = state.labels.filter((l) => l.id !== lbl.id);
+      syncToPlayer();
+    };
+
+    // Listen for labelfocus from spectrogram → highlight table row
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
-      // Highlight table row
-      for (const row of labelsList.querySelectorAll('tr.highlighted')) {
-        row.classList.remove('highlighted');
-      }
-      if (id && state._rowMap) {
-        const tr = state._rowMap.get(id);
-        if (tr) {
-          tr.classList.add('highlighted');
-          tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-      }
+      labelTable.highlightHover(id);
     });
 
+    // ── BirdNET panel ─────────────────────────────────────────────────
+    const birdnetPanel = new BirdNETPanel({
+      backdrop:        document.getElementById('birdnetModalBackdrop'),
+      modelUrlInput:   document.getElementById('birdnetModelUrl'),
+      confidenceInput: document.getElementById('birdnetConfidence'),
+      confidenceVal:   document.getElementById('birdnetConfidenceVal'),
+      overlapSelect:   document.getElementById('birdnetOverlap'),
+      mergeCheckbox:   document.getElementById('birdnetMerge'),
+      authorInput:     document.getElementById('birdnetAuthor'),
+      progressWrap:    document.getElementById('birdnetProgressWrap'),
+      progressBar:     document.getElementById('birdnetProgressBar'),
+      statusEl:        document.getElementById('birdnetStatus'),
+      analyzeBtn:      document.getElementById('birdnetAnalyzeBtn'),
+      cancelBtn:       document.getElementById('birdnetCancelBtn'),
+      openBtn:         document.getElementById('birdnetBtn'),
+      birdnet,
+      getAudioBuffer: () => player._state?.audioBuffer,
+      resolveLabel: (det, audioBuffer) => {
+        const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
+        const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : null;
+        return {
+          label: localized || det.common || det.scientific,
+          scientificName: det.scientific,
+          commonName: det.common,
+        };
+      },
+      onResults: (labels) => {
+        for (const lbl of labels) state.labels.push(lbl);
+        syncToPlayer();
+      },
+    });
+
+    // ── Sync & export ─────────────────────────────────────────────────
     function syncToPlayer() {
       player.setSpectrogramLabels(state.labels);
-      renderLabels();
+      labelTable.render(state.labels);
     }
 
     function toLabelExport() {
@@ -1102,162 +346,37 @@
       }));
     }
 
+    // ── File loading ──────────────────────────────────────────────────
+    async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
+      if (state.activeObjectUrl) {
+        try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+        state.activeObjectUrl = null;
+      }
+      const blob = new Blob([arrayBuffer], { type: mimeType });
+      try {
+        const file = new File([blob], filename, { type: mimeType });
+        await player.loadFile(file);
+      } catch {
+        const objectUrl = URL.createObjectURL(blob);
+        state.activeObjectUrl = objectUrl;
+        await player.loadUrl(objectUrl);
+      }
+      fileLabel.textContent = filename;
+    }
+
+    async function importXenoCantoLabels(xcId) {
+      const result = await xcPanel.importLabels(xcId, state.sampleRate);
+      state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
+      if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
+      state.labels = result.labels;
+      syncToPlayer();
+      return { xcId: result.xcId, imported: result.labels.length };
+    }
+
+    // ── Taxonomy ──────────────────────────────────────────────────────
     function getLangParam() {
       const p = new URLSearchParams(window.location.search || '');
       return p.get('lang') || p.get('LANG') || '';
-    }
-
-    function resolveTaxonomyRecordForScientificName(scientificName) {
-      return taxonomy.resolve(scientificName);
-    }
-
-    function resolveCommonName(record, lang) {
-      if (lang === 'scientific') return record?.s || '';
-      return taxonomy.resolveCommonName(record, lang);
-    }
-
-    /** Map BirdNET language codes to Unicode flag emoji. */
-    const LANG_FLAGS = {
-      af: '\u{1F1FF}\u{1F1E6}', ar: '\u{1F1F8}\u{1F1E6}', bg: '\u{1F1E7}\u{1F1EC}',
-      ca: '\u{1F3F4}\u{E0065}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', cs: '\u{1F1E8}\u{1F1FF}',
-      da: '\u{1F1E9}\u{1F1F0}', de: '\u{1F1E9}\u{1F1EA}', el: '\u{1F1EC}\u{1F1F7}',
-      en_uk: '\u{1F1EC}\u{1F1E7}', es: '\u{1F1EA}\u{1F1F8}', fi: '\u{1F1EB}\u{1F1EE}',
-      fr: '\u{1F1EB}\u{1F1F7}', he: '\u{1F1EE}\u{1F1F1}', hr: '\u{1F1ED}\u{1F1F7}',
-      hu: '\u{1F1ED}\u{1F1FA}', in: '\u{1F1EE}\u{1F1E9}', is: '\u{1F1EE}\u{1F1F8}',
-      it: '\u{1F1EE}\u{1F1F9}', ja: '\u{1F1EF}\u{1F1F5}', ko: '\u{1F1F0}\u{1F1F7}',
-      lt: '\u{1F1F1}\u{1F1F9}', ml: '\u{1F1EE}\u{1F1F3}', nl: '\u{1F1F3}\u{1F1F1}',
-      no: '\u{1F1F3}\u{1F1F4}', pl: '\u{1F1F5}\u{1F1F1}', pt_BR: '\u{1F1E7}\u{1F1F7}',
-      pt_PT: '\u{1F1F5}\u{1F1F9}', ro: '\u{1F1F7}\u{1F1F4}', ru: '\u{1F1F7}\u{1F1FA}',
-      sk: '\u{1F1F8}\u{1F1F0}', sl: '\u{1F1F8}\u{1F1EE}', sr: '\u{1F1F7}\u{1F1F8}',
-      sv: '\u{1F1F8}\u{1F1EA}', th: '\u{1F1F9}\u{1F1ED}', tr: '\u{1F1F9}\u{1F1F7}',
-      uk: '\u{1F1FA}\u{1F1E6}', zh: '\u{1F1E8}\u{1F1F3}',
-    };
-
-    /** Normalize text for search: lowercase + strip diacritics (ü→u, é→e, etc.) */
-    function normalizeSearch(text) {
-      return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    }
-
-    /**
-     * Build a detail string with flags of languages that matched the query.
-     * Returns e.g. "🇩🇪 Kohlmeise · 🇫🇷 Mésange charbonnière" for a hit on both.
-     * The display-language match is excluded (it's already the main name).
-     */
-    function buildMatchDetail(record, query, displayLang) {
-      if (!query || !record?.n) return '';
-      const q = normalizeSearch(query);
-      const parts = [];
-      for (const [lang, name] of Object.entries(record.n)) {
-        if (lang === displayLang) continue;
-        if (!normalizeSearch(name).includes(q)) continue;
-        const flag = LANG_FLAGS[lang] || lang;
-        parts.push(`${flag}\u00a0${name}`);
-        if (parts.length >= 3) break; // keep it compact
-      }
-      return parts.join(' \u00b7 ');
-    }
-
-    function getTrackLabelSuggestions(query, limit = 14) {
-      const q = normalizeSearch(query);
-      const dedupe = new Map();
-
-      // Default entries always available
-      dedupe.set('name:noise', { name: 'Noise', scientificName: '' });
-
-      for (const item of state.xcLabelPool) {
-        const name = String(item?.name || '').trim();
-        const sci = String(item?.scientificName || '').trim();
-        if (!name) continue;
-        const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
-        if (!dedupe.has(key)) {
-          dedupe.set(key, { name, scientificName: sci });
-        }
-      }
-      for (const lbl of state.labels) {
-        const sci = String(lbl?.scientificName || '').trim();
-        const record = sci ? resolveTaxonomyRecordForScientificName(sci) : null;
-        const localized = resolveCommonName(record, state.taxonomyLang);
-        const name = String(localized || lbl?.commonName || lbl?.label || sci).trim();
-        if (!name) continue;
-        const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
-        if (!dedupe.has(key)) {
-          dedupe.set(key, {
-            name,
-            scientificName: sci,
-          });
-        }
-      }
-      // Search full BirdNET taxonomy across ALL languages
-      if (q && taxonomy.data) {
-        for (const rec of taxonomy.records) {
-          // Build search hay from all common names + scientific name
-          const allNames = rec.n ? Object.values(rec.n) : [];
-          const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
-          if (!hay.includes(q)) continue;
-          const key = `sci:${rec.s}`;
-          const displayName = resolveCommonName(rec, state.taxonomyLang);
-          if (!dedupe.has(key)) {
-            dedupe.set(key, {
-              name: displayName || rec.s,
-              scientificName: rec.s,
-              detail: buildMatchDetail(rec, q, state.taxonomyLang),
-            });
-          }
-          if (dedupe.size >= limit * 3) break;
-        }
-      }
-
-      const out = [];
-      for (const item of dedupe.values()) {
-        if (q) {
-          const sci = item.scientificName;
-          // For items with a scientific name, resolve the taxonomy record and
-          // search across ALL languages (same as the taxonomy loop above).
-          const rec = sci ? resolveTaxonomyRecordForScientificName(sci) : null;
-          if (rec?.n) {
-            const allNames = Object.values(rec.n);
-            const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
-            if (!hay.includes(q)) continue;
-            // Enrich existing pool/label entries with flag detail
-            if (!item.detail) {
-              item.detail = buildMatchDetail(rec, q, state.taxonomyLang);
-            }
-          } else {
-            const hay = normalizeSearch(`${item.name} ${sci || ''}`);
-            if (!hay.includes(q)) continue;
-          }
-        }
-        out.push(item);
-      }
-      out.sort((a, b) => a.name.localeCompare(b.name));
-      return out.slice(0, Math.max(1, limit));
-    }
-
-    function rebuildXcLabelPoolFromImport(result) {
-      const pool = new Map();
-      const add = (name, scientificName = '') => {
-        const n = String(name || '').trim();
-        const s = String(scientificName || '').trim();
-        if (!n) return;
-        const key = s ? `sci:${s}` : `name:${n.toLowerCase()}`;
-        if (!pool.has(key)) pool.set(key, { name: n, scientificName: s });
-      };
-
-      const recording = result?.recording || {};
-      const recSci = String(recording?.gen && recording?.sp ? `${recording.gen} ${recording.sp}` : '').trim();
-      add(recording?.en, recSci);
-      add(recSci, recSci);
-      add(recording?.type, recSci);
-
-      for (const raw of (result?.rawLabels || [])) {
-        const sci = String(raw?.scientific_name || raw?.scientificName || recSci).trim();
-        add(raw?.sound_type || raw?.soundType, sci);
-        add(raw?.annotation_remarks || raw?.comment || raw?.description, sci);
-        add(raw?.label || raw?.name || raw?.value, sci);
-        if (sci) add(sci, sci);
-      }
-
-      state.xcLabelPool = Array.from(pool.values());
     }
 
     async function loadBirdnetTaxonomy() {
@@ -1267,109 +386,28 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         taxonomy.load(data);
-        const langs = taxonomy.languages.slice().sort((a, b) => a.localeCompare(b));
-        taxonomyLangSelect.innerHTML = '';
-        const sciOpt = document.createElement('option');
-        sciOpt.value = 'scientific';
-        sciOpt.textContent = '🔬 Scientific';
-        taxonomyLangSelect.appendChild(sciOpt);
-        for (const lang of langs) {
-          const opt = document.createElement('option');
-          opt.value = lang;
-          opt.textContent = lang;
-          taxonomyLangSelect.appendChild(opt);
-        }
-        const langParam = getLangParam();
-        const allOpts = ['scientific', ...langs];
-        state.taxonomyLang = allOpts.includes(langParam) ? langParam : (langs.includes('en_uk') ? 'en_uk' : langs[0]);
-        taxonomyLangSelect.value = state.taxonomyLang;
+        state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
-        renderLabels();
+        labelTable.render(state.labels);
       } catch (err) {
         taxonomy.clear();
         taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
       }
     }
 
-    async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
-      if (state.activeObjectUrl) {
-        try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
-        state.activeObjectUrl = null;
-      }
-
-      const blob = new Blob([arrayBuffer], { type: mimeType });
-      try {
-        const file = new File([blob], filename, { type: mimeType });
-        await player.loadFile(file);
-      } catch {
-        // Fallback for environments without File constructor support
-        const objectUrl = URL.createObjectURL(blob);
-        state.activeObjectUrl = objectUrl;
-        await player.loadUrl(objectUrl);
-      }
-      fileLabel.textContent = filename;
-    }
-
-    async function importXenoCantoLabels(xcId) {
-      const result = await importXenoCantoSpectrogramLabels(xcId, {
-        sampleRate: state.sampleRate,
-        ...getXcRequestAuthOptions(),
-      });
-      rebuildXcLabelPoolFromImport(result);
-      if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
-      state.labels = result.labels;
-      syncToPlayer();
-      return { xcId: result.xcId, imported: result.labels.length };
-    }
-
-    async function fetchXenoCantoAudio(xcId) {
-      const clean = normalizeXcId(xcId);
-      if (!clean) throw new Error('Invalid Xeno-canto ID.');
-
-      const directUrl = `https://xeno-canto.org/${clean}/download`;
-      const candidates = [
-        { name: 'CodeTabs', url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
-        { name: 'CorsProxy', url: `https://corsproxy.io/?${encodeURIComponent(directUrl)}` },
-        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}` },
-        { name: 'ThingProxy', url: `https://thingproxy.freeboard.io/fetch/${directUrl}` },
-      ];
-
-      let lastError = null;
-      for (const c of candidates) {
-        fileLabel.textContent = `Loading XC${clean} (${c.name})...`;
-        try {
-          const res = await fetch(c.url);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const buf = await res.arrayBuffer();
-          if (!buf || buf.byteLength < 10_000) throw new Error('Response too small to be valid audio.');
-          return { xcId: clean, buffer: buf };
-        } catch (err) {
-          lastError = err;
-        }
-      }
-      throw new Error(`Could not download XC${clean}: ${lastError?.message || 'unknown error'}`);
-    }
-
-    function readStartupParams() {
+    // ── URL params & startup ──────────────────────────────────────────
+    async function autoLoadFromParams() {
       const p = new URLSearchParams(window.location.search || '');
       const xcid = p.get('xcid') || p.get('XCID') || p.get('xc') || p.get('XC');
-      const lang = p.get('lang') || p.get('LANG') || '';
-      return { xcid, lang };
-    }
-
-    async function autoLoadFromParams() {
-      const { xcid } = readStartupParams();
       if (!xcid) return;
       try {
-        const audio = await fetchXenoCantoAudio(xcid);
+        const audio = await xcPanel.fetchAudio(xcid, (msg) => { fileLabel.textContent = msg; });
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
         try {
           const labelResult = await importXenoCantoLabels(audio.xcId);
-          if (labelResult.imported > 0) {
-            selectionMeta.textContent = `Imported ${labelResult.imported} XC labels`;
-          } else {
-            selectionMeta.textContent = `No XC labels found for XC${labelResult.xcId}`;
-          }
+          selectionMeta.textContent = labelResult.imported > 0
+            ? `Imported ${labelResult.imported} XC labels`
+            : `No XC labels found for XC${labelResult.xcId}`;
         } catch (err) {
           selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
         }
@@ -1378,6 +416,7 @@
       }
     }
 
+    // ── Event listeners ───────────────────────────────────────────────
     browseBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
@@ -1410,7 +449,7 @@
       state.selected = null;
       selectionMeta.textContent = '';
       player.clearSpectrogramLabels();
-      renderLabels();
+      labelTable.render(state.labels);
     });
 
     exportJsonBtn.addEventListener('click', () => {
@@ -1443,17 +482,16 @@
       const idx = state.labels.findIndex((l) => l.id === label.id);
       if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
       else state.labels.push({ ...label, origin: label.origin || 'manual' });
-      renderLabels();
+      labelTable.render(state.labels);
     }
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
     player.on('spectrogramlabelupdate', (e) => upsertLabel(e.detail?.label));
-
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;
       if (!id) return;
       state.labels = state.labels.filter((l) => l.id !== id);
-      renderLabels();
+      labelTable.render(state.labels);
     });
 
     taxonomyLangSelect.addEventListener('change', () => {
@@ -1461,14 +499,13 @@
       if (taxonomy.data) {
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
       }
-      // Re-resolve label display names for the new language
       for (const lbl of state.labels) {
         if (!lbl.scientificName) continue;
         if (state.taxonomyLang === 'scientific') {
           lbl.label = lbl.scientificName;
         } else {
-          const record = resolveTaxonomyRecordForScientificName(lbl.scientificName);
-          const localized = resolveCommonName(record, state.taxonomyLang);
+          const record = taxonomy.resolve(lbl.scientificName);
+          const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : '';
           if (localized) lbl.label = localized;
         }
       }
@@ -1483,171 +520,20 @@
       birdnet.dispose();
     });
 
-    // ── BirdNET Inference ──────────────────────────────────────────────
-
-    const BIRDNET_MODEL_URL_STORAGE = 'audio-workbench.birdnet-model-url.v2';
-    const BIRDNET_DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
-    const BIRDNET_DETECTION_COLOR = '#f59e0b'; // amber
-
-    /**
-     * Merge labels of the same species whose time ranges overlap.
-     * Keeps the highest confidence and extends the time range.
-     */
-    function mergeOverlappingLabels(labels) {
-      const bySpecies = new Map();
-      for (const lbl of labels) {
-        const key = lbl.scientificName || lbl.label;
-        if (!bySpecies.has(key)) bySpecies.set(key, []);
-        bySpecies.get(key).push(lbl);
-      }
-      const merged = [];
-      for (const group of bySpecies.values()) {
-        group.sort((a, b) => a.start - b.start);
-        let current = { ...group[0] };
-        for (let i = 1; i < group.length; i++) {
-          const next = group[i];
-          if (next.start <= current.end) {
-            // overlap — extend range, keep best confidence
-            current.end = Math.max(current.end, next.end);
-            if (next.confidence > current.confidence) current.confidence = next.confidence;
-          } else {
-            merged.push(current);
-            current = { ...next };
-          }
-        }
-        merged.push(current);
-      }
-      return merged;
-    }
-
-    try {
-      const stored = localStorage.getItem(BIRDNET_MODEL_URL_STORAGE);
-      birdnetModelUrlInput.value = stored || BIRDNET_DEFAULT_MODEL_URL;
-    } catch {
-      birdnetModelUrlInput.value = BIRDNET_DEFAULT_MODEL_URL;
-    }
-
-    birdnetConfidenceInput.addEventListener('input', () => {
-      birdnetConfidenceVal.textContent = birdnetConfidenceInput.value;
-    });
-
-    function openBirdnetModal() {
-      birdnetStatus.textContent = '';
-      birdnetProgressWrap.style.display = 'none';
-      birdnetProgressBar.style.width = '0%';
-      birdnetAnalyzeBtn.disabled = false;
-      birdnetModalBackdrop.classList.add('show');
-      birdnetModalBackdrop.setAttribute('aria-hidden', 'false');
-      setTimeout(() => { birdnetModelUrlInput.focus(); }, 0);
-    }
-
-    function closeBirdnetModal() {
-      birdnetModalBackdrop.classList.remove('show');
-      birdnetModalBackdrop.setAttribute('aria-hidden', 'true');
-    }
-
-    birdnetBtn.addEventListener('click', () => openBirdnetModal());
-    birdnetCancelBtn.addEventListener('click', () => closeBirdnetModal());
-    birdnetModalBackdrop.addEventListener('click', (e) => {
-      if (e.target === birdnetModalBackdrop) closeBirdnetModal();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && birdnetModalBackdrop.classList.contains('show')) closeBirdnetModal();
-    });
-
-    birdnetAnalyzeBtn.addEventListener('click', async () => {
-      const audioBuffer = player._state?.audioBuffer;
-      if (!audioBuffer) {
-        birdnetStatus.textContent = 'No audio loaded.';
-        return;
-      }
-
-      const modelUrl = String(birdnetModelUrlInput.value || '').trim();
-      if (!modelUrl) {
-        birdnetStatus.textContent = 'Please enter a model URL.';
-        return;
-      }
-
-      try { localStorage.setItem(BIRDNET_MODEL_URL_STORAGE, modelUrl); } catch {}
-
-      const confidence = parseFloat(birdnetConfidenceInput.value) || 0.25;
-      const overlap = parseFloat(birdnetOverlapSelect.value) || 0;
-
-      birdnetAnalyzeBtn.disabled = true;
-      birdnetProgressWrap.style.display = '';
-      birdnetProgressBar.style.width = '0%';
-
-      try {
-        // Load model if not already loaded (or URL changed)
-        if (!birdnet.loaded) {
-          birdnetStatus.textContent = 'Loading TF.js + model…';
-          await birdnet.load({
-            modelUrl,
-            onProgress: (msg, pct) => {
-              birdnetStatus.textContent = msg;
-              birdnetProgressBar.style.width = pct + '%';
-            },
-          });
-        }
-
-        birdnetStatus.textContent = 'Analyzing…';
-        birdnetProgressBar.style.width = '0%';
-
-        const channelData = audioBuffer.getChannelData(0);
-        const detections = await birdnet.analyze(channelData, {
-          sampleRate: audioBuffer.sampleRate,
-          overlap,
-          minConfidence: confidence,
-          onProgress: (pct) => {
-            birdnetProgressBar.style.width = pct + '%';
-          },
-        });
-
-        // Resolve common names via loaded taxonomy + selected language
-        const author = birdnetAuthorInput.value.trim();
-        const mergeOverlapping = birdnetMergeCheckbox.checked;
-        const newLabels = [];
-        for (const det of detections) {
-          const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
-          const localized = record ? resolveCommonName(record, state.taxonomyLang) : null;
-          const displayName = localized || det.common || det.scientific;
-
-          newLabels.push({
-            id: `bn_${Math.random().toString(36).slice(2, 10)}`,
-            label: displayName,
-            scientificName: det.scientific,
-            commonName: det.common,
-            start: det.start,
-            end: det.end,
-            freqMin: 0,
-            freqMax: audioBuffer.sampleRate / 2,
-            color: BIRDNET_DETECTION_COLOR,
-            confidence: det.confidence,
-            origin: 'BirdNET',
-            author: author || '',
-          });
-        }
-
-        // Merge overlapping detections of the same species
-        const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
-        for (const lbl of labelsToAdd) state.labels.push(lbl);
-
-        syncToPlayer();
-        birdnetStatus.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
-      } catch (err) {
-        birdnetStatus.textContent = `Error: ${err?.message || String(err)}`;
-        birdnet.dispose(); // allow retry with fresh worker
-      } finally {
-        birdnetAnalyzeBtn.disabled = false;
-      }
-    });
-
-    // Keep shift+drag suggestions track-local by default.
+    // ── Suggestion provider ───────────────────────────────────────────
     player.setLabelTaxonomy([]);
     player.setLabelEditorSuggestionMode('custom-only');
-    player.setLabelSuggestionProvider((query, limit) => getTrackLabelSuggestions(query, limit));
+    player.setLabelSuggestionProvider(
+      createSuggestionProvider({
+        taxonomy,
+        getLang:   () => state.taxonomyLang,
+        getLabels: () => state.labels,
+        getPool:   () => state.xcLabelPool,
+      }),
+    );
 
-    renderLabels();
+    // ── Startup ───────────────────────────────────────────────────────
+    labelTable.render(state.labels);
     await loadBirdnetTaxonomy();
     autoLoadFromParams();
   </script>

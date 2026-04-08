@@ -3,7 +3,7 @@
 // mappings between time, frequency, pixel, and bin domains.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { SPECTROGRAM_HEIGHT, PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE } from './constants.js';
+import { PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE } from './constants.js';
 import { buildMelFrequencies, hzToMel, melToHz } from './dsp.js';
 
 /**
@@ -188,8 +188,9 @@ export class CoordinateSystem {
         }
 
         bin = Math.max(0, Math.min(this._maxBin, bin));
-        const internalY = (SPECTROGRAM_HEIGHT - 1) - (bin / this._maxBin * (SPECTROGRAM_HEIGHT - 1));
-        return internalY / SPECTROGRAM_HEIGHT * this.canvasHeight;
+        const h = this.spectrogramMels;
+        const internalY = (h - 1) - (bin / this._maxBin * (h - 1));
+        return internalY / h * this.canvasHeight;
     }
 
     /**
@@ -201,8 +202,9 @@ export class CoordinateSystem {
             return this._pixelYToFreq_external(displayY);
         }
 
-        const internalY = displayY / this.canvasHeight * SPECTROGRAM_HEIGHT;
-        const bin = Math.round(((SPECTROGRAM_HEIGHT - 1) - internalY) / (SPECTROGRAM_HEIGHT - 1) * this._maxBin);
+        const h = this.spectrogramMels;
+        const internalY = displayY / this.canvasHeight * h;
+        const bin = Math.round(((h - 1) - internalY) / (h - 1) * this._maxBin);
         const clampedBin = Math.max(0, Math.min(this._maxBin, bin));
 
         if (this.isLinear) {
@@ -319,8 +321,9 @@ export class CoordinateSystem {
 
     /** Display pixel Y → bin index (clamped to maxBin). */
     pixelYToBin(displayY) {
-        const internalY = displayY / this.canvasHeight * SPECTROGRAM_HEIGHT;
-        const bin = Math.round(((SPECTROGRAM_HEIGHT - 1) - internalY) / (SPECTROGRAM_HEIGHT - 1) * this._maxBin);
+        const h = this.spectrogramMels;
+        const internalY = displayY / this.canvasHeight * h;
+        const bin = Math.round(((h - 1) - internalY) / (h - 1) * this._maxBin);
         return Math.max(0, Math.min(this._maxBin, bin));
     }
 

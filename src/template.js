@@ -146,28 +146,62 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <div class="settings-section">
-            <h3 class="settings-section-title">Presets</h3>
-            <div class="settings-row preset-row">
-                <button class="preset-btn active" data-aw="presetPerchBtn" title="Perch: mel + PCEN">Perch</button>
-                <button class="preset-btn" data-aw="presetClassicBtn" title="Classic: linear + dB">Classic</button>
+            <div class="settings-row">
+                <label class="settings-label">Engine</label>
+                <select data-aw="engineSelect" class="settings-select">
+                </select>
             </div>
+            <div class="settings-row">
+                <label class="settings-label">Preset</label>
+                <select data-aw="presetSelect" class="settings-select">
+                </select>
+            </div>
+        </div>
+
+        <div class="settings-section quality-slider-section">
+            <h3 class="settings-section-title">Quality</h3>
+            <div class="settings-row quality-slider-row">
+                <span class="quality-end-label">⚡</span>
+                <input type="range" data-aw="qualitySlider" class="settings-range quality-range" min="0" max="4" value="2" step="1" list="qualityStops">
+                <span class="quality-end-label">🔬</span>
+                <datalist id="qualityStops">
+                    <option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option>
+                </datalist>
+            </div>
+            <div class="quality-label-bar">
+                <span>Performance</span><span>Balanced</span><span>Quality</span><span>High</span><span>Ultra</span>
+            </div>
+            <div class="quality-level-display" data-aw="qualityLevelDisplay">Quality</div>
         </div>
 
         <div class="settings-section">
             <h3 class="settings-section-title">DSP</h3>
             <div class="settings-row">
-                <label class="settings-label">Scale</label>
+                <label class="settings-label">Frequency</label>
                 <select data-aw="scaleSelect" class="settings-select">
                     <option value="mel" selected>Mel</option>
                     <option value="linear">Linear</option>
                 </select>
             </div>
             <div class="settings-row">
-                <label class="settings-label">FFT Size</label>
-                <select data-aw="fftSize" class="settings-select">
-                    <option value="1024">1024</option>
-                    <option value="2048" selected>2048</option>
+                <label class="settings-label">Colour Scale</label>
+                <select data-aw="colourScaleSelect" class="settings-select">
+                    <option value="dbSquared" selected>dB²</option>
+                    <option value="db">dB</option>
+                    <option value="linear">Linear</option>
+                    <option value="meter">Meter</option>
+                    <option value="phase">Phase</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Window</label>
+                <select data-aw="windowSize" class="settings-select" title="Window Size (samples)">
+                    <option value="256">256</option>
+                    <option value="512">512</option>
+                    <option value="1024" selected>1024</option>
+                    <option value="2048">2048</option>
                     <option value="4096">4096</option>
+                    <option value="8192">8192</option>
                 </select>
             </div>
             <div class="settings-row">
@@ -179,25 +213,23 @@ export function createPlayerHTML(opts = {}) {
                 </select>
             </div>
             <div class="settings-row">
-                <label class="settings-label">Win Size</label>
-                <select data-aw="windowSize" class="settings-select">
-                    <option value="0">auto</option>
-                    <option value="512">512</option>
-                    <option value="1024">1024</option>
-                    <option value="1280" selected>1280</option>
-                    <option value="2048">2048</option>
-                    <option value="4096">4096</option>
+                <label class="settings-label">Overlap</label>
+                <select data-aw="overlapSelect" class="settings-select" title="Window Overlap — higher = smoother time axis">
+                    <option value="0">None</option>
+                    <option value="1">25 %</option>
+                    <option value="2" selected>50 %</option>
+                    <option value="3">75 %</option>
+                    <option value="4">87.5 %</option>
+                    <option value="5">93.75 %</option>
                 </select>
             </div>
             <div class="settings-row">
-                <label class="settings-label">Hop Size</label>
-                <select data-aw="hopSize" class="settings-select">
-                    <option value="0">auto</option>
-                    <option value="160">160</option>
-                    <option value="256">256</option>
-                    <option value="320" selected>320</option>
-                    <option value="512">512</option>
-                    <option value="1024">1024</option>
+                <label class="settings-label">Oversampling</label>
+                <select data-aw="oversamplingSelect" class="settings-select" title="Zero-pad FFT — higher = finer frequency resolution">
+                    <option value="0" selected>1×</option>
+                    <option value="1">2×</option>
+                    <option value="2">4×</option>
+                    <option value="3">8×</option>
                 </select>
             </div>
             <div class="settings-row">

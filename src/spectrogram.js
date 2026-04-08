@@ -2,9 +2,9 @@
 // spectrogram.js - Spectrogram computation, coloring, and rendering
 // ═══════════════════════════════════════════════════════════════════════
 
-import { SPECTROGRAM_HEIGHT, MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
+import { MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
 import { getTimeGridSteps } from './utils.js';
-import { buildMelFrequencies, computeSpectrogram } from './dsp.js';
+import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.js';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.js';
 
 // Worker constructor - loaded lazily via Vite's ?worker&inline.
@@ -538,19 +538,25 @@ function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {
 
 /**
  * Stage 1 - Expensive, done ONCE per audio / fftSize / maxFreq change.
- * Converts PCEN data → 8-bit grayscale image (Uint8Array) using the
- * absolute log-range.  Frame-averaging and mel→y mapping happens here.
+ * Converts spectrogram data → 8-bit grayscale image (Uint8Array).
+ * Frame-averaging and mel→y mapping happens here.
+ * The `colourScale` parameter controls how raw values map to pixel brightness:
+ *   - 'dbSquared' / 'db' / PCEN: linear range mapping (existing behavior)
+ *   - 'linear': proportional magnitude mapping
+ *   - 'meter': IEC 60268-18 perceptual meter curve
+ *   - 'phase': −π…+π → 0…255
  */
 export function buildSpectrogramGrayscale({
     spectrogramData, spectrogramFrames, spectrogramMels,
     sampleRateHz, maxFreq,
     spectrogramAbsLogMin, spectrogramAbsLogMax,
     scale = 'mel',
+    colourScale = 'dbSquared',
 }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
     const width  = Math.max(1, Math.min(spectrogramFrames, MAX_BASE_SPECTROGRAM_WIDTH));
-    const height = SPECTROGRAM_HEIGHT;
+    const height = spectrogramMels;
     const framesPerPixel = spectrogramFrames / width;
     const isLinear = scale === 'linear';
 
@@ -578,11 +584,26 @@ export function buildSpectrogramGrayscale({
         yBinFrac[y] = fracBin - lo;
     }
 
-    const logRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
+    const dataRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
     const gray = new Uint8Array(width * height);
 
+    // Precompute IEC meter LUT (256 entries) for the meter colour scale
+    let meterLut = null;
+    if (colourScale === 'meter') {
+        meterLut = new Uint8Array(256);
+        // The meter curve maps dB proportions through the IEC fader law.
+        // We map normalised proportion (0-1) → dB in range [-70, 0] → IEC → pixel.
+        const IEC_MAX = iecDbToFader(0); // 100
+        for (let i = 0; i < 256; i++) {
+            const proportion = i / 255;
+            // Map proportion to dB: -70 for silence, 0 for full scale
+            const db = proportion <= 0 ? -80 : 20 * Math.log10(proportion);
+            const meterVal = iecDbToFader(Math.max(-70, db)) / IEC_MAX;
+            meterLut[i] = Math.max(0, Math.min(255, Math.round(meterVal * 255)));
+        }
+    }
+
     for (let x = 0; x < width; x++) {
-        // Non-overlapping frame ranges: each frame contributes to exactly one pixel
         const frameStart = Math.round(x * framesPerPixel);
         const frameEnd   = Math.max(frameStart + 1, Math.round((x + 1) * framesPerPixel));
 
@@ -599,9 +620,24 @@ export function buildSpectrogramGrayscale({
                 count++;
             }
 
-            const magnitude = (sumLo + (sumHi - sumLo) * frac) / Math.max(1, count);
-            const normalized = (magnitude - spectrogramAbsLogMin) / logRange;
-            gray[y * width + x] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+            const value = (sumLo + (sumHi - sumLo) * frac) / Math.max(1, count);
+            let pixel;
+
+            if (colourScale === 'phase') {
+                // Phase: −π…+π → 0…255
+                pixel = Math.round(((value + Math.PI) / (2 * Math.PI)) * 255);
+            } else if (colourScale === 'linear' || colourScale === 'meter') {
+                // Raw magnitude range → proportional mapping
+                const normalized = (value - spectrogramAbsLogMin) / dataRange;
+                const raw = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+                pixel = colourScale === 'meter' ? meterLut[raw] : raw;
+            } else {
+                // dB / dB² / PCEN: linear range mapping (original behavior)
+                const normalized = (value - spectrogramAbsLogMin) / dataRange;
+                pixel = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+            }
+
+            gray[y * width + x] = Math.max(0, Math.min(255, pixel));
         }
     }
 
@@ -735,11 +771,11 @@ export function createSpectrogramProcessor() {
             worker = new Ctor();
 
             worker.onmessage = (event) => {
-                const { requestId, data, nFrames, nMels, smoothState, hopSize, winLength } = event.data;
+                const { requestId, data, nFrames, nMels, smoothState, hopSize, winLength, colourScale } = event.data;
                 const pending = pendingRequests.get(requestId);
                 if (!pending) return;
                 pendingRequests.delete(requestId);
-                const result = { data: new Float32Array(data), nFrames, nMels, hopSize, winLength };
+                const result = { data: new Float32Array(data), nFrames, nMels, hopSize, winLength, colourScale };
                 if (smoothState) result.smoothState = new Float32Array(smoothState);
                 pending.resolve(result);
             };
