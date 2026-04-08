@@ -373,7 +373,7 @@ const IEC_MAX_PERCENT = iecDbToFader(0);  // 100
  * @param {number} [params.hopSize] - hop size in samples (0 or omit = auto: sampleRate/frameRate)
  * @param {string} [params.windowFunction='hann'] - 'hann' | 'hamming' | 'blackman'
  *
- * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, smoothState?: Float32Array }}
+ * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, colourScale: string, smoothState?: Float32Array }}
  */
 export function computeSpectrogram(params) {
     const {
@@ -442,7 +442,7 @@ export function computeSpectrogram(params) {
                 for (let k = 0; k < nBins; k++) output[base + k] = Math.atan2(imag[k], real[k]);
             } else {
                 for (let m = 0; m < nMels; m++) {
-                    const f = denseFB[m];
+                    const f = /** @type {!Float32Array[]} */ (denseFB)[m];
                     let sumSin = 0, sumCos = 0;
                     for (let k = 0; k < f.length; k++) {
                         if (f[k] > 0) {
@@ -478,15 +478,15 @@ export function computeSpectrogram(params) {
             runFFT(frameIdx * hopSize);
             // Compute power spectrum directly (skip sqrt + re-squaring)
             for (let k = 0; k < nBins; k++) {
-                powerBuf[k] = real[k] * real[k] + imag[k] * imag[k];
+                /** @type {!Float32Array} */ (powerBuf)[k] = real[k] * real[k] + imag[k] * imag[k];
             }
             const base = frameIdx * nMels;
             // Apply sparse mel filterbank on power
             for (let m = 0; m < nMels; m++) {
-                const { start, weights } = sparseFB[m];
+                const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
                 let sum = 0;
                 for (let k = 0; k < weights.length; k++) {
-                    sum += powerBuf[start + k] * weights[k];
+                    sum += /** @type {!Float32Array} */ (powerBuf)[start + k] * weights[k];
                 }
                 if (wantRaw) {
                     output[base + m] = Math.sqrt(Math.max(0, sum));
@@ -506,14 +506,14 @@ export function computeSpectrogram(params) {
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             runFFT(frameIdx * hopSize);
             for (let k = 0; k < nBins; k++) {
-                powerBuf[k] = real[k] * real[k] + imag[k] * imag[k];
+                /** @type {!Float32Array} */ (powerBuf)[k] = real[k] * real[k] + imag[k] * imag[k];
             }
             const base = frameIdx * nMels;
             for (let m = 0; m < nMels; m++) {
-                const { start, weights } = sparseFB[m];
+                const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
                 let e = 0;
                 for (let k = 0; k < weights.length; k++) {
-                    e += powerBuf[start + k] * weights[k];
+                    e += /** @type {!Float32Array} */ (powerBuf)[start + k] * weights[k];
                 }
                 smooth[m]   = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
                 const denom = Math.pow(1e-10 + smooth[m], pcenGain);
@@ -729,7 +729,7 @@ export function computeReassignedSpectrogram(params) {
 
                 // Find which mel bin this corrected FFT bin lands in (weighted)
                 for (let m = 0; m < nMels; m++) {
-                    const { start, weights } = sparseFB[m];
+                    const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
                     if (cBinInt < start || cBinInt >= start + weights.length) continue;
                     const w = weights[cBinInt - start];
                     if (w <= 0) continue;

@@ -144,6 +144,14 @@ export function createSpectrolipiProcessor() {
                 scale: 'linear',
             }));
         },
+        async *computeProgressive(channelData, options) {
+            // Single-shot — no chunking support for spectrolipi
+            const result = computeSpectrolipi(channelData, {
+                ...options,
+                scale: 'linear',
+            });
+            yield { chunk: 0, totalChunks: 1, percent: 100, result };
+        },
         dispose() {
             // No worker to terminate
         },
