@@ -250,8 +250,8 @@
     top: var(--toolbar-height);
     right: 0;
     bottom: 0;
-    width: 260px;
-    max-width: 80%;
+    width: 320px;
+    max-width: 85%;
     background: var(--color-toolbar);
     border-left: 1px solid var(--color-border);
     z-index: 40;
@@ -336,6 +336,7 @@
 
 .settings-select {
     flex: 1;
+    min-width: 0;
     height: 28px;
     padding: 0 8px;
     border: 1px solid var(--color-border);
@@ -344,6 +345,8 @@
     color: var(--color-text-primary);
     font-size: 0.78rem;
     cursor: pointer;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .settings-range {
