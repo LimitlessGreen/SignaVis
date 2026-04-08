@@ -155,6 +155,9 @@ export function createPlayerHTML(opts = {}) {
                 <label class="settings-label">Preset</label>
                 <select data-aw="presetSelect" class="settings-select">
                 </select>
+                <button class="toolbar-btn mini-btn" data-aw="presetSaveBtn" title="Save current settings as preset">💾</button>
+                <button class="toolbar-btn mini-btn" data-aw="presetFavBtn" title="Set as default preset" disabled>⭐</button>
+                <button class="toolbar-btn mini-btn" data-aw="presetDeleteBtn" title="Delete user preset" disabled>🗑</button>
             </div>
         </div>
 

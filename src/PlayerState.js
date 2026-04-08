@@ -40,6 +40,9 @@ import { computeReassignedSpectrogram } from './dsp.js';
 
 import { createSpectrolipiProcessor } from './spectrolipiEngine.js';
 
+const LS_USER_PRESETS = 'aw-user-presets';
+const LS_FAV_PRESET   = 'aw-favourite-preset';
+
 import {
     renderMainWaveform,
     renderOverviewWaveform,
@@ -148,6 +151,7 @@ export class PlayerState {
         this.container = container;
         this.d = this._queryDom(container);
         this._populatePresetDropdown();
+        this._applyFavouritePresetControls();
         this._populateEngineDropdown();
         this.WaveSurfer = WaveSurfer;
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
@@ -507,6 +511,9 @@ export class PlayerState {
             colourScaleSelect:      q('colourScaleSelect'),
             engineSelect:           q('engineSelect'),
             presetSelect:           q('presetSelect'),
+            presetSaveBtn:          q('presetSaveBtn'),
+            presetFavBtn:           q('presetFavBtn'),
+            presetDeleteBtn:        q('presetDeleteBtn'),
             nMelsInput:             q('nMelsInput'),
             pcenGainInput:          q('pcenGainInput'),
             pcenBiasInput:          q('pcenBiasInput'),
@@ -549,17 +556,41 @@ export class PlayerState {
     _populatePresetDropdown() {
         const sel = this.d.presetSelect;
         if (!sel) return;
+        sel.innerHTML = '';
         const empty = document.createElement('option');
         empty.value = '';
         empty.textContent = '— Custom —';
         sel.appendChild(empty);
+        // Built-in presets
         for (const name of Object.keys(DSP_PROFILES)) {
             const opt = document.createElement('option');
             opt.value = name;
             opt.textContent = name.charAt(0).toUpperCase() + name.slice(1);
             sel.appendChild(opt);
         }
-        sel.value = 'perch';
+        // User presets
+        const userPresets = this._loadUserPresets();
+        const userNames = Object.keys(userPresets);
+        if (userNames.length) {
+            const sep = document.createElement('option');
+            sep.disabled = true;
+            sep.textContent = '──────────';
+            sel.appendChild(sep);
+            const fav = this._getFavouritePreset();
+            for (const name of userNames) {
+                const opt = document.createElement('option');
+                opt.value = `user:${name}`;
+                opt.textContent = (fav === `user:${name}` ? '⭐ ' : '') + name;
+                sel.appendChild(opt);
+            }
+        }
+        // Select favourite or default
+        const fav = this._getFavouritePreset();
+        if (fav && Array.from(sel.options).some(o => o.value === fav)) {
+            sel.value = fav;
+        } else {
+            sel.value = 'perch';
+        }
     }
 
     _populateEngineDropdown() {
@@ -2387,7 +2418,13 @@ export class PlayerState {
 
     /** Apply a DSP preset (fills all controls, triggers regeneration). */
     _applyPreset(name) {
-        const p = DSP_PROFILES[name];
+        let p;
+        if (name.startsWith('user:')) {
+            const userPresets = this._loadUserPresets();
+            p = userPresets[name.slice(5)];
+        } else {
+            p = DSP_PROFILES[name];
+        }
         if (!p) return;
         // Scale — respect engine constraints
         const engineMeta = SPECTROGRAM_ENGINES[this._engineName];
@@ -2418,15 +2455,167 @@ export class PlayerState {
         }
         // Reassignment
         if (this.d.reassignedCheck) this.d.reassignedCheck.checked = !!p.reassigned;
+        // User preset extras: colourScale, noiseReduction, CLAHE
+        if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
+        if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
+        if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
         // Sync dropdown
         if (this.d.presetSelect) this.d.presetSelect.value = name;
+        this._updatePresetButtons();
         this._syncQualitySlider();
         this._updatePcenSectionDimming();
-        if (this.audioBuffer) this._generateSpectrogram();
+        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
     }
 
     _clearPresetHighlight() {
         if (this.d.presetSelect) this.d.presetSelect.value = '';
+        this._updatePresetButtons();
+    }
+
+    // ── User Presets (localStorage) ─────────────────────────────────
+
+    _loadUserPresets() {
+        try {
+            const raw = localStorage.getItem(LS_USER_PRESETS);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+            }
+        } catch { /* corrupt data — ignore */ }
+        return {};
+    }
+
+    _saveUserPresetsToStorage(presets) {
+        try { localStorage.setItem(LS_USER_PRESETS, JSON.stringify(presets)); } catch { /* quota */ }
+    }
+
+    _getFavouritePreset() {
+        try { return localStorage.getItem(LS_FAV_PRESET) || ''; } catch { return ''; }
+    }
+
+    _setFavouritePreset(key) {
+        try { localStorage.setItem(LS_FAV_PRESET, key); } catch { /* quota */ }
+    }
+
+    /** Snapshot current DSP controls into a preset object. */
+    _getCurrentPresetSettings() {
+        return {
+            scale:             this.d.scaleSelect?.value || 'mel',
+            colourScale:       this.d.colourScaleSelect?.value || 'dbSquared',
+            windowSize:        parseInt(this.d.windowSizeSelect?.value || '1024', 10),
+            overlapLevel:      parseInt(this.d.overlapSelect?.value || '2', 10),
+            oversamplingLevel: parseInt(this.d.oversamplingSelect?.value || '0', 10),
+            windowFunction:    this.d.windowFunctionSelect?.value || 'hann',
+            nMels:             parseInt(this.d.nMelsInput?.value || '160', 10),
+            usePcen:           this.d.pcenEnabledCheck?.checked ?? true,
+            pcenGain:          parseFloat(this.d.pcenGainInput?.value || '0.8'),
+            pcenBias:          parseFloat(this.d.pcenBiasInput?.value || '0.01'),
+            pcenRoot:          parseFloat(this.d.pcenRootInput?.value || '4.0'),
+            pcenSmoothing:     parseFloat(this.d.pcenSmoothingInput?.value || '0.025'),
+            colorScheme:       this.d.colorSchemeSelect?.value || 'grayscale',
+            reassigned:        this.d.reassignedCheck?.checked ?? false,
+            noiseReduction:    this.d.noiseReductionCheck?.checked ?? false,
+            clahe:             this.d.claheCheck?.checked ?? false,
+        };
+    }
+
+    _promptSaveUserPreset() {
+        const name = prompt('Preset name:');
+        if (!name || !name.trim()) return;
+        const clean = name.trim();
+        // Disallow overwriting built-in presets
+        if (DSP_PROFILES[clean.toLowerCase()]) {
+            alert(`"${clean}" is a built-in preset and cannot be overwritten.`);
+            return;
+        }
+        const presets = this._loadUserPresets();
+        presets[clean] = this._getCurrentPresetSettings();
+        this._saveUserPresetsToStorage(presets);
+        this._populatePresetDropdown();
+        if (this.d.presetSelect) this.d.presetSelect.value = `user:${clean}`;
+        this._updatePresetButtons();
+    }
+
+    _deleteSelectedUserPreset() {
+        const val = this.d.presetSelect?.value || '';
+        if (!val.startsWith('user:')) return;
+        const presetName = val.slice(5);
+        if (!confirm(`Delete preset "${presetName}"?`)) return;
+        const presets = this._loadUserPresets();
+        delete presets[presetName];
+        this._saveUserPresetsToStorage(presets);
+        // Clear favourite if it was this preset
+        if (this._getFavouritePreset() === val) this._setFavouritePreset('');
+        this._populatePresetDropdown();
+        this._updatePresetButtons();
+    }
+
+    _toggleFavouritePreset() {
+        const val = this.d.presetSelect?.value || '';
+        if (!val) return;
+        const current = this._getFavouritePreset();
+        if (current === val) {
+            // Un-favourite
+            this._setFavouritePreset('');
+        } else {
+            this._setFavouritePreset(val);
+        }
+        this._populatePresetDropdown();
+        if (this.d.presetSelect) this.d.presetSelect.value = val;
+        this._updatePresetButtons();
+    }
+
+    _updatePresetButtons() {
+        const val = this.d.presetSelect?.value || '';
+        const isUser = val.startsWith('user:');
+        const isAny = val !== '';
+        if (this.d.presetDeleteBtn) this.d.presetDeleteBtn.disabled = !isUser;
+        if (this.d.presetFavBtn) {
+            this.d.presetFavBtn.disabled = !isAny;
+            const isFav = isAny && this._getFavouritePreset() === val;
+            this.d.presetFavBtn.textContent = isFav ? '⭐' : '☆';
+            this.d.presetFavBtn.title = isFav ? 'Remove as default preset' : 'Set as default preset';
+        }
+    }
+
+    /** Apply favourite preset controls (without generating spectrogram — no audio yet). */
+    _applyFavouritePresetControls() {
+        const fav = this._getFavouritePreset();
+        if (!fav) return;
+        let p;
+        if (fav.startsWith('user:')) {
+            const userPresets = this._loadUserPresets();
+            p = userPresets[fav.slice(5)];
+        } else {
+            p = DSP_PROFILES[fav];
+        }
+        if (!p) return;
+        // Set all controls to preset values (same as _applyPreset but skip regeneration)
+        const engineMeta = SPECTROGRAM_ENGINES[this._engineName];
+        const desiredScale = p.scale || 'mel';
+        const effectiveScale = engineMeta && !engineMeta.supportsScales.includes(desiredScale)
+            ? engineMeta.supportsScales[0] : desiredScale;
+        if (this.d.scaleSelect) this.d.scaleSelect.value = effectiveScale;
+        if (this.d.windowSizeSelect && p.windowSize != null) this.d.windowSizeSelect.value = String(p.windowSize);
+        if (this.d.overlapSelect && p.overlapLevel != null) this.d.overlapSelect.value = String(p.overlapLevel);
+        if (this.d.oversamplingSelect && p.oversamplingLevel != null) this.d.oversamplingSelect.value = String(p.oversamplingLevel);
+        if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction || 'hann';
+        if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels || 160);
+        const canPcen = engineMeta ? engineMeta.supportsPcen : true;
+        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = canPcen && !!p.usePcen;
+        if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain ?? 0.8);
+        if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias ?? 0.01);
+        if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot ?? 4.0);
+        if (this.d.pcenSmoothingInput) this.d.pcenSmoothingInput.value = String(p.pcenSmoothing ?? 0.025);
+        if (p.colorScheme && this.d.colorSchemeSelect) {
+            this.d.colorSchemeSelect.value = p.colorScheme;
+            this.currentColorScheme = p.colorScheme;
+        }
+        if (this.d.reassignedCheck) this.d.reassignedCheck.checked = !!p.reassigned;
+        if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
+        if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
+        if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
+        this._updatePresetButtons();
     }
 
     // ── Quality Slider (Performance ↔ Ultra) ────────────────────────
@@ -2862,7 +3051,11 @@ export class PlayerState {
         on(this.d.presetSelect, 'change', () => {
             const val = this.d.presetSelect?.value;
             if (val) this._applyPreset(val);
+            this._updatePresetButtons();
         });
+        on(this.d.presetSaveBtn, 'click', () => this._promptSaveUserPreset());
+        on(this.d.presetFavBtn, 'click', () => this._toggleFavouritePreset());
+        on(this.d.presetDeleteBtn, 'click', () => this._deleteSelectedUserPreset());
         on(this.d.engineSelect, 'change', () => {
             this._switchEngine(this.d.engineSelect.value);
         });
