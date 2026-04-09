@@ -58,8 +58,17 @@ export class Sidebar {
     const btn = document.createElement('button');
     btn.className = 'activity-btn';
     btn.title = label;
-    btn.innerHTML = icon;
     btn.dataset.panel = id;
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'activity-btn-icon';
+    iconSpan.innerHTML = icon;
+    btn.appendChild(iconSpan);
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'activity-btn-label';
+    textSpan.textContent = label;
+    btn.appendChild(textSpan);
 
     const badge = document.createElement('span');
     badge.className = 'activity-badge';
