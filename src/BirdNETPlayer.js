@@ -586,8 +586,12 @@ export class BirdNETPlayer {
     }
 
     /**
+     * Render one row per origin group below the overview bar,
+     * each showing colored segments where labels from that origin occur.
+     */
+    /**
      * Render one row per unique label name below the overview bar,
-     * each showing colored segments where that label occurs.
+     * grouped under compact origin headers (manual, BirdNET, xeno-canto).
      */
     _renderOverviewLabelTracks() {
         const container = this._state?.d?.overviewLabelTracks;
@@ -596,71 +600,86 @@ export class BirdNETPlayer {
         const prevRowCount = container.childElementCount;
         if (duration <= 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
-        // Group labels by name
-        /** @type {Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>} */
-        const groups = new Map();
+        // Two-level grouping: origin → label name
+        /** @type {Map<string, Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>>} */
+        const originGroups = new Map();
         for (const item of this._linkedLabels.values()) {
+            const origin = String(item?.origin || 'manual').trim() || 'manual';
             const name = String(item?.label || item?.species || '').trim();
             if (!name) continue;
-            if (!groups.has(name)) {
-                groups.set(name, { color: item.color || '', segments: [] });
-            }
-            const g = /** @type {{color: string, segments: {id: string, start: number, end: number}[]}} */ (groups.get(name));
-            // Use first non-empty color found
+
+            if (!originGroups.has(origin)) originGroups.set(origin, new Map());
+            const nameMap = /** @type {Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>} */ (originGroups.get(origin));
+
+            if (!nameMap.has(name)) nameMap.set(name, { color: item.color || '', segments: [] });
+            const g = /** @type {{color: string, segments: {id: string, start: number, end: number}[]}} */ (nameMap.get(name));
             if (!g.color && item.color) g.color = item.color;
             g.segments.push({ id: item.id || '', start: item.start, end: item.end });
         }
 
-        if (groups.size === 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
+        if (originGroups.size === 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
-        // Sort group names alphabetically
-        const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        // Sort origins: manual → BirdNET → xeno-canto → alphabetical
+        const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+        const sortedOrigins = [...originGroups.entries()].sort((a, b) =>
+            (ORDER[a[0]] ?? 99) - (ORDER[b[0]] ?? 99) || a[0].localeCompare(b[0]));
 
         container.innerHTML = '';
-        for (const [name, { color, segments }] of sorted) {
-            const row = document.createElement('div');
-            row.className = 'overview-label-row';
-            row.title = name;
-            if (color) {
-                const rgb = this._parseLabelColorRgb(color);
-                if (rgb) {
-                    row.style.setProperty('--label-tint', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`);
+        for (const [origin, nameMap] of sortedOrigins) {
+            // Origin group header (compact strip)
+            const header = document.createElement('div');
+            header.className = 'overview-label-group-header';
+            header.textContent = origin;
+            container.appendChild(header);
+
+            // Label rows sorted alphabetically within origin
+            const sortedNames = [...nameMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            for (const [name, { color, segments }] of sortedNames) {
+                const row = document.createElement('div');
+                row.className = 'overview-label-row';
+                row.title = name;
+                if (color) {
+                    const rgb = this._parseLabelColorRgb(color);
+                    if (rgb) {
+                        row.style.setProperty('--label-tint', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`);
+                    }
                 }
-            }
 
-            const nameEl = document.createElement('span');
-            nameEl.className = 'overview-label-row-name';
-            nameEl.textContent = name;
-            row.appendChild(nameEl);
+                const nameEl = document.createElement('span');
+                nameEl.className = 'overview-label-row-name';
+                nameEl.textContent = name;
+                row.appendChild(nameEl);
 
-            const track = document.createElement('div');
-            track.className = 'overview-label-row-track';
-            for (const seg of segments) {
-                const s = document.createElement('span');
-                s.className = 'overview-label-segment';
-                s.dataset.start = String(seg.start);
-                s.dataset.end = String(seg.end);
-                s.dataset.id = seg.id || '';
-                const leftPct = (seg.start / duration) * 100;
-                const widthPct = ((seg.end - seg.start) / duration) * 100;
-                s.style.left = `${leftPct}%`;
-                s.style.width = `${Math.max(0.3, widthPct)}%`;
-                s.addEventListener('pointerenter', () => {
-                    if (seg.id) this._activeLabelId = seg.id;
-                    this._emit?.('labelfocus', { id: seg.id || null, source: 'overview' });
-                });
-                s.addEventListener('pointerleave', () => {
-                    this._emit?.('labelfocus', { id: null, source: 'overview' });
-                });
-                s.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const midTime = (seg.start + seg.end) / 2;
-                    this._state?._seekToTime(midTime, true);
-                });
-                track.appendChild(s);
+                const track = document.createElement('div');
+                track.className = 'overview-label-row-track';
+                for (const seg of segments) {
+                    const s = document.createElement('span');
+                    s.className = 'overview-label-segment';
+                    s.dataset.start = String(seg.start);
+                    s.dataset.end = String(seg.end);
+                    s.dataset.id = seg.id || '';
+                    const leftPct = (seg.start / duration) * 100;
+                    const widthPct = ((seg.end - seg.start) / duration) * 100;
+                    s.style.left = `${leftPct}%`;
+                    s.style.width = `${Math.max(0.3, widthPct)}%`;
+                    s.addEventListener('pointerenter', () => {
+                        if (seg.id) this._activeLabelId = seg.id;
+                        this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'hover' });
+                    });
+                    s.addEventListener('pointerleave', () => {
+                        this._emit?.('labelfocus', { id: null, source: 'overview', interaction: 'hover' });
+                    });
+                    s.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const midTime = (seg.start + seg.end) / 2;
+                        this._state?._seekToTime(midTime, true);
+                        this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'click' });
+                    });
+                    track.appendChild(s);
+                }
+                row.appendChild(track);
+                container.appendChild(row);
             }
-            row.appendChild(track);
-            container.appendChild(row);
         }
         this._afterOverviewRowChange(prevRowCount, container.childElementCount);
     }
