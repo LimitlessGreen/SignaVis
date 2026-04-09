@@ -77,16 +77,15 @@
 
 .toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    height: var(--toolbar-height);
+    gap: 4px 6px;
     min-height: var(--toolbar-height);
-    padding: 0 8px;
+    padding: 4px 8px;
     background: var(--color-toolbar);
     border-bottom: 1px solid var(--color-border);
     user-select: none;
     position: relative;
-    overflow: hidden;
 }
 
 .toolbar::-webkit-scrollbar { display: none; }
@@ -109,7 +108,7 @@
 }
 
 .compact-more-btn {
-    display: none;
+    display: none !important;
 }
 
 .toolbar-sep {
@@ -193,11 +192,24 @@
     cursor: pointer;
     flex-shrink: 1;
 }
+.toolbar-range-zoom {
+    width: 64px;
+    min-width: 44px;
+    max-width: 90px;
+}
 .toolbar-range-sm {
     width: 64px;
     min-width: 40px;
     max-width: 80px;
 }
+
+.zoom-controls-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.zoom-controls-row .toolbar-label { min-width: unset; font-size: 0.62rem; opacity: 0.6; }
+.freq-zoom-label { margin-left: 4px; }
 .icon-btn {
     background: none;
     border: none;
@@ -234,6 +246,10 @@
     color: var(--color-text-secondary);
     min-width: 56px;
     flex-shrink: 0;
+}
+.toolbar-value-sm {
+    min-width: 40px;
+    font-size: 0.65rem;
 }
 
 /* Settings toggle button */
@@ -586,33 +602,7 @@
     cursor: pointer;
 }
 
-.daw-shell.compact-toolbar-active .compact-more-btn {
-    display: inline-flex;
-}
-
-.daw-shell.compact-toolbar-active .toolbar {
-    overflow: visible;
-}
-
-.daw-shell.compact-toolbar-active .toolbar-secondary {
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    top: calc(100% + 6px);
-    z-index: 35;
-    display: none;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-toolbar);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
-}
-
-.daw-shell.compact-toolbar-open.compact-toolbar-active .toolbar-secondary {
-    display: inline-flex;
-}
+/* compact-toolbar classes kept for JS compat but no longer style changes */
 
 .transport-btn.play-btn.playing .icon-play {
     /* Swap to pause icon via CSS */
@@ -1030,6 +1020,68 @@
         0 0 0 2px var(--spectrogram-label-soft),
         0 0 18px var(--spectrogram-label-soft);
     animation: linkedPulse 0.9s ease-in-out infinite;
+}
+
+/* ── Suggestion labels (BirdNET, xeno-canto — not yet accepted) ── */
+.spectrogram-label-region.suggestion {
+    border-image: repeating-linear-gradient(
+        -45deg,
+        var(--spectrogram-label-edge) 0 4px,
+        transparent 4px 8px
+    ) 6;
+    border-width: 3px;
+    border-style: solid;
+    outline: none;
+    opacity: 0.85;
+}
+.spectrogram-label-region.suggestion:hover {
+    opacity: 1;
+}
+
+/* ── Accept / Discard buttons (suggestion labels) ── */
+.label-accept-btn,
+.label-discard-btn {
+    position: absolute;
+    top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(0, 0, 0, 0.7);
+    color: #e2e8f0;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s, background 0.12s;
+    padding: 0;
+    z-index: 5;
+}
+.label-accept-btn { right: 2px; }
+.label-discard-btn { right: 24px; }
+
+.spectrogram-label-region.suggestion:hover .label-accept-btn,
+.spectrogram-label-region.suggestion:hover .label-discard-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+.label-accept-btn:hover {
+    background: rgba(34, 197, 94, 0.45);
+    border-color: rgba(34, 197, 94, 0.85);
+    color: #bbf7d0;
+}
+.label-discard-btn:hover {
+    background: rgba(239, 68, 68, 0.45);
+    border-color: rgba(239, 68, 68, 0.85);
+    color: #fca5a5;
+}
+
+/* hide edit/delete buttons for suggestions — accept/discard take priority */
+.spectrogram-label-region.suggestion .label-edit-btn,
+.spectrogram-label-region.suggestion .label-delete-btn {
+    display: none;
 }
 
 @keyframes linkedPulse {
@@ -1476,6 +1528,65 @@
     background: var(--color-text-secondary);
     opacity: 0.6;
 }
+
+/* Vertical zoom reset button */
+.freq-zoom-reset-btn {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%) rotate(90deg);
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: 0.7rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 5;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+}
+.freq-zoom-reset-btn:hover {
+    opacity: 1;
+    background: var(--color-hover);
+}
+.freq-zoom-reset-btn[hidden] { display: none; }
+
+/* Vertical frequency scrollbar (visible when Y-zoomed) */
+.freq-scrollbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    background: transparent;
+    z-index: 8;
+    pointer-events: auto;
+    cursor: ns-resize;
+    transition: opacity 0.15s;
+    opacity: 0.5;
+}
+.freq-scrollbar:hover,
+.freq-scrollbar.active { opacity: 0.9; }
+.freq-scrollbar[hidden] { display: none; }
+.freq-scrollbar-thumb {
+    position: absolute;
+    right: 0;
+    width: 6px;
+    min-height: 12px;
+    border-radius: 3px;
+    background: var(--color-text-secondary);
+    opacity: 0.45;
+    transition: opacity 0.12s;
+}
+.freq-scrollbar-thumb:hover,
+.freq-scrollbar.active .freq-scrollbar-thumb { opacity: 0.7; }
+
+/* Freq axis spacer: cursor for scroll hint */
+.freq-axis-spacer { cursor: ns-resize; }
 
 /* ═══ Status Bar ═══ */
 

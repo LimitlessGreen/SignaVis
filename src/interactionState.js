@@ -32,8 +32,13 @@
  * @typedef {Object} InteractionContext
  * @property {string | undefined} playheadSource       - 'waveform' | 'spectrogram' | 'overview' (playhead-drag)
  * @property {number}         panStartX               - clientX at pan start (viewport-pan)
+ * @property {number}         panStartY               - clientY at pan start (viewport-pan)
  * @property {number}         panStartScroll           - scrollLeft at pan start (viewport-pan)
  * @property {boolean}        panSuppressClick         - true once drag exceeds 3px (viewport-pan)
+ * @property {boolean}        panIsMiddle              - true if middle mouse button started the pan
+ * @property {string | undefined} panSource            - 'waveform' | 'spectrogram' (viewport-pan)
+ * @property {number | null}  panStartFreqViewMin      - freq viewport min at pan start (viewport-pan)
+ * @property {number | null}  panStartFreqViewMax      - freq viewport max at pan start (viewport-pan)
  * @property {number}         overviewStartX           - clientX at overview drag start
  * @property {number}         overviewStartNorm        - windowStartNorm at drag start
  * @property {number}         overviewEndNorm          - windowEndNorm at drag start
@@ -92,6 +97,11 @@ function defaultContext() {
         panStartX: 0,
         panStartScroll: 0,
         panSuppressClick: false,
+        panStartY: 0,
+        panIsMiddle: false,
+        panSource: undefined,
+        panStartFreqViewMin: null,
+        panStartFreqViewMax: null,
         overviewStartX: 0,
         overviewStartNorm: 0,
         overviewEndNorm: 1,

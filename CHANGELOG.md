@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-09
+
+### Added
+- **Vertical frequency zoom** — Shift+Wheel on spectrogram, dedicated V-slider,
+  draggable frequency scrollbar, left-drag on freq axis for panning.
+- **Suggestion labels** — BirdNET detections rendered with diagonal-stripe
+  "construction fence" border; accept (✓) promotes to manual, discard (✕) removes.
+- **Xeno-canto loading UX** — no-key modal with inline key input, topbar API key
+  indicator, auto re-import on key change, URL sync.
+- **Right sidebar** — collapsible spectrogram settings panel and properties panel
+  (pin or hover for label detail inspection with inline editing).
+- **Overview label tracks** — grouped by origin with color-coded bars.
+- **Label sidebar** — hierarchical grouping by origin → species with sticky headers,
+  inline editing, tag badges, confidence scores.
+- **Annotation action toolbar** — draw-mode toggle, copy/paste, undo/redo buttons.
+- **Language selector** moved to top bar for quick taxonomy language switching.
+- **Toolbar wrapping** — toolbar now wraps to two rows instead of hiding controls
+  behind a "More" button.
+
+### Fixed
+- **Label positions on window resize / monitor change** — spectrogram now redraws
+  in the resize handler, keeping CoordinateSystem and annotation overlay in sync.
+- **Label horizontal jitter on zoom slider** — `zoomchange` event deferred until
+  canvas dimensions and coords are actually updated.
+- **Middle-mouse vertical drag inversion** — corrected sign in `_updateViewportPan()`.
+- **Freq axis left-drag** — new vertical panning when already vertically zoomed.
+
+### Changed
+- Time axis zoom capped at 450 px/s (was 600) for better performance.
+- Preset manager redesigned from modal to inline panel.
+- Generic tags system for label metadata.
+- Lucide icons throughout the UI.
+
 ## [0.2.0] - 2026-03-25
 
 ### Added

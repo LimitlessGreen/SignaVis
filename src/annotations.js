@@ -1026,6 +1026,15 @@ export class SpectrogramLabelLayer {
         this.render();
     }
 
+    /** Accept a suggestion label — change its origin to 'manual'. */
+    _acceptSuggestion(id) {
+        const label = this.labels.find((l) => l.id === id);
+        if (!label) return;
+        label.origin = 'manual';
+        this.render();
+        this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
+    }
+
     getAll() {
         return [...this.labels];
     }
@@ -1152,6 +1161,8 @@ export class SpectrogramLabelLayer {
     _createLabelElement(label, canvasWidth, canvasHeight) {
         const el = document.createElement('div');
         el.className = 'spectrogram-label-region';
+        const isSuggestion = label.origin && label.origin !== 'manual' && label.origin !== 'xeno-canto';
+        if (isSuggestion) el.classList.add('suggestion');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -1189,6 +1200,18 @@ export class SpectrogramLabelLayer {
             <span class="label-handle handle-r" data-mode="resize-r"></span>
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
+            ${isSuggestion ? `
+            <button class="label-accept-btn" type="button" title="Accept label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </button>
+            <button class="label-discard-btn" type="button" title="Discard label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            ` : ''}
         `;
 
         const editBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-edit-btn'));
@@ -1216,6 +1239,29 @@ export class SpectrogramLabelLayer {
             deleteBtn.addEventListener('pointerdown', (event) => {
                 event.stopPropagation();
             });
+        }
+
+        // ── Accept / Discard for suggestion labels ──
+        const acceptBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-accept-btn'));
+        if (acceptBtn) {
+            acceptBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._suppressClickUntil = performance.now() + 250;
+                this._acceptSuggestion(label.id);
+            });
+            acceptBtn.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
+        }
+        const discardBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-discard-btn'));
+        if (discardBtn) {
+            discardBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._suppressClickUntil = performance.now() + 250;
+                this.remove(label.id);
+                this.player?._emit?.('spectrogramlabelremove', { label: { ...label } });
+            });
+            discardBtn.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
         }
 
         el.addEventListener('click', (event) => {

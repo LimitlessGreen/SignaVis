@@ -18,6 +18,9 @@
       <span class="tb-spacer"></span>
       <span class="tb-meta" id="selectionMeta"></span>
       <span class="tb-sep"></span>
+      <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
+      <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
+      <span class="tb-sep"></span>
       <button class="tb-btn tb-xc-key" id="xcKeyIndicator" type="button" title="Xeno-canto API Key">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="16.5" r="5.5"/></svg>
         <span id="xcKeyLabel">XC API Key</span>
@@ -56,8 +59,6 @@
   <!-- ── Sidebar panel: Labels ────────────────────────────────────── -->
   <div id="panelLabels" hidden>
     <div class="panel-toolbar">
-      <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
-      <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
       <span class="tb-spacer"></span>
       <button class="tb-btn" id="exportJsonBtn" type="button">Export</button>
       <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>

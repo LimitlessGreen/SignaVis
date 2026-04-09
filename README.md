@@ -9,8 +9,13 @@
   <a href="https://limitlessgreen.github.io/Audio-Workbench/">
     <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
   </a>
+  <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html">
+    <img src="https://img.shields.io/badge/Labeling%20App-Open-blue" alt="Labeling App" />
+  </a>
   <br />
   <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/">▶ Live demo — Open in browser (GitHub Pages)</a></strong>
+  <br />
+  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html">🏷 Labeling App — BirdNET detection, annotation & Xeno-canto integration</a></strong>
 </p>
 
 ![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
@@ -37,14 +42,18 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 
 - **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
 - **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
+- **Vertical frequency zoom** — Shift+Wheel, dedicated V-slider, draggable scrollbar, freq-axis drag
 - **Label annotations** — draw, drag, resize time×frequency boxes on the spectrogram
 - **Label taxonomy** — customizable species presets with colors and keyboard shortcuts
+- **Suggestion labels** — BirdNET detections shown with distinct "construction-fence" styling; accept (✓) to promote to manual or discard (✕)
 - **Bandpass-filtered playback** — isolate and play back a specific time×frequency region via Web Audio
+- **Xeno-canto integration** — search, preview and import recordings; auto-enrich labels with XC metadata
 - **External spectrogram injection** — supply pre-computed Float32 data or a rendered image
 - **Settings side-panel** — FFT size, max frequency, color scheme, display gain, auto contrast, zoom
+- **Properties panel** — pin or hover to inspect label details; inline editing
 - **Crosshair overlay** — real-time time + frequency readout
 - **Compact preview modes** — hero transport, overlay mode, small embeds
-- **110+ tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+- **196 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
 
 ## Install
 
@@ -198,7 +207,8 @@ HTML(render_daw_player(audio_bytes))
 
 ## Demos
 
-- **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/Audio-Workbench/)**
+- **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/Audio-Workbench/)** — component storybook with configurable stories
+- **[Labeling App](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
 - **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)**
 - **Streamlit:**
   ```bash

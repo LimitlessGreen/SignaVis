@@ -169,8 +169,9 @@ export function renderOverviewWaveform({
 export function renderFrequencyLabels({ labelsElement, coords }) {
     labelsElement.innerHTML = '';
 
-    const boundedMaxFreq = Math.min(coords.maxFreq, coords.sampleRate / 2);
-    const minFreq = (coords.freqRange && coords.freqRange[0]) || 0;
+    // Use frequency viewport if active, otherwise full range
+    const boundedMaxFreq = coords.freqViewMax ?? Math.min(coords.maxFreq, coords.sampleRate / 2);
+    const minFreq = coords.freqViewMin ?? ((coords.freqRange && coords.freqRange[0]) || 0);
     const range = boundedMaxFreq - minFreq;
 
     // Choose a "nice" tick step based on the frequency range

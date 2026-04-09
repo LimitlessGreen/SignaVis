@@ -120,10 +120,12 @@ export function createPlayerHTML(opts = {}) {
         <div class="toolbar-sep"${hide(o.showZoom)}></div>
 
         <!-- Zoom -->
-        <span${hide(o.showZoom)}>
-            <label class="toolbar-label">Zoom</label>
-            <input type="range" data-aw="zoomSlider" class="toolbar-range" min="20" max="600" value="100" step="5">
-            <span class="toolbar-value" data-aw="zoomValue">100 px/s</span>
+        <span${hide(o.showZoom)} class="zoom-controls-row">
+            <label class="toolbar-label">H</label>
+            <input type="range" data-aw="zoomSlider" class="toolbar-range toolbar-range-zoom" min="20" max="450" value="100" step="5">
+            <span class="toolbar-value toolbar-value-sm" data-aw="zoomValue">100 px/s</span>
+            <label class="toolbar-label freq-zoom-label">V</label>
+            <input type="range" data-aw="freqZoomSlider" class="toolbar-range toolbar-range-zoom" min="0" max="100" value="0" step="1" title="Vertical frequency zoom">
         </span>
 
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
@@ -387,10 +389,14 @@ export function createPlayerHTML(opts = {}) {
         <!-- Spectrogram -->
         <div class="spectrogram-container" data-aw="spectrogramContainer">
             <div class="time-aligned-row">
-                <div class="axis-spacer freq-axis-spacer">
+                <div class="axis-spacer freq-axis-spacer" data-aw="freqAxisSpacer">
                     <div class="frequency-labels" data-aw="freqLabels"></div>
+                    <button class="freq-zoom-reset-btn" data-aw="freqZoomResetBtn" hidden title="Reset vertical zoom (Shift+DblClick)">⟷</button>
                 </div>
                 <div class="time-pane">
+                    <div class="freq-scrollbar" data-aw="freqScrollbar" hidden>
+                        <div class="freq-scrollbar-thumb" data-aw="freqScrollbarThumb"></div>
+                    </div>
                     <div class="canvas-wrapper" data-aw="canvasWrapper"
                          role="slider"
                          aria-label="Playback position"

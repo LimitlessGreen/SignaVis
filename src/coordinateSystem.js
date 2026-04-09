@@ -49,6 +49,8 @@ export class CoordinateSystem {
      * @param {number} [params.hopSize]            Actual hop size in samples (0 = auto from frameRate)
      * @param {number[] | null} [params.freqRange]  [fMin, fMax] in Hz — explicit frequency range (for external images)
      * @param {string | null} [params.freqScale]    Frequency axis mapping: 'mel' | 'linear' | 'log' (for external images)
+     * @param {number | null} [params.freqViewMin]  Frequency viewport bottom (Hz) for vertical zoom (null = 0)
+     * @param {number | null} [params.freqViewMax]  Frequency viewport top (Hz) for vertical zoom (null = boundedMaxFreq)
      */
     constructor({
         duration = 0,
@@ -63,6 +65,8 @@ export class CoordinateSystem {
         hopSize = 0,
         freqRange = null,
         freqScale = null,
+        freqViewMin = null,
+        freqViewMax = null,
     } = {}) {
         this.duration = Math.max(0, duration);
         this.sampleRate = Math.max(1, sampleRate);
@@ -94,6 +98,22 @@ export class CoordinateSystem {
         /** @type {Float32Array | null} */
         this._melFreqs = null;
         this._maxBin = this._computeMaxBin();
+
+        // ── Frequency viewport (vertical zoom) ──
+        const hasView = freqViewMin != null && freqViewMax != null
+            && (freqViewMin > 0 || freqViewMax < this.boundedMaxFreq);
+        this.freqViewMin = hasView ? Math.max(0, freqViewMin) : null;
+        this.freqViewMax = hasView ? Math.min(this.boundedMaxFreq, freqViewMax) : null;
+        this._hasFreqView = hasView;
+        if (hasView) {
+            this._viewMinBin = this._freqToBinFractional(this.freqViewMin);
+            this._viewMaxBin = this._freqToBinFractional(this.freqViewMax);
+            this._viewBinRange = this._viewMaxBin - this._viewMinBin;
+        } else {
+            this._viewMinBin = 0;
+            this._viewMaxBin = this._maxBin;
+            this._viewBinRange = this._maxBin;
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -157,9 +177,32 @@ export class CoordinateSystem {
     // ═════════════════════════════════════════════════════════════════
 
     /**
+     * Frequency → fractional bin index [0 .. maxBin].
+     * Shared helper for both full-range and viewport-aware mappings.
+     * @private
+     */
+    _freqToBinFractional(freq) {
+        const cf = Math.max(0, Math.min(this.boundedMaxFreq, freq));
+        if (this.isLinear) {
+            const binHz = this.nyquist / this.spectrogramMels;
+            return Math.max(0, Math.min(this._maxBin, cf / binHz));
+        }
+        const freqs = this.melFreqs;
+        if (cf >= freqs[this._maxBin]) return this._maxBin;
+        for (let i = 0; i < this._maxBin; i++) {
+            if (freqs[i + 1] >= cf) {
+                const range = freqs[i + 1] - freqs[i];
+                return range > 0 ? i + (cf - freqs[i]) / range : i;
+            }
+        }
+        return 0;
+    }
+
+    /**
      * Frequency (Hz) → display pixel Y (0 = top).
      * Correctly handles mel, linear, and log modes.
      * When freqRange is set (external image), uses direct mapping over that range.
+     * When freqViewMin/freqViewMax are set (vertical zoom), maps within that viewport.
      */
     frequencyToPixelY(freq) {
         // External image with explicit frequency range
@@ -167,31 +210,21 @@ export class CoordinateSystem {
             return this._freqToPixelY_external(freq);
         }
 
-        const cf = Math.max(0, Math.min(this.boundedMaxFreq, freq));
-        let bin;
+        const bin = this._freqToBinFractional(freq);
 
-        if (this.isLinear) {
-            const binHz = this.nyquist / this.spectrogramMels;
-            bin = cf / binHz;
-        } else {
-            const freqs = this.melFreqs;
-            bin = 0;
-            if (cf >= freqs[this._maxBin]) {
-                bin = this._maxBin;
-            } else {
-                for (let i = 0; i < this._maxBin; i++) {
-                    if (freqs[i + 1] >= cf) {
-                        const range = freqs[i + 1] - freqs[i];
-                        bin = range > 0 ? i + (cf - freqs[i]) / range : i;
-                        break;
-                    }
-                }
-            }
+        if (this._hasFreqView) {
+            // Viewport mode: map bin within [viewMinBin, viewMaxBin] → [0, canvasHeight]
+            const fraction = this._viewBinRange > 0
+                ? (bin - this._viewMinBin) / this._viewBinRange
+                : 0;
+            // fraction: 0 = viewMin (bottom), 1 = viewMax (top)
+            return (1 - fraction) * this.canvasHeight;
         }
 
-        bin = Math.max(0, Math.min(this._maxBin, bin));
+        // Full range
+        const clampedBin = Math.max(0, Math.min(this._maxBin, bin));
         const h = this.spectrogramMels;
-        const internalY = (h - 1) - (bin / this._maxBin * (h - 1));
+        const internalY = (h - 1) - (clampedBin / this._maxBin * (h - 1));
         return internalY / h * this.canvasHeight;
     }
 
@@ -202,6 +235,16 @@ export class CoordinateSystem {
         // External image with explicit frequency range
         if (this.freqRange) {
             return this._pixelYToFreq_external(displayY);
+        }
+
+        if (this._hasFreqView) {
+            const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+            const bin = this._viewMinBin + fraction * this._viewBinRange;
+            const clampedBin = Math.max(0, Math.min(this._maxBin, Math.round(bin)));
+            if (this.isLinear) {
+                return clampedBin * (this.nyquist / this.spectrogramMels);
+            }
+            return this.melFreqs[clampedBin] || 0;
         }
 
         const h = this.spectrogramMels;
@@ -271,6 +314,21 @@ export class CoordinateSystem {
         return this.frequencyToPixelY(freq) / this.canvasHeight;
     }
 
+    /**
+     * Frequency → Y fraction in the base spectrogram image (full range, viewport-independent).
+     * 0 = top (highest freq), 1 = bottom (0 Hz).
+     * Used for computing source crop when rendering with vertical zoom.
+     */
+    frequencyToBaseYFraction(freq) {
+        if (this.freqRange) {
+            // For external images, normalize the external mapping
+            return this._freqToPixelY_external(freq) / Math.max(1, this.canvasHeight);
+        }
+        const bin = this._freqToBinFractional(freq);
+        const h = this.spectrogramMels;
+        return ((h - 1) - (bin / this._maxBin * (h - 1))) / h;
+    }
+
     // ═════════════════════════════════════════════════════════════════
     //  FREQUENCY ↔ BIN
     // ═════════════════════════════════════════════════════════════════
@@ -323,6 +381,11 @@ export class CoordinateSystem {
 
     /** Display pixel Y → bin index (clamped to maxBin). */
     pixelYToBin(displayY) {
+        if (this._hasFreqView) {
+            const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+            const bin = this._viewMinBin + fraction * this._viewBinRange;
+            return Math.max(0, Math.min(this._maxBin, Math.round(bin)));
+        }
         const h = this.spectrogramMels;
         const internalY = displayY / this.canvasHeight * h;
         const bin = Math.round(((h - 1) - internalY) / (h - 1) * this._maxBin);

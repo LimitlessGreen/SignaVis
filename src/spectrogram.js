@@ -819,6 +819,7 @@ export function renderSpectrogram({
     frameRate,
     spectrogramFrames,
     hopSize: userHopSize,
+    freqViewSrcCrop,
 }) {
     if (!baseCanvas) return;
     const ctx = spectrogramCanvas.getContext('2d');
@@ -833,22 +834,21 @@ export function renderSpectrogram({
     ctx.clearRect(0, 0, width, height);
 
     // Align spectrogram frames to correct time positions.
-    // Each FFT frame's analysis center is offset by winLength/2 = 2*hopSize
-    // from the hop start. Map frame f → pixel (f*hopSize + 2*hopSize)/sr * pps.
     const hopSize = (userHopSize && userHopSize > 0) ? userHopSize : Math.floor(sampleRate / frameRate);
-    const frameCenterSec = 2 * hopSize / sampleRate;           // center of first frame
-    const x0 = Math.round(frameCenterSec * pixelsPerSecond);   // start pixel
+    const frameCenterSec = 2 * hopSize / sampleRate;
+    const x0 = Math.round(frameCenterSec * pixelsPerSecond);
     const drawWidth = Math.round(spectrogramFrames * hopSize / sampleRate * pixelsPerSecond);
 
-    // Two-pass rendering when we want crisp horizontal pixels (zoomed in)
-    // but the vertical axis needs smooth interpolation (base height ≠ display height).
-    // A single drawImage with imageSmoothingEnabled=false would apply nearest-neighbor
-    // to BOTH axes, creating visible horizontal banding artifacts (160→200px etc.).
+    // Source region of baseCanvas (supports vertical zoom via frequency viewport crop)
+    const srcY = freqViewSrcCrop?.srcY ?? 0;
+    const srcH = freqViewSrcCrop?.srcH ?? baseCanvas.height;
+
+    // Two-pass rendering: crisp horizontal pixels + smooth vertical interpolation
     const wantCrispH = drawWidth >= baseCanvas.width;
-    const needsVerticalScale = height !== baseCanvas.height;
+    const needsVerticalScale = height !== srcH;
 
     if (wantCrispH && needsVerticalScale) {
-        // Pass 1: scale vertically with bilinear (smooth frequency axis)
+        // Pass 1: crop + scale vertically with bilinear (smooth frequency axis)
         const oc = typeof OffscreenCanvas !== 'undefined'
             ? new OffscreenCanvas(baseCanvas.width, height)
             : (() => { const c = document.createElement('canvas'); c.width = baseCanvas.width; c.height = height; return c; })();
@@ -856,7 +856,7 @@ export function renderSpectrogram({
         if (!octx) return;
         octx.imageSmoothingEnabled = true;
         octx.imageSmoothingQuality = 'high';
-        octx.drawImage(baseCanvas, 0, 0, baseCanvas.width, baseCanvas.height,
+        octx.drawImage(baseCanvas, 0, srcY, baseCanvas.width, srcH,
                                    0, 0, baseCanvas.width, height);
         // Pass 2: scale horizontally with nearest-neighbor (crisp time axis)
         ctx.imageSmoothingEnabled = false;
@@ -866,7 +866,7 @@ export function renderSpectrogram({
         ctx.imageSmoothingEnabled = !wantCrispH;
         ctx.drawImage(
             baseCanvas,
-            0, 0, baseCanvas.width, baseCanvas.height,
+            0, srcY, baseCanvas.width, srcH,
             x0, 0, drawWidth, height,
         );
     }

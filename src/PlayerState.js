@@ -202,6 +202,12 @@ export class PlayerState {
         this.windowStartNorm = 0;
         this.windowEndNorm = 1;
 
+        // ── Vertical frequency zoom viewport ──
+        /** @type {number | null} */
+        this._freqViewMin = null;
+        /** @type {number | null} */
+        this._freqViewMax = null;
+
         // ── Playback toggles ──
         this.followMode = 'follow'; // 'free' | 'follow' | 'smooth'
         this.followPlayback = true;
@@ -542,6 +548,11 @@ export class PlayerState {
             maxFreqSelect:          q('maxFreqSelect'),
             colorSchemeSelect:      q('colorSchemeSelect'),
             freqLabels:             q('freqLabels'),
+            freqZoomResetBtn:       q('freqZoomResetBtn'),
+            freqAxisSpacer:         q('freqAxisSpacer'),
+            freqZoomSlider:         q('freqZoomSlider'),
+            freqScrollbar:          q('freqScrollbar'),
+            freqScrollbarThumb:     q('freqScrollbarThumb'),
             volumeToggleBtn:        q('volumeToggleBtn'),
             volumeIcon:             q('volumeIcon'),
             volumeWaves:            q('volumeWaves'),
@@ -1787,6 +1798,16 @@ export class PlayerState {
 
         const effectiveSpectrogramHeight = this._getEffectiveSpectrogramHeight();
 
+        // Compute frequency viewport crop for vertical zoom
+        let freqViewSrcCrop = null;
+        if (this._freqViewMin != null && this._freqViewMax != null) {
+            const baseH = this.spectrogramBaseCanvas.height;
+            const srcYTop = this.coords.frequencyToBaseYFraction(this._freqViewMax) * baseH;
+            const srcYBottom = this.coords.frequencyToBaseYFraction(this._freqViewMin) * baseH;
+            const srcH = Math.max(1, srcYBottom - srcYTop);
+            freqViewSrcCrop = { srcY: srcYTop, srcH };
+        }
+
         renderSpectrogram({
             duration: this.audioBuffer.duration,
             spectrogramCanvas: this.d.spectrogramCanvas,
@@ -1797,6 +1818,7 @@ export class PlayerState {
             frameRate: PERCH_FRAME_RATE,
             spectrogramFrames: this.spectrogramFrames,
             hopSize: this.spectrogramHopSize,
+            freqViewSrcCrop,
         });
 
         this._updateCoords();
@@ -1810,6 +1832,8 @@ export class PlayerState {
             if (!this.audioBuffer) return;
             if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
             this._drawMainWaveform();
+            // Coords are now in sync with actual canvas dims — notify label layers.
+            this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
         });
     }
 
@@ -1955,11 +1979,12 @@ export class PlayerState {
                 // and coords are up-to-date when listeners (e.g. label layers) run.
                 if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
                 this._drawMainWaveform();
+                this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
             } else {
                 this._updateCoords();
+                // zoomchange deferred — canvas dims are stale until the
+                // batched _requestSpectrogramRedraw completes the actual redraw.
             }
-
-            this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
         }
 
         this._setLinkedScrollLeft(bounded);
@@ -2064,7 +2089,7 @@ export class PlayerState {
         const duration = Math.max(0.001, this.audioBuffer?.duration || 0.001);
         const vw = Math.max(1, this._getViewportWidth());
         const minPps = Math.max(1, Number(this.d.zoomSlider?.min || 20));
-        const maxPps = Math.max(minPps, Number(this.d.zoomSlider?.max || 600));
+        const maxPps = Math.max(minPps, Number(this.d.zoomSlider?.max || 450));
         const minSpanNorm = Math.max(MIN_WINDOW_NORM, (vw / maxPps) / duration);
         const maxSpanNorm = Math.min(1, (vw / minPps) / duration);
         return {
@@ -2186,16 +2211,42 @@ export class PlayerState {
 
         if (!this.interaction.enter('viewport-pan')) return;
         this.interaction.ctx.panStartX = event.clientX;
+        this.interaction.ctx.panStartY = event.clientY;
         this.interaction.ctx.panStartScroll = source === 'waveform'
             ? this.d.waveformWrapper.scrollLeft
             : this.d.canvasWrapper.scrollLeft;
+        this.interaction.ctx.panStartFreqViewMin = this._freqViewMin;
+        this.interaction.ctx.panStartFreqViewMax = this._freqViewMax;
+        this.interaction.ctx.panIsMiddle = event.button === 1;
+        this.interaction.ctx.panSource = source;
         document.body.style.cursor = 'grabbing';
     }
 
-    _updateViewportPan(clientX) {
+    _updateViewportPan(clientX, clientY) {
         const dx = clientX - this.interaction.ctx.panStartX;
-        this.interaction.ctx.panSuppressClick = Math.abs(dx) > 3;
+        const dy = clientY - (this.interaction.ctx.panStartY || 0);
+        this.interaction.ctx.panSuppressClick = Math.abs(dx) > 3 || Math.abs(dy) > 3;
         this._setLinkedScrollLeft(this.interaction.ctx.panStartScroll - dx);
+
+        // Middle mouse: also pan vertically
+        if (this.interaction.ctx.panIsMiddle && this.interaction.ctx.panSource !== 'waveform'
+            && this._showSpectrogram && (this._freqViewMin != null || this._freqViewMax != null)) {
+            const wrapper = this.d.canvasWrapper;
+            const height = wrapper?.getBoundingClientRect().height || 1;
+            const boundedMax = this.coords.boundedMaxFreq;
+            const startMin = this.interaction.ctx.panStartFreqViewMin ?? 0;
+            const startMax = this.interaction.ctx.panStartFreqViewMax ?? boundedMax;
+            const range = startMax - startMin;
+            // dy positive = mouse moves down = pan view down (show higher freqs)
+            const deltaHz = (dy / height) * range;
+            let newMin = startMin + deltaHz;
+            let newMax = startMax + deltaHz;
+            if (newMin < 0) { newMin = 0; newMax = range; }
+            if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+            this._freqViewMin = Math.max(0, newMin);
+            this._freqViewMax = Math.min(boundedMax, newMax);
+            this._applyFreqViewChange();
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -2218,10 +2269,161 @@ export class PlayerState {
             return;
         }
 
+        // Shift + Wheel = vertical frequency zoom (spectrogram only)
+        if (event.shiftKey && source !== 'waveform' && this._showSpectrogram) {
+            event.preventDefault();
+            const localY = event.clientY - rect.top;
+            const canvasY = (localY / Math.max(1, rect.height))
+                * (this.d.spectrogramCanvas?.height || rect.height);
+            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
+            const zoomIn = event.deltaY < 0;
+            this._verticalFreqZoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
+            return;
+        }
+
         if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
             event.preventDefault();
             this._setLinkedScrollLeft(Math.max(0, wrapper.scrollLeft + event.deltaY));
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    //  Vertical Frequency Zoom
+    // ═════════════════════════════════════════════════════════════════
+
+    _verticalFreqZoom(factor, anchorFreq) {
+        const boundedMax = this.coords.boundedMaxFreq;
+        const currentMin = this._freqViewMin ?? 0;
+        const currentMax = this._freqViewMax ?? boundedMax;
+        const anchor = Math.max(currentMin, Math.min(currentMax, anchorFreq));
+
+        // Scale distances from anchor
+        let newMin = anchor - (anchor - currentMin) / factor;
+        let newMax = anchor + (currentMax - anchor) / factor;
+
+        // Enforce minimum range (100 Hz or 5% of full range)
+        const minRange = Math.max(100, boundedMax * 0.05);
+        if (newMax - newMin < minRange) {
+            const mid = (newMin + newMax) / 2;
+            newMin = mid - minRange / 2;
+            newMax = mid + minRange / 2;
+        }
+
+        // Clamp to valid range
+        newMin = Math.max(0, newMin);
+        newMax = Math.min(boundedMax, newMax);
+
+        // If (near) full range, reset viewport
+        if (newMin <= 1 && newMax >= boundedMax - 1) {
+            this._freqViewMin = null;
+            this._freqViewMax = null;
+        } else {
+            this._freqViewMin = newMin;
+            this._freqViewMax = newMax;
+        }
+
+        this._applyFreqViewChange();
+    }
+
+    _resetFreqView() {
+        if (this._freqViewMin == null && this._freqViewMax == null) return;
+        this._freqViewMin = null;
+        this._freqViewMax = null;
+        this._applyFreqViewChange();
+    }
+
+    /** Shift the frequency viewport up/down by deltaHz (positive = up). */
+    _verticalFreqPan(deltaHz) {
+        const boundedMax = this.coords.boundedMaxFreq;
+        const currentMin = this._freqViewMin ?? 0;
+        const currentMax = this._freqViewMax ?? boundedMax;
+        if (currentMin <= 0 && currentMax >= boundedMax) return; // not zoomed
+
+        let newMin = currentMin + deltaHz;
+        let newMax = currentMax + deltaHz;
+        const range = currentMax - currentMin;
+
+        // Clamp so viewport stays within [0, boundedMax]
+        if (newMin < 0) { newMin = 0; newMax = range; }
+        if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+
+        this._freqViewMin = Math.max(0, newMin);
+        this._freqViewMax = Math.min(boundedMax, newMax);
+        this._applyFreqViewChange();
+    }
+
+    /** Set Y-zoom to a specific level (0 = full range, 100 = max zoom). */
+    _setFreqZoomFromSlider(sliderValue) {
+        const boundedMax = this.coords.boundedMaxFreq;
+        if (sliderValue <= 0) {
+            this._resetFreqView();
+            return;
+        }
+        // Exponential mapping: 0→full, 100→5% of full range
+        const fraction = Math.max(0.05, 1 - sliderValue / 100 * 0.95);
+        const range = boundedMax * fraction;
+
+        // Keep centered on current midpoint or center of full range
+        const currentMid = (this._freqViewMin != null && this._freqViewMax != null)
+            ? (this._freqViewMin + this._freqViewMax) / 2
+            : boundedMax / 2;
+        let newMin = currentMid - range / 2;
+        let newMax = currentMid + range / 2;
+        if (newMin < 0) { newMin = 0; newMax = range; }
+        if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+
+        this._freqViewMin = newMin;
+        this._freqViewMax = newMax;
+        this._applyFreqViewChange();
+    }
+
+    _applyFreqViewChange() {
+        this._updateCoords();
+        this._drawSpectrogram();
+        this._createFrequencyLabels();
+        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
+        // Toggle Y-zoom reset button visibility
+        const btn = this.d.freqZoomResetBtn;
+        if (btn) btn.hidden = this._freqViewMin == null;
+        // Update scrollbar
+        this._updateFreqScrollbar();
+        // Sync slider
+        this._syncFreqZoomSlider();
+        // Notify annotation layers so they re-render with updated coords
+        this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
+    }
+
+    _updateFreqScrollbar() {
+        const bar = this.d.freqScrollbar;
+        const thumb = this.d.freqScrollbarThumb;
+        if (!bar || !thumb) return;
+
+        if (this._freqViewMin == null || this._freqViewMax == null) {
+            bar.hidden = true;
+            return;
+        }
+        bar.hidden = false;
+        const boundedMax = this.coords.boundedMaxFreq;
+        const viewRange = this._freqViewMax - this._freqViewMin;
+        const thumbFrac = Math.min(1, viewRange / boundedMax);
+        // top=0 is highest freq, bottom=100% is 0 Hz
+        const topFrac = 1 - this._freqViewMax / boundedMax;
+        thumb.style.height = `${Math.max(8, thumbFrac * 100)}%`;
+        thumb.style.top = `${topFrac * 100}%`;
+    }
+
+    _syncFreqZoomSlider() {
+        const slider = this.d.freqZoomSlider;
+        if (!slider) return;
+        if (this._freqViewMin == null || this._freqViewMax == null) {
+            slider.value = '0';
+            return;
+        }
+        const boundedMax = this.coords.boundedMaxFreq;
+        const fraction = (this._freqViewMax - this._freqViewMin) / boundedMax;
+        // Inverse of exponential mapping: fraction = 1 - val/100*0.95
+        const val = (1 - fraction) / 0.95 * 100;
+        slider.value = String(Math.round(Math.max(0, Math.min(100, val))));
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -2292,6 +2494,8 @@ export class PlayerState {
             hopSize: this.spectrogramHopSize || 0,
             freqRange: extCfg?.freqRange || null,
             freqScale: extCfg?.freqScale || null,
+            freqViewMin: this._freqViewMin,
+            freqViewMax: this._freqViewMax,
         });
     }
 
@@ -3277,12 +3481,121 @@ export class PlayerState {
         on(this.d.followToggleBtn, 'click', () => this._cycleFollowMode());
         on(this.d.loopToggleBtn, 'click', () => { this.loopPlayback = !this.loopPlayback; this._updateToggleButtons(); });
         on(this.d.crosshairToggleBtn, 'click', () => this._toggleCrosshair());
+        on(this.d.freqZoomResetBtn, 'click', () => this._resetFreqView());
         on(this.d.fitViewBtn, 'click', () => this._fitEntireTrackInView());
         on(this.d.resetViewBtn, 'click', () => {
             this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, true);
             this._setLinkedScrollLeft(0);
+            this._resetFreqView();
             this._syncOverviewWindowToViewport();
         });
+
+        // ── Freq axis: left-drag = vertical pan ──
+        {
+            let dragging = false;
+            let startY = 0;
+            let startMin = 0;
+            let startMax = 0;
+            const onMove = (e) => {
+                if (!dragging) return;
+                const spacer = this.d.freqAxisSpacer;
+                const spacerH = spacer.getBoundingClientRect().height;
+                const dy = e.clientY - startY;
+                const boundedMax = this.coords.boundedMaxFreq;
+                const range = startMax - startMin;
+                const deltaHz = (dy / spacerH) * range;
+                let newMin = startMin + deltaHz;
+                let newMax = startMax + deltaHz;
+                if (newMin < 0) { newMin = 0; newMax = range; }
+                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+                this._freqViewMin = Math.max(0, newMin);
+                this._freqViewMax = Math.min(boundedMax, newMax);
+                this._applyFreqViewChange();
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                document.body.style.cursor = '';
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+            };
+            on(this.d.freqAxisSpacer, 'pointerdown', (e) => {
+                if (e.button !== 0 || !this._showSpectrogram) return;
+                if (this._freqViewMin == null && this._freqViewMax == null) return;
+                e.preventDefault();
+                dragging = true;
+                startY = e.clientY;
+                startMin = this._freqViewMin ?? 0;
+                startMax = this._freqViewMax ?? this.coords.boundedMaxFreq;
+                document.body.style.cursor = 'ns-resize';
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
+
+        // ── Freq axis: wheel = vertical zoom ──
+        on(this.d.freqAxisSpacer, 'wheel', (e) => {
+            if (!this.audioBuffer || !this._showSpectrogram) return;
+            e.preventDefault();
+            const rect = this.d.freqAxisSpacer.getBoundingClientRect();
+            const localY = e.clientY - rect.top;
+            // Map pixel Y to frequency using canvas coordinates
+            const canvasH = this.d.spectrogramCanvas?.height || rect.height;
+            const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
+            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
+            const zoomIn = e.deltaY < 0;
+            this._verticalFreqZoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
+        }, { passive: false });
+
+        // ── Freq zoom slider ──
+        on(this.d.freqZoomSlider, 'input', (e) => {
+            this._setFreqZoomFromSlider(parseInt(e.target.value, 10));
+        });
+
+        // ── Freq scrollbar drag ──
+        {
+            let dragging = false;
+            let startY = 0;
+            let startMin = 0;
+            let startMax = 0;
+            const onMove = (e) => {
+                if (!dragging) return;
+                const bar = this.d.freqScrollbar;
+                const barH = bar.getBoundingClientRect().height;
+                const dy = e.clientY - startY;
+                const boundedMax = this.coords.boundedMaxFreq;
+                const range = startMax - startMin;
+                // dy positive = drag down = lower freqs
+                const deltaFrac = dy / barH;
+                const deltaHz = deltaFrac * boundedMax;
+                let newMin = startMin - deltaHz;
+                let newMax = startMax - deltaHz;
+                if (newMin < 0) { newMin = 0; newMax = range; }
+                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+                this._freqViewMin = Math.max(0, newMin);
+                this._freqViewMax = Math.min(boundedMax, newMax);
+                this._applyFreqViewChange();
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                this.d.freqScrollbar?.classList.remove('active');
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+            };
+            on(this.d.freqScrollbarThumb, 'pointerdown', (e) => {
+                if (this._freqViewMin == null) return;
+                e.preventDefault();
+                e.stopPropagation();
+                dragging = true;
+                startY = e.clientY;
+                startMin = this._freqViewMin ?? 0;
+                startMax = this._freqViewMax ?? this.coords.boundedMaxFreq;
+                this.d.freqScrollbar?.classList.add('active');
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
 
         // ── Settings ──
         on(this.d.scaleSelect, 'change', () => {
@@ -3333,12 +3646,15 @@ export class PlayerState {
         });
         on(this.d.maxFreqSelect, 'change', () => {
             if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
+                this._freqViewMin = null;
+                this._freqViewMax = null;
                 this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
                 this._updateCoords();
                 this._createFrequencyLabels();
                 this._buildSpectrogramGrayscale();  // maxFreq affects spatial layout
                 this._buildSpectrogramBaseImage();
                 this._drawSpectrogram();
+                if (this.d.freqZoomResetBtn) this.d.freqZoomResetBtn.hidden = true;
             }
         });
         on(this.d.colorSchemeSelect, 'change', () => {
@@ -3390,6 +3706,9 @@ export class PlayerState {
 
         // ── Canvas interaction ──
         on(this.d.canvasWrapper, 'click', (e) => this._handleCanvasClick(e));
+        on(this.d.canvasWrapper, 'dblclick', (e) => {
+            if (e.shiftKey) { e.preventDefault(); this._resetFreqView(); }
+        });
         on(this.d.canvasWrapper, 'mousemove', (e) => this._updateCrosshair(e));
         on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
         on(this.d.waveformWrapper, 'click', (e) => this._handleWaveformClick(e));
@@ -3451,7 +3770,7 @@ export class PlayerState {
         // ── Document-level pointer ──
         on(document, 'pointermove', (e) => {
             if (this.interaction.isViewResize) { this._updateViewResize(e.clientY); return; }
-            if (this.interaction.isDraggingViewport) this._updateViewportPan(e.clientX);
+            if (this.interaction.isDraggingViewport) this._updateViewportPan(e.clientX, e.clientY);
             if (this.interaction.isDraggingPlayhead) this._seekFromClientX(e.clientX, this.interaction.ctx.playheadSource);
             if (this.interaction.isOverviewDrag) this._updateOverviewDrag(e.clientX);
         });
@@ -3513,6 +3832,7 @@ export class PlayerState {
             this._queueCompactToolbarLayoutRefresh();
             if (!this._shouldCompactToolbarBeActive()) this._setCompactToolbarOpen(false);
             if (!this.audioBuffer) return;
+            this._drawSpectrogram();
             this._drawMainWaveform();
             this._drawOverviewWaveform();
             this._syncOverviewWindowToViewport();
