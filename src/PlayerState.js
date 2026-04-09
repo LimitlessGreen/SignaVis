@@ -510,8 +510,16 @@ export class PlayerState {
             presetSelect:           q('presetSelect'),
             presetSaveBtn:          q('presetSaveBtn'),
             presetFavBtn:           q('presetFavBtn'),
-            presetDeleteBtn:        q('presetDeleteBtn'),
             presetManageBtn:        q('presetManageBtn'),
+            presetSaveRow:          q('presetSaveRow'),
+            presetSaveInput:        q('presetSaveInput'),
+            presetSaveConfirm:      q('presetSaveConfirm'),
+            presetSaveCancel:       q('presetSaveCancel'),
+            presetManagerPanel:     q('presetManagerPanel'),
+            presetManagerList:      q('presetManagerList'),
+            presetImportBtn:        q('presetImportBtn'),
+            presetExportBtn:        q('presetExportBtn'),
+            presetStatus:           q('presetStatus'),
             nMelsInput:             q('nMelsInput'),
             pcenGainInput:          q('pcenGainInput'),
             pcenBiasInput:          q('pcenBiasInput'),
@@ -2572,12 +2580,22 @@ export class PlayerState {
     }
 
     _promptSaveUserPreset() {
-        const name = prompt('Preset name:');
-        if (!name || !name.trim()) return;
-        const clean = name.trim();
-        // Disallow overwriting built-in presets
+        if (!this.d.presetSaveRow) return;
+        const isOpen = !this.d.presetSaveRow.hidden;
+        this.d.presetSaveRow.hidden = isOpen;
+        if (!isOpen) {
+            const inp = this.d.presetSaveInput;
+            if (inp) { inp.value = ''; inp.focus(); }
+        }
+    }
+
+    _confirmSaveUserPreset() {
+        const inp = this.d.presetSaveInput;
+        if (!inp) return;
+        const clean = (inp.value || '').trim();
+        if (!clean) return;
         if (DSP_PROFILES[clean.toLowerCase()]) {
-            alert(`"${clean}" is a built-in preset and cannot be overwritten.`);
+            this._showPresetStatus('Built-in name — choose another', true);
             return;
         }
         const presets = this._loadUserPresets();
@@ -2586,20 +2604,13 @@ export class PlayerState {
         this._populatePresetDropdown();
         if (this.d.presetSelect) this.d.presetSelect.value = `user:${clean}`;
         this._updatePresetButtons();
+        this.d.presetSaveRow.hidden = true;
+        this._renderPresetManagerList();
+        this._showPresetStatus(`Saved "${clean}"`);
     }
 
-    _deleteSelectedUserPreset() {
-        const val = this.d.presetSelect?.value || '';
-        if (!val.startsWith('user:')) return;
-        const presetName = val.slice(5);
-        if (!confirm(`Delete preset "${presetName}"?`)) return;
-        const presets = this._loadUserPresets();
-        delete presets[presetName];
-        this._saveUserPresetsToStorage(presets);
-        // Clear favourite if it was this preset
-        if (this._getFavouritePreset() === val) this._setFavouritePreset('');
-        this._populatePresetDropdown();
-        this._updatePresetButtons();
+    _cancelSaveUserPreset() {
+        if (this.d.presetSaveRow) this.d.presetSaveRow.hidden = true;
     }
 
     _toggleFavouritePreset() {
@@ -2607,7 +2618,6 @@ export class PlayerState {
         if (!val) return;
         const current = this._getFavouritePreset();
         if (current === val) {
-            // Un-favourite
             this._setFavouritePreset('');
         } else {
             this._setFavouritePreset(val);
@@ -2615,170 +2625,171 @@ export class PlayerState {
         this._populatePresetDropdown();
         if (this.d.presetSelect) this.d.presetSelect.value = val;
         this._updatePresetButtons();
+        this._renderPresetManagerList();
     }
 
     _updatePresetButtons() {
         const val = this.d.presetSelect?.value || '';
-        const isUser = val.startsWith('user:');
         const isAny = val !== '';
-        if (this.d.presetDeleteBtn) this.d.presetDeleteBtn.disabled = !isUser;
         if (this.d.presetFavBtn) {
             this.d.presetFavBtn.disabled = !isAny;
             const isFav = isAny && this._getFavouritePreset() === val;
-            this.d.presetFavBtn.textContent = isFav ? '⭐' : '☆';
+            this.d.presetFavBtn.classList.toggle('active', isFav);
             this.d.presetFavBtn.title = isFav ? 'Remove as default preset' : 'Set as default preset';
         }
     }
 
-    // ── Preset Manager Modal ────────────────────────────────────────
+    /** Show a transient status message in the preset manager panel. */
+    _showPresetStatus(msg, isError = false) {
+        const el = this.d.presetStatus;
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.toggle('pm-status-error', isError);
+        el.classList.remove('pm-status-visible');
+        // Force reflow for animation
+        void el.offsetWidth;
+        el.classList.add('pm-status-visible');
+        clearTimeout(this._pmStatusTimer);
+        this._pmStatusTimer = setTimeout(() => el.classList.remove('pm-status-visible'), 2500);
+    }
+
+    // ── Preset Manager (inline panel) ─────────────────────────────────
 
     _openPresetManager() {
-        if (this._pmBackdrop) return; // already open
-        const backdrop = document.createElement('div');
-        backdrop.className = 'preset-manager-backdrop';
-        const panel = document.createElement('div');
-        panel.className = 'preset-manager';
-
-        // Header
-        const header = document.createElement('div');
-        header.className = 'preset-manager-header';
-        const h3 = document.createElement('h3');
-        h3.textContent = 'Preset Manager';
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'preset-manager-close';
-        closeBtn.textContent = '✕';
-        closeBtn.onclick = () => this._closePresetManager();
-        header.append(h3, closeBtn);
-
-        // List
-        const list = document.createElement('div');
-        list.className = 'preset-manager-list';
-
-        // Footer
-        const footer = document.createElement('div');
-        footer.className = 'preset-manager-footer';
-        const exportBtn = document.createElement('button');
-        exportBtn.textContent = '⬇ Export';
-        exportBtn.title = 'Export all user presets as JSON';
-        exportBtn.onclick = () => this._exportPresets();
-        const importBtn = document.createElement('button');
-        importBtn.textContent = '⬆ Import';
-        importBtn.title = 'Import presets from JSON file';
-        importBtn.onclick = () => this._importPresets();
-        footer.append(exportBtn, importBtn);
-
-        panel.append(header, list, footer);
-        backdrop.appendChild(panel);
-        backdrop.addEventListener('mousedown', (e) => {
-            if (e.target === backdrop) this._closePresetManager();
-        });
-
-        this._pmBackdrop = backdrop;
-        this._pmList = list;
-        this.container.appendChild(backdrop);
-        this._renderPresetManagerList();
+        if (!this.d.presetManagerPanel) return;
+        const isOpen = !this.d.presetManagerPanel.hidden;
+        this.d.presetManagerPanel.hidden = isOpen;
+        this.d.presetManageBtn?.classList.toggle('active', !isOpen);
+        if (!isOpen) this._renderPresetManagerList();
     }
 
     _closePresetManager() {
-        if (this._pmBackdrop) {
-            this._pmBackdrop.remove();
-            this._pmBackdrop = null;
-            this._pmList = null;
-        }
+        if (this.d.presetManagerPanel) this.d.presetManagerPanel.hidden = true;
+        this.d.presetManageBtn?.classList.remove('active');
     }
 
     _renderPresetManagerList() {
-        const list = this._pmList;
+        const list = this.d.presetManagerList;
         if (!list) return;
         list.innerHTML = '';
         const fav = this._getFavouritePreset();
+        const starSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+        const starFilledSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+        const trashSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+        const pencilSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 00-3.986-3.987L3.842 16.174a2 2 0 00-.5.83l-1.321 4.352a.5.5 0 00.62.62l4.352-1.321a2 2 0 00.83-.497z"/></svg>`;
 
         // Built-in presets
         for (const name of Object.keys(DSP_PROFILES)) {
             const key = name;
+            const isFav = fav === key;
             const row = document.createElement('div');
-            row.className = 'preset-manager-item';
-            const favIcon = document.createElement('span');
-            favIcon.className = 'pm-fav';
-            favIcon.textContent = fav === key ? '⭐' : '☆';
-            favIcon.style.cursor = 'pointer';
-            favIcon.title = 'Set as default';
-            favIcon.onclick = () => { this._setFavouritePreset(fav === key ? '' : key); this._renderPresetManagerList(); this._populatePresetDropdown(); this._updatePresetButtons(); };
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'pm-name';
-            nameSpan.textContent = name.charAt(0).toUpperCase() + name.slice(1);
-            const tag = document.createElement('span');
-            tag.className = 'pm-builtin';
-            tag.textContent = 'built-in';
-            row.append(favIcon, nameSpan, tag);
+            row.className = 'pm-item';
+            row.innerHTML = `
+                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
+                <span class="pm-name" title="Click to apply">${name.charAt(0).toUpperCase() + name.slice(1)}</span>
+                <span class="pm-badge">built-in</span>`;
+            /** @type {HTMLElement} */ (row.querySelector('.pm-fav-btn')).onclick = () => {
+                this._setFavouritePreset(isFav ? '' : key);
+                this._populatePresetDropdown(); this._updatePresetButtons();
+                this._renderPresetManagerList();
+            };
+            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).onclick = () => {
+                this._applyPreset(key);
+                this._persistCurrentSettings();
+            };
             list.appendChild(row);
         }
 
         // User presets
         const userPresets = this._loadUserPresets();
-        const userNames = Object.keys(userPresets);
-        if (userNames.length) {
-            for (const name of userNames) {
-                const key = `user:${name}`;
-                const row = document.createElement('div');
-                row.className = 'preset-manager-item';
-                const favIcon = document.createElement('span');
-                favIcon.className = 'pm-fav';
-                favIcon.textContent = fav === key ? '⭐' : '☆';
-                favIcon.style.cursor = 'pointer';
-                favIcon.title = 'Set as default';
-                favIcon.onclick = () => { this._setFavouritePreset(fav === key ? '' : key); this._renderPresetManagerList(); this._populatePresetDropdown(); this._updatePresetButtons(); };
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'pm-name';
-                nameSpan.textContent = name;
-                const renameBtn = document.createElement('button');
-                renameBtn.textContent = '✏️';
-                renameBtn.title = 'Rename';
-                renameBtn.onclick = () => this._renameUserPreset(name);
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'pm-delete';
-                deleteBtn.textContent = '🗑';
-                deleteBtn.title = 'Delete';
-                deleteBtn.onclick = () => this._deleteUserPresetFromManager(name);
-                row.append(favIcon, nameSpan, renameBtn, deleteBtn);
-                list.appendChild(row);
-            }
+        for (const name of Object.keys(userPresets)) {
+            const key = `user:${name}`;
+            const isFav = fav === key;
+            const row = document.createElement('div');
+            row.className = 'pm-item';
+            row.innerHTML = `
+                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
+                <span class="pm-name" title="Click to apply"></span>
+                <button class="pm-icon-btn pm-rename-btn" title="Rename">${pencilSvg}</button>
+                <button class="pm-icon-btn pm-delete-btn" title="Delete">${trashSvg}</button>`;
+            // Use textContent to prevent XSS from preset names
+            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).textContent = name;
+            /** @type {HTMLElement} */ (row.querySelector('.pm-fav-btn')).onclick = () => {
+                this._setFavouritePreset(isFav ? '' : key);
+                this._populatePresetDropdown(); this._updatePresetButtons();
+                this._renderPresetManagerList();
+            };
+            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).onclick = () => {
+                this._applyPreset(key);
+                this._persistCurrentSettings();
+            };
+            /** @type {HTMLElement} */ (row.querySelector('.pm-rename-btn')).onclick = () => this._inlineRenamePreset(name, row);
+            const delBtn = /** @type {HTMLElement} */ (row.querySelector('.pm-delete-btn'));
+            delBtn.onclick = () => {
+                if (delBtn.classList.contains('pm-confirm-delete')) {
+                    // Second click — confirmed
+                    this._deleteUserPresetDirect(name);
+                } else {
+                    // First click — arm confirmation
+                    delBtn.classList.add('pm-confirm-delete');
+                    delBtn.title = 'Click again to confirm';
+                    setTimeout(() => { delBtn.classList.remove('pm-confirm-delete'); delBtn.title = 'Delete'; }, 2000);
+                }
+            };
+            list.appendChild(row);
         }
-        if (!Object.keys(DSP_PROFILES).length && !userNames.length) {
+
+        if (!Object.keys(DSP_PROFILES).length && !Object.keys(userPresets).length) {
             const empty = document.createElement('div');
-            empty.className = 'preset-manager-empty';
+            empty.className = 'pm-empty';
             empty.textContent = 'No presets yet.';
             list.appendChild(empty);
         }
     }
 
-    _renameUserPreset(oldName) {
-        const newName = prompt('New name:', oldName);
-        if (!newName || !newName.trim() || newName.trim() === oldName) return;
-        const clean = newName.trim();
-        if (DSP_PROFILES[clean.toLowerCase()]) {
-            alert(`"${clean}" is a built-in preset name.`);
-            return;
-        }
-        const presets = this._loadUserPresets();
-        if (presets[clean]) {
-            alert(`A preset named "${clean}" already exists.`);
-            return;
-        }
-        presets[clean] = presets[oldName];
-        delete presets[oldName];
-        this._saveUserPresetsToStorage(presets);
-        // Update favourite if renamed
-        const oldKey = `user:${oldName}`;
-        const newKey = `user:${clean}`;
-        if (this._getFavouritePreset() === oldKey) this._setFavouritePreset(newKey);
-        this._populatePresetDropdown();
-        this._updatePresetButtons();
-        this._renderPresetManagerList();
+    /** Replace the name span with an inline input for renaming. */
+    _inlineRenamePreset(oldName, row) {
+        const nameSpan = row.querySelector('.pm-name');
+        if (!nameSpan || row.querySelector('.pm-rename-input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'pm-rename-input';
+        input.value = oldName;
+        input.maxLength = 40;
+        nameSpan.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const commit = () => {
+            const clean = (input.value || '').trim();
+            if (!clean || clean === oldName) { this._renderPresetManagerList(); return; }
+            if (DSP_PROFILES[clean.toLowerCase()]) {
+                this._showPresetStatus('Built-in name — choose another', true);
+                this._renderPresetManagerList(); return;
+            }
+            const presets = this._loadUserPresets();
+            if (presets[clean]) {
+                this._showPresetStatus(`"${clean}" already exists`, true);
+                this._renderPresetManagerList(); return;
+            }
+            presets[clean] = presets[oldName];
+            delete presets[oldName];
+            this._saveUserPresetsToStorage(presets);
+            const oldKey = `user:${oldName}`;
+            const newKey = `user:${clean}`;
+            if (this._getFavouritePreset() === oldKey) this._setFavouritePreset(newKey);
+            this._populatePresetDropdown();
+            this._updatePresetButtons();
+            this._renderPresetManagerList();
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') this._renderPresetManagerList();
+        });
+        input.addEventListener('blur', commit);
     }
 
-    _deleteUserPresetFromManager(name) {
-        if (!confirm(`Delete preset "${name}"?`)) return;
+    _deleteUserPresetDirect(name) {
         const presets = this._loadUserPresets();
         delete presets[name];
         this._saveUserPresetsToStorage(presets);
@@ -2801,6 +2812,7 @@ export class PlayerState {
         a.download = 'audio-workbench-presets.json';
         a.click();
         URL.revokeObjectURL(url);
+        this._showPresetStatus('Exported');
     }
 
     _importPresets() {
@@ -2815,49 +2827,31 @@ export class PlayerState {
                 try {
                     const data = JSON.parse(/** @type {string} */ (reader.result));
                     if (!data || typeof data !== 'object' || typeof data.presets !== 'object' || Array.isArray(data.presets)) {
-                        alert('Invalid preset file format.');
-                        return;
+                        this._showPresetStatus('Invalid preset file', true); return;
                     }
-                    // Validate each preset is an object
                     for (const [k, v] of Object.entries(data.presets)) {
                         if (!v || typeof v !== 'object' || Array.isArray(v)) {
-                            alert(`Invalid preset entry: "${k}"`);
-                            return;
+                            this._showPresetStatus(`Invalid entry: "${k}"`, true); return;
                         }
                     }
                     const existing = this._loadUserPresets();
-                    const incoming = Object.keys(data.presets);
-                    const conflicts = incoming.filter(k => existing[k]);
-                    let mode = 'merge';
-                    if (conflicts.length) {
-                        const answer = confirm(
-                            `${incoming.length} preset(s) found, ${conflicts.length} name conflict(s).\n\n` +
-                            `OK = overwrite duplicates, Cancel = skip duplicates`
-                        );
-                        mode = answer ? 'overwrite' : 'skip';
-                    }
                     let imported = 0;
                     for (const [k, v] of Object.entries(data.presets)) {
-                        if (DSP_PROFILES[k.toLowerCase()]) continue; // never overwrite built-in
-                        if (existing[k] && mode === 'skip') continue;
+                        if (DSP_PROFILES[k.toLowerCase()]) continue;
                         existing[k] = v;
                         imported++;
                     }
                     this._saveUserPresetsToStorage(existing);
-                    // Optionally restore favourite
-                    if (data.favourite && typeof data.favourite === 'string') {
-                        const favKey = data.favourite;
-                        if (favKey.startsWith('user:')) {
-                            const favName = favKey.slice(5);
-                            if (existing[favName]) this._setFavouritePreset(favKey);
-                        }
+                    if (data.favourite && typeof data.favourite === 'string' && data.favourite.startsWith('user:')) {
+                        const favName = data.favourite.slice(5);
+                        if (existing[favName]) this._setFavouritePreset(data.favourite);
                     }
                     this._populatePresetDropdown();
                     this._updatePresetButtons();
                     this._renderPresetManagerList();
-                    alert(`Imported ${imported} preset(s).`);
+                    this._showPresetStatus(`Imported ${imported} preset(s)`);
                 } catch {
-                    alert('Failed to parse preset file.');
+                    this._showPresetStatus('Failed to parse file', true);
                 }
             };
             reader.readAsText(file);
@@ -2882,6 +2876,11 @@ export class PlayerState {
             p = this._loadLastSettings();
             // Show "Custom" in dropdown when restoring last-used settings
             if (p && this.d.presetSelect) this.d.presetSelect.value = '';
+        }
+        // Fall back to default built-in preset so controls match the dropdown
+        if (!p) {
+            const defaultKey = this.d.presetSelect?.value || 'birder';
+            p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
         // Set all controls to preset values (same as _applyPreset but skip regeneration)
@@ -3303,8 +3302,12 @@ export class PlayerState {
         });
         on(this.d.presetSaveBtn, 'click', () => this._promptSaveUserPreset());
         on(this.d.presetFavBtn, 'click', () => this._toggleFavouritePreset());
-        on(this.d.presetDeleteBtn, 'click', () => this._deleteSelectedUserPreset());
         on(this.d.presetManageBtn, 'click', () => this._openPresetManager());
+        on(this.d.presetSaveConfirm, 'click', () => this._confirmSaveUserPreset());
+        on(this.d.presetSaveCancel, 'click', () => this._cancelSaveUserPreset());
+        on(this.d.presetSaveInput, 'keydown', (e) => { if (e.key === 'Enter') this._confirmSaveUserPreset(); if (e.key === 'Escape') this._cancelSaveUserPreset(); });
+        on(this.d.presetImportBtn, 'click', () => this._importPresets());
+        on(this.d.presetExportBtn, 'click', () => this._exportPresets());
         on(this.d.qualitySlider, 'input', () => {
             this._applyQualityLevel(parseInt(this.d.qualitySlider.value, 10));
         });

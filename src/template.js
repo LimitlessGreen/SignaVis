@@ -145,15 +145,43 @@ export function createPlayerHTML(opts = {}) {
             </button>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section preset-section">
             <div class="settings-row">
                 <label class="settings-label">Preset</label>
                 <select data-aw="presetSelect" class="settings-select">
                 </select>
-                <button class="toolbar-btn mini-btn" data-aw="presetSaveBtn" title="Save current settings as preset">💾</button>
-                <button class="toolbar-btn mini-btn" data-aw="presetFavBtn" title="Set as default preset" disabled>⭐</button>
-                <button class="toolbar-btn mini-btn" data-aw="presetDeleteBtn" title="Delete user preset" disabled>🗑</button>
-                <button class="toolbar-btn mini-btn" data-aw="presetManageBtn" title="Manage presets…">📋</button>
+                <button class="toolbar-btn mini-btn" data-aw="presetFavBtn" title="Set as default preset" disabled>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+                <button class="toolbar-btn mini-btn" data-aw="presetSaveBtn" title="Save current settings as preset">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 011.4.6l3.8 3.8a2 2 0 01.6 1.4V19a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M17 21v-7a1 1 0 00-1-1H8a1 1 0 00-1 1v7"/><path d="M7 3v4a1 1 0 001 1h7"/></svg>
+                </button>
+                <button class="toolbar-btn mini-btn" data-aw="presetManageBtn" title="Manage presets">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M3 18h18"/><path d="M3 6h18"/></svg>
+                </button>
+            </div>
+            <div class="preset-save-row" data-aw="presetSaveRow" hidden>
+                <input type="text" data-aw="presetSaveInput" class="settings-input" placeholder="Preset name…" maxlength="40">
+                <button class="toolbar-btn mini-btn pm-confirm" data-aw="presetSaveConfirm" title="Save">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button class="toolbar-btn mini-btn" data-aw="presetSaveCancel" title="Cancel">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="preset-manager-inline" data-aw="presetManagerPanel" hidden>
+                <div class="preset-manager-list" data-aw="presetManagerList"></div>
+                <div class="pm-actions">
+                    <button class="pm-action-btn" data-aw="presetImportBtn" title="Import presets from JSON">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Import
+                    </button>
+                    <button class="pm-action-btn" data-aw="presetExportBtn" title="Export user presets as JSON">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Export
+                    </button>
+                    <span class="pm-status" data-aw="presetStatus"></span>
+                </div>
             </div>
         </div>
 

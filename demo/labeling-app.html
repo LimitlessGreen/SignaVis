@@ -17,7 +17,31 @@
       <input id="fileInput" type="file" accept="audio/*" hidden />
       <span class="tb-spacer"></span>
       <span class="tb-meta" id="selectionMeta"></span>
+      <span class="tb-sep"></span>
+      <button class="tb-btn tb-xc-key" id="xcKeyIndicator" type="button" title="Xeno-canto API Key">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="16.5" r="5.5"/></svg>
+        <span id="xcKeyLabel">XC API Key</span>
+      </button>
     </header>
+
+    <!-- API key missing modal -->
+    <div class="xc-nokey-backdrop" id="xcNokeyModal" hidden>
+      <div class="xc-nokey-dialog">
+        <h3>No Xeno-canto API Key configured</h3>
+        <p>Without an API key, labels from Xeno-canto cannot be loaded. The recording will play, but annotations will be missing.</p>
+        <p class="xc-nokey-hint">You can add your key at any time in the <strong>Xeno Canto</strong> tab in the sidebar.</p>
+        <div class="xc-nokey-input-row">
+          <input type="text" id="xcNokeyKeyInput" class="input" placeholder="Paste your API key here…" />
+        </div>
+        <label class="xc-nokey-dismiss-label">
+          <input type="checkbox" id="xcNokeyDismiss" /> Don't show again
+        </label>
+        <div class="xc-nokey-actions">
+          <button class="tb-btn" id="xcNokeySetKeyBtn" type="button" disabled>Save key</button>
+          <button class="tb-btn" id="xcNokeyCloseBtn" type="button">Continue without key</button>
+        </div>
+      </div>
+    </div>
 
     <div class="workspace" id="workspace">
       <!-- sidebar.js injects: activity-bar | sidebar | resize-handle here -->
@@ -121,13 +145,21 @@
     <!-- API Key -->
     <div class="panel-section">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
-      <input id="xcApiKeyInput" class="input" placeholder="XC API key" />
-      <p class="field-hint">Für Label-Import und Upload. Lokal gespeichert.</p>
+      <div class="xc-key-input-row">
+        <div class="xc-key-input-wrap">
+          <input id="xcApiKeyInput" class="input xc-key-masked" type="text" placeholder="XC API key" autocomplete="off" spellcheck="false" />
+          <button id="xcKeyToggleVisibility" class="xc-key-eye" type="button" title="Show key" tabindex="-1">
+            <svg class="xc-eye-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="xc-eye-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
+          </button>
+        </div>
+        <button id="xcApiSaveBtn" class="sidebar-action-btn" type="button">Save</button>
+      </div>
+      <p class="field-hint">Required for label import and upload. Stored locally.</p>
     </div>
 
     <!-- Actions -->
     <div class="panel-actions xc-actions">
-      <button class="sidebar-action-btn" id="xcApiSaveBtn" type="button">Save Key</button>
       <div class="xc-action-row">
         <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button">Export JSON</button>
         <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Upload to XC</button>
@@ -270,6 +302,9 @@
     };
 
     // ── Xeno-canto panel ──────────────────────────────────────────────
+    /** XC ID of the currently loaded recording (survives failed label import). */
+    let currentXcId = null;
+
     const xcPanel = new XenoCantoPanel({
       keyInput:        document.getElementById('xcApiKeyInput'),
       saveBtn:         document.getElementById('xcApiSaveBtn'),
@@ -279,6 +314,31 @@
       exportSetBtn:    document.getElementById('xcExportSetBtn'),
       statusEl:        document.getElementById('xcStatus'),
     });
+    xcPanel.onKeyChange = () => {
+      updateXcKeyIndicator();
+    };
+
+    // ── XC key visibility toggle (eye button inside input) ────────────
+    const xcKeyToggleVisibility = document.getElementById('xcKeyToggleVisibility');
+    const xcApiKeyInput = document.getElementById('xcApiKeyInput');
+    function updateXcKeySavedDisplay() {
+      // Populate input from saved key on load / after external save
+      if (xcPanel.apiKey && !xcApiKeyInput.value) {
+        xcApiKeyInput.value = xcPanel.apiKey;
+      }
+      const visible = !xcApiKeyInput.classList.contains('xc-key-masked');
+      xcKeyToggleVisibility.classList.toggle('revealed', visible);
+    }
+    xcKeyToggleVisibility.addEventListener('click', () => {
+      const isHidden = xcApiKeyInput.classList.contains('xc-key-masked');
+      xcApiKeyInput.classList.toggle('xc-key-masked', !isHidden);
+      xcKeyToggleVisibility.title = isHidden ? 'Hide key' : 'Show key';
+      xcKeyToggleVisibility.classList.toggle('revealed', isHidden);
+      xcApiKeyInput.focus();
+    });
+    // Pre-fill if key was previously saved
+    if (xcPanel.apiKey) xcApiKeyInput.value = xcPanel.apiKey;
+    updateXcKeySavedDisplay();
 
     // ── Helpers ───────────────────────────────────────────────────────
     function fmt(sec) { return Number(sec).toFixed(2) + 's'; }
@@ -435,6 +495,108 @@
       return { xcId: result.xcId, imported: result.labels.length };
     }
 
+    /** Check if an error looks like an invalid API key and guide the user. */
+    function isInvalidKeyError(err) {
+      const msg = String(err?.message || err || '').toLowerCase();
+      return msg.includes('invalid') || msg.includes('expired')
+        || msg.includes('401') || msg.includes('403')
+        || msg.includes('unauthorized') || msg.includes('forbidden');
+    }
+    function handleInvalidKeyError(err) {
+      if (!isInvalidKeyError(err)) return false;
+      selectionMeta.textContent = 'API key invalid — please update your key.';
+      sidebar.setActive('xc');
+      setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
+      return true;
+    }
+
+    // ── XC API key topbar indicator ────────────────────────────────────
+    const xcKeyIndicator = document.getElementById('xcKeyIndicator');
+    const xcKeyLabel = document.getElementById('xcKeyLabel');
+    function updateXcKeyIndicator() {
+      const hasKey = !!xcPanel.apiKey;
+      xcKeyIndicator.classList.toggle('has-key', hasKey);
+      xcKeyLabel.textContent = hasKey ? 'XC API ✓' : 'XC API Key';
+      xcKeyIndicator.title = hasKey ? 'Xeno-canto API Key active' : 'Set Xeno-canto API Key';
+    }
+    updateXcKeyIndicator();
+    xcKeyIndicator.addEventListener('click', () => {
+      sidebar.setActive('xc');
+      setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
+    });
+
+    // ── XC no-key modal ───────────────────────────────────────────────
+    const XC_NOKEY_DISMISSED_KEY = 'audio-workbench.xc-nokey-dismissed.v1';
+    const xcNokeyModal = document.getElementById('xcNokeyModal');
+    const xcNokeyDismiss = document.getElementById('xcNokeyDismiss');
+    const xcNokeyCloseBtn = document.getElementById('xcNokeyCloseBtn');
+    const xcNokeySetKeyBtn = document.getElementById('xcNokeySetKeyBtn');
+    const xcNokeyKeyInput = document.getElementById('xcNokeyKeyInput');
+
+    function showXcNokeyModal() {
+      const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
+      if (dismissed || xcPanel.apiKey) return false;
+      xcNokeyKeyInput.value = '';
+      xcNokeySetKeyBtn.disabled = true;
+      xcNokeyModal.hidden = false;
+      setTimeout(() => xcNokeyKeyInput.focus(), 60);
+      return true;
+    }
+    function closeXcNokeyModal() {
+      if (xcNokeyDismiss.checked) {
+        try { localStorage.setItem(XC_NOKEY_DISMISSED_KEY, '1'); } catch {}
+      }
+      xcNokeyModal.hidden = true;
+    }
+    xcNokeyKeyInput.addEventListener('input', () => {
+      xcNokeySetKeyBtn.disabled = !xcNokeyKeyInput.value.trim();
+    });
+    xcNokeyKeyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && xcNokeyKeyInput.value.trim()) xcNokeySetKeyBtn.click();
+    });
+    xcNokeyCloseBtn.addEventListener('click', closeXcNokeyModal);
+    xcNokeySetKeyBtn.addEventListener('click', async () => {
+      const key = xcNokeyKeyInput.value.trim();
+      if (!key) return;
+      // Save through xcPanel so localStorage + state + callbacks stay in sync
+      xcPanel.keyInput.value = key;
+      xcPanel.saveBtn.click();
+      updateXcKeyIndicator();
+      closeXcNokeyModal();
+      // Re-import labels now that a key is available
+      const xcId = currentXcId || xcPanel.xcId;
+      if (xcId) {
+        try {
+          const labelResult = await importXenoCantoLabels(xcId);
+          selectionMeta.textContent = labelResult.imported > 0
+            ? `Imported ${labelResult.imported} XC labels`
+            : `No XC labels for XC${labelResult.xcId}`;
+          sidebar.setActive('labels');
+        } catch (err) {
+          if (!handleInvalidKeyError(err)) {
+            selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+          }
+        }
+      }
+    });
+    xcNokeyModal.addEventListener('click', (e) => {
+      if (e.target === xcNokeyModal) closeXcNokeyModal();
+    });
+
+    /** Update URL to reflect current XC ID (or clear it). */
+    function updateUrlXcId(xcId) {
+      const url = new URL(window.location.href);
+      if (xcId) {
+        url.searchParams.set('xcid', xcId);
+      } else {
+        url.searchParams.delete('xcid');
+        url.searchParams.delete('XCID');
+        url.searchParams.delete('xc');
+        url.searchParams.delete('XC');
+      }
+      history.replaceState(null, '', url);
+    }
+
     // ── Xeno-canto load from sidebar ──────────────────────────────────
     const xcIdInput = document.getElementById('xcIdInput');
     const xcLoadBtn = document.getElementById('xcLoadBtn');
@@ -445,14 +607,19 @@
       xcLoadBtn.textContent = '…';
       try {
         const audio = await xcPanel.fetchAudio(raw, (msg) => { fileLabel.textContent = msg; });
+        currentXcId = audio.xcId;
+        updateUrlXcId(audio.xcId);
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        showXcNokeyModal();
         try {
           const labelResult = await importXenoCantoLabels(audio.xcId);
           selectionMeta.textContent = labelResult.imported > 0
             ? `Imported ${labelResult.imported} XC labels`
             : `No XC labels for XC${labelResult.xcId}`;
         } catch (err) {
-          selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+          if (!handleInvalidKeyError(err)) {
+            selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+          }
         }
         sidebar.setActive('labels');
       } catch (err) {
@@ -521,14 +688,19 @@
       if (!xcid) return;
       try {
         const audio = await xcPanel.fetchAudio(xcid, (msg) => { fileLabel.textContent = msg; });
+        currentXcId = audio.xcId;
+        updateUrlXcId(audio.xcId);
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        showXcNokeyModal();
         try {
           const labelResult = await importXenoCantoLabels(audio.xcId);
           selectionMeta.textContent = labelResult.imported > 0
             ? `Imported ${labelResult.imported} XC labels`
             : `No XC labels found for XC${labelResult.xcId}`;
         } catch (err) {
-          selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+          if (!handleInvalidKeyError(err)) {
+            selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+          }
         }
       } catch (err) {
         fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
@@ -541,6 +713,11 @@
       const file = fileInput.files?.[0];
       if (!file) return;
       state.xcLabelPool = [];
+      state.labels = [];
+      state.recordingMeta = null;
+      currentXcId = null;
+      updateUrlXcId(null);
+      syncToPlayer();
       await player.loadFile(file);
       fileLabel.textContent = file.name;
       fileInput.value = '';
@@ -548,6 +725,11 @@
 
     loadSampleBtn.addEventListener('click', async () => {
       state.xcLabelPool = [];
+      state.labels = [];
+      state.recordingMeta = null;
+      currentXcId = null;
+      updateUrlXcId(null);
+      syncToPlayer();
       await player.loadUrl('./samples/birdsong.wav');
       fileLabel.textContent = 'birdsong.wav';
     });

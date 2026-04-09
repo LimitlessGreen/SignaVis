@@ -43,7 +43,11 @@ export async function fetchXenoCantoRecording(xcId, options = {}) {
             const body = await res.json();
             msg = firstNonEmpty([body?.message, body?.error]);
         } catch {}
-        throw new Error(msg || `XC API HTTP ${Number(res.status) || 0}`);
+        const status = Number(res.status) || 0;
+        if (status === 401 || status === 403) {
+            throw new Error(msg || 'Invalid or expired API key. Please check your XC API key.');
+        }
+        throw new Error(msg || `XC API HTTP ${status}`);
     }
 
     const data = await res.json();

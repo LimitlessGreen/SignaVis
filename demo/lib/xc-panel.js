@@ -76,6 +76,9 @@ export class XenoCantoPanel {
     /** @type {object} Annotation set metadata (editable) */
     this.setMeta = { setName: '', setCreator: '', setLicense: '', projectName: '', scope: '' };
 
+    /** @type {((apiKey: string) => void)|null} */
+    this.onKeyChange = null;
+
     this._restoreKey();
     this._restoreSetMeta();
     this._bindEvents();
@@ -451,6 +454,7 @@ export class XenoCantoPanel {
       try { localStorage.setItem(API_KEY_STORAGE, this.apiKey); } catch { /* ignore */ }
       this._updateButtonState();
       this._updateUploadState();
+      this.onKeyChange?.(this.apiKey);
       if (this.backdrop) {
         this.close();
       } else if (this.saveBtn) {

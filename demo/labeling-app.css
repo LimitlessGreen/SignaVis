@@ -931,3 +931,91 @@ html, body {
 .spectrogram-settings-panel .mini-btn:hover {
   color: var(--text); border-color: #3a5580;
 }
+
+/* ── XC API key topbar indicator ── */
+.tb-xc-key {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--muted); font-size: 11px;
+}
+.tb-xc-key.has-key {
+  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+}
+.tb-xc-key.has-key:hover {
+  background: rgba(74, 222, 128, 0.08);
+}
+
+/* ── XC no-key modal ── */
+.xc-nokey-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  animation: fadeIn 0.15s ease;
+}
+.xc-nokey-backdrop:not([hidden]) {
+  display: flex;
+}
+.xc-nokey-dialog {
+  max-width: 420px; width: 92%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color: var(--text); font-size: 13px; line-height: 1.5;
+}
+.xc-nokey-dialog h3 {
+  margin: 0 0 10px; font-size: 15px; font-weight: 600;
+  color: var(--text);
+}
+.xc-nokey-dialog p { margin: 0 0 8px; color: var(--muted); }
+.xc-nokey-hint { font-size: 11.5px; }
+.xc-nokey-input-row {
+  margin: 10px 0 4px;
+}
+.xc-nokey-input-row .input {
+  width: 100%; box-sizing: border-box;
+  font-size: 12px; padding: 6px 8px;
+}
+
+/* XC sidebar key input + eye toggle */
+.xc-key-input-row {
+  display: flex; gap: 6px; align-items: stretch;
+}
+.xc-key-input-wrap {
+  position: relative; flex: 1; min-width: 0;
+}
+.xc-key-input-wrap .input {
+  width: 100%; box-sizing: border-box;
+  padding-right: 32px;          /* room for eye button */
+  height: 100%;                 /* match sibling button height */
+}
+.xc-key-masked {
+  -webkit-text-security: disc;
+}
+.xc-key-input-row .sidebar-action-btn {
+  flex-shrink: 0; width: auto; padding: 0 14px;
+  white-space: nowrap;
+}
+.xc-key-eye {
+  position: absolute; right: 1px; top: 1px; bottom: 1px;
+  width: 28px;
+  background: none; border: none; border-radius: 0 5px 5px 0;
+  color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.xc-key-eye:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.xc-key-eye .xc-eye-hide { display: none; }
+.xc-key-eye.revealed .xc-eye-show { display: none; }
+.xc-key-eye.revealed .xc-eye-hide { display: inline; }
+.xc-nokey-dismiss-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted);
+  margin: 12px 0 14px; cursor: pointer;
+}
+.xc-nokey-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.xc-nokey-actions .tb-btn:first-child {
+  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
