@@ -63,7 +63,7 @@ export class LabelList {
   set onRemove(fn) { this._onRemove = fn; }
   get selectedId() { return this._selectedId; }
 
-  /** Full re-render of the label list. */
+  /** Full re-render of the label list, grouped by origin. */
   render(labels) {
     this._labels = labels;
     this._container.innerHTML = '';
@@ -72,10 +72,33 @@ export class LabelList {
     if (this._badgeEl) this._badgeEl.textContent = String(sorted.length);
     this._emptyEl.style.display = sorted.length ? 'none' : '';
 
+    // Group by origin
+    const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+    /** @type {Map<string, any[]>} */
+    const groups = new Map();
     for (const lbl of sorted) {
-      const card = this._buildCard(lbl);
-      this._container.appendChild(card);
-      this._cardMap.set(lbl.id, card);
+      const origin = lbl.origin || 'manual';
+      if (!groups.has(origin)) groups.set(origin, []);
+      /** @type {any[]} */ (groups.get(origin)).push(lbl);
+    }
+    const origins = [...groups.keys()].sort((a, b) =>
+      (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || a.localeCompare(b));
+
+    // Only show headers when more than one origin is present
+    const showHeaders = origins.length > 1;
+
+    for (const origin of origins) {
+      if (showHeaders) {
+        const header = document.createElement('div');
+        header.className = 'label-group-header';
+        header.textContent = origin;
+        this._container.appendChild(header);
+      }
+      for (const lbl of /** @type {any[]} */ (groups.get(origin))) {
+        const card = this._buildCard(lbl);
+        this._container.appendChild(card);
+        this._cardMap.set(lbl.id, card);
+      }
     }
 
     if (this._selectedId) this.highlightRow(this._selectedId);

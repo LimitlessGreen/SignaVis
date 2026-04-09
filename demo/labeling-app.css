@@ -401,6 +401,19 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+.label-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 12px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
 .label-card {
   padding: 8px 12px;
   border-bottom: 1px solid rgba(30, 45, 71, 0.4);
