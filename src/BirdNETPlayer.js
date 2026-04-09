@@ -127,6 +127,7 @@ export class BirdNETPlayer {
         this.spectrogramLabels.attach(this);
         this._bindLinkedLabelSync();
         this._bindGlobalHotkeys();
+        this._injectAnnotationToolbar();
         this._emit('ready', { phase: 'init' });
         return this;
     }
@@ -483,6 +484,30 @@ export class BirdNETPlayer {
             this.applyTaxonomyToLabel(this._activeLabelId, idx);
         };
         document.addEventListener('keydown', this._globalKeyHandler, true);
+    }
+
+    // ── Annotation Toolbar ──────────────────────────────────────────
+
+    _injectAnnotationToolbar() {
+        const secondary = this.root?.querySelector('[data-aw="toolbarSecondary"]');
+        if (!secondary) return;
+
+        const sep = document.createElement('div');
+        sep.className = 'toolbar-sep';
+        secondary.appendChild(sep);
+
+        // Draw mode toggle — enables click+drag label creation without Shift
+        const drawBtn = document.createElement('button');
+        drawBtn.className = 'toolbar-btn toggle-btn';
+        drawBtn.title = 'Label zeichnen (Shift+Drag)';
+        drawBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.375 2.625a1 1 0 013 3l-9.013 9.014a2 2 0 01-.853.505l-2.873.84a.5.5 0 01-.62-.62l.84-2.873a2 2 0 01.506-.852z"/></svg> Draw`;
+        drawBtn.addEventListener('click', () => {
+            const on = !this.spectrogramLabels.drawMode;
+            this.spectrogramLabels.drawMode = on;
+            drawBtn.classList.toggle('active', on);
+            this.root?.classList.toggle('draw-mode-active', on);
+        });
+        secondary.appendChild(drawBtn);
     }
 
     _previewFromAnnotationEvent(annotation) {

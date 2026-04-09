@@ -955,6 +955,7 @@ export class SpectrogramLabelLayer {
         this.player = null;
         this.overlay = null;
         this.labels = [];
+        this.drawMode = false;
         this._liveLinkedId = null;
         this._unsubs = [];
         this._domCleanups = [];
@@ -1290,7 +1291,7 @@ export class SpectrogramLabelLayer {
     _bindDrawingInteractions(wrapper) {
         const onPointerDown = (e) => {
             if (e.target?.closest?.('.spectrogram-label-region')) return;
-            if (!e.shiftKey || e.button !== 0) return;
+            if ((!e.shiftKey && !this.drawMode) || e.button !== 0) return;
             if (!this.player?._state?.audioBuffer) return;
 
             const start = this._clientXToTime(e.clientX);

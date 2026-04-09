@@ -243,6 +243,17 @@
     border-color: transparent;
 }
 
+/* ═══ Annotation Toolbar ═══ */
+
+.toggle-btn.active {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: transparent;
+}
+.daw-shell.draw-mode-active .spectrogram-canvas-wrapper {
+    cursor: crosshair;
+}
+
 /* ═══ Settings Side-Panel ═══ */
 
 .settings-panel {
