@@ -91,12 +91,15 @@ export class BirdNETPanel {
     this.progressWrap.style.display = 'none';
     this.progressBar.style.width = '0%';
     this.analyzeBtn.disabled = false;
-    this.backdrop.classList.add('show');
-    this.backdrop.setAttribute('aria-hidden', 'false');
+    if (this.backdrop) {
+      this.backdrop.classList.add('show');
+      this.backdrop.setAttribute('aria-hidden', 'false');
+    }
     setTimeout(() => this.modelUrlInput.focus(), 0);
   }
 
   close() {
+    if (!this.backdrop) return;
     this.backdrop.classList.remove('show');
     this.backdrop.setAttribute('aria-hidden', 'true');
   }
@@ -112,12 +115,12 @@ export class BirdNETPanel {
 
   _bindEvents() {
     this.openBtn?.addEventListener('click', () => this.open());
-    this.cancelBtn.addEventListener('click', () => this.close());
-    this.backdrop.addEventListener('click', (e) => {
+    this.cancelBtn?.addEventListener('click', () => this.close());
+    this.backdrop?.addEventListener('click', (e) => {
       if (e.target === this.backdrop) this.close();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.backdrop.classList.contains('show')) this.close();
+      if (e.key === 'Escape' && this.backdrop?.classList.contains('show')) this.close();
     });
     this.confidenceInput.addEventListener('input', () => {
       this.confidenceVal.textContent = this.confidenceInput.value;

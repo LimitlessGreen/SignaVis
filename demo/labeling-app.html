@@ -17,149 +17,147 @@
       <input id="fileInput" type="file" accept="audio/*" hidden />
       <span class="tb-spacer"></span>
       <span class="tb-meta" id="selectionMeta"></span>
-      <button class="tb-btn" id="birdnetBtn" type="button">BirdNET</button>
-      <button class="tb-btn" id="xcApiBtn" type="button">XC API</button>
     </header>
 
-    <main class="stage">
-      <div id="playerRoot"></div>
-    </main>
-
-    <div class="resize-handle" id="resizeHandle"></div>
-
-    <footer class="label-panel">
-      <!-- Tab bar -->
-      <nav class="tab-bar" id="panelTabBar">
-        <button class="tab-btn active" data-tab="labels">Labels <span class="tab-badge" id="labelCount">0</span></button>
-        <button class="tab-btn" data-tab="help">Help</button>
-        <span class="tb-spacer"></span>
-        <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
-        <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
-      </nav>
-
-      <!-- Labels toolbar (visible when labels tab active) -->
-      <div class="label-panel-header" id="labelsToolbar">
-        <span class="label-panel-hints"><kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · double-click edit · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd> copy/paste</span>
-        <span class="tb-spacer"></span>
-        <button class="tb-btn" id="exportJsonBtn" type="button">Export JSON</button>
-        <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
-        <button class="tb-btn danger" id="clearAllBtn" type="button">Clear All</button>
-      </div>
-
-      <!-- Tab: Labels -->
-      <div class="tab-content active" id="tabLabels" data-tab="labels">
-        <div class="label-table-wrap" id="labelTableWrap">
-          <table class="label-table">
-            <thead><tr><th class="col-dot"></th><th class="col-label">Label</th><th class="col-range">Range</th><th class="col-sex">Sex</th><th class="col-stage">Life Stage</th><th class="col-sound">Sound Type</th><th class="col-tags">Tags</th><th class="col-info">Info</th><th class="col-actions"></th></tr></thead>
-            <tbody id="labelsList"></tbody>
-          </table>
-          <div class="labels-empty" id="labelsEmpty">
-            No labels yet — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.
-          </div>
+    <div class="workspace" id="workspace">
+      <!-- sidebar.js injects: activity-bar | sidebar | resize-handle here -->
+      <main class="main-area">
+        <div class="stage">
+          <div id="playerRoot"></div>
         </div>
-      </div>
-
-      <!-- Tab: Help -->
-      <div class="tab-content" id="tabHelp" data-tab="help">
-        <div class="help-content">
-          <div class="help-section">
-            <h3>Spectrogram</h3>
-            <div class="shortcut-grid">
-              <kbd>Shift + Drag</kbd> <span class="sc-desc">Draw new label region</span>
-              <kbd>Drag</kbd> <span class="sc-desc">Move label region</span>
-              <kbd>Double-click</kbd> <span class="sc-desc">Edit label (taxonomy search)</span>
-              <kbd>Scroll</kbd> <span class="sc-desc">Zoom time axis</span>
-              <kbd>Ctrl + Scroll</kbd> <span class="sc-desc">Zoom frequency axis</span>
-            </div>
-          </div>
-          <div class="help-section">
-            <h3>Labels</h3>
-            <div class="shortcut-grid">
-              <kbd>Ctrl + C</kbd> <span class="sc-desc">Copy selected label</span>
-              <kbd>Ctrl + V</kbd> <span class="sc-desc">Paste label at current time</span>
-              <kbd>Delete</kbd> <span class="sc-desc">Remove selected label</span>
-              <kbd>Click row</kbd> <span class="sc-desc">Seek to label &amp; select</span>
-              <kbd>Click name</kbd> <span class="sc-desc">Inline-edit label name</span>
-            </div>
-          </div>
-          <div class="help-section">
-            <h3>Label Editor</h3>
-            <div class="shortcut-grid">
-              <kbd>↑ ↓</kbd> <span class="sc-desc">Navigate suggestions</span>
-              <kbd>Enter</kbd> <span class="sc-desc">Select suggestion / confirm</span>
-              <kbd>Double-click</kbd> <span class="sc-desc">Select &amp; immediately confirm</span>
-              <kbd>Esc</kbd> <span class="sc-desc">Close editor</span>
-            </div>
-          </div>
-          <div class="help-section">
-            <h3>Playback</h3>
-            <div class="shortcut-grid">
-              <kbd>Space</kbd> <span class="sc-desc">Play / Pause</span>
-              <kbd>← →</kbd> <span class="sc-desc">Seek backward / forward</span>
-            </div>
-          </div>
-          <div class="help-section">
-            <h3>Tag Columns</h3>
-            <p>Use the <strong>Sex</strong>, <strong>Life Stage</strong>, and <strong>Sound Type</strong> dropdowns in the table to tag labels.
-              Custom tags can be added via the <strong>+</strong> button in the Tags column.
-              Tags are included in JSON export.</p>
-          </div>
-        </div>
-      </div>
-    </footer>
+      </main>
+    </div>
   </div>
 
-  <div class="modal-backdrop" id="xcApiModalBackdrop" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="xcApiModalTitle">
-      <div class="modal-title" id="xcApiModalTitle">Xeno-canto API Settings</div>
-      <input id="xcApiKeyInput" class="input" placeholder="API key (optional)" />
-      <div class="meta">Nur für XC-API-Requests zum Label-Import. Wird lokal im Browser gespeichert.</div>
-      <div class="row">
-        <button class="tb-btn" id="xcApiCancelBtn" type="button">Cancel</button>
-        <button class="tb-btn" id="xcApiSaveBtn" type="button" style="border-color:#2770b8;color:#d7eeff;">Save</button>
+  <!-- ── Sidebar panel: Labels ────────────────────────────────────── -->
+  <div id="panelLabels" hidden>
+    <div class="panel-toolbar">
+      <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
+      <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
+      <span class="tb-spacer"></span>
+      <button class="tb-btn" id="exportJsonBtn" type="button">Export</button>
+      <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
+      <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
+    </div>
+    <div class="panel-hint">
+      <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit
+    </div>
+    <div class="label-list-scroll">
+      <div class="label-list" id="labelList"></div>
+      <div class="labels-empty" id="labelsEmpty">
+        No labels — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.
       </div>
     </div>
   </div>
 
-  <!-- BirdNET Inference Modal -->
-  <div class="modal-backdrop" id="birdnetModalBackdrop" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="birdnetModalTitle">
-      <div class="modal-title" id="birdnetModalTitle">BirdNET Inference</div>
-      <label class="meta" for="birdnetModelUrl">Model URL (TF.js Layers-Format — Ordner mit model.json + labels.json)</label>
+  <!-- ── Sidebar panel: BirdNET ───────────────────────────────────── -->
+  <div id="panelBirdnet" class="scroll-panel" hidden>
+    <div class="panel-section">
+      <label class="field-label" for="birdnetModelUrl">Model URL</label>
       <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
-      <div class="birdnet-slider-row">
-        <label class="meta" for="birdnetConfidence">Min. Confidence</label>
-        <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" />
-        <span class="birdnet-slider-val" id="birdnetConfidenceVal">0.25</span>
+      <p class="field-hint">TF.js Layers-Format — Ordner mit model.json + labels.json</p>
+    </div>
+    <div class="panel-section">
+      <div class="slider-row">
+        <label class="field-label" for="birdnetConfidence" style="margin:0">Min. Confidence</label>
+        <span class="slider-val" id="birdnetConfidenceVal">0.25</span>
       </div>
-      <div class="row">
-        <label class="meta" for="birdnetOverlap">Overlap</label>
-        <select id="birdnetOverlap" class="tb-select">
-          <option value="0">0 s</option>
-          <option value="0.5">0.5 s</option>
-          <option value="1">1 s</option>
-          <option value="1.5">1.5 s</option>
-          <option value="2">2 s</option>
-          <option value="2.5">2.5 s</option>
-        </select>
+      <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" class="range-input" />
+    </div>
+    <div class="panel-section">
+      <label class="field-label" for="birdnetOverlap">Overlap</label>
+      <select id="birdnetOverlap" class="field-select">
+        <option value="0">0 s</option>
+        <option value="0.5">0.5 s</option>
+        <option value="1">1 s</option>
+        <option value="1.5">1.5 s</option>
+        <option value="2">2 s</option>
+        <option value="2.5">2.5 s</option>
+      </select>
+    </div>
+    <div class="panel-section">
+      <label class="field-check">
+        <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
+      </label>
+    </div>
+    <div class="panel-section">
+      <label class="field-label" for="birdnetAuthor">Author</label>
+      <input id="birdnetAuthor" class="input" placeholder="(optional)" />
+    </div>
+    <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
+      <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
+    </div>
+    <span id="birdnetStatus" class="meta" style="padding:0 14px"></span>
+    <div class="panel-actions">
+      <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
+    </div>
+  </div>
+
+  <!-- ── Sidebar panel: Xeno-canto ────────────────────────────────── -->
+  <div id="panelXc" class="scroll-panel" hidden>
+    <div class="panel-section">
+      <label class="field-label" for="xcIdInput">Load XC Recording</label>
+      <div class="xc-load-row">
+        <input id="xcIdInput" class="input" placeholder="XC ID (e.g. 12345)" />
+        <button class="tb-btn" id="xcLoadBtn" type="button">Load</button>
       </div>
-      <div class="row" style="align-items:center">
-        <label class="meta" style="cursor:pointer;display:flex;align-items:center;gap:6px;margin:0">
-          <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
-        </label>
+    </div>
+    <div class="panel-section">
+      <label class="field-label" for="xcApiKeyInput">API Key</label>
+      <input id="xcApiKeyInput" class="input" placeholder="API key (optional)" />
+      <p class="field-hint">Für XC-API-Requests zum Label-Import. Wird lokal im Browser gespeichert.</p>
+    </div>
+    <div class="panel-actions">
+      <button class="sidebar-action-btn" id="xcApiSaveBtn" type="button">Save Key</button>
+    </div>
+  </div>
+
+  <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
+  <div id="panelHelp" class="scroll-panel" hidden>
+    <div class="help-content">
+      <div class="help-section">
+        <h3>Spectrogram</h3>
+        <div class="shortcut-grid">
+          <kbd>Shift + Drag</kbd> <span class="sc-desc">Draw new label region</span>
+          <kbd>Drag</kbd> <span class="sc-desc">Move label region</span>
+          <kbd>Double-click</kbd> <span class="sc-desc">Edit label (taxonomy search)</span>
+          <kbd>Scroll</kbd> <span class="sc-desc">Zoom time axis</span>
+          <kbd>Ctrl + Scroll</kbd> <span class="sc-desc">Zoom frequency axis</span>
+        </div>
       </div>
-      <div class="row">
-        <label class="meta" for="birdnetAuthor">Author</label>
-        <input id="birdnetAuthor" class="input" style="flex:1" placeholder="(optional)" />
+      <div class="help-section">
+        <h3>Labels</h3>
+        <div class="shortcut-grid">
+          <kbd>Ctrl + C</kbd> <span class="sc-desc">Copy selected label</span>
+          <kbd>Ctrl + V</kbd> <span class="sc-desc">Paste label at current time</span>
+          <kbd>Delete</kbd> <span class="sc-desc">Remove selected label</span>
+          <kbd>Click card</kbd> <span class="sc-desc">Seek to label &amp; select</span>
+          <kbd>Click name</kbd> <span class="sc-desc">Inline-edit label name</span>
+          <kbd>Double-click</kbd> <span class="sc-desc">Expand tag editing</span>
+        </div>
       </div>
-      <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
-        <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
+      <div class="help-section">
+        <h3>Label Editor</h3>
+        <div class="shortcut-grid">
+          <kbd>↑ ↓</kbd> <span class="sc-desc">Navigate suggestions</span>
+          <kbd>Enter</kbd> <span class="sc-desc">Select suggestion / confirm</span>
+          <kbd>Double-click</kbd> <span class="sc-desc">Select &amp; immediately confirm</span>
+          <kbd>Esc</kbd> <span class="sc-desc">Close editor</span>
+        </div>
       </div>
-      <span id="birdnetStatus" class="meta"></span>
-      <div class="row">
-        <button class="tb-btn" id="birdnetCancelBtn" type="button">Cancel</button>
-        <span style="flex:1"></span>
-        <button class="tb-btn" id="birdnetAnalyzeBtn" type="button" style="border-color:#2770b8;color:#d7eeff;">Analyze</button>
+      <div class="help-section">
+        <h3>Playback</h3>
+        <div class="shortcut-grid">
+          <kbd>Space</kbd> <span class="sc-desc">Play / Pause</span>
+          <kbd>← →</kbd> <span class="sc-desc">Seek backward / forward</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>Tags</h3>
+        <p>Double-click a label card to expand tag editing.
+          Use the <strong>Sex</strong>, <strong>Life Stage</strong>, and <strong>Sound Type</strong> dropdowns.
+          Custom tags can be added via the <strong>+ Tag</strong> button.
+          Tags are included in JSON export.</p>
       </div>
     </div>
   </div>
@@ -170,9 +168,9 @@
     import { BirdNETInference } from '../src/birdnetInference.js';
     import '../src/player.css';
 
-    import { initResizeHandle } from './lib/resize-handle.js';
+    import { Sidebar } from './lib/sidebar.js';
     import { populateLanguageSelect, createSuggestionProvider } from './lib/taxonomy-ui.js';
-    import { LabelTable } from './lib/label-table.js';
+    import { LabelList } from './lib/label-list.js';
     import { BirdNETPanel } from './lib/birdnet-panel.js';
     import { XenoCantoPanel } from './lib/xc-panel.js';
 
@@ -200,30 +198,23 @@
     const taxonomy = new TaxonomyResolver();
     const birdnet  = new BirdNETInference();
 
-    // ── Tab switching ─────────────────────────────────────────────────
-    const panelTabBar   = document.getElementById('panelTabBar');
-    const labelsToolbar = document.getElementById('labelsToolbar');
-    panelTabBar.addEventListener('click', (e) => {
-      const btn = /** @type {HTMLElement} */ (e.target).closest('.tab-btn');
-      if (!btn) return;
-      const tabId = btn.dataset.tab;
-      if (!tabId) return;
-      for (const b of panelTabBar.querySelectorAll('.tab-btn')) b.classList.toggle('active', b === btn);
-      for (const c of document.querySelectorAll('.label-panel .tab-content')) c.classList.toggle('active', c.dataset.tab === tabId);
-      labelsToolbar.style.display = tabId === 'labels' ? '' : 'none';
+    // ── Sidebar ───────────────────────────────────────────────────────
+    const ICONS = {
+      labels: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 5.5h12M4 10h12M4 14.5h12"/><circle cx="6" cy="5.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="6" cy="10" r="1.2" fill="currentColor" stroke="none"/><circle cx="6" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+      birdnet: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 14V9M10 14V6M13 14V11"/></svg>`,
+      xc: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="7"/><ellipse cx="10" cy="10" rx="3" ry="7"/><path d="M3 10h14" stroke-linecap="round"/></svg>`,
+      help: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M8 8.5a2.2 2.2 0 0 1 4 1.3c0 1.3-2 1.8-2 3"/><circle cx="10" cy="15" r="0.8" fill="currentColor" stroke="none"/></svg>`,
+    };
+
+    const sidebar = new Sidebar(document.getElementById('workspace'), {
+      onResize: () => player?.resize?.(),
     });
 
-    // ── Resize handle ─────────────────────────────────────────────────
-    initResizeHandle({
-      handle: document.getElementById('resizeHandle'),
-      container: document.querySelector('.app'),
-      cssProp: '--panel-height',
-      storageKey: 'audio-workbench.panel-height.v1',
-      minPanel: 80,
-      minStage: 120,
-      fixedOverhead: 46,
-      onResizeEnd: () => player?.resize?.(),
-    });
+    sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',   element: document.getElementById('panelLabels') });
+    sidebar.addPanel('birdnet', { icon: ICONS.birdnet, label: 'BirdNET',  element: document.getElementById('panelBirdnet') });
+    sidebar.addPanel('xc',     { icon: ICONS.xc,      label: 'Xeno Canto', element: document.getElementById('panelXc') });
+    sidebar.addPanel('help',   { icon: ICONS.help,    label: 'Help',     element: document.getElementById('panelHelp') });
+    sidebar.setActive('labels');
 
     // ── App state ─────────────────────────────────────────────────────
     const state = {
@@ -238,11 +229,8 @@
 
     // ── Xeno-canto panel ──────────────────────────────────────────────
     const xcPanel = new XenoCantoPanel({
-      backdrop:  document.getElementById('xcApiModalBackdrop'),
       keyInput:  document.getElementById('xcApiKeyInput'),
       saveBtn:   document.getElementById('xcApiSaveBtn'),
-      cancelBtn: document.getElementById('xcApiCancelBtn'),
-      openBtn:   document.getElementById('xcApiBtn'),
     });
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -267,32 +255,29 @@
       if (el) el.classList.toggle('highlighted', on);
     }
 
-    // ── Label table ───────────────────────────────────────────────────
-    const labelTable = new LabelTable({
-      tbody:   document.getElementById('labelsList'),
-      emptyEl: document.getElementById('labelsEmpty'),
-      badgeEl: document.getElementById('labelCount'),
+    // ── Label list ────────────────────────────────────────────────────
+    const labelList = new LabelList({
+      container: document.getElementById('labelList'),
+      emptyEl:   document.getElementById('labelsEmpty'),
       resolveName,
       onSync:  () => syncToPlayer(),
       onSeek:  (lbl) => { if (player?.currentTime != null) player.currentTime = lbl.start; },
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
-      onFocus: (id) => player._emit?.('labelfocus', { id, source: 'table' }),
+      onFocus: (id) => player._emit?.('labelfocus', { id, source: 'list' }),
       onHover: highlightSpectrogramLabel,
     });
-    labelTable.onRemove = (lbl) => {
+    labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
     };
 
-    // Listen for labelfocus from spectrogram → highlight table row
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
-      labelTable.highlightHover(id);
+      labelList.highlightHover(id);
     });
 
     // ── BirdNET panel ─────────────────────────────────────────────────
     const birdnetPanel = new BirdNETPanel({
-      backdrop:        document.getElementById('birdnetModalBackdrop'),
       modelUrlInput:   document.getElementById('birdnetModelUrl'),
       confidenceInput: document.getElementById('birdnetConfidence'),
       confidenceVal:   document.getElementById('birdnetConfidenceVal'),
@@ -303,8 +288,6 @@
       progressBar:     document.getElementById('birdnetProgressBar'),
       statusEl:        document.getElementById('birdnetStatus'),
       analyzeBtn:      document.getElementById('birdnetAnalyzeBtn'),
-      cancelBtn:       document.getElementById('birdnetCancelBtn'),
-      openBtn:         document.getElementById('birdnetBtn'),
       birdnet,
       getAudioBuffer: () => player._state?.audioBuffer,
       resolveLabel: (det, audioBuffer) => {
@@ -319,13 +302,15 @@
       onResults: (labels) => {
         for (const lbl of labels) state.labels.push(lbl);
         syncToPlayer();
+        sidebar.setActive('labels');
       },
     });
 
     // ── Sync & export ─────────────────────────────────────────────────
     function syncToPlayer() {
       player.setSpectrogramLabels(state.labels);
-      labelTable.render(state.labels);
+      labelList.render(state.labels);
+      sidebar.setBadge('labels', state.labels.length || '');
     }
 
     function toLabelExport() {
@@ -373,6 +358,37 @@
       return { xcId: result.xcId, imported: result.labels.length };
     }
 
+    // ── Xeno-canto load from sidebar ──────────────────────────────────
+    const xcIdInput = document.getElementById('xcIdInput');
+    const xcLoadBtn = document.getElementById('xcLoadBtn');
+    xcLoadBtn.addEventListener('click', async () => {
+      const raw = xcIdInput.value.trim();
+      if (!raw) return;
+      xcLoadBtn.disabled = true;
+      xcLoadBtn.textContent = '…';
+      try {
+        const audio = await xcPanel.fetchAudio(raw, (msg) => { fileLabel.textContent = msg; });
+        await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        try {
+          const labelResult = await importXenoCantoLabels(audio.xcId);
+          selectionMeta.textContent = labelResult.imported > 0
+            ? `Imported ${labelResult.imported} XC labels`
+            : `No XC labels for XC${labelResult.xcId}`;
+        } catch (err) {
+          selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+        }
+        sidebar.setActive('labels');
+      } catch (err) {
+        fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
+      } finally {
+        xcLoadBtn.disabled = false;
+        xcLoadBtn.textContent = 'Load';
+      }
+    });
+    xcIdInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); xcLoadBtn.click(); }
+    });
+
     // ── Taxonomy ──────────────────────────────────────────────────────
     function getLangParam() {
       const p = new URLSearchParams(window.location.search || '');
@@ -388,7 +404,7 @@
         taxonomy.load(data);
         state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
-        labelTable.render(state.labels);
+        labelList.render(state.labels);
       } catch (err) {
         taxonomy.clear();
         taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
@@ -449,7 +465,8 @@
       state.selected = null;
       selectionMeta.textContent = '';
       player.clearSpectrogramLabels();
-      labelTable.render(state.labels);
+      labelList.render(state.labels);
+      sidebar.setBadge('labels', '');
     });
 
     exportJsonBtn.addEventListener('click', () => {
@@ -470,10 +487,10 @@
       try {
         await navigator.clipboard.writeText(data);
         copyJsonBtn.textContent = 'Copied';
-        setTimeout(() => { copyJsonBtn.textContent = 'Copy JSON'; }, 900);
+        setTimeout(() => { copyJsonBtn.textContent = 'Copy'; }, 900);
       } catch {
         copyJsonBtn.textContent = 'Copy failed';
-        setTimeout(() => { copyJsonBtn.textContent = 'Copy JSON'; }, 1200);
+        setTimeout(() => { copyJsonBtn.textContent = 'Copy'; }, 1200);
       }
     });
 
@@ -482,7 +499,8 @@
       const idx = state.labels.findIndex((l) => l.id === label.id);
       if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
       else state.labels.push({ ...label, origin: label.origin || 'manual' });
-      labelTable.render(state.labels);
+      labelList.render(state.labels);
+      sidebar.setBadge('labels', state.labels.length || '');
     }
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
@@ -491,7 +509,8 @@
       const id = e.detail?.label?.id;
       if (!id) return;
       state.labels = state.labels.filter((l) => l.id !== id);
-      labelTable.render(state.labels);
+      labelList.render(state.labels);
+      sidebar.setBadge('labels', state.labels.length || '');
     });
 
     taxonomyLangSelect.addEventListener('change', () => {
@@ -533,7 +552,7 @@
     );
 
     // ── Startup ───────────────────────────────────────────────────────
-    labelTable.render(state.labels);
+    labelList.render(state.labels);
     await loadBirdnetTaxonomy();
     autoLoadFromParams();
   </script>

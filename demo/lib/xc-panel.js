@@ -30,10 +30,10 @@ export class XenoCantoPanel {
    * @param {HTMLButtonElement} [opts.openBtn]
    */
   constructor(opts) {
-    this.backdrop = opts.backdrop;
+    this.backdrop = opts.backdrop || null;
     this.keyInput = opts.keyInput;
     this.saveBtn = opts.saveBtn;
-    this.cancelBtn = opts.cancelBtn;
+    this.cancelBtn = opts.cancelBtn || null;
     this.openBtn = opts.openBtn || null;
     this.apiKey = '';
     this._restoreKey();
@@ -42,6 +42,7 @@ export class XenoCantoPanel {
   }
 
   open() {
+    if (!this.backdrop) return;
     this.keyInput.value = this.apiKey || '';
     this.backdrop.classList.add('show');
     this.backdrop.setAttribute('aria-hidden', 'false');
@@ -49,6 +50,7 @@ export class XenoCantoPanel {
   }
 
   close() {
+    if (!this.backdrop) return;
     this.backdrop.classList.remove('show');
     this.backdrop.setAttribute('aria-hidden', 'true');
   }
@@ -151,18 +153,24 @@ export class XenoCantoPanel {
 
   _bindEvents() {
     this.openBtn?.addEventListener('click', () => this.open());
-    this.cancelBtn.addEventListener('click', () => this.close());
-    this.saveBtn.addEventListener('click', () => {
-      this.apiKey = String(this.keyInput.value || '').trim();
+    this.cancelBtn?.addEventListener('click', () => this.close());
+    this.saveBtn?.addEventListener('click', () => {
+      this.apiKey = String(this.keyInput?.value || '').trim();
       try { localStorage.setItem(API_KEY_STORAGE, this.apiKey); } catch { /* ignore */ }
       this._updateButtonState();
-      this.close();
+      if (this.backdrop) {
+        this.close();
+      } else if (this.saveBtn) {
+        const orig = this.saveBtn.textContent;
+        this.saveBtn.textContent = '✓ Saved';
+        setTimeout(() => { this.saveBtn.textContent = orig; }, 1200);
+      }
     });
-    this.backdrop.addEventListener('click', (e) => {
+    this.backdrop?.addEventListener('click', (e) => {
       if (e.target === this.backdrop) this.close();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.backdrop.classList.contains('show')) this.close();
+      if (e.key === 'Escape' && this.backdrop?.classList.contains('show')) this.close();
     });
   }
 }
