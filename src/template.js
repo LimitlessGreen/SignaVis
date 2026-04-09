@@ -147,11 +147,6 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="settings-section">
             <div class="settings-row">
-                <label class="settings-label">Engine</label>
-                <select data-aw="engineSelect" class="settings-select">
-                </select>
-            </div>
-            <div class="settings-row">
                 <label class="settings-label">Preset</label>
                 <select data-aw="presetSelect" class="settings-select">
                 </select>

@@ -11,7 +11,6 @@ import {
     PROGRESSIVE_CHUNK_SECONDS, PROGRESSIVE_MIN_DURATION_SEC,
     PERCH_FRAME_RATE,
     DSP_PROFILES,
-    SPECTROGRAM_ENGINES,
     QUALITY_LEVELS,
     CQT_FMIN, CQT_BINS_PER_OCTAVE,
     windowHopFromOverlap,
@@ -38,7 +37,7 @@ import {
 
 import { computeReassignedSpectrogram } from './dsp.js';
 
-import { createSpectrolipiProcessor } from './spectrolipiEngine.js';
+
 
 const LS_USER_PRESETS = 'aw-user-presets';
 const LS_FAV_PRESET   = 'aw-favourite-preset';
@@ -153,7 +152,6 @@ export class PlayerState {
         this.d = this._queryDom(container);
         this._populatePresetDropdown();
         this._applyFavouritePresetControls();
-        this._populateEngineDropdown();
         this.WaveSurfer = WaveSurfer;
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
         this.options = options || {};
@@ -174,7 +172,6 @@ export class PlayerState {
             && !(this.options.transportOverlay && this._viewMode === 'waveform');
         this._playbackViewportConfig = this._sanitizePlaybackViewportConfig(this.options || {});
 
-        this._engineName = 'workbench';
         this.processor = createSpectrogramProcessor();
         this.colorizer = new GpuColorizer();
 
@@ -510,7 +507,6 @@ export class PlayerState {
             sampleRateInfo:         q('sampleRateInfo'),
             scaleSelect:            q('scaleSelect'),
             colourScaleSelect:      q('colourScaleSelect'),
-            engineSelect:           q('engineSelect'),
             presetSelect:           q('presetSelect'),
             presetSaveBtn:          q('presetSaveBtn'),
             presetFavBtn:           q('presetFavBtn'),
@@ -595,19 +591,6 @@ export class PlayerState {
         } else {
             sel.value = 'birder';
         }
-    }
-
-    _populateEngineDropdown() {
-        const sel = this.d.engineSelect;
-        if (!sel) return;
-        for (const [key, meta] of Object.entries(SPECTROGRAM_ENGINES)) {
-            const opt = document.createElement('option');
-            opt.value = key;
-            opt.textContent = meta.label;
-            opt.title = meta.description;
-            sel.appendChild(opt);
-        }
-        sel.value = this._engineName;
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -2458,13 +2441,7 @@ export class PlayerState {
             p = DSP_PROFILES[name];
         }
         if (!p) return;
-        // Scale — respect engine constraints
-        const engineMeta = SPECTROGRAM_ENGINES[this._engineName];
-        const desiredScale = p.scale || 'mel';
-        const effectiveScale = engineMeta && !engineMeta.supportsScales.includes(desiredScale)
-            ? engineMeta.supportsScales[0]
-            : desiredScale;
-        if (this.d.scaleSelect) this.d.scaleSelect.value = effectiveScale;
+        if (this.d.scaleSelect) this.d.scaleSelect.value = p.scale || 'mel';
         // Window size + overlap + oversampling
         if (this.d.windowSizeSelect && p.windowSize != null) this.d.windowSizeSelect.value = String(p.windowSize);
         if (this.d.overlapSelect && p.overlapLevel != null) this.d.overlapSelect.value = String(p.overlapLevel);
@@ -2473,9 +2450,7 @@ export class PlayerState {
         if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction;
         // nMels
         if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels);
-        // PCEN — respect engine constraints
-        const canPcen = engineMeta ? engineMeta.supportsPcen : true;
-        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = canPcen && !!p.usePcen;
+        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = !!p.usePcen;
         if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain);
         if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias);
         if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot);
@@ -2910,18 +2885,13 @@ export class PlayerState {
         }
         if (!p) return;
         // Set all controls to preset values (same as _applyPreset but skip regeneration)
-        const engineMeta = SPECTROGRAM_ENGINES[this._engineName];
-        const desiredScale = p.scale || 'mel';
-        const effectiveScale = engineMeta && !engineMeta.supportsScales.includes(desiredScale)
-            ? engineMeta.supportsScales[0] : desiredScale;
-        if (this.d.scaleSelect) this.d.scaleSelect.value = effectiveScale;
+        if (this.d.scaleSelect) this.d.scaleSelect.value = p.scale || 'mel';
         if (this.d.windowSizeSelect && p.windowSize != null) this.d.windowSizeSelect.value = String(p.windowSize);
         if (this.d.overlapSelect && p.overlapLevel != null) this.d.overlapSelect.value = String(p.overlapLevel);
         if (this.d.oversamplingSelect && p.oversamplingLevel != null) this.d.oversamplingSelect.value = String(p.oversamplingLevel);
         if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction || 'hann';
         if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels || 160);
-        const canPcen = engineMeta ? engineMeta.supportsPcen : true;
-        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = canPcen && !!p.usePcen;
+        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = !!p.usePcen;
         if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain ?? 0.8);
         if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias ?? 0.01);
         if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot ?? 4.0);
@@ -2982,60 +2952,6 @@ export class PlayerState {
         }
     }
 
-    // ── Engine Switching ────────────────────────────────────────────
-
-    _switchEngine(name) {
-        const meta = SPECTROGRAM_ENGINES[name];
-        if (!meta || name === this._engineName) return;
-
-        // Tear down old processor
-        if (this.processor?.dispose) this.processor.dispose();
-
-        this._engineName = name;
-        if (name === 'spectrolipi') {
-            this.processor = createSpectrolipiProcessor();
-        } else {
-            this.processor = createSpectrogramProcessor();
-        }
-
-        // Enforce frequency scale constraints: spectrolipi only supports linear
-        if (!meta.supportsScales.includes(this.d.scaleSelect?.value)) {
-            if (this.d.scaleSelect) this.d.scaleSelect.value = meta.supportsScales[0];
-        }
-
-        // Disable mel option if engine doesn't support it
-        if (this.d.scaleSelect) {
-            for (const opt of this.d.scaleSelect.options) {
-                opt.disabled = !meta.supportsScales.includes(opt.value);
-            }
-        }
-
-        // Enforce colour scale constraints
-        if (meta.supportsColourScales && this.d.colourScaleSelect) {
-            if (!meta.supportsColourScales.includes(this.d.colourScaleSelect.value)) {
-                this.d.colourScaleSelect.value = meta.supportsColourScales[0];
-            }
-            for (const opt of this.d.colourScaleSelect.options) {
-                opt.disabled = !meta.supportsColourScales.includes(opt.value);
-            }
-        }
-
-        // Disable PCEN if engine doesn't support it
-        if (this.d.pcenEnabledCheck) {
-            if (!meta.supportsPcen) {
-                this.d.pcenEnabledCheck.checked = false;
-                this.d.pcenEnabledCheck.disabled = true;
-            } else {
-                this.d.pcenEnabledCheck.disabled = false;
-            }
-            this._updatePcenSectionDimming();
-        }
-
-        this._clearPresetHighlight();
-        this._emit('enginechange', { engine: name });
-        if (this.audioBuffer) this._generateSpectrogram();
-    }
-
     _updatePcenSectionDimming() {
         if (this.d.pcenSection) {
             const enabled = this.d.pcenEnabledCheck?.checked ?? true;
@@ -3058,8 +2974,7 @@ export class PlayerState {
                 this.d.pcenEnabledCheck.checked = false;
                 this.d.pcenEnabledCheck.disabled = true;
             } else {
-                const engineMeta = SPECTROGRAM_ENGINES[this._engineName];
-                this.d.pcenEnabledCheck.disabled = engineMeta ? !engineMeta.supportsPcen : false;
+                this.d.pcenEnabledCheck.disabled = false;
             }
             this._updatePcenSectionDimming();
         }
@@ -3390,9 +3305,6 @@ export class PlayerState {
         on(this.d.presetFavBtn, 'click', () => this._toggleFavouritePreset());
         on(this.d.presetDeleteBtn, 'click', () => this._deleteSelectedUserPreset());
         on(this.d.presetManageBtn, 'click', () => this._openPresetManager());
-        on(this.d.engineSelect, 'change', () => {
-            this._switchEngine(this.d.engineSelect.value);
-        });
         on(this.d.qualitySlider, 'input', () => {
             this._applyQualityLevel(parseInt(this.d.qualitySlider.value, 10));
         });

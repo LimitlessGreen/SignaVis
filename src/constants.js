@@ -133,22 +133,4 @@ export const COLOUR_SCALES = {
     phase:   { label: 'Phase',   description: 'atan2(imag, real) — phase angle (−π … +π)' },
 };
 
-// ─── Spectrogram Engines ────────────────────────────────────────────
-// Available rendering engine identifiers for A/B comparison.
 
-export const SPECTROGRAM_ENGINES = {
-    workbench: {
-        label: 'Workbench',
-        description: 'Mel/linear + PCEN, Web Worker, GPU colorizer',
-        supportsScales: ['mel', 'linear'],
-        supportsPcen: true,
-        supportsColourScales: ['linear', 'meter', 'dbSquared', 'db', 'phase'],
-    },
-    spectrolipi: {
-        label: 'Spectrolipi',
-        description: 'Linear FFT, Hann window, dB only',
-        supportsScales: ['linear'],
-        supportsPcen: false,
-        supportsColourScales: ['dbSquared'],
-    },
-};
