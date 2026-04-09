@@ -310,7 +310,11 @@
       onSync:  () => syncToPlayer(),
       onSeek:  (lbl) => { if (player?.currentTime != null) player.currentTime = lbl.start; },
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
-      onFocus: (id) => player._emit?.('labelfocus', { id, source: 'list' }),
+      onFocus: (id) => {
+        player._emit?.('labelfocus', { id, source: 'list', interaction: 'click' });
+        const lbl = id ? state.labels.find((l) => l.id === id) : null;
+        propsPanel.pinLabel(lbl);
+      },
       onHover: highlightSpectrogramLabel,
     });
     labelList.onRemove = (lbl) => {
@@ -320,9 +324,21 @@
 
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
+      const interaction = e.detail?.interaction || 'hover';
       labelList.highlightHover(id);
-      const lbl = id ? state.labels.find((l) => l.id === id) : null;
-      propsPanel.setSelectedLabel(lbl);
+
+      if (interaction === 'click') {
+        const lbl = id ? state.labels.find((l) => l.id === id) : null;
+        propsPanel.pinLabel(lbl);
+      } else {
+        // hover
+        if (id) {
+          const lbl = state.labels.find((l) => l.id === id) || null;
+          propsPanel.hoverLabel(lbl);
+        } else {
+          propsPanel.clearHover();
+        }
+      }
     });
 
     // ── BirdNET panel ─────────────────────────────────────────────────
@@ -593,11 +609,21 @@
       else state.labels.push({ ...label, origin: label.origin || 'manual' });
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
-      // Update properties panel if this label is currently shown
-      if (propsPanel._selectedLabel?.id === label.id) {
-        propsPanel.setSelectedLabel(state.labels.find((l) => l.id === label.id) || null);
+      // Refresh properties panel if this label is displayed (pinned or hovered)
+      const displayed = propsPanel.displayedLabel;
+      if (displayed?.id === label.id) {
+        propsPanel.refreshLabel(state.labels.find((l) => l.id === label.id) || null);
       }
     }
+
+    // Properties panel → edit a label field inline
+    propsPanel.onChange = (id, updates) => {
+      const idx = state.labels.findIndex((l) => l.id === id);
+      if (idx < 0) return;
+      state.labels[idx] = { ...state.labels[idx], ...updates };
+      syncToPlayer();
+      // Don't re-render the properties panel here — the input still has focus
+    };
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
     player.on('spectrogramlabelupdate', (e) => upsertLabel(e.detail?.label));

@@ -1,12 +1,19 @@
 /**
  * Properties / Attributes sidebar panel.
  *
- * Shows a read-only attribute table for:
- *  1) Recording metadata (source, recordist, date, location, etc.)
- *  2) The currently selected/highlighted label (name, time, freq, tags, etc.)
+ * Shows an attribute table for:
+ *  1) Recording metadata (read-only)
+ *  2) The currently pinned or hovered label — with inline editing for
+ *     editable fields (name, times, frequencies, color, tags, etc.)
  *
- * Inspired by the attribute tables in GIS software and modern IDEs.
+ * Selection model:
+ *  - "pinned" = actively clicked / selected label → persists
+ *  - "hover"  = label under the cursor → temporary, reverts to pinned
+ *
+ * Inspired by the property editors in GIS software and modern IDEs.
  */
+
+import { TAG_PRESETS } from './label-table.js';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -34,30 +41,48 @@ const RECORDING_FIELDS = [
   { key: 'remarks',     label: 'Remarks' },
 ];
 
+/**
+ * @typedef {'text'|'number'|'color'} EditType
+ */
+
+/** @type {Array<{key: string, label: string, fmt?: (v:any)=>string, edit?: EditType, step?: number, suffix?: string}>} */
 const LABEL_FIELDS = [
-  { key: 'label',            label: 'Name' },
-  { key: 'scientificName',   label: 'Scientific name' },
-  { key: 'commonName',       label: 'Common name' },
-  { key: 'start',            label: 'Start',     fmt: (v) => `${Number(v).toFixed(3)} s` },
-  { key: 'end',              label: 'End',        fmt: (v) => `${Number(v).toFixed(3)} s` },
-  { key: 'freqMin',          label: 'Freq min',   fmt: (v) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
-  { key: 'freqMax',          label: 'Freq max',   fmt: (v) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
-  { key: 'confidence',       label: 'Confidence',  fmt: (v) => v != null ? `${(Number(v) * 100).toFixed(1)}%` : '' },
+  { key: 'label',            label: 'Name',            edit: 'text' },
+  { key: 'scientificName',   label: 'Scientific name', edit: 'text' },
+  { key: 'commonName',       label: 'Common name',     edit: 'text' },
+  { key: 'start',            label: 'Start',           edit: 'number', step: 0.001, suffix: 's', fmt: (v) => `${Number(v).toFixed(3)} s` },
+  { key: 'end',              label: 'End',             edit: 'number', step: 0.001, suffix: 's', fmt: (v) => `${Number(v).toFixed(3)} s` },
+  { key: 'freqMin',          label: 'Freq min',        edit: 'number', step: 1,     suffix: 'Hz', fmt: (v) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
+  { key: 'freqMax',          label: 'Freq max',        edit: 'number', step: 1,     suffix: 'Hz', fmt: (v) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
+  { key: 'confidence',       label: 'Confidence',      fmt: (v) => v != null ? `${(Number(v) * 100).toFixed(1)}%` : '' },
   { key: 'origin',           label: 'Origin' },
-  { key: 'author',           label: 'Author' },
-  { key: 'color',            label: 'Color' },
+  { key: 'author',           label: 'Author',          edit: 'text' },
+  { key: 'color',            label: 'Color',           edit: 'color' },
 ];
+
+const PRESET_MAP = new Map(TAG_PRESETS.map((p) => [p.key, p.options]));
 
 export class PropertiesPanel {
   constructor() {
     this.el = document.createElement('div');
     this.el.className = 'scroll-panel properties-panel';
+
     /** @type {object|null} */
     this._recordingMeta = null;
     /** @type {object|null} */
     this._audioInfo = null;
-    /** @type {object|null} */
-    this._selectedLabel = null;
+
+    /** @type {object|null} Actively selected (pinned) label */
+    this._pinnedLabel = null;
+    /** @type {object|null} Temporarily hovered label */
+    this._hoverLabel = null;
+
+    /**
+     * Called when the user edits a field. Signature: (labelId, updates) => void
+     * @type {((id: string, updates: object) => void)|null}
+     */
+    this.onChange = null;
+
     this._build();
   }
 
@@ -65,8 +90,8 @@ export class PropertiesPanel {
 
   /**
    * Set recording metadata (from XC import or manual source).
-   * @param {object|null} meta  Key-value pairs from recording
-   * @param {object}      [audioInfo]  { sampleRate, duration, channels, filename, source }
+   * @param {object|null} meta
+   * @param {object}      [audioInfo]
    */
   setRecordingMeta(meta, audioInfo) {
     this._recordingMeta = meta || null;
@@ -75,11 +100,43 @@ export class PropertiesPanel {
   }
 
   /**
-   * Set the currently selected/highlighted label.
-   * @param {object|null} label  Label object from state.labels
+   * Pin (select) a label — persists until another label is pinned or cleared.
+   * @param {object|null} label
    */
-  setSelectedLabel(label) {
-    this._selectedLabel = label || null;
+  pinLabel(label) {
+    this._pinnedLabel = label || null;
+    if (!this._hoverLabel) this._renderLabel();
+  }
+
+  /**
+   * Hover-preview a label (temporary).
+   * @param {object|null} label
+   */
+  hoverLabel(label) {
+    this._hoverLabel = label || null;
+    this._renderLabel();
+  }
+
+  /**
+   * End hover — reverts to pinned label.
+   */
+  clearHover() {
+    this._hoverLabel = null;
+    this._renderLabel();
+  }
+
+  /** @returns {object|null} The currently displayed label */
+  get displayedLabel() {
+    return this._hoverLabel || this._pinnedLabel;
+  }
+
+  /**
+   * Refresh the currently displayed label (e.g. after external edit).
+   * @param {object} label  Updated label with same id
+   */
+  refreshLabel(label) {
+    if (this._pinnedLabel?.id === label?.id) this._pinnedLabel = label;
+    if (this._hoverLabel?.id === label?.id) this._hoverLabel = label;
     this._renderLabel();
   }
 
@@ -87,7 +144,8 @@ export class PropertiesPanel {
   clear() {
     this._recordingMeta = null;
     this._audioInfo = null;
-    this._selectedLabel = null;
+    this._pinnedLabel = null;
+    this._hoverLabel = null;
     this._renderRecording();
     this._renderLabel();
   }
@@ -110,10 +168,9 @@ export class PropertiesPanel {
     // Label section
     this._lblSection = document.createElement('div');
     this._lblSection.className = 'props-section';
-    const lblHeader = document.createElement('div');
-    lblHeader.className = 'props-section-title';
-    lblHeader.textContent = 'Selected Label';
-    this._lblSection.appendChild(lblHeader);
+    this._lblHeader = document.createElement('div');
+    this._lblHeader.className = 'props-section-title';
+    this._lblSection.appendChild(this._lblHeader);
     this._lblBody = document.createElement('div');
     this._lblBody.className = 'props-section-body';
     this._lblSection.appendChild(this._lblBody);
@@ -130,37 +187,34 @@ export class PropertiesPanel {
       this._recBody.innerHTML = '<div class="props-empty">No recording loaded.</div>';
       return;
     }
-    this._recBody.appendChild(this._buildGrid(RECORDING_FIELDS, merged));
+    this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
   }
 
   _renderLabel() {
     this._lblBody.innerHTML = '';
-    if (!this._selectedLabel) {
+    const lbl = this._hoverLabel || this._pinnedLabel;
+    const isHover = !!this._hoverLabel;
+
+    // Update section header
+    this._lblHeader.textContent = isHover ? 'Hovered Label' : 'Selected Label';
+    this._lblHeader.classList.toggle('props-hover-hint', isHover);
+
+    if (!lbl) {
       this._lblBody.innerHTML = '<div class="props-empty">No label selected.</div>';
       return;
     }
-    const lbl = this._selectedLabel;
-    this._lblBody.appendChild(this._buildGrid(LABEL_FIELDS, lbl));
 
-    // Tags as extra key-value pairs
-    const tags = lbl.tags;
-    if (tags && typeof tags === 'object' && Object.keys(tags).length) {
-      const tagHeader = document.createElement('div');
-      tagHeader.className = 'props-tag-header';
-      tagHeader.textContent = 'Tags';
-      this._lblBody.appendChild(tagHeader);
-      const tagFields = Object.entries(tags).map(([k, v]) => ({ key: k, label: k }));
-      this._lblBody.appendChild(this._buildGrid(tagFields, tags));
-    }
+    const editable = !isHover; // only pinned labels are editable
+    this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
+
+    // Tags section
+    this._lblBody.appendChild(this._buildTagsSection(lbl, editable));
   }
 
-  /**
-   * Build a DL grid from field definitions and a data object.
-   * @param {Array<{key: string, label: string, fmt?: (v: any) => string}>} fields
-   * @param {object} data
-   * @returns {HTMLDListElement}
-   */
-  _buildGrid(fields, data) {
+  // ── Grid builders ─────────────────────────────────────────────────
+
+  /** Read-only DL grid (for recording metadata). */
+  _buildReadonlyGrid(fields, data) {
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
     for (const f of fields) {
@@ -169,18 +223,253 @@ export class PropertiesPanel {
       const dt = document.createElement('dt');
       dt.textContent = f.label;
       const dd = document.createElement('dd');
-      if (f.key === 'color' && typeof raw === 'string' && raw.startsWith('#')) {
+      dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
+    return dl;
+  }
+
+  /** Label grid with editable / read-only fields. */
+  _buildLabelGrid(lbl, editable) {
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid';
+
+    for (const f of LABEL_FIELDS) {
+      const raw = lbl[f.key];
+      // For editable fields, always show the row (even if empty) so user can fill it
+      if (!f.edit && (raw == null || raw === '')) continue;
+      if (!editable && (raw == null || raw === '')) continue;
+
+      const dt = document.createElement('dt');
+      dt.textContent = f.label;
+
+      const dd = document.createElement('dd');
+
+      if (editable && f.edit) {
+        dd.classList.add('props-editable');
+        dd.appendChild(this._buildInput(f, raw, lbl));
+      } else if (f.key === 'color' && typeof raw === 'string' && raw.startsWith('#')) {
         const swatch = document.createElement('span');
         swatch.className = 'props-color-swatch';
         swatch.style.background = raw;
         dd.appendChild(swatch);
         dd.appendChild(document.createTextNode(raw));
       } else {
-        dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
+        dd.textContent = f.fmt ? f.fmt(raw) : String(raw ?? '');
+        if (!f.edit) dd.classList.add('props-readonly');
       }
+
       dl.appendChild(dt);
       dl.appendChild(dd);
     }
     return dl;
+  }
+
+  /** Create the appropriate input element for an editable field. */
+  _buildInput(field, value, lbl) {
+    if (field.edit === 'color') {
+      return this._buildColorInput(field, value, lbl);
+    }
+
+    if (field.edit === 'number') {
+      return this._buildNumberInput(field, value, lbl);
+    }
+
+    // text
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'props-input';
+    input.value = value ?? '';
+    input.placeholder = field.label;
+    input.addEventListener('change', () => {
+      this._emitChange(lbl.id, { [field.key]: input.value });
+    });
+    return input;
+  }
+
+  _buildNumberInput(field, value, lbl) {
+    const wrap = document.createElement('span');
+    wrap.className = 'props-number-wrap';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'props-input props-input-number';
+    input.value = value != null ? Number(value) : '';
+    input.step = String(field.step || 0.001);
+    input.addEventListener('change', () => {
+      const v = input.value === '' ? null : Number(input.value);
+      this._emitChange(lbl.id, { [field.key]: v });
+    });
+    wrap.appendChild(input);
+    if (field.suffix) {
+      const suf = document.createElement('span');
+      suf.className = 'props-suffix';
+      suf.textContent = field.suffix;
+      wrap.appendChild(suf);
+    }
+    return wrap;
+  }
+
+  _buildColorInput(field, value, lbl) {
+    const wrap = document.createElement('span');
+    wrap.className = 'props-color-wrap';
+
+    const swatch = document.createElement('input');
+    swatch.type = 'color';
+    swatch.className = 'props-color-input';
+    swatch.value = (typeof value === 'string' && value.startsWith('#')) ? value : '#888888';
+    swatch.addEventListener('input', () => {
+      text.value = swatch.value;
+    });
+    swatch.addEventListener('change', () => {
+      this._emitChange(lbl.id, { color: swatch.value });
+    });
+
+    const text = document.createElement('input');
+    text.type = 'text';
+    text.className = 'props-input props-input-color-text';
+    text.value = value ?? '';
+    text.addEventListener('change', () => {
+      if (/^#[0-9a-f]{6}$/i.test(text.value)) {
+        swatch.value = text.value;
+        this._emitChange(lbl.id, { color: text.value });
+      }
+    });
+
+    wrap.appendChild(swatch);
+    wrap.appendChild(text);
+    return wrap;
+  }
+
+  // ── Tags section ──────────────────────────────────────────────────
+
+  _buildTagsSection(lbl, editable) {
+    const frag = document.createDocumentFragment();
+    const header = document.createElement('div');
+    header.className = 'props-tag-header';
+    header.textContent = 'Tags';
+    frag.appendChild(header);
+
+    const tags = (lbl.tags && typeof lbl.tags === 'object') ? { ...lbl.tags } : {};
+
+    if (!editable) {
+      // Read-only: just show key-value pairs
+      if (!Object.keys(tags).length) {
+        const empty = document.createElement('div');
+        empty.className = 'props-empty';
+        empty.textContent = 'No tags.';
+        frag.appendChild(empty);
+      } else {
+        const dl = document.createElement('dl');
+        dl.className = 'props-grid';
+        for (const [k, v] of Object.entries(tags)) {
+          const dt = document.createElement('dt');
+          dt.textContent = k;
+          const dd = document.createElement('dd');
+          dd.textContent = String(v);
+          dl.appendChild(dt);
+          dl.appendChild(dd);
+        }
+        frag.appendChild(dl);
+      }
+      return frag;
+    }
+
+    // Editable: preset selects + custom tags + add button
+    const grid = document.createElement('dl');
+    grid.className = 'props-grid';
+
+    // Preset tags (sex, lifeStage, soundType)
+    for (const preset of TAG_PRESETS) {
+      const dt = document.createElement('dt');
+      dt.textContent = preset.key;
+      const dd = document.createElement('dd');
+      dd.classList.add('props-editable');
+      const sel = document.createElement('select');
+      sel.className = 'props-select';
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '–';
+      sel.appendChild(emptyOpt);
+      for (const opt of preset.options) {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt;
+        if (tags[preset.key] === opt) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => {
+        const newTags = { ...lbl.tags };
+        if (sel.value) newTags[preset.key] = sel.value;
+        else delete newTags[preset.key];
+        this._emitChange(lbl.id, { tags: newTags });
+      });
+      dd.appendChild(sel);
+      grid.appendChild(dt);
+      grid.appendChild(dd);
+    }
+
+    // Custom (non-preset) tags
+    const customKeys = Object.keys(tags).filter((k) => !PRESET_MAP.has(k));
+    for (const k of customKeys) {
+      const dt = document.createElement('dt');
+      const keyInput = document.createElement('input');
+      keyInput.type = 'text';
+      keyInput.className = 'props-input props-input-tag-key';
+      keyInput.value = k;
+      keyInput.readOnly = true;
+      dt.appendChild(keyInput);
+
+      const dd = document.createElement('dd');
+      dd.classList.add('props-editable');
+      const wrap = document.createElement('span');
+      wrap.className = 'props-custom-tag-wrap';
+      const valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.className = 'props-input';
+      valInput.value = tags[k] ?? '';
+      valInput.addEventListener('change', () => {
+        const newTags = { ...lbl.tags };
+        newTags[k] = valInput.value;
+        this._emitChange(lbl.id, { tags: newTags });
+      });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'props-tag-del';
+      delBtn.textContent = '×';
+      delBtn.title = 'Remove tag';
+      delBtn.addEventListener('click', () => {
+        const newTags = { ...lbl.tags };
+        delete newTags[k];
+        this._emitChange(lbl.id, { tags: newTags });
+      });
+      wrap.appendChild(valInput);
+      wrap.appendChild(delBtn);
+      dd.appendChild(wrap);
+      grid.appendChild(dt);
+      grid.appendChild(dd);
+    }
+
+    frag.appendChild(grid);
+
+    // Add custom tag button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'props-tag-add';
+    addBtn.textContent = '+ Tag';
+    addBtn.addEventListener('click', () => {
+      const key = prompt('Tag key:');
+      if (!key?.trim()) return;
+      const val = prompt('Tag value:') ?? '';
+      const newTags = { ...lbl.tags, [key.trim()]: val };
+      this._emitChange(lbl.id, { tags: newTags });
+    });
+    frag.appendChild(addBtn);
+
+    return frag;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
+
+  _emitChange(id, updates) {
+    this.onChange?.(id, updates);
   }
 }

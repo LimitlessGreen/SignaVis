@@ -662,6 +662,146 @@ html, body {
   vertical-align: middle;
 }
 
+/* ── Hover hint ── */
+.props-section-title.props-hover-hint {
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* ── Read-only visual cue ── */
+.props-readonly {
+  opacity: 0.65;
+}
+
+/* ── Editable cells ── */
+.props-editable {
+  /* no extra opacity — inputs are the visual cue */
+}
+.props-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.props-input:hover {
+  border-color: var(--line);
+}
+.props-input:focus {
+  border-color: var(--accent);
+  background: rgba(255,255,255,0.08);
+}
+.props-input-number {
+  width: auto;
+  min-width: 64px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+.props-number-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.props-suffix {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── Color editor ── */
+.props-color-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.props-color-input {
+  width: 22px; height: 22px;
+  padding: 0; border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.props-color-input::-webkit-color-swatch-wrapper { padding: 1px; }
+.props-color-input::-webkit-color-swatch { border: none; border-radius: 2px; }
+.props-input-color-text {
+  width: auto; flex: 1; min-width: 0;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ── Select (for tag presets) ── */
+.props-select {
+  width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.props-select:hover { border-color: var(--line); }
+.props-select:focus { border-color: var(--accent); }
+
+/* ── Custom tag row ── */
+.props-input-tag-key {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.45);
+  font-size: 11px;
+  padding: 0;
+  width: 100%;
+  pointer-events: none;
+}
+.props-custom-tag-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+.props-custom-tag-wrap .props-input {
+  flex: 1; min-width: 0;
+}
+.props-tag-del {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.props-tag-del:hover { color: #e55; }
+
+/* ── Add tag button ── */
+.props-tag-add {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.props-tag-add:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 /* ── Spectrogram Settings Panel (relocated from player) ── */
 .spectrogram-settings-panel {
   padding: 0;

@@ -710,7 +710,7 @@ export class AnnotationLayer {
             if (performance.now() < this._suppressClickUntil) return;
             event.preventDefault();
             event.stopPropagation();
-            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform' });
+            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'click' });
             this.player?._state?._blockSeekClicks?.(260);
             this.player?.playSegment?.(region.start, region.end, { labelId: region.id });
         });
@@ -722,7 +722,7 @@ export class AnnotationLayer {
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform' });
+            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'click' });
             const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.annotation-handle');
             const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
@@ -731,11 +731,11 @@ export class AnnotationLayer {
         });
         el.addEventListener('pointerenter', (event) => {
             this._lastPointerX = event.clientX;
-            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform' });
+            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'hover' });
         });
         el.addEventListener('pointerleave', () => {
             if (!this._grabbing && !this._editing) {
-                this.player?._emit?.('labelfocus', { id: null, source: 'waveform' });
+                this.player?._emit?.('labelfocus', { id: null, source: 'waveform', interaction: 'hover' });
             }
         });
         el.addEventListener('pointermove', (event) => {
@@ -1221,7 +1221,7 @@ export class SpectrogramLabelLayer {
             if (performance.now() < this._suppressClickUntil) return;
             event.stopPropagation();
             event.preventDefault();
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram' });
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
             this.player?._state?._blockSeekClicks?.(260);
             this.player?.playBandpassedSegment?.(
                 label.start,
@@ -1239,7 +1239,7 @@ export class SpectrogramLabelLayer {
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram' });
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
             const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.label-handle');
             const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
@@ -1249,11 +1249,11 @@ export class SpectrogramLabelLayer {
         el.addEventListener('pointerenter', (event) => {
             this._lastPointerX = event.clientX;
             this._lastPointerY = event.clientY;
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram' });
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'hover' });
         });
         el.addEventListener('pointerleave', () => {
             if (!this._grabbing && !this._editing) {
-                this.player?._emit?.('labelfocus', { id: null, source: 'spectrogram' });
+                this.player?._emit?.('labelfocus', { id: null, source: 'spectrogram', interaction: 'hover' });
             }
         });
         el.addEventListener('pointermove', (event) => {
