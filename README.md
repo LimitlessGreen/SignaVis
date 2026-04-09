@@ -9,13 +9,13 @@
   <a href="https://limitlessgreen.github.io/Audio-Workbench/">
     <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
   </a>
-  <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html">
+  <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1">
     <img src="https://img.shields.io/badge/Labeling%20App-Open-blue" alt="Labeling App" />
   </a>
   <br />
   <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/">▶ Live demo — Open in browser (GitHub Pages)</a></strong>
   <br />
-  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html">🏷 Labeling App — BirdNET detection, annotation & Xeno-canto integration</a></strong>
+  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1">🏷 Labeling App — BirdNET detection, annotation & Xeno-canto integration</a></strong>
 </p>
 
 ![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
@@ -208,7 +208,7 @@ HTML(render_daw_player(audio_bytes))
 ## Demos
 
 - **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/Audio-Workbench/)** — component storybook with configurable stories
-- **[Labeling App](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
+- **[Labeling App](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
 - **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)**
 - **Streamlit:**
   ```bash
