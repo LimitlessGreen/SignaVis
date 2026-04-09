@@ -197,7 +197,9 @@
     import { LabelList } from './lib/label-list.js';
     import { BirdNETPanel } from './lib/birdnet-panel.js';
     import { XenoCantoPanel } from './lib/xc-panel.js';
-    import { Tags, Bird, Globe, CircleHelp } from 'lucide-static';
+    import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
+    import { PropertiesPanel } from './lib/properties-panel.js';
+    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info } from 'lucide-static';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -240,6 +242,20 @@
     sidebar.addPanel('xc',     { icon: ICONS.xc,      label: 'Xeno Canto', element: document.getElementById('panelXc') });
     sidebar.addPanel('help',   { icon: ICONS.help,    label: 'Help',     element: document.getElementById('panelHelp') });
     sidebar.setActive('labels');
+
+    // ── Right sidebar ─────────────────────────────────────────────────
+    const specPanel = new SpectrogramSettingsPanel(player);
+    specPanel.relocate();
+
+    const propsPanel = new PropertiesPanel();
+
+    const rightBar = new Sidebar(document.getElementById('workspace'), {
+      side: 'right',
+      onResize: () => player?.resize?.(),
+    });
+
+    rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
+    rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
 
     // ── App state ─────────────────────────────────────────────────────
     const state = {
@@ -305,6 +321,8 @@
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
       labelList.highlightHover(id);
+      const lbl = id ? state.labels.find((l) => l.id === id) : null;
+      propsPanel.setSelectedLabel(lbl);
     });
 
     // ── BirdNET panel ─────────────────────────────────────────────────
@@ -388,6 +406,13 @@
       const result = await xcPanel.importLabels(xcId, state.sampleRate);
       state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
       state.recordingMeta = result.recordingMeta || null;
+      propsPanel.setRecordingMeta(state.recordingMeta, {
+        source: `XC${result.xcId}`,
+        sampleRate: state.sampleRate,
+        duration: player.duration || 0,
+        species: result.recording?.en || '',
+        filename: fileLabel.textContent || '',
+      });
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
       state.labels = result.labels;
       syncToPlayer();
@@ -513,6 +538,11 @@
 
     player.on('ready', (e) => {
       if (e.detail?.sampleRate) state.sampleRate = e.detail.sampleRate;
+      propsPanel.setRecordingMeta(state.recordingMeta, {
+        sampleRate: state.sampleRate,
+        duration: player.duration || 0,
+        filename: fileLabel.textContent || '',
+      });
     });
 
     player.on('selection', (e) => {
@@ -563,6 +593,10 @@
       else state.labels.push({ ...label, origin: label.origin || 'manual' });
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
+      // Update properties panel if this label is currently shown
+      if (propsPanel._selectedLabel?.id === label.id) {
+        propsPanel.setSelectedLabel(state.labels.find((l) => l.id === label.id) || null);
+      }
     }
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));

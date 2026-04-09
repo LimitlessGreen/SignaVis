@@ -7,6 +7,7 @@
   --accent: #39b5ff;
   --danger: #f87171;
   --sidebar-width: 300px;
+  --sidebar-right-width: 300px;
 }
 * { box-sizing: border-box; margin: 0; }
 html, body {
@@ -204,6 +205,24 @@ html, body {
 .sidebar-resize:hover,
 .sidebar-resize.dragging {
   background: var(--accent);
+}
+
+/* ── Right sidebar variants ── */
+.activity-bar--right {
+  border-right: none;
+  border-left: 1px solid var(--line);
+}
+.activity-bar--right .activity-btn.active {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+.sidebar--right {
+  width: var(--sidebar-right-width, 300px);
+  border-right: none;
+  border-left: 1px solid var(--line);
+}
+.sidebar--right.collapsed {
+  width: 0;
+  border-left: none;
 }
 
 /* ── Main Area + Stage ── */
@@ -584,5 +603,130 @@ html, body {
   .activity-btn-label { font-size: 8px; }
   .activity-btn-icon svg { width: 15px; height: 15px; }
   .sidebar { --sidebar-width: 240px; }
+  .sidebar--right { --sidebar-right-width: 240px; }
   .panel-hint { display: none; }
+}
+
+/* ── Properties Panel ── */
+.properties-panel {
+  padding: 0;
+}
+.props-section {
+  border-bottom: 1px solid var(--line);
+}
+.props-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 10px 14px 6px;
+}
+.props-section-body {
+  padding: 0 14px 10px;
+}
+.props-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0; padding: 0;
+  font-size: 11px; line-height: 1.5;
+}
+.props-grid dt {
+  color: rgba(255,255,255,0.45);
+  white-space: nowrap;
+}
+.props-grid dd {
+  margin: 0;
+  color: rgba(255,255,255,0.85);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.props-empty {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.props-tag-header {
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.props-color-swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* ── Spectrogram Settings Panel (relocated from player) ── */
+.spectrogram-settings-panel {
+  padding: 0;
+}
+.spectrogram-settings-panel .settings-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.spectrogram-settings-panel .settings-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.spectrogram-settings-panel .settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.spectrogram-settings-panel .settings-row:last-child {
+  margin-bottom: 0;
+}
+.spectrogram-settings-panel .settings-label {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 65px;
+  flex-shrink: 0;
+}
+.spectrogram-settings-panel .settings-select {
+  flex: 1; min-width: 0;
+  height: 26px; padding: 0 6px;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); color: var(--text);
+  font-size: 11px;
+}
+.spectrogram-settings-panel .settings-number {
+  width: 68px; height: 26px;
+  padding: 0 5px;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); color: var(--text);
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+.spectrogram-settings-panel .settings-range {
+  flex: 1; height: 4px;
+  accent-color: var(--accent);
+}
+.spectrogram-settings-panel .quality-label-bar {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--muted);
+  padding: 2px 20px 0; opacity: 0.7;
+}
+.spectrogram-settings-panel .quality-level-display {
+  text-align: center;
+  font-size: 11px; font-weight: 600;
+  color: var(--accent); margin-top: 2px;
+}
+.spectrogram-settings-panel .mini-btn {
+  border: 1px solid var(--line); border-radius: 4px;
+  background: transparent; color: var(--muted);
+  font-size: 10px; padding: 2px 6px; cursor: pointer;
+}
+.spectrogram-settings-panel .mini-btn:hover {
+  color: var(--text); border-color: #3a5580;
 }
