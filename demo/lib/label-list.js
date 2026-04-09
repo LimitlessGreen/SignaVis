@@ -1,12 +1,15 @@
 /**
- * Compact card-based label list for sidebar display.
+ * Hierarchical label list for sidebar display.
  *
- * Each label renders as a vertical card showing:
- *   • Color dot + name (inline-editable) + action buttons
+ * Labels are grouped by origin (manual / BirdNET / xeno-canto) and then
+ * by label name. Each name group renders as a collapsible tree node:
+ *   • Color dot + name (inline-editable) + count badge + taxonomy-edit btn
  *   • Scientific name (italic, muted)
- *   • Time range + frequency range
- *   • Tag badges (preset + custom) + confidence
- *   • Expandable detail section (double-click) with tag dropdowns
+ *   • Expandable list of instances, each showing:
+ *     – Time range + frequency range
+ *     – Tag badges + confidence
+ *     – Delete button
+ *     – Double-click: inline tag editing
  *
  * Usage:
  *   import { LabelList } from './lib/label-list.js';
@@ -63,41 +66,45 @@ export class LabelList {
   set onRemove(fn) { this._onRemove = fn; }
   get selectedId() { return this._selectedId; }
 
-  /** Full re-render of the label list, grouped by origin. */
+  /** Full re-render — groups labels by origin, then by name. */
   render(labels) {
     this._labels = labels;
     this._container.innerHTML = '';
     this._cardMap = new Map();
-    const sorted = labels.slice().sort((a, b) => a.start - b.start);
-    if (this._badgeEl) this._badgeEl.textContent = String(sorted.length);
-    this._emptyEl.style.display = sorted.length ? 'none' : '';
+    if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
+    this._emptyEl.style.display = labels.length ? 'none' : '';
 
-    // Group by origin
     const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
-    /** @type {Map<string, any[]>} */
-    const groups = new Map();
-    for (const lbl of sorted) {
-      const origin = lbl.origin || 'manual';
-      if (!groups.has(origin)) groups.set(origin, []);
-      /** @type {any[]} */ (groups.get(origin)).push(lbl);
-    }
-    const origins = [...groups.keys()].sort((a, b) =>
-      (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || a.localeCompare(b));
 
-    // Only show headers when more than one origin is present
-    const showHeaders = origins.length > 1;
+    // Two-level: origin → label name → instances[]
+    /** @type {Map<string, Map<string, any[]>>} */
+    const originGroups = new Map();
+    for (const lbl of labels) {
+      const origin = lbl.origin || 'manual';
+      if (!originGroups.has(origin)) originGroups.set(origin, new Map());
+      const nameMap = /** @type {Map<string, any[]>} */ (originGroups.get(origin));
+      const key = lbl.label || '(unlabeled)';
+      if (!nameMap.has(key)) nameMap.set(key, []);
+      /** @type {any[]} */ (nameMap.get(key)).push(lbl);
+    }
+
+    const origins = [...originGroups.keys()].sort((a, b) =>
+      (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || a.localeCompare(b));
+    const showOriginHeaders = origins.length > 1;
 
     for (const origin of origins) {
-      if (showHeaders) {
-        const header = document.createElement('div');
-        header.className = 'label-group-header';
-        header.textContent = origin;
-        this._container.appendChild(header);
+      if (showOriginHeaders) {
+        const hdr = document.createElement('div');
+        hdr.className = 'label-origin-header';
+        hdr.textContent = origin;
+        this._container.appendChild(hdr);
       }
-      for (const lbl of /** @type {any[]} */ (groups.get(origin))) {
-        const card = this._buildCard(lbl);
-        this._container.appendChild(card);
-        this._cardMap.set(lbl.id, card);
+      const nameMap = /** @type {Map<string, any[]>} */ (originGroups.get(origin));
+      const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
+      for (const name of names) {
+        const instances = /** @type {any[]} */ (nameMap.get(name));
+        instances.sort((a, b) => a.start - b.start);
+        this._container.appendChild(this._buildGroup(instances));
       }
     }
 
@@ -106,72 +113,91 @@ export class LabelList {
 
   highlightRow(labelId) {
     this._selectedId = labelId || null;
-    for (const c of this._container.querySelectorAll('.label-card.selected')) {
+    for (const c of this._container.querySelectorAll('.label-instance.selected')) {
       c.classList.remove('selected');
     }
     if (labelId) {
-      const card = this._cardMap.get(labelId);
-      if (card) {
-        card.classList.add('selected');
-        card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const inst = this._cardMap.get(labelId);
+      if (inst) {
+        // Auto-expand parent group if collapsed
+        const group = inst.closest('.label-group');
+        if (group && !group.classList.contains('expanded')) {
+          const list = group.querySelector('.label-group-instances');
+          if (list) /** @type {HTMLElement} */ (list).hidden = false;
+          group.classList.add('expanded');
+        }
+        inst.classList.add('selected');
+        inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
   }
 
   highlightHover(labelId) {
-    for (const c of this._container.querySelectorAll('.label-card.highlighted')) {
+    for (const c of this._container.querySelectorAll('.label-instance.highlighted')) {
       c.classList.remove('highlighted');
     }
     if (labelId) {
-      const card = this._cardMap.get(labelId);
-      if (card) {
-        card.classList.add('highlighted');
-        card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const inst = this._cardMap.get(labelId);
+      if (inst) {
+        // Auto-expand parent group if collapsed
+        const group = inst.closest('.label-group');
+        if (group && !group.classList.contains('expanded')) {
+          const list = group.querySelector('.label-group-instances');
+          if (list) /** @type {HTMLElement} */ (list).hidden = false;
+          group.classList.add('expanded');
+        }
+        inst.classList.add('highlighted');
+        inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
   }
 
-  // ── Card builder ──────────────────────────────────────────────────
+  // ── Group builder ──────────────────────────────────────────────────
 
-  _buildCard(lbl) {
-    const { display, scientific } = this._resolveName(lbl);
+  /** @param {any[]} instances  Labels sharing the same name+origin */
+  _buildGroup(instances) {
+    const representative = instances[0];
+    const { display, scientific } = this._resolveName(representative);
 
-    const card = document.createElement('div');
-    card.className = 'label-card';
-    card.dataset.labelId = lbl.id;
+    const group = document.createElement('div');
+    group.className = 'label-group';
 
-    card.addEventListener('click', () => {
-      this._onSeek?.(lbl);
-      this.highlightRow(lbl.id);
-      this._onFocus?.(lbl.id, 'list');
-    });
-    card.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
-    card.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
+    // ── Group header: chevron + dot + name + count + edit btn ──
+    const row = document.createElement('div');
+    row.className = 'label-group-row';
 
-    // ── Header: dot + name + spacer + actions ──
-    const header = document.createElement('div');
-    header.className = 'label-card-header';
+    const chevron = document.createElement('span');
+    chevron.className = 'label-group-chevron';
+    chevron.textContent = '▸';
+    row.appendChild(chevron);
 
-    if (lbl.color) {
+    if (representative.color) {
       const dot = document.createElement('span');
       dot.className = 'color-dot';
-      dot.style.background = lbl.color;
-      header.appendChild(dot);
+      dot.style.background = representative.color;
+      row.appendChild(dot);
     }
 
     const nameEl = document.createElement('span');
-    nameEl.className = 'label-card-name';
+    nameEl.className = 'label-group-name';
     nameEl.textContent = display;
-    nameEl.title = 'Click to edit';
+    nameEl.title = 'Click to edit name';
     nameEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      this._startInlineEdit(nameEl, lbl, display);
+      this._startGroupInlineEdit(nameEl, instances, display);
     });
-    header.appendChild(nameEl);
+    row.appendChild(nameEl);
+
+    if (instances.length > 1) {
+      const count = document.createElement('span');
+      count.className = 'label-group-count';
+      count.textContent = String(instances.length);
+      row.appendChild(count);
+    }
 
     const spacer = document.createElement('span');
-    spacer.className = 'label-card-spacer';
-    header.appendChild(spacer);
+    spacer.style.flex = '1';
+    row.appendChild(spacer);
 
     const editBtn = document.createElement('button');
     editBtn.className = 'act-btn';
@@ -179,54 +205,105 @@ export class LabelList {
     editBtn.title = 'Edit (taxonomy search)';
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this._onEdit?.(lbl.id);
+      this._onEdit?.(representative.id);
     });
-    header.appendChild(editBtn);
+    row.appendChild(editBtn);
+
+    group.appendChild(row);
+
+    // ── Scientific name ──
+    if (scientific) {
+      const sciEl = document.createElement('div');
+      sciEl.className = 'label-group-sci';
+      sciEl.textContent = scientific;
+      group.appendChild(sciEl);
+    }
+
+    // ── Instances list (collapsible) ──
+    const instanceList = document.createElement('div');
+    instanceList.className = 'label-group-instances';
+
+    for (const lbl of instances) {
+      const inst = this._buildInstance(lbl);
+      instanceList.appendChild(inst);
+      this._cardMap.set(lbl.id, inst);
+    }
+
+    // Auto-expand single-instance groups
+    const single = instances.length === 1;
+    if (!single) instanceList.hidden = true;
+    group.classList.toggle('expanded', single);
+
+    group.appendChild(instanceList);
+
+    row.addEventListener('click', () => {
+      const collapsed = instanceList.hidden;
+      instanceList.hidden = !collapsed;
+      group.classList.toggle('expanded', collapsed);
+    });
+
+    return group;
+  }
+
+  // ── Instance builder ──────────────────────────────────────────────
+
+  _buildInstance(lbl) {
+    const inst = document.createElement('div');
+    inst.className = 'label-instance';
+    inst.dataset.labelId = lbl.id;
+
+    inst.addEventListener('click', (e) => {
+      if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input')) return;
+      this._onSeek?.(lbl);
+      this.highlightRow(lbl.id);
+      this._onFocus?.(lbl.id, 'list');
+    });
+    inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
+    inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
+
+    // ── Header: time/freq + delete ──
+    const header = document.createElement('div');
+    header.className = 'label-instance-header';
+
+    const meta = document.createElement('span');
+    meta.className = 'label-instance-meta';
+    meta.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}  ·  ${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
+    header.appendChild(meta);
+
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    header.appendChild(spacer);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'act-btn danger';
     delBtn.textContent = '×';
-    delBtn.title = 'Remove label';
+    delBtn.title = 'Remove';
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this._onRemove?.(lbl);
     });
     header.appendChild(delBtn);
 
-    card.appendChild(header);
-
-    // ── Scientific name ──
-    if (scientific) {
-      const sciEl = document.createElement('div');
-      sciEl.className = 'label-card-sci';
-      sciEl.textContent = scientific;
-      card.appendChild(sciEl);
-    }
-
-    // ── Meta: time + freq ──
-    const meta = document.createElement('div');
-    meta.className = 'label-card-meta';
-    meta.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}  ·  ${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
-    card.appendChild(meta);
+    inst.appendChild(header);
 
     // ── Tag badges ──
     const tagsEl = this._buildTagBadges(lbl);
-    if (tagsEl.childNodes.length > 0) card.appendChild(tagsEl);
+    if (tagsEl.childNodes.length > 0) inst.appendChild(tagsEl);
 
-    // ── Expandable detail (tag editing) ──
+    // ── Expandable detail (tag editing, double-click) ──
     const detail = this._buildDetail(lbl);
     detail.style.display = 'none';
-    card.appendChild(detail);
+    inst.appendChild(detail);
 
-    card.addEventListener('dblclick', (e) => {
+    inst.addEventListener('dblclick', (e) => {
       if (e.target.closest('.act-btn') || e.target.closest('input') || e.target.closest('select')) return;
       e.stopPropagation();
       const open = detail.style.display !== 'none';
       detail.style.display = open ? 'none' : '';
-      card.classList.toggle('expanded', !open);
+      inst.classList.toggle('expanded', !open);
     });
 
-    return card;
+    return inst;
   }
 
   // ── Tag badges line ───────────────────────────────────────────────
@@ -356,13 +433,13 @@ export class LabelList {
     }
   }
 
-  // ── Inline name editing ───────────────────────────────────────────
+  // ── Inline name editing (group-level, renames all instances) ────
 
-  _startInlineEdit(nameEl, lbl, displayName) {
+  _startGroupInlineEdit(nameEl, instances, displayName) {
     if (nameEl.querySelector('input')) return;
     const input = document.createElement('input');
     input.className = 'inline-name-input';
-    input.value = lbl.label || displayName;
+    input.value = instances[0].label || displayName;
     nameEl.textContent = '';
     nameEl.appendChild(input);
     input.focus();
@@ -370,10 +447,12 @@ export class LabelList {
 
     const commit = () => {
       const val = input.value.trim();
-      if (val && val !== lbl.label) {
-        lbl.label = val;
-        lbl.scientificName = '';
-        lbl.commonName = '';
+      if (val && val !== instances[0].label) {
+        for (const lbl of instances) {
+          lbl.label = val;
+          lbl.scientificName = '';
+          lbl.commonName = '';
+        }
         this._onSync();
       } else {
         nameEl.textContent = displayName;

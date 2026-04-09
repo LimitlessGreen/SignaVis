@@ -394,17 +394,19 @@ html, body {
 .xc-status-success { color: #66bb6a; }
 .xc-status-error { color: #ef5350; }
 
-/* ── Label Cards ── */
+/* ── Label Hierarchy ── */
 .label-list-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
-.label-group-header {
+
+/* Origin headers */
+.label-origin-header {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   padding: 4px 12px;
   font-size: 9px;
   font-weight: 700;
@@ -414,63 +416,109 @@ html, body {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-.label-card {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(30, 45, 71, 0.4);
-  cursor: pointer;
-  transition: background 0.1s;
+
+/* Name groups */
+.label-group {
+  border-bottom: 1px solid rgba(30, 45, 71, 0.35);
 }
-.label-card:hover {
-  background: rgba(57, 181, 255, 0.06);
-}
-.label-card.highlighted {
-  background: rgba(57, 181, 255, 0.1);
-}
-.label-card.selected {
-  background: rgba(57, 181, 255, 0.14);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.label-card-header {
+.label-group-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
 }
-.label-card-spacer { flex: 1; }
-.label-card-header .act-btn {
-  opacity: 0;
-  transition: opacity 0.15s;
+.label-group-row:hover {
+  background: rgba(57, 181, 255, 0.06);
 }
-.label-card:hover .label-card-header .act-btn,
-.label-card.selected .label-card-header .act-btn {
-  opacity: 1;
+.label-group-chevron {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  transition: transform 0.15s ease;
+  transform-origin: center;
 }
-.label-card-name {
+.label-group.expanded > .label-group-row > .label-group-chevron {
+  transform: rotate(90deg);
+}
+.label-group-name {
   font-weight: 600; color: #dce8f8;
   font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   cursor: text; line-height: 1.35;
   min-width: 0;
 }
-.label-card-name:hover {
+.label-group-name:hover {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
   text-decoration-color: #3a5580;
 }
-.label-card-sci {
+.label-group-count {
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: rgba(57, 181, 255, 0.12);
+  color: var(--accent);
+  font-weight: 600;
+  line-height: 16px;
+  flex-shrink: 0;
+}
+.label-group-row .act-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.label-group-row:hover .act-btn {
+  opacity: 1;
+}
+.label-group-sci {
   color: var(--muted); font-style: italic; font-size: 11px;
-  padding-left: 16px;
+  padding: 0 10px 3px 30px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.label-card-meta {
+
+/* Instances */
+.label-group-instances {
+  padding-left: 14px;
+}
+.label-instance {
+  padding: 3px 10px 3px 16px;
+  cursor: pointer;
+  border-top: 1px solid rgba(30, 45, 71, 0.18);
+  transition: background 0.1s;
+}
+.label-instance:hover {
+  background: rgba(57, 181, 255, 0.06);
+}
+.label-instance.highlighted {
+  background: rgba(57, 181, 255, 0.1);
+}
+.label-instance.selected {
+  background: rgba(57, 181, 255, 0.14);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.label-instance-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.label-instance-meta {
   color: #6b7f9e;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px;
-  padding-left: 16px;
-  margin-top: 2px;
+}
+.label-instance-header .act-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.label-instance:hover .act-btn {
+  opacity: 1;
 }
 .label-card-tags {
   display: flex; flex-wrap: wrap; gap: 3px;
-  padding-left: 16px; margin-top: 3px;
+  margin-top: 2px;
 }
 .tag-mini {
   font-size: 9px; padding: 1px 4px;
@@ -484,9 +532,9 @@ html, body {
 
 /* ── Label Card Detail (expanded) ── */
 .label-card-detail {
-  padding: 8px 0 4px 16px;
+  padding: 6px 0 4px 0;
   border-top: 1px solid rgba(30, 45, 71, 0.3);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .detail-row {
   display: flex; align-items: center; gap: 8px;
