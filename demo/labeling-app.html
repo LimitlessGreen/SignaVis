@@ -95,6 +95,7 @@
 
   <!-- ── Sidebar panel: Xeno-canto ────────────────────────────────── -->
   <div id="panelXc" class="scroll-panel" hidden>
+    <!-- Load -->
     <div class="panel-section">
       <label class="field-label" for="xcIdInput">Load XC Recording</label>
       <div class="xc-load-row">
@@ -102,14 +103,37 @@
         <button class="tb-btn" id="xcLoadBtn" type="button">Load</button>
       </div>
     </div>
+
+    <!-- Recording metadata (read-only, populated after load) -->
+    <div class="panel-section xc-recording-section">
+      <div class="field-label">Recording</div>
+      <div id="xcRecordingMeta" class="xc-recording-meta">
+        <div class="field-hint" style="padding:6px 0">No recording loaded.</div>
+      </div>
+    </div>
+
+    <!-- Annotation Set metadata (editable) -->
+    <div class="panel-section">
+      <div class="field-label">Annotation Set</div>
+      <div id="xcSetMeta" class="xc-set-meta"></div>
+    </div>
+
+    <!-- API Key -->
     <div class="panel-section">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
-      <input id="xcApiKeyInput" class="input" placeholder="API key (optional)" />
-      <p class="field-hint">Für XC-API-Requests zum Label-Import. Wird lokal im Browser gespeichert.</p>
+      <input id="xcApiKeyInput" class="input" placeholder="XC API key" />
+      <p class="field-hint">Für Label-Import und Upload. Lokal gespeichert.</p>
     </div>
-    <div class="panel-actions">
+
+    <!-- Actions -->
+    <div class="panel-actions xc-actions">
       <button class="sidebar-action-btn" id="xcApiSaveBtn" type="button">Save Key</button>
+      <div class="xc-action-row">
+        <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button">Export JSON</button>
+        <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Upload to XC</button>
+      </div>
     </div>
+    <div id="xcStatus" class="xc-status" style="display:none"></div>
   </div>
 
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
@@ -221,6 +245,7 @@
     const state = {
       labels: [],
       xcLabelPool: [],
+      recordingMeta: null,
       selected: null,
       selectedLabelId: null,
       sampleRate: 32000,
@@ -230,8 +255,13 @@
 
     // ── Xeno-canto panel ──────────────────────────────────────────────
     const xcPanel = new XenoCantoPanel({
-      keyInput:  document.getElementById('xcApiKeyInput'),
-      saveBtn:   document.getElementById('xcApiSaveBtn'),
+      keyInput:        document.getElementById('xcApiKeyInput'),
+      saveBtn:         document.getElementById('xcApiSaveBtn'),
+      recordingMetaEl: document.getElementById('xcRecordingMeta'),
+      setMetaEl:       document.getElementById('xcSetMeta'),
+      uploadBtn:       document.getElementById('xcUploadBtn'),
+      exportSetBtn:    document.getElementById('xcExportSetBtn'),
+      statusEl:        document.getElementById('xcStatus'),
     });
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -315,21 +345,25 @@
     }
 
     function toLabelExport() {
-      return state.labels.map((l) => ({
-        id: l.id,
-        label: l.label,
-        scientificName: l.scientificName || '',
-        commonName: l.commonName || '',
-        start: l.start,
-        end: l.end,
-        freqMin: l.freqMin,
-        freqMax: l.freqMax,
-        color: l.color || '',
-        confidence: l.confidence != null ? l.confidence : '',
-        origin: l.origin || '',
-        author: l.author || '',
-        tags: l.tags || {},
-      }));
+      const out = {
+        labels: state.labels.map((l) => ({
+          id: l.id,
+          label: l.label,
+          scientificName: l.scientificName || '',
+          commonName: l.commonName || '',
+          start: l.start,
+          end: l.end,
+          freqMin: l.freqMin,
+          freqMax: l.freqMax,
+          color: l.color || '',
+          confidence: l.confidence != null ? l.confidence : '',
+          origin: l.origin || '',
+          author: l.author || '',
+          tags: l.tags || {},
+        })),
+      };
+      if (state.recordingMeta) out.recordingMeta = state.recordingMeta;
+      return out;
     }
 
     // ── File loading ──────────────────────────────────────────────────
@@ -353,6 +387,7 @@
     async function importXenoCantoLabels(xcId) {
       const result = await xcPanel.importLabels(xcId, state.sampleRate);
       state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
+      state.recordingMeta = result.recordingMeta || null;
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
       state.labels = result.labels;
       syncToPlayer();
@@ -388,6 +423,32 @@
     });
     xcIdInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); xcLoadBtn.click(); }
+    });
+
+    // ── Xeno-canto export & upload ────────────────────────────────────
+    const xcExportSetBtn = document.getElementById('xcExportSetBtn');
+    const xcUploadBtn = document.getElementById('xcUploadBtn');
+
+    xcExportSetBtn.addEventListener('click', () => {
+      xcPanel.exportAnnotationSetJSON(state.labels);
+    });
+
+    xcUploadBtn.addEventListener('click', async () => {
+      xcUploadBtn.disabled = true;
+      xcPanel._setStatus('Uploading…', 'info');
+      try {
+        const result = await xcPanel.uploadToXenoCanto(state.labels);
+        if (result.ok) {
+          xcPanel._setStatus(result.message, 'success');
+        } else {
+          const msgs = [result.message, ...(result.errors || [])].filter(Boolean).join('; ');
+          xcPanel._setStatus(msgs, 'error');
+        }
+      } catch (err) {
+        xcPanel._setStatus(err?.message || 'Upload failed', 'error');
+      } finally {
+        xcUploadBtn.disabled = !xcPanel.apiKey || !xcPanel.xcId;
+      }
     });
 
     // ── Taxonomy ──────────────────────────────────────────────────────

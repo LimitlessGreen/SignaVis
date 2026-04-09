@@ -313,6 +313,68 @@ html, body {
 }
 .xc-load-row .input { flex: 1; }
 
+/* XC Recording metadata grid */
+.xc-meta-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0; padding: 0;
+  font-size: 11px; line-height: 1.4;
+}
+.xc-meta-grid dt {
+  color: rgba(255,255,255,0.5);
+  white-space: nowrap;
+}
+.xc-meta-grid dd {
+  margin: 0;
+  color: rgba(255,255,255,0.85);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.xc-recording-section {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* XC annotation set form */
+.xc-set-meta {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.set-meta-field {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.set-meta-field .field-label {
+  font-size: 11px; padding: 0;
+}
+.set-meta-field .input,
+.set-meta-field .field-select {
+  font-size: 12px; padding: 4px 6px;
+}
+
+/* XC action row */
+.xc-action-row {
+  display: flex; gap: 6px; margin-top: 6px;
+}
+.xc-action-row .sidebar-action-btn { flex: 1; }
+.sidebar-action-btn.secondary {
+  background: transparent;
+  border-color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.7);
+}
+.sidebar-action-btn.secondary:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.35);
+}
+.xc-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* XC status */
+.xc-status {
+  padding: 6px 14px;
+  font-size: 11px; line-height: 1.4;
+}
+.xc-status-info  { color: rgba(255,255,255,0.6); }
+.xc-status-success { color: #66bb6a; }
+.xc-status-error { color: #ef5350; }
+
 /* ── Label Cards ── */
 .label-list-scroll {
   flex: 1;
