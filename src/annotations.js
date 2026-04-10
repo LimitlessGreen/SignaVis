@@ -1111,7 +1111,8 @@ export class SpectrogramLabelLayer {
     _updateFocusedVisual() {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            el.classList.toggle('focused', el.dataset?.id === this._focusedLabelId);
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('focused', h.dataset?.id === this._focusedLabelId);
         }
     }
 
@@ -1403,6 +1404,7 @@ export class SpectrogramLabelLayer {
         const height = parseFloat(this.overlay.style.height) || 1;
         const ghost = { start: t, end: t + duration, freqMin, freqMax, label: ref.label };
         const geo = this._toGeometry(ghost, width, height);
+        if (!this._stampGhostEl) return;
         const el = this._stampGhostEl;
         el.style.left = `${geo.left}px`;
         el.style.top = `${geo.top}px`;
