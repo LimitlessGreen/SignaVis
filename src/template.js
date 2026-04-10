@@ -56,7 +56,7 @@ export function createPlayerHTML(opts = {}) {
     <!-- ═══ Top Toolbar ═══ -->
     <div class="toolbar" data-aw="toolbarRoot">
       <div class="toolbar-primary">
-        <button class="toolbar-btn file-btn" data-aw="openFileBtn" title="Audio-Datei laden"${hide(o.showFileOpen)}>
+        <button class="toolbar-btn file-btn" data-aw="openFileBtn" title="Load audio file"${hide(o.showFileOpen)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 15v4a2 2 0 002 2h14a2 2 0 002-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Open
         </button>
@@ -66,7 +66,7 @@ export function createPlayerHTML(opts = {}) {
 
         <!-- Transport -->
         <div class="transport"${hide(o.showTransport)}>
-            <button class="transport-btn" data-aw="jumpStartBtn" disabled title="Zum Anfang (Home)">
+            <button class="transport-btn" data-aw="jumpStartBtn" disabled title="Jump to start (Home)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="3" height="14"/><polygon points="20 5 10 12 20 19"/></svg>
             </button>
             <button class="transport-btn" data-aw="backwardBtn" disabled title="-5s (J)">
@@ -81,7 +81,7 @@ export function createPlayerHTML(opts = {}) {
             <button class="transport-btn" data-aw="forwardBtn" disabled title="+5s (L)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 5 15 12 5 19"/><polygon points="12 5 22 12 12 19"/></svg>
             </button>
-            <button class="transport-btn" data-aw="jumpEndBtn" disabled title="Zum Ende (End)">
+            <button class="transport-btn" data-aw="jumpEndBtn" disabled title="Jump to end (End)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="4 5 14 12 4 19"/><rect x="18" y="5" width="3" height="14"/></svg>
             </button>
         </div>
@@ -90,7 +90,7 @@ export function createPlayerHTML(opts = {}) {
         <div class="time-display" data-aw="timeDisplay" role="status" aria-live="polite"${hide(o.showTime)}>
             <span data-aw="currentTime">00:00.0</span><span class="time-sep">/</span><span data-aw="totalTime">00:00.0</span>
         </div>
-        <button class="toolbar-btn compact-more-btn" data-aw="compactMoreBtn" aria-expanded="false" title="Weitere Controls anzeigen">More</button>
+        <button class="toolbar-btn compact-more-btn" data-aw="compactMoreBtn" aria-expanded="false" title="Show more controls">More</button>
       </div>
 
       <div class="toolbar-secondary" data-aw="toolbarSecondary">
@@ -104,15 +104,15 @@ export function createPlayerHTML(opts = {}) {
                 <path data-aw="volumeWaves" d="M15 8.5a4 4 0 010 7M18 5a9 9 0 010 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </button>
-        <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Lautstärke"${hide(o.showVolume)}>
+        <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Volume"${hide(o.showVolume)}>
 
         <div class="toolbar-sep"${hide(o.showViewToggles)}></div>
 
         <!-- Toggle tools -->
         <span${hide(o.showViewToggles)}>
-            <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Free / Follow / Smooth umschalten">Follow</button>
+            <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Toggle Free / Follow / Smooth">Follow</button>
             <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop">Loop</button>
-            <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Crosshair ein/aus">Crosshair</button>
+            <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Toggle crosshair">Crosshair</button>
             <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit to view">Fit</button>
             <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset zoom">Reset</button>
         </span>
@@ -131,7 +131,7 @@ export function createPlayerHTML(opts = {}) {
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>
 
         <!-- Settings toggle (opens side panel) -->
-        <button class="toolbar-btn settings-toggle-btn" data-aw="settingsToggleBtn" title="Settings-Panel öffnen"${hide(o.showFFTControls)}>
+        <button class="toolbar-btn settings-toggle-btn" data-aw="settingsToggleBtn" title="Open settings panel"${hide(o.showFFTControls)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             Settings
         </button>
@@ -142,7 +142,7 @@ export function createPlayerHTML(opts = {}) {
     <div class="settings-panel" data-aw="settingsPanel">
         <div class="settings-panel-header">
             <span class="settings-panel-title">Settings</span>
-            <button class="settings-panel-close" data-aw="settingsPanelClose" title="Schließen">
+            <button class="settings-panel-close" data-aw="settingsPanelClose" title="Close">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
         </div>
@@ -201,6 +201,66 @@ export function createPlayerHTML(opts = {}) {
                 <span>Performance</span><span>Balanced</span><span>Quality</span><span>High</span><span>Ultra</span>
             </div>
             <div class="quality-level-display" data-aw="qualityLevelDisplay">Quality</div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Gain</h3>
+            <div class="settings-row">
+                <label class="settings-label">Mode</label>
+                <select data-aw="gainModeSelect" class="settings-select" title="Auto: percentile-based contrast on each file. Fixed: use saved floor/ceil values.">
+                    <option value="auto" selected>Auto</option>
+                    <option value="fixed">Fixed</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Floor</label>
+                <input type="range" data-aw="floorSlider" class="settings-range" min="0" max="100" value="0" title="Spectrogram floor">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Ceiling</label>
+                <input type="range" data-aw="ceilSlider" class="settings-range" min="0" max="100" value="100" title="Spectrogram ceiling">
+            </div>
+            <div class="settings-row">
+                <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Auto optimize contrast">Auto Contrast</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Display</h3>
+            <div class="settings-row">
+                <label class="settings-label">Max Freq</label>
+                <select data-aw="maxFreqModeSelect" class="settings-select" title="Auto: detect from content. Nyquist: full bandwidth. Fixed: use selected value.">
+                    <option value="auto" selected>Auto</option>
+                    <option value="nyquist">Nyquist</option>
+                    <option value="fixed">Fixed</option>
+                </select>
+                <select data-aw="maxFreqSelect" class="settings-select">
+                    <option value="10000" selected>10 kHz</option>
+                </select>
+                <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Auto-detect frequency range">AF</button>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Color</label>
+                <select data-aw="colorSchemeSelect" class="settings-select">
+                    <option value="grayscale" selected>B/W</option>
+                    <option value="xenocanto">XC</option>
+                    <option value="fire">Fire</option>
+                    <option value="inferno">Inferno</option>
+                    <option value="viridis">Viridis</option>
+                    <option value="magma">Magma</option>
+                    <option value="plasma">Plasma</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Median-based spectral noise floor subtraction">
+                    <input type="checkbox" data-aw="noiseReductionCheck"> Noise Reduction
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
+                    <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast
+                </label>
+            </div>
         </div>
 
         <div class="settings-section">
@@ -272,7 +332,7 @@ export function createPlayerHTML(opts = {}) {
             </div>
             <div class="settings-row">
                 <label class="settings-label">Mel Bins</label>
-                <input type="number" data-aw="nMelsInput" class="settings-number" value="160" min="16" max="512" step="16" title="Anzahl Mel-Frequenzbänder">
+                <input type="number" data-aw="nMelsInput" class="settings-number" value="160" min="16" max="512" step="16" title="Number of mel bands">
             </div>
         </div>
 
@@ -298,66 +358,6 @@ export function createPlayerHTML(opts = {}) {
             <div class="settings-row">
                 <label class="settings-label">Smoothing</label>
                 <input type="number" data-aw="pcenSmoothingInput" class="settings-number" value="0.025" min="0" max="0.5" step="0.005">
-            </div>
-        </div>
-
-        <div class="settings-section">
-            <h3 class="settings-section-title">Display</h3>
-            <div class="settings-row">
-                <label class="settings-label">Max Freq</label>
-                <select data-aw="maxFreqModeSelect" class="settings-select" title="Auto: detect from content. Nyquist: full bandwidth. Fixed: use selected value.">
-                    <option value="auto" selected>Auto</option>
-                    <option value="nyquist">Nyquist</option>
-                    <option value="fixed">Fixed</option>
-                </select>
-                <select data-aw="maxFreqSelect" class="settings-select">
-                    <option value="10000" selected>10 kHz</option>
-                </select>
-                <button class="toolbar-btn mini-btn" data-aw="autoFreqBtn" disabled title="Frequenzbereich automatisch erkennen">AF</button>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Color</label>
-                <select data-aw="colorSchemeSelect" class="settings-select">
-                    <option value="grayscale" selected>B/W</option>
-                    <option value="xenocanto">XC</option>
-                    <option value="fire">Fire</option>
-                    <option value="inferno">Inferno</option>
-                    <option value="viridis">Viridis</option>
-                    <option value="magma">Magma</option>
-                    <option value="plasma">Plasma</option>
-                </select>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label" title="Median-based spectral noise floor subtraction">
-                    <input type="checkbox" data-aw="noiseReductionCheck"> Noise Reduction
-                </label>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
-                    <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast
-                </label>
-            </div>
-        </div>
-
-        <div class="settings-section">
-            <h3 class="settings-section-title">Gain</h3>
-            <div class="settings-row">
-                <label class="settings-label">Mode</label>
-                <select data-aw="gainModeSelect" class="settings-select" title="Auto: percentile-based contrast on each file. Fixed: use saved floor/ceil values.">
-                    <option value="auto" selected>Auto</option>
-                    <option value="fixed">Fixed</option>
-                </select>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Floor</label>
-                <input type="range" data-aw="floorSlider" class="settings-range" min="0" max="100" value="0" title="Spectrogram Floor (Schwarzpunkt)">
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Ceiling</label>
-                <input type="range" data-aw="ceilSlider" class="settings-range" min="0" max="100" value="100" title="Spectrogram Ceiling (Weißpunkt)">
-            </div>
-            <div class="settings-row">
-                <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Kontrast automatisch optimieren">Auto Contrast</button>
             </div>
         </div>
     </div>

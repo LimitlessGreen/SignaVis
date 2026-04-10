@@ -64,6 +64,7 @@ export const DSP_PROFILES = {
         windowFunction: 'hann',
         colorScheme: 'grayscale',
         reassigned: false,
+        maxFreqMode: 'nyquist',
     },
     classic: {
         scale: 'linear',
@@ -80,6 +81,7 @@ export const DSP_PROFILES = {
         windowFunction: 'hann',
         colorScheme: 'xenocanto',
         reassigned: false,
+        maxFreqMode: 'nyquist',
     },
     birder: {
         scale: 'linear',
