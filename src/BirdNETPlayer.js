@@ -13,6 +13,7 @@ import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import { PlayerState } from './PlayerState.js';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName } from './annotations.js';
+import { UndoStack } from './undoStack.js';
 import './player.css';  // Vite extracts this into birdnet-player.css
 
 const WAVESURFER_CDN = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
@@ -85,6 +86,8 @@ export class BirdNETPlayer {
         this.spectrogramLabels = new SpectrogramLabelLayer();
         this._linkedLabels = new Map();
         this._isSyncingLabels = false;
+        this._undoStack = new UndoStack(100);
+        this._isRestoring = false;  // true during undo/redo restore
         this._labelLibrary = new Map();
         this._labelSuggestionProvider = null;
         this._labelEditorSuggestionMode = 'merge';
@@ -128,6 +131,13 @@ export class BirdNETPlayer {
         this._bindLinkedLabelSync();
         this._bindGlobalHotkeys();
         this._injectAnnotationToolbar();
+        // Sync stamp button when stamp mode exits from inside the label layer
+        this.on('stampmodechange', (e) => {
+            const on = e?.detail?.active ?? false;
+            if (this._stampBtn) this._stampBtn.classList.toggle('active', on);
+            this.root?.classList.toggle('stamp-mode-active', on);
+            if (!on) this.spectrogramLabels._stampAxisLock = false;
+        });
         this._emit('ready', { phase: 'init' });
         return this;
     }
@@ -439,6 +449,18 @@ export class BirdNETPlayer {
                 this.spectrogramLabels?.copyLabel(this._activeLabelId);
                 return;
             }
+            // Ctrl+Z — undo
+            if (ctrl && key === 'z') {
+                event.preventDefault();
+                this.undo();
+                return;
+            }
+            // Ctrl+Y / Ctrl+Shift+Z — redo
+            if (ctrl && (key === 'y' || (key === 'Z' && event.shiftKey))) {
+                event.preventDefault();
+                this.redo();
+                return;
+            }
             // Ctrl+V — paste at current playhead position
             if (ctrl && key === 'v') {
                 event.preventDefault();
@@ -446,9 +468,38 @@ export class BirdNETPlayer {
                 if (pasted) this._emit?.('spectrogramlabelcreate', { label: { ...pasted } });
                 return;
             }
+            // Ctrl+D — toggle stamp mode
+            if (ctrl && key === 'd') {
+                event.preventDefault();
+                if (this.spectrogramLabels?.stampMode) {
+                    // turning off — use exitStampMode which cleans up ghost+axis lock
+                    this.spectrogramLabels.exitStampMode();
+                } else {
+                    if (this.spectrogramLabels) {
+                        this.spectrogramLabels.stampMode = true;
+                        // Capture the currently hovered/focused label as stamp reference
+                        if (this._activeLabelId) {
+                            this.spectrogramLabels._stampRefLabelId = this._activeLabelId;
+                        }
+                        // mutual exclusion with draw mode
+                        this.spectrogramLabels.drawMode = false;
+                        this.root?.classList.remove('draw-mode-active');
+                        if (this._drawBtn) this._drawBtn.classList.remove('active');
+                    }
+                    this.root?.classList.add('stamp-mode-active');
+                    if (this._stampBtn) this._stampBtn.classList.add('active');
+                }
+                return;
+            }
 
             if (!this._activeLabelId) return;
-            if (key === 'Delete' || key === 'Backspace' || key === 'x') {
+
+            // X deletes focused label — but only when NOT in stamp mode or grab
+            // (in those modes, X is used for Blender-style axis constraint)
+            const inAxisMode = this.spectrogramLabels?.stampMode
+                || this.spectrogramLabels?._grabbing
+                || this.spectrogramLabels?._editing;
+            if (key === 'Delete' || key === 'Backspace' || (key === 'x' && !inAxisMode)) {
                 event.preventDefault();
                 const id = this._activeLabelId;
                 // Try spectrogram labels first, then waveform annotations
@@ -498,16 +549,49 @@ export class BirdNETPlayer {
 
         // Draw mode toggle — enables click+drag label creation without Shift
         const drawBtn = document.createElement('button');
-        drawBtn.className = 'toolbar-btn toggle-btn';
-        drawBtn.title = 'Label zeichnen (Shift+Drag)';
+        drawBtn.className = 'toolbar-btn toggle-btn active';
+        drawBtn.title = 'Draw label (Shift+Drag)';
         drawBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.375 2.625a1 1 0 013 3l-9.013 9.014a2 2 0 01-.853.505l-2.873.84a.5.5 0 01-.62-.62l.84-2.873a2 2 0 01.506-.852z"/></svg> Draw`;
+        // keep a reference so keyboard toggles update it
+        this._drawBtn = drawBtn;
+        // Draw mode is on by default
+        this.root?.classList.add('draw-mode-active');
         drawBtn.addEventListener('click', () => {
             const on = !this.spectrogramLabels.drawMode;
             this.spectrogramLabels.drawMode = on;
+            // disable stamp mode when entering draw mode
+            if (on && this.spectrogramLabels) {
+                this.spectrogramLabels.exitStampMode();
+            }
             drawBtn.classList.toggle('active', on);
             this.root?.classList.toggle('draw-mode-active', on);
         });
         secondary.appendChild(drawBtn);
+
+        // Stamp mode toggle — click to stamp the last/focused label (Ctrl+D)
+        const stampBtn = document.createElement('button');
+        stampBtn.className = 'toolbar-btn toggle-btn';
+        stampBtn.title = 'Stamp mode (Ctrl+D)';
+        stampBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg> Stamp`;
+        this._stampBtn = stampBtn;
+        stampBtn.addEventListener('click', () => {
+            if (this.spectrogramLabels.stampMode) {
+                this.spectrogramLabels.exitStampMode();
+            } else {
+                this.spectrogramLabels.stampMode = true;
+                // Capture the currently hovered/focused label as stamp reference
+                if (this._activeLabelId) {
+                    this.spectrogramLabels._stampRefLabelId = this._activeLabelId;
+                }
+                // disable draw mode when entering stamp mode
+                this.spectrogramLabels.drawMode = false;
+                if (this._drawBtn) this._drawBtn.classList.remove('active');
+                this.root?.classList.remove('draw-mode-active');
+                stampBtn.classList.add('active');
+                this.root?.classList.add('stamp-mode-active');
+            }
+        });
+        secondary.appendChild(stampBtn);
     }
 
     _previewFromAnnotationEvent(annotation) {
@@ -589,6 +673,11 @@ export class BirdNETPlayer {
     }
 
     _syncLinkedLabelsToLayers() {
+        // Push undo snapshot before applying the new state
+        // (skip during restore, initial sync, or preview events)
+        if (!this._isRestoring) {
+            this._undoStack.push(this._snapshotLabels());
+        }
         this._isSyncingLabels = true;
         try {
             this.annotations.set(this._toAnnotationList());
@@ -598,6 +687,38 @@ export class BirdNETPlayer {
         } finally {
             this._isSyncingLabels = false;
         }
+    }
+
+    /** Create a deep snapshot of the current _linkedLabels for undo. */
+    _snapshotLabels() {
+        return Array.from(this._linkedLabels.values()).map((l) => ({ ...l, tags: { ...l.tags } }));
+    }
+
+    /** Restore a snapshot from the undo stack. */
+    _restoreSnapshot(snapshot) {
+        if (!snapshot) return;
+        this._isRestoring = true;
+        this._linkedLabels.clear();
+        for (const label of snapshot) {
+            this._linkedLabels.set(label.id, { ...label, tags: { ...label.tags } });
+        }
+        this._syncLinkedLabelsToLayers();
+        this._isRestoring = false;
+        this._emit?.('undochange', { canUndo: this._undoStack.canUndo, canRedo: this._undoStack.canRedo });
+    }
+
+    /** Undo the last label mutation. */
+    undo() {
+        const snapshot = this._undoStack.undo();
+        if (snapshot) this._restoreSnapshot(snapshot);
+        return !!snapshot;
+    }
+
+    /** Redo the last undone label mutation. */
+    redo() {
+        const snapshot = this._undoStack.redo();
+        if (snapshot) this._restoreSnapshot(snapshot);
+        return !!snapshot;
     }
 
     _rebuildLabelLibrary() {

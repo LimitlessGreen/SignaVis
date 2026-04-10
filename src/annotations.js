@@ -955,7 +955,13 @@ export class SpectrogramLabelLayer {
         this.player = null;
         this.overlay = null;
         this.labels = [];
-        this.drawMode = false;
+        this.drawMode = true;
+        // stampMode: click-to-stamp the last or focused label (see Player: Ctrl+D)
+        this.stampMode = false;
+        this._stampGhostEl = null;
+        this._stampAxisLock = false;   // X pressed → lock freq to reference
+        this._stampRefLabelId = null;  // persistent clicked-label ref for stamp
+        this._axisConstraint = null;   // 'x' | 'y' | null  (Blender-style)
         this._liveLinkedId = null;
         this._unsubs = [];
         this._domCleanups = [];
@@ -964,6 +970,7 @@ export class SpectrogramLabelLayer {
         this._editing = null;
         this._counter = 1;
         this._suppressClickUntil = 0;
+        this._suppressContextMenuUntil = 0;
         this._focusedLabelId = null;
         this._clipboard = null;
     }
@@ -985,6 +992,7 @@ export class SpectrogramLabelLayer {
         this._unsubs.push(this.player.on('timeupdate', (e) => this.highlightActiveLabel(e.detail.currentTime)));
         this._unsubs.push(this.player.on('labelfocus', (e) => {
             this._focusedLabelId = e?.detail?.id || null;
+            this._updateFocusedVisual();
         }));
         this._bindDrawingInteractions(root);
         this.render();
@@ -1001,13 +1009,15 @@ export class SpectrogramLabelLayer {
         this._draftEl = null;
         this._drawing = null;
         this._editing = null;
+        this._stampGhostEl = null;
+        this._stampAxisLock = false;
     }
 
     add(label) {
         const region = this._normalize(label);
         this.labels.push(region);
         this.render();
-        this.player?._emit?.('spectrogramlabelcreate', { label: region });
+        this.player?._emit?.('spectrogramlabelcreate', { label: { ...region } });
         return region.id;
     }
 
@@ -1071,8 +1081,15 @@ export class SpectrogramLabelLayer {
         return region;
     }
 
-    /** Returns the focused label, falling back to the most recently added label. */
+    /**
+     * Returns the reference label for stamp/paste defaults.
+     * Priority: 1) explicit stamp ref  2) click-focused  3) last label
+     */
     _getReferenceLabelForDefaults() {
+        if (this._stampRefLabelId) {
+            const ref = this.labels.find((l) => l.id === this._stampRefLabelId);
+            if (ref) return ref;
+        }
         if (this._focusedLabelId) {
             const focused = this.labels.find((l) => l.id === this._focusedLabelId);
             if (focused) return focused;
@@ -1087,6 +1104,14 @@ export class SpectrogramLabelLayer {
             const start = parseFloat(h.dataset.start || '0');
             const end = parseFloat(h.dataset.end || '0');
             el.classList.toggle('active', currentTime >= start && currentTime <= end);
+        }
+    }
+
+    /** Set .focused class on only the single focused label element. */
+    _updateFocusedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
+            el.classList.toggle('focused', el.dataset?.id === this._focusedLabelId);
         }
     }
 
@@ -1113,6 +1138,14 @@ export class SpectrogramLabelLayer {
         }
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
+
+        // Re-apply focus visual after innerHTML wipe
+        this._updateFocusedVisual();
+
+        // Re-attach ghost stamp if it exists (innerHTML wipe removes it)
+        if (this._stampGhostEl && this.stampMode) {
+            this.overlay.appendChild(this._stampGhostEl);
+        }
     }
 
     /**
@@ -1287,6 +1320,13 @@ export class SpectrogramLabelLayer {
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
             this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
+            // In stamp mode, clicking a label sets the stamp reference — do NOT start move
+            if (this.stampMode) {
+                this._stampRefLabelId = label.id;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.label-handle');
             const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
@@ -1334,8 +1374,98 @@ export class SpectrogramLabelLayer {
         };
     }
 
+    // ── Stamp-mode ghost helpers ──
+
+    _ensureStampGhost() {
+        if (this._stampGhostEl || !this.overlay) return;
+        this._stampGhostEl = document.createElement('div');
+        this._stampGhostEl.className = 'spectrogram-label-ghost';
+        this.overlay.appendChild(this._stampGhostEl);
+    }
+
+    _removeStampGhost() {
+        if (this._stampGhostEl?.parentNode) this._stampGhostEl.parentNode.removeChild(this._stampGhostEl);
+        this._stampGhostEl = null;
+    }
+
+    _updateStampGhost(clientX, clientY) {
+        if (!this.stampMode || !this.overlay) { this._removeStampGhost(); return; }
+        const ref = this._getReferenceLabelForDefaults();
+        if (!ref) { this._removeStampGhost(); return; }
+        this._ensureStampGhost();
+        const t = this._clientXToTime(clientX);
+        const duration = Math.max(0.01, (ref.end - ref.start) || 0.01);
+        const freq = this._stampAxisLock ? null : this._clientYToFreq(clientY);
+        const freqSpan = ref.freqMax - ref.freqMin;
+        const freqMin = freq != null ? (freq - freqSpan / 2) : ref.freqMin;
+        const freqMax = freq != null ? (freq + freqSpan / 2) : ref.freqMax;
+        const width = parseFloat(this.overlay.style.width) || 1;
+        const height = parseFloat(this.overlay.style.height) || 1;
+        const ghost = { start: t, end: t + duration, freqMin, freqMax, label: ref.label };
+        const geo = this._toGeometry(ghost, width, height);
+        const el = this._stampGhostEl;
+        el.style.left = `${geo.left}px`;
+        el.style.top = `${geo.top}px`;
+        el.style.width = `${geo.width}px`;
+        el.style.height = `${geo.height}px`;
+        const colorStyle = getOverlayColorStyle(ref.color);
+        if (colorStyle) {
+            el.style.setProperty('--ghost-color', colorStyle.edge);
+            el.style.setProperty('--ghost-fill', colorStyle.fill);
+        }
+        el.textContent = ref.label || 'Label';
+        el.classList.toggle('axis-locked', this._stampAxisLock);
+    }
+
+    /** Exit stamp mode and clean up ghost. */
+    exitStampMode() {
+        this.stampMode = false;
+        this._stampAxisLock = false;
+        this._stampRefLabelId = null;
+        this._removeStampGhost();
+        this.player?.root?.classList.remove('stamp-mode-active');
+        // Notify BirdNETPlayer to sync button state
+        this.player?._emit?.('stampmodechange', { active: false });
+    }
+
     _bindDrawingInteractions(wrapper) {
         const onPointerDown = (e) => {
+            // Stamp mode: left-click places label, right-click exits mode
+            if (this.stampMode) {
+                if (e.button === 2) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._suppressContextMenuUntil = performance.now() + 400;
+                    this.exitStampMode();
+                    return;
+                }
+                if (e.button === 0) {
+                    if (!this.player?._state?.audioBuffer) return;
+                    const ref = this._getReferenceLabelForDefaults();
+                    if (!ref) return;
+                    const t = this._clientXToTime(e.clientX);
+                    const duration = Math.max(0.01, (ref.end - ref.start) || 0.01);
+                    const freq = this._stampAxisLock ? null : this._clientYToFreq(e.clientY);
+                    const freqSpan = ref.freqMax - ref.freqMin;
+                    this.add({
+                        start: t,
+                        end: t + duration,
+                        freqMin: freq != null ? (freq - freqSpan / 2) : ref.freqMin,
+                        freqMax: freq != null ? (freq + freqSpan / 2) : ref.freqMax,
+                        label: ref.label,
+                        color: ref.color,
+                        scientificName: ref.scientificName,
+                        commonName: ref.commonName,
+                        origin: 'manual',
+                        author: ref.author,
+                        tags: ref.tags ? { ...ref.tags } : {},
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
             if (e.target?.closest?.('.spectrogram-label-region')) return;
             if ((!e.shiftKey && !this.drawMode) || e.button !== 0) return;
             if (!this.player?._state?.audioBuffer) return;
@@ -1350,6 +1480,10 @@ export class SpectrogramLabelLayer {
         };
 
         const onPointerMove = (e) => {
+            // Update ghost stamp preview
+            if (this.stampMode) {
+                this._updateStampGhost(e.clientX, e.clientY);
+            }
             if (this._editing) {
                 this._updateEditInteraction(e.clientX, e.clientY);
                 e.preventDefault();
@@ -1383,15 +1517,66 @@ export class SpectrogramLabelLayer {
             }
         };
 
+        // Prevent browser context-menu in stamp mode (and briefly after exiting via right-click)
+        const onContextMenu = (e) => {
+            if (this.stampMode || this._suppressContextMenuUntil > performance.now()) {
+                e.preventDefault(); e.stopPropagation();
+            }
+        };
+
+        // Keyboard: X/Y = axis lock (stamp + grab), Escape = exit stamp
+        const onKeyDown = (e) => {
+            // Don't intercept when user is typing in an input
+            const tag = e?.target?.tagName?.toLowerCase?.() || '';
+            if (tag === 'input' || tag === 'textarea' || e?.target?.isContentEditable) return;
+
+            // Escape exits stamp mode
+            if (this.stampMode && e.key === 'Escape') {
+                e.preventDefault();
+                this.exitStampMode();
+                return;
+            }
+
+            // X/Y axis lock in stamp mode
+            if (this.stampMode) {
+                if (e.key === 'x' || e.key === 'X') {
+                    e.preventDefault();
+                    this._stampAxisLock = !this._stampAxisLock;
+                    if (this._stampGhostEl) {
+                        this._stampGhostEl.classList.toggle('axis-locked', this._stampAxisLock);
+                    }
+                    return;
+                }
+            }
+
+            // X/Y axis constraint during drag-edit (not grab — grab has its own handler)
+            if (this._editing && !this._grabbing) {
+                if (e.key === 'x' || e.key === 'X') {
+                    e.preventDefault();
+                    this._axisConstraint = this._axisConstraint === 'x' ? null : 'x';
+                    return;
+                }
+                if (e.key === 'y' || e.key === 'Y') {
+                    e.preventDefault();
+                    this._axisConstraint = this._axisConstraint === 'y' ? null : 'y';
+                    return;
+                }
+            }
+        };
+
         wrapper.addEventListener('pointerdown', onPointerDown, true);
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);
+        wrapper.addEventListener('contextmenu', onContextMenu, true);
+        document.addEventListener('keydown', onKeyDown, true);
 
         this._domCleanups.push(() => wrapper.removeEventListener('pointerdown', onPointerDown, true));
         this._domCleanups.push(() => document.removeEventListener('pointermove', onPointerMove, true));
         this._domCleanups.push(() => document.removeEventListener('pointerup', onPointerUp, true));
         this._domCleanups.push(() => document.removeEventListener('pointercancel', onPointerUp, true));
+        this._domCleanups.push(() => wrapper.removeEventListener('contextmenu', onContextMenu, true));
+        this._domCleanups.push(() => document.removeEventListener('keydown', onKeyDown, true));
     }
 
     _ensureDraft() {
@@ -1540,12 +1725,12 @@ export class SpectrogramLabelLayer {
         }
 
         let next = { ...label };
+        // Blender-style axis constraint: 'x' = time only, 'y' = freq only
+        const ax = this._axisConstraint;
         switch (this._editing.mode) {
             case 'move':
-                next.start = src.start + dt;
-                next.end = src.end + dt;
-                next.freqMin = shiftedFreq(src.freqMin);
-                next.freqMax = shiftedFreq(src.freqMax);
+                if (ax !== 'y') { next.start = src.start + dt; next.end = src.end + dt; }
+                if (ax !== 'x') { next.freqMin = shiftedFreq(src.freqMin); next.freqMax = shiftedFreq(src.freqMax); }
                 break;
             case 'resize-l':
                 next.start = src.start + dt;
@@ -1625,7 +1810,7 @@ export class SpectrogramLabelLayer {
         const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
         editing.element?.classList?.remove('editing');
         const label = this.labels.find((l) => l.id === editing.id);
-        if (label && editing.moved) this.player?._emit?.('spectrogramlabelupdate', { label });
+        if (label && editing.moved) this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
         this._editing = null;
         if (shouldSuppressClick) {
             this._suppressClickUntil = performance.now() + 250;
@@ -1664,6 +1849,7 @@ export class SpectrogramLabelLayer {
             forceSuppressClick: true,
         };
         this._grabbing = true;
+        this._axisConstraint = null;
 
         const onMove = (e) => {
             this._updateEditInteraction(e.clientX, e.clientY);
@@ -1688,9 +1874,19 @@ export class SpectrogramLabelLayer {
         const onKey = (e) => {
             if (e.key === 'Escape') cancel(e);
             if (e.key === 'g') confirm(e);
+            // Blender-style axis constraints during grab
+            if (e.key === 'x' || e.key === 'X') {
+                e.preventDefault();
+                this._axisConstraint = this._axisConstraint === 'x' ? null : 'x';
+            }
+            if (e.key === 'y' || e.key === 'Y') {
+                e.preventDefault();
+                this._axisConstraint = this._axisConstraint === 'y' ? null : 'y';
+            }
         };
         const cleanup = () => {
             this._grabbing = false;
+            this._axisConstraint = null;
             document.removeEventListener('pointermove', onMove, true);
             document.removeEventListener('pointerdown', confirm, true);
             document.removeEventListener('keydown', onKey, true);
