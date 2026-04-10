@@ -122,7 +122,7 @@ function parseNativeSampleRate(buf) {
  */
 async function decodeArrayBuffer(arrayBuffer) {
     const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-    if (!Ctor) throw new Error('AudioContext wird von diesem Browser nicht unterstützt.');
+    if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
 
     const nativeSr = parseNativeSampleRate(arrayBuffer);
     /** @type {AudioContextOptions | undefined} */
@@ -693,11 +693,11 @@ export class PlayerState {
             this._createFrequencyLabels();
             this._seekToTime(0, true);
         } catch (error) {
-            console.error('Fehler beim Laden der Datei:', error);
+            console.error('Error loading file:', error);
             this._setTransportState('error', 'file-load-failed');
             this.d.fileInfo.classList.remove('loading');
             this._emit('error', { message: error?.message || String(error), source: 'file' });
-            alert('Fehler beim Laden der Audio-Datei');
+            alert('Error loading audio file');
         }
     }
 
