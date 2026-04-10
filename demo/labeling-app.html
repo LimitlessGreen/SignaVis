@@ -32,7 +32,7 @@
       <div class="xc-nokey-dialog">
         <h3>No Xeno-canto API Key configured</h3>
         <p>Without an API key, labels from Xeno-canto cannot be loaded. The recording will play, but annotations will be missing.</p>
-        <p class="xc-nokey-hint">You can add your key at any time in the <strong>Xeno Canto</strong> tab in the sidebar.</p>
+        <p class="xc-nokey-hint">You can add your key at any time in the <strong>Xeno Canto</strong> tab in the sidebar. Get an API key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">https://xeno-canto.org/account</a>.</p>
         <div class="xc-nokey-input-row">
           <input type="text" id="xcNokeyKeyInput" class="input" placeholder="Paste your API key here…" />
         </div>
@@ -80,7 +80,7 @@
     <div class="panel-section">
       <label class="field-label" for="birdnetModelUrl">Model URL</label>
       <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
-      <p class="field-hint">TF.js Layers-Format — Ordner mit model.json + labels.json</p>
+      <p class="field-hint">TF.js Layers format — folder containing model.json and labels.json</p>
     </div>
     <div class="panel-section">
       <div class="slider-row">
@@ -178,8 +178,21 @@
           <kbd>Shift + Drag</kbd> <span class="sc-desc">Draw new label region</span>
           <kbd>Drag</kbd> <span class="sc-desc">Move label region</span>
           <kbd>Double-click</kbd> <span class="sc-desc">Edit label (taxonomy search)</span>
-          <kbd>Scroll</kbd> <span class="sc-desc">Zoom time axis</span>
-          <kbd>Ctrl + Scroll</kbd> <span class="sc-desc">Zoom frequency axis</span>
+          <kbd>Shift + Double-click</kbd> <span class="sc-desc">Reset frequency axis</span>
+          <kbd>Scroll (wheel)</kbd> <span class="sc-desc">Pan time axis horizontally</span>
+          <kbd>Ctrl / Cmd + Scroll</kbd> <span class="sc-desc">Zoom time axis (horizontal)</span>
+          <kbd>Shift + Scroll</kbd> <span class="sc-desc">Zoom frequency axis (vertical)</span>
+          <kbd>Middle mouse + Drag</kbd> <span class="sc-desc">Pan frequency axis (vertical)</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>Playback &amp; Navigation</h3>
+        <div class="shortcut-grid">
+          <kbd>Space</kbd> <span class="sc-desc">Play / Pause</span>
+          <kbd>← →</kbd> <span class="sc-desc">Seek backward / forward (fine)</span>
+          <kbd>J / L</kbd> <span class="sc-desc">Seek backward / forward (coarse)</span>
+          <kbd>Home</kbd> <span class="sc-desc">Seek to start</span>
+          <kbd>End</kbd> <span class="sc-desc">Seek to end</span>
         </div>
       </div>
       <div class="help-section">
@@ -187,7 +200,12 @@
         <div class="shortcut-grid">
           <kbd>Ctrl + C</kbd> <span class="sc-desc">Copy selected label</span>
           <kbd>Ctrl + V</kbd> <span class="sc-desc">Paste label at current time</span>
-          <kbd>Delete</kbd> <span class="sc-desc">Remove selected label</span>
+          <kbd>Ctrl + Z</kbd> <span class="sc-desc">Undo</span>
+          <kbd>Ctrl + Y</kbd> <span class="sc-desc">Redo (or Ctrl+Shift+Z)</span>
+          <kbd>Ctrl + D</kbd> <span class="sc-desc">Toggle Stamp mode</span>
+          <kbd>Delete / Backspace</kbd> <span class="sc-desc">Remove selected label</span>
+          <kbd>g</kbd> <span class="sc-desc">Grab / move focused label (press again to confirm)</span>
+          <kbd>1–9</kbd> <span class="sc-desc">Apply taxonomy preset to focused label</span>
           <kbd>Click card</kbd> <span class="sc-desc">Seek to label &amp; select</span>
           <kbd>Click name</kbd> <span class="sc-desc">Inline-edit label name</span>
           <kbd>Double-click</kbd> <span class="sc-desc">Expand tag editing</span>
@@ -199,14 +217,8 @@
           <kbd>↑ ↓</kbd> <span class="sc-desc">Navigate suggestions</span>
           <kbd>Enter</kbd> <span class="sc-desc">Select suggestion / confirm</span>
           <kbd>Double-click</kbd> <span class="sc-desc">Select &amp; immediately confirm</span>
-          <kbd>Esc</kbd> <span class="sc-desc">Close editor</span>
-        </div>
-      </div>
-      <div class="help-section">
-        <h3>Playback</h3>
-        <div class="shortcut-grid">
-          <kbd>Space</kbd> <span class="sc-desc">Play / Pause</span>
-          <kbd>← →</kbd> <span class="sc-desc">Seek backward / forward</span>
+          <kbd>Esc</kbd> <span class="sc-desc">Close editor / cancel</span>
+          <kbd>x / y</kbd> <span class="sc-desc">Axis lock / constraint when editing or in stamp mode</span>
         </div>
       </div>
       <div class="help-section">

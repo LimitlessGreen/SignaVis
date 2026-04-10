@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -23,12 +23,12 @@
     <div class="card">
       <div id="player"></div>
       <div class="demo-toolbar">
-        <button id="loadDemoAnnotationsBtn">Demo-Annotations laden</button>
-        <button id="loadSpectrogramLabelsBtn">Spektrogramm-Labels laden</button>
-        <button id="clearAnnotationsBtn">Annotations löschen</button>
-        <button id="exportRavenBtn">Raven TXT in Console</button>
+        <button id="loadDemoAnnotationsBtn">Load demo annotations</button>
+        <button id="loadSpectrogramLabelsBtn">Load spectrogram labels</button>
+        <button id="clearAnnotationsBtn">Clear annotations</button>
+        <button id="exportRavenBtn">Export Raven TXT to console</button>
       </div>
-      <div style="margin-top:8px;color:#4f5e7d;font-size:13px">Tipp: Klick auf ein Label im Amplitudenbereich spielt jetzt genau dieses Zeitfenster. Spektrogramm: <b>Shift + Drag</b> zum Erstellen, dann mit Handles anpassen.</div>
+      <div style="margin-top:8px;color:#4f5e7d;font-size:13px">Tip: Click a label in the amplitude view to play that time range. Spectrogram: <b>Shift + Drag</b> to create, then adjust with the handles.</div>
       <pre id="events"></pre>
     </div>
   </div>
@@ -87,24 +87,24 @@
 
     document.getElementById('loadDemoAnnotationsBtn').addEventListener('click', () => {
       player.setAnnotations(demoAnnotations);
-      log('3 Demo-Annotations geladen');
+      log('3 demo annotations loaded');
     });
 
     document.getElementById('clearAnnotationsBtn').addEventListener('click', () => {
       player.clearAnnotations();
       player.clearSpectrogramLabels();
-      log('Annotations gelöscht');
+      log('Annotations cleared');
     });
 
     document.getElementById('loadSpectrogramLabelsBtn').addEventListener('click', () => {
       player.setSpectrogramLabels(demoSpectrogramLabels);
-      log('3 Spektrogramm-Labels geladen');
+      log('3 spectrogram labels loaded');
     });
 
     document.getElementById('exportRavenBtn').addEventListener('click', () => {
       const txt = player.exportAnnotationsRaven();
       console.log('Raven Export\\n' + txt);
-      log('Raven-Export in Console geschrieben');
+      log('Raven export written to console');
     });
   </script>
 </body>
