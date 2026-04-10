@@ -1939,6 +1939,28 @@
     border-color: rgba(56, 189, 248, 0.6);
 }
 
+.label-tag-combo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+}
+
+.label-tag-custom-input {
+    width: 110px;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.95);
+    color: #e2e8f0;
+    font-size: 11px;
+    padding: 2px 5px;
+    outline: none;
+}
+.label-tag-custom-input::placeholder {
+    color: #64748b;
+    font-style: italic;
+}
+
 .label-tag-badge {
     display: inline-flex;
     align-items: center;

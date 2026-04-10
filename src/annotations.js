@@ -55,7 +55,7 @@ function _rgbToHex({ r, g, b }) {
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-function getOverlayColorStyle(color) {
+export function getOverlayColorStyle(color) {
     const rgb = _parseColorToRgb(color);
     if (!rgb) return null;
     return {
@@ -188,25 +188,28 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     searchRow.append(input, colorInput);
 
     // ── Tags row ──
-    const TAG_PRESETS = [
+    const DEFAULT_TAG_PRESETS = [
         { key: 'sex', label: 'Sex', options: ['male', 'female', 'unknown'] },
         { key: 'lifeStage', label: 'Life stage', options: ['adult', 'juvenile', 'immature', 'subadult'] },
         { key: 'soundType', label: 'Sound type', options: ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming', 'nocturnal flight call'] },
     ];
+    const tagPresets = player?.getTagPresets?.() || DEFAULT_TAG_PRESETS;
     const currentTags = { ...(initialTags || {}) };
 
     const tagsRow = document.createElement('div');
     tagsRow.className = 'label-tags-row';
 
-    /** renders preset selects and the custom tag input */
-    const renderTags = () => {
-        tagsRow.innerHTML = '';
+    /** Creates a combobox-style select: options list + free-text input */
+    const makeTagCombobox = (preset) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'label-tag-combo';
 
-        // Preset dropdowns
-        for (const preset of TAG_PRESETS) {
-            const sel = document.createElement('select');
-            sel.className = 'label-tag-select';
-            sel.title = preset.label;
+        const sel = document.createElement('select');
+        sel.className = 'label-tag-select';
+        sel.title = preset.label;
+
+        const rebuildOptions = () => {
+            sel.innerHTML = '';
             const emptyOpt = document.createElement('option');
             emptyOpt.value = '';
             emptyOpt.textContent = preset.label;
@@ -215,18 +218,88 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
                 const optEl = document.createElement('option');
                 optEl.value = opt;
                 optEl.textContent = opt;
-                if (currentTags[preset.key] === opt) optEl.selected = true;
                 sel.appendChild(optEl);
             }
-            sel.addEventListener('change', () => {
+            // "Custom…" sentinel
+            const customOpt = document.createElement('option');
+            customOpt.value = '__custom__';
+            customOpt.textContent = '+ custom…';
+            sel.appendChild(customOpt);
+            // If current value isn't in options, add it as a temporary entry
+            const curVal = currentTags[preset.key] || '';
+            if (curVal && !preset.options.includes(curVal)) {
+                const tempOpt = document.createElement('option');
+                tempOpt.value = curVal;
+                tempOpt.textContent = curVal;
+                sel.insertBefore(tempOpt, customOpt);
+            }
+            sel.value = curVal;
+        };
+        rebuildOptions();
+
+        sel.addEventListener('change', () => {
+            if (sel.value === '__custom__') {
+                // Show inline text input
+                sel.style.display = 'none';
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'label-tag-custom-input';
+                inp.placeholder = `New ${preset.label.toLowerCase()}…`;
+                inp.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = inp.value.trim();
+                        if (val) {
+                            currentTags[preset.key] = val;
+                            // Notify app to persist the new option
+                            if (!preset.options.includes(val)) {
+                                player?._emit?.('tagcustomadd', { key: preset.key, value: val });
+                            }
+                        }
+                        inp.remove();
+                        sel.style.display = '';
+                        rebuildOptions();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        inp.remove();
+                        sel.style.display = '';
+                        sel.value = currentTags[preset.key] || '';
+                    }
+                });
+                inp.addEventListener('blur', () => {
+                    const val = inp.value.trim();
+                    if (val) {
+                        currentTags[preset.key] = val;
+                        if (!preset.options.includes(val)) {
+                            player?._emit?.('tagcustomadd', { key: preset.key, value: val });
+                        }
+                    }
+                    inp.remove();
+                    sel.style.display = '';
+                    rebuildOptions();
+                });
+                wrap.appendChild(inp);
+                inp.focus();
+            } else {
                 if (sel.value) currentTags[preset.key] = sel.value;
                 else delete currentTags[preset.key];
-            });
-            tagsRow.appendChild(sel);
+            }
+        });
+        wrap.appendChild(sel);
+        return wrap;
+    };
+
+    /** renders preset selects and the custom tag input */
+    const renderTags = () => {
+        tagsRow.innerHTML = '';
+
+        // Preset combobox dropdowns
+        for (const preset of tagPresets) {
+            tagsRow.appendChild(makeTagCombobox(preset));
         }
 
         // Show current custom tags as badges + add-button
-        const customKeys = Object.keys(currentTags).filter((k) => !TAG_PRESETS.some((p) => p.key === k));
+        const customKeys = Object.keys(currentTags).filter((k) => !tagPresets.some((p) => p.key === k));
         for (const key of customKeys) {
             const badge = document.createElement('span');
             badge.className = 'label-tag-badge';
@@ -1449,6 +1522,7 @@ export class SpectrogramLabelLayer {
                     const duration = Math.max(0.01, (ref.end - ref.start) || 0.01);
                     const freq = this._stampAxisLock ? null : this._clientYToFreq(e.clientY);
                     const freqSpan = ref.freqMax - ref.freqMin;
+                    const isXc = ref.origin === 'xeno-canto';
                     this.add({
                         start: t,
                         end: t + duration,
@@ -1459,8 +1533,8 @@ export class SpectrogramLabelLayer {
                         scientificName: ref.scientificName,
                         commonName: ref.commonName,
                         origin: 'manual',
-                        author: ref.author,
-                        tags: ref.tags ? { ...ref.tags } : {},
+                        author: isXc ? '' : ref.author,
+                        tags: isXc ? {} : (ref.tags ? { ...ref.tags } : {}),
                     });
                     e.preventDefault();
                     e.stopPropagation();
@@ -1628,6 +1702,17 @@ export class SpectrogramLabelLayer {
     }
 
     _openNewLabelPicker(region) {
+        // If species search bar has a selection, skip the dialog entirely
+        const barSel = this.player?.getSpeciesBarSelection?.();
+        if (barSel && barSel.name) {
+            region.label = barSel.name;
+            region.color = barSel.color || colorForName(barSel.name);
+            region.scientificName = barSel.scientificName || '';
+            region.tags = {};
+            this.add(region);
+            return;
+        }
+
         // Collect unique labels with their colors for quick pick
         const seen = new Set();
         const existingLabels = [];
@@ -1639,8 +1724,9 @@ export class SpectrogramLabelLayer {
             seen.add(key);
             existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: l.tags || {} });
         }
-        // Pre-fill from focused/last label
+        // Pre-fill from focused/last label (skip XC metadata)
         const ref = this._getReferenceLabelForDefaults();
+        const isXcRef = ref?.origin === 'xeno-canto';
         const initialColor = ref?.color || _autoAssignColor(this.labels);
         const refName = (ref?.label || '').trim().toLowerCase();
         const initialHex = (getOverlayColorStyle(initialColor)?.hex || '').toLowerCase();
@@ -1648,7 +1734,7 @@ export class SpectrogramLabelLayer {
             player: this.player,
             initialValue: ref?.label || '',
             initialColor,
-            initialTags: ref?.tags || null,
+            initialTags: isXcRef ? null : (ref?.tags || null),
             existingLabels,
             title: 'New Label',
             onSubmit: ({ name, color, scientificName = '', tags = {} }) => {

@@ -14,6 +14,7 @@
  */
 
 import { TAG_PRESETS } from './label-table.js';
+import { createEditableSelect } from './editable-select.js';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -77,6 +78,9 @@ export class PropertiesPanel {
     /** @type {object|null} Temporarily hovered label */
     this._hoverLabel = null;
 
+    /** @type {import('./custom-tag-store.js').CustomTagStore|null} */
+    this._tagStore = null;
+
     /**
      * Called when the user edits a field. Signature: (labelId, updates) => void
      * @type {((id: string, updates: object) => void)|null}
@@ -84,6 +88,11 @@ export class PropertiesPanel {
     this.onChange = null;
 
     this._build();
+  }
+
+  /** Set the custom tag store for editable dropdowns. */
+  setTagStore(store) {
+    this._tagStore = store || null;
   }
 
   // ── Public API ────────────────────────────────────────────────────
@@ -385,26 +394,25 @@ export class PropertiesPanel {
       dt.textContent = preset.key;
       const dd = document.createElement('dd');
       dd.classList.add('props-editable');
-      const sel = document.createElement('select');
-      sel.className = 'props-select';
-      const emptyOpt = document.createElement('option');
-      emptyOpt.value = '';
-      emptyOpt.textContent = '–';
-      sel.appendChild(emptyOpt);
-      for (const opt of preset.options) {
-        const o = document.createElement('option');
-        o.value = opt;
-        o.textContent = opt;
-        if (tags[preset.key] === opt) o.selected = true;
-        sel.appendChild(o);
-      }
-      sel.addEventListener('change', () => {
-        const newTags = { ...lbl.tags };
-        if (sel.value) newTags[preset.key] = sel.value;
-        else delete newTags[preset.key];
-        this._emitChange(lbl.id, { tags: newTags });
+      const store = this._tagStore;
+      const items = store
+        ? store.getMerged(preset.key, preset.options)
+        : preset.options.map((v) => ({ value: v, custom: false }));
+      const es = createEditableSelect({
+        placeholder: '–',
+        value: tags[preset.key] || '',
+        items,
+        onChange: (val) => {
+          const newTags = { ...lbl.tags };
+          if (val) newTags[preset.key] = val;
+          else delete newTags[preset.key];
+          this._emitChange(lbl.id, { tags: newTags });
+        },
+        onAdd: store ? (val) => store.add(preset.key, val) : undefined,
+        onRemove: store ? (val) => store.remove(preset.key, val) : undefined,
+        onRename: store ? (oldV, newV) => store.rename(preset.key, oldV, newV) : undefined,
       });
-      dd.appendChild(sel);
+      dd.appendChild(es.el);
       grid.appendChild(dt);
       grid.appendChild(dd);
     }

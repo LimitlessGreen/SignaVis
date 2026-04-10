@@ -17,9 +17,12 @@
  *     onEdit: (id) => player.spectrogramLabels._renameSpectrogramLabelPrompt(id),
  *     onFocus: (id) => player._emit('labelfocus', { id, source: 'table' }),
  *     onHover: (id, on) => highlightSpectrogramLabel(id, on),
+ *     tagStore: customTagStore,  // optional CustomTagStore instance
  *   });
  *   table.render(labels);
  */
+
+import { createEditableSelect } from './editable-select.js';
 
 /** Preset tag columns shown as inline `<select>` dropdowns. */
 export const TAG_PRESETS = [
@@ -57,6 +60,7 @@ export class LabelTable {
     this._onEdit = opts.onEdit;
     this._onFocus = opts.onFocus;
     this._onHover = opts.onHover;
+    this._tagStore = opts.tagStore || null;
     this._rowMap = new Map();
     this._selectedId = null;
     this._labels = [];
@@ -137,30 +141,26 @@ export class LabelTable {
       for (const preset of TAG_PRESETS) {
         const tdTag = document.createElement('td');
         tdTag.className = 'tag-select-cell';
-        const sel = document.createElement('select');
-        sel.className = 'tag-select';
-        const emptyOpt = document.createElement('option');
-        emptyOpt.value = '';
-        emptyOpt.textContent = '—';
-        sel.appendChild(emptyOpt);
-        for (const val of preset.options) {
-          const opt = document.createElement('option');
-          opt.value = val;
-          opt.textContent = val;
-          sel.appendChild(opt);
-        }
-        sel.value = lbl.tags?.[preset.key] || '';
-        if (sel.value) sel.classList.add('has-value');
-        sel.addEventListener('change', (e) => {
-          e.stopPropagation();
-          if (!lbl.tags) lbl.tags = {};
-          if (sel.value) lbl.tags[preset.key] = sel.value;
-          else delete lbl.tags[preset.key];
-          sel.classList.toggle('has-value', !!sel.value);
-          this._onSync();
+        const store = this._tagStore;
+        const items = store
+          ? store.getMerged(preset.key, preset.options)
+          : preset.options.map((v) => ({ value: v, custom: false }));
+        const es = createEditableSelect({
+          placeholder: '—',
+          value: lbl.tags?.[preset.key] || '',
+          items,
+          onChange: (val) => {
+            if (!lbl.tags) lbl.tags = {};
+            if (val) lbl.tags[preset.key] = val;
+            else delete lbl.tags[preset.key];
+            this._onSync();
+          },
+          onAdd: store ? (val) => store.add(preset.key, val) : undefined,
+          onRemove: store ? (val) => store.remove(preset.key, val) : undefined,
+          onRename: store ? (oldV, newV) => store.rename(preset.key, oldV, newV) : undefined,
         });
-        sel.addEventListener('click', (e) => e.stopPropagation());
-        tdTag.appendChild(sel);
+        es.el.addEventListener('click', (e) => e.stopPropagation());
+        tdTag.appendChild(es.el);
         tr.appendChild(tdTag);
       }
 

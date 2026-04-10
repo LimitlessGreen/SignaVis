@@ -27,6 +27,7 @@
  */
 
 import { TAG_PRESETS } from './label-table.js';
+import { createEditableSelect } from './editable-select.js';
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 
@@ -58,6 +59,7 @@ export class LabelList {
     this._onFocus = opts.onFocus;
     this._onHover = opts.onHover;
     this._onRemove = null;
+    this._tagStore = opts.tagStore || null;
     this._cardMap = new Map();
     this._selectedId = null;
     this._labels = [];
@@ -353,6 +355,7 @@ export class LabelList {
     const detail = document.createElement('div');
     detail.className = 'label-card-detail';
 
+    const store = this._tagStore;
     for (const preset of TAG_PRESETS) {
       const row = document.createElement('div');
       row.className = 'detail-row';
@@ -362,28 +365,26 @@ export class LabelList {
       label.textContent = preset.key;
       row.appendChild(label);
 
-      const sel = document.createElement('select');
-      sel.className = 'detail-select';
-      const emptyOpt = document.createElement('option');
-      emptyOpt.value = '';
-      emptyOpt.textContent = '—';
-      sel.appendChild(emptyOpt);
-      for (const val of preset.options) {
-        const opt = document.createElement('option');
-        opt.value = val;
-        opt.textContent = val;
-        sel.appendChild(opt);
-      }
-      sel.value = lbl.tags?.[preset.key] || '';
-      sel.addEventListener('change', (e) => {
-        e.stopPropagation();
-        if (!lbl.tags) lbl.tags = {};
-        if (sel.value) lbl.tags[preset.key] = sel.value;
-        else delete lbl.tags[preset.key];
-        this._onSync();
+      const items = store
+        ? store.getMerged(preset.key, preset.options)
+        : preset.options.map((v) => ({ value: v, custom: false }));
+
+      const es = createEditableSelect({
+        placeholder: '–',
+        value: lbl.tags?.[preset.key] || '',
+        items,
+        onChange: (val) => {
+          if (!lbl.tags) lbl.tags = {};
+          if (val) lbl.tags[preset.key] = val;
+          else delete lbl.tags[preset.key];
+          this._onSync();
+        },
+        onAdd: store ? (val) => { store.add(preset.key, val); } : undefined,
+        onRemove: store ? (val) => { store.remove(preset.key, val); } : undefined,
+        onRename: store ? (oldVal, newVal) => { store.rename(preset.key, oldVal, newVal); } : undefined,
       });
-      sel.addEventListener('click', (e) => e.stopPropagation());
-      row.appendChild(sel);
+      es.el.addEventListener('click', (e) => e.stopPropagation());
+      row.appendChild(es.el);
       detail.appendChild(row);
     }
 

@@ -94,6 +94,10 @@ export class BirdNETPlayer {
         this._labelTaxonomy = this._normalizeTaxonomy(options.labelTaxonomy || DEFAULT_LABEL_TAXONOMY);
         this._activeLabelId = null;
         this._globalKeyHandler = null;
+        /** @type {Array<{ name: string, scientificName?: string }>} */
+        this._backgroundSpecies = [];
+        /** @type {{ name: string, color: string, scientificName: string } | null} */
+        this._speciesBarSelection = null;
 
         this.on = (event, callback, options) => {
             this._events.addEventListener(event, callback, options);
@@ -245,6 +249,8 @@ export class BirdNETPlayer {
     }
     clearSpectrogramLabels() {
         this._linkedLabels.clear();
+        this._backgroundSpecies = [];
+        this.setSpeciesBar('');
         this._syncLinkedLabelsToLayers();
     }
     renameLabel(id, name) {
@@ -316,6 +322,23 @@ export class BirdNETPlayer {
         this._labelTaxonomy = this._normalizeTaxonomy(taxonomy);
         this._syncLinkedLabelsToLayers();
     }
+
+    /**
+     * Override or extend the tag presets shown in the label editor dialog.
+     * Each entry: { key, label, options: string[] }
+     * @param {Array<{ key: string, label?: string, options: string[] }>} presets
+     */
+    setTagPresets(presets) {
+        this._tagPresets = (presets || []).map((p) => ({
+            key: String(p.key || ''),
+            label: String(p.label || p.key || ''),
+            options: Array.isArray(p.options) ? p.options.map(String) : [],
+        })).filter((p) => p.key);
+    }
+    getTagPresets() {
+        return this._tagPresets ? this._tagPresets.map((p) => ({ ...p, options: p.options.slice() })) : null;
+    }
+
     applyTaxonomyToLabel(id, shortcutOrIndex) {
         const key = String(id || '').trim();
         const current = this._linkedLabels.get(key);
@@ -594,6 +617,34 @@ export class BirdNETPlayer {
         secondary.appendChild(stampBtn);
     }
 
+    /** Public getter for current species bar selection. */
+    getSpeciesBarSelection() {
+        return this._speciesBarSelection ? { ...this._speciesBarSelection } : null;
+    }
+
+    /**
+     * Programmatically set the species search bar (e.g. after loading XC recording).
+     * @param {string} name
+     * @param {{ color?: string, scientificName?: string }} [opts]
+     */
+    setSpeciesBar(name, opts = {}) {
+        const trimmed = (name || '').trim();
+        this._speciesBarSelection = trimmed
+            ? { name: trimmed, color: opts.color || colorForName(trimmed), scientificName: opts.scientificName || '' }
+            : null;
+        this._emit('speciesbarchange', { selection: this._speciesBarSelection ? { ...this._speciesBarSelection } : null });
+    }
+
+    /**
+     * Set background species (XC "also" field) to appear in search suggestions.
+     * @param {Array<string | { name: string, scientificName?: string }>} species
+     */
+    setBackgroundSpecies(species) {
+        this._backgroundSpecies = (species || []).map((s) =>
+            typeof s === 'string' ? { name: s } : { name: s.name || '', scientificName: s.scientificName || '' },
+        ).filter((s) => s.name);
+    }
+
     _previewFromAnnotationEvent(annotation) {
         if (this._isSyncingLabels || !annotation) return;
         const id = annotation.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
@@ -687,6 +738,7 @@ export class BirdNETPlayer {
         } finally {
             this._isSyncingLabels = false;
         }
+        this._emit('labelsync', {});
     }
 
     /** Create a deep snapshot of the current _linkedLabels for undo. */

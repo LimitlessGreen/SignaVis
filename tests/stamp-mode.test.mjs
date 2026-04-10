@@ -222,3 +222,106 @@ test('stamp reference label dimensions are accessible via _getReferenceLabelForD
     assert.ok(duration >= 1.9 && duration <= 2.1, `duration should be ~2, got ${duration}`);
     assert.ok(freqSpan >= 5900 && freqSpan <= 6100, `freqSpan should be ~6000, got ${freqSpan}`);
 });
+
+// ── Xeno Canto reference: tags and author should NOT carry over ──
+
+test('_getReferenceLabelForDefaults returns XC label when it is the stamp ref', () => {
+    const { layer } = createLayer();
+    layer.add({
+        start: 0, end: 2, freqMin: 1000, freqMax: 8000,
+        label: 'Amsel', origin: 'xeno-canto', author: 'XC Recordist',
+        tags: { sex: 'male', soundType: 'song', annotator: 'external' },
+    });
+    layer._stampRefLabelId = layer.labels[0].id;
+    const ref = layer._getReferenceLabelForDefaults();
+    assert.equal(ref.origin, 'xeno-canto');
+});
+
+test('XC ref label origin check: isXc flag is true for xeno-canto', () => {
+    const { layer } = createLayer();
+    layer.add({
+        start: 0, end: 2, freqMin: 1000, freqMax: 8000,
+        label: 'Amsel', origin: 'xeno-canto', author: 'XC Recordist',
+        tags: { sex: 'male', soundType: 'song' },
+    });
+    const ref = layer._getReferenceLabelForDefaults();
+    const isXc = ref.origin === 'xeno-canto';
+    assert.ok(isXc, 'xeno-canto label should be detected');
+});
+
+test('manual ref label origin check: isXc flag is false', () => {
+    const { layer } = createLayer();
+    layer.add({
+        start: 0, end: 2, freqMin: 1000, freqMax: 8000,
+        label: 'Amsel', origin: 'manual', author: 'User',
+        tags: { soundType: 'call' },
+    });
+    const ref = layer._getReferenceLabelForDefaults();
+    const isXc = ref.origin === 'xeno-canto';
+    assert.ok(!isXc, 'manual label should not be treated as XC');
+});
+
+test('stamp from XC ref produces label without XC tags and author', () => {
+    const { layer } = createLayer();
+    // Simulate: XC label is the reference
+    layer.add({
+        start: 0, end: 2, freqMin: 1000, freqMax: 8000,
+        label: 'Amsel', origin: 'xeno-canto', author: 'XC Recordist',
+        scientificName: 'Turdus merula', commonName: 'Common Blackbird',
+        tags: { sex: 'male', soundType: 'song', annotator: 'external', remarks: 'nice recording' },
+    });
+
+    const ref = layer._getReferenceLabelForDefaults();
+    const isXc = ref.origin === 'xeno-canto';
+
+    // Build the stamped label the same way the real code does
+    const stamped = layer._normalize({
+        start: 3,
+        end: 3 + (ref.end - ref.start),
+        freqMin: ref.freqMin,
+        freqMax: ref.freqMax,
+        label: ref.label,
+        color: ref.color,
+        scientificName: ref.scientificName,
+        commonName: ref.commonName,
+        origin: 'manual',
+        author: isXc ? '' : ref.author,
+        tags: isXc ? {} : (ref.tags ? { ...ref.tags } : {}),
+    });
+
+    // Species info SHOULD carry over
+    assert.equal(stamped.label, 'Amsel');
+    assert.equal(stamped.scientificName, 'Turdus merula');
+    assert.equal(stamped.commonName, 'Common Blackbird');
+    assert.equal(stamped.origin, 'manual');
+
+    // Tags and author should NOT carry over from XC
+    assert.deepStrictEqual(stamped.tags, {}, 'XC tags must not be copied');
+    assert.equal(stamped.author, '', 'XC author must not be copied');
+});
+
+test('stamp from manual ref preserves tags and author', () => {
+    const { layer } = createLayer();
+    layer.add({
+        start: 0, end: 2, freqMin: 1000, freqMax: 8000,
+        label: 'Amsel', origin: 'manual', author: 'MyUser',
+        tags: { soundType: 'call' },
+    });
+
+    const ref = layer._getReferenceLabelForDefaults();
+    const isXc = ref.origin === 'xeno-canto';
+
+    const stamped = layer._normalize({
+        start: 3,
+        end: 3 + (ref.end - ref.start),
+        freqMin: ref.freqMin,
+        freqMax: ref.freqMax,
+        label: ref.label,
+        origin: 'manual',
+        author: isXc ? '' : ref.author,
+        tags: isXc ? {} : (ref.tags ? { ...ref.tags } : {}),
+    });
+
+    assert.equal(stamped.author, 'MyUser', 'manual author should carry over');
+    assert.deepStrictEqual(stamped.tags, { soundType: 'call' }, 'manual tags should carry over');
+});
