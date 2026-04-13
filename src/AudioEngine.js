@@ -495,7 +495,9 @@ export class AudioEngine extends EventTarget {
   _setupWaveSurfer(source, name) {
     if (this.wavesurfer) this.wavesurfer.destroy();
 
-    const ws = this._WaveSurferCtor.create({
+    // Support WaveSurfer builds that expose a static `create()` or are constructible.
+    const WaveSurferCtor = /** @type {any} */ (this._WaveSurferCtor);
+    const wsOptions = {
       container: null, // Will be set by PlayerState
       height: 1,
       waveColor: '#38bdf8',
@@ -505,7 +507,10 @@ export class AudioEngine extends EventTarget {
       minPxPerSec: this.pixelsPerSecond,
       autoScroll: false,
       autoCenter: false,
-    });
+    };
+    const ws = (WaveSurferCtor && typeof WaveSurferCtor.create === 'function')
+      ? WaveSurferCtor.create(wsOptions)
+      : new WaveSurferCtor(wsOptions);
 
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects
     if (source) {
@@ -646,8 +651,10 @@ export class AudioEngine extends EventTarget {
     const hasFreq = Number.isFinite(freqMinHz) && Number.isFinite(freqMaxHz);
     if (hasFreq) {
       const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
-      const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-      const fHi = Math.max(fLo + 5, Math.min(Math.max(freqMinHz, freqMaxHz), nyquist));
+      const fMin = Number(freqMinHz);
+      const fMax = Number(freqMaxHz);
+      const fLo = Math.max(20, Math.min(fMin, fMax, nyquist - 5));
+      const fHi = Math.max(fLo + 5, Math.min(Math.max(fMin, fMax), nyquist));
       const center = Math.sqrt(fLo * fHi);
       const bandwidth = Math.max(10, fHi - fLo);
       const q = Math.max(0.25, Math.min(40, center / bandwidth));
