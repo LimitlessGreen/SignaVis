@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench — Storybook</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <link rel="stylesheet" href="../src/styles/tokens.css">
   <!-- Library loaded via ESM in the module script below -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; }
 
     :root {
-      --bg: #f3f4f6;
-      --surface: #ffffff;
-      --border: #e5e7eb;
-      --text: #111827;
-      --muted: #6b7280;
-      --accent: #2563eb;
-      --accent-soft: #eff6ff;
+      --bg: var(--color-bg-primary);
+      --surface: var(--color-bg-surface);
+      --border: var(--color-border);
+      --text: var(--color-text-primary);
+      --muted: var(--color-text-secondary);
+      --accent: var(--color-accent);
+      --accent-soft: var(--color-accent-faint);
       --radius: 10px;
       --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       --mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
@@ -109,7 +110,7 @@
     #stage { min-height: 200px; }
 
     .error-box {
-      padding: 32px; text-align: center; color: #dc2626;
+      padding: 32px; text-align: center; color: var(--danger);
     }
     .error-box p:first-child { font-size: 16px; font-weight: 600; }
     .error-box p:last-child  { font-size: 13px; opacity: .7; margin-top: 4px; }

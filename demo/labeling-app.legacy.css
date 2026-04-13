@@ -31,8 +31,8 @@ html, body {
 }
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: linear-gradient(135deg, #7fe8ff, #39b5ff);
-  box-shadow: 0 0 10px rgba(57, 181, 255, 0.7);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
+  box-shadow: 0 0 10px var(--color-accent);
 }
 .file-label {
   color: var(--muted); max-width: 200px;
@@ -45,9 +45,9 @@ html, body {
   font-size: 11px; padding: 3px 8px; cursor: pointer;
   white-space: nowrap;
 }
-.tb-btn:hover { border-color: #3a5580; background: rgba(57, 181, 255, 0.08); }
-.tb-btn.danger { border-color: #5c2020; color: var(--danger); }
-.tb-btn.danger:hover { background: rgba(248, 113, 113, 0.1); }
+.tb-btn:hover { border-color: var(--color-accent); background: var(--color-accent-faint); }
+.tb-btn.danger { border-color: var(--danger); color: var(--danger); }
+.tb-btn.danger:hover { background: var(--danger-soft); }
 .tb-select {
   border: 1px solid var(--line); border-radius: 5px;
   background: var(--panel); color: var(--text);
@@ -159,7 +159,7 @@ html, body {
   width: 100%; height: 100%;
   min-width: 0; min-height: 0;
   border: 1px solid var(--line); border-radius: 8px;
-  overflow: hidden; background: #0a0f1a;
+  overflow: hidden; background: var(--color-bg-secondary);
 }
 /* Panels and XC helper styles moved to:
    - src/styles/components/_panels.scss
@@ -187,9 +187,9 @@ html, body {
   gap: 3px 10px; font-size: 12px;
 }
 .shortcut-grid kbd {
-  border: 1px solid #2a3d5c; border-bottom-width: 2px;
+  border: 1px solid var(--line); border-bottom-width: 2px;
   border-radius: 4px; padding: 1px 5px;
-  background: #0d172b; color: #c8daf0;
+  background: var(--panel); color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px; white-space: nowrap; text-align: center;
 }
@@ -227,10 +227,10 @@ html, body {
   color: var(--muted); font-size: 11px;
 }
 .tb-xc-key.has-key {
-  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+  color: var(--color-success); border-color: var(--color-success-soft);
 }
 .tb-xc-key.has-key:hover {
-  background: rgba(74, 222, 128, 0.08);
+  background: var(--color-success-faint);
 }
 
 /* ── XC no-key modal ── */
@@ -305,6 +305,6 @@ html, body {
   display: flex; gap: 8px; justify-content: flex-end;
 }
 .xc-nokey-actions .tb-btn:first-child {
-  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+  color: var(--color-success); border-color: var(--color-success-soft);
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

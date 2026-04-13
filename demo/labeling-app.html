@@ -11,6 +11,7 @@
   <div class="app">
     <header class="topbar">
       <div class="brand"><span class="dot"></span> Labeling App</div>
+      <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
       <span class="tb-sep"></span>
       <span class="file-label" id="fileLabel">No file loaded</span>
       <button class="tb-btn" id="browseBtn" type="button">Browse</button>
@@ -260,7 +261,7 @@
     import { PropertiesPanel } from './lib/properties-panel.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
-    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info } from 'lucide-static';
+    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon } from 'lucide-static';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -282,6 +283,7 @@
     const selectionMeta   = document.getElementById('selectionMeta');
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
     const taxonomyMeta    = document.getElementById('taxonomyMeta');
+    const themeToggleBtn  = document.getElementById('themeToggleBtn');
 
     const taxonomy = new TaxonomyResolver();
     const birdnet  = new BirdNETInference();
@@ -396,6 +398,38 @@
         display: localized || lbl.commonName || lbl.label || 'Label',
         scientific: lbl.scientificName || '',
       };
+    }
+
+    // ── Theme toggle (persists in localStorage, overrides prefers-color-scheme)
+    function setTheme(theme) {
+      if (!theme) return;
+      document.documentElement.setAttribute('data-theme', theme);
+      if (themeToggleBtn) {
+        // Use Lucide SVG icons (injected as raw SVG strings)
+        try {
+          themeToggleBtn.innerHTML = theme === 'light' ? Sun : Moon;
+        } catch (e) {
+          themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
+        }
+        themeToggleBtn.setAttribute('aria-pressed', String(theme === 'light'));
+      }
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem('aw:theme');
+      const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      const theme = saved || (prefersLight ? 'light' : 'dark');
+      setTheme(theme);
+    }
+
+    if (themeToggleBtn) {
+      initTheme();
+      themeToggleBtn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        const next = current === 'light' ? 'dark' : 'light';
+        setTheme(next);
+        localStorage.setItem('aw:theme', next);
+      });
     }
 
     function highlightSpectrogramLabel(labelId, on) {

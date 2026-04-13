@@ -23,7 +23,7 @@ function container(root, height = 520) {
   const el = document.createElement('div');
   Object.assign(el.style, {
     height: `${height}px`, width: '100%',
-    borderRadius: '10px', overflow: 'hidden', background: '#fff',
+    borderRadius: '10px', overflow: 'hidden', background: 'var(--color-bg-surface)',
   });
   root.appendChild(el);
   return el;
@@ -179,13 +179,13 @@ export const stories = [
       const togglePanel = document.createElement('div');
       Object.assign(togglePanel.style, {
         padding: '8px 10px', borderRadius: '10px',
-        background: '#1e293b', color: '#94a3b8',
+        background: 'var(--color-bg-secondary)', color: 'var(--muted)',
         font: '11px/1.6 ui-monospace, SFMono-Regular, monospace',
         display: 'flex', flexWrap: 'wrap', gap: '2px 10px',
       });
       const heading = document.createElement('div');
       heading.textContent = 'Events';
-      heading.style.cssText = 'width:100%;font-weight:600;color:#e2e8f0;margin-bottom:2px';
+      heading.style.cssText = 'width:100%;font-weight:600;color:var(--color-text-primary);margin-bottom:2px';
       togglePanel.appendChild(heading);
       sidebar.appendChild(togglePanel);
 
@@ -195,7 +195,7 @@ export const stories = [
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = def.on;
-        cb.style.cssText = 'accent-color:#3b82f6;margin:0';
+        cb.style.cssText = 'accent-color:var(--color-accent);margin:0';
         label.appendChild(cb);
         label.appendChild(document.createTextNode(def.name));
         togglePanel.appendChild(label);
@@ -206,7 +206,7 @@ export const stories = [
       const log = document.createElement('pre');
       Object.assign(log.style, {
         margin: '0', padding: '10px', borderRadius: '10px',
-        background: '#0f172a', color: '#94a3b8',
+        background: 'var(--color-bg-secondary)', color: 'var(--muted)',
         font: '12px/1.4 ui-monospace, SFMono-Regular, monospace',
         flex: '1 1 0', overflow: 'auto', minHeight: '0',
       });
@@ -295,7 +295,7 @@ export const stories = [
         const lbl = document.createElement('label');
         lbl.style.cssText = 'display:grid;gap:3px';
         const sel = document.createElement('select');
-        sel.style.cssText = 'height:28px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font:inherit;font-size:12px';
+        sel.style.cssText = 'height:28px;border:1px solid var(--color-border);border-radius:6px;padding:0 6px;font:inherit;font-size:12px';
         for (const v of values) {
           const o = document.createElement('option');
           o.value = v; o.textContent = v;

@@ -1,20 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench Player Demo</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
+  <link rel="stylesheet" href="../src/styles/tokens.css">
   <!-- Library loaded via ESM in the module script below -->
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f6fa; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--color-bg-primary); }
     .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
     h1 { margin: 0 0 12px; }
-    .card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
+    .card { background: var(--color-bg-surface); border-radius: 12px; padding: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
     .demo-toolbar { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .demo-toolbar button { border: 1px solid #c9d3e0; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-    .demo-toolbar button:hover { background: #f3f7ff; }
-    #events { margin-top: 12px; background: #0b1020; color: #cfe7ff; border-radius: 8px; padding: 8px; height: 120px; overflow: auto; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .demo-toolbar button { border: 1px solid var(--color-border); background: var(--color-bg-surface); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+    .demo-toolbar button:hover { background: var(--color-accent-faint); }
+    #events { margin-top: 12px; background: var(--color-bg-secondary); color: var(--color-text-primary); border-radius: 8px; padding: 8px; height: 120px; overflow: auto; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
 <body>
@@ -28,7 +29,7 @@
         <button id="clearAnnotationsBtn">Clear annotations</button>
         <button id="exportRavenBtn">Export Raven TXT to console</button>
       </div>
-      <div style="margin-top:8px;color:#4f5e7d;font-size:13px">Tip: Click a label in the amplitude view to play that time range. Spectrogram: <b>Shift + Drag</b> to create, then adjust with the handles.</div>
+      <div style="margin-top:8px;color:var(--muted);font-size:13px">Tip: Click a label in the amplitude view to play that time range. Spectrogram: <b>Shift + Drag</b> to create, then adjust with the handles.</div>
       <pre id="events"></pre>
     </div>
   </div>

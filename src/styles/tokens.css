@@ -30,6 +30,14 @@
     --danger: #f87171;
     --sidebar-width: 300px;
     --sidebar-right-width: 300px;
+    /* Success / misc utility tokens */
+    --color-success: #4ade80;
+    --color-success-soft: rgba(74,222,128,0.35);
+    --color-success-faint: rgba(74,222,128,0.08);
+    --color-accent-faint: rgba(56,189,248,0.08);
+    --danger-soft: rgba(248,113,113,0.1);
+    --color-detection: #f59e0b;
+    --overlay-bg: rgba(0,0,0,0.55);
 }
 
 @media (prefers-color-scheme: light) {
@@ -53,3 +61,22 @@
   Central token file for Audio-Workbench. Add new variables here and
   replace per-file :root declarations with `@import "../src/styles/tokens.css"`.
 */
+
+/* Theme override: allow explicit theme toggle via `html[data-theme="light"]`.
+     This takes precedence over the `prefers-color-scheme` media query when set.
+*/
+html[data-theme="light"] {
+        --color-bg-primary: #f0f0f4;
+        --color-bg-secondary: #e8e8ee;
+        --color-bg-tertiary: #d4d4dc;
+        --color-bg-surface: #ffffff;
+        --color-text-primary: #1a1a2e;
+        --color-text-secondary: #555568;
+        --color-accent: #0284c7;
+        --color-accent-hover: #0369a1;
+        --color-playhead: #dc2626;
+        --color-border: rgba(0,0,0,0.1);
+        --color-toolbar: #e0e0e8;
+        --color-statusbar: #d8d8e2;
+}
+
