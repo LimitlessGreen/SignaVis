@@ -78,7 +78,7 @@ html, body {
   padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  background: rgba(0,0,0,0.25);
+  background: var(--input-bg);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .species-search-inner:focus-within {
@@ -119,7 +119,7 @@ html, body {
   margin-left: 2px;
   border: none;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
+  background: var(--input-bg-weak);
   color: var(--muted);
   font-size: 14px;
   line-height: 1;
@@ -127,7 +127,7 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 .species-search-clear:hover {
-  background: rgba(255,255,255,0.2);
+  background: var(--input-hover-bg);
   color: var(--text);
 }
 .species-search-clear.hidden { display: none; }
@@ -237,7 +237,7 @@ html, body {
 .xc-nokey-backdrop {
   position: fixed; inset: 0; z-index: 200;
   display: none; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-bg);
   animation: fadeIn 0.15s ease;
 }
 .xc-nokey-backdrop:not([hidden]) {
@@ -249,7 +249,7 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 20px 24px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 48px var(--shadow-strong);
   color: var(--text); font-size: 13px; line-height: 1.5;
 }
 .xc-nokey-dialog h3 {
@@ -292,7 +292,7 @@ html, body {
   color: var(--muted); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.xc-key-eye:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.xc-key-eye:hover { color: var(--text); background: var(--input-hover-bg); }
 .xc-key-eye .xc-eye-hide { display: none; }
 .xc-key-eye.revealed .xc-eye-show { display: none; }
 .xc-key-eye.revealed .xc-eye-hide { display: inline; }

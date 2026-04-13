@@ -326,12 +326,18 @@ export class PropertiesPanel {
     const swatch = document.createElement('input');
     swatch.type = 'color';
     swatch.className = 'props-color-input';
-    let defaultSwatch = '#888888';
+    let defaultSwatch = '';
     if (typeof window !== 'undefined' && window.getComputedStyle) {
-      const cssVal = getComputedStyle(document.documentElement).getPropertyValue('--muted') || '';
-      if (cssVal.trim()) defaultSwatch = cssVal.trim();
+      const cssVal = getComputedStyle(document.documentElement).getPropertyValue('--muted') || getComputedStyle(document.documentElement).getPropertyValue('--color-text-secondary') || '';
+      const v = cssVal.trim();
+      if (v.startsWith('#')) {
+        defaultSwatch = v;
+      } else if (/rgba?\(/i.test(v)) {
+        const m = v.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+        if (m) defaultSwatch = '#' + [1,2,3].map(i => Number(m[i]).toString(16).padStart(2,'0')).join('');
+      }
     }
-    swatch.value = (typeof value === 'string' && value.startsWith('#')) ? value : defaultSwatch;
+    swatch.value = (typeof value === 'string' && value.startsWith('#')) ? value : (defaultSwatch || '');
     swatch.addEventListener('input', () => {
       text.value = swatch.value;
     });

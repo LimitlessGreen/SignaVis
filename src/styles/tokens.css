@@ -38,6 +38,11 @@
     --danger-soft: rgba(248,113,113,0.1);
     --color-detection: #f59e0b;
     --overlay-bg: rgba(0,0,0,0.55);
+        /* Form / input tokens (backgrounds and hover states) */
+        --input-bg: rgba(255,255,255,0.03);
+        --input-bg-weak: rgba(255,255,255,0.06);
+        --input-hover-bg: rgba(255,255,255,0.04);
+        --shadow-strong: rgba(0,0,0,0.5);
 }
 
 @media (prefers-color-scheme: light) {
@@ -62,6 +67,11 @@
         --muted: var(--color-text-secondary);
         --accent: var(--color-accent);
         --danger: #dc2626;
+            /* Input tokens (light theme values) */
+            --input-bg: rgba(0,0,0,0.06);
+            --input-bg-weak: rgba(0,0,0,0.08);
+            --input-hover-bg: rgba(0,0,0,0.04);
+            --shadow-strong: rgba(0,0,0,0.12);
     }
 }
 
@@ -94,5 +104,10 @@ html[data-theme="light"] {
     --muted: var(--color-text-secondary);
     --accent: var(--color-accent);
     --danger: #dc2626;
+            /* Input tokens (explicit light mapping) */
+            --input-bg: rgba(0,0,0,0.06);
+            --input-bg-weak: rgba(0,0,0,0.08);
+            --input-hover-bg: rgba(0,0,0,0.04);
+            --shadow-strong: rgba(0,0,0,0.12);
 }
 
