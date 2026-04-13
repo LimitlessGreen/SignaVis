@@ -1,0 +1,63 @@
+/* Buttons partial for Audio-Workbench (SCSS)
+   Uses CSS custom properties for colors so runtime theming remains possible.
+*/
+
+@mixin aw-button-base() {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+/* Provide both new `.aw-btn` and legacy selectors for an easy, opt-in
+   migration without breaking legacy CSS immediately. */
+.aw-btn, .toolbar-btn, .tb-btn {
+  @include aw-button-base();
+}
+
+/* Legacy danger variant used in demo */
+.tb-btn.danger {
+  border-color: #5c2020;
+  color: var(--danger);
+}
+
+.aw-btn:hover, .toolbar-btn:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--color-accent);
+}
+
+.aw-btn--primary, .toolbar-btn.file-btn {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 600;
+}
+.aw-btn--primary:hover, .toolbar-btn.file-btn:hover {
+  background: var(--color-accent-hover);
+}
+
+.mini-btn {
+  background: var(--color-bg-surface, #2a2a3e);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.mini-btn:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}

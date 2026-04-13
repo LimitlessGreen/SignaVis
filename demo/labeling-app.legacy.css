@@ -1,0 +1,310 @@
+@import "../src/styles/tokens.css";
+* { box-sizing: border-box; margin: 0; }
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  font-size: 13px;
+}
+.app {
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  width: 100%; height: 100%;
+}
+
+/* ── Topbar ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.brand {
+  display: flex; align-items: center; gap: 7px;
+  font-weight: 700; letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: linear-gradient(135deg, #7fe8ff, #39b5ff);
+  box-shadow: 0 0 10px rgba(57, 181, 255, 0.7);
+}
+.file-label {
+  color: var(--muted); max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px;
+}
+.tb-btn {
+  border: 1px solid var(--line); border-radius: 5px;
+  background: transparent; color: var(--text);
+  font-size: 11px; padding: 3px 8px; cursor: pointer;
+  white-space: nowrap;
+}
+.tb-btn:hover { border-color: #3a5580; background: rgba(57, 181, 255, 0.08); }
+.tb-btn.danger { border-color: #5c2020; color: var(--danger); }
+.tb-btn.danger:hover { background: rgba(248, 113, 113, 0.1); }
+.tb-select {
+  border: 1px solid var(--line); border-radius: 5px;
+  background: var(--panel); color: var(--text);
+  font-size: 11px; padding: 3px 6px;
+}
+.tb-select option {
+  background: var(--panel); color: var(--text);
+}
+.tb-meta {
+  color: var(--muted); font-size: 11px; white-space: nowrap;
+}
+.tb-sep { width: 1px; height: 18px; background: var(--line); }
+.tb-spacer { flex: 1; }
+
+/* ── Species Search Bar ── */
+.species-search {
+  flex: 0 1 320px;
+  min-width: 120px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.species-search-inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(0,0,0,0.25);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.species-search-inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.species-search-icon {
+  flex-shrink: 0;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.species-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+.species-search-input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.species-search-input.has-selection {
+  font-weight: 600;
+}
+.species-search-clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 2px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.species-search-clear:hover {
+  background: rgba(255,255,255,0.2);
+  color: var(--text);
+}
+.species-search-clear.hidden { display: none; }
+
+/* Dropdown */
+/* Species search dropdown moved to src/styles/components/_popovers.scss */
+
+/* ── Workspace ── */
+.workspace {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Activity bar moved to src/styles/components/_activity-bar.scss */
+/* Sidebar layout & resize moved to src/styles/components/_sidebar.scss */
+/* Keep legacy CSS minimal here during migration. */
+
+/* ── Main Area + Stage ── */
+.main-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 5px; }
+#playerRoot {
+  width: 100%; height: 100%;
+  min-width: 0; min-height: 0;
+  border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; background: #0a0f1a;
+}
+/* Panels and XC helper styles moved to:
+   - src/styles/components/_panels.scss
+   Topbar / toolbar helpers live in src/styles/components/_labeling-app.scss
+*/
+
+/* Label list and tag UI moved to:
+   - src/styles/components/_label-list.scss
+   - src/styles/components/_tags.scss
+*/
+
+/* Input helpers moved to src/styles/components/_labeling-app.scss */
+
+/* ── Help ── */
+.help-content {
+  padding: 12px 14px;
+}
+.help-section { margin-bottom: 14px; }
+.help-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); margin: 0 0 6px; font-weight: 600;
+}
+.shortcut-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 3px 10px; font-size: 12px;
+}
+.shortcut-grid kbd {
+  border: 1px solid #2a3d5c; border-bottom-width: 2px;
+  border-radius: 4px; padding: 1px 5px;
+  background: #0d172b; color: #c8daf0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px; white-space: nowrap; text-align: center;
+}
+.shortcut-grid .sc-desc { color: var(--muted); }
+.help-section p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+
+/* ── BirdNET Progress ── */
+.birdnet-progress {
+  height: 4px; background: var(--line); border-radius: 2px;
+  overflow: hidden; margin: 4px 14px;
+}
+.birdnet-progress-bar {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width 0.15s ease;
+}
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  /* Activity bar and sidebar responsive rules moved to component partials */
+  .panel-hint { display: none; }
+}
+
+/* Properties & form controls moved to:
+   - src/styles/components/_forms.scss
+   This file contains inputs, number fields, selects and helpers used
+   by the Properties Panel, XC dialogs and other sidebars.
+*/
+
+/* ── Spectrogram Settings Panel (relocated from player) ── */
+/* Spectrogram settings moved to src/styles/components/_spectrogram-settings.scss */
+
+/* ── XC API key topbar indicator ── */
+.tb-xc-key {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--muted); font-size: 11px;
+}
+.tb-xc-key.has-key {
+  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+}
+.tb-xc-key.has-key:hover {
+  background: rgba(74, 222, 128, 0.08);
+}
+
+/* ── XC no-key modal ── */
+.xc-nokey-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  animation: fadeIn 0.15s ease;
+}
+.xc-nokey-backdrop:not([hidden]) {
+  display: flex;
+}
+.xc-nokey-dialog {
+  max-width: 420px; width: 92%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color: var(--text); font-size: 13px; line-height: 1.5;
+}
+.xc-nokey-dialog h3 {
+  margin: 0 0 10px; font-size: 15px; font-weight: 600;
+  color: var(--text);
+}
+.xc-nokey-dialog p { margin: 0 0 8px; color: var(--muted); }
+.xc-nokey-hint { font-size: 11.5px; }
+.xc-nokey-input-row {
+  margin: 10px 0 4px;
+}
+.xc-nokey-input-row .input {
+  width: 100%; box-sizing: border-box;
+  font-size: 12px; padding: 6px 8px;
+}
+
+/* XC sidebar key input + eye toggle */
+.xc-key-input-row {
+  display: flex; gap: 6px; align-items: stretch;
+}
+.xc-key-input-wrap {
+  position: relative; flex: 1; min-width: 0;
+}
+.xc-key-input-wrap .input {
+  width: 100%; box-sizing: border-box;
+  padding-right: 32px;          /* room for eye button */
+  height: 100%;                 /* match sibling button height */
+}
+.xc-key-masked {
+  -webkit-text-security: disc;
+}
+.xc-key-input-row .sidebar-action-btn {
+  flex-shrink: 0; width: auto; padding: 0 14px;
+  white-space: nowrap;
+}
+.xc-key-eye {
+  position: absolute; right: 1px; top: 1px; bottom: 1px;
+  width: 28px;
+  background: none; border: none; border-radius: 0 5px 5px 0;
+  color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.xc-key-eye:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.xc-key-eye .xc-eye-hide { display: none; }
+.xc-key-eye.revealed .xc-eye-show { display: none; }
+.xc-key-eye.revealed .xc-eye-hide { display: inline; }
+.xc-nokey-dismiss-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted);
+  margin: 12px 0 14px; cursor: pointer;
+}
+.xc-nokey-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.xc-nokey-actions .tb-btn:first-child {
+  color: #4ade80; border-color: rgba(74, 222, 128, 0.35);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

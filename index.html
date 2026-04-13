@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench Player – Dev</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
+  <link rel="stylesheet" href="/src/styles/tokens.css" />
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f6fa; }
     .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
@@ -33,6 +34,7 @@
   </div>
 
   <script type="module">
+    import './src/styles/main.scss';
     // Vite dev mode: import source directly (HMR, no pre-build needed)
     import { BirdNETPlayer } from './src/BirdNETPlayer.js';
 

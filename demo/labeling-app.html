@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Workbench — Labeling App</title>
-  <link rel="stylesheet" href="labeling-app.css" />
+  <link rel="stylesheet" href="/src/styles/tokens.css" />
+  <!-- Styles are provided via the SCSS entrypoint imported in the module script: ../src/styles/main.scss -->
 </head>
 <body>
   <div class="app">
@@ -244,11 +245,11 @@
   </div>
 
   <script type="module">
+    import '../src/styles/main.scss';
     import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
     import { colorForName, getOverlayColorStyle } from '../src/annotations.js';
     import { TaxonomyResolver } from '../src/taxonomyResolver.js';
     import { BirdNETInference } from '../src/birdnetInference.js';
-    import '../src/player.css';
 
     import { Sidebar } from './lib/sidebar.js';
     import { populateLanguageSelect, createSuggestionProvider } from './lib/taxonomy-ui.js';

@@ -1,0 +1,100 @@
+/* Popovers & Dropdowns
+   Moved from demo/labeling-app.css to central SCSS partial.
+*/
+
+/* Species search dropdown */
+.species-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  z-index: 200;
+  scrollbar-width: thin;
+}
+.species-search-dropdown.hidden { display: none; }
+.species-search-dropdown::-webkit-scrollbar { width: 5px; }
+.species-search-dropdown::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.species-search-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.08s;
+}
+.species-search-item:hover,
+.species-search-item.active { background: rgba(255,255,255,0.08); }
+.species-search-item .search-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; }
+.species-search-item .search-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.species-search-item .search-sci { font-style: italic; color: var(--muted); font-size: 10px; flex-shrink: 0; }
+.species-search-item .search-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: rgba(255,255,255,0.06); color: var(--muted); flex-shrink: 0; }
+
+/* Editable Select (combobox) */
+.esel {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.esel-trigger {
+  display: flex; align-items: center; width: 100%; height: 22px;
+  padding: 0 18px 0 5px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--panel); color: var(--muted); font-size: 11px; font-family: inherit;
+  text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  outline: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' fill='%236b7f9e'%3E%3Cpath d='M0 0l4 5 4-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 5px center;
+}
+.esel-trigger:hover { border-color: #3a5580; }
+.esel-trigger:focus { border-color: var(--accent); }
+.esel-trigger.esel-has-value { color: var(--text); }
+
+.esel-dropdown {
+  position: fixed; min-width: 120px; width: max-content; max-width: 280px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 9999; display: flex; flex-direction: column; overflow: hidden;
+}
+.esel-dropdown.hidden { display: none; }
+
+.esel-search { width: 100%; padding: 5px 7px; border: none; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); font-size: 11px; font-family: inherit; outline: none; }
+.esel-search::placeholder { color: var(--muted); opacity: 0.7; }
+
+.esel-list { max-height: 200px; overflow-y: auto; scrollbar-width: thin; }
+.esel-list::-webkit-scrollbar { width: 4px; }
+.esel-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+.esel-row { display: flex; align-items: center; gap: 4px; padding: 4px 7px; cursor: pointer; font-size: 11px; color: var(--text); transition: background 0.06s; }
+.esel-row:hover, .esel-row.esel-active { background: rgba(255,255,255,0.07); }
+.esel-row.esel-selected { font-weight: 600; }
+.esel-row.esel-selected .esel-label::before { content: '✓ '; color: var(--accent); font-size: 10px; }
+
+.esel-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.esel-actions { display: none; gap: 2px; flex-shrink: 0; }
+.esel-row:hover .esel-actions { display: flex; }
+
+.esel-act-btn { border: none; background: transparent; color: var(--muted); font-size: 12px; padding: 0 2px; cursor: pointer; line-height: 1; }
+.esel-act-btn:hover { color: var(--text); }
+.esel-act-btn.esel-del:hover { color: var(--danger); }
+
+.esel-add-row { color: var(--accent); }
+.esel-add-label { font-weight: 500; }
+
+.esel-editing { padding: 2px 4px; }
+.esel-edit-input { width: 100%; padding: 3px 5px; border: 1px solid var(--accent); border-radius: 3px; background: rgba(0,0,0,0.3); color: var(--text); font-size: 11px; font-family: inherit; outline: none; }
+
+/* Table variant: compact trigger for inline use */
+.tag-select-cell .esel-trigger { padding-right: 14px; height: 20px; font-size: 10px; background-position: right 3px center; }
+.tag-select-cell .esel { width: 100%; }

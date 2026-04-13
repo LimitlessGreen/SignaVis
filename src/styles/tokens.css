@@ -1,0 +1,55 @@
+:root {
+    /* Core layout tokens */
+    --axis-width: 56px;
+    --waveform-height: 100px;
+    --spectrogram-height: 200px;
+    --toolbar-height: 40px;
+    --statusbar-height: 24px;
+
+    /* Core color tokens (from dist/birdnet-player.css) */
+    --color-bg-primary: #1a1a2e;
+    --color-bg-secondary: #16213e;
+    --color-bg-tertiary: #0f3460;
+    --color-bg-surface: #1a1a2e;
+    --color-text-primary: #e0e0e0;
+    --color-text-secondary: #8892a4;
+    --color-accent: #38bdf8;
+    --color-accent-hover: #0ea5e9;
+    --color-border: rgba(255,255,255,0.08);
+    --color-playhead: #ef4444;
+    --color-toolbar: #12121f;
+    --color-statusbar: #0e0e1a;
+
+    /* Demo / legacy aliases (kept for backwards compatibility) */
+    --bg: #0b1220;
+    --panel: #0f1829;
+    --line: #1e2d47;
+    --text: #e6edf8;
+    --muted: #6b7f9e;
+    --accent: #39b5ff;
+    --danger: #f87171;
+    --sidebar-width: 300px;
+    --sidebar-right-width: 300px;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --color-bg-primary: #f0f0f4;
+        --color-bg-secondary: #e8e8ee;
+        --color-bg-tertiary: #d4d4dc;
+        --color-bg-surface: #ffffff;
+        --color-text-primary: #1a1a2e;
+        --color-text-secondary: #555568;
+        --color-accent: #0284c7;
+        --color-accent-hover: #0369a1;
+        --color-playhead: #dc2626;
+        --color-border: rgba(0,0,0,0.1);
+        --color-toolbar: #e0e0e8;
+        --color-statusbar: #d8d8e2;
+    }
+}
+
+/*
+  Central token file for Audio-Workbench. Add new variables here and
+  replace per-file :root declarations with `@import "../src/styles/tokens.css"`.
+*/

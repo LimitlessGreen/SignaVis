@@ -1,0 +1,40 @@
+/* General SCSS utilities and mixins for the Audio Workbench
+   Use via `@use "utils";` from src/styles/main.scss
+*/
+
+// Focus ring mixin
+@mixin focus-ring($color: rgba(57,181,255,0.12), $spread: 3px) {
+  outline: none;
+  box-shadow: 0 0 0 $spread $color;
+}
+
+// Visually hidden (accessibility)
+%visually-hidden {
+  position: absolute !important;
+  height: 1px; width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap;
+}
+
+// Truncate helper
+@mixin truncate($lines: 1) {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: $lines;
+  -webkit-box-orient: vertical;
+}
+
+// Center absolute children
+@mixin abs-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
+
+// Simple button reset (use with `.btn` base)
+@mixin btn-reset {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: transparent; padding: 0; cursor: pointer;
+}
+
+// Media query helpers
+@mixin below($px) { @media (max-width: $px) { @content; } }

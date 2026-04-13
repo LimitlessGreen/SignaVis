@@ -1,0 +1,21 @@
+// Audio-Workbench SCSS entrypoint
+// Component partials are loaded via the Sass module system (@use).
+// Tokens (CSS custom properties) are provided at runtime via
+// the plain CSS file `src/styles/tokens.css` which should be
+// included with a <link> in HTML. This avoids deprecated @import.
+@use "utils";
+@use "components/buttons";
+@use "components/toolbar";
+@use "components/labeling-app";
+@use "components/activity-bar";
+@use "components/sidebar";
+@use "components/player";
+
+@use "components/panels";
+@use "components/label-list";
+@use "components/tags";
+@use "components/popovers";
+@use "components/forms";
+@use "components/spectrogram-settings";
+
+// Add other component partials here as the migration progresses.

@@ -1,0 +1,58 @@
+/* Toolbar partial for Audio-Workbench (SCSS)
+   Re-usable toolbar layout and separators.
+*/
+
+@use "buttons";
+
+.aw-toolbar, .toolbar, .topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-height: var(--toolbar-height);
+  padding: 4px 8px;
+  background: var(--color-toolbar);
+  border-bottom: 1px solid var(--color-border);
+  user-select: none;
+  position: relative;
+}
+
+.toolbar-primary,
+.toolbar-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toolbar-sep, .tb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.toolbar-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toolbar-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Lightweight legacy helpers used in demo HTML */
+.tb-spacer { flex: 1; }
+.tb-meta { color: var(--color-text-secondary); font-size: 11px; }
+
