@@ -40,10 +40,123 @@
 .daw-shell *::after {
     margin: 0;
     padding: 0;
+    box-sizing: border-box;
+}
 
-/* Annotation styles migrated to SCSS partial:
-   src/styles/components/_annotation.scss
-   This block removed during incremental migration. */
+.daw-shell {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
+/* ═══ DAW Shell ═══ */
+
+.daw-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+}
+
+.daw-shell.view-mode-waveform .spectrogram-container,
+.daw-shell.view-mode-waveform .view-split-handle {
+    display: none;
+}
+
+.daw-shell.view-mode-waveform .waveform-container {
+    flex: 1;
+    min-height: var(--waveform-height);
+}
+
+.daw-shell.view-mode-spectrogram .waveform-container,
+.daw-shell.view-mode-spectrogram .view-split-handle {
+    display: none;
+}
+
+/* ═══ Top Toolbar ═══ */
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    min-height: var(--toolbar-height);
+    padding: 4px 8px;
+    background: var(--color-toolbar);
+    border-bottom: 1px solid var(--color-border);
+    user-select: none;
+    position: relative;
+}
+
+.toolbar::-webkit-scrollbar { display: none; }
+
+.toolbar-primary,
+.toolbar-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.toolbar-primary {
+    flex: 0 0 auto;
+}
+
+.toolbar-secondary {
+    flex: 0 1 auto;
+    min-width: max-content;
+}
+
+.compact-more-btn {
+    display: none !important;
+}
+
+.toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--color-border);
+    flex-shrink: 0;
+}
+
+.toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.toolbar-btn:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: var(--color-accent);
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.toolbar-btn.file-btn {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: transparent;
+    font-weight: 600;
+}
+
+.toolbar-btn.file-btn:hover {
+    background: var(--color-accent-hover);
+}
+
 .toolbar-btn.toggle-btn.active {
     background: var(--color-accent);
     color: #fff;
@@ -355,9 +468,190 @@
 }
 
 
-/* Transport styles migrated to SCSS partial:
-   src/styles/components/_transport.scss
-   This block removed during incremental migration. */
+
+/* ═══ Transport ═══ */
+
+.transport {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.transport-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+
+.transport-btn:hover:not(:disabled) {
+    background: rgba(255,255,255,0.08);
+    color: var(--color-text-primary);
+}
+
+.transport-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.transport-btn.play-btn {
+    width: 34px;
+    height: 30px;
+    background: var(--color-accent);
+    color: #fff;
+    border-radius: 6px;
+}
+
+.transport-btn.play-btn:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+}
+
+.transport-btn.play-btn:disabled {
+    opacity: 0.4;
+}
+
+.daw-shell.transport-style-hero .transport-btn:not(.play-btn) {
+    display: none;
+}
+
+.daw-shell.transport-style-hero .transport {
+    gap: 0;
+}
+
+.daw-shell.transport-style-hero .transport-btn.play-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.35);
+}
+
+.daw-shell.transport-style-hero .toolbar {
+    min-height: 64px;
+    height: auto;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.daw-shell.transport-overlay .toolbar {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background: transparent;
+    border: 0;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+}
+
+.daw-shell.transport-overlay .toolbar-secondary {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .toolbar-primary > :not(.transport) {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .views-panel {
+    position: relative;
+}
+
+.daw-shell.transport-overlay .view-split-handle,
+.daw-shell.transport-overlay .spectrogram-resize-handle {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .waveform-container,
+.daw-shell.transport-overlay .spectrogram-container {
+    flex: 1 1 auto;
+    height: auto !important;
+    min-height: 0;
+}
+
+.daw-shell.transport-overlay .canvas-wrapper,
+.daw-shell.transport-overlay .waveform-wrapper {
+    scrollbar-width: none;
+}
+
+.daw-shell.transport-overlay .canvas-wrapper::-webkit-scrollbar,
+.daw-shell.transport-overlay .waveform-wrapper::-webkit-scrollbar {
+    display: none;
+}
+
+.daw-shell.transport-overlay .transport {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    z-index: 32;
+}
+
+.daw-shell.transport-overlay .transport-btn:not(.play-btn) {
+    display: none;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    background: rgba(14, 165, 233, 0.82);
+    backdrop-filter: blur(2px);
+    box-shadow:
+        0 10px 26px rgba(14, 165, 233, 0.35),
+        0 0 0 2px rgba(2, 6, 23, 0.42);
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn:hover:not(:disabled) {
+    background: rgba(2, 132, 199, 0.9);
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing {
+    opacity: 0;
+    transform: scale(0.88);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing:hover {
+    opacity: 0.45;
+    transform: scale(1);
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+
+/* compact-toolbar classes kept for JS compat but no longer style changes */
+
+.transport-btn.play-btn.playing .icon-play {
+    /* Swap to pause icon via CSS */
+    display: none;
+}
+
+.transport-btn.play-btn.playing::after {
+    content: '';
+    display: block;
+    width: 12px;
+    height: 14px;
+    border-left: 4px solid #fff;
+    border-right: 4px solid #fff;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing::after {
+    width: 24px;
+    height: 28px;
+    border-left: 7px solid #fff;
+    border-right: 7px solid #fff;
+}
 
 /* ═══ Time Display ═══ */
 
@@ -486,8 +780,33 @@
 .crosshair-readout.visible {
     opacity: 1;
 }
+
 .playhead {
-    /* Playhead migrated to SCSS partial: src/styles/components/_playhead.scss */
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--color-playhead);
+    pointer-events: auto;
+    cursor: ew-resize;
+    z-index: 10;
+    box-shadow: 0 0 6px var(--color-playhead);
+    touch-action: none;
+    will-change: transform;
+}
+
+.playhead::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: var(--color-playhead);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 0 6px var(--color-playhead);
 }
 
 .waveform-container {
