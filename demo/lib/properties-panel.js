@@ -326,7 +326,12 @@ export class PropertiesPanel {
     const swatch = document.createElement('input');
     swatch.type = 'color';
     swatch.className = 'props-color-input';
-    swatch.value = (typeof value === 'string' && value.startsWith('#')) ? value : '#888888';
+    let defaultSwatch = '#888888';
+    if (typeof window !== 'undefined' && window.getComputedStyle) {
+      const cssVal = getComputedStyle(document.documentElement).getPropertyValue('--muted') || '';
+      if (cssVal.trim()) defaultSwatch = cssVal.trim();
+    }
+    swatch.value = (typeof value === 'string' && value.startsWith('#')) ? value : defaultSwatch;
     swatch.addEventListener('input', () => {
       text.value = swatch.value;
     });

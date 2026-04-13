@@ -27,9 +27,11 @@
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
 const STORAGE_KEY = 'audio-workbench.birdnet-model-url.v2';
-const DETECTION_COLOR = (typeof window !== 'undefined')
-  ? (getComputedStyle(document.documentElement).getPropertyValue('--color-detection') || '#f59e0b').trim()
-  : '#f59e0b';
+let DETECTION_COLOR = 'var(--color-detection)';
+if (typeof window !== 'undefined' && window.getComputedStyle) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--color-detection') || '';
+  if (v.trim()) DETECTION_COLOR = v.trim();
+}
 
 /**
  * Merge labels of the same species whose time ranges overlap.

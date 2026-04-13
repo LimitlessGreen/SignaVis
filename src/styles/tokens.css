@@ -54,6 +54,14 @@
         --color-border: rgba(0,0,0,0.1);
         --color-toolbar: #e0e0e8;
         --color-statusbar: #d8d8e2;
+        /* Legacy alias mappings for compatibility with legacy CSS using --panel/--bg */
+        --bg: var(--color-bg-primary);
+        --panel: var(--color-bg-surface);
+        --line: var(--color-border);
+        --text: var(--color-text-primary);
+        --muted: var(--color-text-secondary);
+        --accent: var(--color-accent);
+        --danger: #dc2626;
     }
 }
 
@@ -78,5 +86,13 @@ html[data-theme="light"] {
         --color-border: rgba(0,0,0,0.1);
         --color-toolbar: #e0e0e8;
         --color-statusbar: #d8d8e2;
+    /* Mirror legacy aliases so old demo CSS picks up light values */
+    --bg: var(--color-bg-primary);
+    --panel: var(--color-bg-surface);
+    --line: var(--color-border);
+    --text: var(--color-text-primary);
+    --muted: var(--color-text-secondary);
+    --accent: var(--color-accent);
+    --danger: #dc2626;
 }
 
