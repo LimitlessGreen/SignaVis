@@ -1,0 +1,185 @@
+/* Transport component migrated incrementally from src/player.css */
+
+/* ═══ Transport ═══ */
+
+.transport {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.transport-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+
+.transport-btn:hover:not(:disabled) {
+    background: rgba(255,255,255,0.08);
+    color: var(--color-text-primary);
+}
+
+.transport-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.transport-btn.play-btn {
+    width: 34px;
+    height: 30px;
+    background: var(--color-accent);
+    color: #fff;
+    border-radius: 6px;
+}
+
+.transport-btn.play-btn:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+}
+
+.transport-btn.play-btn:disabled {
+    opacity: 0.4;
+}
+
+.daw-shell.transport-style-hero .transport-btn:not(.play-btn) {
+    display: none;
+}
+
+.daw-shell.transport-style-hero .transport {
+    gap: 0;
+}
+
+.daw-shell.transport-style-hero .transport-btn.play-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.35);
+}
+
+.daw-shell.transport-style-hero .toolbar {
+    min-height: 64px;
+    height: auto;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.daw-shell.transport-overlay .toolbar {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background: transparent;
+    border: 0;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+}
+
+.daw-shell.transport-overlay .toolbar-secondary {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .toolbar-primary > :not(.transport) {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .views-panel {
+    position: relative;
+}
+
+.daw-shell.transport-overlay .view-split-handle,
+.daw-shell.transport-overlay .spectrogram-resize-handle {
+    display: none !important;
+}
+
+.daw-shell.transport-overlay .waveform-container,
+.daw-shell.transport-overlay .spectrogram-container {
+    flex: 1 1 auto;
+    height: auto !important;
+    min-height: 0;
+}
+
+.daw-shell.transport-overlay .canvas-wrapper,
+.daw-shell.transport-overlay .waveform-wrapper {
+    scrollbar-width: none;
+}
+
+.daw-shell.transport-overlay .canvas-wrapper::-webkit-scrollbar,
+.daw-shell.transport-overlay .waveform-wrapper::-webkit-scrollbar {
+    display: none;
+}
+
+.daw-shell.transport-overlay .transport {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    z-index: 32;
+}
+
+.daw-shell.transport-overlay .transport-btn:not(.play-btn) {
+    display: none;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    background: rgba(14, 165, 233, 0.82);
+    backdrop-filter: blur(2px);
+    box-shadow:
+        0 10px 26px rgba(14, 165, 233, 0.35),
+        0 0 0 2px rgba(2, 6, 23, 0.42);
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn:hover:not(:disabled) {
+    background: rgba(2, 132, 199, 0.9);
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing {
+    opacity: 0;
+    transform: scale(0.88);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing:hover {
+    opacity: 0.45;
+    transform: scale(1);
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+
+/* compact-toolbar classes kept for JS compat but no longer style changes */
+
+.transport-btn.play-btn.playing .icon-play {
+    /* Swap to pause icon via CSS */
+    display: none;
+}
+
+.transport-btn.play-btn.playing::after {
+    content: '';
+    display: block;
+    width: 12px;
+    height: 14px;
+    border-left: 4px solid #fff;
+    border-right: 4px solid #fff;
+}
+
+.daw-shell.transport-overlay .transport-btn.play-btn.playing::after {
+    width: 24px;
+    height: 28px;
+    border-left: 7px solid #fff;
+    border-right: 7px solid #fff;
+}
