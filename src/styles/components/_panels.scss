@@ -1,7 +1,7 @@
 /* Panels: form sections, XC helper rows, and action/status styles */
 .panel-section {
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(30, 45, 71, 0.3);
+  border-bottom: 1px solid var(--line);
 }
 .panel-section:last-child { border-bottom: none; }
 .field-label {
@@ -15,10 +15,10 @@
 .field-select {
   width: 100%;
   border: 1px solid var(--line); border-radius: 5px;
-  background: #0d172b; color: var(--text);
+  background: var(--panel); color: var(--text);
   font-size: 11px; padding: 5px 7px;
 }
-.field-select option { background: #0d172b; color: var(--text); }
+.field-select option { background: var(--panel); color: var(--text); }
 .field-check {
   display: flex; align-items: center; gap: 6px;
   font-size: 11px; color: var(--text); cursor: pointer;
@@ -39,12 +39,12 @@
 .sidebar-action-btn {
   width: 100%;
   border: 1px solid var(--accent); border-radius: 6px;
-  background: rgba(57, 181, 255, 0.1); color: var(--accent);
+  background: var(--color-accent-faint); color: var(--color-accent);
   font-size: 12px; font-weight: 600;
   padding: 7px 12px; cursor: pointer;
   transition: background 0.15s;
 }
-.sidebar-action-btn:hover { background: rgba(57, 181, 255, 0.2); }
+.sidebar-action-btn:hover { background: var(--color-accent-faint); }
 .sidebar-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* XC Load row */
@@ -59,8 +59,8 @@
   margin: 0; padding: 0;
   font-size: 11px; line-height: 1.4;
 }
-.xc-meta-grid dt { color: rgba(255,255,255,0.5); white-space: nowrap; }
-.xc-meta-grid dd { margin: 0; color: rgba(255,255,255,0.85); overflow: hidden; text-overflow: ellipsis; }
+.xc-meta-grid dt { color: var(--muted); white-space: nowrap; }
+.xc-meta-grid dd { margin: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .xc-recording-section { max-height: 180px; overflow-y: auto; }
 
 /* XC annotation set form */
@@ -75,17 +75,17 @@
 .xc-action-row .sidebar-action-btn { flex: 1; }
 .sidebar-action-btn.secondary {
   background: transparent;
-  border-color: rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.7);
+  border-color: var(--line);
+  color: var(--muted);
 }
 .sidebar-action-btn.secondary:hover {
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.35);
+  background: var(--input-bg);
+  border-color: var(--line);
 }
 .xc-actions { display: flex; flex-direction: column; gap: 6px; }
 
 /* XC status */
 .xc-status { padding: 6px 14px; font-size: 11px; line-height: 1.4; }
-.xc-status-info  { color: rgba(255,255,255,0.6); }
-.xc-status-success { color: #66bb6a; }
-.xc-status-error { color: #ef5350; }
+.xc-status-info  { color: var(--muted); }
+.xc-status-success { color: var(--color-success); }
+.xc-status-error { color: var(--danger); }

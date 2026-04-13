@@ -66,7 +66,7 @@ html, body {
   padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  background: rgba(0,0,0,0.25);
+  background: var(--input-bg);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .species-search-inner:focus-within {
@@ -76,15 +76,15 @@ html, body {
 .species-search-icon { color: var(--muted); margin-right: 4px; }
 .species-search-input { flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent; color: var(--text); font-size: 11px; font-weight: 500; }
 .species-search-input::placeholder { color: var(--muted); opacity: 0.7; }
-.species-search-clear { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; margin-left: 2px; border: none; border-radius: 50%; background: rgba(255,255,255,0.1); color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; transition: background 0.12s, color 0.12s; }
-.species-search-clear:hover { background: rgba(255,255,255,0.2); color: var(--text); }
+.species-search-clear { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; margin-left: 2px; border: none; border-radius: 50%; background: var(--input-bg-weak); color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.species-search-clear:hover { background: var(--input-hover-bg); color: var(--text); }
 .species-search-clear.hidden { display: none; }
-.species-search-dropdown { position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); z-index: 200; scrollbar-width: thin; }
+.species-search-dropdown { position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px var(--shadow-strong); z-index: 200; scrollbar-width: thin; }
 .species-search-dropdown.hidden { display: none; }
 .species-search-dropdown::-webkit-scrollbar { width: 5px; }
-.species-search-dropdown::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.species-search-dropdown::-webkit-scrollbar-thumb { background: var(--input-bg-weak); border-radius: 3px; }
 .species-search-item { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; border: none; background: transparent; color: var(--text); font-size: 11px; cursor: pointer; text-align: left; transition: background 0.08s; }
-.species-search-item:hover, .species-search-item.active { background: rgba(255,255,255,0.08); }
+.species-search-item:hover, .species-search-item.active { background: var(--input-hover-bg); }
 
 /* ── Workspace (activity bar and sidebar moved to their own partials) */
 .workspace { display: flex; min-height: 0; overflow: hidden; }
@@ -94,7 +94,7 @@ html, body {
 /* Main area */
 .main-area { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 5px; }
-#playerRoot { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0a0f1a; }
+#playerRoot { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--color-bg-secondary); }
 
 /* Panel helpers */
 /* ── Help ── */
@@ -108,10 +108,10 @@ html, body {
   display: grid; grid-template-columns: auto 1fr;
   gap: 3px 10px; font-size: 12px;
 }
-.shortcut-grid kbd {
-  border: 1px solid #2a3d5c; border-bottom-width: 2px;
+  .shortcut-grid kbd {
+  border: 1px solid var(--line); border-bottom-width: 2px;
   border-radius: 4px; padding: 1px 5px;
-  background: #0d172b; color: #c8daf0;
+  background: var(--panel); color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px; white-space: nowrap; text-align: center;
 }
