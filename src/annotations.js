@@ -755,11 +755,12 @@ export class AnnotationLayer {
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
+            const editing = /** @type {any} */ (this._editing);
             const freshEl = this.overlay.querySelector(
-                `.annotation-region[data-id="${this._editing.id}"]`,
+                `.annotation-region[data-id="${editing.id}"]`,
             );
             if (freshEl) {
-                this._editing.element = freshEl;
+                editing.element = /** @type {HTMLElement} */ (freshEl);
                 freshEl.classList.add('editing');
             }
         }
@@ -863,7 +864,7 @@ export class AnnotationLayer {
             mode,
             startX: clientX,
             startRegion: { ...region },
-            element,
+            element: /** @type {HTMLElement} */ (element),
             pending: mode === 'move',
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
@@ -873,35 +874,35 @@ export class AnnotationLayer {
 
     _updateEditInteraction(clientX) {
         if (!this._editing) return;
-        const editing = this._editing;
+        const editing = /** @type {any} */ (this._editing);
         const region = this.annotations.find((a) => a.id === editing.id);
         if (!region) return;
         const pps = this.player?._state?.pixelsPerSecond || 100;
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
-        const dt = (clientX - this._editing.startX) / Math.max(1, pps);
-        const src = this._editing.startRegion;
+        const dt = (clientX - editing.startX) / Math.max(1, pps);
+        const src = editing.startRegion;
         let next = { ...region };
-        if (this._editing.pending) {
-            if (Math.abs(clientX - this._editing.startX) < 4) return;
-            this._editing.pending = false;
-            this._editing.moved = true;
-            this._editing.element?.classList?.add('editing');
+        if (editing.pending) {
+            if (Math.abs(clientX - editing.startX) < 4) return;
+            editing.pending = false;
+            editing.moved = true;
+            editing.element?.classList?.add('editing');
         }
 
-        if (this._editing.mode === 'move') {
+        if (editing.mode === 'move') {
             const span = src.end - src.start;
             next.start = clamp(src.start + dt, 0, Math.max(0, duration - span));
             next.end = next.start + span;
-        } else if (this._editing.mode === 'resize-l') {
+        } else if (editing.mode === 'resize-l') {
             next.start = clamp(src.start + dt, 0, src.end - 0.01);
-        } else if (this._editing.mode === 'resize-r') {
+        } else if (editing.mode === 'resize-r') {
             next.end = clamp(src.end + dt, src.start + 0.01, duration);
         }
 
         Object.assign(region, this._normalize({ ...src, ...next, id: src.id }));
         this.player?._state?.updateActiveSegmentFromLabel?.(region);
         this.player?._emit?.('annotationpreview', { annotation: { ...region } });
-        const el = this._editing.element;
+        const el = editing.element;
         if (el) {
             el.dataset.start = String(region.start);
             el.dataset.end = String(region.end);
@@ -915,7 +916,7 @@ export class AnnotationLayer {
 
     _finishEditInteraction() {
         if (!this._editing) return;
-        const editing = this._editing;
+        const editing = /** @type {any} */ (this._editing);
         const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
         editing.element?.classList?.remove('editing');
         const region = this.annotations.find((a) => a.id === editing.id);
@@ -945,7 +946,7 @@ export class AnnotationLayer {
             mode: 'move',
             startX,
             startRegion: snapshot,
-            element: el,
+            element: /** @type {HTMLElement} */ (el),
             pending: false,
             moved: true,
             forceSuppressClick: true,
@@ -1234,11 +1235,12 @@ export class SpectrogramLabelLayer {
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
+            const editing = /** @type {any} */ (this._editing);
             const freshEl = this.overlay.querySelector(
-                `.spectrogram-label-region[data-id="${this._editing.id}"]`,
+                `.spectrogram-label-region[data-id="${editing.id}"]`,
             );
             if (freshEl) {
-                this._editing.element = freshEl;
+                editing.element = /** @type {HTMLElement} */ (freshEl);
                 freshEl.classList.add('editing');
             }
         }
@@ -1793,7 +1795,7 @@ export class SpectrogramLabelLayer {
             startFreq: this._clientYToFreq(clientY),
             startCanvasY: this._clientYToCanvasY(clientY),
             startLabel: { ...label },
-            element,
+            element: /** @type {HTMLElement} */ (element),
             pending: mode === 'move',
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
@@ -1803,7 +1805,7 @@ export class SpectrogramLabelLayer {
 
     _updateEditInteraction(clientX, clientY) {
         if (!this._editing) return;
-        const editing = this._editing;
+        const editing = /** @type {any} */ (this._editing);
         const label = this.labels.find((l) => l.id === editing.id);
         if (!label) return;
 
@@ -1822,7 +1824,7 @@ export class SpectrogramLabelLayer {
         const currentCanvasY = this._clientYToCanvasY(clientY);
         const deltaCanvasY = currentCanvasY - editing.startCanvasY;
 
-        const src = this._editing.startLabel;
+        const src = editing.startLabel;
 
         // Pixel-Y positions of the original label edges (via CoordinateSystem)
         const srcMaxPy = c ? c.frequencyToPixelY(src.freqMax) : 0;
@@ -1835,17 +1837,17 @@ export class SpectrogramLabelLayer {
             return c.pixelYToFrequency(origPy + deltaCanvasY);
         };
 
-        if (this._editing.pending) {
-            if (Math.abs(clientX - this._editing.startX) < 4 && Math.abs(clientY - this._editing.startY) < 4) return;
-            this._editing.pending = false;
-            this._editing.moved = true;
-            this._editing.element?.classList?.add('editing');
+        if (editing.pending) {
+            if (Math.abs(clientX - editing.startX) < 4 && Math.abs(clientY - editing.startY) < 4) return;
+            editing.pending = false;
+            editing.moved = true;
+            editing.element?.classList?.add('editing');
         }
 
         let next = { ...label };
         // Blender-style axis constraint: 'x' = time only, 'y' = freq only
         const ax = this._axisConstraint;
-        switch (this._editing.mode) {
+        switch (editing.mode) {
             case 'move':
                 if (ax !== 'y') { next.start = src.start + dt; next.end = src.end + dt; }
                 if (ax !== 'x') { next.freqMin = shiftedFreq(src.freqMin); next.freqMax = shiftedFreq(src.freqMax); }
@@ -1885,7 +1887,7 @@ export class SpectrogramLabelLayer {
         next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
 
         // Preserve band thickness on pure move (in pixel space, not Hz)
-        if (this._editing.mode === 'move') {
+        if (editing.mode === 'move') {
             const timeSpan = Math.max(0.01, src.end - src.start);
             next.end = next.start + timeSpan;
 
@@ -1911,20 +1913,20 @@ export class SpectrogramLabelLayer {
         Object.assign(label, next);
         this.player?._state?.updateActiveSegmentFromLabel?.(label);
         this.player?._emit?.('spectrogramlabelpreview', { label: { ...label } });
-        if (this._editing.element) {
-            this._editing.element.dataset.start = String(label.start);
-            this._editing.element.dataset.end = String(label.end);
-            this._editing.element.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+        if (editing.element) {
+            editing.element.dataset.start = String(label.start);
+            editing.element.dataset.end = String(label.end);
+            editing.element.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
             const geometry = this._toGeometry(label, width, height);
-            this._applyGeometryToElement(this._editing.element, geometry);
-            const meta = this._editing.element.querySelector('.spectrogram-label-meta');
+            this._applyGeometryToElement(editing.element, geometry);
+            const meta = editing.element.querySelector('.spectrogram-label-meta');
             if (meta) meta.textContent = `${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
         }
     }
 
     _finishEditInteraction() {
         if (!this._editing) return;
-        const editing = this._editing;
+        const editing = /** @type {any} */ (this._editing);
         const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
         editing.element?.classList?.remove('editing');
         const label = this.labels.find((l) => l.id === editing.id);
@@ -1961,7 +1963,7 @@ export class SpectrogramLabelLayer {
             startFreq: this._clientYToFreq(startY),
             startCanvasY: this._clientYToCanvasY(startY),
             startLabel: snapshot,
-            element: el,
+            element: /** @type {HTMLElement} */ (el),
             pending: false,
             moved: true,
             forceSuppressClick: true,
