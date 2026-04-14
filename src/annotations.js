@@ -575,6 +575,9 @@ export class AnnotationLayer {
         this._liveLinkedId = null;
         this._unsubs = [];
         this._domCleanups = [];
+        /**
+         * @type {{id:string,mode?:string,startX?:number,startRegion?:object,element?:HTMLElement,pending?:boolean,moved?:boolean,forceSuppressClick?:boolean}|null}
+         */
         this._editing = null;
         this._suppressClickUntil = 0;
     }
@@ -1052,6 +1055,9 @@ export class SpectrogramLabelLayer {
         this._domCleanups = [];
         this._draftEl = null;
         this._drawing = null;
+        /**
+         * @type {{id:string,mode?:string,startX?:number,startY?:number,startTime?:number,startFreq?:number,startCanvasY?:number,startLabel?:object,element?:HTMLElement,pending?:boolean,moved?:boolean,forceSuppressClick?:boolean}|null}
+         */
         this._editing = null;
         this._counter = 1;
         this._suppressClickUntil = 0;
