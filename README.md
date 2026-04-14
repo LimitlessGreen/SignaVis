@@ -53,7 +53,7 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - **Properties panel** — pin or hover to inspect label details; inline editing
 - **Crosshair overlay** — real-time time + frequency readout
 - **Compact preview modes** — hero transport, overlay mode, small embeds
- - **231 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+ - **~231 tests** (as of 2026-04-14) — DSP, spectrogram utils, coordinate system, interaction state, transport state
 
 ## Install
 
@@ -118,7 +118,18 @@ git tag -a v0.3.1 -m "release v0.3.1"
 git push origin v0.3.1
 ```
 
+
 The release job will build artifacts, publish to npm and PyPI, and create a GitHub Release including built files.
+
+How to create tokens & add GitHub secrets
+
+- NPM (automation token): create an automation token on https://www.npmjs.com/settings/<your-username>/tokens (Create New Token → Automation). Copy the token and add it to your repository secrets as `NPM_TOKEN` (Settings → Secrets → Actions → New repository secret). You can also set it via the GitHub CLI:
+
+```bash
+gh secret set NPM_TOKEN --body 'PASTE_TOKEN_HERE' -R owner/repo
+```
+
+- PyPI: create an API token on https://pypi.org/manage/account/#api-tokens and add it as `PYPI_API_TOKEN` in repository secrets. The CI uses this secret when uploading the Python package.
 
 Packaging notes:
 
