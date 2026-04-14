@@ -53,7 +53,7 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - **Properties panel** — pin or hover to inspect label details; inline editing
 - **Crosshair overlay** — real-time time + frequency readout
 - **Compact preview modes** — hero transport, overlay mode, small embeds
-- **196 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
+ - **231 tests** — DSP, spectrogram utils, coordinate system, interaction state, transport state
 
 ## Install
 
@@ -90,6 +90,39 @@ import 'audio-workbench/style'
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
+
+## Development & Release
+
+Supported Node versions for CI: 18, 20, 22.
+
+Local development:
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run build:css
+# Inspect what would be published
+npm pack --dry-run
+```
+
+Publishing via CI:
+
+- The CI workflow runs on push and for tags; it publishes when a tag matching `v*` is pushed.
+- To enable automatic publishing to npm, add an `NPM_TOKEN` secret in GitHub repository settings (Settings → Secrets → Actions → `NPM_TOKEN`).
+- Create and push a semver tag to trigger a release:
+
+```bash
+git tag -a v0.3.1 -m "release v0.3.1"
+git push origin v0.3.1
+```
+
+The release job will build artifacts, publish to npm and PyPI, and create a GitHub Release including built files.
+
+Packaging notes:
+
+- The package includes model files under `models/` (e.g., `models/birdnet-v2.4/`) — verify with `npm pack --dry-run`.
 
 ## Player Options
 
