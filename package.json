@@ -70,8 +70,9 @@
   },
   "devDependencies": {
     "lucide-static": "^1.8.0",
+    "sass": "^1.70.0",
     "typescript": "^6.0.2",
-    "vite": "^8.0.2",
-    "sass": "^1.70.0"
+    "vite": "^8.0.8",
+    "wavesurfer.js": "^7.12.6"
   }
 }
