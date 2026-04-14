@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+import { spawn } from 'child_process';
+
+function run(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: 'inherit', shell: true });
+    p.on('close', (code) => (code === 0 ? resolve() : reject(code)));
+  });
+}
+
+(async () => {
+  try {
+    await run('npm', ['run', 'typecheck']);
+    await run('npm', ['test']);
+    process.exit(0);
+  } catch (code) {
+    process.exit(code || 1);
+  }
+})();
