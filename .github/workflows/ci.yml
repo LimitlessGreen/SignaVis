@@ -52,7 +52,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: dist
+          name: dist-${{ github.run_id }}
           path: |
             dist/
             types/
@@ -86,7 +86,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: dist-${{ github.run_id }}
 
       - name: Generate release notes
         id: notes
@@ -132,7 +132,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: dist-${{ github.run_id }}
 
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
@@ -164,7 +164,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: dist-${{ github.run_id }}
 
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
