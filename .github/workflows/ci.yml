@@ -50,6 +50,7 @@ jobs:
         run: npm pack
 
       - name: Upload build artifacts
+        if: ${{ matrix.node-version == '22.12' }}
         uses: actions/upload-artifact@v7
         with:
           name: dist-${{ github.run_id }}
