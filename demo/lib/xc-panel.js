@@ -67,6 +67,18 @@ export class XenoCantoPanel {
     this.exportSetBtn = opts.exportSetBtn || null;
     this.statusEl = opts.statusEl || null;
 
+    /** @type {boolean} */
+    this.useProxies = (typeof opts.useProxies === 'boolean')
+      ? opts.useProxies
+      : (() => {
+        try {
+          const v = localStorage.getItem('aw:xcUseProxies');
+          if (v != null) return v === '1' || v === 'true';
+        } catch (e) { /**/ }
+        // Preserve previous behavior by default (proxies enabled)
+        return true;
+      })();
+
     /** @type {string} */
     this.apiKey = '';
     /** @type {string|null} Current XC recording ID */
@@ -118,6 +130,31 @@ export class XenoCantoPanel {
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
 
     const directUrl = `https://xeno-canto.org/${clean}/download`;
+
+    // First, try direct download from Xeno-canto
+    let lastError = null;
+    try {
+      onStatus?.(`Loading XC${clean} (Direct)...`);
+      const res = await fetch(directUrl);
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf && buf.byteLength >= 10_000) {
+          return { xcId: clean, buffer: buf };
+        }
+        lastError = new Error('Direct response too small to be valid audio.');
+      } else {
+        lastError = new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+
+    // If proxies are disabled, fail now
+    if (!this.useProxies) {
+      throw new Error(`Could not download XC${clean} directly: ${lastError?.message || 'unknown error'}`);
+    }
+
+    // Fallback: try list of public CORS proxies
     const candidates = [
       { name: 'CodeTabs', url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
       { name: 'CorsProxy', url: `https://corsproxy.io/?${encodeURIComponent(directUrl)}` },
@@ -125,7 +162,6 @@ export class XenoCantoPanel {
       { name: 'ThingProxy', url: `https://thingproxy.freeboard.io/fetch/${directUrl}` },
     ];
 
-    let lastError = null;
     for (const c of candidates) {
       onStatus?.(`Loading XC${clean} (${c.name})...`);
       try {
