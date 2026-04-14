@@ -11,6 +11,7 @@
     "dist/",
     "types/",
     "docs/img/",
+    "models/",
     "README.md",
     "LICENSE"
   ],
