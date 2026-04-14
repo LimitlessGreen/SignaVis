@@ -184,13 +184,30 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           set -euo pipefail
+          # avoid passing directories (e.g. 'assets') to twine — only upload recognized archives
+          shopt -s nullglob
           if [ -d "python-wrapper/dist" ]; then
             cd python-wrapper
-            python -m pip install --upgrade pip twine
-            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" dist/*
+            python -m pip install --upgrade pip build twine
+            python -m build
+            packages=(dist/*.tar.gz dist/*.whl dist/*.zip)
+            if [ ${#packages[@]} -eq 0 ]; then
+              echo "No distribution files found in python-wrapper/dist"
+              ls -la dist || true
+              exit 1
+            fi
+            python -m twine check "${packages[@]}"
+            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" "${packages[@]}"
           elif [ -d "dist" ]; then
             python -m pip install --upgrade pip twine
-            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" dist/*
+            packages=(dist/*.tar.gz dist/*.whl dist/*.zip)
+            if [ ${#packages[@]} -eq 0 ]; then
+              echo "No distribution files found in dist"
+              ls -la dist || true
+              exit 1
+            fi
+            python -m twine check "${packages[@]}"
+            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" "${packages[@]}"
           else
             echo "No Python dist/* found to upload"
             exit 1
