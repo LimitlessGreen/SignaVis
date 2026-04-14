@@ -60,13 +60,14 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 ```bash
 npm i audio-workbench
 ```
-Hinweis: `audio-workbench` erwartet `wavesurfer.js` als Peer-Dependency (Version 7). Installiere es mit:
+
+Note: audio-workbench expects `wavesurfer.js` as a peer dependency (v7). Install it with:
 
 ```bash
 npm i wavesurfer.js@^7
 ```
 
-Oder binde `wavesurfer.js` im Browser via CDN ein:
+Or include `wavesurfer.js` from a CDN in the browser:
 
 ```html
 <script src="https://unpkg.com/wavesurfer.js@7"></script>
