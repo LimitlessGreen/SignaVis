@@ -1,0 +1,633 @@
+{
+  "total_count": 5,
+  "jobs": [
+    {
+      "id": 71355385018,
+      "run_id": 24424572150,
+      "workflow_name": "CI",
+      "head_branch": "v0.3.6",
+      "run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/runs/24424572150",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORTX0o88AAAAQnRzEug",
+      "head_sha": "c483b54a840b26ac4a4785c802f52f3502c3c582",
+      "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/jobs/71355385018",
+      "html_url": "https://github.com/LimitlessGreen/Audio-Workbench/actions/runs/24424572150/job/71355385018",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-04-14T21:47:33Z",
+      "started_at": "2026-04-14T21:47:34Z",
+      "completed_at": "2026-04-14T21:48:09Z",
+      "name": "build-and-test (20.19)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-04-14T21:47:35Z",
+          "completed_at": "2026-04-14T21:47:36Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-04-14T21:47:36Z",
+          "completed_at": "2026-04-14T21:47:39Z"
+        },
+        {
+          "name": "Setup Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-04-14T21:47:39Z",
+          "completed_at": "2026-04-14T21:47:44Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-04-14T21:47:44Z",
+          "completed_at": "2026-04-14T21:47:46Z"
+        },
+        {
+          "name": "Typecheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-04-14T21:47:46Z",
+          "completed_at": "2026-04-14T21:47:49Z"
+        },
+        {
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-04-14T21:47:49Z",
+          "completed_at": "2026-04-14T21:47:50Z"
+        },
+        {
+          "name": "Build library + types",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-04-14T21:47:50Z",
+          "completed_at": "2026-04-14T21:47:54Z"
+        },
+        {
+          "name": "Check version sync",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-04-14T21:47:54Z",
+          "completed_at": "2026-04-14T21:47:54Z"
+        },
+        {
+          "name": "Check npm package archive",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-04-14T21:47:54Z",
+          "completed_at": "2026-04-14T21:47:59Z"
+        },
+        {
+          "name": "Upload build artifacts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-04-14T21:47:59Z",
+          "completed_at": "2026-04-14T21:47:59Z"
+        },
+        {
+          "name": "Setup Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-04-14T21:47:59Z",
+          "completed_at": "2026-04-14T21:47:59Z"
+        },
+        {
+          "name": "Sync & check Python package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-04-14T21:47:59Z",
+          "completed_at": "2026-04-14T21:48:07Z"
+        },
+        {
+          "name": "Post Setup Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-04-14T21:48:07Z",
+          "completed_at": "2026-04-14T21:48:07Z"
+        },
+        {
+          "name": "Post Setup Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-04-14T21:48:07Z",
+          "completed_at": "2026-04-14T21:48:07Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-04-14T21:48:07Z",
+          "completed_at": "2026-04-14T21:48:08Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-04-14T21:48:08Z",
+          "completed_at": "2026-04-14T21:48:08Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/check-runs/71355385018",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001693,
+      "runner_name": "GitHub Actions 1000001693",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 71355385106,
+      "run_id": 24424572150,
+      "workflow_name": "CI",
+      "head_branch": "v0.3.6",
+      "run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/runs/24424572150",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORTX0o88AAAAQnRzFEg",
+      "head_sha": "c483b54a840b26ac4a4785c802f52f3502c3c582",
+      "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/jobs/71355385106",
+      "html_url": "https://github.com/LimitlessGreen/Audio-Workbench/actions/runs/24424572150/job/71355385106",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-04-14T21:47:33Z",
+      "started_at": "2026-04-14T21:47:35Z",
+      "completed_at": "2026-04-14T21:48:17Z",
+      "name": "build-and-test (22.12)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-04-14T21:47:35Z",
+          "completed_at": "2026-04-14T21:47:36Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-04-14T21:47:36Z",
+          "completed_at": "2026-04-14T21:47:39Z"
+        },
+        {
+          "name": "Setup Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-04-14T21:47:39Z",
+          "completed_at": "2026-04-14T21:47:44Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-04-14T21:47:44Z",
+          "completed_at": "2026-04-14T21:47:47Z"
+        },
+        {
+          "name": "Typecheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-04-14T21:47:47Z",
+          "completed_at": "2026-04-14T21:47:50Z"
+        },
+        {
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-04-14T21:47:50Z",
+          "completed_at": "2026-04-14T21:47:51Z"
+        },
+        {
+          "name": "Build library + types",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-04-14T21:47:51Z",
+          "completed_at": "2026-04-14T21:47:55Z"
+        },
+        {
+          "name": "Check version sync",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-04-14T21:47:55Z",
+          "completed_at": "2026-04-14T21:47:56Z"
+        },
+        {
+          "name": "Check npm package archive",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-04-14T21:47:56Z",
+          "completed_at": "2026-04-14T21:48:00Z"
+        },
+        {
+          "name": "Upload build artifacts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-04-14T21:48:00Z",
+          "completed_at": "2026-04-14T21:48:04Z"
+        },
+        {
+          "name": "Setup Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-04-14T21:48:04Z",
+          "completed_at": "2026-04-14T21:48:04Z"
+        },
+        {
+          "name": "Sync & check Python package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-04-14T21:48:04Z",
+          "completed_at": "2026-04-14T21:48:15Z"
+        },
+        {
+          "name": "Post Setup Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-04-14T21:48:15Z",
+          "completed_at": "2026-04-14T21:48:15Z"
+        },
+        {
+          "name": "Post Setup Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-04-14T21:48:15Z",
+          "completed_at": "2026-04-14T21:48:15Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-04-14T21:48:15Z",
+          "completed_at": "2026-04-14T21:48:15Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-04-14T21:48:15Z",
+          "completed_at": "2026-04-14T21:48:15Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/check-runs/71355385106",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001694,
+      "runner_name": "GitHub Actions 1000001694",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 71355478247,
+      "run_id": 24424572150,
+      "workflow_name": "CI",
+      "head_branch": "v0.3.6",
+      "run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/runs/24424572150",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORTX0o88AAAAQnR4w5w",
+      "head_sha": "c483b54a840b26ac4a4785c802f52f3502c3c582",
+      "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/jobs/71355478247",
+      "html_url": "https://github.com/LimitlessGreen/Audio-Workbench/actions/runs/24424572150/job/71355478247",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-04-14T21:48:18Z",
+      "started_at": "2026-04-14T21:48:20Z",
+      "completed_at": "2026-04-14T21:48:36Z",
+      "name": "create-release",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-04-14T21:48:21Z",
+          "completed_at": "2026-04-14T21:48:23Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-04-14T21:48:23Z",
+          "completed_at": "2026-04-14T21:48:27Z"
+        },
+        {
+          "name": "Download build artifacts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-04-14T21:48:27Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Generate release notes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Create GitHub Release",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:34Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-04-14T21:48:34Z",
+          "completed_at": "2026-04-14T21:48:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-04-14T21:48:34Z",
+          "completed_at": "2026-04-14T21:48:34Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/check-runs/71355478247",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001696,
+      "runner_name": "GitHub Actions 1000001696",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 71355478276,
+      "run_id": 24424572150,
+      "workflow_name": "CI",
+      "head_branch": "v0.3.6",
+      "run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/runs/24424572150",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORTX0o88AAAAQnR4xBA",
+      "head_sha": "c483b54a840b26ac4a4785c802f52f3502c3c582",
+      "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/jobs/71355478276",
+      "html_url": "https://github.com/LimitlessGreen/Audio-Workbench/actions/runs/24424572150/job/71355478276",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-04-14T21:48:18Z",
+      "started_at": "2026-04-14T21:48:20Z",
+      "completed_at": "2026-04-14T21:48:39Z",
+      "name": "publish-pypi",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-04-14T21:48:21Z",
+          "completed_at": "2026-04-14T21:48:23Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-04-14T21:48:23Z",
+          "completed_at": "2026-04-14T21:48:26Z"
+        },
+        {
+          "name": "Download build artifacts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-04-14T21:48:26Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Setup Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Check version sync (incl. tag)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Publish to PyPI",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 6,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:37Z"
+        },
+        {
+          "name": "Post Setup Python",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-04-14T21:48:37Z",
+          "completed_at": "2026-04-14T21:48:37Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-04-14T21:48:37Z",
+          "completed_at": "2026-04-14T21:48:37Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-04-14T21:48:37Z",
+          "completed_at": "2026-04-14T21:48:37Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/check-runs/71355478276",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001697,
+      "runner_name": "GitHub Actions 1000001697",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 71355478378,
+      "run_id": 24424572150,
+      "workflow_name": "CI",
+      "head_branch": "v0.3.6",
+      "run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/runs/24424572150",
+      "run_attempt": 1,
+      "node_id": "CR_kwDORTX0o88AAAAQnR4xag",
+      "head_sha": "c483b54a840b26ac4a4785c802f52f3502c3c582",
+      "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/actions/jobs/71355478378",
+      "html_url": "https://github.com/LimitlessGreen/Audio-Workbench/actions/runs/24424572150/job/71355478378",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-04-14T21:48:18Z",
+      "started_at": "2026-04-14T21:48:20Z",
+      "completed_at": "2026-04-14T21:48:35Z",
+      "name": "publish-npm",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-04-14T21:48:20Z",
+          "completed_at": "2026-04-14T21:48:21Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-04-14T21:48:21Z",
+          "completed_at": "2026-04-14T21:48:24Z"
+        },
+        {
+          "name": "Setup Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-04-14T21:48:24Z",
+          "completed_at": "2026-04-14T21:48:29Z"
+        },
+        {
+          "name": "Download build artifacts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-04-14T21:48:29Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Check version sync (incl. tag)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:30Z"
+        },
+        {
+          "name": "Setup npm for trusted publishing",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-04-14T21:48:30Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Ensure NPM token is available",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 7,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Setup npm for trusted publishing",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Setup npm auth",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Publish npm (use packed tarball if available)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Post Setup Node",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 19,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:33Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-04-14T21:48:33Z",
+          "completed_at": "2026-04-14T21:48:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-04-14T21:48:34Z",
+          "completed_at": "2026-04-14T21:48:34Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/check-runs/71355478378",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001698,
+      "runner_name": "GitHub Actions 1000001698",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
