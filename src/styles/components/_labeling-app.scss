@@ -45,7 +45,21 @@ html, body {
 
 /* Buttons: legacy `.tb-*` classes are mapped to AW components in buttons partial */
 .tb-btn { }
-.tb-select { }
+/* Ensure topbar selects use tokenized colors and win over legacy player rules */
+.topbar .tb-select,
+.tb-select {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.topbar .tb-select option,
+.tb-select option {
+  background: var(--panel);
+  color: var(--text);
+}
 .tb-meta { }
 .tb-sep { }
 .tb-spacer { }

@@ -659,6 +659,7 @@ export class AnnotationLayer {
 
     render() {
         if (!this.overlay || !this.player) return;
+        if (this._editing) return;
 
         const coords = this.player._state?.coords;
         const pps = this.player._state?.pixelsPerSecond || 100;
@@ -748,6 +749,17 @@ export class AnnotationLayer {
             }
             this.overlay.appendChild(el);
         }
+
+        // Re-acquire editing element after innerHTML wipe
+        if (this._editing) {
+            const freshEl = this.overlay.querySelector(
+                `.annotation-region[data-id="${this._editing.id}"]`,
+            );
+            if (freshEl) {
+                this._editing.element = freshEl;
+                freshEl.classList.add('editing');
+            }
+        }
     }
 
     _createRegionElement(region, pixelsPerSecond) {
@@ -795,12 +807,12 @@ export class AnnotationLayer {
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'click' });
             const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.annotation-handle');
             const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
             event.preventDefault();
             event.stopPropagation();
+            this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'click' });
         });
         el.addEventListener('pointerenter', (event) => {
             this._lastPointerX = event.clientX;
@@ -1191,6 +1203,7 @@ export class SpectrogramLabelLayer {
 
     render() {
         if (!this.overlay || !this.player) return;
+        if (this._editing) return;
         const state = this.player._state;
         const c = state?.coords;
         const duration = this.player.duration || state?.audioBuffer?.duration || 0;
@@ -1212,6 +1225,17 @@ export class SpectrogramLabelLayer {
         }
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
+
+        // Re-acquire editing element after innerHTML wipe
+        if (this._editing) {
+            const freshEl = this.overlay.querySelector(
+                `.spectrogram-label-region[data-id="${this._editing.id}"]`,
+            );
+            if (freshEl) {
+                this._editing.element = freshEl;
+                freshEl.classList.add('editing');
+            }
+        }
 
         // Re-apply focus visual after innerHTML wipe
         this._updateFocusedVisual();
@@ -1393,7 +1417,6 @@ export class SpectrogramLabelLayer {
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
             // In stamp mode, clicking a label sets the stamp reference — do NOT start move
             if (this.stampMode) {
                 this._stampRefLabelId = label.id;
@@ -1406,6 +1429,7 @@ export class SpectrogramLabelLayer {
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
             event.preventDefault();
             event.stopPropagation();
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
         });
         el.addEventListener('pointerenter', (event) => {
             this._lastPointerX = event.clientX;

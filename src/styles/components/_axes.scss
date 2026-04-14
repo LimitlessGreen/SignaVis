@@ -1,0 +1,131 @@
+/* Amplitude & frequency axis labels, scrollbar, zoom reset.
+   Migrated from player.css */
+
+/* ═══ Amplitude Labels ═══ */
+
+.amplitude-labels {
+    position: absolute;
+    inset: 0;
+    font-size: 0.68rem;
+    color: var(--color-text-secondary);
+    pointer-events: none;
+    overflow: visible;
+}
+
+.amplitude-labels span {
+    position: absolute;
+    right: 6px;
+    --tick-pos: 50%;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.62rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.amplitude-labels span::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: var(--tick-pos);
+    width: 5px;
+    height: 1px;
+    background: var(--color-text-secondary);
+    opacity: 0.6;
+}
+
+/* ═══ Frequency Labels ═══ */
+
+.freq-axis-spacer {
+    display: flex;
+    align-items: stretch;
+    cursor: ns-resize;
+}
+
+.frequency-labels {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    font-size: 0.68rem;
+    color: var(--color-text-secondary);
+    pointer-events: none;
+    overflow: visible;
+}
+
+.frequency-labels span {
+    position: absolute;
+    right: 6px;
+    width: auto;
+    text-align: right;
+    --tick-pos: 50%;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.62rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.frequency-labels span::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: var(--tick-pos);
+    width: 5px;
+    height: 1px;
+    background: var(--color-text-secondary);
+    opacity: 0.6;
+}
+
+/* Vertical zoom reset button */
+.freq-zoom-reset-btn {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%) rotate(90deg);
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: 0.7rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 5;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+}
+.freq-zoom-reset-btn:hover {
+    opacity: 1;
+    background: var(--color-hover);
+}
+.freq-zoom-reset-btn[hidden] { display: none; }
+
+/* Vertical frequency scrollbar (visible when Y-zoomed) */
+.freq-scrollbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    background: transparent;
+    z-index: 8;
+    pointer-events: auto;
+    cursor: ns-resize;
+    transition: opacity 0.15s;
+    opacity: 0.5;
+}
+.freq-scrollbar:hover,
+.freq-scrollbar.active { opacity: 0.9; }
+.freq-scrollbar[hidden] { display: none; }
+.freq-scrollbar-thumb {
+    position: absolute;
+    right: 0;
+    width: 6px;
+    min-height: 12px;
+    border-radius: 3px;
+    background: var(--color-text-secondary);
+    opacity: 0.45;
+    transition: opacity 0.12s;
+}
+.freq-scrollbar-thumb:hover,
+.freq-scrollbar.active .freq-scrollbar-thumb { opacity: 0.7; }

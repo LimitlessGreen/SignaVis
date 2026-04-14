@@ -1,0 +1,223 @@
+/* Views panel, spectrogram/waveform containers, canvas wrappers,
+   overlays, crosshairs, time display, split/resize handles.
+   Migrated from player.css */
+
+/* ═══ Time Display ═══ */
+
+.time-display {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    padding: 0 10px;
+    height: 28px;
+    line-height: 28px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+
+.time-sep {
+    color: var(--color-text-secondary);
+    margin: 0 2px;
+}
+
+/* ═══ Views Panel ═══ */
+
+.views-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--color-bg-primary);
+}
+
+.spectrogram-container {
+    position: relative;
+    background: var(--color-bg-secondary);
+    overflow: hidden;
+    flex: 1;
+    min-height: var(--spectrogram-height);
+    border-top: 1px solid var(--color-border);
+}
+
+.canvas-wrapper {
+    position: relative;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    cursor: crosshair;
+    touch-action: pan-y;
+}
+
+.canvas-wrapper::-webkit-scrollbar {
+    height: 6px;
+}
+
+.canvas-wrapper::-webkit-scrollbar-track {
+    background: var(--color-bg-secondary);
+}
+
+.canvas-wrapper::-webkit-scrollbar-thumb {
+    background: var(--color-text-secondary);
+    border-radius: 3px;
+}
+
+[data-aw="spectrogramCanvas"] {
+    display: block;
+    image-rendering: pixelated;
+}
+
+/* ── Recomputing Overlay ── */
+.recomputing-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #e0e0e0;
+    font: 12px/1.4 system-ui, sans-serif;
+    pointer-events: none;
+    z-index: 20;
+    backdrop-filter: blur(2px);
+    transition: opacity 0.15s;
+}
+.recomputing-overlay[hidden] {
+    display: none;
+}
+.recomputing-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #e0e0e0;
+    border-radius: 50%;
+    animation: aw-spin 0.7s linear infinite;
+}
+@keyframes aw-spin {
+    to { transform: rotate(360deg); }
+}
+
+.crosshair-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: block;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.crosshair-readout {
+    position: absolute;
+    pointer-events: none;
+    z-index: 15;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font: 11px/1.4 monospace;
+    white-space: nowrap;
+    background: rgba(0, 0, 0, 0.78);
+    color: #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.crosshair-readout.visible {
+    opacity: 1;
+}
+
+/* ═══ Waveform ═══ */
+
+.waveform-container {
+    position: relative;
+    height: var(--waveform-height);
+    background: var(--color-bg-secondary);
+    overflow: hidden;
+}
+
+.time-aligned-row {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.axis-spacer {
+    position: relative;
+    width: var(--axis-width);
+    flex: 0 0 var(--axis-width);
+    border-right: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    overflow: visible;
+}
+
+.time-pane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.waveform-wrapper {
+    position: relative;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    cursor: crosshair;
+    background: var(--color-bg-secondary);
+    touch-action: pan-y;
+}
+
+.waveform-wrapper::-webkit-scrollbar { height: 0; }
+.waveform-wrapper::-webkit-scrollbar-track { background: transparent; }
+.waveform-wrapper::-webkit-scrollbar-thumb { background: transparent; }
+
+.waveform-content {
+    position: relative;
+}
+
+[data-aw="amplitudeCanvas"] {
+    display: block;
+    image-rendering: pixelated;
+}
+
+[data-aw="waveformTimelineCanvas"] {
+    display: block;
+}
+
+/* ═══ Split / Resize Handles ═══ */
+
+.view-split-handle {
+    height: 5px;
+    background: var(--color-bg-primary);
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    cursor: row-resize;
+    touch-action: none;
+    transition: background 0.15s;
+}
+
+.view-split-handle:hover {
+    background: var(--color-accent);
+    opacity: 0.5;
+}
+
+.spectrogram-resize-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 6px;
+    background: transparent;
+    cursor: row-resize;
+    touch-action: none;
+    z-index: 11;
+    transition: background 0.15s;
+}
+
+.spectrogram-resize-handle:hover {
+    background: rgba(56, 189, 248, 0.3);
+}

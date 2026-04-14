@@ -1,0 +1,94 @@
+/* Shared animations, media queries, dev overlays — migrated from player.css */
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.loading {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@media (max-width: 900px) {
+    .toolbar {
+        gap: 4px;
+        padding: 0 4px;
+    }
+
+    .toolbar-btn {
+        padding: 0 6px;
+        font-size: 0.72rem;
+    }
+
+    .transport-btn {
+        width: 26px;
+        height: 26px;
+    }
+}
+
+.abp-perf-overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 20;
+    min-width: 210px;
+    max-width: 320px;
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.82);
+    color: #e2e8f0;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    pointer-events: none;
+    backdrop-filter: blur(2px);
+}
+
+.abp-perf-title {
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+    color: #38bdf8;
+}
+
+/* Scrollbar styling (uses tokens in src/styles/tokens.css)
+   - `scrollbar-color` supports Firefox
+   - WebKit uses ::-webkit-scrollbar pseudo elements
+   These values adapt automatically when `html[data-theme="light"]` is set.
+*/
+:root {
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-width);
+}
+*::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+*::-webkit-scrollbar-thumb:active {
+    background: var(--scrollbar-thumb-active);
+}
+
+/* Ensure thin scrollbars on typical panel containers */
+.sidebar-body,
+.settings-panel,
+.label-search-results,
+.preset-manager-list,
+.label-card-detail,
+.pm-list {
+    scrollbar-width: thin;
+}

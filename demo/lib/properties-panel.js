@@ -80,6 +80,7 @@ export class PropertiesPanel {
 
     /** @type {import('./custom-tag-store.js').CustomTagStore|null} */
     this._tagStore = null;
+    this._esInstances = [];
 
     /**
      * Called when the user edits a field. Signature: (labelId, updates) => void
@@ -200,6 +201,9 @@ export class PropertiesPanel {
   }
 
   _renderLabel() {
+    // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
+    for (const es of this._esInstances) es.destroy();
+    this._esInstances = [];
     this._lblBody.innerHTML = '';
     const lbl = this._hoverLabel || this._pinnedLabel;
     const isHover = !!this._hoverLabel;
@@ -424,6 +428,7 @@ export class PropertiesPanel {
         onRename: store ? (oldV, newV) => store.rename(preset.key, oldV, newV) : undefined,
       });
       dd.appendChild(es.el);
+      this._esInstances.push(es);
       grid.appendChild(dt);
       grid.appendChild(dd);
     }

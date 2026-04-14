@@ -1,0 +1,42 @@
+/* DAW Shell — core reset, layout, and view/draw mode toggling */
+
+.daw-shell *,
+.daw-shell *::before,
+.daw-shell *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.daw-shell {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+}
+
+.daw-shell.view-mode-waveform .spectrogram-container,
+.daw-shell.view-mode-waveform .view-split-handle {
+    display: none;
+}
+
+.daw-shell.view-mode-waveform .waveform-container {
+    flex: 1;
+    min-height: var(--waveform-height);
+}
+
+.daw-shell.view-mode-spectrogram .waveform-container,
+.daw-shell.view-mode-spectrogram .view-split-handle {
+    display: none;
+}
+
+.daw-shell.draw-mode-active .spectrogram-canvas-wrapper {
+    cursor: crosshair;
+}
+
+.daw-shell.stamp-mode-active .spectrogram-canvas-wrapper {
+    cursor: copy;
+}

@@ -4,21 +4,59 @@
 
 import { getTimeGridSteps } from './utils.js';
 
+// Helper: read CSS custom property and fall back
+function getCssVar(name, fallback = '') {
+    try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+    } catch (e) {
+        return fallback;
+    }
+}
+
+function hexToRgb(hex) {
+    if (!hex) return null;
+    let h = String(hex).replace('#', '').trim();
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    if (h.length !== 6) return null;
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function colorWithAlpha(color, alpha = 1) {
+    if (!color) return color;
+    const c = color.trim();
+    if (c.startsWith('rgba')) {
+        // normalize to provided alpha
+        const inner = c.slice(5, -1).split(',').map(s => s.trim());
+        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
+    }
+    if (c.startsWith('rgb(')) {
+        const inner = c.slice(4, -1).split(',').map(s => s.trim());
+        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
+    }
+    if (c[0] === '#') {
+        const rgb = hexToRgb(c);
+        if (rgb) return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+    }
+    // Unknown format -- return as-is (alpha ignored)
+    return c;
+}
+
 // ─── Waveform Timeline (private helper) ─────────────────────────────
 
 function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }) {
     if (width <= 0) return;
     const css = getComputedStyle(document.documentElement);
-    const textColor = css.getPropertyValue('--color-text-secondary').trim() || '#cbd5e1';
+    const textColor = getCssVar('--color-text-secondary', '#cbd5e1');
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = css.getPropertyValue('--color-bg-secondary').trim() || '#1e293b';
+    ctx.fillStyle = getCssVar('--color-bg-secondary', '#1e293b');
     ctx.fillRect(0, 0, width, height);
     ctx.font = '11px monospace';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = textColor;
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.strokeStyle = colorWithAlpha(getCssVar('--color-text-secondary', '#cbd5e1'), 0.25);
 
     for (let t = 0; t <= duration; t += minorStep) {
         const x = Math.round(t * pixelsPerSecond) + 0.5;
@@ -53,6 +91,11 @@ export function renderMainWaveform({
     const timelineCtx = waveformTimelineCanvas.getContext('2d');
     if (!ampCtx || !timelineCtx) return;
 
+    // persist last render args so we can redraw on theme changes
+    try {
+        amplitudeCanvas._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline };
+    } catch (e) {}
+
     const width = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
     const clampedWaveformHeight = Math.max(64, Math.floor(waveformHeight));
     const timelineHeight = showTimeline ? Math.max(18, Math.min(32, Math.round(clampedWaveformHeight * 0.22))) : 0;
@@ -72,24 +115,24 @@ export function renderMainWaveform({
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
 
     ampCtx.clearRect(0, 0, width, ampHeight);
-    ampCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-bg-tertiary');
+    ampCtx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
     ampCtx.fillRect(0, 0, width, ampHeight);
     for (let t = 0; t <= audioBuffer.duration; t += minorStep) {
         const x = Math.round(t * pixelsPerSecond) + 0.5;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
-        ampCtx.strokeStyle = isMajor ? 'rgba(148,163,184,0.22)' : 'rgba(148,163,184,0.12)';
+        ampCtx.strokeStyle = isMajor ? colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.22) : colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.12);
         ampCtx.beginPath();
         ampCtx.moveTo(x, 0);
         ampCtx.lineTo(x, ampHeight);
         ampCtx.stroke();
     }
-    ampCtx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+    ampCtx.strokeStyle = colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.35);
     ampCtx.beginPath();
     ampCtx.moveTo(0, midY + 0.5);
     ampCtx.lineTo(width, midY + 0.5);
     ampCtx.stroke();
 
-    ampCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-accent');
+    ampCtx.strokeStyle = getCssVar('--color-accent', '#60a5fa');
     ampCtx.lineWidth = 1;
     for (let x = 0; x < width; x++) {
         const start = Math.floor(x * totalSamples / width);
@@ -116,6 +159,36 @@ export function renderMainWaveform({
             pixelsPerSecond,
         });
     }
+
+    // Install a MutationObserver to redraw when theme changes (data-theme attr)
+    try {
+        if (!amplitudeCanvas.dataset.awThemeObserverInstalled) {
+            amplitudeCanvas.dataset.awThemeObserverInstalled = '1';
+            const redraw = () => {
+                const s = amplitudeCanvas._aw_lastRender;
+                if (s) {
+                    requestAnimationFrame(() => {
+                        try { renderMainWaveform(s); } catch (e) { /* ignore */ }
+                    });
+                }
+            };
+            const mo = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.attributeName === 'data-theme') { redraw(); break; }
+                }
+            });
+            mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            try {
+                const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+                if (mm) {
+                    if (mm.addEventListener) mm.addEventListener('change', redraw);
+                    else if (mm.addListener) mm.addListener(redraw);
+                }
+            } catch (e) {}
+            amplitudeCanvas._aw_themeObserver = mo;
+            amplitudeCanvas._aw_themeRedraw = redraw;
+        }
+    } catch (e) {}
 }
 
 // ─── Overview Waveform ──────────────────────────────────────────────
@@ -131,12 +204,17 @@ export function renderOverviewWaveform({
     const ctx = overviewCanvas.getContext('2d');
     if (!ctx) return;
 
+    // persist last render args so we can redraw on theme changes
+    try {
+        overviewCanvas._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs };
+    } catch (e) {}
+
     const rect = overviewContainer.getBoundingClientRect();
     overviewCanvas.width = Math.max(1, Math.floor(rect.width));
     overviewCanvas.height = Math.max(1, Math.floor(rect.height));
 
     ctx.clearRect(0, 0, overviewCanvas.width, overviewCanvas.height);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-bg-tertiary');
+    ctx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
     ctx.fillRect(0, 0, overviewCanvas.width, overviewCanvas.height);
 
     const channelData = audioBuffer.getChannelData(0);
@@ -144,7 +222,7 @@ export function renderOverviewWaveform({
     const amp = overviewCanvas.height / 2;
     const ampScale = 1 / Math.max(1e-6, amplitudePeakAbs);
 
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-accent');
+    ctx.strokeStyle = getCssVar('--color-accent', '#60a5fa');
     ctx.lineWidth = 1;
 
     for (let x = 0; x < overviewCanvas.width; x++) {
@@ -162,7 +240,38 @@ export function renderOverviewWaveform({
         ctx.lineTo(x, (1 + max) * amp);
         ctx.stroke();
     }
+
+    // Install MutationObserver to redraw overview when theme changes
+    try {
+        if (!overviewCanvas.dataset.awThemeObserverInstalled) {
+            overviewCanvas.dataset.awThemeObserverInstalled = '1';
+            const redraw = () => {
+                const s = overviewCanvas._aw_lastRender;
+                if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch (e) {} });
+            };
+            const mo = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.attributeName === 'data-theme') { redraw(); break; }
+                }
+            });
+            mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            try {
+                const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+                if (mm) {
+                    if (mm.addEventListener) mm.addEventListener('change', redraw);
+                    else if (mm.addListener) mm.addListener(redraw);
+                }
+            } catch (e) {}
+            overviewCanvas._aw_themeObserver = mo;
+            overviewCanvas._aw_themeRedraw = redraw;
+        }
+    } catch (e) {}
 }
+
+// Ensure overview canvas redraws on theme change
+try {
+    // If we have a global observer installed already (on an amplitude canvas), skip creating a duplicate
+} catch (e) {}
 
 // ─── Frequency Labels ───────────────────────────────────────────────
 

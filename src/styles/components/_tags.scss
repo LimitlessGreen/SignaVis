@@ -1,28 +1,94 @@
 /* Tags & small shared helpers used by the label UI */
-.color-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; }
-.inline-name-input { width: 100%; border: 1px solid var(--accent); border-radius: 3px; background: #0d172b; color: #dce8f8; font-size: 12px; font-weight: 600; padding: 1px 4px; outline: none; }
+.color-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; border: 1px solid var(--color-border); flex-shrink: 0; }
+.inline-name-input { width: 100%; border: 1px solid var(--accent); border-radius: 3px; background: var(--panel); color: var(--text); font-size: 12px; font-weight: 600; padding: 1px 4px; outline: none; }
 .act-btn { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 3px; border-radius: 3px; flex-shrink: 0; }
-.act-btn:hover { color: var(--text); background: rgba(57,181,255,0.1); }
-.act-btn.danger:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
+.act-btn:hover { color: var(--text); background: var(--color-accent-faint); }
+.act-btn.danger:hover { color: var(--danger); background: var(--danger-soft); }
 .labels-empty { padding: 24px 14px; color: var(--muted); font-size: 12px; text-align: center; }
-.labels-empty kbd { border: 1px solid #2a3d5c; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #0d172b; color: #c8daf0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+.labels-empty kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--panel); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
 
 /* mini tag tokens used in label lists */
-.tag-mini { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #1a2a44; color: #8fa4c0; border: 1px solid #253a56; white-space: nowrap; }
+.tag-mini { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
 .tag-mini.conf { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .tag-mini.origin { border-style: dashed; }
 
-.tag-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #1a2a44; color: #8fa4c0; border: 1px solid #253a56; margin: 1px 2px; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.tag-badge .tag-key { color: #5b8cb8; }
-.tag-badge .tag-del { border: none; background: transparent; color: #4b6380; cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+tag-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 10px;
+	padding: 2px 6px;
+	border-radius: 6px;
+	background: var(--panel);
+	color: var(--color-accent);
+	border: 1px solid var(--color-accent);
+	margin: 1px 4px;
+	white-space: nowrap;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-weight: 600;
+}
+.tag-badge .tag-key { color: var(--color-accent); opacity: 0.95; }
+.tag-badge .tag-del { border: none; background: transparent; color: var(--color-text-secondary); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
 .tag-badge .tag-del:hover { color: var(--danger); }
-.tag-add-btn { display: inline-block; border: 1px dashed #253a56; border-radius: 3px; background: transparent; color: #4b6380; font-size: 10px; padding: 1px 5px; cursor: pointer; vertical-align: middle; }
-.tag-add-btn:hover { border-color: #3a7db8; color: #8fa4c0; }
+.tag-add-btn { display: inline-block; border: 1px dashed var(--line); border-radius: 3px; background: transparent; color: var(--color-text-secondary); font-size: 10px; padding: 1px 5px; cursor: pointer; vertical-align: middle; }
+.tag-add-btn:hover { border-color: var(--color-accent); color: var(--muted); }
 
-.tag-popover { position: fixed; z-index: 9999; background: rgba(2, 6, 23, 0.98); border: 1px solid #253a56; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); min-width: 180px; }
-.tag-popover input { border: 1px solid #253a56; border-radius: 4px; background: #0d172b; color: var(--text); font-size: 11px; padding: 3px 5px; }
+.tag-popover { position: fixed; z-index: 9999; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 8px 24px var(--shadow-strong); min-width: 180px; }
+.tag-popover input { border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font-size: 11px; padding: 3px 5px; }
 .tag-popover .tag-pop-row { display: flex; gap: 4px; align-items: center; }
 
 /* Add-tag helper used in properties */
 .props-tag-add { display: inline-block; margin-top: 6px; padding: 2px 8px; border: 1px dashed var(--line); border-radius: 3px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
-.props-tag-add:hover { border-color: var(--accent); color: var(--text); }
+.props-tag-add:hover { border-color: var(--color-accent); color: var(--text); }
+
+/* Legacy label classes (override old player.css) */
+.label-tags-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.label-tag-select { border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 11px; padding: 2px 4px; cursor: pointer; outline: none; }
+.label-tag-select:focus { border-color: var(--color-accent); }
+.label-tag-combo { display: inline-flex; align-items: center; gap: 0; position: relative; }
+.label-tag-custom-input { width: 110px; border: 1px solid var(--color-accent); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 11px; padding: 2px 5px; outline: none; }
+.label-tag-custom-input::placeholder { color: var(--muted); font-style: italic; }
+
+.label-tag-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 10px;
+	padding: 2px 6px;
+	border-radius: 6px;
+	background: var(--panel);
+	color: var(--color-accent);
+	border: 1px solid var(--color-accent);
+	white-space: nowrap;
+	font-weight: 600;
+}
+.label-tag-badge-del { border: none; background: transparent; color: var(--color-text-secondary); cursor: pointer; font-size: 12px; padding: 0 1px; line-height: 1; }
+.label-tag-badge-del:hover { color: var(--danger); }
+.label-tag-add { border: 1px dashed var(--line); border-radius: 4px; background: transparent; color: var(--color-text-secondary); font-size: 10px; padding: 2px 6px; cursor: pointer; }
+.label-tag-add:hover { border-color: var(--color-accent); color: var(--muted); }
+
+/* Strong overrides for label/tag pills inside the Labels panel to beat legacy rules */
+
+#panelLabels .tag-badge,
+#panelLabels .label-tag-badge,
+#panelLabels .tag-mini {
+	background: var(--panel) !important;
+	color: var(--color-accent) !important;
+	border: 1px solid var(--color-accent) !important;
+	padding: 2px 6px !important;
+	border-radius: 6px !important;
+	font-weight: 600 !important;
+}
+
+#panelLabels .tag-badge .tag-del,
+#panelLabels .label-tag-badge-del,
+#panelLabels .tag-mini .tag-del {
+	color: var(--color-text-secondary) !important;
+}
+
+#panelLabels .tag-popover,
+#panelLabels .tag-popover input {
+	background: var(--panel) !important;
+	color: var(--text) !important;
+	border-color: var(--line) !important;
+}

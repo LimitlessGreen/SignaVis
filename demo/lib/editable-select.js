@@ -295,6 +295,8 @@ export function createEditableSelect(opts) {
   }
 
   // ── Events ──
+  let destroyed = false;
+
   trigger.addEventListener('click', (e) => {
     e.stopPropagation();
     if (open) hide(); else show();
@@ -326,9 +328,11 @@ export function createEditableSelect(opts) {
     }
   });
 
-  document.addEventListener('pointerdown', (e) => {
+  function onPointerDown(e) {
+    if (destroyed) return;
     if (open && !root.contains(/** @type {Node} */ (e.target)) && !dropdown.contains(/** @type {Node} */ (e.target))) hide();
-  });
+  }
+  document.addEventListener('pointerdown', onPointerDown);
 
   // ── Public API ──
   return {
@@ -343,6 +347,9 @@ export function createEditableSelect(opts) {
       if (open) renderList();
     },
     destroy() {
+      destroyed = true;
+      hide();
+      document.removeEventListener('pointerdown', onPointerDown);
       if (dropdown.parentElement) dropdown.remove();
       root.remove();
     },

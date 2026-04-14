@@ -36,6 +36,21 @@
   border-color: var(--color-accent);
 }
 
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-btn.toggle-btn.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.toolbar-btn.flex-shrink-0 {
+  flex-shrink: 0;
+}
+
 .aw-btn--primary, .toolbar-btn.file-btn {
   background: var(--color-accent);
   color: #fff;

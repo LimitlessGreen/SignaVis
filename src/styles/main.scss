@@ -4,22 +4,37 @@
 // the plain CSS file `src/styles/tokens.css` which should be
 // included with a <link> in HTML. This avoids deprecated @import.
 @use "utils";
+
+// Core shell & layout
+@use "components/shell";
+@use "components/views";
+@use "components/axes";
+@use "components/overview";
+@use "components/statusbar";
+
+// Player chrome
 @use "components/buttons";
 @use "components/toolbar";
-@use "components/labeling-app";
-@use "components/annotation";
-@use "components/activity-bar";
-@use "components/sidebar";
-@use "components/player";
 @use "components/transport";
 @use "components/playhead";
-@use "components/_legacy-player";
+@use "components/settings-panel";
 
+// Spectrogram labels & annotations
+@use "components/annotation";
+@use "components/spectrogram-labels";
+@use "components/label-editor";
+
+// Labeling app UI
+@use "components/labeling-app";
+@use "components/activity-bar";
+@use "components/sidebar";
 @use "components/panels";
 @use "components/label-list";
 @use "components/tags";
 @use "components/popovers";
 @use "components/forms";
 @use "components/spectrogram-settings";
+@use "components/preset-manager";
 
-// Add other component partials here as the migration progresses.
+// Shared utilities & responsive
+@use "components/utilities";

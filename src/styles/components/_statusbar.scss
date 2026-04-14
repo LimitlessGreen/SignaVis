@@ -1,0 +1,35 @@
+/* Status bar — migrated from player.css */
+
+.statusbar {
+    display: flex;
+    align-items: center;
+    height: var(--statusbar-height);
+    min-height: var(--statusbar-height);
+    padding: 0 10px;
+    background: var(--color-statusbar);
+    border-top: 1px solid var(--color-border);
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+    user-select: none;
+    gap: 4px;
+}
+
+.statusbar-section {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+.statusbar-section:not(:last-child) {
+    border-right: 1px solid var(--color-border);
+}
+
+.statusbar-spacer {
+    flex: 1;
+}
+
+.statusbar-label {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}

@@ -61,16 +61,37 @@ export class LabelList {
     this._onRemove = null;
     this._tagStore = opts.tagStore || null;
     this._cardMap = new Map();
+    this._esInstances = [];
     this._selectedId = null;
     this._labels = [];
+    /** @type {Set<string>} group keys that are expanded */
+    this._expandedGroups = new Set();
+    /** @type {Set<string>} label ids whose detail section is open */
+    this._detailOpenIds = new Set();
   }
 
   set onRemove(fn) { this._onRemove = fn; }
   get selectedId() { return this._selectedId; }
 
+  /** Update only the tag-badges of a specific label instance (no full re-render). */
+  updateBadges(labelId, lbl) {
+    const inst = this._cardMap.get(labelId);
+    if (!inst) return;
+    const oldBadges = inst.querySelector('.label-card-tags');
+    if (oldBadges) {
+      const newBadges = this._buildTagBadges(lbl);
+      // Keep hidden if detail is open
+      if (this._detailOpenIds.has(labelId)) newBadges.style.display = 'none';
+      oldBadges.replaceWith(newBadges);
+    }
+  }
+
   /** Full re-render — groups labels by origin, then by name. */
   render(labels) {
     this._labels = labels;
+    // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
+    for (const es of this._esInstances) es.destroy();
+    this._esInstances = [];
     this._container.innerHTML = '';
     this._cardMap = new Map();
     if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
@@ -160,6 +181,8 @@ export class LabelList {
   _buildGroup(instances) {
     const representative = instances[0];
     const { display, scientific } = this._resolveName(representative);
+    const origin = representative.origin || 'manual';
+    const groupKey = `${origin}::${representative.label || '(unlabeled)'}`;
 
     const group = document.createElement('div');
     group.className = 'label-group';
@@ -231,10 +254,12 @@ export class LabelList {
       this._cardMap.set(lbl.id, inst);
     }
 
-    // Auto-expand single-instance groups
+    // Auto-expand single-instance groups; preserve expand state across re-renders
     const single = instances.length === 1;
-    if (!single) instanceList.hidden = true;
-    group.classList.toggle('expanded', single);
+    const shouldExpand = this._expandedGroups.has(groupKey) || single;
+    instanceList.hidden = !shouldExpand;
+    group.classList.toggle('expanded', shouldExpand);
+    if (shouldExpand) this._expandedGroups.add(groupKey);
 
     group.appendChild(instanceList);
 
@@ -242,6 +267,8 @@ export class LabelList {
       const collapsed = instanceList.hidden;
       instanceList.hidden = !collapsed;
       group.classList.toggle('expanded', collapsed);
+      if (collapsed) this._expandedGroups.add(groupKey);
+      else this._expandedGroups.delete(groupKey);
     });
 
     return group;
@@ -255,7 +282,7 @@ export class LabelList {
     inst.dataset.labelId = lbl.id;
 
     inst.addEventListener('click', (e) => {
-      if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input')) return;
+      if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.esel')) return;
       this._onSeek?.(lbl);
       this.highlightRow(lbl.id);
       this._onFocus?.(lbl.id, 'list');
@@ -263,7 +290,7 @@ export class LabelList {
     inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
     inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
 
-    // ── Header: time/freq + delete ──
+    // ── Header: time/freq + edit-toggle + delete ──
     const header = document.createElement('div');
     header.className = 'label-instance-header';
 
@@ -275,6 +302,12 @@ export class LabelList {
     const spacer = document.createElement('span');
     spacer.style.flex = '1';
     header.appendChild(spacer);
+
+    const editToggle = document.createElement('button');
+    editToggle.className = 'act-btn edit-toggle';
+    editToggle.textContent = '✎';
+    editToggle.title = 'Edit tags';
+    header.appendChild(editToggle);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'act-btn danger';
@@ -288,21 +321,37 @@ export class LabelList {
 
     inst.appendChild(header);
 
-    // ── Tag badges ──
+    // ── Tag badges (shown when detail is collapsed) ──
     const tagsEl = this._buildTagBadges(lbl);
-    if (tagsEl.childNodes.length > 0) inst.appendChild(tagsEl);
+    inst.appendChild(tagsEl);
 
-    // ── Expandable detail (tag editing, double-click) ──
+    // ── Expandable detail (tag editing) ──
     const detail = this._buildDetail(lbl);
-    detail.style.display = 'none';
+    const isOpen = this._detailOpenIds.has(lbl.id);
+    detail.style.display = isOpen ? '' : 'none';
+    tagsEl.style.display = isOpen ? 'none' : '';
+    inst.classList.toggle('expanded', isOpen);
     inst.appendChild(detail);
 
-    inst.addEventListener('dblclick', (e) => {
-      if (e.target.closest('.act-btn') || e.target.closest('input') || e.target.closest('select')) return;
-      e.stopPropagation();
+    const toggleDetail = () => {
       const open = detail.style.display !== 'none';
       detail.style.display = open ? 'none' : '';
+      tagsEl.style.display = open ? '' : 'none';
       inst.classList.toggle('expanded', !open);
+      if (open) this._detailOpenIds.delete(lbl.id);
+      else this._detailOpenIds.add(lbl.id);
+    };
+
+    editToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDetail();
+    });
+
+    // Keep dblclick as alternative
+    inst.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.act-btn') || e.target.closest('input') || e.target.closest('select') || e.target.closest('.esel')) return;
+      e.stopPropagation();
+      toggleDetail();
     });
 
     return inst;
@@ -384,6 +433,7 @@ export class LabelList {
         onRename: store ? (oldVal, newVal) => { store.rename(preset.key, oldVal, newVal); } : undefined,
       });
       es.el.addEventListener('click', (e) => e.stopPropagation());
+      this._esInstances.push(es);
       row.appendChild(es.el);
       detail.appendChild(row);
     }

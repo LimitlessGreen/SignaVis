@@ -52,6 +52,75 @@
   flex-shrink: 0;
 }
 
+.compact-more-btn {
+  display: none !important;
+}
+
+.toolbar-range {
+  width: 100px;
+  min-width: 60px;
+  max-width: 140px;
+  height: 4px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  flex-shrink: 1;
+}
+.toolbar-range-zoom {
+  width: 64px;
+  min-width: 44px;
+  max-width: 90px;
+}
+.toolbar-range-sm {
+  width: 64px;
+  min-width: 40px;
+  max-width: 80px;
+}
+
+.zoom-controls-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.zoom-controls-row .toolbar-label { min-width: unset; font-size: 0.62rem; opacity: 0.6; }
+.freq-zoom-label { margin-left: 4px; }
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+}
+.icon-btn:hover { color: var(--color-text-primary); }
+.icon-btn.muted { color: var(--color-accent-dim, #664444); }
+
+.toolbar-value {
+  font-size: 0.72rem;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  color: var(--color-text-secondary);
+  min-width: 56px;
+  flex-shrink: 0;
+}
+.toolbar-value-sm {
+  min-width: 40px;
+  font-size: 0.65rem;
+}
+
+/* Settings toggle button */
+.settings-toggle-btn.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.toggle-btn.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+}
+
 /* Lightweight legacy helpers used in demo HTML */
 .tb-spacer { flex: 1; }
 .tb-meta { color: var(--color-text-secondary); font-size: 11px; }

@@ -1,0 +1,124 @@
+/* Overview strip — minimap + label tracks. Migrated from player.css */
+
+.overview-container {
+    position: relative;
+    height: 48px;
+    min-height: 48px;
+    background: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border);
+    overflow: hidden;
+}
+
+[data-aw="overviewCanvas"] {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.overview-window {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 2px solid var(--color-accent);
+    border-right: 2px solid var(--color-accent);
+    background: rgba(56, 189, 248, 0.08);
+    pointer-events: auto;
+    cursor: grab;
+    box-sizing: border-box;
+}
+
+.overview-window:active {
+    cursor: grabbing;
+}
+
+.overview-window .handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    background: rgba(56, 189, 248, 0.6);
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.overview-window .handle.left { left: -4px; }
+.overview-window .handle.right { right: -4px; }
+
+/* ═══ Overview Label Tracks ═══ */
+
+.overview-label-tracks {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-secondary);
+    overflow: hidden;
+}
+
+.overview-label-tracks:empty {
+    display: none;
+}
+
+.overview-label-group-header {
+    height: 12px;
+    line-height: 12px;
+    padding: 0 4px;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.35);
+    border-top: 1px solid rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+.overview-label-row {
+    position: relative;
+    height: 14px;
+    border-top: 1px solid rgba(0, 0, 0, 0.25);
+    background: var(--label-tint, rgba(30, 41, 59, 0.6));
+}
+
+.overview-label-row-name {
+    position: absolute;
+    left: 3px;
+    top: 0;
+    z-index: 2;
+    padding: 0 2px;
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 14px;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    color: #ffffff;
+    background: none;
+    pointer-events: none;
+    text-shadow:
+        0 0 2px rgba(0, 0, 0, 0.95),
+        0 0 4px rgba(0, 0, 0, 0.8),
+        0 1px 1px rgba(0, 0, 0, 0.9);
+}
+
+.overview-label-row-track {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+}
+
+.overview-label-segment {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.35);
+    min-width: 2px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.overview-label-segment:hover {
+    background: rgba(255, 255, 255, 0.55);
+}

@@ -333,6 +333,7 @@
 
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
+    rightBar.setActive('properties');
 
     // ── App state ─────────────────────────────────────────────────────
     const state = {
@@ -445,7 +446,7 @@
       emptyEl:   document.getElementById('labelsEmpty'),
       resolveName,
       tagStore,
-      onSync:  () => syncToPlayer(),
+      onSync:  () => syncToPlayerSoft(),
       onSeek:  (lbl) => { if (player?.currentTime != null) player.currentTime = lbl.start; },
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
       onFocus: (id) => {
@@ -468,6 +469,7 @@
       if (interaction === 'click') {
         const lbl = id ? state.labels.find((l) => l.id === id) : null;
         propsPanel.pinLabel(lbl);
+        if (lbl) rightBar.setActive('properties');
       } else {
         // hover
         if (id) {
@@ -510,10 +512,28 @@
     });
 
     // ── Sync & export ─────────────────────────────────────────────────
+    let _skipPropsRefresh = false;
     function syncToPlayer() {
       player.setSpectrogramLabels(state.labels);
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
+      // Keep properties panel in sync with fresh label reference
+      if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
+        const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
+        if (fresh) propsPanel.refreshLabel(fresh);
+        else propsPanel.pinLabel(null);
+      }
+    }
+
+    /** Sync labels to spectrogram without re-rendering the label list DOM. */
+    function syncToPlayerSoft() {
+      player.setSpectrogramLabels(state.labels);
+      sidebar.setBadge('labels', state.labels.length || '');
+      if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
+        const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
+        if (fresh) propsPanel.refreshLabel(fresh);
+        else propsPanel.pinLabel(null);
+      }
     }
 
     function toLabelExport() {
@@ -896,8 +916,11 @@
       const idx = state.labels.findIndex((l) => l.id === id);
       if (idx < 0) return;
       state.labels[idx] = { ...state.labels[idx], ...updates };
-      syncToPlayer();
-      // Don't re-render the properties panel here — the input still has focus
+      _skipPropsRefresh = true;
+      syncToPlayerSoft();
+      _skipPropsRefresh = false;
+      // Soft-update the label list tag badges without full re-render
+      labelList.updateBadges(id, state.labels[idx]);
     };
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));

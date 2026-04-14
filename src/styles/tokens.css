@@ -43,6 +43,12 @@
         --input-bg-weak: rgba(255,255,255,0.06);
         --input-hover-bg: rgba(255,255,255,0.04);
         --shadow-strong: rgba(0,0,0,0.5);
+        /* Scrollbar tokens (used for WebKit + Firefox scrollbar theming) */
+        --scrollbar-track: rgba(255,255,255,0.03);
+        --scrollbar-thumb: rgba(255,255,255,0.12);
+        --scrollbar-thumb-hover: rgba(255,255,255,0.18);
+        --scrollbar-thumb-active: rgba(255,255,255,0.22);
+        --scrollbar-width: 10px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -72,6 +78,12 @@
             --input-bg-weak: rgba(0,0,0,0.08);
             --input-hover-bg: rgba(0,0,0,0.04);
             --shadow-strong: rgba(0,0,0,0.12);
+            /* Light theme scrollbar overrides */
+            --scrollbar-track: rgba(0,0,0,0.04);
+            --scrollbar-thumb: rgba(0,0,0,0.18);
+            --scrollbar-thumb-hover: rgba(0,0,0,0.28);
+            --scrollbar-thumb-active: rgba(0,0,0,0.36);
+            --scrollbar-width: 10px;
     }
 }
 
@@ -109,5 +121,11 @@ html[data-theme="light"] {
             --input-bg-weak: rgba(0,0,0,0.08);
             --input-hover-bg: rgba(0,0,0,0.04);
             --shadow-strong: rgba(0,0,0,0.12);
+            /* Explicit light theme scrollbar tokens for html[data-theme="light"] */
+            --scrollbar-track: rgba(0,0,0,0.04);
+            --scrollbar-thumb: rgba(0,0,0,0.18);
+            --scrollbar-thumb-hover: rgba(0,0,0,0.28);
+            --scrollbar-thumb-active: rgba(0,0,0,0.36);
+            --scrollbar-width: 10px;
 }
 

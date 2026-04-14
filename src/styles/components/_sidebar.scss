@@ -31,3 +31,37 @@
   .sidebar { --sidebar-width: 240px; }
   .sidebar--right { --sidebar-right-width: 240px; }
 }
+
+/* Make sidebar panels and their inner bodies scroll when content overflows.
+   Uses flex layout so headers/toolbars remain fixed while content scrolls. */
+.sidebar-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0; /* allow children to use min-height for overflow handling */
+  overflow: hidden;
+}
+.sidebar-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+/* Keep toolbar/hints/actions at natural size, let the main body scroll */
+.sidebar-panel > .panel-toolbar,
+.sidebar-panel > .panel-hint,
+.sidebar-panel > .panel-section,
+.sidebar-panel > .panel-actions {
+  flex: 0 0 auto;
+}
+/* Common scrollable containers inside panels */
+.sidebar-panel > .label-list-scroll,
+.sidebar-panel .props-section-body,
+.sidebar-panel .panel-body,
+.sidebar-panel .help-content,
+.scroll-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}

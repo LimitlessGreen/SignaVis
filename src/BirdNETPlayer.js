@@ -14,7 +14,7 @@ import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import { PlayerState } from './PlayerState.js';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName } from './annotations.js';
 import { UndoStack } from './undoStack.js';
-import './player.css';  // Vite extracts this into birdnet-player.css
+import './styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
 const WAVESURFER_CDN = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
 const DEFAULT_LABEL_TAXONOMY = [
