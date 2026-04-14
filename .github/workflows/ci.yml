@@ -129,6 +129,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22.12"
+          registry-url: 'https://registry.npmjs.org'
+          always-auth: true
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -139,23 +141,7 @@ jobs:
         run: bash ./scripts/check-version-sync.sh
 
       - name: Setup npm for trusted publishing
-        run: npm install -g npm@latest
-      - name: Ensure NPM token is available
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "Error: repository secret NPM_TOKEN is not set. Add it in Settings -> Secrets to enable npm publish.";
-            exit 1;
-          fi
-
-      - name: Setup npm for trusted publishing
-        run: npm install -g npm@latest
-
-      - name: Setup npm auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+        run: npm install -g npm@11.5.1
 
       - name: Publish npm (use packed tarball if available)
         run: |
