@@ -1,0 +1,2 @@
+Line 148: contains non-ascii char '→' (code 8594)
+Line 168: contains non-ascii char '—' (code 8212)

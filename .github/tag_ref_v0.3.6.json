@@ -1,0 +1,10 @@
+{
+  "ref": "refs/tags/v0.3.6",
+  "node_id": "REF_kwDORTX0o7ByZWZzL3RhZ3MvdjAuMy42",
+  "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/git/refs/tags/v0.3.6",
+  "object": {
+    "sha": "cf41db2b25956c3fb677ce992ec56da975c6723e",
+    "type": "tag",
+    "url": "https://api.github.com/repos/LimitlessGreen/Audio-Workbench/git/tags/cf41db2b25956c3fb677ce992ec56da975c6723e"
+  }
+}
