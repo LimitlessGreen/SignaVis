@@ -140,14 +140,34 @@ jobs:
 
       - name: Setup npm for trusted publishing
         run: npm install -g npm@latest
+      - name: Ensure NPM token is available
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "Error: repository secret NPM_TOKEN is not set. Add it in Settings → Secrets to enable npm publish.";
+            exit 1;
+          fi
+
+      - name: Setup npm for trusted publishing
+        run: npm install -g npm@latest
 
       - name: Setup npm auth
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
 
-      - name: Publish npm
-        run: npm publish --access public
+      - name: Publish npm (use packed tarball if available)
+        run: |
+          set -euo pipefail
+          TAR=$(ls *.tgz 2>/dev/null | head -n1 || true)
+          if [ -n "$TAR" ]; then
+            echo "Publishing tarball $TAR"
+            npm publish "$TAR" --access public
+          else
+            echo "No tarball found — falling back to project-level publish (this may run build scripts)."
+            npm publish --access public
+          fi
 
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
