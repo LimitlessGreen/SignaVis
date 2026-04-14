@@ -145,7 +145,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "${NPM_TOKEN}" ]; then
-            echo "Error: repository secret NPM_TOKEN is not set. Add it in Settings → Secrets to enable npm publish.";
+            echo "Error: repository secret NPM_TOKEN is not set. Add it in Settings -> Secrets to enable npm publish.";
             exit 1;
           fi
 
@@ -165,7 +165,7 @@ jobs:
             echo "Publishing tarball $TAR"
             npm publish "$TAR" --access public
           else
-            echo "No tarball found — falling back to project-level publish (this may run build scripts)."
+            echo "No tarball found - falling back to project-level publish (this may run build scripts)."
             npm publish --access public
           fi
 
@@ -176,24 +176,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-                - name: Setup Node for OIDC publishing
-                  uses: actions/setup-node@v6
-                  with:
-                    node-version: "24"
-                    registry-url: 'https://registry.npmjs.org'
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-${{ github.run_id }}
 
-                - name: Ensure npm CLI supports OIDC
-                  run: npm install -g npm@11.5.1
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
 
-                - name: Download build artifacts
-                  uses: actions/download-artifact@v8
-                  with:
-                    name: dist-${{ github.run_id }}
+      - name: Check version sync (incl. tag)
+        run: bash ./scripts/check-version-sync.sh
 
-                - name: Check version sync (incl. tag)
-                  run: bash ./scripts/check-version-sync.sh
-
-                - name: Publish to npm (trusted publishing via OIDC)
-                  run: npm publish --access public
-          python -m twine check dist/*
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -d "python-wrapper/dist" ]; then
+            cd python-wrapper
+            python -m pip install --upgrade pip twine
+            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" dist/*
+          elif [ -d "dist" ]; then
+            python -m pip install --upgrade pip twine
+            python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" dist/*
+          else
+            echo "No Python dist/* found to upload"
+            exit 1
+          fi
