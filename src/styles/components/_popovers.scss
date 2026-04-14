@@ -98,3 +98,49 @@
 /* Table variant: compact trigger for inline use */
 .tag-select-cell .esel-trigger { padding-right: 14px; height: 20px; font-size: 10px; background-position: right 3px center; }
 .tag-select-cell .esel { width: 100%; }
+
+/* XC no-key modal (migrated from demo/labeling-app.legacy.css) */
+.xc-nokey-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  display: none; align-items: center; justify-content: center;
+  background: var(--overlay-bg);
+  animation: fadeIn 0.15s ease;
+}
+.xc-nokey-backdrop:not([hidden]) {
+  display: flex;
+}
+.xc-nokey-dialog {
+  max-width: 420px; width: 92%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 16px 48px var(--shadow-strong);
+  color: var(--text); font-size: 13px; line-height: 1.5;
+}
+.xc-nokey-dialog h3 {
+  margin: 0 0 10px; font-size: 15px; font-weight: 600;
+  color: var(--text);
+}
+.xc-nokey-dialog p { margin: 0 0 8px; color: var(--muted); }
+.xc-nokey-hint { font-size: 11.5px; }
+.xc-nokey-input-row {
+  margin: 10px 0 4px;
+}
+.xc-nokey-input-row .input {
+  width: 100%; box-sizing: border-box;
+  font-size: 12px; padding: 6px 8px;
+}
+
+.xc-nokey-dismiss-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted);
+  margin: 12px 0 14px; cursor: pointer;
+}
+.xc-nokey-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.xc-nokey-actions .tb-btn:first-child {
+  color: var(--color-success); border-color: var(--color-success-soft);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
