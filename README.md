@@ -9,17 +9,26 @@
   <img src="docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
 </p>
 
-### Try it — Demo
-
-Interactive demo and a full labeling app (BirdNET detection & annotation). Try them in your browser:
-
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-%E2%96%B6%20Open-brightgreen?style=for-the-badge)](https://limitlessgreen.github.io/Audio-Workbench/) [![Labeling App](https://img.shields.io/badge/Labeling%20App-%F0%9F%8F%B7%20Open-blue?style=for-the-badge)](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1)
-
-
-[![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml)
-[![NPM](https://img.shields.io/npm/v/audio-workbench.svg)](https://www.npmjs.com/package/audio-workbench)
-[![PyPI](https://img.shields.io/pypi/v/audio-workbench.svg)](https://pypi.org/project/audio-workbench/)
-[![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/LICENSE)
+<div align="center">
+<table align="center" cellpadding="12" cellspacing="0" style="border:1px solid #e1e4e8;background:#f6f8fa;border-radius:6px;">
+  <tr>
+    <td align="center">
+      <h3>💡 Try it — Demo</h3>
+      <p>Interactive demo and a full labeling app (BirdNET detection &amp; annotation). Try them in your browser:</p>
+      <p>
+        <a href="https://limitlessgreen.github.io/Audio-Workbench/"><img src="https://img.shields.io/badge/Live%20Demo-%E2%96%B6%20Open-brightgreen?style=for-the-badge" alt="Live Demo"/></a>
+        <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1"><img src="https://img.shields.io/badge/Labeling%20App-%F0%9F%8F%B7%20Open-blue?style=for-the-badge" alt="Labeling App"/></a>
+      </p>
+      <p>
+        <a href="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml"><img src="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+        <a href="https://www.npmjs.com/package/audio-workbench"><img src="https://img.shields.io/npm/v/audio-workbench.svg" alt="NPM"/></a>
+        <a href="https://pypi.org/project/audio-workbench/"><img src="https://img.shields.io/pypi/v/audio-workbench.svg" alt="PyPI"/></a>
+        <a href="https://github.com/LimitlessGreen/Audio-Workbench/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License"/></a>
+      </p>
+    </td>
+  </tr>
+</table>
+</div>
 
 DAW-like audio player (waveform + spectrogram + transport controls) as a standalone library — built for bioacoustic analysis, annotation, and embedding.
 
@@ -80,7 +89,6 @@ pip install audio-workbench
 See [PyPI](https://pypi.org/project/audio-workbench) and the [python-wrapper/README.md](python-wrapper/README.md) for full Python usage.
 
 ## Quickstart
-
 ```js
 import { BirdNETPlayer } from 'audio-workbench'
 import 'audio-workbench/style'
@@ -88,13 +96,6 @@ import 'audio-workbench/style'
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
-
-## Development & Release
-
-Supported Node versions for CI: 18, 20, 22.
-
-Local development:
-
 ```bash
 npm ci
 npm run typecheck
