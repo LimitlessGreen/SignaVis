@@ -185,6 +185,9 @@
 
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
   <div id="panelHelp" class="scroll-panel" hidden>
+    <div class="panel-actions help-actions" style="padding: 12px 14px;">
+      <button class="sidebar-action-btn" id="helpShowDailyTipsBtn" type="button">Show daily tips</button>
+    </div>
     <div class="help-content">
       <div class="help-section">
         <h3>Spectrogram</h3>
@@ -251,6 +254,8 @@
     import { colorForName, getOverlayColorStyle } from '../src/annotations.js';
     import { TaxonomyResolver } from '../src/taxonomyResolver.js';
     import { BirdNETInference } from '../src/birdnetInference.js';
+    import ModalManager from '../src/modal-manager.js';
+    import { initDailyTips, showTip } from '../src/daily-tips.js';
 
     import { Sidebar } from './lib/sidebar.js';
     import { populateLanguageSelect, createSuggestionProvider } from './lib/taxonomy-ui.js';
@@ -271,6 +276,19 @@
       showTransport: true,
     });
     await player.ready;
+
+    // Initialize daily tips (shows one tip per day unless disabled)
+    try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ }
+
+    // Show daily tips on demand from Help panel (always force-show)
+    const helpShowDailyTipsBtn = document.getElementById('helpShowDailyTipsBtn');
+    if (helpShowDailyTipsBtn) {
+      helpShowDailyTipsBtn.addEventListener('click', () => {
+        try {
+          initDailyTips({ host: player.root, force: true });
+        } catch (e) { /* ignore */ }
+      });
+    }
 
     // ── DOM refs ──────────────────────────────────────────────────────
     const fileLabel       = document.getElementById('fileLabel');
@@ -710,13 +728,14 @@
     const xcNokeyCloseBtn = document.getElementById('xcNokeyCloseBtn');
     const xcNokeySetKeyBtn = document.getElementById('xcNokeySetKeyBtn');
     const xcNokeyKeyInput = document.getElementById('xcNokeyKeyInput');
+    const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: xcNokeyModal?.querySelector('.xc-nokey-dialog') });
 
     function showXcNokeyModal() {
       const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
       if (dismissed || xcPanel.apiKey) return false;
       xcNokeyKeyInput.value = '';
       xcNokeySetKeyBtn.disabled = true;
-      xcNokeyModal.hidden = false;
+      xcNokeyModalManager.open();
       setTimeout(() => xcNokeyKeyInput.focus(), 60);
       return true;
     }
@@ -724,7 +743,7 @@
       if (xcNokeyDismiss.checked) {
         try { localStorage.setItem(XC_NOKEY_DISMISSED_KEY, '1'); } catch {}
       }
-      xcNokeyModal.hidden = true;
+      xcNokeyModalManager.close();
     }
     xcNokeyKeyInput.addEventListener('input', () => {
       xcNokeySetKeyBtn.disabled = !xcNokeyKeyInput.value.trim();
@@ -757,9 +776,7 @@
         }
       }
     });
-    xcNokeyModal.addEventListener('click', (e) => {
-      if (e.target === xcNokeyModal) closeXcNokeyModal();
-    });
+    // Backdrop click handled by ModalManager (focus trap, Escape key, backdrop click)
 
     /** Update URL to reflect current XC ID (or clear it). */
     function updateUrlXcId(xcId) {

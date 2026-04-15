@@ -4,6 +4,7 @@
 
 import { escapeHtml, clamp } from './utils.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
+import ModalManager from './modal-manager.js';
 
 
 const _colorCtx = (() => {
@@ -363,17 +364,21 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     backdrop.appendChild(panel);
     host.appendChild(backdrop);
 
+    const modal = new ModalManager({ backdrop, dialog: panel });
+    modal.open();
+
     let activeIndex = -1;
     let resultItems = [];
     let selectedScientificName = '';
 
     const close = () => {
+        try { modal.close(); } catch (e) { /* ignore */ }
         if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+        try { modal.dispose(); } catch (e) { /* ignore */ }
     };
 
-    backdrop.addEventListener('pointerdown', (e) => {
-        if (e.target === backdrop) close();
-    });
+    // backdrop click and Escape are handled by ModalManager; keep input-level
+    // key handling below for Enter behavior.
 
     const submit = (value, opts = {}) => {
         const trimmed = String(value || '').trim();

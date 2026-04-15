@@ -24,6 +24,7 @@
  *     onResults:       (labels) => { ... },
  *   });
  */
+import ModalManager from '../../src/modal-manager.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
 const STORAGE_KEY = 'audio-workbench.birdnet-model-url.v2';
@@ -86,6 +87,7 @@ export class BirdNETPanel {
    */
   constructor(opts) {
     Object.assign(this, opts);
+    this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
     this._restoreModelUrl();
     this._bindEvents();
   }
@@ -95,7 +97,9 @@ export class BirdNETPanel {
     this.progressWrap.style.display = 'none';
     this.progressBar.style.width = '0%';
     this.analyzeBtn.disabled = false;
-    if (this.backdrop) {
+    if (this._modal) {
+      this._modal.open();
+    } else if (this.backdrop) {
       this.backdrop.classList.add('show');
       this.backdrop.setAttribute('aria-hidden', 'false');
     }
@@ -103,6 +107,10 @@ export class BirdNETPanel {
   }
 
   close() {
+    if (this._modal) {
+      this._modal.close();
+      return;
+    }
     if (!this.backdrop) return;
     this.backdrop.classList.remove('show');
     this.backdrop.setAttribute('aria-hidden', 'true');
@@ -120,12 +128,7 @@ export class BirdNETPanel {
   _bindEvents() {
     this.openBtn?.addEventListener('click', () => this.open());
     this.cancelBtn?.addEventListener('click', () => this.close());
-    this.backdrop?.addEventListener('click', (e) => {
-      if (e.target === this.backdrop) this.close();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.backdrop?.classList.contains('show')) this.close();
-    });
+    // Backdrop clicks and global Escape handler are managed by ModalManager when provided.
     this.confidenceInput.addEventListener('input', () => {
       this.confidenceVal.textContent = this.confidenceInput.value;
     });
@@ -201,5 +204,9 @@ export class BirdNETPanel {
     } finally {
       this.analyzeBtn.disabled = false;
     }
+  }
+
+  dispose() {
+    this._modal?.dispose();
   }
 }

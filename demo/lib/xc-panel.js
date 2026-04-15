@@ -5,6 +5,7 @@
  */
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoCantoRecordingsApi.js';
+import ModalManager from '../../src/modal-manager.js';
 
 const API_KEY_STORAGE = 'audio-workbench.xc-api-key.v1';
 const SET_META_STORAGE = 'audio-workbench.xc-set-meta.v1';
@@ -67,6 +68,8 @@ export class XenoCantoPanel {
     this.exportSetBtn = opts.exportSetBtn || null;
     this.statusEl = opts.statusEl || null;
 
+    this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
+
     /** @type {boolean} */
     this.useProxies = (typeof opts.useProxies === 'boolean')
       ? opts.useProxies
@@ -99,6 +102,11 @@ export class XenoCantoPanel {
   }
 
   open() {
+    if (this._modal) {
+      this.keyInput.value = this.apiKey || '';
+      this._modal.open();
+      return;
+    }
     if (!this.backdrop) return;
     this.keyInput.value = this.apiKey || '';
     this.backdrop.classList.add('show');
@@ -107,6 +115,10 @@ export class XenoCantoPanel {
   }
 
   close() {
+    if (this._modal) {
+      this._modal.close();
+      return;
+    }
     if (!this.backdrop) return;
     this.backdrop.classList.remove('show');
     this.backdrop.setAttribute('aria-hidden', 'true');
@@ -499,11 +511,10 @@ export class XenoCantoPanel {
         setTimeout(() => { this.saveBtn.textContent = orig; }, 1200);
       }
     });
-    this.backdrop?.addEventListener('click', (e) => {
-      if (e.target === this.backdrop) this.close();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.backdrop?.classList.contains('show')) this.close();
-    });
+    // Backdrop clicks and global Escape handler are managed by ModalManager when provided.
+  }
+
+  dispose() {
+    this._modal?.dispose();
   }
 }
