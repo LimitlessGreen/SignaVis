@@ -16,7 +16,8 @@ export function safeString(value) {
 }
 
 export function safeField(value) {
-    return (value === 0 || value === false) ? value : (value != null && value !== '' ? value : '');
+    if (value === 0 || value === false) return value;
+    return value ?? '';
 }
 
 export function firstNonEmpty(values) {
