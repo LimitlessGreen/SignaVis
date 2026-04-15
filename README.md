@@ -17,7 +17,7 @@
       <p>Interactive demo and a full labeling app (BirdNET detection &amp; annotation). Try them in your browser:</p>
       <p>
         <a href="https://limitlessgreen.github.io/Audio-Workbench/"><img src="https://img.shields.io/badge/Live%20Demo-%E2%96%B6%20Open-brightgreen?style=for-the-badge" alt="Live Demo"/></a>
-        <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1"><img src="https://img.shields.io/badge/Labeling%20App-%F0%9F%8F%B7%20Open-blue?style=for-the-badge" alt="Labeling App"/></a>
+        <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1"><img src="https://img.shields.io/badge/Labeling%20App-%E2%96%B6%20Open-blue?style=for-the-badge" alt="Labeling App"/></a>
       </p>
       <p>
         <a href="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml"><img src="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
