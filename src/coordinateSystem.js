@@ -5,6 +5,7 @@
 
 import { PERCH_FRAME_RATE, DEFAULT_SAMPLE_RATE, CQT_FMIN, CQT_BINS_PER_OCTAVE } from './constants.js';
 import { buildMelFrequencies, buildCQTFrequencies, hzToMel, melToHz } from './dsp.js';
+import { clamp } from './utils.js';
 
 /**
  * Compute the highest visible bin index for a given frequency ceiling.
@@ -16,7 +17,7 @@ import { buildMelFrequencies, buildCQTFrequencies, hzToMel, melToHz } from './ds
 export function computeMaxBin({ isLinear, nyquist, spectrogramMels, boundedMaxFreq, melFreqs }) {
     if (isLinear) {
         const binHz = nyquist / spectrogramMels;
-        return Math.max(1, Math.min(spectrogramMels - 1, Math.floor(boundedMaxFreq / binHz)));
+        return clamp(Math.floor(boundedMaxFreq / binHz), 1, spectrogramMels - 1);
     }
     let maxBin = spectrogramMels - 1;
     const freqs = /** @type {Float32Array} */ (melFreqs);
@@ -159,7 +160,7 @@ export class CoordinateSystem {
     pixelXToTime(pixelX) {
         if (this.canvasWidth <= 0 || this.duration <= 0) return 0;
         const t = (pixelX / this.canvasWidth) * this.duration;
-        return Math.max(0, Math.min(this.duration, t));
+        return clamp(t, 0, this.duration);
     }
 
     /** Seconds → scroll‐aware pixel X (accounts for pixelsPerSecond). */
@@ -182,10 +183,10 @@ export class CoordinateSystem {
      * @private
      */
     _freqToBinFractional(freq) {
-        const cf = Math.max(0, Math.min(this.boundedMaxFreq, freq));
+        const cf = clamp(freq, 0, this.boundedMaxFreq);
         if (this.isLinear) {
             const binHz = this.nyquist / this.spectrogramMels;
-            return Math.max(0, Math.min(this._maxBin, cf / binHz));
+            return clamp(cf / binHz, 0, this._maxBin);
         }
         const freqs = this.melFreqs;
         if (cf >= freqs[this._maxBin]) return this._maxBin;
@@ -222,7 +223,7 @@ export class CoordinateSystem {
         }
 
         // Full range
-        const clampedBin = Math.max(0, Math.min(this._maxBin, bin));
+        const clampedBin = clamp(bin, 0, this._maxBin);
         const h = this.spectrogramMels;
         const internalY = (h - 1) - (clampedBin / this._maxBin * (h - 1));
         return internalY / h * this.canvasHeight;
@@ -238,9 +239,9 @@ export class CoordinateSystem {
         }
 
         if (this._hasFreqView) {
-            const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+            const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
             const bin = this._viewMinBin + fraction * this._viewBinRange;
-            const clampedBin = Math.max(0, Math.min(this._maxBin, Math.round(bin)));
+            const clampedBin = clamp(Math.round(bin), 0, this._maxBin);
             if (this.isLinear) {
                 return clampedBin * (this.nyquist / this.spectrogramMels);
             }
@@ -250,7 +251,7 @@ export class CoordinateSystem {
         const h = this.spectrogramMels;
         const internalY = displayY / this.canvasHeight * h;
         const bin = Math.round(((h - 1) - internalY) / (h - 1) * this._maxBin);
-        const clampedBin = Math.max(0, Math.min(this._maxBin, bin));
+        const clampedBin = clamp(bin, 0, this._maxBin);
 
         if (this.isLinear) {
             const binHz = this.nyquist / this.spectrogramMels;
@@ -264,7 +265,7 @@ export class CoordinateSystem {
     /** @private Map frequency → pixel Y for an external image with known freqRange + freqScale. */
     _freqToPixelY_external(freq) {
         const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
-        const cf = Math.max(fMin, Math.min(fMax, freq));
+        const cf = clamp(freq, fMin, fMax);
         const scale = this.freqScale || 'linear';
         let fraction; // 0 = fMin (bottom) … 1 = fMax (top)
 
@@ -280,7 +281,7 @@ export class CoordinateSystem {
             fraction = (fMax > fMin) ? (cf - fMin) / (fMax - fMin) : 0;
         }
 
-        fraction = Math.max(0, Math.min(1, fraction));
+        fraction = clamp(fraction, 0, 1);
         // fraction=0 → bottom → canvasHeight, fraction=1 → top → 0
         return (1 - fraction) * this.canvasHeight;
     }
@@ -289,7 +290,7 @@ export class CoordinateSystem {
     _pixelYToFreq_external(displayY) {
         const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
         // pixel 0 = top = fMax, pixel canvasHeight = bottom = fMin
-        const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+        const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
         const scale = this.freqScale || 'linear';
 
         if (scale === 'log') {
@@ -337,7 +338,7 @@ export class CoordinateSystem {
     frequencyToBin(freq) {
         if (this.isLinear) {
             const binHz = this.nyquist / this.spectrogramMels;
-            return Math.max(0, Math.min(this.spectrogramMels - 1, Math.round(freq / binHz)));
+            return clamp(Math.round(freq / binHz), 0, this.spectrogramMels - 1);
         }
         const freqs = this.melFreqs;
         let best = 0, bestDist = Math.abs(freqs[0] - freq);
@@ -351,7 +352,7 @@ export class CoordinateSystem {
 
     /** Bin index → frequency (Hz). */
     binToFrequency(bin) {
-        const clamped = Math.max(0, Math.min(this.spectrogramMels - 1, bin));
+        const clamped = clamp(bin, 0, this.spectrogramMels - 1);
         if (this.isLinear) {
             return clamped * (this.nyquist / this.spectrogramMels);
         }
@@ -365,8 +366,7 @@ export class CoordinateSystem {
     /** Time (seconds) → spectrogram frame index. */
     timeToFrame(timeSec, nFrames) {
         const frameCenterSec = 2 * this.hopSize / this.sampleRate;
-        return Math.max(0, Math.min(nFrames - 1,
-            Math.round((timeSec - frameCenterSec) * this.frameRate)));
+        return clamp(Math.round((timeSec - frameCenterSec) * this.frameRate), 0, nFrames - 1);
     }
 
     /** Frame index → time (seconds). */
@@ -382,14 +382,14 @@ export class CoordinateSystem {
     /** Display pixel Y → bin index (clamped to maxBin). */
     pixelYToBin(displayY) {
         if (this._hasFreqView) {
-            const fraction = 1 - Math.max(0, Math.min(1, displayY / this.canvasHeight));
+            const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
             const bin = this._viewMinBin + fraction * this._viewBinRange;
-            return Math.max(0, Math.min(this._maxBin, Math.round(bin)));
+            return clamp(Math.round(bin), 0, this._maxBin);
         }
         const h = this.spectrogramMels;
         const internalY = displayY / this.canvasHeight * h;
         const bin = Math.round(((h - 1) - internalY) / (h - 1) * this._maxBin);
-        return Math.max(0, Math.min(this._maxBin, bin));
+        return clamp(bin, 0, this._maxBin);
     }
 
     // ═════════════════════════════════════════════════════════════════

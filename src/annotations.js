@@ -51,7 +51,7 @@ function _parseColorToRgb(color) {
 }
 
 function _rgbToHex({ r, g, b }) {
-    const toHex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+    const toHex = (n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
@@ -141,7 +141,7 @@ function _hslToHex(h, s, l) {
     const f = (n) => {
         const k = (n + h / 30) % 12;
         const color = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-        return Math.round(255 * Math.max(0, Math.min(1, color)));
+        return Math.round(255 * clamp(color, 0, 1));
     };
     return _rgbToHex({ r: f(0), g: f(8), b: f(4) });
 }
@@ -1270,7 +1270,7 @@ export class SpectrogramLabelLayer {
             const textEl = elements[i].querySelector('.spectrogram-label-text');
             if (!textEl) continue;
 
-            const textWidth = Math.min(Math.max(geo.width * 0.7, 100), 200);
+            const textWidth = clamp(geo.width * 0.7, 100, 200);
             let rect = {
                 left: geo.left,
                 top: geo.top,
@@ -1407,7 +1407,10 @@ export class SpectrogramLabelLayer {
             if (performance.now() < this._suppressClickUntil) return;
             event.stopPropagation();
             event.preventDefault();
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
+            // Emit labelfocus but explicitly request no automatic seek
+            // (seek is handled by playBandpassedSegment; we only want
+            // to highlight/pin without changing viewport).
+            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' });
             this.player?._state?._blockSeekClicks?.(260);
             this.player?.playBandpassedSegment?.(
                 label.start,
@@ -1437,7 +1440,6 @@ export class SpectrogramLabelLayer {
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
             event.preventDefault();
             event.stopPropagation();
-            this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'click' });
         });
         el.addEventListener('pointerenter', (event) => {
             this._lastPointerX = event.clientX;
@@ -2084,7 +2086,7 @@ export class SpectrogramLabelLayer {
         const state = this.player?._state;
         const selected = parseFloat(state?.d?.maxFreqSelect?.value || '10000');
         const nyquist = (state?.sampleRateHz || DEFAULT_SAMPLE_RATE) / 2;
-        return Math.max(1, Math.min(selected, nyquist));
+        return clamp(selected, 1, nyquist);
     }
 
     _normalize(label) {
@@ -2098,7 +2100,7 @@ export class SpectrogramLabelLayer {
         const maxFreq = this._getMaxFreq();
         const s = Math.max(0, Math.min(start, end));
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || Math.max(start, end, 0.001));
-        const e = Math.min(duration, Math.max(0, Math.max(start, end)));
+        const e = clamp(Math.max(start, end), 0, duration);
         const f0 = clamp(Math.min(freqMin, freqMax), 0, maxFreq);
         const f1 = clamp(Math.max(freqMin, freqMax), 0, maxFreq);
         const labelName = label?.label || '';

@@ -5,6 +5,8 @@
 // All functions are stateless and operate only on typed arrays.
 // ═══════════════════════════════════════════════════════════════════════
 
+import { clamp } from './utils.js';
+
 // ─── Mel Scale ──────────────────────────────────────────────────────
 
 export function hzToMel(hz) {
@@ -48,9 +50,9 @@ export function createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax) {
     const filterbank = [];
     for (let m = 1; m <= nMels; m++) {
         const filter = new Float32Array(nFftBins);
-        const left   = Math.max(0, Math.min(nFftBins - 1, binPoints[m - 1]));
-        const center = Math.max(0, Math.min(nFftBins - 1, binPoints[m]));
-        const right  = Math.max(0, Math.min(nFftBins - 1, binPoints[m + 1]));
+        const left   = clamp(binPoints[m - 1], 0, nFftBins - 1);
+        const center = clamp(binPoints[m], 0, nFftBins - 1);
+        const right  = clamp(binPoints[m + 1], 0, nFftBins - 1);
 
         for (let k = left; k < center; k++) {
             filter[k] = (k - left) / (center - left || 1);
@@ -702,8 +704,8 @@ export function computeReassignedSpectrogram(params) {
                 const correctedBin = k + dOmega * fftSize / (2 * Math.PI);
                 const correctedFrame = frameIdx + dtSamples / hopSize;
 
-                const cBin   = Math.max(0, Math.min(nBins - 1, Math.round(correctedBin)));
-                const cFrame = Math.max(0, Math.min(numFrames - 1, Math.round(correctedFrame)));
+                const cBin   = clamp(Math.round(correctedBin), 0, nBins - 1);
+                const cFrame = clamp(Math.round(correctedFrame), 0, numFrames - 1);
                 const idx = cFrame * nBins + cBin;
 
                 const value = colourScale === 'linear' || colourScale === 'meter'
@@ -724,8 +726,8 @@ export function computeReassignedSpectrogram(params) {
                 const correctedBin = k + dOmega * fftSize / (2 * Math.PI);
                 const correctedFrame = frameIdx + dtSamples / hopSize;
 
-                const cFrame = Math.max(0, Math.min(numFrames - 1, Math.round(correctedFrame)));
-                const cBinInt = Math.max(0, Math.min(nBins - 1, Math.round(correctedBin)));
+                const cFrame = clamp(Math.round(correctedFrame), 0, numFrames - 1);
+                const cBinInt = clamp(Math.round(correctedBin), 0, nBins - 1);
 
                 // Find which mel bin this corrected FFT bin lands in (weighted)
                 for (let m = 0; m < nMels; m++) {

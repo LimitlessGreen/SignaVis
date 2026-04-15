@@ -11,6 +11,7 @@
 
 import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
+import { clamp } from './utils.js';
 import { PlayerState } from './PlayerState.js';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName } from './annotations.js';
 import { UndoStack } from './undoStack.js';
@@ -964,14 +965,14 @@ export class BirdNETPlayer {
         const duration = Math.max(0.001, this.duration || this._state?.audioBuffer?.duration || 0.001);
         const nyquist = (this._state?.sampleRateHz || DEFAULT_SAMPLE_RATE) / 2;
         const selected = parseFloat(this._state?.d?.maxFreqSelect?.value || `${nyquist}`);
-        const maxFreq = Math.max(1, Math.min(selected, nyquist));
+        const maxFreq = clamp(selected, 1, nyquist);
 
-        const start = Math.max(0, Math.min(Number(label?.start ?? 0), duration));
-        const end = Math.max(start + 0.01, Math.min(duration, Number(label?.end ?? start + 0.01)));
+        const start = clamp(Number(label?.start ?? 0), 0, duration);
+        const end = clamp(Number(label?.end ?? start + 0.01), start + 0.01, duration);
         const freqMinRaw = Number(label?.freqMin ?? 0);
         const freqMaxRaw = Number(label?.freqMax ?? maxFreq);
-        const freqMin = Math.max(0, Math.min(freqMinRaw, maxFreq));
-        const freqMax = Math.max(freqMin + 1, Math.min(maxFreq, freqMaxRaw));
+        const freqMin = clamp(freqMinRaw, 0, maxFreq);
+        const freqMax = clamp(freqMaxRaw, freqMin + 1, maxFreq);
         const labelName = String(label?.label || label?.species || '').trim();
         const tax = labelName
             ? this._labelTaxonomy.find((t) => t.name.toLowerCase() === labelName.toLowerCase())

@@ -17,7 +17,7 @@ import {
     fftSizeFromOversampling,
 } from './constants.js';
 
-import { formatTime, formatSecondsShort, isTypingContext, escapeHtml, clampNumber } from './utils.js';
+import { clamp, formatTime, formatSecondsShort, isTypingContext, escapeHtml, clampNumber } from './utils.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
@@ -450,7 +450,7 @@ export class PlayerState {
         this._perf.uiFlushes += 1;
 
         const duration = Math.max(0, this.audioBuffer.duration || 0);
-        const t = Math.max(0, Math.min(pending.time || 0, duration || pending.time || 0));
+        const t = clamp(pending.time || 0, 0, duration || pending.time || 0);
         this._updateTimeReadout(t);
         this._updatePlayhead(t, pending.fromPlayback);
         if (pending.centerView) this._centerViewportAtTime(t);
@@ -887,8 +887,8 @@ export class PlayerState {
         if (!this.audioBuffer || !this.wavesurfer) return;
         this._clearPlaybackFilter();
         const dur = this.audioBuffer.duration;
-        const start = Math.max(0, Math.min(startSec, dur));
-        const end = Math.max(0, Math.min(endSec, dur));
+        const start = clamp(startSec, 0, dur);
+        const end = clamp(endSec, 0, dur);
         if (end - start < 0.01) return;
         const token = ++this._segmentPlayToken;
         this.playbackMode = 'segment';
@@ -941,15 +941,15 @@ export class PlayerState {
     playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options = {}) {
         if (!this.audioBuffer) return;
         const dur = this.audioBuffer.duration;
-        const start = Math.max(0, Math.min(startSec, dur));
-        const end = Math.max(0, Math.min(endSec, dur));
+        const start = clamp(startSec, 0, dur);
+        const end = clamp(endSec, 0, dur);
         if (end - start < 0.01) return;
         const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
         const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-        const fHi = Math.max(fLo + 5, Math.min(Math.max(freqMinHz, freqMaxHz), nyquist));
+        const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
         const center = Math.sqrt(fLo * fHi);
         const bandwidth = Math.max(10, fHi - fLo);
-        const q = Math.max(0.25, Math.min(40, center / bandwidth));
+        const q = clamp(center / bandwidth, 0.25, 40);
 
         this._stopCustomSegmentPlayback('stopped', start);
         this._clearPlaybackFilter();
@@ -1047,7 +1047,7 @@ export class PlayerState {
             this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
         };
         playback.source = nextSource;
-        playback.runStartSec = startAtSec == null ? playback.startSec : Math.max(playback.startSec, Math.min(startAtSec, playback.endSec - 0.001));
+        playback.runStartSec = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
         playback.startAtCtx = playback.ctx.currentTime + 0.005;
         nextSource.start(playback.startAtCtx, playback.runStartSec, playback.endSec - playback.runStartSec);
     }
@@ -1071,8 +1071,8 @@ export class PlayerState {
         const dur = this.audioBuffer?.duration || 0;
         if (dur <= 0) return;
 
-        const start = Math.max(0, Math.min(Number(label.start ?? 0), dur));
-        const end = Math.max(start + 0.01, Math.min(Number(label.end ?? start + 0.01), dur));
+        const start = clamp(Number(label.start ?? 0), 0, dur);
+        const end = clamp(Number(label.end ?? start + 0.01), start + 0.01, dur);
         this._activeSegmentStart = start;
         this._activeSegmentEnd = end;
 
@@ -1104,16 +1104,16 @@ export class PlayerState {
         if (hasFreq) {
             const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
             const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-            const fHi = Math.max(fLo + 5, Math.min(Math.max(freqMinHz, freqMaxHz), nyquist));
+            const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
             const center = Math.sqrt(fLo * fHi);
             const bandwidth = Math.max(10, fHi - fLo);
-            const q = Math.max(0.25, Math.min(40, center / bandwidth));
+            const q = clamp(center / bandwidth, 0.25, 40);
             playback.bandpass.frequency.value = center;
             playback.bandpass.Q.value = q;
             this._activeSegmentFilter = { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi };
         }
 
-        const desiredStart = Math.max(start, Math.min(playback.currentTimeSec || start, end - 0.001));
+        const desiredStart = clamp(playback.currentTimeSec || start, start, end - 0.001);
         this._restartCustomSegmentSource(playback, desiredStart);
     }
 
@@ -1184,7 +1184,7 @@ export class PlayerState {
         if (this._customSegmentPlayback && options.allowCustomPlayback !== true) {
             this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
         }
-        const t = Math.max(0, Math.min(timeSec, this.audioBuffer.duration));
+        const t = clamp(timeSec, 0, this.audioBuffer.duration);
         if (this.wavesurfer) this.wavesurfer.setTime(t);
         this._scheduleUiUpdate({
             time: t,
@@ -1222,7 +1222,7 @@ export class PlayerState {
         const slider = this.d.canvasWrapper;
         if (!slider) return;
         const duration = this.audioBuffer?.duration || 0;
-        const now = Math.max(0, Math.min(currentTimeSec || 0, duration || currentTimeSec || 0));
+        const now = clamp(currentTimeSec || 0, 0, duration || currentTimeSec || 0);
         slider.setAttribute('aria-valuemin', '0');
         slider.setAttribute('aria-valuemax', String(duration.toFixed(3)));
         slider.setAttribute('aria-valuenow', String(now.toFixed(3)));
@@ -1605,10 +1605,8 @@ export class PlayerState {
         const range = this.spectrogramAbsLogMax - this.spectrogramAbsLogMin;
         if (range < 1e-8) return;
 
-        const floorPct = Math.max(0, Math.min(100,
-            ((stats.logMin - this.spectrogramAbsLogMin) / range) * 100));
-        const ceilPct  = Math.max(0, Math.min(100,
-            ((stats.logMax - this.spectrogramAbsLogMin) / range) * 100));
+        const floorPct = clamp(((stats.logMin - this.spectrogramAbsLogMin) / range) * 100, 0, 100);
+        const ceilPct  = clamp(((stats.logMax - this.spectrogramAbsLogMin) / range) * 100, 0, 100);
 
         this.d.floorSlider.value = Math.round(floorPct);
         this.d.ceilSlider.value  = Math.round(ceilPct);
@@ -1711,7 +1709,7 @@ export class PlayerState {
     // ── Volume ──────────────────────────────────────────────────────
 
     _setVolume(val) {
-        this.volume = Math.max(0, Math.min(1, val));
+        this.volume = clamp(val, 0, 1);
         if (this.wavesurfer) this.wavesurfer.setVolume(this.volume);
         if (this._customSegmentPlayback?.gain) {
             this._customSegmentPlayback.gain.gain.value = this.muted ? 0 : this.volume;
@@ -1882,7 +1880,7 @@ export class PlayerState {
 
         const peak = Math.max(1e-6, this.amplitudePeakAbs || 1);
         const clampedH = this._getEffectiveWaveformHeight();
-        const timelineH = this._showWaveformTimeline ? Math.max(18, Math.min(32, Math.round(clampedH * 0.22))) : 0;
+        const timelineH = this._showWaveformTimeline ? clamp(Math.round(clampedH * 0.22), 18, 32) : 0;
         const ampH = Math.max(32, clampedH - timelineH);
 
         const fmt = (v) => {
@@ -1937,7 +1935,7 @@ export class PlayerState {
         const vw = this._getViewportWidth();
         const tw = this.audioBuffer ? Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration))) : 0;
         const maxScroll = Math.max(0, tw - vw);
-        const bounded = Math.max(0, Math.min(nextLeft, maxScroll));
+        const bounded = clamp(nextLeft, 0, maxScroll);
 
         const primary = this._getPrimaryScrollWrapper();
         const secondary = this._getSecondaryScrollWrapper();
@@ -1955,7 +1953,7 @@ export class PlayerState {
         const vw = this._getViewportWidth();
         const duration = this.audioBuffer?.duration || 0;
 
-        const clamped = Math.max(minPps, Math.min(maxPps, nextPps));
+        const clamped = clamp(nextPps, minPps, maxPps);
         const changed = Math.abs(clamped - this.pixelsPerSecond) >= 0.01;
 
         const fallbackTime = this.coords.scrollXToTime(this._getPrimaryScrollLeft() + vw / 2);
@@ -1966,7 +1964,7 @@ export class PlayerState {
         const estWidth = duration ? Math.max(1, Math.floor(duration * effectivePps)) : 0;
         const maxScroll = Math.max(0, estWidth - vw);
         const nextScroll = duration ? aTime * effectivePps - aPixel : 0;
-        const bounded = Math.max(0, Math.min(maxScroll, nextScroll));
+        const bounded = clamp(nextScroll, 0, maxScroll);
 
         if (changed) {
             this.pixelsPerSecond = effectivePps;
@@ -2000,7 +1998,7 @@ export class PlayerState {
         if (!this.audioBuffer) return;
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         const rect = wrapper.getBoundingClientRect();
-        const localX = Math.max(0, Math.min(rect.width, centerClientX - rect.left));
+        const localX = clamp(centerClientX - rect.left, 0, rect.width);
         const anchorTime = this.coords.scrollXToTime(wrapper.scrollLeft + localX);
         this._setPixelsPerSecond(this.pixelsPerSecond * scale, true, anchorTime, localX);
     }
@@ -2010,7 +2008,7 @@ export class PlayerState {
         const vw = this._getViewportWidth();
         const viewDur = this.coords.scrollXToTime(vw);
         let start = timeSec - viewDur / 2;
-        start = Math.max(0, Math.min(start, Math.max(0, this.audioBuffer.duration - viewDur)));
+        start = clamp(start, 0, Math.max(0, this.audioBuffer.duration - viewDur));
         this._setLinkedScrollLeft(this.coords.timeToScrollX(start));
     }
 
@@ -2020,7 +2018,7 @@ export class PlayerState {
         const scrollX = clientX - rect.left + wrapper.scrollLeft;
         const dur = this.audioBuffer?.duration || 0;
         const t = this.coords.scrollXToTime(scrollX);
-        return Math.max(0, Math.min(t, dur));
+        return clamp(t, 0, dur);
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -2132,14 +2130,14 @@ export class PlayerState {
             const right = fixedEnd;
             const minStart = Math.max(0, right - maxSpanNorm);
             const maxStart = Math.max(minStart, right - minSpanNorm);
-            this.windowStartNorm = Math.max(minStart, Math.min(maxStart, nextStart));
+            this.windowStartNorm = clamp(nextStart, minStart, maxStart);
             this.windowEndNorm = right;
         } else if (sub === 'right') {
             const nextEnd = fixedEnd + deltaNorm;
             const left = fixedStart;
             const minEnd = Math.min(1, left + minSpanNorm);
             const maxEnd = Math.min(1, left + maxSpanNorm);
-            this.windowEndNorm = Math.max(minEnd, Math.min(maxEnd, nextEnd));
+            this.windowEndNorm = clamp(nextEnd, minEnd, maxEnd);
             this.windowStartNorm = left;
         }
 
@@ -2295,7 +2293,7 @@ export class PlayerState {
         const boundedMax = this.coords.boundedMaxFreq;
         const currentMin = this._freqViewMin ?? 0;
         const currentMax = this._freqViewMax ?? boundedMax;
-        const anchor = Math.max(currentMin, Math.min(currentMax, anchorFreq));
+        const anchor = clamp(anchorFreq, currentMin, currentMax);
 
         // Scale distances from anchor
         let newMin = anchor - (anchor - currentMin) / factor;
@@ -2423,7 +2421,7 @@ export class PlayerState {
         const fraction = (this._freqViewMax - this._freqViewMin) / boundedMax;
         // Inverse of exponential mapping: fraction = 1 - val/100*0.95
         const val = (1 - fraction) / 0.95 * 100;
-        slider.value = String(Math.round(Math.max(0, Math.min(100, val))));
+        slider.value = String(clamp(Math.round(val), 0, 100));
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -2521,7 +2519,7 @@ export class PlayerState {
         if (sub === 'split') {
             const total = ctx.resizeStartWaveformH + ctx.resizeStartSpectrogramH;
             let nextWav = ctx.resizeStartWaveformH + dy;
-            nextWav = Math.max(MIN_WAVEFORM_HEIGHT, Math.min(total - MIN_SPECTROGRAM_DISPLAY_HEIGHT, nextWav));
+            nextWav = clamp(nextWav, MIN_WAVEFORM_HEIGHT, total - MIN_SPECTROGRAM_DISPLAY_HEIGHT);
             this.waveformDisplayHeight = nextWav;
             this.spectrogramDisplayHeight = total - nextWav;
             redrawWav = true;
@@ -3351,7 +3349,7 @@ export class PlayerState {
         const vw = this._getViewportWidth();
         const tw = Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration)));
         const maxScroll = Math.max(0, tw - vw);
-        const target = Math.max(0, Math.min(maxScroll, targetScrollLeft));
+        const target = clamp(targetScrollLeft, 0, maxScroll);
         const start = this._getPrimaryScrollLeft();
         const delta = target - start;
         if (Math.abs(delta) < 1) return;
@@ -3374,7 +3372,7 @@ export class PlayerState {
         const tick = (ts) => {
             const anim = this._followCatchupAnim;
             if (!anim) return;
-            const t = Math.max(0, Math.min(1, (ts - anim.startedAt) / Math.max(1, anim.duration)));
+            const t = clamp((ts - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
             const eased = easeOutCubic(t);
             const next = anim.start + (anim.target - anim.start) * eased;
             this._setLinkedScrollLeft(next);
@@ -3391,7 +3389,7 @@ export class PlayerState {
         const vw = Math.max(1, viewportWidth || this._getViewportWidth());
         const totalWidth = this.audioBuffer ? Math.max(1, Math.floor(this.coords.timeToScrollX(this.audioBuffer.duration))) : 0;
         const maxScroll = Math.max(0, totalWidth - vw);
-        const target = Math.max(0, Math.min(maxScroll, position - vw * this._playbackViewportConfig.followTargetRatio));
+        const target = clamp(position - vw * this._playbackViewportConfig.followTargetRatio, 0, maxScroll);
         const current = this._getPrimaryScrollLeft();
         const delta = target - current;
         if (Math.abs(delta) < 0.6) return;
@@ -3823,7 +3821,7 @@ export class PlayerState {
             if (!this._showOverview) return;
             if (!this.audioBuffer) return;
             const rect = this.d.overviewCanvas.getBoundingClientRect();
-            const xNorm = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const xNorm = clamp((e.clientX - rect.left) / rect.width, 0, 1);
             this._seekToTime(xNorm * this.audioBuffer.duration, true);
         });
 
@@ -3855,7 +3853,7 @@ export class PlayerState {
             const offPinch = rec.on('pinch', ({ scale, centerX }) => {
                 if (!this.audioBuffer) return;
                 // Clamp very noisy scale deltas from touch sensors
-                const clampedScale = Math.max(0.85, Math.min(1.15, scale));
+                const clampedScale = clamp(scale, 0.85, 1.15);
                 this._zoomByScale(clampedScale, centerX, source);
             });
             const offDoubleTap = rec.on('doubletap', () => {

@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 // AudioEngine.js — WaveSurfer wrapper, transport & segment playback
 //
-// Extracted from PlayerState.js as part of Phase 1 refactoring.
 // Handles all audio playback, WaveSurfer lifecycle, and AudioContext-based
 // bandpass-filtered segment playback.
 //
@@ -16,6 +15,8 @@
 //   'segmentloop'     — { start, end, filter }
 //   'error'           — { message }
 // ═══════════════════════════════════════════════════════════════════════
+
+import { clamp } from './utils.js';
 
 /**
  * @typedef {Object} SegmentFilter
@@ -214,7 +215,7 @@ export class AudioEngine extends EventTarget {
     if (this._customSegmentPlayback && options.allowCustomPlayback !== true) {
       this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
     }
-    const t = Math.max(0, Math.min(timeSec, this.audioBuffer.duration));
+    const t = clamp(timeSec, 0, this.audioBuffer.duration);
     if (this.wavesurfer) this.wavesurfer.setTime(t);
     this._onUiUpdate(t, false, { centerView, emitSeek: true, immediate: true });
   }
@@ -248,8 +249,8 @@ export class AudioEngine extends EventTarget {
     if (!this.audioBuffer || !this.wavesurfer) return;
     this._clearPlaybackFilter();
     const dur = this.audioBuffer.duration;
-    const start = Math.max(0, Math.min(startSec, dur));
-    const end = Math.max(0, Math.min(endSec, dur));
+    const start = clamp(startSec, 0, dur);
+    const end = clamp(endSec, 0, dur);
     if (end - start < 0.01) return;
     const token = ++this._segmentPlayToken;
     this.playbackMode = 'segment';
@@ -311,15 +312,15 @@ export class AudioEngine extends EventTarget {
   playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options = {}) {
     if (!this.audioBuffer) return;
     const dur = this.audioBuffer.duration;
-    const start = Math.max(0, Math.min(startSec, dur));
-    const end = Math.max(0, Math.min(endSec, dur));
+    const start = clamp(startSec, 0, dur);
+    const end = clamp(endSec, 0, dur);
     if (end - start < 0.01) return;
     const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
     const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-    const fHi = Math.max(fLo + 5, Math.min(Math.max(freqMinHz, freqMaxHz), nyquist));
+    const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
     const center = Math.sqrt(fLo * fHi);
     const bandwidth = Math.max(10, fHi - fLo);
-    const q = Math.max(0.25, Math.min(40, center / bandwidth));
+    const q = clamp(center / bandwidth, 0.25, 40);
 
     this._stopCustomSegmentPlayback('stopped', start);
     this._clearPlaybackFilter();
@@ -414,7 +415,7 @@ export class AudioEngine extends EventTarget {
    * @param {number} val - 0 bis 1
    */
   setVolume(val) {
-    this.volume = Math.max(0, Math.min(1, val));
+    this.volume = clamp(val, 0, 1);
     if (this.wavesurfer) this.wavesurfer.setVolume(this.volume);
     if (this._customSegmentPlayback?.gain) {
       this._customSegmentPlayback.gain.gain.value = this.muted ? 0 : this.volume;
@@ -455,8 +456,8 @@ export class AudioEngine extends EventTarget {
     const dur = this.audioBuffer?.duration || 0;
     if (dur <= 0) return;
 
-    const start = Math.max(0, Math.min(Number(label.start ?? 0), dur));
-    const end = Math.max(start + 0.01, Math.min(Number(label.end ?? start + 0.01), dur));
+    const start = clamp(Number(label.start ?? 0), 0, dur);
+    const end = clamp(Number(label.end ?? start + 0.01), start + 0.01, dur);
     this._activeSegmentStart = start;
     this._activeSegmentEnd = end;
 
@@ -622,7 +623,7 @@ export class AudioEngine extends EventTarget {
       this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
     };
     playback.source = nextSource;
-    playback.runStartSec = startAtSec == null ? playback.startSec : Math.max(playback.startSec, Math.min(startAtSec, playback.endSec - 0.001));
+    playback.runStartSec = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
     playback.startAtCtx = playback.ctx.currentTime + 0.005;
     nextSource.start(playback.startAtCtx, playback.runStartSec, playback.endSec - playback.runStartSec);
   }
@@ -654,16 +655,16 @@ export class AudioEngine extends EventTarget {
       const fMin = Number(freqMinHz);
       const fMax = Number(freqMaxHz);
       const fLo = Math.max(20, Math.min(fMin, fMax, nyquist - 5));
-      const fHi = Math.max(fLo + 5, Math.min(Math.max(fMin, fMax), nyquist));
+      const fHi = clamp(Math.max(fMin, fMax), fLo + 5, nyquist);
       const center = Math.sqrt(fLo * fHi);
       const bandwidth = Math.max(10, fHi - fLo);
-      const q = Math.max(0.25, Math.min(40, center / bandwidth));
+      const q = clamp(center / bandwidth, 0.25, 40);
       playback.bandpass.frequency.value = center;
       playback.bandpass.Q.value = q;
       this._activeSegmentFilter = { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi };
     }
 
-    const desiredStart = Math.max(start, Math.min(playback.currentTimeSec || start, end - 0.001));
+    const desiredStart = clamp(playback.currentTimeSec || start, start, end - 0.001);
     this._restartCustomSegmentSource(playback, desiredStart);
   }
 
@@ -783,7 +784,7 @@ export class AudioEngine extends EventTarget {
     let offset = 44;
     for (let i = 0; i < buffer.length; i++) {
       for (let ch = 0; ch < numChannels; ch++) {
-        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+        const sample = clamp(channels[ch][i], -1, 1);
         const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
         view.setInt16(offset, intSample, true);
         offset += 2;

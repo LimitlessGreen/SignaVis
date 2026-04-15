@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { MAX_BASE_SPECTROGRAM_WIDTH } from './constants.js';
-import { getTimeGridSteps } from './utils.js';
+import { clamp, getTimeGridSteps } from './utils.js';
 import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.js';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.js';
 
@@ -152,7 +152,7 @@ function sampleColorMap(stops, t) {
     if (!stops || stops.length === 0) return { r: 0, g: 0, b: 0 };
     if (stops.length === 1) return { r: stops[0][0], g: stops[0][1], b: stops[0][2] };
 
-    const pos = Math.max(0, Math.min(1, t)) * (stops.length - 1);
+    const pos = clamp(t, 0, 1) * (stops.length - 1);
     const idx = Math.floor(pos);
     const frac = pos - idx;
     const a = stops[idx];
@@ -165,7 +165,7 @@ function sampleColorMap(stops, t) {
 }
 
 function getSpectrogramColor(value, colorScheme) {
-    const x = Math.max(0, Math.min(1, value));
+    const x = clamp(value, 0, 1);
     if (colorScheme === 'grayscale') {
         const v = Math.round((1 - x) * 255);
         return { r: v, g: v, b: v };
@@ -178,8 +178,8 @@ function getSpectrogramColor(value, colorScheme) {
     }
     if (colorScheme === 'fire') {
         const r = Math.round(255 * Math.pow(x, 0.7));
-        const g = Math.round(255 * Math.max(0, Math.min(1, (x - 0.15) / 0.85)));
-        const b = Math.round(255 * Math.max(0, Math.min(1, (x - 0.45) / 0.55)));
+        const g = Math.round(255 * clamp((x - 0.15) / 0.85, 0, 1));
+        const b = Math.round(255 * clamp((x - 0.45) / 0.55, 0, 1));
         return { r, g, b };
     }
     return sampleColorMap(COLOR_MAPS[colorScheme] || COLOR_MAPS.inferno, x);
@@ -562,7 +562,7 @@ export function buildSpectrogramGrayscale({
 }) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
-    const width  = Math.max(1, Math.min(spectrogramFrames, MAX_BASE_SPECTROGRAM_WIDTH));
+    const width  = clamp(spectrogramFrames, 1, MAX_BASE_SPECTROGRAM_WIDTH);
     const height = spectrogramMels;
     const framesPerPixel = spectrogramFrames / width;
     const isLinear = scale === 'linear';
@@ -584,7 +584,7 @@ export function buildSpectrogramGrayscale({
     const yBinFrac = new Float32Array(height);
     for (let y = 0; y < height; y++) {
         const fracBin = (height - 1 - y) / (height - 1) * maxBin;
-        const lo = Math.max(0, Math.min(maxBin, Math.floor(fracBin)));
+        const lo = clamp(Math.floor(fracBin), 0, maxBin);
         const hi = Math.min(maxBin, lo + 1);
         yBinLo[y]   = lo;
         yBinHi[y]   = hi;
@@ -630,14 +630,14 @@ export function buildSpectrogramGrayscale({
                 pixel = (value + Math.PI) / (2 * Math.PI);
             } else if (colourScale === 'meter') {
                 const normalized = (value - spectrogramAbsLogMin) / dataRange;
-                const raw = Math.max(0, Math.min(1, normalized));
+                const raw = clamp(normalized, 0, 1);
                 const db = raw <= 0 ? -80 : 20 * Math.log10(raw);
                 pixel = iecDbToFader(Math.max(-70, db)) / IEC_MAX;
             } else {
                 pixel = (value - spectrogramAbsLogMin) / dataRange;
             }
 
-            gray[y * width + x] = Math.max(0, Math.min(1, pixel));
+            gray[y * width + x] = clamp(pixel, 0, 1);
         }
     }
 
@@ -745,18 +745,18 @@ export function applyCLAHE(gray, width, height, nTilesX = 8, nTilesY = 4, clipLi
     for (let y = 0; y < height; y++) {
         // Tile center coordinate
         const tyF = (y + 0.5) / tileH - 0.5;
-        const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(tyF)));
+        const ty0 = clamp(Math.floor(tyF), 0, tilesY - 1);
         const ty1 = Math.min(tilesY - 1, ty0 + 1);
         const fy = tyF - ty0;
 
         for (let x = 0; x < width; x++) {
             const txF = (x + 0.5) / tileW - 0.5;
-            const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(txF)));
+            const tx0 = clamp(Math.floor(txF), 0, tilesX - 1);
             const tx1 = Math.min(tilesX - 1, tx0 + 1);
             const fx = txF - tx0;
 
             const val = gray[y * width + x];
-            const bin = Math.min(nBins - 1, Math.max(0, Math.floor(val * (nBins - 1))));
+            const bin = clamp(Math.floor(val * (nBins - 1)), 0, nBins - 1);
 
             // Bilinear interpolation of 4 surrounding tile CDFs
             const c00 = cdfs[ty0 * tilesX + tx0][bin];
@@ -765,7 +765,7 @@ export function applyCLAHE(gray, width, height, nTilesX = 8, nTilesY = 4, clipLi
             const c11 = cdfs[ty1 * tilesX + tx1][bin];
             const top = c00 + (c10 - c00) * fx;
             const bot = c01 + (c11 - c01) * fx;
-            gray[y * width + x] = Math.max(0, Math.min(1, top + (bot - top) * fy));
+            gray[y * width + x] = clamp(top + (bot - top) * fy, 0, 1);
         }
     }
 }
@@ -783,7 +783,7 @@ export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     const view = new DataView(lut.buffer);
     for (let i = 0; i < 256; i++) {
         const raw = i / 255;
-        const remapped = Math.max(0, Math.min(1, (raw - floor01) / range));
+        const remapped = clamp((raw - floor01) / range, 0, 1);
         const c = getSpectrogramColor(remapped, colorScheme);
         view.setUint32(i * 4, (255 << 24) | (c.b << 16) | (c.g << 8) | c.r, true);
     }
@@ -799,7 +799,7 @@ export function colorizeSpectrogram(grayInfo, floor01, ceil01, colorScheme) {
     const len = width * height;
     for (let i = 0; i < len; i++) {
         // Float32 gray [0,1] → LUT index [0,255]
-        const idx = Math.min(255, Math.max(0, Math.round(gray[i] * 255)));
+        const idx = clamp(Math.round(gray[i] * 255), 0, 255);
         pixels[i] = lut[idx];
     }
 
