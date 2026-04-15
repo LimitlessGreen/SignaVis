@@ -33,6 +33,11 @@ tmp/
 _site/
 types/generated/
 
+# CI debug artifacts (API responses, logs accidentally committed)
+.github/*.json
+.github/*.txt
+.github/*.zip
+
 # Downloaded sample audio (notebooks)
 python-wrapper/sample_audio.*
 python-wrapper/XC*.wav
