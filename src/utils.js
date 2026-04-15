@@ -101,6 +101,47 @@ export function colorWithAlpha(color, alpha = 1) {
     return c;
 }
 
+/**
+ * Parse the native sample rate from an audio file header (WAV, FLAC, OGG Vorbis/Opus).
+ * Returns 0 if the format is unrecognised or the buffer is too short.
+ * @param {ArrayBuffer} buf
+ * @returns {number}
+ */
+export function parseNativeSampleRate(buf) {
+    if (buf.byteLength < 44) return 0;
+    const view = new DataView(buf);
+
+    // ── WAV: "RIFF" … "WAVE", sample rate at byte 24 (LE uint32) ──
+    if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
+        return view.getUint32(24, true);
+    }
+
+    // ── FLAC: "fLaC", STREAMINFO sample rate = 20 bits at byte 18 ──
+    if (view.getUint32(0) === 0x664C6143) {
+        return (view.getUint8(18) << 12) | (view.getUint8(19) << 4) | (view.getUint8(20) >> 4);
+    }
+
+    // ── OGG: "OggS", then Vorbis or Opus inside first page ──
+    if (view.getUint32(0) === 0x4F676753 && buf.byteLength >= 64) {
+        const nSegments = view.getUint8(26);
+        const dataOffset = 27 + nSegments;
+        if (buf.byteLength >= dataOffset + 16) {
+            const b0 = view.getUint8(dataOffset);
+            // Vorbis identification header: type 0x01, then "vorbis"
+            if (b0 === 0x01 && view.getUint32(dataOffset + 1) === 0x766F7262 /* "vorb" */) {
+                return view.getUint32(dataOffset + 12, true);
+            }
+            // OpusHead: "OpusHead", sample rate at byte 12 of header
+            if (view.getUint32(dataOffset) === 0x4F707573 /* "Opus" */ &&
+                view.getUint32(dataOffset + 4) === 0x48656164 /* "Head" */) {
+                return view.getUint32(dataOffset + 12, true);
+            }
+        }
+    }
+
+    return 0;
+}
+
 export function escapeHtml(value) {
     return String(value ?? '')
         .split('&').join('&amp;')

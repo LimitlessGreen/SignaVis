@@ -16,7 +16,7 @@
 //   'error'           — { message }
 // ═══════════════════════════════════════════════════════════════════════
 
-import { clamp } from './utils.js';
+import { clamp, parseNativeSampleRate } from './utils.js';
 
 /**
  * @typedef {Object} SegmentFilter
@@ -43,37 +43,19 @@ import { clamp } from './utils.js';
 
 /**
  * Decode an ArrayBuffer into an AudioBuffer, preserving the file's native
- * sample rate when possible (instead of resampling to AudioContext default).
+ * sample rate by pre-parsing the header before creating the AudioContext.
  * @param {ArrayBuffer} arrayBuffer
  * @returns {Promise<AudioBuffer>}
  */
 async function decodeArrayBuffer(arrayBuffer) {
   const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-  if (!Ctor) throw new Error('No AudioContext available');
-  const tempCtx = new Ctor();
+  if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
+  const nativeSr = parseNativeSampleRate(arrayBuffer);
+  const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
   try {
-    const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer.slice(0));
-    // Preserve native sample rate
-    if (audioBuffer.sampleRate !== tempCtx.sampleRate) {
-      const offlineCtx = new OfflineAudioContext(
-        audioBuffer.numberOfChannels,
-        audioBuffer.length,
-        audioBuffer.sampleRate,
-      );
-      const source = offlineCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(offlineCtx.destination);
-      source.start();
-      const renderedBuffer = await offlineCtx.startRendering();
-      tempCtx.close();
-      return renderedBuffer;
-    }
-    const result = audioBuffer;
-    tempCtx.close();
-    return result;
-  } catch {
-    tempCtx.close();
-    throw new Error('Failed to decode audio data');
+    return await ctx.decodeAudioData(arrayBuffer);
+  } finally {
+    ctx.close?.().catch(() => {});
   }
 }
 
@@ -85,16 +67,20 @@ export class AudioEngine extends EventTarget {
   /**
    * @param {Function} WaveSurferCtor - WaveSurfer constructor (loaded at runtime)
    * @param {Object} [options]
+   * @param {HTMLElement} [options.container] - Container element for WaveSurfer
    * @param {Function} [options.onUiUpdate] - Callback for UI updates: (time, fromPlayback, options) => void
    * @param {Function} [options.onTransportStateChange] - Callback: (state, reason) => void
    * @param {Function} [options.onPlayPauseBtnUpdate] - Callback: (hasPlayingClass) => void
+   * @param {Function} [options.onReady] - Callback fired when WaveSurfer 'ready' fires
    */
   constructor(WaveSurferCtor, options = {}) {
     super();
     this._WaveSurferCtor = WaveSurferCtor;
+    this._container = options.container || null;
     this._onUiUpdate = options.onUiUpdate || (() => {});
     this._onTransportStateChange = options.onTransportStateChange || (() => {});
     this._onPlayPauseBtnUpdate = options.onPlayPauseBtnUpdate || (() => {});
+    this._onReady = options.onReady || null;
 
     // ── State ──────────────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */
@@ -168,6 +154,19 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
+   * Lädt Audio aus einem File-Objekt (WaveSurfer lädt das File direkt per loadBlob)
+   * @param {File} file
+   * @returns {Promise<{duration: number, sampleRate: number}>}
+   */
+  async loadFromFile(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    this.audioBuffer = audioBuffer;
+    this._setupWaveSurfer(file, file.name);
+    return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
+  }
+
+  /**
    * Spielt ab / pausiert
    */
   playPause() {
@@ -175,12 +174,7 @@ export class AudioEngine extends EventTarget {
       this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
       return;
     }
-    this.playbackMode = 'normal';
-    this._activeSegmentLabelId = null;
-    this._activeSegmentFilter = null;
-    this._activeSegmentStart = null;
-    this._activeSegmentEnd = null;
-    this._segmentPlayToken++;
+    this._clearActiveSegment();
     if (this.wavesurfer && this.audioBuffer) this.wavesurfer.playPause();
   }
 
@@ -192,12 +186,7 @@ export class AudioEngine extends EventTarget {
       this._stopCustomSegmentPlayback('stopped', 0);
     }
     if (!this.wavesurfer) return;
-    this.playbackMode = 'normal';
-    this._activeSegmentLabelId = null;
-    this._activeSegmentFilter = null;
-    this._activeSegmentStart = null;
-    this._activeSegmentEnd = null;
-    this._segmentPlayToken++;
+    this._clearActiveSegment();
     this.wavesurfer.pause();
     this.seekToTime(0);
     this._onTransportStateChange('stopped', 'stop-control');
@@ -252,7 +241,8 @@ export class AudioEngine extends EventTarget {
     const start = clamp(startSec, 0, dur);
     const end = clamp(endSec, 0, dur);
     if (end - start < 0.01) return;
-    const token = ++this._segmentPlayToken;
+    this._clearActiveSegment();
+    const token = this._segmentPlayToken;
     this.playbackMode = 'segment';
     this._activeSegmentLabelId = options?.labelId || null;
     this._activeSegmentFilter = null;
@@ -474,6 +464,21 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
+   * Beendet ein normales (nicht-Bandpass) Segment, setzt Segment-State zurück und pausiert.
+   * Wird von PlayerState aufgerufen, wenn während normaler WaveSurfer-Wiedergabe das
+   * Segment-Ende erreicht wird.
+   * @param {number} targetTimeSec
+   */
+  endNormalSegment(targetTimeSec) {
+    this._clearActiveSegment();
+    this._suppressNextPauseHandler = true;
+    if (this.wavesurfer) {
+      this.wavesurfer.pause();
+      this.seekToTime(targetTimeSec, false);
+    }
+  }
+
+  /**
    * Zerstört Engine und gibt Ressourcen frei
    */
   destroy() {
@@ -490,7 +495,7 @@ export class AudioEngine extends EventTarget {
   // ── WaveSurfer Setup ─────────────────────────────────────────────────
 
   /**
-   * @param {string|null} source - URL or null for blob
+   * @param {string|File|Blob|null} source - URL string, File/Blob, or null
    * @param {string} [name] - display name
    */
   _setupWaveSurfer(source, name) {
@@ -499,7 +504,7 @@ export class AudioEngine extends EventTarget {
     // Support WaveSurfer builds that expose a static `create()` or are constructible.
     const WaveSurferCtor = /** @type {any} */ (this._WaveSurferCtor);
     const wsOptions = {
-      container: null, // Will be set by PlayerState
+      container: this._container,
       height: 1,
       waveColor: '#38bdf8',
       progressColor: '#0ea5e9',
@@ -514,24 +519,11 @@ export class AudioEngine extends EventTarget {
       : new WaveSurferCtor(wsOptions);
 
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects
-    if (source) {
+    if (typeof source === 'string') {
       ws.load(source);
-    } else if (this.audioBuffer) {
-      // Create blob from audioBuffer for WaveSurfer
-      const offlineCtx = new OfflineAudioContext(
-        this.audioBuffer.numberOfChannels,
-        this.audioBuffer.length,
-        this.audioBuffer.sampleRate,
-      );
-      const sourceNode = offlineCtx.createBufferSource();
-      sourceNode.buffer = this.audioBuffer;
-      sourceNode.connect(offlineCtx.destination);
-      sourceNode.start();
-      offlineCtx.startRendering().then((renderedBuffer) => {
-        const wav = this._audioBufferToWav(renderedBuffer);
-        const blob = new Blob([wav], { type: 'audio/wav' });
-        ws.loadBlob(blob);
-      });
+    } else if (source instanceof Blob) {
+      // File extends Blob — works for both File and raw Blob
+      ws.loadBlob(source);
     }
 
     ws.on('ready', () => {
@@ -539,9 +531,12 @@ export class AudioEngine extends EventTarget {
       ws.setVolume(this.volume);
       this.seekToTime(0, true);
       this._lastTimeupdateEmitAt = 0;
+      this._onReady?.();
     });
 
     ws.on('timeupdate', (t) => {
+      // Drive the UI on every frame during normal WaveSurfer playback
+      this._onUiUpdate(t, true);
       const now = performance.now();
       if (now - this._lastTimeupdateEmitAt >= 66) {
         this._lastTimeupdateEmitAt = now;
@@ -579,12 +574,7 @@ export class AudioEngine extends EventTarget {
 
     ws.on('finish', () => {
       if (this.playbackMode === 'segment') {
-        this.playbackMode = 'normal';
-        this._activeSegmentLabelId = null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = null;
-        this._activeSegmentEnd = null;
-        this._segmentPlayToken++;
+        this._clearActiveSegment();
       }
       if (this.loopPlayback) {
         this.seekToTime(0, this.loopPlayback);
@@ -707,12 +697,7 @@ export class AudioEngine extends EventTarget {
     try { active.ctx.close(); } catch { /**/ }
 
     this._customSegmentPlayback = null;
-    this._activeSegmentLabelId = null;
-    this._activeSegmentFilter = null;
-    this._activeSegmentStart = null;
-    this._activeSegmentEnd = null;
-    this.playbackMode = 'normal';
-    this._segmentPlayToken++;
+    this._clearActiveSegment();
 
     if (Number.isFinite(targetTimeSec)) {
       this._onUiUpdate(targetTimeSec, false, { immediate: true });
@@ -732,6 +717,19 @@ export class AudioEngine extends EventTarget {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Reset all active-segment state to idle.
+   * Call this from every path that ends or cancels segment playback.
+   */
+  _clearActiveSegment() {
+    this._activeSegmentLabelId = null;
+    this._activeSegmentFilter = null;
+    this._activeSegmentStart = null;
+    this._activeSegmentEnd = null;
+    this.playbackMode = 'normal';
+    this._segmentPlayToken++;
+  }
 
   /**
    * @param {string} eventName

@@ -18,6 +18,7 @@ import {
 } from './constants.js';
 
 import { clamp, formatTime, formatSecondsShort, isTypingContext, escapeHtml, clampNumber } from './utils.js';
+import { AudioEngine } from './AudioEngine.js';
 import { GestureRecognizer } from './gestures.js';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transportState.js';
 import { InteractionState } from './interactionState.js';
@@ -71,70 +72,6 @@ import {
  * @property {boolean} [enableProgressiveSpectrogram]
  */
 
-// ─── Helper ─────────────────────────────────────────────────────────
-
-/**
- * Parse the native sample rate from an audio file header (WAV, FLAC, OGG Vorbis/Opus).
- * Returns 0 if the format is unrecognised.
- * @param {ArrayBuffer} buf
- * @returns {number}
- */
-function parseNativeSampleRate(buf) {
-    if (buf.byteLength < 44) return 0;
-    const view = new DataView(buf);
-
-    // ── WAV: "RIFF" … "WAVE", sample rate at byte 24 (LE uint32) ──
-    if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
-        return view.getUint32(24, true);
-    }
-
-    // ── FLAC: "fLaC", STREAMINFO sample rate = 20 bits at byte 18 ──
-    if (view.getUint32(0) === 0x664C6143) {
-        return (view.getUint8(18) << 12) | (view.getUint8(19) << 4) | (view.getUint8(20) >> 4);
-    }
-
-    // ── OGG: "OggS", then Vorbis or Opus inside first page ──
-    if (view.getUint32(0) === 0x4F676753 && buf.byteLength >= 64) {
-        const nSegments = view.getUint8(26);
-        const dataOffset = 27 + nSegments;
-        if (buf.byteLength >= dataOffset + 16) {
-            const b0 = view.getUint8(dataOffset);
-            // Vorbis identification header: type 0x01, then "vorbis"
-            if (b0 === 0x01 && view.getUint32(dataOffset + 1) === 0x766F7262 /* "vorb" */) {
-                return view.getUint32(dataOffset + 12, true);
-            }
-            // OpusHead: "OpusHead", sample rate at byte 12 of header
-            if (view.getUint32(dataOffset) === 0x4F707573 /* "Opus" */ &&
-                view.getUint32(dataOffset + 4) === 0x48656164 /* "Head" */) {
-                return view.getUint32(dataOffset + 12, true);
-            }
-        }
-    }
-
-    return 0;
-}
-
-/**
- * Decode an ArrayBuffer into an AudioBuffer, preserving the file's native
- * sample rate when possible (instead of resampling to AudioContext default).
- * @param {ArrayBuffer} arrayBuffer
- * @returns {Promise<AudioBuffer>}
- */
-async function decodeArrayBuffer(arrayBuffer) {
-    const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-    if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
-
-    const nativeSr = parseNativeSampleRate(arrayBuffer);
-    /** @type {AudioContextOptions | undefined} */
-    const opts = nativeSr > 0 ? { sampleRate: nativeSr } : undefined;
-    const ctx = new Ctor(opts);
-    try {
-        return await ctx.decodeAudioData(arrayBuffer);
-    } finally {
-        ctx.close?.().catch(() => {});
-    }
-}
-
 // ═════════════════════════════════════════════════════════════════════
 
 export class PlayerState {
@@ -153,6 +90,31 @@ export class PlayerState {
         this._populatePresetDropdown();
         this._applyFavouritePresetControls();
         this.WaveSurfer = WaveSurfer;
+
+        // ── AudioEngine: owns WaveSurfer, decoding, segment playback, volume state ──
+        this._engine = new AudioEngine(WaveSurfer, {
+            container: this.d.audioEngineHost,
+            onUiUpdate: (t, fromPlayback, opts) => this._scheduleUiUpdate({ time: t, fromPlayback, ...opts }),
+            onTransportStateChange: (state, reason) => this._setTransportState(state, reason),
+            onPlayPauseBtnUpdate: (playing) => {
+                if (playing) this.d.playPauseBtn.classList.add('playing');
+                else this.d.playPauseBtn.classList.remove('playing');
+            },
+            onReady: () => {
+                this._lastSelectionEmitAt = 0;
+                this._lastSelectionStart = NaN;
+                this._lastSelectionEnd = NaN;
+            },
+        });
+
+        // Map AudioEngine EventTarget events to host events
+        this._engine.addEventListener('timeupdate', (e) => {
+            this._perf.timeupdateEvents += 1;
+            this._emit('timeupdate', e.detail);
+        });
+        this._engine.addEventListener('segmentstart', (e) => this._emit('segmentplaystart', e.detail));
+        this._engine.addEventListener('segmentend', (e) => this._emit('segmentplayend', e.detail));
+        this._engine.addEventListener('segmentloop', (e) => this._emit('segmentloop', e.detail));
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
         this.options = options || {};
         this._viewMode = this.options.viewMode === 'waveform' || this.options.viewMode === 'spectrogram'
@@ -176,8 +138,7 @@ export class PlayerState {
         this.colorizer = new GpuColorizer();
 
         // ── Audio / analysis state ──
-        this.audioBuffer = null;
-        this.wavesurfer = null;
+        // audioBuffer and wavesurfer are owned by this._engine (accessed via getters)
         this.spectrogramData = null;
         this.spectrogramFrames = 0;
         this.spectrogramMels = 0;
@@ -191,9 +152,7 @@ export class PlayerState {
         this._externalImageConfig = null; // { freqRange, freqScale } for external images
         this.amplitudePeakAbs = 1;
         this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
-        this.volume = 0.8;
-        this.muted = false;
-        this.preMuteVolume = 0.8;
+        // volume, muted, preMuteVolume — owned by this._engine (accessed via getters)
 
         // ── Zoom / viewport ──
         this.pixelsPerSecond = DEFAULT_ZOOM_PPS;
@@ -211,18 +170,10 @@ export class PlayerState {
         // ── Playback toggles ──
         this.followMode = 'follow'; // 'free' | 'follow' | 'smooth'
         this.followPlayback = true;
-        this.loopPlayback = false;
-        this.playbackMode = 'normal'; // 'normal' | 'segment'
+        // loopPlayback, playbackMode, _activeSegment*, _suppressNextPauseHandler,
+        // _segmentPlayToken, _customSegmentPlayback, _lastTimeupdateEmitAt — owned by this._engine
         this.transportState = '';
-        this._activeSegmentLabelId = null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = null;
-        this._activeSegmentEnd = null;
-        this._suppressNextPauseHandler = false;
-        this._segmentPlayToken = 0;
-        this._customSegmentPlayback = null;
         this._smoothSeekFocusUntil = 0;
-        this._lastTimeupdateEmitAt = 0;
         this._lastSelectionEmitAt = 0;
         this._lastSelectionStart = NaN;
         this._lastSelectionEnd = NaN;
@@ -296,6 +247,31 @@ export class PlayerState {
         if (!this._emitHostEvent) return;
         this._emitHostEvent(event, detail);
     }
+
+    // ─── AudioEngine pass-through getters/setters ────────────────────
+    // AudioEngine is the source of truth for all audio state.
+    // These getters keep the rest of PlayerState working without renaming.
+
+    get audioBuffer()               { return this._engine.audioBuffer; }
+    get wavesurfer()                { return this._engine.wavesurfer; }
+    get volume()                    { return this._engine.volume; }
+    get muted()                     { return this._engine.muted; }
+    get preMuteVolume()             { return this._engine.preMuteVolume; }
+    get playbackMode()              { return this._engine.playbackMode; }
+    get loopPlayback()              { return this._engine.loopPlayback; }
+    get _activeSegmentLabelId()     { return this._engine._activeSegmentLabelId; }
+    get _activeSegmentFilter()      { return this._engine._activeSegmentFilter; }
+    get _activeSegmentStart()       { return this._engine._activeSegmentStart; }
+    get _activeSegmentEnd()         { return this._engine._activeSegmentEnd; }
+    get _customSegmentPlayback()    { return this._engine._customSegmentPlayback; }
+    get _suppressNextPauseHandler() { return this._engine._suppressNextPauseHandler; }
+    get _segmentPlayToken()         { return this._engine._segmentPlayToken; }
+    get _lastTimeupdateEmitAt()     { return this._engine._lastTimeupdateEmitAt; }
+
+    set muted(v)                     { this._engine.muted = v; }
+    set loopPlayback(v)              { this._engine.loopPlayback = v; }
+    set _suppressNextPauseHandler(v) { this._engine._suppressNextPauseHandler = v; }
+    set _lastTimeupdateEmitAt(v)     { this._engine._lastTimeupdateEmitAt = v; }
 
     _sanitizePlaybackViewportConfig(partial = {}) {
         const cfg = this._playbackViewportConfig || {};
@@ -667,17 +643,15 @@ export class PlayerState {
         this._setTransportState('loading', 'file-load');
 
         try {
-            const fileBuffer = await file.arrayBuffer();
-            const audioBuffer = await decodeArrayBuffer(fileBuffer);
-            this.audioBuffer = audioBuffer;
-            this.sampleRateHz = audioBuffer.sampleRate;
-            this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
+            const { duration, sampleRate } = await this._engine.loadFromFile(file);
+            this.sampleRateHz = sampleRate;
+            this.amplitudePeakAbs = computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
             this._updateMaxFreqOptions();
 
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
-            this.d.sampleRateInfo.textContent = `${audioBuffer.sampleRate} Hz`;
-            this.d.totalTimeDisplay.textContent = formatTime(audioBuffer.duration);
+            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span> <span>${formatTime(duration)}</span>`;
+            this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
+            this.d.totalTimeDisplay.textContent = formatTime(duration);
             this.d.currentTimeDisplay.textContent = formatTime(0);
 
             this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
@@ -686,7 +660,6 @@ export class PlayerState {
             this._setTransportState('ready', 'file-loaded');
             this.d.fileInfo.classList.remove('loading');
 
-            this._setupWaveSurfer(file);
             await this._generateSpectrogram({ autoAdjust: true });
             this._drawMainWaveform();
             this._drawOverviewWaveform();
@@ -711,23 +684,18 @@ export class PlayerState {
         this._setTransportState('loading', 'url-load');
 
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const arrayBuffer = await response.arrayBuffer();
-
-            const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-            this.audioBuffer = audioBuffer;
-            this.sampleRateHz = audioBuffer.sampleRate;
-            this.amplitudePeakAbs = computeAmplitudePeak(audioBuffer.getChannelData(0));
+            const { duration, sampleRate } = await this._engine.loadFromUrl(url);
+            this.sampleRateHz = sampleRate;
+            this.amplitudePeakAbs = computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0));
             this._updateAmplitudeLabels();
             this._updateMaxFreqOptions();
 
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(name)}</span> <span>${formatTime(audioBuffer.duration)}</span>`;
-            this.d.sampleRateInfo.textContent = `${audioBuffer.sampleRate} Hz`;
-            this.d.totalTimeDisplay.textContent = formatTime(audioBuffer.duration);
+            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(name)}</span> <span>${formatTime(duration)}</span>`;
+            this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
+            this.d.totalTimeDisplay.textContent = formatTime(duration);
             this.d.currentTimeDisplay.textContent = formatTime(0);
 
             this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
@@ -736,9 +704,6 @@ export class PlayerState {
             this._setTransportState('ready', 'url-loaded');
             this.d.fileInfo.classList.remove('loading');
 
-            // Pass the original URL to WaveSurfer (data: URLs work in
-            // sandboxed iframes where blob: URLs fail).
-            this._setupWaveSurfer(url);
             await this._generateSpectrogram({ autoAdjust: true });
             this._drawMainWaveform();
             this._drawOverviewWaveform();
@@ -753,427 +718,31 @@ export class PlayerState {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    //  WaveSurfer Engine
-    // ═════════════════════════════════════════════════════════════════
-
-    _setupWaveSurfer(source) {
-        if (this.wavesurfer) this.wavesurfer.destroy();
-
-        const ws = this.WaveSurfer.create({
-            container: this.d.audioEngineHost,
-            height: 1,
-            waveColor: '#38bdf8',
-            progressColor: '#0ea5e9',
-            cursorColor: '#ef4444',
-            normalize: true,
-            minPxPerSec: this.pixelsPerSecond,
-            autoScroll: false,
-            autoCenter: false,
-        });
-
-        // Accept both URL strings (data:, http:, blob:) and File/Blob objects
-        if (typeof source === 'string') {
-            ws.load(source);
-        } else {
-            ws.loadBlob(source);
-        }
-
-        ws.on('ready', () => {
-            ws.zoom(this.pixelsPerSecond);
-            ws.setVolume(this.volume);
-            this._seekToTime(0, true);
-            this._lastTimeupdateEmitAt = 0;
-            this._lastSelectionEmitAt = 0;
-            this._lastSelectionStart = NaN;
-            this._lastSelectionEnd = NaN;
-        });
-
-        ws.on('timeupdate', (t) => {
-            this._perf.timeupdateEvents += 1;
-            this._scheduleUiUpdate({ time: t, fromPlayback: true });
-            const now = performance.now();
-            if (now - this._lastTimeupdateEmitAt >= 66) {
-                this._lastTimeupdateEmitAt = now;
-                this._emit('timeupdate', {
-                    currentTime: t,
-                    duration: this.audioBuffer?.duration || 0,
-                });
-            }
-        });
-
-        ws.on('play', () => {
-            this.d.playPauseBtn.classList.add('playing');
-            if (this.playbackMode === 'segment') {
-                this._setTransportState('playing_segment', 'engine-play');
-                return;
-            }
-            this._setTransportState(this.loopPlayback ? 'playing_loop' : 'playing', 'engine-play');
-        });
-
-        ws.on('pause', () => {
-            if (this._suppressNextPauseHandler) {
-                this._suppressNextPauseHandler = false;
-                return;
-            }
-            this.d.playPauseBtn.classList.remove('playing');
-            if (this.playbackMode === 'segment' && this._activeSegmentEnd != null) {
-                this._setTransportState('paused_segment', 'engine-pause');
-            } else if (this.audioBuffer) {
-                const atEnd = ws.getCurrentTime() >= this.audioBuffer.duration - 0.01;
-                this._setTransportState(atEnd ? 'stopped' : 'paused', 'engine-pause');
-            } else {
-                this._setTransportState('paused', 'engine-pause');
-            }
-        });
-
-        ws.on('finish', () => {
-            if (this.playbackMode === 'segment') {
-                this.playbackMode = 'normal';
-                this._activeSegmentLabelId = null;
-                this._activeSegmentFilter = null;
-                this._activeSegmentStart = null;
-                this._activeSegmentEnd = null;
-                this._segmentPlayToken++;
-            }
-            if (this.loopPlayback) {
-                this._seekToTime(0, this.followPlayback);
-                ws.play();
-                return;
-            }
-            this.d.playPauseBtn.classList.remove('playing');
-            this._setTransportState('stopped', 'engine-finish');
-            if (this.audioBuffer) this._scheduleUiUpdate({ time: this.audioBuffer.duration, fromPlayback: false, immediate: true });
-        });
-
-        this.wavesurfer = ws;
-    }
-
-    // ═════════════════════════════════════════════════════════════════
     //  Transport Controls
     // ═════════════════════════════════════════════════════════════════
 
-    _togglePlayPause() {
-        if (this._customSegmentPlayback) {
-            this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
-            return;
-        }
-        this.playbackMode = 'normal';
-        this._activeSegmentLabelId = null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = null;
-        this._activeSegmentEnd = null;
-        this._segmentPlayToken++;
-        if (this.wavesurfer && this.audioBuffer) this.wavesurfer.playPause();
-    }
+    _togglePlayPause() { this._engine.playPause(); }
 
-    _stopPlayback() {
-        if (this._customSegmentPlayback) {
-            this._stopCustomSegmentPlayback('stopped', 0);
-        }
-        if (!this.wavesurfer) return;
-        this.playbackMode = 'normal';
-        this._activeSegmentLabelId = null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = null;
-        this._activeSegmentEnd = null;
-        this._segmentPlayToken++;
-        this.wavesurfer.pause();
-        this._seekToTime(0, true);
-        this._setTransportState('stopped', 'stop-control');
-        this.d.playPauseBtn.classList.remove('playing');
-    }
+    _stopPlayback() { this._engine.stop(); }
 
     playSegment(startSec, endSec, options = {}) {
-        if (!this.audioBuffer || !this.wavesurfer) return;
-        this._clearPlaybackFilter();
-        const dur = this.audioBuffer.duration;
-        const start = clamp(startSec, 0, dur);
-        const end = clamp(endSec, 0, dur);
-        if (end - start < 0.01) return;
-        const token = ++this._segmentPlayToken;
-        this.playbackMode = 'segment';
-        this._activeSegmentLabelId = options?.labelId || null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = start;
-        this._activeSegmentEnd = end;
-        if (this.wavesurfer.isPlaying()) {
-            this._suppressNextPauseHandler = true;
-            this.wavesurfer.pause();
-        }
-        this._seekToTime(start, false);
-        if (token !== this._segmentPlayToken) return;
-
-        const runPlay = () => {
-            if (token !== this._segmentPlayToken) return;
-            try {
-                if (this.loopPlayback) {
-                    this._seekToTime(start, false, { allowCustomPlayback: true });
-                    this.wavesurfer.play();
-                    this._emit('segmentplaystart', { start, end, loop: true });
-                    return;
-                }
-                // Prefer native segment playback if available in this WaveSurfer build.
-                const maybePromise = this.wavesurfer.play(start, end);
-                this._emit('segmentplaystart', { start, end });
-                if (maybePromise && typeof maybePromise.then === 'function') {
-                    maybePromise.catch(() => {
-                        if (token !== this._segmentPlayToken) return;
-                        this._seekToTime(start, false);
-                        this.wavesurfer?.play();
-                    });
-                }
-            } catch {
-                if (token !== this._segmentPlayToken) return;
-                this._seekToTime(start, false);
-                this.wavesurfer?.play();
-                this._emit('segmentplaystart', { start, end });
-            }
-        };
-
-        try {
-            // One frame delay prevents play/pause races after click+drag interactions.
-            window.requestAnimationFrame(runPlay);
-        } catch {
-            runPlay();
-        }
+        this._engine.playSegment(startSec, endSec, options);
     }
 
     playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options = {}) {
-        if (!this.audioBuffer) return;
-        const dur = this.audioBuffer.duration;
-        const start = clamp(startSec, 0, dur);
-        const end = clamp(endSec, 0, dur);
-        if (end - start < 0.01) return;
-        const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
-        const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-        const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
-        const center = Math.sqrt(fLo * fHi);
-        const bandwidth = Math.max(10, fHi - fLo);
-        const q = clamp(center / bandwidth, 0.25, 40);
-
-        this._stopCustomSegmentPlayback('stopped', start);
-        this._clearPlaybackFilter();
-
-        if (this.wavesurfer?.isPlaying()) {
-            this._suppressNextPauseHandler = true;
-            this.wavesurfer.pause();
-        }
-        this._seekToTime(start, false, { allowCustomPlayback: true });
-
-        const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-        if (!Ctor) {
-            this.playSegment(start, end, { labelId: options?.labelId });
-            return;
-        }
-
-        const token = ++this._segmentPlayToken;
-        this.playbackMode = 'segment';
-        this._activeSegmentLabelId = options?.labelId || null;
-        this._activeSegmentStart = start;
-        this._activeSegmentEnd = end;
-        this._activeSegmentFilter = {
-            type: 'bandpass',
-            freqMinHz: fLo,
-            freqMaxHz: fHi,
-        };
-
-        const ctx = new Ctor();
-        const bandpass = ctx.createBiquadFilter();
-        bandpass.type = 'bandpass';
-        bandpass.frequency.value = center;
-        bandpass.Q.value = q;
-
-        const gain = ctx.createGain();
-        gain.gain.value = this.muted ? 0 : this.volume;
-
-        bandpass.connect(gain);
-        gain.connect(ctx.destination);
-
-        const playback = {
-            token,
-            ctx,
-            /** @type {AudioBufferSourceNode | null} */
-            source: null,
-            bandpass,
-            gain,
-            startSec: start,
-            endSec: end,
-            startAtCtx: 0,
-            runStartSec: start,
-            sourceGeneration: 0,
-            rafId: 0,
-            currentTimeSec: start,
-        };
-        this._customSegmentPlayback = playback;
-        this._startCustomSegmentSource(playback);
-        this._setTransportState('playing_segment', 'bandpass-segment-start');
-        this._emit('segmentplaystart', { start, end, filter: { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi } });
-
-        const onFrame = () => {
-            if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== token) return;
-            const elapsed = Math.max(0, ctx.currentTime - playback.startAtCtx);
-            const t = Math.min(playback.endSec, playback.runStartSec + elapsed);
-            playback.currentTimeSec = t;
-            this._scheduleUiUpdate({ time: t, fromPlayback: true });
-            if (t >= playback.endSec - 0.002) {
-                if (this.loopPlayback) {
-                    this._loopCustomSegmentPlayback(playback);
-                    playback.rafId = requestAnimationFrame(onFrame);
-                    return;
-                }
-                this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
-                return;
-            }
-            playback.rafId = requestAnimationFrame(onFrame);
-        };
-
-        playback.rafId = requestAnimationFrame(onFrame);
-    }
-
-    _startCustomSegmentSource(playback, source = null, startAtSec = null) {
-        if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
-        playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
-        const generation = playback.sourceGeneration;
-        const nextSource = source || playback.ctx.createBufferSource();
-        nextSource.buffer = this.audioBuffer;
-        nextSource.connect(playback.bandpass);
-        nextSource.onended = () => {
-            if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
-            if (playback.sourceGeneration !== generation) return;
-            if (this.loopPlayback) {
-                this._loopCustomSegmentPlayback(playback);
-                return;
-            }
-            this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
-        };
-        playback.source = nextSource;
-        playback.runStartSec = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
-        playback.startAtCtx = playback.ctx.currentTime + 0.005;
-        nextSource.start(playback.startAtCtx, playback.runStartSec, playback.endSec - playback.runStartSec);
-    }
-
-    _loopCustomSegmentPlayback(playback) {
-        if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
-        playback.currentTimeSec = playback.startSec;
-        this._scheduleUiUpdate({
-            time: playback.startSec,
-            fromPlayback: false,
-            immediate: true,
-        });
-        this._emit('segmentloop', { start: playback.startSec, end: playback.endSec, filter: 'bandpass' });
-        this._startCustomSegmentSource(playback);
+        this._engine.playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options);
     }
 
     updateActiveSegmentFromLabel(label) {
-        if (!label || this.playbackMode !== 'segment') return;
-        const labelId = label.id || null;
-        if (this._activeSegmentLabelId && labelId && this._activeSegmentLabelId !== labelId) return;
-        const dur = this.audioBuffer?.duration || 0;
-        if (dur <= 0) return;
-
-        const start = clamp(Number(label.start ?? 0), 0, dur);
-        const end = clamp(Number(label.end ?? start + 0.01), start + 0.01, dur);
-        this._activeSegmentStart = start;
-        this._activeSegmentEnd = end;
-
-        if (this._customSegmentPlayback) {
-            this._retargetCustomSegmentPlayback({
-                start,
-                end,
-                freqMinHz: Number(label.freqMin),
-                freqMaxHz: Number(label.freqMax),
-            });
-            return;
-        }
-
-        const now = this._getCurrentTime();
-        if (now < start || now > end) {
-            this._seekToTime(start, false, { allowCustomPlayback: true });
-            if (this.loopPlayback && !this.wavesurfer?.isPlaying()) this.wavesurfer?.play();
-        }
+        this._engine.updateActiveSegmentFromLabel(label);
     }
 
-    _retargetCustomSegmentPlayback({ start, end, freqMinHz, freqMaxHz }) {
-        const playback = this._customSegmentPlayback;
-        if (!playback || !this.audioBuffer) return;
-
-        playback.startSec = start;
-        playback.endSec = end;
-
-        const hasFreq = Number.isFinite(freqMinHz) && Number.isFinite(freqMaxHz);
-        if (hasFreq) {
-            const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
-            const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
-            const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
-            const center = Math.sqrt(fLo * fHi);
-            const bandwidth = Math.max(10, fHi - fLo);
-            const q = clamp(center / bandwidth, 0.25, 40);
-            playback.bandpass.frequency.value = center;
-            playback.bandpass.Q.value = q;
-            this._activeSegmentFilter = { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi };
-        }
-
-        const desiredStart = clamp(playback.currentTimeSec || start, start, end - 0.001);
-        this._restartCustomSegmentSource(playback, desiredStart);
-    }
-
-    _restartCustomSegmentSource(playback, atSec) {
-        if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
-        playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
-        if (playback.source) {
-            playback.source.onended = null;
-            try { playback.source.stop(); } catch {}
-            try { playback.source.disconnect(); } catch {}
-            playback.source = null;
-        }
-        playback.currentTimeSec = atSec;
-        this._scheduleUiUpdate({ time: atSec, fromPlayback: false, immediate: true });
-        this._startCustomSegmentSource(playback, null, atSec);
-    }
-
-    /**
-     * @param {string} [reason]
-     * @param {number | null} [targetTimeSec]
-     * @param {Object} [options]
-     */
-    _stopCustomSegmentPlayback(reason = 'stopped', targetTimeSec = null, options = {}) {
-        const active = this._customSegmentPlayback;
-        if (!active) return;
-
-        if (active.rafId) cancelAnimationFrame(active.rafId);
-        active.rafId = 0;
-        if (active.source) {
-            active.source.onended = null;
-            try { active.source.stop(); } catch {}
-            try { active.source.disconnect(); } catch {}
-        }
-        try { active.bandpass?.disconnect(); } catch {}
-        try { active.gain.disconnect(); } catch {}
-        try { active.ctx.close(); } catch {}
-
-        this._customSegmentPlayback = null;
-        this._activeSegmentLabelId = null;
-        this._activeSegmentFilter = null;
-        this._activeSegmentStart = null;
-        this._activeSegmentEnd = null;
-        this.playbackMode = 'normal';
-        this._segmentPlayToken++;
-
-        if (Number.isFinite(targetTimeSec)) {
-            this._scheduleUiUpdate({ time: targetTimeSec, fromPlayback: false, immediate: true });
-        }
-        this.d.playPauseBtn.classList.remove('playing');
-        this._setTransportState(reason === 'paused' ? 'paused_segment' : 'stopped', 'bandpass-segment-stop');
-        if (options.emitEnd) {
-            this._emit('segmentplayend', { end: targetTimeSec ?? 0 });
-        }
+    _stopCustomSegmentPlayback(reason = 'stopped', targetTimeSec = null) {
+        this._engine.stopSegmentPlayback(reason, targetTimeSec);
     }
 
     _clearPlaybackFilter() {
-        if (!this.wavesurfer) return;
-        if (typeof this.wavesurfer.setFilter === 'function') {
-            try { this.wavesurfer.setFilter(null); } catch {}
-        }
+        this._engine._clearPlaybackFilter();
     }
 
     _seekToTime(timeSec, centerView = false, options = {}) {
@@ -1181,18 +750,8 @@ export class PlayerState {
         if (options.userInitiated) {
             this._smoothSeekFocusUntil = performance.now() + this._playbackViewportConfig.smoothSeekFocusMs;
         }
-        if (this._customSegmentPlayback && options.allowCustomPlayback !== true) {
-            this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
-        }
-        const t = clamp(timeSec, 0, this.audioBuffer.duration);
-        if (this.wavesurfer) this.wavesurfer.setTime(t);
-        this._scheduleUiUpdate({
-            time: t,
-            fromPlayback: false,
-            centerView,
-            emitSeek: true,
-            immediate: true,
-        });
+        // Delegate to engine — handles custom segment stop, clamp, wavesurfer.setTime, onUiUpdate
+        this._engine.seekToTime(timeSec, centerView, options);
     }
 
     _seekByDelta(deltaSec) {
@@ -1204,10 +763,7 @@ export class PlayerState {
         this._seekByDelta(deltaSec);
     }
 
-    _getCurrentTime() {
-        if (this._customSegmentPlayback) return this._customSegmentPlayback.currentTimeSec;
-        return this.wavesurfer ? this.wavesurfer.getCurrentTime() : 0;
-    }
+    _getCurrentTime() { return this._engine.getCurrentTime(); }
 
     _updateTimeReadout(t) {
         const nextText = formatTime(t);
@@ -1266,15 +822,7 @@ export class PlayerState {
                 this._emit('segmentloop', { start, end, filter: 'none' });
                 return;
             }
-            this._activeSegmentStart = null;
-            this._activeSegmentLabelId = null;
-            this._activeSegmentFilter = null;
-            this._activeSegmentEnd = null;
-            this.playbackMode = 'normal';
-            this._segmentPlayToken++;
-            this._suppressNextPauseHandler = true;
-            this.wavesurfer?.pause();
-            this._seekToTime(end, false);
+            this._engine.endNormalSegment(end);
             this.d.playPauseBtn.classList.remove('playing');
             this._setTransportState('stopped', 'segment-end');
             this._emit('segmentplayend', { end });
@@ -1709,26 +1257,16 @@ export class PlayerState {
     // ── Volume ──────────────────────────────────────────────────────
 
     _setVolume(val) {
-        this.volume = clamp(val, 0, 1);
-        if (this.wavesurfer) this.wavesurfer.setVolume(this.volume);
-        if (this._customSegmentPlayback?.gain) {
-            this._customSegmentPlayback.gain.gain.value = this.muted ? 0 : this.volume;
-        }
+        this._engine.setVolume(val);
         this._updateVolumeIcon();
     }
 
     _toggleMute() {
-        if (this.muted) {
-            this.muted = false;
-            this._setVolume(this.preMuteVolume);
-            this.d.volumeSlider.value = Math.round(this.preMuteVolume * 100);
-        } else {
-            this.preMuteVolume = this.volume;
-            this.muted = true;
-            if (this.wavesurfer) this.wavesurfer.setVolume(0);
-            if (this._customSegmentPlayback?.gain) this._customSegmentPlayback.gain.gain.value = 0;
-            this._updateVolumeIcon();
+        this._engine.toggleMute();
+        if (!this.muted) {
+            this.d.volumeSlider.value = Math.round(this.volume * 100);
         }
+        this._updateVolumeIcon();
     }
 
     _updateVolumeIcon() {

@@ -13,6 +13,26 @@ function getCssVar(name, fallback = '') {
     }
 }
 
+// ─── Theme Observer (private helper) ────────────────────────────────
+
+function installThemeObserver(canvas, redrawFn) {
+    if (canvas.dataset.awThemeObserverInstalled) return;
+    canvas.dataset.awThemeObserverInstalled = '1';
+    const mo = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            if (m.attributeName === 'data-theme') { redrawFn(); break; }
+        }
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    try {
+        const mm = window.matchMedia?.('(prefers-color-scheme: light)');
+        if (mm?.addEventListener) mm.addEventListener('change', redrawFn);
+        else if (mm?.addListener) mm.addListener(redrawFn);
+    } catch {}
+    canvas._aw_themeObserver = mo;
+    canvas._aw_themeRedraw = redrawFn;
+}
+
 // ─── Waveform Timeline (private helper) ─────────────────────────────
 
 function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }) {
@@ -131,35 +151,10 @@ export function renderMainWaveform({
         });
     }
 
-    // Install a MutationObserver to redraw when theme changes (data-theme attr)
-    try {
-        if (!amplitudeCanvas.dataset.awThemeObserverInstalled) {
-            amplitudeCanvas.dataset.awThemeObserverInstalled = '1';
-            const redraw = () => {
-                const s = amplitudeCanvas._aw_lastRender;
-                if (s) {
-                    requestAnimationFrame(() => {
-                        try { renderMainWaveform(s); } catch (e) { /* ignore */ }
-                    });
-                }
-            };
-            const mo = new MutationObserver((mutations) => {
-                for (const m of mutations) {
-                    if (m.attributeName === 'data-theme') { redraw(); break; }
-                }
-            });
-            mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-            try {
-                const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
-                if (mm) {
-                    if (mm.addEventListener) mm.addEventListener('change', redraw);
-                    else if (mm.addListener) mm.addListener(redraw);
-                }
-            } catch (e) {}
-            amplitudeCanvas._aw_themeObserver = mo;
-            amplitudeCanvas._aw_themeRedraw = redraw;
-        }
-    } catch (e) {}
+    installThemeObserver(amplitudeCanvas, () => {
+        const s = amplitudeCanvas._aw_lastRender;
+        if (s) requestAnimationFrame(() => { try { renderMainWaveform(s); } catch {} });
+    });
 }
 
 // ─── Overview Waveform ──────────────────────────────────────────────
@@ -212,37 +207,11 @@ export function renderOverviewWaveform({
         ctx.stroke();
     }
 
-    // Install MutationObserver to redraw overview when theme changes
-    try {
-        if (!overviewCanvas.dataset.awThemeObserverInstalled) {
-            overviewCanvas.dataset.awThemeObserverInstalled = '1';
-            const redraw = () => {
-                const s = overviewCanvas._aw_lastRender;
-                if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch (e) {} });
-            };
-            const mo = new MutationObserver((mutations) => {
-                for (const m of mutations) {
-                    if (m.attributeName === 'data-theme') { redraw(); break; }
-                }
-            });
-            mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-            try {
-                const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
-                if (mm) {
-                    if (mm.addEventListener) mm.addEventListener('change', redraw);
-                    else if (mm.addListener) mm.addListener(redraw);
-                }
-            } catch (e) {}
-            overviewCanvas._aw_themeObserver = mo;
-            overviewCanvas._aw_themeRedraw = redraw;
-        }
-    } catch (e) {}
+    installThemeObserver(overviewCanvas, () => {
+        const s = overviewCanvas._aw_lastRender;
+        if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch {} });
+    });
 }
-
-// Ensure overview canvas redraws on theme change
-try {
-    // If we have a global observer installed already (on an amplitude canvas), skip creating a duplicate
-} catch (e) {}
 
 // ─── Frequency Labels ───────────────────────────────────────────────
 

@@ -84,6 +84,68 @@ export function extractXenoCantoRawLabels(recording) {
     return [];
 }
 
+function _buildXcLabel(src, index, meta) {
+    const {
+        xcId, idPrefix, scientificName, recordingCommonName, recordist, nyquist,
+        recSex, recType, recStage, recAnimalSeen, recPlaybackUsed,
+    } = meta;
+
+    const start = toFiniteNumber(src.start ?? src.begin ?? src.from ?? src.t0 ?? src.start_time ?? src.startTime);
+    const end = toFiniteNumber(src.end ?? src.stop ?? src.to ?? src.t1 ?? src.end_time ?? src.endTime);
+    if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) return null;
+
+    const freqMinRaw = toFiniteNumber(src.freq_min ?? src.low_freq ?? src.f_low ?? src.min_freq ?? src.frequency_low);
+    const freqMaxRaw = toFiniteNumber(src.freq_max ?? src.high_freq ?? src.f_high ?? src.max_freq ?? src.frequency_high);
+    const freqMin = Number.isFinite(freqMinRaw) ? Math.max(0, freqMinRaw) : 0;
+    const freqMax = Number.isFinite(freqMaxRaw) ? Math.min(nyquist, freqMaxRaw) : nyquist;
+    if (!(freqMax > freqMin)) return null;
+
+    const label = firstNonEmpty([
+        src.sound_type, src.soundType, recordingCommonName,
+        src.scientific_name, src.scientificName,
+        src.label, src.name, src.value, src.type, src.event,
+        src.comment, src.description, 'XC label',
+    ]);
+    const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, index + 1]);
+
+    // Build tags: per-annotation values override recording-level values
+    const tags = {};
+    const sex = firstNonEmpty([src.sex, src.Sex, recSex]);
+    const soundType = firstNonEmpty([src.sound_type, src.soundType, src.type, recType]);
+    const lifeStage = firstNonEmpty([src.stage, src.life_stage, src.lifeStage, src.age, recStage]);
+    if (sex) tags.sex = sex;
+    if (soundType) tags.soundType = soundType;
+    if (lifeStage) tags.lifeStage = lifeStage;
+
+    const annSciName = firstNonEmpty([src.scientific_name, src.scientificName]) || '';
+    const annotator = firstNonEmpty([src.annotator, src.annotator_name]) || '';
+    const animalSeen = firstNonEmpty([src.animal_seen, src.animalSeen, recAnimalSeen]) || '';
+    const playbackUsed = firstNonEmpty([src.playback_used, src.playbackUsed, recPlaybackUsed]) || '';
+    const remarks = firstNonEmpty([src.annotation_remarks, src.remarks, src.notes]) || '';
+    if (annotator) tags.annotator = annotator;
+    if (animalSeen) tags.animalSeen = animalSeen;
+    if (playbackUsed) tags.playbackUsed = playbackUsed;
+    if (remarks) tags.remarks = remarks;
+
+    const setMeta = src.original_set_metadata || {};
+    const setLicense = firstNonEmpty([setMeta.set_license, setMeta.license]) || '';
+    const setName = firstNonEmpty([setMeta.set_name, setMeta.name]) || '';
+    const setCreator = firstNonEmpty([setMeta.set_creator, setMeta.creator]) || '';
+    if (setLicense) tags.setLicense = setLicense;
+    if (setName) tags.setName = setName;
+    if (setCreator) tags.setCreator = setCreator;
+
+    return {
+        id: `${idPrefix}${xcId}_lbl_${annotationId}`,
+        start, end, freqMin, freqMax, label,
+        scientificName: annSciName || scientificName,
+        commonName: recordingCommonName,
+        origin: 'xeno-canto',
+        author: annotator || recordist || '',
+        tags,
+    };
+}
+
 export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
     const arr = Array.isArray(rawLabels) ? rawLabels : [];
     const xcId = normalizeXcId(options.xcId || '');
@@ -125,78 +187,11 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels, options = {}) {
     const labels = [];
 
     for (let i = 0; i < arr.length; i += 1) {
-        const src = arr[i] || {};
-        const start = toFiniteNumber(src.start ?? src.begin ?? src.from ?? src.t0 ?? src.start_time ?? src.startTime);
-        const end = toFiniteNumber(src.end ?? src.stop ?? src.to ?? src.t1 ?? src.end_time ?? src.endTime);
-        if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) continue;
-
-        const freqMinRaw = toFiniteNumber(src.freq_min ?? src.low_freq ?? src.f_low ?? src.min_freq ?? src.frequency_low);
-        const freqMaxRaw = toFiniteNumber(src.freq_max ?? src.high_freq ?? src.f_high ?? src.max_freq ?? src.frequency_high);
-        const freqMin = Number.isFinite(freqMinRaw) ? Math.max(0, freqMinRaw) : 0;
-        const freqMax = Number.isFinite(freqMaxRaw) ? Math.min(nyquist, freqMaxRaw) : nyquist;
-        if (!(freqMax > freqMin)) continue;
-
-        const label = firstNonEmpty([
-            src.sound_type,
-            src.soundType,
-            recordingCommonName,
-            src.scientific_name,
-            src.scientificName,
-            src.label,
-            src.name,
-            src.value,
-            src.type,
-            src.event,
-            src.comment,
-            src.description,
-            'XC label',
-        ]);
-        const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, i + 1]);
-
-        // Build tags: per-annotation values override recording-level values
-        const tags = {};
-        const sex = firstNonEmpty([src.sex, src.Sex, recSex]);
-        const soundType = firstNonEmpty([src.sound_type, src.soundType, src.type, recType]);
-        const lifeStage = firstNonEmpty([src.stage, src.life_stage, src.lifeStage, src.age, recStage]);
-        if (sex) tags.sex = sex;
-        if (soundType) tags.soundType = soundType;
-        if (lifeStage) tags.lifeStage = lifeStage;
-
-        // Per-annotation scientific name overrides recording-level
-        const annSciName = firstNonEmpty([src.scientific_name, src.scientificName]) || '';
-
-        // Per-annotation fields
-        const annotator = firstNonEmpty([src.annotator, src.annotator_name]) || '';
-        const animalSeen = firstNonEmpty([src.animal_seen, src.animalSeen, recAnimalSeen]) || '';
-        const playbackUsed = firstNonEmpty([src.playback_used, src.playbackUsed, recPlaybackUsed]) || '';
-        const remarks = firstNonEmpty([src.annotation_remarks, src.remarks, src.notes]) || '';
-        if (annotator) tags.annotator = annotator;
-        if (animalSeen) tags.animalSeen = animalSeen;
-        if (playbackUsed) tags.playbackUsed = playbackUsed;
-        if (remarks) tags.remarks = remarks;
-
-        // Original annotation set metadata
-        const setMeta = src.original_set_metadata || {};
-        const setLicense = firstNonEmpty([setMeta.set_license, setMeta.license]) || '';
-        const setName = firstNonEmpty([setMeta.set_name, setMeta.name]) || '';
-        const setCreator = firstNonEmpty([setMeta.set_creator, setMeta.creator]) || '';
-        if (setLicense) tags.setLicense = setLicense;
-        if (setName) tags.setName = setName;
-        if (setCreator) tags.setCreator = setCreator;
-
-        labels.push({
-            id: `${idPrefix}${xcId}_lbl_${annotationId}`,
-            start,
-            end,
-            freqMin,
-            freqMax,
-            label,
-            scientificName: annSciName || scientificName,
-            commonName: recordingCommonName,
-            origin: 'xeno-canto',
-            author: annotator || recordist || '',
-            tags,
+        const label = _buildXcLabel(arr[i] || {}, i, {
+            xcId, idPrefix, scientificName, recordingCommonName, recordist, nyquist,
+            recSex, recType, recStage, recAnimalSeen, recPlaybackUsed,
         });
+        if (label) labels.push(label);
     }
 
     // Recording-level metadata (shared, not duplicated per label)
