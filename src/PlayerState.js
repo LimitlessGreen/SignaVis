@@ -110,11 +110,11 @@ export class PlayerState {
         // Map AudioEngine EventTarget events to host events
         this._engine.addEventListener('timeupdate', (e) => {
             this._perf.timeupdateEvents += 1;
-            this._emit('timeupdate', e.detail);
+            this._emit('timeupdate', /** @type {CustomEvent} */ (e).detail);
         });
-        this._engine.addEventListener('segmentstart', (e) => this._emit('segmentplaystart', e.detail));
-        this._engine.addEventListener('segmentend', (e) => this._emit('segmentplayend', e.detail));
-        this._engine.addEventListener('segmentloop', (e) => this._emit('segmentloop', e.detail));
+        this._engine.addEventListener('segmentstart', (e) => this._emit('segmentplaystart', /** @type {CustomEvent} */ (e).detail));
+        this._engine.addEventListener('segmentend', (e) => this._emit('segmentplayend', /** @type {CustomEvent} */ (e).detail));
+        this._engine.addEventListener('segmentloop', (e) => this._emit('segmentloop', /** @type {CustomEvent} */ (e).detail));
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
         this.options = options || {};
         this._viewMode = this.options.viewMode === 'waveform' || this.options.viewMode === 'spectrogram'
@@ -645,7 +645,7 @@ export class PlayerState {
         try {
             const { duration, sampleRate } = await this._engine.loadFromFile(file);
             this.sampleRateHz = sampleRate;
-            this.amplitudePeakAbs = computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0));
+            this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
             this._updateAmplitudeLabels();
             this._updateMaxFreqOptions();
 
@@ -686,7 +686,7 @@ export class PlayerState {
         try {
             const { duration, sampleRate } = await this._engine.loadFromUrl(url);
             this.sampleRateHz = sampleRate;
-            this.amplitudePeakAbs = computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0));
+            this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
             this._updateAmplitudeLabels();
             this._updateMaxFreqOptions();
 
@@ -737,6 +737,11 @@ export class PlayerState {
         this._engine.updateActiveSegmentFromLabel(label);
     }
 
+    /**
+     * Stop any custom segment playback.
+     * @param {string} [reason]
+     * @param {number|null} [targetTimeSec]
+     */
     _stopCustomSegmentPlayback(reason = 'stopped', targetTimeSec = null) {
         this._engine.stopSegmentPlayback(reason, targetTimeSec);
     }

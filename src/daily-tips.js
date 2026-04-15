@@ -45,7 +45,17 @@ function _createButton(text, cls = '') {
 
 /**
  * Render a tip into a modal and return the ModalManager instance.
- * onNext/onClose/onDisable are optional callbacks.
+ *
+ * @param {Object} tip
+ * @param {HTMLElement} [host]
+ * @param {Object} [opts]
+ * @param {number} [opts.index]
+ * @param {number} [opts.count]
+ * @param {() => void} [opts.onNext]
+ * @param {() => void} [opts.onPrev]
+ * @param {() => void} [opts.onClose]
+ * @param {(disabled: boolean) => void} [opts.onDisable]
+ * @returns {import('./modal-manager.js').default}
  */
 export function showTip(tip, host = document.body, { index = 0, count = 1, onNext, onPrev, onClose, onDisable } = {}) {
   const backdrop = document.createElement('div');
@@ -160,14 +170,14 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
     // clicked multiple times quickly.
     try {
       const existing = host && host.querySelector && host.querySelector('.daily-tip-backdrop');
-      if (existing) {
-        try {
-          const dlg = existing.querySelector('.daily-tip-dialog');
-          const focusTarget = dlg && (dlg.querySelector('button, [tabindex], input') || dlg);
-          focusTarget && focusTarget.focus && focusTarget.focus();
-        } catch (e) { /* ignore */ }
-        return;
-      }
+        if (existing) {
+          try {
+            const dlg = existing.querySelector('.daily-tip-dialog');
+            const focusTarget = dlg && (dlg.querySelector('button, [tabindex], input') || dlg);
+            if (focusTarget instanceof HTMLElement) focusTarget.focus();
+          } catch (e) { /* ignore */ }
+          return;
+        }
     } catch (e) { /* ignore */ }
 
     let index = parseInt(localStorage.getItem(`${storagePrefix}.index`) || '0', 10) || 0;

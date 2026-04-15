@@ -5,9 +5,19 @@
  * - traps focus inside the dialog while open
  * - restores focus and removes listeners on close / dispose
  */
+/**
+ * @typedef {Object} ModalManagerOptions
+ * @property {HTMLElement|null|undefined} [backdrop]
+ * @property {HTMLElement|null|undefined} [dialog]
+ */
 export default class ModalManager {
+  /**
+   * @param {ModalManagerOptions} [opts]
+   */
   constructor({ backdrop = null, dialog = null } = {}) {
+    /** @type {HTMLElement|null} */
     this.backdrop = backdrop || null;
+    /** @type {HTMLElement|null} */
     this.dialog = dialog || (this.backdrop && (this.backdrop.querySelector('.modal, .xc-nokey-dialog, [role="dialog"], dialog'))) || null;
     this._onKeydown = this._onKeydown.bind(this);
     this._onBackdropClick = this._onBackdropClick.bind(this);
@@ -52,7 +62,7 @@ export default class ModalManager {
     this._bind();
     setTimeout(() => {
       const focusTarget = (this._getFocusable()[0]) || this.dialog || this.backdrop;
-      try { focusTarget && focusTarget.focus && focusTarget.focus(); } catch (e) { /* ignore */ }
+      try { if (focusTarget instanceof HTMLElement) focusTarget.focus(); } catch (e) { /* ignore */ }
     }, 0);
   }
 
@@ -63,7 +73,7 @@ export default class ModalManager {
       try { this.backdrop.hidden = true; } catch (e) { /* ignore */ }
     }
     this._unbind();
-    setTimeout(() => { try { this._lastActive?.focus?.(); } catch (e) { /* ignore */ } }, 0);
+    setTimeout(() => { try { if (this._lastActive instanceof HTMLElement) this._lastActive.focus(); } catch (e) { /* ignore */ } }, 0);
   }
 
   _bind() {
