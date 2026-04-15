@@ -40,17 +40,18 @@ export default class ModalManager {
       if (title && !title.id) title.id = this._generateId('modal-title');
       if (title) this.dialog.setAttribute('aria-labelledby', title.id);
       // Ensure an accessible close button exists in the dialog
-      let btn = this.dialog.querySelector('.modal-close');
+      /** @type {HTMLButtonElement|null} */
+      let btn = /** @type {HTMLButtonElement|null} */ (this.dialog.querySelector('.modal-close'));
       if (!btn) {
-        btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'modal-close';
-        btn.setAttribute('aria-label', 'Close');
-        btn.textContent = '\u00d7';
-        btn.dataset.modalManaged = '1';
-        this.dialog.appendChild(btn);
-        this._closeBtn = btn;
-        btn.addEventListener('click', this._onCloseClick);
+        const newBtn = /** @type {HTMLButtonElement} */ (document.createElement('button'));
+        newBtn.type = 'button';
+        newBtn.className = 'modal-close';
+        newBtn.setAttribute('aria-label', 'Close');
+        newBtn.textContent = '\u00d7';
+        newBtn.dataset.modalManaged = '1';
+        this.dialog.appendChild(newBtn);
+        this._closeBtn = newBtn;
+        newBtn.addEventListener('click', this._onCloseClick);
       } else {
         this._closeBtn = btn;
         if (!btn.dataset.modalHandlerBound) {
