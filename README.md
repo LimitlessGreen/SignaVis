@@ -34,16 +34,26 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 
 ## Table of contents
 
-- [Features](#features)
-- [Install](#install)
-- [Quickstart](#quickstart)
-- [Player Options](#player-options)
-- [Usage Examples](#usage-examples)
-- [API](#api)
-- [Demos](#demos)
-- [Python wrapper](#python-wrapper)
-- [Contributing](#contributing)
-- [License](#license)
+- [audio-workbench](#audio-workbench)
+  - [Table of contents](#table-of-contents)
+  - [Features](#features)
+  - [Install](#install)
+  - [Quickstart](#quickstart)
+  - [Player Options](#player-options)
+  - [Usage Examples](#usage-examples)
+    - [ESM (Vite / Vanilla)](#esm-vite--vanilla)
+    - [Load from URL](#load-from-url)
+    - [File Input](#file-input)
+    - [React](#react)
+    - [Vue](#vue)
+    - [Svelte](#svelte)
+    - [CDN / IIFE](#cdn--iife)
+    - [Streamlit (Python)](#streamlit-python)
+    - [Jupyter Notebook](#jupyter-notebook)
+  - [Demos](#demos)
+  - [Python wrapper](#python-wrapper)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Features
 
