@@ -63,6 +63,44 @@ export function getTimeGridSteps(pixelsPerSecond) {
     return { majorStep, minorStep: majorStep / 2 };
 }
 
+/**
+ * Parse a hex color string (#rgb or #rrggbb) to an [r, g, b] array, or null on failure.
+ * @param {string} hex
+ * @returns {[number, number, number] | null}
+ */
+export function hexToRgb(hex) {
+    if (!hex) return null;
+    let h = String(hex).replace('#', '').trim();
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    if (h.length !== 6) return null;
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+/**
+ * Return a CSS `rgba(...)` string from any CSS color value, overriding alpha.
+ * Unknown formats are returned as-is (alpha ignored).
+ * @param {string} color
+ * @param {number} [alpha=1]
+ * @returns {string}
+ */
+export function colorWithAlpha(color, alpha = 1) {
+    if (!color) return color;
+    const c = color.trim();
+    if (c.startsWith('rgba')) {
+        const inner = c.slice(5, -1).split(',').map(s => s.trim());
+        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
+    }
+    if (c.startsWith('rgb(')) {
+        const inner = c.slice(4, -1).split(',').map(s => s.trim());
+        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
+    }
+    if (c[0] === '#') {
+        const rgb = hexToRgb(c);
+        if (rgb) return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+    }
+    return c;
+}
+
 export function escapeHtml(value) {
     return String(value ?? '')
         .split('&').join('&amp;')

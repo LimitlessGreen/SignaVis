@@ -2,44 +2,15 @@
 // waveform.js — Waveform, timeline, overview and frequency rendering
 // ═══════════════════════════════════════════════════════════════════════
 
-import { getTimeGridSteps } from './utils.js';
+import { clamp, getTimeGridSteps, hexToRgb, colorWithAlpha } from './utils.js';
 
-// Helper: read CSS custom property and fall back
 function getCssVar(name, fallback = '') {
     try {
         const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         return v || fallback;
-    } catch (e) {
+    } catch {
         return fallback;
     }
-}
-
-function hexToRgb(hex) {
-    if (!hex) return null;
-    let h = String(hex).replace('#', '').trim();
-    if (h.length === 3) h = h.split('').map(c => c + c).join('');
-    if (h.length !== 6) return null;
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-
-function colorWithAlpha(color, alpha = 1) {
-    if (!color) return color;
-    const c = color.trim();
-    if (c.startsWith('rgba')) {
-        // normalize to provided alpha
-        const inner = c.slice(5, -1).split(',').map(s => s.trim());
-        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
-    }
-    if (c.startsWith('rgb(')) {
-        const inner = c.slice(4, -1).split(',').map(s => s.trim());
-        return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${alpha})`;
-    }
-    if (c[0] === '#') {
-        const rgb = hexToRgb(c);
-        if (rgb) return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-    }
-    // Unknown format -- return as-is (alpha ignored)
-    return c;
 }
 
 // ─── Waveform Timeline (private helper) ─────────────────────────────
@@ -98,7 +69,7 @@ export function renderMainWaveform({
 
     const width = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
     const clampedWaveformHeight = Math.max(64, Math.floor(waveformHeight));
-    const timelineHeight = showTimeline ? Math.max(18, Math.min(32, Math.round(clampedWaveformHeight * 0.22))) : 0;
+    const timelineHeight = showTimeline ? clamp(Math.round(clampedWaveformHeight * 0.22), 18, 32) : 0;
     const ampHeight = Math.max(32, clampedWaveformHeight - timelineHeight);
 
     amplitudeCanvas.width = width;
@@ -140,7 +111,7 @@ export function renderMainWaveform({
         let min = 1;
         let max = -1;
         for (let i = start; i < end; i++) {
-            const v = Math.max(-1, Math.min(1, channelData[i] * ampScale));
+            const v = clamp(channelData[i] * ampScale, -1, 1);
             if (v < min) min = v;
             if (v > max) max = v;
         }
@@ -231,7 +202,7 @@ export function renderOverviewWaveform({
         let min = 1;
         let max = -1;
         for (let i = start; i < end; i++) {
-            const v = Math.max(-1, Math.min(1, channelData[i] * ampScale));
+            const v = clamp(channelData[i] * ampScale, -1, 1);
             if (v < min) min = v;
             if (v > max) max = v;
         }
