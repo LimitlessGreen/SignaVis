@@ -9,18 +9,16 @@
   <img src="docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
 </p>
 
-<p align="center">
-  <a href="https://limitlessgreen.github.io/Audio-Workbench/">
-    <img src="https://img.shields.io/badge/Live%20Demo-Open-brightgreen" alt="Live Demo" />
-  </a>
-  <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1">
-    <img src="https://img.shields.io/badge/Labeling%20App-Open-blue" alt="Labeling App" />
-  </a>
-  <br />
-  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/">▶ Live demo — Open in browser (GitHub Pages)</a></strong>
-  <br />
-  <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1">🏷 Labeling App — BirdNET detection, annotation & Xeno-canto integration</a></strong>
-</p>
+<div align="center">
+  <div style="display:inline-block;padding:16px;border-radius:10px;border:1px solid #e1e4e8;background:#f8f9fa;text-align:center;max-width:760px;width:100%;">
+    <h3 style="margin:0 0 8px 0">Try it — Demo</h3>
+    <p style="margin:0 0 12px 0;color:#586069">Interactive demo and a full labeling app (BirdNET detection & annotation). Click a button to open in your browser.</p>
+    <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
+      <a href="https://limitlessgreen.github.io/Audio-Workbench/" style="display:inline-block;padding:10px 18px;background:#28a745;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">▶ Live Demo</a>
+      <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1" style="display:inline-block;padding:10px 18px;background:#0366d6;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">🏷 Labeling App</a>
+    </div>
+  </div>
+</div>
 
 [![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml)
 [![NPM](https://img.shields.io/npm/v/audio-workbench.svg)](https://www.npmjs.com/package/audio-workbench)
