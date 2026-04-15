@@ -22,10 +22,10 @@
   <strong><a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1">🏷 Labeling App — BirdNET detection, annotation & Xeno-canto integration</a></strong>
 </p>
 
-![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)
-![NPM](https://img.shields.io/npm/v/audio-workbench.svg)
-![PyPI](https://img.shields.io/pypi/v/audio-workbench.svg)
-![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)
+[![CI](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml)
+[![NPM](https://img.shields.io/npm/v/audio-workbench.svg)](https://www.npmjs.com/package/audio-workbench)
+[![PyPI](https://img.shields.io/pypi/v/audio-workbench.svg)](https://pypi.org/project/audio-workbench/)
+[![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/LICENSE)
 
 DAW-like audio player (waveform + spectrogram + transport controls) as a standalone library — built for bioacoustic analysis, annotation, and embedding.
 
