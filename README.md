@@ -1,4 +1,8 @@
 
+> ⚠️ **Early development — Unstable**
+>
+> This project is in active early development. APIs, features, and build artifacts may change or break without notice. You're encouraged to try it and provide feedback, but do not expect a stable release or backward compatibility yet. If you require stability, pin to a specific commit or wait for an official release. Contributions and bug reports are welcome.
+
 # audio-workbench
 
 <p align="center">
