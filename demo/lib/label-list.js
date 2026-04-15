@@ -364,11 +364,20 @@ export class LabelList {
     el.className = 'label-card-tags';
     const tags = lbl.tags || {};
 
+    // Show preset attributes as small labelled pills (e.g. "Sex: male")
+    const PRESET_LABELS = { sex: 'Sex', lifeStage: 'Stage', soundType: 'Type' };
     for (const preset of TAG_PRESETS) {
-      if (tags[preset.key]) {
+      const val = tags[preset.key];
+      if (val) {
         const badge = document.createElement('span');
-        badge.className = 'tag-mini';
-        badge.textContent = tags[preset.key];
+        // Use modal-consistent pill styling for clarity in the sidebar
+        badge.className = 'label-tag-badge';
+        // small key label inside the pill
+        const keySpan = document.createElement('span');
+        keySpan.className = 'tag-key';
+        keySpan.textContent = PRESET_LABELS[preset.key] || preset.key;
+        badge.appendChild(keySpan);
+        badge.appendChild(document.createTextNode(': ' + val + ' '));
         el.appendChild(badge);
       }
     }
@@ -464,14 +473,16 @@ export class LabelList {
     const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k));
     for (const [k, v] of custom) {
       const badge = document.createElement('span');
-      badge.className = 'tag-badge';
+      // Use the same pill styling as the modal's label tag badges
+      badge.className = 'label-tag-badge';
       const keySpan = document.createElement('span');
       keySpan.className = 'tag-key';
       keySpan.textContent = k;
       badge.appendChild(keySpan);
       badge.appendChild(document.createTextNode(': ' + v + ' '));
       const del = document.createElement('button');
-      del.className = 'tag-del';
+      // modal uses a slightly different delete button class
+      del.className = 'label-tag-badge-del';
       del.textContent = '×';
       del.addEventListener('click', (e) => {
         e.stopPropagation();

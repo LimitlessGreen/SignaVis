@@ -347,6 +347,8 @@
       taxonomyLang: 'en_uk',
     };
 
+    // No local last-click tracking needed; clear/add highlight by querying overlay.
+
     // ── Xeno-canto panel ──────────────────────────────────────────────
     /** XC ID of the currently loaded recording (survives failed label import). */
     let currentXcId = null;
@@ -440,6 +442,54 @@
       if (el) el.classList.toggle('highlighted', on);
     }
 
+    // Centralized selection helper — seeks, highlights overlay and list rows,
+    // and pins the properties panel. Default seek mode is 'middle' for a
+    // more useful visual context; change to 'start' to mimic legacy behavior.
+    const DEFAULT_SEEK_MODE = 'middle'; // 'middle' | 'start' | 'none'
+    function selectLabel(labelId, opts = {}) {
+      const seekMode = (opts && typeof opts.seekMode !== 'undefined') ? opts.seekMode : DEFAULT_SEEK_MODE;
+      const lbl = labelId ? state.labels.find((l) => l.id === labelId) : null;
+
+      // Clear any existing overlay highlights
+      const overlay = player.spectrogramLabels?.overlay;
+      if (overlay) {
+        for (const el of overlay.querySelectorAll('.spectrogram-label-region.highlighted')) {
+          el.classList.remove('highlighted');
+        }
+      }
+
+      if (!lbl) {
+        // Clear pin/hover state
+        try { propsPanel.clearHover(); } catch (e) {}
+        return;
+      }
+
+      // Seek to label (middle by default). If seekMode === 'none', skip seeking.
+      if (seekMode !== 'none') {
+        const start = Number(lbl.start) || 0;
+        const end = Number(lbl.end) || start;
+        const targetTime = (seekMode === 'start') ? start : ((start + end) / 2);
+        if (player?._state?._seekToTime) {
+          try { player._state._seekToTime(targetTime, true); } catch (e) { /* ignore */ }
+        } else if (player?._state?.wavesurfer?.seekTo) {
+          const dur = player.duration || player._state?.audioBuffer?.duration || 1;
+          try { player._state.wavesurfer.seekTo(Math.max(0, Math.min(1, targetTime / dur))); } catch (e) { /* ignore */ }
+        }
+      }
+
+      // Highlight list/table rows
+      try { labelList.highlightRow(labelId); } catch (e) {}
+      if (typeof labelTable !== 'undefined' && labelTable && typeof labelTable.highlightRow === 'function') {
+        try { labelTable.highlightRow(labelId); } catch (e) {}
+      }
+
+      // Highlight overlay region
+      highlightSpectrogramLabel(labelId, true);
+
+      // Pin properties
+      try { propsPanel.pinLabel(lbl); } catch (e) {}
+    }
+
     // ── Label list ────────────────────────────────────────────────────
     const labelList = new LabelList({
       container: document.getElementById('labelList'),
@@ -447,14 +497,21 @@
       resolveName,
       tagStore,
       onSync:  () => syncToPlayerSoft(),
-      onSeek:  (lbl) => { if (player?.currentTime != null) player.currentTime = lbl.start; },
+      // We rely on the internal LabelList.highlightRow() for immediate
+      // visual feedback. Emit a canonical `labelfocus` from onFocus so
+      // the centralized handler can perform seek/highlight/pin logic.
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
-      onFocus: (id) => {
-        player._emit?.('labelfocus', { id, source: 'list', interaction: 'click' });
-        const lbl = id ? state.labels.find((l) => l.id === id) : null;
-        propsPanel.pinLabel(lbl);
+      onFocus: (id, src) => {
+        player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
+        // Also run centralized selection immediately for snappy UI
+        try { selectLabel(id, { seekMode: 'start' }); } catch (e) { /* ignore */ }
       },
-      onHover: highlightSpectrogramLabel,
+      onHover: (id, on) => {
+        // Emit a labelfocus hover so the properties panel receives hover info
+        player._emit?.('labelfocus', { id: on ? id : null, source: 'list', interaction: 'hover' });
+        // Keep the spectrogram overlay hover highlight
+        try { highlightSpectrogramLabel(id, on); } catch (e) {}
+      },
     });
     labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
@@ -463,13 +520,21 @@
 
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
-      const interaction = e.detail?.interaction || 'hover';
+      // If the emitter didn't include an explicit interaction, treat
+      // selections coming from the list/table as clicks so they trigger
+      // the same click-path (row + overlay highlight).
+      const rawInteraction = e.detail?.interaction;
+      const source = e.detail?.source;
+      const interaction = rawInteraction ?? ((source === 'list' || source === 'table') ? 'click' : 'hover');
       labelList.highlightHover(id);
 
       if (interaction === 'click') {
-        const lbl = id ? state.labels.find((l) => l.id === id) : null;
-        propsPanel.pinLabel(lbl);
-        if (lbl) rightBar.setActive('properties');
+        // Centralized selection: pick seek mode based on source to preserve
+        // existing UX (overview=center, lists= start), but keep it
+        // configurable via event.detail.seekMode.
+        const source = e.detail?.source;
+        const seekMode = e.detail?.seekMode || ((source === 'overview') ? 'middle' : 'start');
+        selectLabel(id, { seekMode });
       } else {
         // hover
         if (id) {

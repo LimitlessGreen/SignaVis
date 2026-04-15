@@ -282,14 +282,15 @@ export class LabelTable {
 
     for (const [k, v] of customEntries) {
       const badge = document.createElement('span');
-      badge.className = 'tag-badge';
+      // Keep visual parity with the modal's tag pills
+      badge.className = 'label-tag-badge';
       const keySpan = document.createElement('span');
       keySpan.className = 'tag-key';
       keySpan.textContent = k;
       badge.appendChild(keySpan);
       badge.appendChild(document.createTextNode(': ' + v + ' '));
       const del = document.createElement('button');
-      del.className = 'tag-del';
+      del.className = 'label-tag-badge-del';
       del.textContent = '×';
       del.addEventListener('click', (e) => {
         e.stopPropagation();
