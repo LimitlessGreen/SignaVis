@@ -609,6 +609,21 @@ export class AnnotationLayer {
          */
         this._editing = null;
         this._suppressClickUntil = 0;
+        /** @type {Set<string>} */
+        this._multiSelectedIds = new Set();
+    }
+
+    setMultiSelected(ids) {
+        this._multiSelectedIds = new Set(ids);
+        this._updateMultiSelectedVisual();
+    }
+
+    _updateMultiSelectedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
+        }
     }
 
     attach(player) {
@@ -793,6 +808,7 @@ export class AnnotationLayer {
                 freshEl.classList.add('editing');
             }
         }
+        this._updateMultiSelectedVisual();
     }
 
     _createRegionElement(region, pixelsPerSecond) {
@@ -828,6 +844,10 @@ export class AnnotationLayer {
             if (performance.now() < this._suppressClickUntil) return;
             event.preventDefault();
             event.stopPropagation();
+            if (event.ctrlKey || event.metaKey) {
+                this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'ctrl-click' });
+                return;
+            }
             this.player?._emit?.('labelfocus', { id: region.id, source: 'waveform', interaction: 'click' });
             this.player?._state?._blockSeekClicks?.(260);
             this.player?.playSegment?.(region.start, region.end, { labelId: region.id });

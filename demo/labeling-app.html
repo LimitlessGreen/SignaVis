@@ -501,9 +501,7 @@
       // the centralized handler can perform seek/highlight/pin logic.
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
       onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
-      onMultiSelectionChange: (ids) => {
-        try { player.spectrogramLabels?.setMultiSelected(ids); } catch (e) {}
-      },
+      onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
       onFocus: (id, src) => {
         player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
         // Also run centralized selection immediately for snappy UI
@@ -531,8 +529,8 @@
       labelList.highlightHover(id);
 
       if (interaction === 'ctrl-click') {
-        // Ctrl+Click: toggle multi-selection in label list AND spectrogram overlay.
-        // On first ctrl-click, carry the currently selected label into the set.
+        // Ctrl+Click: toggle multi-selection across all views.
+        // On first ctrl-click, carry the currently single-selected label into the set.
         if (id) {
           if (labelList.multiSelectedIds.size === 0 && labelList.selectedId && labelList.selectedId !== id) {
             labelList.multiSelectedIds.add(labelList.selectedId);
@@ -544,13 +542,13 @@
           }
           labelList._updateMultiVisual();
           labelList._updateBulkToolbar();
-          try { player.spectrogramLabels?.setMultiSelected([...labelList.multiSelectedIds]); } catch (e) {}
+          syncMultiSelected([...labelList.multiSelectedIds]);
         }
       } else if (interaction === 'click') {
-        // Plain click clears any multi-selection
+        // Plain click clears any multi-selection in all views
         if (labelList.multiSelectedIds.size > 0) {
           labelList.clearMultiSelection();
-          try { player.spectrogramLabels?.setMultiSelected([]); } catch (e) {}
+          syncMultiSelected([]);
         }
         // Centralized selection: pick seek mode based on source to preserve
         // existing UX (overview=center, lists= start), but keep it
@@ -622,6 +620,13 @@
         if (fresh) propsPanel.refreshLabel(fresh);
         else propsPanel.pinLabel(null);
       }
+    }
+
+    /** Push a multi-selection change to every view that can show it. */
+    function syncMultiSelected(ids) {
+      try { player.spectrogramLabels?.setMultiSelected(ids); } catch (e) {}
+      try { player.annotations?.setMultiSelected(ids); } catch (e) {}
+      try { player.setMultiSelectedOverview?.(ids); } catch (e) {}
     }
 
     function toLabelExport() {

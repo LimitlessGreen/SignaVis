@@ -41,6 +41,12 @@
     background: rgba(239, 68, 68, 0.25);
 }
 
+.annotation-region.multi-selected {
+    outline: 2px dashed rgba(56,189,248,0.9);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.35);
+}
+
 .annotation-region.editing {
     outline: 2px solid rgba(255,255,255,0.95);
     outline-offset: -2px;

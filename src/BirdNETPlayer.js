@@ -795,10 +795,16 @@ export class BirdNETPlayer {
         this._labelLibrary = next;
     }
 
-    /**
-     * Render one row per origin group below the overview bar,
-     * each showing colored segments where labels from that origin occur.
-     */
+    setMultiSelectedOverview(ids) {
+        const container = this._state?.d?.overviewLabelTracks;
+        if (!container) return;
+        const set = new Set(ids);
+        for (const el of container.querySelectorAll('.overview-label-segment')) {
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('multi-selected', set.has(h.dataset?.id || ''));
+        }
+    }
+
     /**
      * Render one row per unique label name below the overview bar,
      * grouped under compact origin headers (manual, BirdNET, xeno-canto).
@@ -881,6 +887,10 @@ export class BirdNETPlayer {
                     });
                     s.addEventListener('click', (e) => {
                         e.stopPropagation();
+                        if (e.ctrlKey || e.metaKey) {
+                            this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'ctrl-click' });
+                            return;
+                        }
                         const midTime = (seg.start + seg.end) / 2;
                         this._state?._seekToTime(midTime, true);
                         this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'click' });
