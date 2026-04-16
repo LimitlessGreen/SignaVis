@@ -89,3 +89,76 @@
 .xc-status-info  { color: var(--muted); }
 .xc-status-success { color: var(--color-success); }
 .xc-status-error { color: var(--danger); }
+
+/* XC section header row (label + edit toggle) */
+.xc-section-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.xc-section-hdr span { flex: 1; }
+
+.xc-toggle-edit-btn {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 7px;
+  height: 18px;
+  line-height: 1;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.xc-toggle-edit-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--color-accent-faint); }
+.xc-toggle-edit-btn.active { color: var(--accent); border-color: var(--accent); background: var(--color-accent-faint); }
+
+/* XC editable recording fields */
+.xc-recording-edit { display: flex; flex-direction: column; gap: 0; padding: 0 14px 6px; }
+
+/* XC annotation set container */
+.xc-set-container { display: flex; flex-direction: column; }
+
+/* Set selector row */
+.xc-set-selector-wrap { padding: 4px 14px 6px; display: flex; flex-direction: column; gap: 4px; }
+.xc-set-selector-row { display: flex; align-items: center; gap: 5px; }
+.xc-set-selector-row select { flex: 1; height: 24px; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 11px; cursor: pointer; }
+.xc-set-selector-row select:focus { border-color: var(--accent); outline: none; }
+
+/* Set form */
+.xc-set-form { display: flex; flex-direction: column; gap: 0; padding: 0 14px 8px; }
+
+/* Generic field row used in set form and recording edit */
+.xc-field { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 4px; min-width: 0; padding: 2px 0; }
+.xc-field .field-label { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xc-field .input { height: 22px; padding: 1px 5px; font-size: 11px; border-radius: 3px; }
+.xc-field .xc-textarea { height: auto; min-height: 44px; padding: 3px 5px; font-size: 11px; border-radius: 3px; resize: vertical; }
+
+/* Collapsible sub-section (Project / Scope) */
+.xc-collapsible { border-top: 1px solid var(--line); margin-top: 4px; }
+.xc-collapsible-hdr {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0 4px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.1s;
+}
+.xc-collapsible-hdr:hover { color: var(--text); }
+.xc-collapsible-chevron { font-size: 9px; transition: transform 0.15s ease; display: inline-block; }
+.xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); }
+.xc-collapsible-body { display: none; }
+.xc-collapsible.expanded .xc-collapsible-body { display: flex; flex-direction: column; gap: 0; }

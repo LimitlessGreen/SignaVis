@@ -63,8 +63,30 @@ const LABEL_FIELDS = [
 
 const PRESET_MAP = new Map(TAG_PRESETS.map((p) => [p.key, p.options]));
 
+const SET_FIELDS = [
+  { key: 'name',         label: 'Set Name',     edit: 'text' },
+  { key: 'license',      label: 'License',      edit: 'text' },
+  { key: 'creator',      label: 'Creator',      edit: 'text' },
+  { key: 'creatorId',    label: 'Creator ID',   edit: 'text' },
+  { key: 'owner',        label: 'Owner',        edit: 'text' },
+  { key: 'source',       label: 'Set Source',   edit: 'text' },
+  { key: 'uri',          label: 'Set URI',      edit: 'text' },
+  { key: 'projectName',  label: 'Project',      edit: 'text' },
+  { key: 'projectUri',   label: 'Project URI',  edit: 'text' },
+  { key: 'funding',      label: 'Funding',      edit: 'text' },
+  { key: 'taxonCoverage',label: 'Taxon cover.', edit: 'text' },
+  { key: 'completeness', label: 'Completeness', edit: 'text' },
+  { key: 'createdOn',    label: 'Created on' },
+  { key: 'origin',       label: 'Origin' },
+];
+
 export class PropertiesPanel {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {(setId: string) => object|null} [opts.getSetInfo]
+   * @param {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
+   */
+  constructor(opts = {}) {
     this.el = document.createElement('div');
     this.el.className = 'scroll-panel properties-panel';
 
@@ -82,14 +104,26 @@ export class PropertiesPanel {
     this._tagStore = null;
     this._esInstances = [];
 
+    this._getSetInfo = opts.getSetInfo || null;
+    /** @type {((anchor: HTMLElement, cb: function) => object)|null} */
+    this._speciesSearchFactory = opts.speciesSearchFactory || null;
+
     /**
-     * Called when the user edits a field. Signature: (labelId, updates) => void
+     * Called when the user edits a label field. Signature: (labelId, updates) => void
      * @type {((id: string, updates: object) => void)|null}
      */
     this.onChange = null;
+    /**
+     * Called when the user edits a set field. Signature: (setId, updates) => void
+     * @type {((id: string, updates: object) => void)|null}
+     */
+    this.onSetChange = null;
 
     this._build();
   }
+
+  /** Provide or update the species search factory after construction. */
+  setSpeciesSearchFactory(fn) { this._speciesSearchFactory = fn || null; }
 
   /** Set the custom tag store for editable dropdowns. */
   setTagStore(store) {
@@ -175,6 +209,19 @@ export class PropertiesPanel {
     this._recSection.appendChild(this._recBody);
     this.el.appendChild(this._recSection);
 
+    // Set section (between Recording and Label)
+    this._setSection = document.createElement('div');
+    this._setSection.className = 'props-section props-section--set';
+    this._setSection.hidden = true;
+    const setHdr = document.createElement('div');
+    setHdr.className = 'props-section-title';
+    setHdr.textContent = 'Annotation Set';
+    this._setSection.appendChild(setHdr);
+    this._setBody = document.createElement('div');
+    this._setBody.className = 'props-section-body';
+    this._setSection.appendChild(this._setBody);
+    this.el.appendChild(this._setSection);
+
     // Label section
     this._lblSection = document.createElement('div');
     this._lblSection.className = 'props-section';
@@ -200,6 +247,44 @@ export class PropertiesPanel {
     this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
   }
 
+  _renderSet() {
+    const lbl = this._hoverLabel || this._pinnedLabel;
+    const setId = lbl?.setId || null;
+    const setInfo = (setId && this._getSetInfo) ? this._getSetInfo(setId) : null;
+    this._setSection.hidden = !setInfo;
+    this._setBody.innerHTML = '';
+    if (!setInfo) return;
+    const editable = !this._hoverLabel;
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid';
+    for (const f of SET_FIELDS) {
+      const raw = setInfo[f.key];
+      if (!f.edit && (raw == null || raw === '')) continue;
+      if (!editable && (raw == null || raw === '')) continue;
+      const dt = document.createElement('dt');
+      dt.textContent = f.label;
+      const dd = document.createElement('dd');
+      if (editable && f.edit) {
+        dd.classList.add('props-editable');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'props-input';
+        inp.value = raw ?? '';
+        inp.placeholder = f.label;
+        inp.addEventListener('change', () => {
+          this.onSetChange?.(setId, { [f.key]: inp.value.trim() });
+        });
+        dd.appendChild(inp);
+      } else {
+        dd.textContent = String(raw ?? '');
+        dd.classList.add('props-readonly');
+      }
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
+    this._setBody.appendChild(dl);
+  }
+
   _renderLabel() {
     // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
     for (const es of this._esInstances) es.destroy();
@@ -207,6 +292,8 @@ export class PropertiesPanel {
     this._lblBody.innerHTML = '';
     const lbl = this._hoverLabel || this._pinnedLabel;
     const isHover = !!this._hoverLabel;
+
+    this._renderSet();
 
     // Update section header
     this._lblHeader.textContent = isHover ? 'Hovered Label' : 'Selected Label';
@@ -287,6 +374,21 @@ export class PropertiesPanel {
 
     if (field.edit === 'number') {
       return this._buildNumberInput(field, value, lbl);
+    }
+
+    // 'label' field: use taxonomy search widget when factory is available
+    if (field.key === 'label' && this._speciesSearchFactory) {
+      const placeholder = document.createElement('span');
+      const widget = this._speciesSearchFactory(placeholder, ({ name, scientificName }) => {
+        this._emitChange(lbl.id, {
+          label: name,
+          scientificName: scientificName || '',
+          commonName: '',
+        });
+      });
+      widget.input.value = value ?? '';
+      if (value) widget.input.classList.add('has-selection');
+      return widget.el;
     }
 
     // text

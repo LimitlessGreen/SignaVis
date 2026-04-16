@@ -134,7 +134,8 @@
 
   <!-- ── Sidebar panel: Xeno-canto ────────────────────────────────── -->
   <div id="panelXc" class="scroll-panel" hidden>
-    <!-- Load -->
+
+    <!-- ── 1. Load Recording ── -->
     <div class="panel-section">
       <label class="field-label" for="xcIdInput">Load XC Recording</label>
       <div class="xc-load-row">
@@ -143,21 +144,26 @@
       </div>
     </div>
 
-    <!-- Recording metadata (read-only, populated after load) -->
-    <div class="panel-section xc-recording-section">
-      <div class="field-label">Recording</div>
-      <div id="xcRecordingMeta" class="xc-recording-meta">
-        <div class="field-hint" style="padding:6px 0">No recording loaded.</div>
+    <!-- ── 2. Recording Metadata (read-only from XC API) ── -->
+    <div class="panel-section">
+      <div class="xc-section-hdr">
+        <span class="field-label" style="margin:0">Recording (from XC)</span>
+        <button class="xc-toggle-edit-btn tb-btn" id="xcToggleRecordingEdit" type="button" title="Edit recording metadata for upload">Edit</button>
       </div>
+      <div id="xcRecordingMeta" class="xc-recording-meta">
+        <div class="field-hint" style="padding:4px 0">No recording loaded.</div>
+      </div>
+      <!-- Editable recording fields (collapsed by default) -->
+      <div id="xcRecordingEdit" class="xc-recording-edit" hidden></div>
     </div>
 
-    <!-- Annotation Set metadata (editable) -->
+    <!-- ── 3. Annotation Set ── -->
     <div class="panel-section">
       <div class="field-label">Annotation Set</div>
-      <div id="xcSetMeta" class="xc-set-meta"></div>
+      <div id="xcSetContainer" class="xc-set-container"></div>
     </div>
 
-    <!-- API Key -->
+    <!-- ── 4. API Key ── -->
     <div class="panel-section">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
       <div class="xc-key-input-row">
@@ -173,7 +179,7 @@
       <p class="field-hint">Required for label import and upload. Stored locally.</p>
     </div>
 
-    <!-- Actions -->
+    <!-- ── 5. Actions ── -->
     <div class="panel-actions xc-actions">
       <div class="xc-action-row">
         <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button">Export JSON</button>
@@ -181,6 +187,7 @@
       </div>
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
+
   </div>
 
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
@@ -258,10 +265,10 @@
     import { initDailyTips, showTip } from '../src/daily-tips.js';
 
     import { Sidebar } from './lib/sidebar.js';
-    import { populateLanguageSelect, createSuggestionProvider } from './lib/taxonomy-ui.js';
+    import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from './lib/taxonomy-ui.js';
     import { LabelList } from './lib/label-list.js';
     import { BirdNETPanel } from './lib/birdnet-panel.js';
-    import { XenoCantoPanel } from './lib/xc-panel.js';
+    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from './lib/xc-panel.js';
     import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
     import { PropertiesPanel } from './lib/properties-panel.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
@@ -341,7 +348,9 @@
     const specPanel = new SpectrogramSettingsPanel(player);
     specPanel.relocate();
 
-    const propsPanel = new PropertiesPanel();
+    const propsPanel = new PropertiesPanel({
+      getSetInfo: (setId) => state.labelSets?.get(setId) || null,
+    });
     propsPanel.setTagStore(tagStore);
 
     const rightBar = new Sidebar(document.getElementById('workspace'), {
@@ -356,6 +365,10 @@
     // ── App state ─────────────────────────────────────────────────────
     const state = {
       labels: [],
+      /** @type {Map<string, ReturnType<typeof defaultSetInfo>>} */
+      labelSets: new Map(),
+      /** Editable recording metadata for XC upload context */
+      recordingEditMeta: defaultRecordingEditMeta(),
       xcLabelPool: [],
       recordingMeta: null,
       selected: null,
@@ -365,6 +378,47 @@
       taxonomyLang: 'en_uk',
     };
 
+    // ── Label set CRUD ────────────────────────────────────────────────
+    function _genSetId() { return 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
+
+    function createLabelSet(partial = {}) {
+      const set = defaultSetInfo({ id: _genSetId(), ...partial });
+      if (!set.id) set.id = _genSetId();
+      state.labelSets.set(set.id, set);
+      syncToPlayer();
+      // Rebuild the XC set selector to reflect the new set
+      xcPanel._rebuildSetSection?.();
+      return set;
+    }
+
+    function renameLabelSet(id, newName) {
+      const s = state.labelSets.get(id);
+      if (s) {
+        s.name = newName;
+        syncToPlayer();
+        xcPanel._rebuildSetSection?.();
+      }
+    }
+
+    function deleteLabelSet(id) {
+      for (const lbl of state.labels) {
+        if (lbl.setId === id) lbl.setId = null;
+      }
+      state.labelSets.delete(id);
+      syncToPlayer();
+      xcPanel._rebuildSetSection?.();
+    }
+
+    function assignLabelToSet(labelId, setId) {
+      const lbl = state.labels.find((l) => l.id === labelId);
+      if (lbl) { lbl.setId = setId || null; syncToPlayer(); }
+    }
+
+    function convertSetToManual(setId) {
+      const s = state.labelSets.get(setId);
+      if (s) { s.origin = 'manual'; syncToPlayer(); }
+    }
+
     // No local last-click tracking needed; clear/add highlight by querying overlay.
 
     // ── Xeno-canto panel ──────────────────────────────────────────────
@@ -372,13 +426,22 @@
     let currentXcId = null;
 
     const xcPanel = new XenoCantoPanel({
-      keyInput:        document.getElementById('xcApiKeyInput'),
-      saveBtn:         document.getElementById('xcApiSaveBtn'),
-      recordingMetaEl: document.getElementById('xcRecordingMeta'),
-      setMetaEl:       document.getElementById('xcSetMeta'),
-      uploadBtn:       document.getElementById('xcUploadBtn'),
-      exportSetBtn:    document.getElementById('xcExportSetBtn'),
-      statusEl:        document.getElementById('xcStatus'),
+      keyInput:              document.getElementById('xcApiKeyInput'),
+      saveBtn:               document.getElementById('xcApiSaveBtn'),
+      recordingMetaEl:       document.getElementById('xcRecordingMeta'),
+      recordingEditEl:       document.getElementById('xcRecordingEdit'),
+      setContainerEl:        document.getElementById('xcSetContainer'),
+      uploadBtn:             document.getElementById('xcUploadBtn'),
+      exportSetBtn:          document.getElementById('xcExportSetBtn'),
+      statusEl:              document.getElementById('xcStatus'),
+      getLabelSets:          () => state.labelSets,
+      onSetChange:           (setId, updates) => {
+        const s = state.labelSets.get(setId);
+        if (s) { Object.assign(s, updates); }
+      },
+      onCreateSet:           (partial) => createLabelSet(partial),
+      getRecordingEditMeta:  () => state.recordingEditMeta,
+      onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
     });
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
@@ -496,26 +559,31 @@
       resolveName,
       tagStore,
       onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
-      // We rely on the internal LabelList.highlightRow() for immediate
-      // visual feedback. Emit a canonical `labelfocus` from onFocus so
-      // the centralized handler can perform seek/highlight/pin logic.
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
       onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
       onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
       onFocus: (id, src) => {
         player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
-        // Also run centralized selection immediately for snappy UI
         try { selectLabel(id, { seekMode: 'start' }); } catch (e) { /* ignore */ }
       },
       onHover: (id, on) => {
-        // Emit a labelfocus hover so the spectrogram layer and properties panel
-        // receive the hover state (.focused class is managed by SpectrogramLabelLayer).
         player._emit?.('labelfocus', { id: on ? id : null, source: 'list', interaction: 'hover' });
       },
+      // ── Set management ──
+      getSets: () => state.labelSets,
+      onCreateSet: (partial) => createLabelSet(partial),
+      onRenameSet: (id, name) => renameLabelSet(id, name),
+      onDeleteSet: (id) => deleteLabelSet(id),
+      onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
+      onConvertSetToManual: (setId) => convertSetToManual(setId),
     });
     labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
+    };
+    propsPanel.onSetChange = (setId, updates) => {
+      const s = state.labelSets.get(setId);
+      if (s) { Object.assign(s, updates); syncToPlayer(); }
     };
 
     player.on('labelfocus', (e) => {
@@ -653,6 +721,14 @@
 
     // ── File loading ──────────────────────────────────────────────────
     async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
+      // Reset label + set state when loading a new file
+      state.labels = [];
+      state.labelSets.clear();
+      state.xcLabelPool = [];
+      state.recordingEditMeta = defaultRecordingEditMeta();
+      xcPanel._activeSetId = null;
+      xcPanel._rebuildSetSection?.();
+      syncToPlayer();
       if (state.activeObjectUrl) {
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
         state.activeObjectUrl = null;
@@ -702,6 +778,41 @@
       }
 
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
+
+      // ── Promote embedded annotationSet objects into the set registry ──
+      const setIdMap = new Map(); // "uri||name" → setId
+      for (const lbl of result.labels) {
+        if (lbl.annotationSet) {
+          const as = lbl.annotationSet;
+          const key = as.uri || as.name || '';
+          if (key && !setIdMap.has(key)) {
+            // Find existing matching set in registry (by uri or name)
+            let existingId = null;
+            for (const [id, s] of state.labelSets) {
+              if ((as.uri && s.uri === as.uri) || (as.name && s.name === as.name)) {
+                existingId = id; break;
+              }
+            }
+            if (!existingId) {
+              const newSet = createLabelSet({
+                name: as.name || `XC${result.xcId} set`,
+                license: as.license || '',
+                creator: as.creator || '',
+                uri: as.uri || '',
+                date: as.date || '',
+                origin: 'xeno-canto',
+              });
+              existingId = newSet.id;
+            }
+            setIdMap.set(key, existingId);
+          }
+          lbl.setId = key ? (setIdMap.get(key) || null) : null;
+          delete lbl.annotationSet; // migrate to flat setId reference
+        } else {
+          lbl.setId = null;
+        }
+      }
+
       state.labels = result.labels;
       syncToPlayer();
       return { xcId: result.xcId, imported: result.labels.length };
@@ -849,14 +960,14 @@
     const xcUploadBtn = document.getElementById('xcUploadBtn');
 
     xcExportSetBtn.addEventListener('click', () => {
-      xcPanel.exportAnnotationSetJSON(state.labels);
+      xcPanel.exportAnnotationSetJSON(state.labels, state.labelSets, state.recordingEditMeta);
     });
 
     xcUploadBtn.addEventListener('click', async () => {
       xcUploadBtn.disabled = true;
       xcPanel._setStatus('Uploading…', 'info');
       try {
-        const result = await xcPanel.uploadToXenoCanto(state.labels);
+        const result = await xcPanel.uploadToXenoCanto(state.labels, state.labelSets, state.recordingEditMeta);
         if (result.ok) {
           xcPanel._setStatus(result.message, 'success');
         } else {
@@ -866,8 +977,18 @@
       } catch (err) {
         xcPanel._setStatus(err?.message || 'Upload failed', 'error');
       } finally {
-        xcUploadBtn.disabled = !xcPanel.apiKey || !xcPanel.xcId;
+        xcPanel._updateUploadState();
       }
+    });
+
+    // ── Toggle editable recording metadata section ────────────────────
+    const xcToggleRecordingEdit = document.getElementById('xcToggleRecordingEdit');
+    const xcRecordingEditEl = document.getElementById('xcRecordingEdit');
+    xcToggleRecordingEdit?.addEventListener('click', () => {
+      const hidden = xcRecordingEditEl.hidden;
+      xcRecordingEditEl.hidden = !hidden;
+      xcToggleRecordingEdit.textContent = hidden ? 'Hide' : 'Edit';
+      if (hidden) xcPanel._buildRecordingEditSection();
     });
 
     // ── Taxonomy ──────────────────────────────────────────────────────
@@ -885,6 +1006,17 @@
         taxonomy.load(data);
         state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
+        // Wire species search widget factory into label list + properties panel
+        const getSuggestions = createSuggestionProvider({
+          taxonomy,
+          getLang: () => state.taxonomyLang,
+          getLabels: () => state.labels,
+          getPool: () => state.xcLabelPool,
+        });
+        const speciesSearchFactory = (anchor, onSelect) =>
+          createSpeciesSearchWidget({ getSuggestions, onSelect });
+        labelList.setSpeciesSearchFactory(speciesSearchFactory);
+        propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
         labelList.render(state.labels);
       } catch (err) {
         taxonomy.clear();
@@ -925,6 +1057,7 @@
       if (!file) return;
       state.xcLabelPool = [];
       state.labels = [];
+      state.labelSets.clear();
       state.recordingMeta = null;
       currentXcId = null;
       updateUrlXcId(null);
@@ -937,6 +1070,7 @@
     loadSampleBtn.addEventListener('click', async () => {
       state.xcLabelPool = [];
       state.labels = [];
+      state.labelSets.clear();
       state.recordingMeta = null;
       currentXcId = null;
       updateUrlXcId(null);
@@ -963,6 +1097,7 @@
 
     clearAllBtn.addEventListener('click', () => {
       state.labels = [];
+      state.labelSets.clear();
       state.selected = null;
       selectionMeta.textContent = '';
       player.clearSpectrogramLabels();

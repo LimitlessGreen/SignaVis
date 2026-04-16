@@ -1,28 +1,15 @@
 /**
  * Hierarchical label list for sidebar display.
  *
- * Labels are grouped by origin (manual / BirdNET / xeno-canto) and then
- * by label name. Each name group renders as a collapsible tree node:
- *   • Color dot + name (inline-editable) + count badge + taxonomy-edit btn
- *   • Scientific name (italic, muted)
- *   • Expandable list of instances, each showing:
- *     – Time range + frequency range
- *     – Tag badges + confidence
- *     – Delete button
- *     – Double-click: inline tag editing
+ * Labels are grouped in up to three levels:
+ *   1. Origin (manual / BirdNET / xeno-canto)
+ *   2. Annotation Set (XC labels from an annotation set get a collapsible set header)
+ *   3. Species/label name (collapsible, inline-editable, shows all instances)
+ *      └─ Instance cards (time · freq · tag pills · actions)
  *
  * Usage:
  *   import { LabelList } from './lib/label-list.js';
- *   const list = new LabelList({
- *     container: document.getElementById('labelList'),
- *     emptyEl:   document.getElementById('labelsEmpty'),
- *     resolveName: (lbl) => ({ display, scientific }),
- *     onSync:  () => syncToPlayer(),
- *     onSeek:  (lbl) => player.currentTime = lbl.start,
- *     onEdit:  (id)  => player.spectrogramLabels._renameSpectrogramLabelPrompt(id),
- *     onFocus: (id)  => player._emit('labelfocus', { id, source: 'table' }),
- *     onHover: (id, on) => highlightLabel(id, on),
- *   });
+ *   const list = new LabelList({ container, emptyEl, resolveName, onSync, ... });
  *   list.render(labels);
  */
 
@@ -30,23 +17,68 @@ import { TAG_PRESETS } from './label-table.js';
 import { createEditableSelect } from './editable-select.js';
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
+// Tags that belong to the set header — never shown as per-instance badges
+const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
 
 function fmt(sec) {
-  return Number(sec).toFixed(2) + 's';
+  const s = Number(sec);
+  return s >= 60
+    ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.round((s % 1) * 10)).padStart(1, '0')}`
+    : s.toFixed(2) + 's';
+}
+
+function fmtFreq(hz) {
+  const n = Math.round(Number(hz));
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+/** Derive annotation set info from a label — supports both new (annotationSet field) and legacy (tags) format. */
+function getAnnotationSet(lbl) {
+  if (lbl.annotationSet) return lbl.annotationSet;
+  if (lbl.tags?.setName || lbl.tags?.setLicense) {
+    return {
+      name: lbl.tags.setName || '',
+      license: lbl.tags.setLicense || '',
+      creator: lbl.tags.setCreator || '',
+      uri: '',
+      date: '',
+    };
+  }
+  return null;
+}
+
+const LICENSE_COLORS = {
+  'CC0': '#6366f1', 'CC-BY-4.0': '#10b981', 'CC-BY-NC-4.0': '#f59e0b',
+  'CC-BY-SA-4.0': '#3b82f6', 'CC-BY-NC-SA-4.0': '#ef4444',
+};
+function licenseColor(lic) {
+  for (const [k, v] of Object.entries(LICENSE_COLORS)) {
+    if ((lic || '').startsWith(k)) return v;
+  }
+  return '#6b7280';
 }
 
 export class LabelList {
   /**
    * @param {object} opts
-   * @param {HTMLElement}  opts.container    Scrollable parent for label cards
-   * @param {HTMLElement}  opts.emptyEl      "No labels" placeholder
-   * @param {HTMLElement}  [opts.badgeEl]    Element for label count text
+   * @param {HTMLElement}  opts.container
+   * @param {HTMLElement}  opts.emptyEl
+   * @param {HTMLElement}  [opts.badgeEl]
    * @param {(lbl: any) => {display: string, scientific: string}} opts.resolveName
    * @param {() => void}   opts.onSync
    * @param {(lbl: any) => void}  [opts.onSeek]
    * @param {(id: string) => void} [opts.onEdit]
+   * @param {(ids: string[]) => void} [opts.onBulkEdit]
    * @param {(id: string, source: string) => void} [opts.onFocus]
    * @param {(id: string, on: boolean) => void}     [opts.onHover]
+   * @param {(ids: string[]) => void} [opts.onMultiSelectionChange]
+   * @param {() => Map<string,object>}  [opts.getSets]           Returns state.labelSets
+   * @param {(partial: object) => void} [opts.onCreateSet]       Create a new set
+   * @param {(id: string, name: string) => void} [opts.onRenameSet]
+   * @param {(id: string) => void}      [opts.onDeleteSet]
+   * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
+   * @param {(setId: string) => void}   [opts.onConvertSetToManual]
+   * @param {((anchor: HTMLElement, onSelect: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
    */
   constructor(opts) {
     this._container = opts.container;
@@ -56,20 +88,31 @@ export class LabelList {
     this._onSync = opts.onSync;
     this._onSeek = opts.onSeek;
     this._onEdit = opts.onEdit;
+    this._onBulkEdit = opts.onBulkEdit || null;
     this._onFocus = opts.onFocus;
     this._onHover = opts.onHover;
-    this._onBulkEdit = opts.onBulkEdit || null;
     this._onMultiSelectionChange = opts.onMultiSelectionChange || null;
     this._onRemove = null;
     this._tagStore = opts.tagStore || null;
+    // Set management callbacks
+    this._getSets = opts.getSets || null;
+    this._onCreateSet = opts.onCreateSet || null;
+    this._onRenameSet = opts.onRenameSet || null;
+    this._onDeleteSet = opts.onDeleteSet || null;
+    this._onAssignSet = opts.onAssignSet || null;
+    this._onConvertSetToManual = opts.onConvertSetToManual || null;
+    /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
+    this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._cardMap = new Map();
     this._esInstances = [];
     this._selectedId = null;
-    /** @type {Set<string>} ids selected via Ctrl+Click for bulk actions */
+    /** @type {Set<string>} */
     this._multiSelectedIds = new Set();
     this._labels = [];
     /** @type {Set<string>} group keys that are expanded */
     this._expandedGroups = new Set();
+    /** @type {Set<string>} annotation set keys that are expanded */
+    this._expandedSets = new Set();
     /** @type {Set<string>} label ids whose detail section is open */
     this._detailOpenIds = new Set();
     /** @type {HTMLElement|null} */
@@ -79,31 +122,29 @@ export class LabelList {
   set onRemove(fn) { this._onRemove = fn; }
   set onBulkEdit(fn) { this._onBulkEdit = fn; }
   set onMultiSelectionChange(fn) { this._onMultiSelectionChange = fn; }
+  /** Provide or update the species search factory after construction. */
+  setSpeciesSearchFactory(fn) { this._speciesSearchFactory = fn || null; }
   get selectedId() { return this._selectedId; }
   get multiSelectedIds() { return this._multiSelectedIds; }
 
-  /** Update only the tag-badges of a specific label instance (no full re-render). */
+  /** Update only tag-badges of a specific label instance (no full re-render). */
   updateBadges(labelId, lbl) {
     const inst = this._cardMap.get(labelId);
     if (!inst) return;
-    const oldBadges = inst.querySelector('.label-card-tags');
+    const oldBadges = inst.querySelector('.label-instance-tags');
     if (oldBadges) {
-      const newBadges = this._buildTagBadges(lbl);
-      // Keep hidden if detail is open
-      if (this._detailOpenIds.has(labelId)) newBadges.style.display = 'none';
+      const newBadges = this._buildTagPills(lbl);
       oldBadges.replaceWith(newBadges);
     }
   }
 
-  /** Full re-render — groups labels by origin, then by name. */
+  /** Full re-render. */
   render(labels) {
     this._labels = labels;
-    // Remove any ids that no longer exist
     const idSet = new Set(labels.map((l) => l.id));
     for (const id of this._multiSelectedIds) {
       if (!idSet.has(id)) this._multiSelectedIds.delete(id);
     }
-    // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
     for (const es of this._esInstances) es.destroy();
     this._esInstances = [];
     this._container.innerHTML = '';
@@ -112,17 +153,33 @@ export class LabelList {
     this._emptyEl.style.display = labels.length ? 'none' : '';
 
     const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+    const setsRegistry = this._getSets ? this._getSets() : new Map();
 
-    // Two-level: origin → label name → instances[]
-    /** @type {Map<string, Map<string, any[]>>} */
+    // 3-level: origin → setKey → nameKey → instances[]
+    /** @type {Map<string, Map<string, {setInfo: any, nameMap: Map<string, any[]>}>>} */
     const originGroups = new Map();
     for (const lbl of labels) {
       const origin = lbl.origin || 'manual';
       if (!originGroups.has(origin)) originGroups.set(origin, new Map());
-      const nameMap = /** @type {Map<string, any[]>} */ (originGroups.get(origin));
-      const key = lbl.label || '(unlabeled)';
-      if (!nameMap.has(key)) nameMap.set(key, []);
-      /** @type {any[]} */ (nameMap.get(key)).push(lbl);
+      const setMap = originGroups.get(origin);
+
+      // Prefer setId → registry lookup, fall back to embedded annotationSet for backwards compat
+      let setInfo = null;
+      let setKey = '';
+      if (lbl.setId && setsRegistry.has(lbl.setId)) {
+        setInfo = setsRegistry.get(lbl.setId);
+        setKey = lbl.setId;
+      } else {
+        const as = getAnnotationSet(lbl);
+        setInfo = as;
+        setKey = as?.uri || as?.name || '';
+      }
+      if (!setMap.has(setKey)) setMap.set(setKey, { setInfo, nameMap: new Map() });
+      const { nameMap } = setMap.get(setKey);
+
+      const nameKey = lbl.label || '(unlabeled)';
+      if (!nameMap.has(nameKey)) nameMap.set(nameKey, []);
+      nameMap.get(nameKey).push(lbl);
     }
 
     const origins = [...originGroups.keys()].sort((a, b) =>
@@ -133,15 +190,45 @@ export class LabelList {
       if (showOriginHeaders) {
         const hdr = document.createElement('div');
         hdr.className = 'label-origin-header';
-        hdr.textContent = origin;
+        const span = document.createElement('span');
+        span.textContent = origin;
+        hdr.appendChild(span);
+        if (this._onCreateSet) {
+          const addBtn = document.createElement('button');
+          addBtn.className = 'label-origin-add-set-btn';
+          addBtn.title = 'New annotation set';
+          addBtn.textContent = '+ Set';
+          addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._onCreateSet({ origin: origin === 'xeno-canto' ? 'xeno-canto' : 'manual' });
+          });
+          hdr.appendChild(addBtn);
+        }
         this._container.appendChild(hdr);
       }
-      const nameMap = /** @type {Map<string, any[]>} */ (originGroups.get(origin));
-      const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
-      for (const name of names) {
-        const instances = /** @type {any[]} */ (nameMap.get(name));
-        instances.sort((a, b) => a.start - b.start);
-        this._container.appendChild(this._buildGroup(instances));
+      const setMap = originGroups.get(origin);
+      for (const [setKey, { setInfo, nameMap }] of setMap) {
+        const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
+        const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
+
+        if (setKey) {
+          // Render annotation set header + collapsible body
+          const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
+            const frag = document.createDocumentFragment();
+            for (const name of names) {
+              const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
+              frag.appendChild(this._buildGroup(instances));
+            }
+            return frag;
+          });
+          this._container.appendChild(setSection);
+        } else {
+          // No annotation set — render species groups directly
+          for (const name of names) {
+            const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
+            this._container.appendChild(this._buildGroup(instances));
+          }
+        }
       }
     }
 
@@ -155,16 +242,10 @@ export class LabelList {
     for (const c of this._container.querySelectorAll('.label-instance.selected')) {
       c.classList.remove('selected');
     }
-    if (labelId) {
+    if (labelId && this._multiSelectedIds.size === 0) {
       const inst = this._cardMap.get(labelId);
       if (inst) {
-        // Auto-expand parent group if collapsed
-        const group = inst.closest('.label-group');
-        if (group && !group.classList.contains('expanded')) {
-          const list = group.querySelector('.label-group-instances');
-          if (list) /** @type {HTMLElement} */ (list).hidden = false;
-          group.classList.add('expanded');
-        }
+        this._autoExpand(inst);
         inst.classList.add('selected');
         inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
@@ -178,13 +259,7 @@ export class LabelList {
     if (labelId) {
       const inst = this._cardMap.get(labelId);
       if (inst) {
-        // Auto-expand parent group if collapsed
-        const group = inst.closest('.label-group');
-        if (group && !group.classList.contains('expanded')) {
-          const list = group.querySelector('.label-group-instances');
-          if (list) /** @type {HTMLElement} */ (list).hidden = false;
-          group.classList.add('expanded');
-        }
+        this._autoExpand(inst);
         inst.classList.add('highlighted');
         inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
@@ -197,14 +272,27 @@ export class LabelList {
     this._updateBulkToolbar();
   }
 
+  _autoExpand(inst) {
+    const group = inst.closest('.label-group');
+    if (group && !group.classList.contains('expanded')) {
+      const list = group.querySelector('.label-group-instances');
+      if (list) list.hidden = false;
+      group.classList.add('expanded');
+    }
+    const setBody = inst.closest('.label-set-body');
+    if (setBody && setBody.hidden) {
+      setBody.hidden = false;
+      const sec = setBody.closest('.label-set-section');
+      if (sec) sec.classList.add('expanded');
+    }
+  }
+
   _updateMultiVisual() {
     const anySelected = this._multiSelectedIds.size > 0;
     for (const [id, el] of this._cardMap) {
       const multiSelected = this._multiSelectedIds.has(id);
       el.classList.toggle('multi-selected', multiSelected);
       el.classList.toggle('multi-active', anySelected);
-      // Suppress single-selection highlight while multi-select is active;
-      // restore it when multi-select is cleared.
       if (anySelected) {
         el.classList.remove('selected');
       } else if (id === this._selectedId) {
@@ -219,50 +307,209 @@ export class LabelList {
     this._onMultiSelectionChange?.([...this._multiSelectedIds]);
     const count = this._multiSelectedIds.size;
     if (count < 2) {
-      if (this._bulkToolbar) {
-        this._bulkToolbar.remove();
-        this._bulkToolbar = null;
-      }
+      if (this._bulkToolbar) { this._bulkToolbar.remove(); this._bulkToolbar = null; }
       return;
     }
-
     if (!this._bulkToolbar) {
       const bar = document.createElement('div');
       bar.className = 'label-multi-toolbar';
-      // Insert before the scroll container or as sibling of _container
       const scroll = this._container.closest('.label-list-scroll');
       const parent = scroll ? scroll.parentElement : this._container.parentElement;
       if (scroll) parent.insertBefore(bar, scroll);
       else parent.insertBefore(bar, this._container);
       this._bulkToolbar = bar;
     }
-
     this._bulkToolbar.innerHTML = '';
     const info = document.createElement('span');
     info.className = 'label-multi-info';
     info.textContent = `${count} selected`;
     this._bulkToolbar.appendChild(info);
-
     if (this._onBulkEdit) {
-      const renameBtn = document.createElement('button');
-      renameBtn.className = 'tb-btn';
-      renameBtn.textContent = 'Rename selected';
-      renameBtn.addEventListener('click', () => {
-        this._onBulkEdit([...this._multiSelectedIds]);
-      });
-      this._bulkToolbar.appendChild(renameBtn);
+      const btn = document.createElement('button');
+      btn.className = 'tb-btn';
+      btn.textContent = 'Rename selected';
+      btn.addEventListener('click', () => this._onBulkEdit([...this._multiSelectedIds]));
+      this._bulkToolbar.appendChild(btn);
     }
-
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'tb-btn';
-    clearBtn.textContent = 'Deselect all';
-    clearBtn.addEventListener('click', () => this.clearMultiSelection());
-    this._bulkToolbar.appendChild(clearBtn);
+    const clrBtn = document.createElement('button');
+    clrBtn.className = 'tb-btn';
+    clrBtn.textContent = 'Deselect all';
+    clrBtn.addEventListener('click', () => this.clearMultiSelection());
+    this._bulkToolbar.appendChild(clrBtn);
   }
 
-  // ── Group builder ──────────────────────────────────────────────────
+  // ── Annotation set section ──────────────────────────────────────────
 
-  /** @param {any[]} instances  Labels sharing the same name+origin */
+  _buildSetSection(setInfo, setKey, totalCount, buildBody) {
+    const section = document.createElement('div');
+    section.className = 'label-set-section';
+
+    const isExpanded = this._expandedSets.has(setKey) !== false;  // expanded by default
+    if (!this._expandedSets.has(setKey + '__init')) {
+      this._expandedSets.add(setKey);
+      this._expandedSets.add(setKey + '__init');
+    }
+    const expanded = this._expandedSets.has(setKey);
+
+    // ── Set header ──
+    const hdr = document.createElement('div');
+    hdr.className = 'label-set-header';
+
+    const chevron = document.createElement('span');
+    chevron.className = 'label-set-chevron';
+    chevron.textContent = '▸';
+    hdr.appendChild(chevron);
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'label-set-name-wrap';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'label-set-name';
+    nameEl.textContent = setInfo?.name || 'Annotation set';
+    if (setInfo?.uri) {
+      const link = document.createElement('a');
+      link.href = setInfo.uri;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.className = 'label-set-link';
+      link.title = 'Open on Xeno-canto';
+      link.textContent = '↗';
+      nameWrap.appendChild(nameEl);
+      nameWrap.appendChild(link);
+    } else {
+      nameWrap.appendChild(nameEl);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'label-set-meta';
+    if (setInfo?.creator) {
+      const cr = document.createElement('span');
+      cr.className = 'label-set-creator';
+      cr.textContent = setInfo.creator;
+      meta.appendChild(cr);
+    }
+    if (setInfo?.license) {
+      const lic = document.createElement('span');
+      lic.className = 'label-set-license';
+      lic.textContent = setInfo.license;
+      lic.style.background = licenseColor(setInfo.license) + '22';
+      lic.style.color = licenseColor(setInfo.license);
+      meta.appendChild(lic);
+    }
+    nameWrap.appendChild(meta);
+    hdr.appendChild(nameWrap);
+
+    const count = document.createElement('span');
+    count.className = 'label-set-count';
+    count.textContent = String(totalCount);
+    hdr.appendChild(count);
+
+    // ── Set action buttons (hover-visible) ──
+    const setActions = document.createElement('div');
+    setActions.className = 'label-set-actions';
+
+    if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') {
+      const convBtn = document.createElement('button');
+      convBtn.className = 'act-btn label-set-action-btn';
+      convBtn.title = 'Convert to manual set';
+      convBtn.textContent = '⇄';
+      convBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onConvertSetToManual(setKey); });
+      setActions.appendChild(convBtn);
+    }
+    if (this._onRenameSet) {
+      const renBtn = document.createElement('button');
+      renBtn.className = 'act-btn label-set-action-btn';
+      renBtn.title = 'Rename set';
+      renBtn.textContent = '✎';
+      renBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nameSpan = hdr.querySelector('.label-set-name');
+        if (!nameSpan || nameSpan.querySelector('input')) return;
+        const oldName = setInfo?.name || '';
+        const inp = document.createElement('input');
+        inp.className = 'inline-name-input';
+        inp.value = oldName;
+        inp.style.cssText = 'max-width:120px;font-size:11px;';
+        nameSpan.textContent = '';
+        nameSpan.appendChild(inp);
+        inp.focus(); inp.select();
+        const commit = () => {
+          const val = inp.value.trim();
+          if (val && val !== oldName) this._onRenameSet(setKey, val);
+          nameSpan.textContent = val || oldName;
+        };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+          if (ev.key === 'Escape') { ev.preventDefault(); nameSpan.textContent = oldName; }
+        });
+        inp.addEventListener('click', (ev) => ev.stopPropagation());
+      });
+      setActions.appendChild(renBtn);
+    }
+    if (this._onDeleteSet) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'act-btn label-set-action-btn danger';
+      delBtn.title = 'Delete set (labels remain without a set)';
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(`Delete set "${setInfo?.name || setKey}"? Labels will remain without a set.`)) {
+          this._onDeleteSet(setKey);
+        }
+      });
+      setActions.appendChild(delBtn);
+    }
+    if (setActions.children.length) hdr.appendChild(setActions);
+
+    // Drag-over: accept label cards dropped onto this set header
+    if (this._onAssignSet) {
+      hdr.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; hdr.classList.add('drag-over'); });
+      hdr.addEventListener('dragleave', (e) => { if (!hdr.contains(e.relatedTarget)) hdr.classList.remove('drag-over'); });
+      hdr.addEventListener('drop', (e) => {
+        e.preventDefault();
+        hdr.classList.remove('drag-over');
+        const labelId = e.dataTransfer.getData('text/label-id');
+        if (labelId) this._onAssignSet(labelId, setKey);
+      });
+    }
+
+    section.appendChild(hdr);
+
+    // ── Collapsible body ──
+    const body = document.createElement('div');
+    body.className = 'label-set-body';
+    body.hidden = !expanded;
+    section.classList.toggle('expanded', expanded);
+
+    // Build group content lazily on first expand
+    let built = false;
+    const ensureBuilt = () => {
+      if (built) return;
+      built = true;
+      body.appendChild(buildBody());
+    };
+    if (expanded) ensureBuilt();
+
+    hdr.addEventListener('click', () => {
+      const wasExpanded = !body.hidden;
+      body.hidden = wasExpanded;
+      section.classList.toggle('expanded', !wasExpanded);
+      if (!wasExpanded) {
+        ensureBuilt();
+        this._expandedSets.add(setKey);
+      } else {
+        this._expandedSets.delete(setKey);
+      }
+    });
+
+    section.appendChild(body);
+    return section;
+  }
+
+  // ── Species group builder ───────────────────────────────────────────
+
   _buildGroup(instances) {
     const representative = instances[0];
     const { display, scientific } = this._resolveName(representative);
@@ -272,7 +519,6 @@ export class LabelList {
     const group = document.createElement('div');
     group.className = 'label-group';
 
-    // ── Group header: chevron + dot + name + count + edit btn ──
     const row = document.createElement('div');
     row.className = 'label-group-row';
 
@@ -291,7 +537,7 @@ export class LabelList {
     const nameEl = document.createElement('span');
     nameEl.className = 'label-group-name';
     nameEl.textContent = display;
-    nameEl.title = 'Click to edit name';
+    nameEl.title = 'Click to inline-edit name';
     nameEl.addEventListener('click', (e) => {
       e.stopPropagation();
       this._startGroupInlineEdit(nameEl, instances, display);
@@ -299,10 +545,10 @@ export class LabelList {
     row.appendChild(nameEl);
 
     if (instances.length > 1) {
-      const count = document.createElement('span');
-      count.className = 'label-group-count';
-      count.textContent = String(instances.length);
-      row.appendChild(count);
+      const cnt = document.createElement('span');
+      cnt.className = 'label-group-count';
+      cnt.textContent = String(instances.length);
+      row.appendChild(cnt);
     }
 
     const spacer = document.createElement('span');
@@ -312,7 +558,9 @@ export class LabelList {
     const editBtn = document.createElement('button');
     editBtn.className = 'act-btn';
     editBtn.textContent = '✎';
-    editBtn.title = instances.length > 1 ? `Edit species for all ${instances.length} instances` : 'Edit species';
+    editBtn.title = instances.length > 1
+      ? `Edit species for all ${instances.length} instances`
+      : 'Edit species';
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (instances.length > 1 && this._onBulkEdit) {
@@ -325,15 +573,13 @@ export class LabelList {
 
     group.appendChild(row);
 
-    // ── Scientific name ──
-    if (scientific) {
+    if (scientific && scientific !== display) {
       const sciEl = document.createElement('div');
       sciEl.className = 'label-group-sci';
       sciEl.textContent = scientific;
       group.appendChild(sciEl);
     }
 
-    // ── Instances list (collapsible) ──
     const instanceList = document.createElement('div');
     instanceList.className = 'label-group-instances';
 
@@ -343,7 +589,6 @@ export class LabelList {
       this._cardMap.set(lbl.id, inst);
     }
 
-    // Auto-expand single-instance groups; preserve expand state across re-renders
     const single = instances.length === 1;
     const shouldExpand = this._expandedGroups.has(groupKey) || single;
     instanceList.hidden = !shouldExpand;
@@ -363,32 +608,39 @@ export class LabelList {
     return group;
   }
 
-  // ── Instance builder ──────────────────────────────────────────────
+  // ── Instance builder ────────────────────────────────────────────────
 
   _buildInstance(lbl) {
     const inst = document.createElement('div');
     inst.className = 'label-instance';
     inst.dataset.labelId = lbl.id;
+    // Color left border via CSS variable
+    if (lbl.color) inst.style.setProperty('--lbl-color', lbl.color);
+
+    // ── Drag to set ──
+    if (this._onAssignSet) {
+      inst.draggable = true;
+      inst.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/label-id', lbl.id);
+        e.dataTransfer.effectAllowed = 'move';
+        inst.classList.add('dragging');
+      });
+      inst.addEventListener('dragend', () => inst.classList.remove('dragging'));
+    }
 
     inst.addEventListener('click', (e) => {
       if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.esel')) return;
       if (e.ctrlKey || e.metaKey) {
-        // Ctrl+Click: toggle multi-selection without seeking.
-        // On the first Ctrl+Click, carry the previously selected label into the set.
         e.preventDefault();
         if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
           this._multiSelectedIds.add(this._selectedId);
         }
-        if (this._multiSelectedIds.has(lbl.id)) {
-          this._multiSelectedIds.delete(lbl.id);
-        } else {
-          this._multiSelectedIds.add(lbl.id);
-        }
+        if (this._multiSelectedIds.has(lbl.id)) this._multiSelectedIds.delete(lbl.id);
+        else this._multiSelectedIds.add(lbl.id);
         this._updateMultiVisual();
         this._updateBulkToolbar();
         return;
       }
-      // Clear multi-selection on plain click
       if (this._multiSelectedIds.size > 0) {
         this._multiSelectedIds.clear();
         this._updateMultiVisual();
@@ -401,11 +653,10 @@ export class LabelList {
     inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
     inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
 
-    // ── Header: checkbox + time/freq + edit-toggle + delete ──
+    // ── Header row ──
     const header = document.createElement('div');
     header.className = 'label-instance-header';
 
-    // Multi-select checkbox (visible on hover or when any multi-selection is active)
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'label-instance-cb';
@@ -414,7 +665,6 @@ export class LabelList {
     cb.addEventListener('change', (e) => {
       e.stopPropagation();
       if (cb.checked) {
-        // Carry existing single-selection into the set on first checkbox tick
         if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
           this._multiSelectedIds.add(this._selectedId);
         }
@@ -428,49 +678,55 @@ export class LabelList {
     cb.addEventListener('click', (e) => e.stopPropagation());
     header.appendChild(cb);
 
-    const meta = document.createElement('span');
+    // Time + freq meta
+    const meta = document.createElement('div');
     meta.className = 'label-instance-meta';
-    meta.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}  ·  ${Math.round(lbl.freqMin)}–${Math.round(lbl.freqMax)} Hz`;
+    const timeEl = document.createElement('span');
+    timeEl.className = 'lbl-time';
+    timeEl.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
+    const freqEl = document.createElement('span');
+    freqEl.className = 'lbl-freq';
+    freqEl.textContent = `${fmtFreq(lbl.freqMin)} – ${fmtFreq(lbl.freqMax)} Hz`;
+    meta.appendChild(timeEl);
+    meta.appendChild(freqEl);
     header.appendChild(meta);
 
     const spacer = document.createElement('span');
     spacer.style.flex = '1';
     header.appendChild(spacer);
 
-    // Species-rename button — opens taxonomy search for this instance only
+    // Actions (hidden until hover)
+    const actions = document.createElement('div');
+    actions.className = 'label-instance-actions';
+
     const speciesBtn = document.createElement('button');
     speciesBtn.className = 'act-btn species-edit-btn';
     speciesBtn.textContent = '🏷';
     speciesBtn.title = 'Change species for this label';
-    speciesBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._onEdit?.(lbl.id);
-    });
-    header.appendChild(speciesBtn);
+    speciesBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
+    actions.appendChild(speciesBtn);
 
     const editToggle = document.createElement('button');
     editToggle.className = 'act-btn edit-toggle';
-    editToggle.textContent = '✎';
     editToggle.title = 'Edit tags';
-    header.appendChild(editToggle);
+    editToggle.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    actions.appendChild(editToggle);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'act-btn danger';
     delBtn.textContent = '×';
     delBtn.title = 'Remove';
-    delBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._onRemove?.(lbl);
-    });
-    header.appendChild(delBtn);
+    delBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onRemove?.(lbl); });
+    actions.appendChild(delBtn);
 
+    header.appendChild(actions);
     inst.appendChild(header);
 
-    // ── Tag badges (shown when detail is collapsed) ──
-    const tagsEl = this._buildTagBadges(lbl);
+    // ── Tag pills row (always visible) ──
+    const tagsEl = this._buildTagPills(lbl);
     inst.appendChild(tagsEl);
 
-    // ── Expandable detail (tag editing) ──
+    // ── Expandable detail ──
     const detail = this._buildDetail(lbl);
     const isOpen = this._detailOpenIds.has(lbl.id);
     detail.style.display = isOpen ? '' : 'none';
@@ -487,12 +743,7 @@ export class LabelList {
       else this._detailOpenIds.add(lbl.id);
     };
 
-    editToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleDetail();
-    });
-
-    // Keep dblclick as alternative
+    editToggle.addEventListener('click', (e) => { e.stopPropagation(); toggleDetail(); });
     inst.addEventListener('dblclick', (e) => {
       if (e.target.closest('.act-btn') || e.target.closest('input') || e.target.closest('select') || e.target.closest('.esel')) return;
       e.stopPropagation();
@@ -502,67 +753,68 @@ export class LabelList {
     return inst;
   }
 
-  // ── Tag badges line ───────────────────────────────────────────────
+  // ── Tag pills (always-visible key tags) ────────────────────────────
 
-  _buildTagBadges(lbl) {
+  _buildTagPills(lbl) {
     const el = document.createElement('div');
-    el.className = 'label-card-tags';
+    el.className = 'label-instance-tags';
     const tags = lbl.tags || {};
 
-    // Show preset attributes as small labelled pills (e.g. "Sex: male")
-    const PRESET_LABELS = { sex: 'Sex', lifeStage: 'Stage', soundType: 'Type' };
-    for (const preset of TAG_PRESETS) {
-      const val = tags[preset.key];
-      if (val) {
-        const badge = document.createElement('span');
-        // Use modal-consistent pill styling for clarity in the sidebar
-        badge.className = 'label-tag-badge';
-        // small key label inside the pill
-        const keySpan = document.createElement('span');
-        keySpan.className = 'tag-key';
-        keySpan.textContent = PRESET_LABELS[preset.key] || preset.key;
-        badge.appendChild(keySpan);
-        badge.appendChild(document.createTextNode(': ' + val + ' '));
-        el.appendChild(badge);
-      }
+    const SEX_ICONS = { male: '♂', female: '♀' };
+    const sex = tags.sex;
+    if (sex) {
+      const p = document.createElement('span');
+      p.className = `lbl-pill lbl-pill--sex lbl-pill--sex-${sex.toLowerCase().replace(/\s+/g, '-')}`;
+      p.textContent = (SEX_ICONS[sex.toLowerCase()] || '') + ' ' + sex;
+      el.appendChild(p);
     }
 
-    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k));
+    const lifeStage = tags.lifeStage;
+    if (lifeStage) {
+      const p = document.createElement('span');
+      p.className = 'lbl-pill lbl-pill--stage';
+      p.textContent = lifeStage;
+      el.appendChild(p);
+    }
+
+    const soundType = tags.soundType;
+    if (soundType) {
+      const p = document.createElement('span');
+      p.className = 'lbl-pill lbl-pill--sound';
+      p.textContent = soundType;
+      el.appendChild(p);
+    }
+
+    // Custom tags (not preset, not set-level)
+    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k) && !SET_TAG_KEYS.has(k)
+      && k !== 'annotator' && k !== 'animalSeen' && k !== 'playbackUsed' && k !== 'remarks');
     for (const [k, v] of custom) {
-      const badge = document.createElement('span');
-      badge.className = 'tag-mini custom';
-      badge.textContent = `${k}: ${v}`;
-      el.appendChild(badge);
+      const p = document.createElement('span');
+      p.className = 'lbl-pill lbl-pill--custom';
+      p.textContent = `${k}: ${v}`;
+      el.appendChild(p);
     }
 
     if (lbl.confidence != null) {
-      const badge = document.createElement('span');
-      badge.className = 'tag-mini conf';
-      badge.textContent = Number(lbl.confidence).toFixed(2);
-      el.appendChild(badge);
-    }
-
-    if (lbl.origin) {
-      const badge = document.createElement('span');
-      badge.className = 'tag-mini origin';
-      badge.textContent = lbl.origin;
-      el.appendChild(badge);
+      const p = document.createElement('span');
+      p.className = 'lbl-pill lbl-pill--conf';
+      p.textContent = Math.round(Number(lbl.confidence) * 100) + '%';
+      el.appendChild(p);
     }
 
     return el;
   }
 
-  // ── Expandable detail section ─────────────────────────────────────
+  // ── Expandable detail section ───────────────────────────────────────
 
   _buildDetail(lbl) {
     const detail = document.createElement('div');
     detail.className = 'label-card-detail';
-
     const store = this._tagStore;
+
     for (const preset of TAG_PRESETS) {
       const row = document.createElement('div');
       row.className = 'detail-row';
-
       const label = document.createElement('label');
       label.className = 'detail-label';
       label.textContent = preset.key;
@@ -571,7 +823,6 @@ export class LabelList {
       const items = store
         ? store.getMerged(preset.key, preset.options)
         : preset.options.map((v) => ({ value: v, custom: false }));
-
       const es = createEditableSelect({
         placeholder: '–',
         value: lbl.tags?.[preset.key] || '',
@@ -582,13 +833,28 @@ export class LabelList {
           else delete lbl.tags[preset.key];
           this._onSync();
         },
-        onAdd: store ? (val) => { store.add(preset.key, val); } : undefined,
-        onRemove: store ? (val) => { store.remove(preset.key, val); } : undefined,
-        onRename: store ? (oldVal, newVal) => { store.rename(preset.key, oldVal, newVal); } : undefined,
+        onAdd: store ? (val) => store.add(preset.key, val) : undefined,
+        onRemove: store ? (val) => store.remove(preset.key, val) : undefined,
+        onRename: store ? (old, nw) => store.rename(preset.key, old, nw) : undefined,
       });
       es.el.addEventListener('click', (e) => e.stopPropagation());
       this._esInstances.push(es);
       row.appendChild(es.el);
+      detail.appendChild(row);
+    }
+
+    // Annotator (read-only if from XC)
+    if (lbl.author) {
+      const row = document.createElement('div');
+      row.className = 'detail-row detail-row--meta';
+      const lbl2 = document.createElement('span');
+      lbl2.className = 'detail-label';
+      lbl2.textContent = 'annotator';
+      const val = document.createElement('span');
+      val.className = 'detail-value-muted';
+      val.textContent = lbl.author;
+      row.appendChild(lbl2);
+      row.appendChild(val);
       detail.appendChild(row);
     }
 
@@ -602,10 +868,7 @@ export class LabelList {
     const addBtn = document.createElement('button');
     addBtn.className = 'tag-add-btn';
     addBtn.textContent = '+ Tag';
-    addBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._showCustomTagPopover(customTags, lbl, addBtn);
-    });
+    addBtn.addEventListener('click', (e) => { e.stopPropagation(); this._showCustomTagPopover(customTags, lbl, addBtn); });
     addRow.appendChild(addBtn);
     detail.appendChild(addRow);
 
@@ -615,10 +878,9 @@ export class LabelList {
   _renderCustomTags(container, lbl) {
     container.innerHTML = '';
     const tags = lbl.tags || {};
-    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k));
+    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k) && !SET_TAG_KEYS.has(k));
     for (const [k, v] of custom) {
       const badge = document.createElement('span');
-      // Use the same pill styling as the modal's label tag badges
       badge.className = 'label-tag-badge';
       const keySpan = document.createElement('span');
       keySpan.className = 'tag-key';
@@ -626,7 +888,6 @@ export class LabelList {
       badge.appendChild(keySpan);
       badge.appendChild(document.createTextNode(': ' + v + ' '));
       const del = document.createElement('button');
-      // modal uses a slightly different delete button class
       del.className = 'label-tag-badge-del';
       del.textContent = '×';
       del.addEventListener('click', (e) => {
@@ -640,24 +901,17 @@ export class LabelList {
     }
   }
 
-  // ── Inline name editing (group-level, renames all instances) ────
+  // ── Inline name editing (group-level) ──────────────────────────────
 
   _startGroupInlineEdit(nameEl, instances, displayName) {
-    if (nameEl.querySelector('input')) return;
-    const input = document.createElement('input');
-    input.className = 'inline-name-input';
-    input.value = instances[0].label || displayName;
-    nameEl.textContent = '';
-    nameEl.appendChild(input);
-    input.focus();
-    input.select();
+    if (nameEl.querySelector('input') || nameEl.querySelector('.species-search-widget')) return;
 
-    const commit = () => {
-      const val = input.value.trim();
-      if (val && val !== instances[0].label) {
+    const applyName = ({ name, scientificName }) => {
+      const val = (name || '').trim();
+      if (val) {
         for (const lbl of instances) {
           lbl.label = val;
-          lbl.scientificName = '';
+          lbl.scientificName = scientificName || '';
           lbl.commonName = '';
         }
         this._onSync({ structural: true });
@@ -665,16 +919,52 @@ export class LabelList {
         nameEl.textContent = displayName;
       }
     };
-    input.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') { e.preventDefault(); nameEl.textContent = displayName; }
-    });
-    input.addEventListener('blur', commit);
-    input.addEventListener('click', (e) => e.stopPropagation());
+
+    if (this._speciesSearchFactory) {
+      nameEl.textContent = '';
+      const widget = this._speciesSearchFactory(nameEl, applyName);
+      widget.input.value = instances[0].label || displayName;
+      nameEl.appendChild(widget.el);
+      widget.input.focus();
+      widget.input.select();
+      // Clicking away or pressing Escape restores display name
+      const onBlur = () => {
+        if (!nameEl.querySelector('.species-search-widget')) return;
+        setTimeout(() => {
+          if (nameEl.querySelector('.species-search-widget')) nameEl.textContent = displayName;
+        }, 200);
+      };
+      widget.input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); nameEl.textContent = displayName; }
+      });
+      widget.input.addEventListener('blur', onBlur);
+      widget.input.addEventListener('click', (e) => e.stopPropagation());
+    } else {
+      // Fallback: plain text input
+      const input = document.createElement('input');
+      input.className = 'inline-name-input';
+      input.value = instances[0].label || displayName;
+      nameEl.textContent = '';
+      nameEl.appendChild(input);
+      input.focus();
+      input.select();
+      const commit = () => {
+        const val = input.value.trim();
+        if (val && val !== instances[0].label) applyName({ name: val, scientificName: '' });
+        else nameEl.textContent = displayName;
+      };
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { e.preventDefault(); nameEl.textContent = displayName; }
+      });
+      input.addEventListener('blur', commit);
+      input.addEventListener('click', (e) => e.stopPropagation());
+    }
   }
 
-  // ── Custom tag popover ────────────────────────────────────────────
+  // ── Custom tag popover ──────────────────────────────────────────────
 
   _showCustomTagPopover(customTagsContainer, lbl, anchorBtn) {
     document.querySelector('.tag-popover')?.remove();
@@ -720,7 +1010,6 @@ export class LabelList {
       if (e.key === 'Enter') { e.preventDefault(); commitCustom(); }
     });
     keyInput.addEventListener('keydown', (e) => e.stopPropagation());
-
     row.appendChild(keyInput);
     row.appendChild(valInput);
     row.appendChild(okBtn);
@@ -733,7 +1022,6 @@ export class LabelList {
       }
     };
     setTimeout(() => document.addEventListener('pointerdown', closeHandler, true), 0);
-
     document.body.appendChild(pop);
     keyInput.focus();
   }

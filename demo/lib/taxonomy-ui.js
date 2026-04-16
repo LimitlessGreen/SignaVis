@@ -151,3 +151,175 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
     return out.slice(0, Math.max(1, limit));
   };
 }
+
+/**
+ * Create a reusable species autocomplete widget (input + floating dropdown).
+ *
+ * Mirrors the top-bar species search visually and functionally.
+ * The dropdown is appended to `document.body` and positioned under the anchor.
+ *
+ * @param {object} opts
+ * @param {(query: string, limit?: number) => Array<{name:string,scientificName:string,detail?:string}>} opts.getSuggestions
+ * @param {(item: {name:string, scientificName:string}) => void} opts.onSelect
+ * @param {string}  [opts.placeholder]
+ * @param {string}  [opts.initialValue]
+ * @returns {{ el: HTMLElement, input: HTMLInputElement, destroy: () => void }}
+ */
+export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholder = 'Species / Label…', initialValue = '' }) {
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── DOM ──
+  const wrap = document.createElement('div');
+  wrap.className = 'species-search-widget';
+  wrap.style.cssText = 'position:relative;display:flex;align-items:center;width:100%;';
+
+  const inner = document.createElement('div');
+  inner.className = 'species-search-inner';
+  inner.style.width = '100%';
+
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('class', 'species-search-icon');
+  icon.setAttribute('width', '13');
+  icon.setAttribute('height', '13');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('fill', 'none');
+  icon.setAttribute('stroke', 'currentColor');
+  icon.setAttribute('stroke-width', '2.5');
+  icon.setAttribute('stroke-linecap', 'round');
+  icon.innerHTML = '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>';
+  inner.appendChild(icon);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'species-search-input';
+  input.placeholder = placeholder;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.value = initialValue;
+  if (initialValue) input.classList.add('has-selection');
+  inner.appendChild(input);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'species-search-clear' + (initialValue ? '' : ' hidden');
+  clearBtn.title = 'Clear';
+  clearBtn.textContent = '×';
+  inner.appendChild(clearBtn);
+
+  wrap.appendChild(inner);
+
+  // ── Floating dropdown (portalled to body) ──
+  const dropdown = document.createElement('div');
+  dropdown.className = 'species-search-dropdown hidden';
+  document.body.appendChild(dropdown);
+
+  let activeIndex = -1;
+  let items = [];
+  let destroyed = false;
+
+  function positionDropdown() {
+    const r = inner.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = (r.bottom + 2) + 'px';
+    dropdown.style.left = r.left + 'px';
+    dropdown.style.width = Math.max(r.width, 200) + 'px';
+    dropdown.style.zIndex = '9999';
+  }
+
+  function updateHighlight() {
+    for (let i = 0; i < items.length; i++) items[i].classList.toggle('active', i === activeIndex);
+    if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
+  }
+
+  function renderDropdown() {
+    if (destroyed) return;
+    const query = input.value.trim();
+    dropdown.innerHTML = '';
+    items = [];
+    activeIndex = -1;
+    positionDropdown();
+
+    const suggestions = getSuggestions(query, 16);
+
+    if (suggestions.length === 0 && query) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'species-search-item';
+      row.innerHTML = `<span class="search-name">Create: <b>${escHtml(query)}</b></span>`;
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); selectEntry({ name: query, scientificName: '' }); });
+      dropdown.appendChild(row);
+      items.push(row);
+    }
+
+    for (const s of suggestions) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'species-search-item';
+      let html = `<span class="search-name">${escHtml(s.name)}</span>`;
+      if (s.scientificName) html += `<span class="search-sci">${escHtml(s.scientificName)}</span>`;
+      if (s.detail) html += `<span class="search-badge">${escHtml(s.detail)}</span>`;
+      row.innerHTML = html;
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); selectEntry(s); });
+      row.addEventListener('pointerenter', () => { activeIndex = items.indexOf(row); updateHighlight(); });
+      dropdown.appendChild(row);
+      items.push(row);
+    }
+
+    dropdown.classList.toggle('hidden', items.length === 0);
+  }
+
+  function selectEntry(item) {
+    const name = (item.name || '').trim();
+    input.value = name;
+    input.classList.toggle('has-selection', !!name);
+    clearBtn.classList.toggle('hidden', !name);
+    dropdown.classList.add('hidden');
+    onSelect({ name, scientificName: item.scientificName || '' });
+  }
+
+  function destroy() {
+    destroyed = true;
+    dropdown.remove();
+    document.removeEventListener('mousedown', onDocClick, true);
+    window.removeEventListener('scroll', positionDropdown, true);
+    window.removeEventListener('resize', positionDropdown);
+  }
+
+  function onDocClick(e) {
+    if (!wrap.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.add('hidden');
+    }
+  }
+
+  input.addEventListener('focus', () => renderDropdown());
+  input.addEventListener('input', () => renderDropdown());
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, items.length - 1); updateHighlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); updateHighlight(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      else if (input.value.trim()) selectEntry({ name: input.value.trim(), scientificName: '' });
+    } else if (e.key === 'Escape') {
+      dropdown.classList.add('hidden');
+      activeIndex = -1;
+    }
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => { if (!destroyed) dropdown.classList.add('hidden'); }, 120);
+  });
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    input.classList.remove('has-selection');
+    clearBtn.classList.add('hidden');
+    input.focus();
+    renderDropdown();
+  });
+  document.addEventListener('mousedown', onDocClick, true);
+  window.addEventListener('scroll', positionDropdown, true);
+  window.addEventListener('resize', positionDropdown);
+
+  return { el: wrap, input, destroy };
+}

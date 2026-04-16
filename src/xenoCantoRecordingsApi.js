@@ -136,9 +136,12 @@ function _buildXcLabel(src, index, meta) {
     const setLicense = firstNonEmpty([setMeta.set_license, setMeta.license]) || '';
     const setName = firstNonEmpty([setMeta.set_name, setMeta.name]) || '';
     const setCreator = firstNonEmpty([setMeta.set_creator, setMeta.creator]) || '';
-    if (setLicense) tags.setLicense = setLicense;
-    if (setName) tags.setName = setName;
-    if (setCreator) tags.setCreator = setCreator;
+    const setUri = firstNonEmpty([setMeta.set_uri, setMeta.uri]) || '';
+    const setDate = firstNonEmpty([setMeta.set_creation_date, setMeta.creation_date]) || '';
+    // Set metadata is stored as a top-level annotationSet object, not repeated in every label's tags
+    const annotationSet = (setName || setLicense || setUri)
+        ? { name: setName, license: setLicense, creator: setCreator, uri: setUri, date: setDate }
+        : null;
 
     // When the annotation has its own scientific name, clear commonName so that
     // the host app's taxonomy resolver can fill in the correct common name.
@@ -154,6 +157,7 @@ function _buildXcLabel(src, index, meta) {
         origin: 'xeno-canto',
         author: annotator || recordist || '',
         tags,
+        ...(annotationSet ? { annotationSet } : {}),
     };
 }
 
