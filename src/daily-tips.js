@@ -85,7 +85,9 @@ export function showTip(tip, host = document.body, { index = 0, count = 1, onNex
 
   const prevBtn = _createButton('Previous Tip', 'daily-tip-prev');
   const nextBtn = _createButton('Next Tip', 'daily-tip-next');
-  const closeBtn = _createButton('Close', 'daily-tip-close');
+  // 'modal-close' ensures ModalManager finds this button and doesn't inject a
+  // duplicate ×-button at the top-right corner of the dialog.
+  const closeBtn = _createButton('Close', 'daily-tip-close modal-close');
 
   // Disable checkbox (persistent preference)
   const disableId = `daily-tip-disable-${Date.now()}-${Math.floor(Math.random()*1000)}`;
@@ -142,6 +144,8 @@ export function showTip(tip, host = document.body, { index = 0, count = 1, onNex
     try { onPrev && onPrev(); } catch (e) { /* ignore */ }
   });
 
+  // Mark as bound so ModalManager doesn't add a second handler on open().
+  closeBtn.dataset.modalHandlerBound = '1';
   closeBtn.addEventListener('click', () => modal.close());
 
   disableCheckbox.addEventListener('change', () => {
