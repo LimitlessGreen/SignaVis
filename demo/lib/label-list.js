@@ -94,6 +94,8 @@ export class LabelList {
     this._onMultiSelectionChange = opts.onMultiSelectionChange || null;
     this._onRemove = null;
     this._tagStore = opts.tagStore || null;
+    /** If true, ensure only one label group is expanded at once (accordion) */
+    this._accordion = !!opts.accordion;
     // Set management callbacks
     this._getSets = opts.getSets || null;
     this._onCreateSet = opts.onCreateSet || null;
@@ -152,18 +154,16 @@ export class LabelList {
     if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
     this._emptyEl.style.display = labels.length ? 'none' : '';
 
-    const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+    const ORIGIN_ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
     const setsRegistry = this._getSets ? this._getSets() : new Map();
 
-    // 3-level: origin → setKey → nameKey → instances[]
-    /** @type {Map<string, Map<string, {setInfo: any, nameMap: Map<string, any[]>}>>} */
-    const originGroups = new Map();
+    // 2-level: setKey → {setInfo, origin, nameMap}
+    // Labels with no set are grouped into a virtual '' key (rendered without a set header)
+    /** @type {Map<string, {setInfo: any, origin: string, nameMap: Map<string, any[]>}>} */
+    const setGroups = new Map();
+
     for (const lbl of labels) {
       const origin = lbl.origin || 'manual';
-      if (!originGroups.has(origin)) originGroups.set(origin, new Map());
-      const setMap = originGroups.get(origin);
-
-      // Prefer setId → registry lookup, fall back to embedded annotationSet for backwards compat
       let setInfo = null;
       let setKey = '';
       if (lbl.setId && setsRegistry.has(lbl.setId)) {
@@ -171,63 +171,44 @@ export class LabelList {
         setKey = lbl.setId;
       } else {
         const as = getAnnotationSet(lbl);
-        setInfo = as;
-        setKey = as?.uri || as?.name || '';
+        if (as) { setInfo = as; setKey = as?.uri || as?.name || ''; }
       }
-      if (!setMap.has(setKey)) setMap.set(setKey, { setInfo, nameMap: new Map() });
-      const { nameMap } = setMap.get(setKey);
-
+      if (!setGroups.has(setKey)) setGroups.set(setKey, { setInfo, origin, nameMap: new Map() });
+      const { nameMap } = setGroups.get(setKey);
       const nameKey = lbl.label || '(unlabeled)';
       if (!nameMap.has(nameKey)) nameMap.set(nameKey, []);
       nameMap.get(nameKey).push(lbl);
     }
 
-    const origins = [...originGroups.keys()].sort((a, b) =>
-      (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || a.localeCompare(b));
-    const showOriginHeaders = origins.length > 1;
+    // Sort set entries: '' (unassigned) first, then by origin order, then by name
+    const sortedKeys = [...setGroups.keys()].sort((a, b) => {
+      if (a === '' && b !== '') return -1;
+      if (b === '' && a !== '') return 1;
+      const ga = setGroups.get(a), gb = setGroups.get(b);
+      const oa = ORIGIN_ORDER[ga.origin] ?? 99, ob = ORIGIN_ORDER[gb.origin] ?? 99;
+      if (oa !== ob) return oa - ob;
+      return (ga.setInfo?.name || a).localeCompare(gb.setInfo?.name || b);
+    });
 
-    for (const origin of origins) {
-      if (showOriginHeaders) {
-        const hdr = document.createElement('div');
-        hdr.className = 'label-origin-header';
-        const span = document.createElement('span');
-        span.textContent = origin;
-        hdr.appendChild(span);
-        if (this._onCreateSet) {
-          const addBtn = document.createElement('button');
-          addBtn.className = 'label-origin-add-set-btn';
-          addBtn.title = 'New annotation set';
-          addBtn.textContent = '+ Set';
-          addBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._onCreateSet({ origin: origin === 'xeno-canto' ? 'xeno-canto' : 'manual' });
-          });
-          hdr.appendChild(addBtn);
-        }
-        this._container.appendChild(hdr);
-      }
-      const setMap = originGroups.get(origin);
-      for (const [setKey, { setInfo, nameMap }] of setMap) {
-        const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
-        const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
+    for (const setKey of sortedKeys) {
+      const { setInfo, nameMap } = setGroups.get(setKey);
+      const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
+      const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
 
-        if (setKey) {
-          // Render annotation set header + collapsible body
-          const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
-            const frag = document.createDocumentFragment();
-            for (const name of names) {
-              const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
-              frag.appendChild(this._buildGroup(instances));
-            }
-            return frag;
-          });
-          this._container.appendChild(setSection);
-        } else {
-          // No annotation set — render species groups directly
+      if (setKey) {
+        const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
+          const frag = document.createDocumentFragment();
           for (const name of names) {
             const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
-            this._container.appendChild(this._buildGroup(instances));
+            frag.appendChild(this._buildGroup(instances));
           }
+          return frag;
+        });
+        this._container.appendChild(setSection);
+      } else {
+        for (const name of names) {
+          const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
+          this._container.appendChild(this._buildGroup(instances));
         }
       }
     }
@@ -272,19 +253,125 @@ export class LabelList {
     this._updateBulkToolbar();
   }
 
+  // ── Helpers for animated expand/collapse ──────────────────────────
+  _setGroupOpenState(group, open, animate = false) {
+    if (!group) return;
+    const list = group.querySelector('.label-group-instances');
+    if (!list) return;
+    if (!animate) {
+      // immediate (no transition)
+      list.style.transition = 'none';
+      list.style.overflow = 'hidden';
+      if (open) {
+        list.style.display = '';
+        // keep expanded state stable by using explicit 'none' so CSS doesn't revert to max-height:0
+        list.style.maxHeight = 'none';
+        list.style.opacity = '1';
+        group.classList.add('expanded');
+        const key = group.dataset.groupKey; if (key) this._expandedGroups.add(key);
+      } else {
+        list.style.maxHeight = '0px';
+        list.style.opacity = '0';
+        group.classList.remove('expanded');
+        const key = group.dataset.groupKey; if (key) this._expandedGroups.delete(key);
+      }
+      // clear the manual transition after a tick so future toggles use CSS transitions
+      requestAnimationFrame(() => { list.style.transition = ''; });
+      return;
+    }
+    if (open) this._expandGroupElement(group);
+    else this._collapseGroupElement(group);
+  }
+
+  _expandGroupElement(group) {
+    const list = group.querySelector('.label-group-instances');
+    if (!list) return;
+    // prepare
+    list.style.overflow = 'hidden';
+    // ensure it's visible to measure
+    list.style.display = '';
+    // measure
+    const height = list.scrollHeight;
+    // start from 0
+    list.style.maxHeight = '0px';
+    list.style.opacity = '0';
+    // trigger transition to measured height
+    requestAnimationFrame(() => {
+      list.style.transition = 'max-height 220ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease';
+      list.style.maxHeight = height + 'px';
+      list.style.opacity = '1';
+    });
+    const onEnd = (e) => {
+      if (e.target !== list) return;
+      if (e.propertyName === 'max-height') {
+        // keep the element open by setting maxHeight to 'none' so CSS doesn't collapse it
+        list.style.maxHeight = 'none';
+        list.style.transition = '';
+        list.removeEventListener('transitionend', onEnd);
+      }
+    };
+    list.addEventListener('transitionend', onEnd);
+    group.classList.add('expanded');
+    const key = group.dataset.groupKey; if (key) this._expandedGroups.add(key);
+  }
+
+  _collapseGroupElement(group) {
+    const list = group.querySelector('.label-group-instances');
+    if (!list) return;
+    // measure current height
+    const height = list.scrollHeight || list.offsetHeight || 0;
+    list.style.overflow = 'hidden';
+    // Ensure current height set as start point for transition
+    list.style.maxHeight = height + 'px';
+    list.style.opacity = '1';
+    requestAnimationFrame(() => {
+      list.style.transition = 'max-height 180ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease';
+      list.style.maxHeight = '0px';
+      list.style.opacity = '0';
+    });
+    const onEnd = (e) => {
+      if (e.target !== list) return;
+      if (e.propertyName === 'max-height') {
+        list.style.transition = '';
+        // keep maxHeight at 0 to remain collapsed
+        list.style.maxHeight = '0px';
+        group.classList.remove('expanded');
+        list.removeEventListener('transitionend', onEnd);
+      }
+    };
+    list.addEventListener('transitionend', onEnd);
+    const key = group.dataset.groupKey; if (key) this._expandedGroups.delete(key);
+  }
+
   _autoExpand(inst) {
     const group = inst.closest('.label-group');
     if (group && !group.classList.contains('expanded')) {
-      const list = group.querySelector('.label-group-instances');
-      if (list) list.hidden = false;
-      group.classList.add('expanded');
+      // Ensure parent set body is visible so measurements work
+      const setBody = inst.closest('.label-set-body');
+      if (setBody && setBody.hidden) {
+        setBody.hidden = false;
+        const sec = setBody.closest('.label-set-section');
+        if (sec) sec.classList.add('expanded');
+      }
+      // If accordion enabled, close other expanded groups first — but
+      // suppress this behavior when there is an active multi-selection
+      // (user marked labels across groups) so their selections don't
+      // force-collapse unrelated groups.
+      if (this._accordion) {
+        if (this._multiSelectedIds.size === 0) {
+          const others = this._container.querySelectorAll('.label-group.expanded');
+          for (const og of others) {
+            if (og === group) continue;
+            this._collapseGroupElement(og);
+          }
+          this._expandedGroups.clear();
+        } else {
+          // keep existing expanded groups when multiple labels are selected
+        }
+      }
+      this._setGroupOpenState(group, true, true);
     }
-    const setBody = inst.closest('.label-set-body');
-    if (setBody && setBody.hidden) {
-      setBody.hidden = false;
-      const sec = setBody.closest('.label-set-section');
-      if (sec) sec.classList.add('expanded');
-    }
+    // Note: setBody visibility handled above
   }
 
   _updateMultiVisual() {
@@ -363,9 +450,50 @@ export class LabelList {
     const nameWrap = document.createElement('div');
     nameWrap.className = 'label-set-name-wrap';
 
+    // Name row: origin badge + name + optional link
+    const origin = setInfo?.origin || 'manual';
+    const nameRow = document.createElement('div');
+    nameRow.className = 'label-set-name-row';
+
+    const originBadge = document.createElement('span');
+    originBadge.className = `label-set-origin-badge label-set-origin--${origin.replace(/[^a-z]/gi, '-').toLowerCase()}`;
+    originBadge.textContent = origin === 'xeno-canto' ? 'XC' : origin === 'BirdNET' ? 'BN' : 'manual';
+    originBadge.title = origin;
+    nameRow.appendChild(originBadge);
+
     const nameEl = document.createElement('span');
     nameEl.className = 'label-set-name';
     nameEl.textContent = setInfo?.name || 'Annotation set';
+    nameEl.title = 'Click to inline-edit name';
+    nameRow.appendChild(nameEl);
+
+    // Allow clicking the set name to inline-edit the set name (behaves like group-level edit)
+    nameEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!this._onRenameSet) return;
+      if (nameEl.querySelector('input')) return;
+      const oldName = setInfo?.name || '';
+      const inp = document.createElement('input');
+      inp.className = 'inline-name-input';
+      inp.value = oldName;
+      inp.style.cssText = 'max-width:120px;font-size:11px;';
+      nameEl.textContent = '';
+      nameEl.appendChild(inp);
+      inp.focus(); inp.select();
+      const commit = () => {
+        const val = inp.value.trim();
+        if (val && val !== oldName) this._onRenameSet(setKey, val);
+        nameEl.textContent = val || oldName;
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); nameEl.textContent = oldName; }
+      });
+      inp.addEventListener('click', (ev) => ev.stopPropagation());
+    });
+
     if (setInfo?.uri) {
       const link = document.createElement('a');
       link.href = setInfo.uri;
@@ -374,11 +502,9 @@ export class LabelList {
       link.className = 'label-set-link';
       link.title = 'Open on Xeno-canto';
       link.textContent = '↗';
-      nameWrap.appendChild(nameEl);
-      nameWrap.appendChild(link);
-    } else {
-      nameWrap.appendChild(nameEl);
+      nameRow.appendChild(link);
     }
+    nameWrap.appendChild(nameRow);
 
     const meta = document.createElement('div');
     meta.className = 'label-set-meta';
@@ -518,6 +644,8 @@ export class LabelList {
 
     const group = document.createElement('div');
     group.className = 'label-group';
+    // expose group key so we can find/close groups later (used by accordion behaviour)
+    group.dataset.groupKey = groupKey;
 
     const row = document.createElement('div');
     row.className = 'label-group-row';
@@ -591,18 +719,23 @@ export class LabelList {
 
     const single = instances.length === 1;
     const shouldExpand = this._expandedGroups.has(groupKey) || single;
-    instanceList.hidden = !shouldExpand;
-    group.classList.toggle('expanded', shouldExpand);
-    if (shouldExpand) this._expandedGroups.add(groupKey);
-
     group.appendChild(instanceList);
+    // set initial open state (no animation)
+    this._setGroupOpenState(group, shouldExpand, false);
 
     row.addEventListener('click', () => {
-      const collapsed = instanceList.hidden;
-      instanceList.hidden = !collapsed;
-      group.classList.toggle('expanded', collapsed);
-      if (collapsed) this._expandedGroups.add(groupKey);
-      else this._expandedGroups.delete(groupKey);
+      const currentlyOpen = group.classList.contains('expanded');
+      if (!currentlyOpen) {
+        if (this._accordion) {
+          const others = this._container.querySelectorAll('.label-group.expanded');
+          for (const og of others) {
+            if (og === group) continue;
+            this._collapseGroupElement(og);
+          }
+          this._expandedGroups.clear();
+        }
+      }
+      this._setGroupOpenState(group, !currentlyOpen, true);
     });
 
     return group;

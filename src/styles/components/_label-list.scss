@@ -1,6 +1,36 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Label list — 3-level hierarchy: origin → annotation set → species → instances
+   Label list — 2-level hierarchy: annotation set → species → instances
    ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Active set selector bar ─────────────────────────────────────────── */
+.label-active-set-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.label-active-set-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.label-active-set-select {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.label-active-set-select:focus { border-color: var(--accent); outline: none; }
 
 .label-list-scroll {
   flex: 1;
@@ -9,7 +39,7 @@
   overflow-x: hidden;
 }
 
-/* ── Origin header ────────────────────────────────────────────────────── */
+/* ── Origin header (kept for legacy / fallback) ───────────────────────── */
 .label-origin-header {
   position: sticky;
   top: 0;
@@ -78,6 +108,12 @@
   flex-direction: column;
   gap: 2px;
 }
+.label-set-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
 .label-set-name {
   font-size: 11px;
   font-weight: 700;
@@ -86,6 +122,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Make set names behave like group names on hover (underline, pointer) */
+.label-set-name {
+  cursor: text;
+}
+.label-set-name:hover {
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--accent);
+}
+
+/* Origin badge on set header */
+.label-set-origin-badge {
+  flex-shrink: 0;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.label-set-origin--manual      { background: rgba(255,255,255,0.07); color: var(--muted); }
+.label-set-origin--xeno-canto  { background: rgba(56,189,248,0.15); color: var(--accent); }
+.label-set-origin--birdnet     { background: rgba(16,185,129,0.15); color: #6ee7b7; }
 .label-set-link {
   font-size: 9px;
   color: var(--accent);
@@ -240,6 +301,19 @@
 
 /* ── Instance list ────────────────────────────────────────────────────── */
 .label-group-instances { padding-left: 0; }
+
+/* Smooth accordion animation for expanding/collapsing groups. */
+.label-group-instances {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 220ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease;
+}
+.label-group.expanded > .label-group-instances {
+  /* When expanded via class, opacity is shown. Exact height is managed
+     by JS for smooth and accurate transitions. */
+  opacity: 1;
+}
 
 /* ── Single label instance card ──────────────────────────────────────── */
 .label-instance {
