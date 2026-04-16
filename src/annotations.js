@@ -5,6 +5,7 @@
 import { escapeHtml, clamp } from './utils.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import ModalManager from './modal-manager.js';
+import { createEditableSelect } from './editable-select.js';
 
 
 const _colorCtx = (() => {
@@ -200,94 +201,41 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     const tagsRow = document.createElement('div');
     tagsRow.className = 'label-tags-row';
 
-    /** Creates a combobox-style select: options list + free-text input */
+    // Keep track of created editable-select instances so we can destroy them
+    // when the modal closes and avoid leaking global portal dropdowns.
+    const esInstances = [];
+
+    /** Creates a combobox-style select using the shared createEditableSelect. */
     const makeTagCombobox = (preset) => {
-        const wrap = document.createElement('div');
-        wrap.className = 'label-tag-combo';
+        const presetDef = tagPresets.find((p) => p.key === preset.key) || preset;
+        const presetOptions = Array.isArray(presetDef.options) ? presetDef.options.slice() : (preset.options || []);
+        const defaultDef = DEFAULT_TAG_PRESETS.find((p) => p.key === preset.key) || preset;
+        const baseOptions = Array.isArray(defaultDef.options) ? defaultDef.options.slice() : (preset.options || []);
 
-        const sel = document.createElement('select');
-        sel.className = 'label-tag-select';
-        sel.title = preset.label;
+        const items = presetOptions.map((v) => ({ value: v, custom: !baseOptions.includes(v) }));
+        const curVal = currentTags[preset.key] || '';
+        if (curVal && !items.some((it) => it.value === curVal)) {
+            items.push({ value: curVal, custom: !baseOptions.includes(curVal) });
+        }
 
-        const rebuildOptions = () => {
-            sel.innerHTML = '';
-            const emptyOpt = document.createElement('option');
-            emptyOpt.value = '';
-            emptyOpt.textContent = preset.label;
-            sel.appendChild(emptyOpt);
-            for (const opt of preset.options) {
-                const optEl = document.createElement('option');
-                optEl.value = opt;
-                optEl.textContent = opt;
-                sel.appendChild(optEl);
-            }
-            // "Custom…" sentinel
-            const customOpt = document.createElement('option');
-            customOpt.value = '__custom__';
-            customOpt.textContent = '+ custom…';
-            sel.appendChild(customOpt);
-            // If current value isn't in options, add it as a temporary entry
-            const curVal = currentTags[preset.key] || '';
-            if (curVal && !preset.options.includes(curVal)) {
-                const tempOpt = document.createElement('option');
-                tempOpt.value = curVal;
-                tempOpt.textContent = curVal;
-                sel.insertBefore(tempOpt, customOpt);
-            }
-            sel.value = curVal;
-        };
-        rebuildOptions();
-
-        sel.addEventListener('change', () => {
-            if (sel.value === '__custom__') {
-                // Show inline text input
-                sel.style.display = 'none';
-                const inp = document.createElement('input');
-                inp.type = 'text';
-                inp.className = 'label-tag-custom-input';
-                inp.placeholder = `New ${preset.label.toLowerCase()}…`;
-                inp.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        const val = inp.value.trim();
-                        if (val) {
-                            currentTags[preset.key] = val;
-                            // Notify app to persist the new option
-                            if (!preset.options.includes(val)) {
-                                player?._emit?.('tagcustomadd', { key: preset.key, value: val });
-                            }
-                        }
-                        inp.remove();
-                        sel.style.display = '';
-                        rebuildOptions();
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        inp.remove();
-                        sel.style.display = '';
-                        sel.value = currentTags[preset.key] || '';
-                    }
-                });
-                inp.addEventListener('blur', () => {
-                    const val = inp.value.trim();
-                    if (val) {
-                        currentTags[preset.key] = val;
-                        if (!preset.options.includes(val)) {
-                            player?._emit?.('tagcustomadd', { key: preset.key, value: val });
-                        }
-                    }
-                    inp.remove();
-                    sel.style.display = '';
-                    rebuildOptions();
-                });
-                wrap.appendChild(inp);
-                inp.focus();
-            } else {
-                if (sel.value) currentTags[preset.key] = sel.value;
+        const es = createEditableSelect({
+            placeholder: preset.label || '–',
+            value: curVal,
+            items,
+            onChange: (val) => {
+                if (val) currentTags[preset.key] = val;
                 else delete currentTags[preset.key];
-            }
+            },
+            onAdd: (val) => { player?._emit?.('tagcustomadd', { key: preset.key, value: val }); },
+            onRemove: (val) => { player?._emit?.('tagcustomremove', { key: preset.key, value: val }); },
+            onRename: (oldV, newV) => { player?._emit?.('tagcustomrename', { key: preset.key, oldValue: oldV, newValue: newV }); },
         });
-        wrap.appendChild(sel);
-        return wrap;
+
+        es.el.classList.add('label-tag-combo');
+        const trig = es.el.querySelector('.esel-trigger');
+        if (trig) trig.setAttribute('title', preset.label || preset.key);
+        esInstances.push(es);
+        return es.el;
     };
 
     /** renders preset selects and the custom tag input */
@@ -390,6 +338,10 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     let selectedScientificName = '';
 
     const close = () => {
+        // Destroy any editable-select instances to remove portal dropdowns
+        try {
+            for (const es of esInstances) { try { es.destroy(); } catch (e) { /* ignore */ } }
+        } catch (e) { /* ignore */ }
         try { modal.close(); } catch (e) { /* ignore */ }
         if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
         try { modal.dispose(); } catch (e) { /* ignore */ }
@@ -1911,9 +1863,12 @@ export class SpectrogramLabelLayer {
 
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
         const maxFreq = this._getMaxFreq();
-        const width = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.width || 1);
-        const height = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.height || 1);
         const c = this.player?._state?.coords;
+        const pps = this.player?._state?.pixelsPerSecond || 100;
+        // Use total scrollable width (same formula as render()), not canvas element width
+        // which is only viewport-wide with sticky/viewport rendering.
+        const width = Math.max(1, c ? Math.floor(c.timeToScrollX(duration)) : Math.floor(duration * pps));
+        const height = Math.max(1, this.player?._state?.d?.spectrogramCanvas?.height || 1);
 
         // Use CoordinateSystem for time delta
         const currentTime = this._clientXToTime(clientX);
