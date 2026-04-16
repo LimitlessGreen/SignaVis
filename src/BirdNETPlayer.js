@@ -446,8 +446,19 @@ export class BirdNETPlayer {
 
     _bindLinkedLabelSync() {
         this.on('labelfocus', (e) => {
-            const id = String(e?.detail?.id || '').trim();
-            this._activeLabelId = id || null;
+            const id = String(e?.detail?.id || '').trim() || null;
+            const interaction = e?.detail?.interaction;
+            if (interaction === 'click') {
+                // Sticky selection — hotkeys operate on this label
+                this._activeLabelId = id;
+            } else {
+                // Transient hover — only update if not currently selected,
+                // so hovering over a different label doesn't steal hotkeys
+                // from an explicitly selected one.
+                if (!this._activeLabelId || id === null) {
+                    this._activeLabelId = id;
+                }
+            }
         });
         this.on('annotationpreview', (e) => this._previewFromAnnotationEvent(e.detail.annotation));
         this.on('spectrogramlabelpreview', (e) => this._previewFromSpectrogramEvent(e.detail.label));

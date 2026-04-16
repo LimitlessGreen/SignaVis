@@ -93,8 +93,8 @@ export class AudioEngine extends EventTarget {
     this.muted = false;
     /** @type {number} Volume before mute */
     this.preMuteVolume = 0.8;
-    /** @type {'normal'|'segment'} */
-    this.playbackMode = 'normal';
+    /** @type {boolean} True while a segment (labelled or unlabelled) is the active playback target. */
+    this._segmentMode = false;
     /** @type {string|null} */
     this._activeSegmentLabelId = null;
     /** @type {SegmentFilter|null} */
@@ -116,6 +116,12 @@ export class AudioEngine extends EventTarget {
     /** @type {boolean} */
     this.loopPlayback = false;
   }
+
+  // ── Derived state ────────────────────────────────────────────────────
+
+  /** @returns {'normal'|'segment'} */
+  get playbackMode() { return this._segmentMode ? 'segment' : 'normal'; }
+  set playbackMode(v) { this._segmentMode = (v === 'segment'); }
 
   // ── Public API ───────────────────────────────────────────────────────
 
