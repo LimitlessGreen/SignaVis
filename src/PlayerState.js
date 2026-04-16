@@ -1392,7 +1392,8 @@ export class PlayerState {
         this._lastFreqAxisH = h;
         // Defer the style write to after the current paint so it doesn't
         // force a synchronous reflow in the middle of a wheel event chain.
-        cancelAnimationFrame(this._freqAxisRafId);
+        // _freqAxisRafId may be undefined; only cancel when it's a number.
+        if (typeof this._freqAxisRafId === 'number') cancelAnimationFrame(this._freqAxisRafId);
         this._freqAxisRafId = requestAnimationFrame(() => {
             const ch = this.d.spectrogramCanvas?.height;
             if (ch > 0) {
@@ -2061,7 +2062,7 @@ export class PlayerState {
         // Return cached height when available — avoids a forced layout read on
         // every scroll event. Cache is invalidated by _invalidateSpectrogramHeightCache()
         // which is called on resize and spectrogram-height changes.
-        if (this._cachedSpectrogramHeight > 0) return this._cachedSpectrogramHeight;
+        if (typeof this._cachedSpectrogramHeight === 'number' && this._cachedSpectrogramHeight > 0) return this._cachedSpectrogramHeight;
         // Use canvasWrapper.clientHeight: excludes horizontal scrollbar height so
         // the canvas doesn't overlap low frequencies when the scrollbar is visible.
         const h = this.d.canvasWrapper?.clientHeight ?? this.d.spectrogramContainer?.clientHeight;
