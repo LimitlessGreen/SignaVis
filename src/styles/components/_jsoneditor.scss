@@ -44,6 +44,42 @@
 .jsoneditor .jsoneditor-menu button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 4px 8px; border-radius: 4px; }
 .jsoneditor .jsoneditor-menu button:hover { background: rgba(255,255,255,0.03); color: var(--text); border-color: rgba(255,255,255,0.04); }
 
+/* Stronger overrides for the top/header area (override vendor defaults)
+   Ensure the top bar/tree uses app tokens in dark mode and when theme toggles. */
+.jsoneditor div.jsoneditor-tree {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+}
+.jsoneditor .jsoneditor-menu,
+.jsoneditor .jsoneditor-search,
+.jsoneditor .jsoneditor-main,
+.jsoneditor .jsoneditor-outer,
+.jsoneditor .jsoneditor-inner {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+.jsoneditor .jsoneditor-menu {
+  background: var(--panel) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+/* If JSONEditor modal header is used, make it follow tokens too */
+.jsoneditor-modal .pico-modal-header {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+/* Breadcrumb / treepath (top white strip) */
+.jsoneditor .jsoneditor-treepath,
+.jsoneditor .jsoneditor-treepath *,
+.jsoneditor .jsoneditor-treepath .jsoneditor-path,
+.jsoneditor .jsoneditor-treepath .jsoneditor-preview {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
 /* Light theme overrides */
 html[data-theme="light"] .jsoneditor { background: var(--panel); color: var(--text); border-color: var(--line); }
 html[data-theme="light"] .jsoneditor .jsoneditor-value-string { color: #0369a1; }

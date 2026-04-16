@@ -33,6 +33,34 @@
 .input:hover { border-color: var(--line); }
 .input:focus { border-color: var(--accent); background: var(--input-hover-bg); }
 
+/* XC API key input: inline eye toggle inside the input field
+   Keep input type=text but mask visually via -webkit-text-security when needed. */
+.xc-key-input-row { display: flex; align-items: center; gap: 8px; }
+.xc-key-input-wrap { position: relative; width: 100%; }
+.xc-key-input-wrap .input { padding-right: 44px; }
+.xc-key-input-wrap .xc-key-eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.xc-key-input-wrap .xc-key-eye:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+.xc-key-input-wrap .xc-key-eye .xc-eye-hide { display: none; }
+.xc-key-input-wrap .xc-key-eye.revealed .xc-eye-hide { display: inline-block; }
+.xc-key-input-wrap .xc-key-eye.revealed .xc-eye-show { display: none; }
+
+/* Visual masking while keeping `type=text` to avoid browser password heuristics */
+.input.xc-key-masked { -webkit-text-security: disc; text-security: disc; }
+
 .input[type="number"] { -moz-appearance: textfield; }
 .input[type="range"] { appearance: none; height: 6px; background: var(--line); border-radius: 6px; }
 .input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(57,181,255,0.15); }

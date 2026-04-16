@@ -2,6 +2,10 @@
    Use via `@use "utils";` from src/styles/main.scss
 */
 
+/* Ensure the [hidden] attribute always wins over any display override from
+   author stylesheets (e.g. display:flex on .xc-recording-edit). */
+[hidden] { display: none !important; }
+
 // Focus ring mixin
 @mixin focus-ring($color: rgba(57,181,255,0.12), $spread: 3px) {
   outline: none;
