@@ -344,7 +344,8 @@ export class XenoCantoPanel {
       return;
     }
     const dl = document.createElement('dl');
-    dl.className = 'xc-meta-grid';
+    // add shared props-grid class so recording metadata uses the same layout as Properties panel
+    dl.className = 'xc-meta-grid props-grid';
     for (const { key, label } of RECORDING_FIELDS_READONLY) {
       const val = m[key];
       if (!val) continue;

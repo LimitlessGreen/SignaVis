@@ -403,6 +403,47 @@
   border-radius: 8px;
 }
 
+/* Export dialog: larger and responsive */
+.xc-export-dialog {
+  max-width: 1200px;
+  width: min(96vw, 1200px);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 18px;
+}
+
+.xc-export-dialog pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.xc-export-dialog .json-key { color: var(--accent); font-weight:600; }
+.xc-export-dialog .json-string { color: #7dd3fc; }
+.xc-export-dialog .json-number { color: #f59e0b; }
+.xc-export-dialog .json-boolean { color: #f97316; }
+.xc-export-dialog .json-null { color: #9ca3af; }
+
+/* Collapsible JSON renderer styles */
+.xc-export-dialog .json-pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace; }
+.xc-export-dialog .json-line { display: block; padding: 2px 0; }
+.xc-export-dialog .json-node { margin: 2px 0; }
+.xc-export-dialog .json-node > .json-children { margin-left: 18px; border-left: 1px dashed rgba(255,255,255,0.03); padding-left: 8px; }
+.xc-export-dialog .json-children.collapsed { display: none; }
+.xc-export-dialog .json-toggle { border: none; background: transparent; color: var(--muted); cursor: pointer; width: 22px; font-size: 12px; padding: 0 4px; }
+.xc-export-dialog .json-toggle:focus { outline: 2px solid var(--accent); }
+.xc-export-dialog .json-summary { color: var(--muted); margin-left: 6px; }
+/* JSONEditor styles moved to components/_jsoneditor.scss */
+
+/* Improve contrast in light theme */
+html[data-theme="light"] .xc-export-dialog .json-string { color: #0369a1; }
+html[data-theme="light"] .xc-export-dialog .json-key { color: #065f46; }
+html[data-theme="light"] .xc-export-dialog .json-number { color: #b45309; }
+html[data-theme="light"] .xc-export-dialog .json-boolean { color: #b45309; }
+html[data-theme="light"] .xc-export-dialog .json-null { color: #6b7280; }
+
+
 /* Daily tip dialog specifics */
 .daily-tip-dialog {
   position: relative; /* needed so .modal-close--injected positions inside the dialog */

@@ -60,6 +60,9 @@
       </div>
     </div>
 
+    <!-- XC export modal (created programmatically by script) -->
+    <!-- placeholder: element is appended by the module script -->
+
     <div class="workspace" id="workspace">
       <!-- sidebar.js injects: activity-bar | sidebar | resize-handle here -->
       <main class="main-area">
@@ -190,6 +193,8 @@
 
   </div>
 
+  <!-- About panel moved to demo/lib/about-panel.js -->
+
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
   <div id="panelHelp" class="scroll-panel" hidden>
     <div class="panel-actions help-actions" style="padding: 12px 14px;">
@@ -262,6 +267,7 @@
     import { TaxonomyResolver } from '../src/taxonomyResolver.js';
     import { BirdNETInference } from '../src/birdnetInference.js';
     import ModalManager from '../src/modal-manager.js';
+    import { createXcExportModal } from './xc-export-modal.js';
     import { initDailyTips, showTip } from '../src/daily-tips.js';
 
     import { Sidebar } from './lib/sidebar.js';
@@ -273,6 +279,7 @@
     import { PropertiesPanel } from './lib/properties-panel.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
+    import { createAboutPanel } from './lib/about-panel.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon } from 'lucide-static';
 
     // ── Player ────────────────────────────────────────────────────────
@@ -318,6 +325,7 @@
       labels:  Tags,
       birdnet: Bird,
       xc:      Globe,
+      about:   Info,
       help:    CircleHelp,
     };
 
@@ -328,8 +336,13 @@
     sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',   element: document.getElementById('panelLabels') });
     sidebar.addPanel('birdnet', { icon: ICONS.birdnet, label: 'BirdNET',  element: document.getElementById('panelBirdnet') });
     sidebar.addPanel('xc',     { icon: ICONS.xc,      label: 'Xeno Canto', element: document.getElementById('panelXc') });
+    // About panel is created by module to keep markup modular
+    const aboutPanelEl = createAboutPanel();
+    sidebar.addPanel('about',  { icon: ICONS.about,   label: 'About',    element: aboutPanelEl });
     sidebar.addPanel('help',   { icon: ICONS.help,    label: 'Help',     element: document.getElementById('panelHelp') });
     sidebar.setActive('labels');
+
+    // About panel simplified to a GitHub link (no extra runtime handlers)
 
     // ── Custom tag persistence ─────────────────────────────────────
     const tagStore = new CustomTagStore();
@@ -445,6 +458,7 @@
     });
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
+      try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
     };
 
     // ── XC key visibility toggle (eye button inside input) ────────────
@@ -857,6 +871,8 @@
     const xcNokeyKeyInput = document.getElementById('xcNokeyKeyInput');
     const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: xcNokeyModal?.querySelector('.xc-nokey-dialog') });
 
+    // XC export modal is provided by demo/xc-export-modal.js (instantiated later)
+
     function showXcNokeyModal() {
       const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
       if (dismissed || xcPanel.apiKey) return false;
@@ -959,9 +975,18 @@
     const xcExportSetBtn = document.getElementById('xcExportSetBtn');
     const xcUploadBtn = document.getElementById('xcUploadBtn');
 
-    xcExportSetBtn.addEventListener('click', () => {
-      xcPanel.exportAnnotationSetJSON(state.labels, state.labelSets, state.recordingEditMeta);
+    // Initialize extracted export modal and wire it to xcPanel
+    window.xcExportModalApi = createXcExportModal({
+      buildPayload: () => xcPanel.buildAnnotationSetPayload(state.labels, state.labelSets, state.recordingEditMeta),
+      upload: () => xcPanel.uploadToXenoCanto(state.labels, state.labelSets, state.recordingEditMeta),
+      getApiKey: () => xcPanel.apiKey,
+      getFilename: () => (xcPanel.xcId ? `XC${xcPanel.xcId}_annotation_set.json` : 'annotation_set.json'),
+      defaultCollapseDepth: 1,
     });
+
+    function openXcExportModal() { try { window.xcExportModalApi.open(); } catch (e) {} }
+
+    xcExportSetBtn.addEventListener('click', () => openXcExportModal());
 
     xcUploadBtn.addEventListener('click', async () => {
       xcUploadBtn.disabled = true;

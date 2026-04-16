@@ -19,6 +19,29 @@
   font-size: 11px; padding: 5px 7px;
 }
 .field-select option { background: var(--panel); color: var(--text); }
+
+/* Ensure selects and option lists follow the theme (fix white dropdowns in darkmode) */
+.field-select,
+.props-select,
+.detail-select,
+.xc-set-selector-row select,
+.select-compact {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-color: var(--line);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field-select option,
+.detail-select option,
+.xc-set-selector-row select option,
+.props-select option {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+}
+
+/* hide native expand glyph where supported to keep styling consistent */
+select::-ms-expand { display: none; }
 .field-check {
   display: flex; align-items: center; gap: 6px;
   font-size: 11px; color: var(--text); cursor: pointer;
@@ -34,7 +57,36 @@
   font-size: 11px; color: var(--text);
 }
 .range-input { width: 100%; accent-color: var(--accent); }
-.panel-actions { padding: 8px 14px; }
+.panel-actions {
+  padding: 8px 14px;
+  display: grid;
+  /* columns try to be between 140px and 260px; don't stretch wider than 260px */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 260px));
+  gap: 8px;
+  align-items: stretch;
+  justify-content: center; /* center the grid so small number of buttons look balanced */
+}
+.panel-actions .sidebar-action-btn {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  word-break: break-word;
+}
+@media (max-width: 480px) {
+  .panel-actions {
+    grid-template-columns: 1fr;
+  }
+  .panel-actions .sidebar-action-btn { max-width: none; }
+}
+.panel-actions {
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  max-width: none;
+}
 .panel-desc { padding: 4px 14px 0; line-height: 1.4; }
 .sidebar-action-btn {
   width: 100%;
@@ -47,6 +99,19 @@
 .sidebar-action-btn:hover { background: var(--color-accent-faint); }
 .sidebar-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+@media (min-width: 520px) {
+  .panel-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .panel-actions .sidebar-action-btn {
+    width: auto;
+    flex: 0 1 160px;
+    max-width: 240px;
+  }
+}
 /* XC Load row */
 .xc-load-row { display: flex; gap: 6px; align-items: center; }
 .xc-load-row .input { flex: 1; }
@@ -65,10 +130,23 @@
 
 /* XC annotation set form */
 .xc-set-meta { display: flex; flex-direction: column; gap: 6px; }
-.set-meta-field { display: flex; flex-direction: column; gap: 2px; }
-.set-meta-field .field-label { font-size: 11px; padding: 0; }
+/* Align set metadata rows as two-column grid (label | input) for consistent alignment
+   with the XC editable rows and the Properties panel. Falls back to stacked layout
+   on small screens. */
+.set-meta-field {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  min-width: 0;
+}
+.set-meta-field .field-label { font-size: 11px; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .set-meta-field .input,
-.set-meta-field .field-select { font-size: 12px; padding: 4px 6px; }
+.set-meta-field .field-select { font-size: 12px; padding: 4px 6px; width: 100%; min-width: 0; }
+
+@media (max-width: 480px) {
+  .set-meta-field { display: flex; flex-direction: column; gap: 6px; }
+}
 
 /* XC action row */
 .xc-action-row { display: flex; gap: 6px; margin-top: 6px; }
@@ -162,3 +240,65 @@
 .xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); }
 .xc-collapsible-body { display: none; }
 .xc-collapsible.expanded .xc-collapsible-body { display: flex; flex-direction: column; gap: 0; }
+
+/* BibTeX collapsible in About panel: use theme colors instead of hardcoded light background */
+.help-content details.bibtex-collapsible { margin-top: 8px; }
+.help-content details.bibtex-collapsible summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.help-content pre.bibtex {
+  white-space: pre-wrap;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  overflow: auto;
+}
+
+/* Override: simple, content-sized action buttons for about panel and similar uses
+   - stacked by default (column) so they line up exactly under each other
+   - on wider screens they flow inline and size to their content
+   - use gap for spacing, no inline margins
+*/
+.panel-actions {
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.panel-actions .sidebar-action-btn {
+  width: auto; /* size to content */
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-action-btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+@media (min-width: 520px) {
+  .panel-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .panel-actions .sidebar-action-btn {
+    width: auto;
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .panel-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .panel-actions .sidebar-action-btn {
+    width: 100%;
+  }
+}

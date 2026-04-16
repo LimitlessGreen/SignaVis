@@ -1,0 +1,57 @@
+/* JSONEditor — theme-aware dark/light tweaks
+   Extracted from _overlays.scss to keep editor styles modular */
+.jsoneditor,
+.jsoneditor * {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+  color: var(--text);
+}
+
+.jsoneditor {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+}
+
+.jsoneditor .jsoneditor-outer,
+.jsoneditor .jsoneditor-inner,
+.jsoneditor .jsoneditor-tree,
+.jsoneditor .jsoneditor-content,
+.jsoneditor .jsoneditor-menu,
+.jsoneditor .jsoneditor-search,
+.jsoneditor .jsoneditor-main {
+  background: transparent;
+  color: var(--text);
+}
+
+/* Token colours (dark theme defaults) */
+.jsoneditor .jsoneditor-value-string { color: #9cdcfe; }
+.jsoneditor .jsoneditor-value-number { color: #b5cea8; }
+.jsoneditor .jsoneditor-value-boolean { color: #d7ba7d; }
+.jsoneditor .jsoneditor-quote { color: #c586c0; }
+.jsoneditor .jsoneditor-property { color: #8fbcbb; }
+.jsoneditor div.jsoneditor-field,
+.jsoneditor div.jsoneditor-field p,
+.jsoneditor div.jsoneditor-field .jsoneditor-property {
+  color: #8fbcbb;
+}
+.jsoneditor .jsoneditor-icon { color: var(--muted); }
+
+.jsoneditor .jsoneditor-selected { background: rgba(56,189,248,0.12); }
+.jsoneditor .jsoneditor-selected .jsoneditor-property { color: var(--accent); }
+
+.jsoneditor .jsoneditor-menu { border-bottom: 1px solid var(--line); padding: 6px; }
+.jsoneditor .jsoneditor-menu button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 4px 8px; border-radius: 4px; }
+.jsoneditor .jsoneditor-menu button:hover { background: rgba(255,255,255,0.03); color: var(--text); border-color: rgba(255,255,255,0.04); }
+
+/* Light theme overrides */
+html[data-theme="light"] .jsoneditor { background: var(--panel); color: var(--text); border-color: var(--line); }
+html[data-theme="light"] .jsoneditor .jsoneditor-value-string { color: #0369a1; }
+html[data-theme="light"] .jsoneditor .jsoneditor-value-number { color: #b45309; }
+html[data-theme="light"] .jsoneditor .jsoneditor-value-boolean { color: #b45309; }
+html[data-theme="light"] .jsoneditor .jsoneditor-property { color: #065f46; }
+html[data-theme="light"] .jsoneditor div.jsoneditor-field,
+html[data-theme="light"] .jsoneditor div.jsoneditor-field p,
+html[data-theme="light"] .jsoneditor div.jsoneditor-field .jsoneditor-property {
+  color: #065f46;
+}
