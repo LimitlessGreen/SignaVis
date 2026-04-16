@@ -81,6 +81,12 @@
       <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
       <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
     </div>
+    <!-- Active annotation set selector -->
+    <div class="label-active-set-bar">
+      <span class="label-active-set-label">Set</span>
+      <select id="labelActiveSetSelect" class="label-active-set-select"></select>
+      <button class="tb-btn" id="labelNewSetBtn" type="button" title="New annotation set">+</button>
+    </div>
     <div class="panel-hint">
       <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit · <kbd>Ctrl</kbd>+click multi-select
     </div>
@@ -148,21 +154,23 @@
     </div>
 
     <!-- ── 2. Recording Metadata (read-only from XC API) ── -->
-    <div class="panel-section">
-      <div class="xc-section-hdr">
-        <span class="field-label" style="margin:0">Recording (from XC)</span>
-        <button class="xc-toggle-edit-btn tb-btn" id="xcToggleRecordingEdit" type="button" title="Edit recording metadata for upload">Edit</button>
+    <div class="props-section">
+      <div class="props-section-title xc-section-hdr">
+        <span>Recording (from XC)</span>
+        <button class="xc-toggle-edit-btn" id="xcToggleRecordingEdit" type="button" title="Edit recording metadata for upload">Edit</button>
       </div>
-      <div id="xcRecordingMeta" class="xc-recording-meta">
-        <div class="field-hint" style="padding:4px 0">No recording loaded.</div>
+      <div id="xcRecordingMeta" class="props-section-body xc-recording-meta">
+        <div class="props-empty">No recording loaded.</div>
       </div>
       <!-- Editable recording fields (collapsed by default) -->
-      <div id="xcRecordingEdit" class="xc-recording-edit" hidden></div>
+      <div id="xcRecordingEdit" class="props-section-body xc-recording-edit" hidden></div>
     </div>
 
     <!-- ── 3. Annotation Set ── -->
-    <div class="panel-section">
-      <div class="field-label">Annotation Set</div>
+    <div class="props-section props-section--set">
+      <div class="props-section-title xc-section-hdr">
+        <span>Annotation Set</span>
+      </div>
       <div id="xcSetContainer" class="xc-set-container"></div>
     </div>
 
@@ -191,6 +199,40 @@
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
 
+  </div>
+
+  <!-- ── Sidebar panel: Audio ───────────────────────────────────── -->
+  <div id="panelAudio" class="scroll-panel" hidden>
+    <div class="panel-section">
+      <h3>Audio — Make ultrasonic frequencies audible</h3>
+      <p class="field-hint">Methods to shift ultrasonic frequencies into the audible range.</p>
+    </div>
+    <div class="panel-section">
+      <label class="field-label">Method</label>
+      <select id="audioMethodSelect" class="field-select">
+        <option value="heterodyne">Frequency mixer (Heterodyne)</option>
+        <option value="divider">Frequency divider (Resampling)</option>
+      </select>
+    </div>
+    <div id="heterodyneControls" class="panel-section">
+      <label class="field-label" for="heterodyneFreq">Carrier frequency (Hz)</label>
+      <input id="heterodyneFreq" class="input" type="number" value="20000" />
+      <label class="field-label" for="heterodyneLowpass">Lowpass (Hz)</label>
+      <input id="heterodyneLowpass" class="input" type="number" value="8000" />
+      <div class="panel-actions">
+        <button class="sidebar-action-btn" id="audioHeterodyneBtn" type="button">Process &amp; Load into Player</button>
+        <button class="sidebar-action-btn secondary" id="audioRestoreBtn" type="button">Restore Original</button>
+      </div>
+    </div>
+    <div id="dividerControls" class="panel-section" style="display:none">
+      <label class="field-label" for="dividerFactor">Divider (n)</label>
+      <input id="dividerFactor" class="input" type="number" min="1" value="8" />
+      <div class="panel-actions">
+        <button class="sidebar-action-btn" id="audioDividerBtn" type="button">Process &amp; Load into Player</button>
+        <button class="sidebar-action-btn secondary" id="audioRestoreBtnDivider" type="button">Restore Original</button>
+      </div>
+    </div>
+    <div id="audioStatus" class="panel-section meta" style="padding:12px;"></div>
   </div>
 
   <!-- About panel moved to demo/lib/about-panel.js -->
@@ -280,7 +322,8 @@
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
     import { createAboutPanel } from './lib/about-panel.js';
-    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon } from 'lucide-static';
+    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
+    import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/audioTransforms.js';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -327,6 +370,7 @@
       xc:      Globe,
       about:   Info,
       help:    CircleHelp,
+      audio:   Volume2,
     };
 
     const sidebar = new Sidebar(document.getElementById('workspace'), {
@@ -357,6 +401,11 @@
     }
     syncTagPresets();
 
+    // Re-sync player presets whenever the CustomTagStore changes (e.g. from PropertiesPanel)
+    window.addEventListener('aw:customTagStoreChanged', () => {
+      try { syncTagPresets(); } catch (e) { /* ignore */ }
+    });
+
     // ── Right sidebar ─────────────────────────────────────────────────
     const specPanel = new SpectrogramSettingsPanel(player);
     specPanel.relocate();
@@ -373,13 +422,119 @@
 
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
+    rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: document.getElementById('panelAudio') });
     rightBar.setActive('properties');
+
+    // Audio panel bindings
+    (function setupAudioPanel() {
+      const methodSelect = document.getElementById('audioMethodSelect');
+      const heteroControls = document.getElementById('heterodyneControls');
+      const dividerControls = document.getElementById('dividerControls');
+      const statusEl = document.getElementById('audioStatus');
+
+      // Keep original audio on the player so processing always uses the original file
+      let lastProcessedUrl = null;
+
+      if (!methodSelect) return;
+
+      methodSelect.addEventListener('change', () => {
+        if (methodSelect.value === 'heterodyne') {
+          heteroControls.style.display = '';
+          dividerControls.style.display = 'none';
+        } else {
+          heteroControls.style.display = 'none';
+          dividerControls.style.display = '';
+        }
+      });
+
+      async function saveOriginalIfNeeded(buf) {
+        if (!buf || player.__originalAudioBuffer) return;
+        try {
+          player.__originalAudioBuffer = buf;
+          const blob = audioBufferToWav(buf);
+          player.__originalBlobUrl = URL.createObjectURL(blob);
+        } catch (e) {
+          player.__originalBlobUrl = null;
+        }
+      }
+
+      async function loadProcessedBuffer(rendered) {
+        if (lastProcessedUrl) try { URL.revokeObjectURL(lastProcessedUrl); } catch (e) {}
+        const blob = audioBufferToWav(rendered);
+        const url = URL.createObjectURL(blob);
+        lastProcessedUrl = url;
+        await player.loadUrl(url);
+        player.play();
+      }
+
+      document.getElementById('audioHeterodyneBtn')?.addEventListener('click', async () => {
+        const currentBuf = player._state?.audioBuffer;
+        if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
+        await saveOriginalIfNeeded(currentBuf);
+        const sourceBuf = player.__originalAudioBuffer || currentBuf;
+        const carrier = Number(document.getElementById('heterodyneFreq').value) || 20000;
+        const lowpass = Number(document.getElementById('heterodyneLowpass').value) || 8000;
+        statusEl.textContent = 'Processing...';
+        try {
+          const rendered = await heterodyneDownmix(sourceBuf, carrier, lowpass);
+          await loadProcessedBuffer(rendered);
+          statusEl.textContent = 'Done: audio loaded into player.';
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'Processing error: ' + (err.message || err);
+        }
+      });
+
+      document.getElementById('audioDividerBtn')?.addEventListener('click', async () => {
+        const currentBuf = player._state?.audioBuffer;
+        if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
+        await saveOriginalIfNeeded(currentBuf);
+        const sourceBuf = player.__originalAudioBuffer || currentBuf;
+        const divisor = Math.max(1, parseInt(document.getElementById('dividerFactor').value, 10) || 8);
+        statusEl.textContent = 'Processing...';
+        try {
+          const rendered = await resampleDivider(sourceBuf, divisor);
+          await loadProcessedBuffer(rendered);
+          statusEl.textContent = 'Done: audio loaded into player.';
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'Processing error: ' + (err.message || err);
+        }
+      });
+
+      // Restore handlers (two buttons for convenience)
+      const restoreHandler = async () => {
+        if (!player.__originalAudioBuffer && !player.__originalBlobUrl) { statusEl.textContent = 'No original saved.'; return; }
+        statusEl.textContent = 'Restoring...';
+        try {
+          if (player.__originalBlobUrl) {
+            await player.loadUrl(player.__originalBlobUrl);
+            player.play();
+          } else if (player.__originalAudioBuffer) {
+            const blob = audioBufferToWav(player.__originalAudioBuffer);
+            const url = URL.createObjectURL(blob);
+            await player.loadUrl(url);
+            player.play();
+            player.__originalBlobUrl = url;
+          }
+          statusEl.textContent = 'Original restored.';
+        } catch (e) {
+          console.error(e);
+          statusEl.textContent = 'Error restoring original.';
+        }
+      };
+
+      document.getElementById('audioRestoreBtn')?.addEventListener('click', restoreHandler);
+      document.getElementById('audioRestoreBtnDivider')?.addEventListener('click', restoreHandler);
+    })();
 
     // ── App state ─────────────────────────────────────────────────────
     const state = {
       labels: [],
       /** @type {Map<string, ReturnType<typeof defaultSetInfo>>} */
       labelSets: new Map(),
+      /** ID of the currently active annotation set (new labels are assigned to it) */
+      activeSetId: null,
       /** Editable recording metadata for XC upload context */
       recordingEditMeta: defaultRecordingEditMeta(),
       xcLabelPool: [],
@@ -394,12 +549,38 @@
     // ── Label set CRUD ────────────────────────────────────────────────
     function _genSetId() { return 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
 
+    function rebuildActiveSetDropdown() {
+      const sel = document.getElementById('labelActiveSetSelect');
+      if (!sel) return;
+      sel.innerHTML = '';
+      // None option
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '';
+      noneOpt.textContent = '— none —';
+      sel.appendChild(noneOpt);
+      for (const [id, s] of state.labelSets) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        const originTag = s.origin === 'xeno-canto' ? '[XC]' : s.origin === 'BirdNET' ? '[BN]' : '';
+        opt.textContent = (originTag ? originTag + ' ' : '') + (s.name || id);
+        sel.appendChild(opt);
+      }
+      sel.value = state.activeSetId || '';
+    }
+
+    /** Set the active annotation set for new labels (Labels tab). */
+    function setActiveSet(id) {
+      state.activeSetId = id || null;
+      const sel = document.getElementById('labelActiveSetSelect');
+      if (sel) sel.value = id || '';
+    }
+
     function createLabelSet(partial = {}) {
       const set = defaultSetInfo({ id: _genSetId(), ...partial });
       if (!set.id) set.id = _genSetId();
       state.labelSets.set(set.id, set);
       syncToPlayer();
-      // Rebuild the XC set selector to reflect the new set
+      rebuildActiveSetDropdown();
       xcPanel._rebuildSetSection?.();
       return set;
     }
@@ -409,6 +590,7 @@
       if (s) {
         s.name = newName;
         syncToPlayer();
+        rebuildActiveSetDropdown();
         xcPanel._rebuildSetSection?.();
       }
     }
@@ -418,7 +600,9 @@
         if (lbl.setId === id) lbl.setId = null;
       }
       state.labelSets.delete(id);
+      if (state.activeSetId === id) state.activeSetId = null;
       syncToPlayer();
+      rebuildActiveSetDropdown();
       xcPanel._rebuildSetSection?.();
     }
 
@@ -429,7 +613,71 @@
 
     function convertSetToManual(setId) {
       const s = state.labelSets.get(setId);
-      if (s) { s.origin = 'manual'; syncToPlayer(); }
+      if (s) { s.origin = 'manual'; updateSet(setId, {}); }
+    }
+
+    // ── Central set update — call whenever any set field changes ──────
+    // Debounced so fast typing doesn't re-render on every keystroke.
+    let _setRenderTimer = null;
+    function updateSet(setId, updates) {
+      const s = state.labelSets.get(setId);
+      if (!s) return;
+      Object.assign(s, updates);
+      saveSetProfile(s);
+      clearTimeout(_setRenderTimer);
+      _setRenderTimer = setTimeout(() => {
+        syncToPlayer();
+        labelList.render(state.labels);                      // set header name/license in label list
+        rebuildActiveSetDropdown();                          // set name in Labels tab dropdown
+        xcPanel._rebuildSetSection?.();                      // set selector + form in XC tab
+        const displayed = propsPanel.displayedLabel;
+        if (displayed) propsPanel.refreshLabel(displayed);  // set section in Properties tab
+        saveSessionSets();
+      }, 300);
+    }
+
+    // Persist labeler-profile fields (creator, license, …) from manual sets
+    const PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
+    const PROFILE_KEY = 'audio-workbench.labeler-profile.v1';
+    function saveSetProfile(s) {
+      if (s.origin !== 'manual') return;
+      try {
+        const prev = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+        let changed = false;
+        for (const k of PROFILE_FIELDS) {
+          if (s[k] != null && s[k] !== '') { prev[k] = s[k]; changed = true; }
+        }
+        if (changed) localStorage.setItem(PROFILE_KEY, JSON.stringify(prev));
+      } catch {}
+    }
+    function loadSetProfile() {
+      try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; }
+    }
+
+    // Persist set registry so values survive page reload (cleared on new file load)
+    const SESSION_SETS_KEY = 'audio-workbench.session-sets.v1';
+    function saveSessionSets() {
+      try {
+        localStorage.setItem(SESSION_SETS_KEY, JSON.stringify({
+          sets: [...state.labelSets.entries()],
+          activeSetId: state.activeSetId,
+        }));
+      } catch {}
+    }
+    function restoreSessionSets() {
+      try {
+        const raw = localStorage.getItem(SESSION_SETS_KEY);
+        if (!raw) return false;
+        const { sets, activeSetId } = JSON.parse(raw);
+        if (!Array.isArray(sets) || !sets.length) return false;
+        state.labelSets = new Map(sets);
+        if (activeSetId && state.labelSets.has(activeSetId)) {
+          state.activeSetId = activeSetId;
+        }
+        rebuildActiveSetDropdown();
+        xcPanel._rebuildSetSection?.();
+        return true;
+      } catch { return false; }
     }
 
     // No local last-click tracking needed; clear/add highlight by querying overlay.
@@ -448,10 +696,7 @@
       exportSetBtn:          document.getElementById('xcExportSetBtn'),
       statusEl:              document.getElementById('xcStatus'),
       getLabelSets:          () => state.labelSets,
-      onSetChange:           (setId, updates) => {
-        const s = state.labelSets.get(setId);
-        if (s) { Object.assign(s, updates); }
-      },
+      onSetChange:           (setId, updates) => updateSet(setId, updates),
       onCreateSet:           (partial) => createLabelSet(partial),
       getRecordingEditMeta:  () => state.recordingEditMeta,
       onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
@@ -572,6 +817,7 @@
       emptyEl:   document.getElementById('labelsEmpty'),
       resolveName,
       tagStore,
+      accordion: true,
       onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
       onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
@@ -595,10 +841,7 @@
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
     };
-    propsPanel.onSetChange = (setId, updates) => {
-      const s = state.labelSets.get(setId);
-      if (s) { Object.assign(s, updates); syncToPlayer(); }
-    };
+    propsPanel.onSetChange = (setId, updates) => updateSet(setId, updates);
 
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;
@@ -733,15 +976,34 @@
       return out;
     }
 
+    let _defaultSetCounter = 0;
+
     // ── File loading ──────────────────────────────────────────────────
     async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
       // Reset label + set state when loading a new file
       state.labels = [];
       state.labelSets.clear();
+      state.activeSetId = null;
       state.xcLabelPool = [];
       state.recordingEditMeta = defaultRecordingEditMeta();
       xcPanel._activeSetId = null;
+
+      // Auto-create a default manual set pre-filled with persisted labeler profile
+      _defaultSetCounter++;
+      const profile = loadSetProfile();
+      const defaultSet = createLabelSet({
+        name: `Annotation Set #${_defaultSetCounter}`,
+        origin: 'manual',
+        creator:   profile.creator   || '',
+        creatorId: profile.creatorId || '',
+        license:   profile.license   || '',
+        owner:     profile.owner     || '',
+      });
+      try { localStorage.removeItem(SESSION_SETS_KEY); } catch {}
+      setActiveSet(defaultSet.id);
+
       xcPanel._rebuildSetSection?.();
+      rebuildActiveSetDropdown();
       syncToPlayer();
       if (state.activeObjectUrl) {
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
@@ -829,6 +1091,7 @@
 
       state.labels = result.labels;
       syncToPlayer();
+      rebuildActiveSetDropdown();
       return { xcId: result.xcId, imported: result.labels.length };
     }
 
@@ -1009,11 +1272,16 @@
     // ── Toggle editable recording metadata section ────────────────────
     const xcToggleRecordingEdit = document.getElementById('xcToggleRecordingEdit');
     const xcRecordingEditEl = document.getElementById('xcRecordingEdit');
+    let _xcRecordingEditBuilt = false;
     xcToggleRecordingEdit?.addEventListener('click', () => {
-      const hidden = xcRecordingEditEl.hidden;
-      xcRecordingEditEl.hidden = !hidden;
-      xcToggleRecordingEdit.textContent = hidden ? 'Hide' : 'Edit';
-      if (hidden) xcPanel._buildRecordingEditSection();
+      const nowVisible = xcRecordingEditEl.hidden;
+      if (nowVisible && !_xcRecordingEditBuilt) {
+        _xcRecordingEditBuilt = true;
+        xcPanel._buildRecordingEditSection();
+      }
+      xcRecordingEditEl.hidden = !nowVisible;
+      xcToggleRecordingEdit.classList.toggle('active', nowVisible);
+      xcToggleRecordingEdit.textContent = nowVisible ? 'Hide' : 'Edit';
     });
 
     // ── Taxonomy ──────────────────────────────────────────────────────
@@ -1089,6 +1357,9 @@
       syncToPlayer();
       await player.loadFile(file);
       fileLabel.textContent = file.name;
+      // Clear any saved original when a new file is explicitly loaded by the user
+      try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
+      player.__originalAudioBuffer = null;
       fileInput.value = '';
     });
 
@@ -1102,6 +1373,9 @@
       syncToPlayer();
       await player.loadUrl('./samples/birdsong.wav');
       fileLabel.textContent = 'birdsong.wav';
+      // Clear any previously saved original when loading the demo sample
+      try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
+      player.__originalAudioBuffer = null;
     });
 
     player.on('ready', (e) => {
@@ -1120,13 +1394,27 @@
       if (end > start) selectionMeta.textContent = `${fmt(start)} – ${fmt(end)}`;
     });
 
+    // Active set dropdown
+    document.getElementById('labelActiveSetSelect')?.addEventListener('change', (e) => {
+      setActiveSet(e.target.value || null);
+    });
+    document.getElementById('labelNewSetBtn')?.addEventListener('click', () => {
+      const name = prompt('New annotation set name:', 'My Set');
+      if (!name?.trim()) return;
+      const set = createLabelSet({ name: name.trim(), origin: 'manual' });
+      setActiveSet(set.id);
+      labelList.render(state.labels);
+    });
+
     clearAllBtn.addEventListener('click', () => {
       state.labels = [];
       state.labelSets.clear();
+      state.activeSetId = null;
       state.selected = null;
       selectionMeta.textContent = '';
       player.clearSpectrogramLabels();
       labelList.render(state.labels);
+      rebuildActiveSetDropdown();
       sidebar.setBadge('labels', '');
     });
 
@@ -1159,7 +1447,11 @@
       if (!label?.id) return;
       const idx = state.labels.findIndex((l) => l.id === label.id);
       if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
-      else state.labels.push({ ...label, origin: label.origin || 'manual' });
+      else {
+        // Assign the active annotation set to newly created labels
+        const setId = label.setId ?? (state.activeSetId || null);
+        state.labels.push({ ...label, origin: label.origin || 'manual', setId });
+      }
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
       // Refresh properties panel if this label is displayed (pinned or hovered)
@@ -1415,6 +1707,11 @@
     }
 
     // ── Startup ───────────────────────────────────────────────────────
+    // Restore sets from last session (only if no URL params will load a recording)
+    if (!new URLSearchParams(window.location.search).has('xc') &&
+        !new URLSearchParams(window.location.search).has('XC')) {
+      restoreSessionSets();
+    }
     labelList.render(state.labels);
     await loadBirdnetTaxonomy();
     autoLoadFromParams();

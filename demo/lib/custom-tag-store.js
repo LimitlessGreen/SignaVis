@@ -38,6 +38,15 @@ export class CustomTagStore {
     } catch { /* quota exceeded — silently ignore */ }
   }
 
+  _emitChange(action, key, info = {}) {
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        const detail = { action: String(action || ''), key: String(key || ''), ...info };
+        window.dispatchEvent(new CustomEvent('aw:customTagStoreChanged', { detail }));
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   /** Get custom options for a preset key. */
   getCustom(key) {
     return (this._data[key] || []).slice();
@@ -52,6 +61,7 @@ export class CustomTagStore {
     if (this._data[key].some((v) => v.toLowerCase() === lc)) return false;
     this._data[key].push(trimmed);
     this._save();
+    this._emitChange('add', key, { value: trimmed });
     return true;
   }
 
@@ -64,6 +74,7 @@ export class CustomTagStore {
     this._data[key].splice(idx, 1);
     if (!this._data[key].length) delete this._data[key];
     this._save();
+    this._emitChange('remove', key, { value });
     return true;
   }
 
@@ -76,6 +87,7 @@ export class CustomTagStore {
     if (idx < 0) return false;
     this._data[key][idx] = trimmed;
     this._save();
+    this._emitChange('rename', key, { oldValue, newValue: trimmed });
     return true;
   }
 
