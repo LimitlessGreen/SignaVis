@@ -312,10 +312,14 @@ export class LabelList {
     const editBtn = document.createElement('button');
     editBtn.className = 'act-btn';
     editBtn.textContent = '✎';
-    editBtn.title = 'Edit (taxonomy search)';
+    editBtn.title = instances.length > 1 ? `Edit species for all ${instances.length} instances` : 'Edit species';
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this._onEdit?.(representative.id);
+      if (instances.length > 1 && this._onBulkEdit) {
+        this._onBulkEdit(instances.map((l) => l.id));
+      } else {
+        this._onEdit?.(representative.id);
+      }
     });
     row.appendChild(editBtn);
 
