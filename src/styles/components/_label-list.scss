@@ -33,11 +33,28 @@
 .label-instance.highlighted { background: rgba(56,189,248,0.10); }
 .label-instance.selected { background: rgba(56,189,248,0.14); box-shadow: inset 2px 0 0 var(--accent); }
 .label-instance-header { display: flex; align-items: center; gap: 6px; }
+
+/* Multi-select checkbox — hidden until hover or any item is selected */
+.label-instance-cb {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+  accent-color: var(--accent);
+}
+.label-instance:hover .label-instance-cb,
+.label-instance-cb:checked,
+.label-instance.multi-active .label-instance-cb { opacity: 1; }
 .label-instance-meta { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; }
 .label-instance-header .act-btn { opacity: 0; transition: opacity 0.15s; }
 .label-instance:hover .act-btn { opacity: 1; }
-.label-instance .edit-toggle { opacity: 0; }
+.label-instance .edit-toggle,
+.label-instance .species-edit-btn { opacity: 0; }
 .label-instance:hover .edit-toggle,
+.label-instance:hover .species-edit-btn,
 .label-instance.expanded .edit-toggle { opacity: 1; }
 .label-instance.expanded .edit-toggle { color: var(--accent); }
 .label-card-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
@@ -51,6 +68,23 @@
 .detail-select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 11px; padding: 3px 5px; cursor: pointer; }
 .detail-select option { background: var(--panel); color: var(--text); }
 .detail-custom-tags { padding: 2px 0 4px; }
+
+/* Multi-select */
+.label-instance.multi-selected,
+tr.multi-selected { background: rgba(var(--color-accent-rgb, 56,189,248), 0.18); box-shadow: inset 2px 0 0 var(--accent); outline: 1px solid rgba(var(--color-accent-rgb, 56,189,248), 0.35); }
+
+.label-multi-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--color-accent-faint);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  flex-shrink: 0;
+  .label-multi-info { color: var(--accent); font-weight: 600; flex: 1; }
+  .tb-btn { font-size: 10px; padding: 2px 8px; height: 22px; }
+}
 
 /* Force stronger species header styling inside the labels panel */
 #panelLabels .label-group-name {

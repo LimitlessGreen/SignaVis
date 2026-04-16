@@ -58,20 +58,29 @@ export class LabelList {
     this._onEdit = opts.onEdit;
     this._onFocus = opts.onFocus;
     this._onHover = opts.onHover;
+    this._onBulkEdit = opts.onBulkEdit || null;
+    this._onMultiSelectionChange = opts.onMultiSelectionChange || null;
     this._onRemove = null;
     this._tagStore = opts.tagStore || null;
     this._cardMap = new Map();
     this._esInstances = [];
     this._selectedId = null;
+    /** @type {Set<string>} ids selected via Ctrl+Click for bulk actions */
+    this._multiSelectedIds = new Set();
     this._labels = [];
     /** @type {Set<string>} group keys that are expanded */
     this._expandedGroups = new Set();
     /** @type {Set<string>} label ids whose detail section is open */
     this._detailOpenIds = new Set();
+    /** @type {HTMLElement|null} */
+    this._bulkToolbar = null;
   }
 
   set onRemove(fn) { this._onRemove = fn; }
+  set onBulkEdit(fn) { this._onBulkEdit = fn; }
+  set onMultiSelectionChange(fn) { this._onMultiSelectionChange = fn; }
   get selectedId() { return this._selectedId; }
+  get multiSelectedIds() { return this._multiSelectedIds; }
 
   /** Update only the tag-badges of a specific label instance (no full re-render). */
   updateBadges(labelId, lbl) {
@@ -89,6 +98,11 @@ export class LabelList {
   /** Full re-render — groups labels by origin, then by name. */
   render(labels) {
     this._labels = labels;
+    // Remove any ids that no longer exist
+    const idSet = new Set(labels.map((l) => l.id));
+    for (const id of this._multiSelectedIds) {
+      if (!idSet.has(id)) this._multiSelectedIds.delete(id);
+    }
     // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
     for (const es of this._esInstances) es.destroy();
     this._esInstances = [];
@@ -132,6 +146,8 @@ export class LabelList {
     }
 
     if (this._selectedId) this.highlightRow(this._selectedId);
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
   }
 
   highlightRow(labelId) {
@@ -173,6 +189,75 @@ export class LabelList {
         inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
+  }
+
+  clearMultiSelection() {
+    this._multiSelectedIds.clear();
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
+  }
+
+  _updateMultiVisual() {
+    const anySelected = this._multiSelectedIds.size > 0;
+    for (const [id, el] of this._cardMap) {
+      const multiSelected = this._multiSelectedIds.has(id);
+      el.classList.toggle('multi-selected', multiSelected);
+      el.classList.toggle('multi-active', anySelected);
+      // Suppress single-selection highlight while multi-select is active;
+      // restore it when multi-select is cleared.
+      if (anySelected) {
+        el.classList.remove('selected');
+      } else if (id === this._selectedId) {
+        el.classList.add('selected');
+      }
+      const cb = /** @type {HTMLInputElement|null} */ (el.querySelector('.label-instance-cb'));
+      if (cb) cb.checked = multiSelected;
+    }
+  }
+
+  _updateBulkToolbar() {
+    this._onMultiSelectionChange?.([...this._multiSelectedIds]);
+    const count = this._multiSelectedIds.size;
+    if (count < 2) {
+      if (this._bulkToolbar) {
+        this._bulkToolbar.remove();
+        this._bulkToolbar = null;
+      }
+      return;
+    }
+
+    if (!this._bulkToolbar) {
+      const bar = document.createElement('div');
+      bar.className = 'label-multi-toolbar';
+      // Insert before the scroll container or as sibling of _container
+      const scroll = this._container.closest('.label-list-scroll');
+      const parent = scroll ? scroll.parentElement : this._container.parentElement;
+      if (scroll) parent.insertBefore(bar, scroll);
+      else parent.insertBefore(bar, this._container);
+      this._bulkToolbar = bar;
+    }
+
+    this._bulkToolbar.innerHTML = '';
+    const info = document.createElement('span');
+    info.className = 'label-multi-info';
+    info.textContent = `${count} selected`;
+    this._bulkToolbar.appendChild(info);
+
+    if (this._onBulkEdit) {
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'tb-btn';
+      renameBtn.textContent = 'Rename selected';
+      renameBtn.addEventListener('click', () => {
+        this._onBulkEdit([...this._multiSelectedIds]);
+      });
+      this._bulkToolbar.appendChild(renameBtn);
+    }
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'tb-btn';
+    clearBtn.textContent = 'Deselect all';
+    clearBtn.addEventListener('click', () => this.clearMultiSelection());
+    this._bulkToolbar.appendChild(clearBtn);
   }
 
   // ── Group builder ──────────────────────────────────────────────────
@@ -283,6 +368,28 @@ export class LabelList {
 
     inst.addEventListener('click', (e) => {
       if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.esel')) return;
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl+Click: toggle multi-selection without seeking.
+        // On the first Ctrl+Click, carry the previously selected label into the set.
+        e.preventDefault();
+        if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
+          this._multiSelectedIds.add(this._selectedId);
+        }
+        if (this._multiSelectedIds.has(lbl.id)) {
+          this._multiSelectedIds.delete(lbl.id);
+        } else {
+          this._multiSelectedIds.add(lbl.id);
+        }
+        this._updateMultiVisual();
+        this._updateBulkToolbar();
+        return;
+      }
+      // Clear multi-selection on plain click
+      if (this._multiSelectedIds.size > 0) {
+        this._multiSelectedIds.clear();
+        this._updateMultiVisual();
+        this._updateBulkToolbar();
+      }
       this._onSeek?.(lbl);
       this.highlightRow(lbl.id);
       this._onFocus?.(lbl.id, 'list');
@@ -290,9 +397,32 @@ export class LabelList {
     inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
     inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
 
-    // ── Header: time/freq + edit-toggle + delete ──
+    // ── Header: checkbox + time/freq + edit-toggle + delete ──
     const header = document.createElement('div');
     header.className = 'label-instance-header';
+
+    // Multi-select checkbox (visible on hover or when any multi-selection is active)
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'label-instance-cb';
+    cb.title = 'Ctrl+click or check to multi-select';
+    cb.checked = this._multiSelectedIds.has(lbl.id);
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) {
+        // Carry existing single-selection into the set on first checkbox tick
+        if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
+          this._multiSelectedIds.add(this._selectedId);
+        }
+        this._multiSelectedIds.add(lbl.id);
+      } else {
+        this._multiSelectedIds.delete(lbl.id);
+      }
+      this._updateMultiVisual();
+      this._updateBulkToolbar();
+    });
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    header.appendChild(cb);
 
     const meta = document.createElement('span');
     meta.className = 'label-instance-meta';
@@ -302,6 +432,17 @@ export class LabelList {
     const spacer = document.createElement('span');
     spacer.style.flex = '1';
     header.appendChild(spacer);
+
+    // Species-rename button — opens taxonomy search for this instance only
+    const speciesBtn = document.createElement('button');
+    speciesBtn.className = 'act-btn species-edit-btn';
+    speciesBtn.textContent = '🏷';
+    speciesBtn.title = 'Change species for this label';
+    speciesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._onEdit?.(lbl.id);
+    });
+    header.appendChild(speciesBtn);
 
     const editToggle = document.createElement('button');
     editToggle.className = 'act-btn edit-toggle';
@@ -515,7 +656,7 @@ export class LabelList {
           lbl.scientificName = '';
           lbl.commonName = '';
         }
-        this._onSync();
+        this._onSync({ structural: true });
       } else {
         nameEl.textContent = displayName;
       }

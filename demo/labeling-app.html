@@ -79,7 +79,7 @@
       <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
     </div>
     <div class="panel-hint">
-      <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit
+      <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit · <kbd>Ctrl</kbd>+click multi-select
     </div>
     <div class="label-list-scroll">
       <div class="label-list" id="labelList"></div>
@@ -453,31 +453,15 @@
       });
     }
 
-    function highlightSpectrogramLabel(labelId, on) {
-      const overlay = player.spectrogramLabels?.overlay;
-      if (!overlay) return;
-      const el = overlay.querySelector(`.spectrogram-label-region[data-id="${CSS.escape(labelId)}"]`);
-      if (el) el.classList.toggle('highlighted', on);
-    }
-
-    // Centralized selection helper — seeks, highlights overlay and list rows,
-    // and pins the properties panel. Default seek mode is 'middle' for a
-    // more useful visual context; change to 'start' to mimic legacy behavior.
+    // Centralized selection helper — seeks, highlights list rows, and pins
+    // the properties panel. Overlay highlight is owned by SpectrogramLabelLayer
+    // via the .selected CSS class (driven by labelfocus interaction:'click').
     const DEFAULT_SEEK_MODE = 'middle'; // 'middle' | 'start' | 'none'
     function selectLabel(labelId, opts = {}) {
       const seekMode = (opts && typeof opts.seekMode !== 'undefined') ? opts.seekMode : DEFAULT_SEEK_MODE;
       const lbl = labelId ? state.labels.find((l) => l.id === labelId) : null;
 
-      // Clear any existing overlay highlights
-      const overlay = player.spectrogramLabels?.overlay;
-      if (overlay) {
-        for (const el of overlay.querySelectorAll('.spectrogram-label-region.highlighted')) {
-          el.classList.remove('highlighted');
-        }
-      }
-
       if (!lbl) {
-        // Clear pin/hover state
         try { propsPanel.clearHover(); } catch (e) {}
         return;
       }
@@ -501,9 +485,6 @@
         try { labelTable.highlightRow(labelId); } catch (e) {}
       }
 
-      // Highlight overlay region
-      highlightSpectrogramLabel(labelId, true);
-
       // Pin properties
       try { propsPanel.pinLabel(lbl); } catch (e) {}
     }
@@ -514,21 +495,24 @@
       emptyEl:   document.getElementById('labelsEmpty'),
       resolveName,
       tagStore,
-      onSync:  () => syncToPlayerSoft(),
+      onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
       // We rely on the internal LabelList.highlightRow() for immediate
       // visual feedback. Emit a canonical `labelfocus` from onFocus so
       // the centralized handler can perform seek/highlight/pin logic.
       onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
+      onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
+      onMultiSelectionChange: (ids) => {
+        try { player.spectrogramLabels?.setMultiSelected(ids); } catch (e) {}
+      },
       onFocus: (id, src) => {
         player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
         // Also run centralized selection immediately for snappy UI
         try { selectLabel(id, { seekMode: 'start' }); } catch (e) { /* ignore */ }
       },
       onHover: (id, on) => {
-        // Emit a labelfocus hover so the properties panel receives hover info
+        // Emit a labelfocus hover so the spectrogram layer and properties panel
+        // receive the hover state (.focused class is managed by SpectrogramLabelLayer).
         player._emit?.('labelfocus', { id: on ? id : null, source: 'list', interaction: 'hover' });
-        // Keep the spectrogram overlay hover highlight
-        try { highlightSpectrogramLabel(id, on); } catch (e) {}
       },
     });
     labelList.onRemove = (lbl) => {
@@ -546,7 +530,28 @@
       const interaction = rawInteraction ?? ((source === 'list' || source === 'table') ? 'click' : 'hover');
       labelList.highlightHover(id);
 
-      if (interaction === 'click') {
+      if (interaction === 'ctrl-click') {
+        // Ctrl+Click: toggle multi-selection in label list AND spectrogram overlay.
+        // On first ctrl-click, carry the currently selected label into the set.
+        if (id) {
+          if (labelList.multiSelectedIds.size === 0 && labelList.selectedId && labelList.selectedId !== id) {
+            labelList.multiSelectedIds.add(labelList.selectedId);
+          }
+          if (labelList.multiSelectedIds.has(id)) {
+            labelList.multiSelectedIds.delete(id);
+          } else {
+            labelList.multiSelectedIds.add(id);
+          }
+          labelList._updateMultiVisual();
+          labelList._updateBulkToolbar();
+          try { player.spectrogramLabels?.setMultiSelected([...labelList.multiSelectedIds]); } catch (e) {}
+        }
+      } else if (interaction === 'click') {
+        // Plain click clears any multi-selection
+        if (labelList.multiSelectedIds.size > 0) {
+          labelList.clearMultiSelection();
+          try { player.spectrogramLabels?.setMultiSelected([]); } catch (e) {}
+        }
         // Centralized selection: pick seek mode based on source to preserve
         // existing UX (overview=center, lists= start), but keep it
         // configurable via event.detail.seekMode.

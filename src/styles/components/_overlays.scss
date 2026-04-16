@@ -9,11 +9,15 @@
   position: absolute;
   inset: 0;
   z-index: 40;
-  display: flex;
+  /* Hidden by default; .show is added by ModalManager.open() */
+  display: none;
   align-items: flex-start;
   justify-content: center;
   padding-top: 12%;
   background: var(--overlay-bg);
+}
+.label-editor-backdrop.show {
+  display: flex;
 }
 
 .label-name-editor {
@@ -28,6 +32,29 @@
   box-shadow: 0 20px 50px var(--shadow-strong), 0 0 0 1px rgba(255,255,255,0.03);
   color: var(--text);
   overflow: hidden;
+}
+
+/* Header strip: title + close button side-by-side */
+.label-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  gap: 8px;
+}
+
+.label-editor-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .label-search-row {
@@ -305,6 +332,7 @@
   display: flex;
 }
 .xc-nokey-dialog {
+  position: relative; /* needed so .modal-close--injected positions inside the dialog */
   max-width: 420px; width: 92%;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -340,29 +368,44 @@
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* Close button used by ModalManager */
+/* Close button — base styles (in-flow, e.g. inside a flex header) */
 .modal-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 36px;
-  height: 36px;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: none;
-  background: rgba(255,255,255,0.04);
-  color: var(--text);
-  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  transition: background 0.1s, color 0.1s;
 }
-.modal-close:hover { background: rgba(255,255,255,0.08); }
+.modal-close:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .modal-close:focus { outline: 2px solid var(--accent); }
+
+/* Injected close button (ModalManager auto-creates when dialog has no .modal-close).
+   Positioned absolute so it floats at the top-right corner of its dialog. */
+.modal-close--injected {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  border-radius: 8px;
+}
 
 /* Daily tip dialog specifics */
 .daily-tip-dialog {
+  position: relative; /* needed so .modal-close--injected positions inside the dialog */
   max-width: 520px;
   width: 92%;
   padding: 14px 16px;

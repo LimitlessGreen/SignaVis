@@ -60,14 +60,21 @@ export class LabelTable {
     this._onEdit = opts.onEdit;
     this._onFocus = opts.onFocus;
     this._onHover = opts.onHover;
+    this._onBulkEdit = opts.onBulkEdit || null;
     this._tagStore = opts.tagStore || null;
     this._rowMap = new Map();
     this._selectedId = null;
+    /** @type {Set<string>} ids selected via Ctrl+Click for bulk actions */
+    this._multiSelectedIds = new Set();
     this._labels = [];
+    /** @type {HTMLElement|null} */
+    this._bulkToolbar = null;
   }
 
   get rowMap() { return this._rowMap; }
   get selectedId() { return this._selectedId; }
+  get multiSelectedIds() { return this._multiSelectedIds; }
+  set onBulkEdit(fn) { this._onBulkEdit = fn; }
 
   /**
    * Full re-render of the table body.
@@ -75,6 +82,11 @@ export class LabelTable {
    */
   render(labels) {
     this._labels = labels;
+    // Remove stale multi-selected ids
+    const idSet = new Set(labels.map((l) => l.id));
+    for (const id of this._multiSelectedIds) {
+      if (!idSet.has(id)) this._multiSelectedIds.delete(id);
+    }
     this._tbody.innerHTML = '';
     this._rowMap = new Map();
     const sorted = labels.slice().sort((a, b) => a.start - b.start);
@@ -87,7 +99,24 @@ export class LabelTable {
       tr.dataset.labelId = lbl.id;
       this._rowMap.set(lbl.id, tr);
 
-      tr.addEventListener('click', () => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.act-btn') || e.target.closest('.esel')) return;
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (this._multiSelectedIds.has(lbl.id)) {
+            this._multiSelectedIds.delete(lbl.id);
+          } else {
+            this._multiSelectedIds.add(lbl.id);
+          }
+          this._updateMultiVisual();
+          this._updateBulkToolbar();
+          return;
+        }
+        if (this._multiSelectedIds.size > 0) {
+          this._multiSelectedIds.clear();
+          this._updateMultiVisual();
+          this._updateBulkToolbar();
+        }
         this._onSeek?.(lbl);
         this.highlightRow(lbl.id);
         this._onFocus?.(lbl.id, 'table');
@@ -215,10 +244,67 @@ export class LabelTable {
     }
 
     if (this._selectedId) this.highlightRow(this._selectedId);
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
   }
 
   /** Bind a remove handler (called with the label object). */
   set onRemove(fn) { this._onRemove = fn; }
+
+  clearMultiSelection() {
+    this._multiSelectedIds.clear();
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
+  }
+
+  _updateMultiVisual() {
+    for (const [id, row] of this._rowMap) {
+      row.classList.toggle('multi-selected', this._multiSelectedIds.has(id));
+    }
+  }
+
+  _updateBulkToolbar() {
+    const count = this._multiSelectedIds.size;
+    if (count < 2) {
+      if (this._bulkToolbar) {
+        this._bulkToolbar.remove();
+        this._bulkToolbar = null;
+      }
+      return;
+    }
+
+    if (!this._bulkToolbar) {
+      const bar = document.createElement('div');
+      bar.className = 'label-multi-toolbar';
+      const table = this._tbody.closest('table');
+      const parent = table ? table.parentElement : this._tbody.parentElement;
+      if (table) parent.insertBefore(bar, table);
+      else parent.insertBefore(bar, this._tbody);
+      this._bulkToolbar = bar;
+    }
+
+    this._bulkToolbar.innerHTML = '';
+    const info = document.createElement('span');
+    info.className = 'label-multi-info';
+    info.textContent = `${count} selected`;
+    this._bulkToolbar.appendChild(info);
+
+    if (this._onBulkEdit) {
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'tb-btn';
+      renameBtn.textContent = 'Rename selected';
+      renameBtn.addEventListener('click', () => {
+        this._onBulkEdit([...this._multiSelectedIds]);
+      });
+      this._bulkToolbar.appendChild(renameBtn);
+    }
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'tb-btn';
+    clearBtn.textContent = 'Deselect all';
+    clearBtn.addEventListener('click', () => this.clearMultiSelection());
+    this._bulkToolbar.appendChild(clearBtn);
+  }
 
   highlightRow(labelId) {
     this._selectedId = labelId || null;
@@ -261,7 +347,7 @@ export class LabelTable {
         lbl.label = val;
         lbl.scientificName = '';
         lbl.commonName = '';
-        this._onSync();
+        this._onSync({ structural: true });
       } else {
         nameSpan.textContent = displayName;
       }

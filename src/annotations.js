@@ -360,12 +360,30 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     });
     footer.appendChild(confirmBtn);
 
-    panel.append(searchRow, tagsRow, results, footer);
+    // ── Header row: title + close button ──
+    // The close button is placed here (not floating-absolute) so it does not
+    // overlap the color picker in the search row below.
+    const header = document.createElement('div');
+    header.className = 'label-editor-header';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'label-editor-title';
+    titleEl.textContent = title || 'Edit label';
+
+    const xBtn = document.createElement('button');
+    xBtn.type = 'button';
+    xBtn.className = 'modal-close';
+    xBtn.setAttribute('aria-label', 'Close');
+    xBtn.textContent = '\u00d7';
+    // Prevent ModalManager from adding a second click handler; we wire it below
+    // once `close` is defined.
+    xBtn.dataset.modalHandlerBound = '1';
+
+    header.append(titleEl, xBtn);
+
+    panel.append(header, searchRow, tagsRow, results, footer);
     backdrop.appendChild(panel);
     host.appendChild(backdrop);
-
-    const modal = new ModalManager({ backdrop, dialog: panel });
-    modal.open();
 
     let activeIndex = -1;
     let resultItems = [];
@@ -377,8 +395,14 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         try { modal.dispose(); } catch (e) { /* ignore */ }
     };
 
-    // backdrop click and Escape are handled by ModalManager; keep input-level
-    // key handling below for Enter behavior.
+    xBtn.addEventListener('click', () => close());
+
+    // Pass onClose so Escape key and backdrop click also run the full cleanup.
+    const modal = new ModalManager({ backdrop, dialog: panel, onClose: close });
+    modal.open();
+
+    // Escape and backdrop click are handled by ModalManager via onClose above.
+    // Keep input-level key handling below for Enter/navigation behavior.
 
     const submit = (value, opts = {}) => {
         const trimmed = String(value || '').trim();
@@ -1069,6 +1093,9 @@ export class SpectrogramLabelLayer {
         this._suppressClickUntil = 0;
         this._suppressContextMenuUntil = 0;
         this._focusedLabelId = null;
+        this._selectedLabelId = null;
+        /** @type {Set<string>} ids toggled via Ctrl+Click for bulk actions */
+        this._multiSelectedIds = new Set();
         this._clipboard = null;
     }
 
@@ -1088,8 +1115,16 @@ export class SpectrogramLabelLayer {
         this._unsubs.push(this.player.on('spectrogramscalechange', () => this.render()));
         this._unsubs.push(this.player.on('timeupdate', (e) => this.highlightActiveLabel(e.detail.currentTime)));
         this._unsubs.push(this.player.on('labelfocus', (e) => {
-            this._focusedLabelId = e?.detail?.id || null;
-            this._updateFocusedVisual();
+            const id = e?.detail?.id || null;
+            const interaction = e?.detail?.interaction;
+            if (interaction === 'click') {
+                this._selectedLabelId = id;
+                this._updateSelectedVisual();
+            } else {
+                // hover or unspecified — update transient focus highlight
+                this._focusedLabelId = id;
+                this._updateFocusedVisual();
+            }
         }));
         this._bindDrawingInteractions(root);
         this.render();
@@ -1204,13 +1239,44 @@ export class SpectrogramLabelLayer {
         }
     }
 
-    /** Set .focused class on only the single focused label element. */
+    /** Set .focused class on the currently hovered label element (transient). */
     _updateFocusedVisual() {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
             const h = /** @type {HTMLElement} */ (el);
-            h.classList.toggle('focused', h.dataset?.id === this._focusedLabelId);
+            h.classList.toggle('focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
         }
+    }
+
+    /** Set .selected class on the explicitly selected label element (sticky). */
+    _updateSelectedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
+        }
+    }
+
+    /** Set .multi-selected class on all Ctrl+Click selected labels. */
+    _updateMultiSelectedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
+        }
+    }
+
+    /** Toggle a label id in the multi-selection set (called from host app or Ctrl+Click). */
+    toggleMultiSelected(id) {
+        if (this._multiSelectedIds.has(id)) this._multiSelectedIds.delete(id);
+        else this._multiSelectedIds.add(id);
+        this._updateMultiSelectedVisual();
+    }
+
+    /** Replace the multi-selection set entirely (e.g. sync from label list). */
+    setMultiSelected(ids) {
+        this._multiSelectedIds = new Set(ids);
+        this._updateMultiSelectedVisual();
     }
 
     render() {
@@ -1250,8 +1316,10 @@ export class SpectrogramLabelLayer {
             }
         }
 
-        // Re-apply focus visual after innerHTML wipe
+        // Re-apply focus and selection visuals after innerHTML wipe
         this._updateFocusedVisual();
+        this._updateSelectedVisual();
+        this._updateMultiSelectedVisual();
 
         // Re-attach ghost stamp if it exists (innerHTML wipe removes it)
         if (this._stampGhostEl && this.stampMode) {
@@ -1412,6 +1480,11 @@ export class SpectrogramLabelLayer {
             if (performance.now() < this._suppressClickUntil) return;
             event.stopPropagation();
             event.preventDefault();
+            if (event.ctrlKey || event.metaKey) {
+                // Ctrl+Click: toggle label into sidebar multi-selection without playing
+                this.player?._emit?.('labelfocus', { id: label.id, source: 'spectrogram', interaction: 'ctrl-click' });
+                return;
+            }
             // Emit labelfocus but explicitly request no automatic seek
             // (seek is handled by playBandpassedSegment; we only want
             // to highlight/pin without changing viewport).
@@ -2058,6 +2131,34 @@ export class SpectrogramLabelLayer {
             onDelete: () => {
                 this.remove(id);
                 this.player?._emit?.('spectrogramlabelremove', { label: { ...label } });
+            },
+        });
+    }
+
+    _renameBulkPrompt(ids) {
+        if (!ids || ids.length === 0) return;
+        const labels = ids.map((id) => this.labels.find((l) => l.id === id)).filter(Boolean);
+        if (labels.length === 0) return;
+        const first = labels[0];
+        const anchorEl = this.overlay || null;
+        openLabelNameEditor({
+            player: this.player,
+            anchorEl,
+            initialValue: first.label || '',
+            initialColor: first.color,
+            initialTags: null,
+            title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
+            onSubmit: ({ name, color, scientificName = '' }) => {
+                for (const lbl of labels) {
+                    lbl.label = name;
+                    lbl.color = color;
+                    if (scientificName) lbl.scientificName = scientificName;
+                    else { lbl.scientificName = ''; lbl.commonName = ''; }
+                    this.player?._emit?.('spectrogramlabelupdate', { label: { ...lbl } });
+                }
+                this._multiSelectedIds.clear();
+                this._updateMultiSelectedVisual();
+                this.render();
             },
         });
     }
