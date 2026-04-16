@@ -100,11 +100,16 @@ function _buildXcLabel(src, index, meta) {
     const freqMax = Number.isFinite(freqMaxRaw) ? Math.min(nyquist, freqMaxRaw) : nyquist;
     if (!(freqMax > freqMin)) return null;
 
+    // Per-annotation scientific name takes priority over recording-level common name
+    // (important for soundscape recordings where recordingCommonName = "Soundscape"
+    // but each annotation has its own scientific_name).
     const label = firstNonEmpty([
-        src.sound_type, src.soundType, recordingCommonName,
         src.scientific_name, src.scientificName,
+        src.sound_type, src.soundType,
         src.label, src.name, src.value, src.type, src.event,
-        src.comment, src.description, 'XC label',
+        src.comment, src.description,
+        recordingCommonName,
+        'XC label',
     ]);
     const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, index + 1]);
 
@@ -135,11 +140,17 @@ function _buildXcLabel(src, index, meta) {
     if (setName) tags.setName = setName;
     if (setCreator) tags.setCreator = setCreator;
 
+    // When the annotation has its own scientific name, clear commonName so that
+    // the host app's taxonomy resolver can fill in the correct common name.
+    // Only fall back to recordingCommonName when there is no per-annotation species.
+    const resolvedSciName = annSciName || scientificName;
+    const resolvedCommonName = annSciName ? '' : recordingCommonName;
+
     return {
         id: `${idPrefix}${xcId}_lbl_${annotationId}`,
         start, end, freqMin, freqMax, label,
-        scientificName: annSciName || scientificName,
-        commonName: recordingCommonName,
+        scientificName: resolvedSciName,
+        commonName: resolvedCommonName,
         origin: 'xeno-canto',
         author: annotator || recordist || '',
         tags,

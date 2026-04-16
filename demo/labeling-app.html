@@ -673,20 +673,26 @@
       const result = await xcPanel.importLabels(xcId, state.sampleRate);
       state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
       state.recordingMeta = result.recordingMeta || null;
+      const recGen = result.recording?.gen || '';
+      const recEn = result.recording?.en || '';
       propsPanel.setRecordingMeta(state.recordingMeta, {
         source: `XC${result.xcId}`,
         sampleRate: state.sampleRate,
         duration: player.duration || 0,
-        species: result.recording?.en || '',
+        species: recGen.toLowerCase() === 'sonus' ? '' : recEn,
         filename: fileLabel.textContent || '',
       });
 
-      // Set species search bar to main species from XC recording
-      const mainSpecies = result.recording?.en || '';
-      const mainSciName = result.recording?.sp || result.recording?.gen
-        ? `${result.recording.gen || ''} ${result.recording.sp || ''}`.trim() : '';
-      if (mainSpecies) {
-        player.setSpeciesBar(mainSpecies, { scientificName: mainSciName });
+      // Set species search bar to main species — skip soundscape pseudo-taxa (Sonus naturalis)
+      const mainGen = result.recording?.gen || '';
+      const isSoundscape = mainGen.toLowerCase() === 'sonus';
+      if (!isSoundscape) {
+        const mainSpecies = result.recording?.en || '';
+        const mainSciName = mainGen && result.recording?.sp
+          ? `${mainGen} ${result.recording.sp}`.trim() : '';
+        if (mainSpecies) {
+          player.setSpeciesBar(mainSpecies, { scientificName: mainSciName });
+        }
       }
 
       // Add XC "also" (background species) to search suggestions
