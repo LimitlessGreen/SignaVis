@@ -7,8 +7,10 @@
 import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoCantoRecordingsApi.js';
 import ModalManager from '../../src/modal-manager.js';
 
-const API_KEY_STORAGE = 'audio-workbench.xc-api-key.v1';
-const SET_META_STORAGE = 'audio-workbench.xc-set-meta.v2';
+const API_KEY_STORAGE     = 'audio-workbench.xc-api-key.v1';
+const SET_META_STORAGE    = 'audio-workbench.xc-set-meta.v2';
+// Profile fields that are auto-saved per manual set (persisted by labeling-app.html)
+const LABELER_PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
 const XC_UPLOAD_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotation-set';
 
 // ── Read-only recording metadata (from XC API) ──────────────────────
@@ -123,21 +125,19 @@ export function defaultSetInfo(partial = {}) {
   };
 }
 
-// ── Helper: build a labeled field row ────────────────────────────────
+// ── Helper: build a dt/dd pair for use inside a props-grid <dl> ──────
 
 function buildField(f, value, onChange) {
-  const wrap = document.createElement('div');
-  wrap.className = 'xc-field';
+  const dt = document.createElement('dt');
+  dt.textContent = f.label + (f.required ? ' *' : '');
 
-  const lbl = document.createElement('label');
-  lbl.className = 'field-label';
-  lbl.textContent = f.label + (f.required ? ' *' : '');
-  wrap.appendChild(lbl);
+  const dd = document.createElement('dd');
+  dd.classList.add('props-editable');
 
   let input;
   if (f.type === 'select') {
     input = document.createElement('select');
-    input.className = 'field-select';
+    input.className = 'props-select';
     for (const opt of (f.options || [])) {
       const o = document.createElement('option');
       o.value = opt;
@@ -146,20 +146,21 @@ function buildField(f, value, onChange) {
     }
   } else if (f.type === 'textarea') {
     input = document.createElement('textarea');
-    input.className = 'input xc-textarea';
+    input.className = 'props-input';
     input.placeholder = f.placeholder || '';
-    input.rows = 2;
+    input.rows = 3;
+    input.style.cssText = 'height:auto;resize:vertical;min-height:44px;width:100%';
   } else {
     input = document.createElement('input');
     input.type = f.type || 'text';
-    input.className = 'input';
+    input.className = 'props-input';
     input.placeholder = f.placeholder || '';
   }
   input.value = value ?? '';
   input.addEventListener('input', () => onChange(input.value));
   input.addEventListener('change', () => onChange(input.value.trim()));
-  wrap.appendChild(input);
-  return { el: wrap, input };
+  dd.appendChild(input);
+  return { dt, dd, input };
 }
 
 // ── Collapsible section helper ────────────────────────────────────────
@@ -262,7 +263,7 @@ export class XenoCantoPanel {
     this._bindEvents();
     this._updateButtonState();
     this._buildSetSection();
-    this._buildRecordingEditSection();
+    // Recording edit section is built lazily (hidden by default)
   }
 
   open() {
@@ -344,8 +345,7 @@ export class XenoCantoPanel {
       return;
     }
     const dl = document.createElement('dl');
-    // add shared props-grid class so recording metadata uses the same layout as Properties panel
-    dl.className = 'xc-meta-grid props-grid';
+    dl.className = 'props-grid';
     for (const { key, label } of RECORDING_FIELDS_READONLY) {
       const val = m[key];
       if (!val) continue;
@@ -372,7 +372,7 @@ export class XenoCantoPanel {
     if (m.type)      updates.type = m.type;
     if (m.recordist) updates.recorder = m.recordist;
     if (Object.keys(updates).length) this._onRecordingEditMetaChange(updates);
-    this._rebuildRecordingEditSection();
+    this._buildRecordingEditSection();
   }
 
   // ── Editable recording metadata section ────────────────────────────
@@ -382,15 +382,17 @@ export class XenoCantoPanel {
     if (!el) return;
     el.innerHTML = '';
     const meta = this._getRecordingEditMeta?.() || {};
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid';
     for (const f of RECORDING_EDIT_FIELDS) {
-      const { el: row } = buildField(f, meta[f.key] || '', (val) => {
+      const { dt, dd } = buildField(f, meta[f.key] || '', (val) => {
         this._onRecordingEditMetaChange?.({ [f.key]: val });
       });
-      el.appendChild(row);
+      dl.appendChild(dt);
+      dl.appendChild(dd);
     }
+    el.appendChild(dl);
   }
-
-  _rebuildRecordingEditSection() { this._buildRecordingEditSection(); }
 
   // ── Set section: selector + form ────────────────────────────────────
 
@@ -456,6 +458,7 @@ export class XenoCantoPanel {
     this._rebuildSetForm();
   }
 
+  /** Rebuild set selector + form (call after external set registry changes). */
   _rebuildSetSection() { this._buildSetSection(); }
 
   _rebuildSetForm() {
@@ -474,31 +477,35 @@ export class XenoCantoPanel {
     }
 
     if (!setData) {
-      el.innerHTML = '<div class="field-hint" style="padding:4px 0">Select or create a set above.</div>';
+      el.innerHTML = '<div class="props-empty">Select or create a set above.</div>';
       return;
     }
 
     const isExternal = this._activeSetId && sets.has(this._activeSetId);
 
+    const makeOnChange = (key) => (val) => {
+      if (isExternal && this._onSetChange) {
+        this._onSetChange(this._activeSetId, { [key]: val });
+      } else {
+        this.setMeta[key] = val;
+        this._saveSetMeta();
+      }
+    };
+
     for (const group of SET_FIELD_GROUPS) {
       const buildGroup = () => {
-        const frag = document.createDocumentFragment();
+        const dl = document.createElement('dl');
+        dl.className = 'props-grid';
         for (const f of group.fields) {
-          const { el: row } = buildField(f, setData[f.key] ?? '', (val) => {
-            if (isExternal && this._onSetChange) {
-              this._onSetChange(this._activeSetId, { [f.key]: val });
-            } else {
-              this.setMeta[f.key] = val;
-              this._saveSetMeta();
-            }
-          });
-          frag.appendChild(row);
+          const { dt, dd } = buildField(f, setData[f.key] ?? '', makeOnChange(f.key));
+          dl.appendChild(dt);
+          dl.appendChild(dd);
         }
-        return frag;
+        return dl;
       };
 
       if (group.label) {
-        el.appendChild(buildCollapsible(group.label, buildGroup, { expanded: false }));
+        el.appendChild(buildCollapsible(group.label, buildGroup));
       } else {
         el.appendChild(buildGroup());
       }
@@ -506,17 +513,13 @@ export class XenoCantoPanel {
 
     // Created on (read-only)
     if (setData.createdOn) {
-      const row = document.createElement('div');
-      row.className = 'xc-field';
-      const lbl = document.createElement('label');
-      lbl.className = 'field-label';
-      lbl.textContent = 'Created on';
-      const val = document.createElement('div');
-      val.className = 'field-hint';
-      val.style.marginTop = '2px';
-      val.textContent = new Date(setData.createdOn).toLocaleString();
-      row.appendChild(lbl); row.appendChild(val);
-      el.appendChild(row);
+      const dl = document.createElement('dl');
+      dl.className = 'props-grid';
+      const dt = document.createElement('dt'); dt.textContent = 'Created on';
+      const dd = document.createElement('dd');
+      dd.textContent = new Date(setData.createdOn).toLocaleString();
+      dl.appendChild(dt); dl.appendChild(dd);
+      el.appendChild(dl);
     }
   }
 

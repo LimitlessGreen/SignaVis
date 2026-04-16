@@ -477,6 +477,7 @@ export class PlayerState {
             audioEngineHost:        q('audioEngineHost'),
             playhead:               q('playhead'),
             canvasWrapper:          q('canvasWrapper'),
+            canvasSizer:            q('canvasSizer'),
             viewSplitHandle:        q('viewSplitHandle'),
             spectrogramResizeHandle:q('spectrogramResizeHandle'),
             overviewCanvas:         q('overviewCanvas'),
@@ -1129,17 +1130,27 @@ export class PlayerState {
     }
 
     _mergeProgressiveResults(chunkResults, nMels) {
-        let totalFrames = 0;
-        for (const chunk of chunkResults) totalFrames += chunk.nFrames;
+        if (!chunkResults.length) return { data: new Float32Array(0), nFrames: 0, nMels, hopSize: 0, winLength: 0 };
 
-        const data = new Float32Array(totalFrames * nMels);
-        let frameOffset = 0;
+        // Use the nMels actually returned by the chunks (may differ from options.nMels
+        // if a worker timed out and the main-thread fallback computed a different shape).
+        const actualNMels = chunkResults[0].nMels || nMels;
+
+        // Compute total size from actual data lengths (not nFrames) to avoid
+        // RangeError: offset is out of bounds when chunks are trimmed or rounded.
+        let totalSize = 0;
+        for (const chunk of chunkResults) totalSize += chunk.data.length;
+        const totalFrames = Math.floor(totalSize / actualNMels);
+
+        const data = new Float32Array(totalFrames * actualNMels);
+        let offset = 0;
         for (const chunk of chunkResults) {
-            data.set(chunk.data, frameOffset * nMels);
-            frameOffset += chunk.nFrames;
+            const toCopy = Math.min(chunk.data.length, data.length - offset);
+            if (toCopy > 0) data.set(chunk.data.subarray(0, toCopy), offset);
+            offset += toCopy;
         }
         const first = chunkResults[0] || {};
-        return { data, nFrames: totalFrames, nMels, hopSize: first.hopSize, winLength: first.winLength };
+        return { data, nFrames: totalFrames, nMels: actualNMels, hopSize: first.hopSize, winLength: first.winLength };
     }
 
     _updateSpectrogramStats() {
@@ -1349,21 +1360,46 @@ export class PlayerState {
             freqViewSrcCrop = { srcY: srcYTop, srcH };
         }
 
+        // Use the same formula as renderMainWaveform so both views always have
+        // identical total widths — independent of DOM measurement timing.
+        const totalWidth = Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond));
+
         renderSpectrogram({
             duration: this.audioBuffer.duration,
             spectrogramCanvas: this.d.spectrogramCanvas,
             pixelsPerSecond: this.pixelsPerSecond,
             canvasHeight: effectiveSpectrogramHeight,
             baseCanvas: this.spectrogramBaseCanvas,
-            sampleRate: this.audioBuffer.sampleRate,
-            frameRate: PERCH_FRAME_RATE,
-            spectrogramFrames: this.spectrogramFrames,
-            hopSize: this.spectrogramHopSize,
             freqViewSrcCrop,
+            canvasSizer:   this.d.canvasSizer,
+            scrollLeft:    this.d.canvasWrapper?.scrollLeft ?? 0,
+            viewportWidth: this.d.canvasWrapper?.clientWidth ?? 0,
+            totalWidth,
         });
 
         this._updateCoords();
+        this._syncFreqAxisHeight();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
+    }
+
+    // Keep the freq axis height in sync with the canvas height (needed when the
+    // horizontal scrollbar is visible and reduces the canvas height by ~6 px).
+    // Guards against no-op writes so repeated zoom events don't dirty layout.
+    _syncFreqAxisHeight() {
+        const h = this.d.spectrogramCanvas?.height;
+        if (!h || !this.d.freqAxisSpacer) return;
+        if (this._lastFreqAxisH === h) return; // nothing changed
+        this._lastFreqAxisH = h;
+        // Defer the style write to after the current paint so it doesn't
+        // force a synchronous reflow in the middle of a wheel event chain.
+        cancelAnimationFrame(this._freqAxisRafId);
+        this._freqAxisRafId = requestAnimationFrame(() => {
+            const ch = this.d.spectrogramCanvas?.height;
+            if (ch > 0) {
+                this.d.freqAxisSpacer.style.height = `${ch}px`;
+                if (this.d.crosshairCanvas) this.d.crosshairCanvas.style.marginTop = `-${ch}px`;
+            }
+        });
     }
 
     _requestSpectrogramRedraw() {
@@ -1514,7 +1550,9 @@ export class PlayerState {
             this.d.zoomSlider.value = String(Math.round(effectivePps / sliderStep) * sliderStep);
             this.d.zoomValue.textContent = `${Math.round(effectivePps)} px/s`;
 
-            if (this.wavesurfer) this.wavesurfer.zoom(effectivePps);
+            if (this.wavesurfer) {
+                this.wavesurfer.zoom(effectivePps);
+            }
             if (this.audioBuffer && redraw) {
                 // Redraw BEFORE emitting zoomchange so that canvas dimensions
                 // and coords are up-to-date when listeners (e.g. label layers) run.
@@ -1696,7 +1734,13 @@ export class PlayerState {
             const redraw = this._overviewNeedsFinalRedraw;
             this._overviewNeedsFinalRedraw = false;
             this._applyOverviewWindowToViewport(redraw);
-            if (!redraw) this._requestSpectrogramRedraw();
+            if (!redraw) {
+                // Draw inline (same frame) so the spectrogram update is
+                // synchronous with the scroll — matching the native scrollbar path.
+                if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+                this._drawMainWaveform();
+                this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
+            }
         });
     }
 
@@ -2014,19 +2058,38 @@ export class PlayerState {
     }
 
     _getEffectiveSpectrogramHeight() {
-        const h = this.d.spectrogramContainer?.clientHeight;
-        if (h > 0) return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, h);
-        return Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
+        // Return cached height when available — avoids a forced layout read on
+        // every scroll event. Cache is invalidated by _invalidateSpectrogramHeightCache()
+        // which is called on resize and spectrogram-height changes.
+        if (this._cachedSpectrogramHeight > 0) return this._cachedSpectrogramHeight;
+        // Use canvasWrapper.clientHeight: excludes horizontal scrollbar height so
+        // the canvas doesn't overlap low frequencies when the scrollbar is visible.
+        const h = this.d.canvasWrapper?.clientHeight ?? this.d.spectrogramContainer?.clientHeight;
+        const result = h > 0
+            ? Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, h)
+            : Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
+        this._cachedSpectrogramHeight = result;
+        return result;
+    }
+
+    _invalidateSpectrogramHeightCache() {
+        this._cachedSpectrogramHeight = 0;
     }
 
     /** Rebuild the shared CoordinateSystem whenever any mapping parameter changes. */
     _updateCoords() {
         const extCfg = this._externalImageConfig;
+        // canvasWidth must be the TOTAL spectrogram width (duration × pps), not the
+        // viewport-sized canvas element width. pixelXToTime / timeToPixelX rely on
+        // canvasWidth representing the full scrollable range.
+        const totalSpectrogramWidth = this.audioBuffer
+            ? Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond))
+            : (this.d.spectrogramCanvas?.width || 0);
         this.coords = new CoordinateSystem({
             duration: this.audioBuffer?.duration || 0,
             sampleRate: this.sampleRateHz,
             pixelsPerSecond: this.pixelsPerSecond,
-            canvasWidth: this.d.spectrogramCanvas?.width || 0,
+            canvasWidth: totalSpectrogramWidth,
             canvasHeight: this.d.spectrogramCanvas?.height || 0,
             maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
             spectrogramMels: this.spectrogramMels,
@@ -2102,6 +2165,8 @@ export class PlayerState {
             cancelAnimationFrame(this._viewResizeFrameId);
             this._viewResizeFrameId = 0;
         }
+        // Container was resized — cached height is stale.
+        this._invalidateSpectrogramHeightCache();
 
         const redrawWaveform = force || this._viewResizeNeedsWaveformRedraw;
         const redrawSpectrogram = force || this._viewResizeNeedsSpectrogramRedraw;
@@ -2800,11 +2865,13 @@ export class PlayerState {
         const bin = c.pixelYToBin(canvasY);
         const amplitude = this.spectrogramData[frame * this.spectrogramMels + bin] || 0;
 
-        // Draw crosshair lines on overlay canvas
+        // Draw crosshair lines on overlay canvas.
+        // Canvas is viewport-sized (sticky rendering), so use localX not canvasX.
         if (this._crosshairRafId) cancelAnimationFrame(this._crosshairRafId);
         this._crosshairRafId = requestAnimationFrame(() => {
             this._crosshairRafId = 0;
-            this._drawCrosshairLines(overlay, canvasX, canvasY, c.canvasWidth, c.canvasHeight);
+            const vw = wrapper.clientWidth || c.canvasWidth;
+            this._drawCrosshairLines(overlay, localX, canvasY, vw, c.canvasHeight);
         });
 
         // Format readout
@@ -3257,11 +3324,16 @@ export class PlayerState {
             if (this.scrollSyncLock) return;
             if (this._getPrimaryScrollWrapper() !== this.d.canvasWrapper) return;
             this._setLinkedScrollLeft(this.d.canvasWrapper.scrollLeft);
+            // Viewport-rendering: synchronous redraw so the canvas doesn't lag
+            // behind the label overlay which the browser scrolls natively.
+            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
         });
         on(this.d.waveformWrapper, 'scroll', () => {
             if (this.scrollSyncLock) return;
             if (this._getPrimaryScrollWrapper() !== this.d.waveformWrapper) return;
             this._setLinkedScrollLeft(this.d.waveformWrapper.scrollLeft);
+            // Sync the spectrogram viewport when the waveform is the primary scroller.
+            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
         });
         on(this.d.canvasWrapper, 'wheel', (e) => this._handleWheel(e, 'spectrogram'), { passive: false });
         on(this.d.waveformWrapper, 'wheel', (e) => this._handleWheel(e, 'waveform'), { passive: false });
@@ -3373,6 +3445,7 @@ export class PlayerState {
             this._queueCompactToolbarLayoutRefresh();
             if (!this._shouldCompactToolbarBeActive()) this._setCompactToolbarOpen(false);
             if (!this.audioBuffer) return;
+            this._invalidateSpectrogramHeightCache();
             this._drawSpectrogram();
             this._drawMainWaveform();
             this._drawOverviewWaveform();

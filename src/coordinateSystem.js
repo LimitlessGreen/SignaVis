@@ -409,7 +409,10 @@ export class CoordinateSystem {
         const localX = clientX - wrapperRect.left;
         const localY = clientY - wrapperRect.top;
         const canvasX = scrollLeft + localX;
-        const canvasY = (localY / Math.max(1, wrapperRect.height)) * this.canvasHeight;
+        // Use canvasHeight as denominator, not wrapperRect.height: the wrapper's
+        // bounding rect includes the horizontal scrollbar (~6 px), but the spectrogram
+        // canvas occupies exactly canvasHeight CSS pixels, so localY maps 1:1.
+        const canvasY = Math.max(0, Math.min(localY, this.canvasHeight));
         return { canvasX, canvasY, localX, localY };
     }
 

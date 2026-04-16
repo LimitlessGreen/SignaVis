@@ -46,3 +46,6 @@ python-wrapper/XC*.ogg
 python-wrapper/XC*.flac
 
 TODO.md
+
+# Diagrams (generated / working files)
+docs/diagrams/

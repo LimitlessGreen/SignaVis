@@ -66,8 +66,33 @@
     border-radius: 3px;
 }
 
-[data-aw="spectrogramCanvas"] {
+/* Full-width invisible element that gives the scroll container its scrollable range.
+   Must stay in normal flow so its width contributes to scrollWidth.
+   height: 1px + visibility: hidden is more reliable than height: 0 + overflow: hidden,
+   which some browsers exclude from scrollable-overflow calculation. */
+.canvas-sizer {
     display: block;
+    height: 1px;
+    margin-bottom: -1px; /* cancel out the 1px so it takes no visible space */
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* Spectrogram canvas + crosshair overlay are viewport-width only.
+   position: sticky keeps them pinned to the visible left edge while the
+   scroll container (and label overlays inside it) scroll normally.
+   will-change: contents lets the compositor pre-allocate a GPU layer so
+   canvas repaints don't trigger full-page compositing. */
+[data-aw="spectrogramCanvas"],
+.crosshair-overlay {
+    display: block;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    will-change: contents;
+}
+
+[data-aw="spectrogramCanvas"] {
     image-rendering: pixelated;
 }
 
@@ -103,10 +128,6 @@
 }
 
 .crosshair-overlay {
-    position: absolute;
-    left: 0;
-    top: 0;
-    display: block;
     pointer-events: none;
     z-index: 5;
 }

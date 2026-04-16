@@ -512,7 +512,9 @@ export function frequencyToPixelY(freq, displayHeight, maxFreq, sampleRateHz, sp
 
 // ─── Time Grid (private helper) ─────────────────────────────────────
 
-function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {
+// scrollLeft: how many px the canvas-wrapper is scrolled (viewport offset).
+// Grid lines are drawn in viewport coords (x = absoluteX - scrollLeft).
+function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }) {
     if (width <= 0) return;
     const css = getComputedStyle(document.documentElement);
     const majorColor = css.getPropertyValue('--color-text-secondary').trim() || '#cbd5e1';
@@ -523,7 +525,8 @@ function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond }) {
     ctx.textBaseline = 'top';
 
     for (let t = 0; t <= duration; t += minorStep) {
-        const x = Math.round(t * pixelsPerSecond) + 0.5;
+        const absX = Math.round(t * pixelsPerSecond);
+        const x = absX - scrollLeft + 0.5;
         if (x < 0 || x > width) continue;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
         ctx.strokeStyle = isMajor ? 'rgba(148,163,184,0.35)' : 'rgba(148,163,184,0.18)';
@@ -815,63 +818,87 @@ export function renderSpectrogram({
     pixelsPerSecond,
     canvasHeight,
     baseCanvas,
-    sampleRate,
-    frameRate,
-    spectrogramFrames,
-    hopSize: userHopSize,
     freqViewSrcCrop,
+    // Viewport-rendering params. When provided the canvas is sized to the
+    // visible viewport only (huge perf win for long recordings at high zoom).
+    canvasSizer,      // HTMLElement — sets the scrollable width
+    scrollLeft = 0,   // canvasWrapper.scrollLeft
+    viewportWidth,    // canvasWrapper.clientWidth (null → legacy full-width)
+    totalWidth: explicitTotalWidth, // override computed width (sync to waveform width)
 }) {
     if (!baseCanvas) return;
     const ctx = spectrogramCanvas.getContext('2d');
     if (!ctx) return;
 
-    const width = Math.max(1, Math.floor(duration * pixelsPerSecond));
+    const totalWidth = explicitTotalWidth > 0
+        ? explicitTotalWidth
+        : Math.max(1, Math.round(duration * pixelsPerSecond));
     const height = Math.max(140, Math.floor(canvasHeight));
+
+    // Update the sizer so the scroll container knows the full scrollable range.
+    if (canvasSizer) canvasSizer.style.width = `${totalWidth}px`;
+
+    // Canvas width = visible viewport (capped at totalWidth).
+    // Falls back to full-width if viewportWidth is not supplied.
+    const width = viewportWidth > 0 ? Math.min(viewportWidth, totalWidth) : totalWidth;
+    const sl = viewportWidth > 0 ? scrollLeft : 0; // scroll offset applied in drawing
 
     spectrogramCanvas.width = width;
     spectrogramCanvas.height = height;
 
     ctx.clearRect(0, 0, width, height);
 
-    // Align spectrogram frames to correct time positions.
-    const hopSize = (userHopSize && userHopSize > 0) ? userHopSize : Math.floor(sampleRate / frameRate);
-    const frameCenterSec = 2 * hopSize / sampleRate;
-    const x0 = Math.round(frameCenterSec * pixelsPerSecond);
-    const drawWidth = Math.round(spectrogramFrames * hopSize / sampleRate * pixelsPerSecond);
+    // Draw the spectrogram image stretched to exactly [0, totalWidth] so that
+    // the time axis matches the waveform pixel-for-pixel. Any sub-frame rounding
+    // error (<< 1 hop ≈ 10ms) is imperceptible for audio visualization.
+    const x0 = -sl;           // image starts at absolute pixel 0, viewport-relative: -scrollLeft
+    const drawWidth = totalWidth;
 
-    // Source region of baseCanvas (supports vertical zoom via frequency viewport crop)
+    // Source region of baseCanvas (supports vertical zoom via frequency viewport crop).
     const srcY = freqViewSrcCrop?.srcY ?? 0;
     const srcH = freqViewSrcCrop?.srcH ?? baseCanvas.height;
 
-    // Two-pass rendering: crisp horizontal pixels + smooth vertical interpolation
-    const wantCrispH = drawWidth >= baseCanvas.width;
-    const needsVerticalScale = height !== srcH;
+    // Clip to visible viewport so we only blit what's on screen.
+    const visLeft  = Math.max(0, -x0);                    // pixels into draw region that are visible
+    const visRight = Math.min(drawWidth, width - x0);     // right edge (in draw region coords)
+    if (visRight > visLeft) {
+        const srcFrac0 = visLeft  / drawWidth;
+        const srcFrac1 = visRight / drawWidth;
+        const clipSrcX = srcFrac0 * baseCanvas.width;
+        const clipSrcW = (srcFrac1 - srcFrac0) * baseCanvas.width;
+        const dstX = x0 + visLeft;
+        const dstW = visRight - visLeft;
 
-    if (wantCrispH && needsVerticalScale) {
-        // Pass 1: crop + scale vertically with bilinear (smooth frequency axis)
-        const oc = typeof OffscreenCanvas !== 'undefined'
-            ? new OffscreenCanvas(baseCanvas.width, height)
-            : (() => { const c = document.createElement('canvas'); c.width = baseCanvas.width; c.height = height; return c; })();
-        const octx = oc.getContext('2d');
-        if (!octx) return;
-        octx.imageSmoothingEnabled = true;
-        octx.imageSmoothingQuality = 'high';
-        octx.drawImage(baseCanvas, 0, srcY, baseCanvas.width, srcH,
-                                   0, 0, baseCanvas.width, height);
-        // Pass 2: scale horizontally with nearest-neighbor (crisp time axis)
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(oc, 0, 0, baseCanvas.width, height,
-                          x0, 0, drawWidth, height);
-    } else {
-        ctx.imageSmoothingEnabled = !wantCrispH;
-        ctx.drawImage(
-            baseCanvas,
-            0, srcY, baseCanvas.width, srcH,
-            x0, 0, drawWidth, height,
-        );
+        // Two-pass rendering: crisp horizontal pixels + smooth vertical interpolation.
+        const wantCrispH = drawWidth >= baseCanvas.width;
+        const needsVerticalScale = height !== srcH;
+
+        if (wantCrispH && needsVerticalScale) {
+            // Pass 1: crop the visible horizontal slice + scale vertically (bilinear).
+            const oc = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(Math.ceil(clipSrcW), height)
+                : (() => { const c = document.createElement('canvas'); c.width = Math.ceil(clipSrcW); c.height = height; return c; })();
+            const octx = oc.getContext('2d');
+            if (!octx) return;
+            octx.imageSmoothingEnabled = true;
+            octx.imageSmoothingQuality = 'high';
+            octx.drawImage(baseCanvas,
+                clipSrcX, srcY, clipSrcW, srcH,
+                0, 0, Math.ceil(clipSrcW), height);
+            // Pass 2: scale horizontally with nearest-neighbor (crisp time axis).
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(oc,
+                0, 0, Math.ceil(clipSrcW), height,
+                dstX, 0, dstW, height);
+        } else {
+            ctx.imageSmoothingEnabled = !wantCrispH;
+            ctx.drawImage(baseCanvas,
+                clipSrcX, srcY, clipSrcW, srcH,
+                dstX, 0, dstW, height);
+        }
     }
 
-    drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond });
+    drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft: sl });
 }
 
 // ─── Worker-based Spectrogram Processor ─────────────────────────────
@@ -949,9 +976,11 @@ export function createSpectrogramProcessor() {
             [audioCopy.buffer],
         );
 
-        // Timeout scales with audio length: 3s base + 1s per 30s of audio
+        // Timeout scales with audio length: 5s base + 2s per 10s of audio.
+        // Progressive mode sends 10s chunks, so each chunk gets at least 7s.
+        // Full-file compute for short clips: 60s → 17s timeout, plenty of headroom.
         const durationSec = channelData.length / Math.max(1, options.sampleRate || 44100);
-        const timeoutMs = Math.max(3000, 3000 + Math.ceil(durationSec / 30) * 1000);
+        const timeoutMs = Math.max(5000, 5000 + Math.ceil(durationSec / 10) * 2000);
 
         try {
             const result = await Promise.race([

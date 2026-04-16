@@ -405,16 +405,17 @@ export function createPlayerHTML(opts = {}) {
                          aria-valuenow="0"
                          aria-valuetext="00:00.0 of 00:00.0"
                          tabindex="0">
+                        <div class="canvas-sizer" data-aw="canvasSizer" aria-hidden="true"></div>
                         <canvas data-aw="spectrogramCanvas"></canvas>
                         <canvas class="crosshair-overlay" data-aw="crosshairCanvas"></canvas>
                         <div class="crosshair-readout" data-aw="crosshairReadout"></div>
                         <div class="playhead" data-aw="playhead"></div>
-                        <div class="recomputing-overlay" data-aw="recomputingOverlay" aria-live="polite" hidden>
-                            <span class="recomputing-spinner"></span>
-                            <span>Computing…</span>
-                        </div>
                     </div>
                 </div>
+            </div>
+            <div class="recomputing-overlay" data-aw="recomputingOverlay" aria-live="polite" hidden>
+                <span class="recomputing-spinner"></span>
+                <span>Computing…</span>
             </div>
             <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Adjust spectrogram height"></div>
         </div>
