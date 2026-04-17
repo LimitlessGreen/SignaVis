@@ -1,7 +1,7 @@
 /* Panels: form sections, XC helper rows, and action/status styles */
 .panel-section {
   padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .panel-section:last-child { border-bottom: none; }
 .field-label {
@@ -9,16 +9,16 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   margin-bottom: 4px;
 }
 .field-select {
   width: 100%;
-  border: 1px solid var(--line); border-radius: 5px;
-  background: var(--panel); color: var(--text);
+  border: 1px solid var(--color-border); border-radius: 5px;
+  background: var(--color-bg-surface); color: var(--color-text-primary);
   font-size: 11px; padding: 5px 7px;
 }
-.field-select option { background: var(--panel); color: var(--text); }
+.field-select option { background: var(--color-bg-surface); color: var(--color-text-primary); }
 
 /* Ensure selects and option lists follow the theme (fix white dropdowns in darkmode) */
 .field-select,
@@ -26,9 +26,9 @@
 .detail-select,
 .xc-set-selector-row select,
 .select-compact {
-  background: var(--panel) !important;
-  color: var(--text) !important;
-  border-color: var(--line);
+  background: var(--color-bg-surface) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border);
   -webkit-appearance: none;
   appearance: none;
 }
@@ -36,27 +36,27 @@
 .detail-select option,
 .xc-set-selector-row select option,
 .props-select option {
-  background: var(--panel) !important;
-  color: var(--text) !important;
+  background: var(--color-bg-surface) !important;
+  color: var(--color-text-primary) !important;
 }
 
 /* hide native expand glyph where supported to keep styling consistent */
 select::-ms-expand { display: none; }
 .field-check {
   display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--text); cursor: pointer;
+  font-size: 11px; color: var(--color-text-primary); cursor: pointer;
 }
-.field-check input[type="checkbox"] { accent-color: var(--accent); }
-.field-hint { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+.field-check input[type="checkbox"] { accent-color: var(--color-accent); }
+.field-hint { font-size: 10px; color: var(--color-text-secondary); margin-top: 4px; line-height: 1.4; }
 .slider-row {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 4px;
 }
 .slider-val {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px; color: var(--text);
+  font-size: 11px; color: var(--color-text-primary);
 }
-.range-input { width: 100%; accent-color: var(--accent); }
+.range-input { width: 100%; accent-color: var(--color-accent); }
 .panel-actions {
   padding: 8px 14px;
   display: grid;
@@ -90,7 +90,7 @@ select::-ms-expand { display: none; }
 .panel-desc { padding: 4px 14px 0; line-height: 1.4; }
 .sidebar-action-btn {
   width: 100%;
-  border: 1px solid var(--accent); border-radius: 6px;
+  border: 1px solid var(--color-accent); border-radius: 6px;
   background: var(--color-accent-faint); color: var(--color-accent);
   font-size: 12px; font-weight: 600;
   padding: 7px 12px; cursor: pointer;
@@ -124,8 +124,8 @@ select::-ms-expand { display: none; }
   margin: 0; padding: 0;
   font-size: 11px; line-height: 1.4;
 }
-.xc-meta-grid dt { color: var(--muted); white-space: nowrap; }
-.xc-meta-grid dd { margin: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.xc-meta-grid dt { color: var(--color-text-secondary); white-space: nowrap; }
+.xc-meta-grid dd { margin: 0; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; }
 .xc-recording-section { max-height: 180px; overflow-y: auto; }
 .xc-recording-meta { max-height: 180px; overflow-y: auto; }
 
@@ -154,20 +154,20 @@ select::-ms-expand { display: none; }
 .xc-action-row .sidebar-action-btn { flex: 1; }
 .sidebar-action-btn.secondary {
   background: transparent;
-  border-color: var(--line);
-  color: var(--muted);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
 }
 .sidebar-action-btn.secondary:hover {
   background: var(--input-bg);
-  border-color: var(--line);
+  border-color: var(--color-border);
 }
 .xc-actions { display: flex; flex-direction: column; gap: 6px; }
 
 /* XC status */
 .xc-status { padding: 6px 14px; font-size: 11px; line-height: 1.4; }
-.xc-status-info  { color: var(--muted); }
+.xc-status-info  { color: var(--color-text-secondary); }
 .xc-status-success { color: var(--color-success); }
-.xc-status-error { color: var(--danger); }
+.xc-status-error { color: var(--color-danger); }
 
 /* XC section header: extends props-section-title with flex for optional action button */
 .xc-section-hdr {
@@ -184,17 +184,17 @@ select::-ms-expand { display: none; }
   height: 18px;
   line-height: 1;
   border-radius: 3px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
-.xc-toggle-edit-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--color-accent-faint); }
-.xc-toggle-edit-btn.active { color: var(--accent); border-color: var(--accent); background: var(--color-accent-faint); }
+.xc-toggle-edit-btn:hover { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-faint); }
+.xc-toggle-edit-btn.active { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-faint); }
 
 /* XC editable recording fields — uses props-section-body padding, just add a top separator */
-.xc-recording-edit { border-top: 1px solid var(--line); }
+.xc-recording-edit { border-top: 1px solid var(--color-border); }
 
 /* XC annotation set container */
 .xc-set-container { display: flex; flex-direction: column; }
@@ -202,20 +202,20 @@ select::-ms-expand { display: none; }
 /* Set selector row — sits inside props-section-body padding */
 .xc-set-selector-wrap { display: flex; flex-direction: column; gap: 4px; padding: 0 14px 8px; }
 .xc-set-selector-row { display: flex; align-items: center; gap: 5px; }
-.xc-set-selector-row select { flex: 1; height: 24px; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; cursor: pointer; }
-.xc-set-selector-row select:focus { border-color: var(--accent); outline: none; }
+.xc-set-selector-row select { flex: 1; height: 24px; padding: 0 5px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 11px; cursor: pointer; }
+.xc-set-selector-row select:focus { border-color: var(--color-accent); outline: none; }
 
 /* Set form — uses props-section-body padding + props-grid inside */
 .xc-set-form { display: flex; flex-direction: column; gap: 0; padding: 0 14px 8px; }
 
 /* Generic field row used in set form and recording edit */
 .xc-field { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 4px; min-width: 0; padding: 2px 0; }
-.xc-field .field-label { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xc-field .field-label { font-size: 10px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .xc-field .input { height: 22px; padding: 1px 5px; font-size: 11px; border-radius: 3px; }
 .xc-field .xc-textarea { height: auto; min-height: 44px; padding: 3px 5px; font-size: 11px; border-radius: 3px; resize: vertical; }
 
 /* Collapsible sub-section (Project / Scope) */
-.xc-collapsible { border-top: 1px solid var(--line); margin-top: 4px; }
+.xc-collapsible { border-top: 1px solid var(--color-border); margin-top: 4px; }
 .xc-collapsible-hdr {
   display: flex;
   align-items: center;
@@ -225,12 +225,12 @@ select::-ms-expand { display: none; }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
   user-select: none;
   transition: color 0.1s;
 }
-.xc-collapsible-hdr:hover { color: var(--text); }
+.xc-collapsible-hdr:hover { color: var(--color-text-primary); }
 .xc-collapsible-chevron { font-size: 14px; line-height: 1; margin-right: 6px; transition: transform 0.15s ease; display: inline-block; }
 .xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); }
 .xc-collapsible-body { display: none; }
@@ -238,15 +238,15 @@ select::-ms-expand { display: none; }
 
 /* BibTeX collapsible in About panel: use theme colors instead of hardcoded light background */
 .help-content details.bibtex-collapsible { margin-top: 8px; }
-.help-content details.bibtex-collapsible summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.help-content details.bibtex-collapsible summary { cursor: pointer; color: var(--color-accent); font-weight: 600; }
 .help-content pre.bibtex {
   white-space: pre-wrap;
   font-size: 12px;
   padding: 8px;
   border-radius: 4px;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
   overflow: auto;
 }
 
@@ -271,8 +271,8 @@ select::-ms-expand { display: none; }
 }
 
 .sidebar-action-btn.danger {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--color-danger);
+  border-color: var(--color-danger);
   color: #fff;
 }
 

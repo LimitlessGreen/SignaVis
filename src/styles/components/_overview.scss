@@ -46,6 +46,60 @@
 .overview-window .handle.left { left: -4px; }
 .overview-window .handle.right { right: -4px; }
 
+/* ═══ Overview Label Section (collapsible) ═══ */
+
+.overview-label-section {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--color-border);
+}
+
+.overview-label-section[hidden] {
+    display: none;
+}
+
+/* ── Collapse tab ── */
+.overview-label-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 0 6px;
+    height: 16px;
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+    transition: color 0.12s, background 0.12s;
+}
+
+.overview-label-tab:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-secondary);
+}
+
+.overview-label-tab-chevron {
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+    transition: transform 0.18s ease;
+}
+
+/* Collapsed state */
+.overview-label-section.collapsed .overview-label-tab-chevron {
+    transform: rotate(-90deg);
+}
+
+.overview-label-section.collapsed .overview-label-tracks {
+    display: none;
+}
+
 /* ═══ Overview Label Tracks ═══ */
 
 .overview-label-tracks {

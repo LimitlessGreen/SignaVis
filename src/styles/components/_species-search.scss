@@ -1,0 +1,167 @@
+/*
+  Species Search — shared component
+  ──────────────────────────────────
+  Used in two contexts:
+    1. Topbar search bar (.species-search wrapper, created from static HTML)
+    2. Inline label-editor widget (.species-search-widget, created by createSpeciesSearchWidget)
+  Both share the same inner structure and dropdown anatomy.
+
+  Context-specific layout (flex sizing for the topbar) lives in _labeling-app.scss.
+*/
+
+/* ── Input wrapper ── */
+.species-search-inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.species-search-inner:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+/* ── Parts ── */
+.species-search-icon {
+  color: var(--color-text-secondary);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.species-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.species-search-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+.species-search-clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 2px;
+  border: none;
+  border-radius: 50%;
+  background: var(--input-bg-weak);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.species-search-clear:hover {
+  background: var(--input-hover-bg);
+  color: var(--color-text-primary);
+}
+.species-search-clear.hidden { display: none; }
+
+/* ── Dropdown ── */
+.species-search-dropdown {
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  z-index: 200;
+  scrollbar-width: thin;
+}
+.species-search-dropdown.hidden { display: none; }
+.species-search-dropdown::-webkit-scrollbar { width: 5px; }
+.species-search-dropdown::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* ── Result row ── */
+.species-search-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.08s;
+}
+.species-search-item:hover,
+.species-search-item.active { background: var(--input-hover-bg); }
+
+/* Row anatomy — all optional, rendered by JS */
+.search-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-sci {
+  font-style: italic;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.search-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--input-bg-weak);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* ── Widget root (JS-created variant, portals dropdown to body) ── */
+.species-search-widget {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+
+  .species-search-dropdown {
+    /* When portalled to <body> the dropdown is fixed-positioned via JS inline
+       styles — no `position: absolute` needed here. */
+    position: fixed;
+  }
+}
+
+/* ── Static-HTML topbar variant ── */
+.species-search {
+  /* Layout sizing lives in _labeling-app.scss (.topbar context).
+     This rule only adds the relative positioning needed for the
+     absolutely-positioned dropdown in the static-HTML variant. */
+  position: relative;
+
+  .species-search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+  }
+}

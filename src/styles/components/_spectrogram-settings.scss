@@ -4,14 +4,14 @@
 }
 .spectrogram-settings-panel .settings-section {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .spectrogram-settings-panel .settings-section-title {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--color-accent);
   margin-bottom: 8px;
 }
 .spectrogram-settings-panel .settings-row {
@@ -23,39 +23,39 @@
 .spectrogram-settings-panel .settings-row:last-child { margin-bottom: 0; }
 .spectrogram-settings-panel .settings-label {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   min-width: 65px;
   flex-shrink: 0;
 }
 .spectrogram-settings-panel .settings-select {
   flex: 1; min-width: 0;
   height: 26px; padding: 0 6px;
-  border: 1px solid var(--line); border-radius: 4px;
-  background: var(--panel); color: var(--text);
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: var(--color-bg-surface); color: var(--color-text-primary);
   font-size: 11px;
 }
 .spectrogram-settings-panel .settings-number {
   width: 68px; height: 26px;
   padding: 0 5px;
-  border: 1px solid var(--line); border-radius: 4px;
-  background: var(--panel); color: var(--text);
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: var(--color-bg-surface); color: var(--color-text-primary);
   font-size: 11px;
   font-family: 'Cascadia Code', 'Consolas', monospace;
 }
-.spectrogram-settings-panel .settings-range { flex: 1; height: 4px; accent-color: var(--accent); }
+.spectrogram-settings-panel .settings-range { flex: 1; height: 4px; accent-color: var(--color-accent); }
 .spectrogram-settings-panel .quality-label-bar {
   display: flex; justify-content: space-between;
-  font-size: 9px; color: var(--muted);
+  font-size: 9px; color: var(--color-text-secondary);
   padding: 2px 20px 0; opacity: 0.7;
 }
 .spectrogram-settings-panel .quality-level-display {
   text-align: center;
   font-size: 11px; font-weight: 600;
-  color: var(--accent); margin-top: 2px;
+  color: var(--color-accent); margin-top: 2px;
 }
 .spectrogram-settings-panel .mini-btn {
-  border: 1px solid var(--line); border-radius: 4px;
-  background: transparent; color: var(--muted);
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: transparent; color: var(--color-text-secondary);
   font-size: 10px; padding: 2px 6px; cursor: pointer;
 }
-.spectrogram-settings-panel .mini-btn:hover { color: var(--text); border-color: #3a5580; }
+.spectrogram-settings-panel .mini-btn:hover { color: var(--color-text-primary); border-color: #3a5580; }

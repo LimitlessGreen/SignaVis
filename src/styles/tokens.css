@@ -1,131 +1,150 @@
+/*
+  Central token file for Audio-Workbench.
+  Single source of truth for all design tokens.
+  Included via <link> in HTML — not imported via Sass.
+
+  Token categories
+  ────────────────
+  Layout  : --axis-width, --waveform-height, --spectrogram-height,
+            --toolbar-height, --statusbar-height,
+            --sidebar-width, --sidebar-right-width
+  Color   : --color-*        (all theme-switching color values)
+  Form    : --input-*        (form element backgrounds / hover states)
+  Surface : --shadow-*, --scrollbar-*
+*/
+
+/* ═══════════════════════════════════════════════════════
+   Dark theme (default)
+   ═══════════════════════════════════════════════════════ */
 :root {
-    /* Core layout tokens */
-    --axis-width: 56px;
-    --waveform-height: 100px;
-    --spectrogram-height: 200px;
-    --toolbar-height: 40px;
-    --statusbar-height: 24px;
+    /* Layout */
+    --axis-width:             56px;
+    --waveform-height:        100px;
+    --spectrogram-height:     200px;
+    --toolbar-height:         40px;
+    --statusbar-height:       24px;
+    --sidebar-width:          300px;
+    --sidebar-right-width:    300px;
 
-    /* Core color tokens (from dist/birdnet-player.css) */
-    --color-bg-primary: #1a1a2e;
-    --color-bg-secondary: #16213e;
-    --color-bg-tertiary: #0f3460;
-    --color-bg-surface: #1a1a2e;
-    --color-text-primary: #e0e0e0;
-    --color-text-secondary: #8892a4;
-    --color-accent: #38bdf8;
-    --color-accent-hover: #0ea5e9;
-    --color-border: rgba(255,255,255,0.08);
-    --color-playhead: #ef4444;
-    --color-toolbar: #12121f;
-    --color-statusbar: #0e0e1a;
+    /* Backgrounds */
+    --color-bg-primary:       #1a1a2e;
+    --color-bg-secondary:     #16213e;
+    --color-bg-tertiary:      #0f3460;
+    --color-bg-surface:       #1a1a2e;
 
-    /* Demo / legacy aliases (kept for backwards compatibility) */
-    --bg: #0b1220;
-    --panel: #0f1829;
-    --line: #1e2d47;
-    --text: #e6edf8;
-    --muted: #6b7f9e;
-    --accent: #39b5ff;
-    --danger: #f87171;
-    --sidebar-width: 300px;
-    --sidebar-right-width: 300px;
-    /* Success / misc utility tokens */
-    --color-success: #4ade80;
-    --color-success-soft: rgba(74,222,128,0.35);
-    --color-success-faint: rgba(74,222,128,0.08);
-    --color-accent-faint: rgba(56,189,248,0.08);
-    --danger-soft: rgba(248,113,113,0.1);
-    --color-detection: #f59e0b;
-    --overlay-bg: rgba(0,0,0,0.55);
-        /* Form / input tokens (backgrounds and hover states) */
-        --input-bg: rgba(255,255,255,0.03);
-        --input-bg-weak: rgba(255,255,255,0.06);
-        --input-hover-bg: rgba(255,255,255,0.04);
-        --shadow-strong: rgba(0,0,0,0.5);
-        /* Scrollbar tokens (used for WebKit + Firefox scrollbar theming) */
-        --scrollbar-track: rgba(255,255,255,0.03);
-        --scrollbar-thumb: rgba(255,255,255,0.12);
-        --scrollbar-thumb-hover: rgba(255,255,255,0.18);
-        --scrollbar-thumb-active: rgba(255,255,255,0.22);
-        --scrollbar-width: 10px;
+    /* Text */
+    --color-text-primary:     #e0e0e0;
+    --color-text-secondary:   #8892a4;
+
+    /* Accent */
+    --color-accent:           #38bdf8;
+    --color-accent-hover:     #0ea5e9;
+    --color-accent-faint:     rgba(56, 189, 248, 0.08);
+
+    /* Borders */
+    --color-border:           rgba(255, 255, 255, 0.08);
+
+    /* Chrome */
+    --color-toolbar:          #12121f;
+    --color-statusbar:        #0e0e1a;
+    --color-playhead:         #ef4444;
+    --color-overlay-bg:       rgba(0, 0, 0, 0.55);
+
+    /* Semantic states */
+    --color-danger:           #f87171;
+    --color-danger-soft:      rgba(248, 113, 113, 0.10);
+    --color-success:          #4ade80;
+    --color-success-soft:     rgba(74, 222, 128, 0.35);
+    --color-success-faint:    rgba(74, 222, 128, 0.08);
+    --color-detection:        #f59e0b;
+
+    /* Form elements */
+    --input-bg:               rgba(255, 255, 255, 0.03);
+    --input-bg-weak:          rgba(255, 255, 255, 0.06);
+    --input-hover-bg:         rgba(255, 255, 255, 0.04);
+    --shadow-strong:          rgba(0, 0, 0, 0.50);
+
+    /* Scrollbars */
+    --scrollbar-width:        10px;
+    --scrollbar-track:        rgba(255, 255, 255, 0.03);
+    --scrollbar-thumb:        rgba(255, 255, 255, 0.12);
+    --scrollbar-thumb-hover:  rgba(255, 255, 255, 0.18);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.22);
 }
 
+/* ═══════════════════════════════════════════════════════
+   Light theme — system preference
+   ═══════════════════════════════════════════════════════ */
 @media (prefers-color-scheme: light) {
     :root {
-        --color-bg-primary: #f0f0f4;
-        --color-bg-secondary: #e8e8ee;
-        --color-bg-tertiary: #d4d4dc;
-        --color-bg-surface: #ffffff;
-        --color-text-primary: #1a1a2e;
-        --color-text-secondary: #555568;
-        --color-accent: #0284c7;
-        --color-accent-hover: #0369a1;
-        --color-playhead: #dc2626;
-        --color-border: rgba(0,0,0,0.1);
-        --color-toolbar: #e0e0e8;
-        --color-statusbar: #d8d8e2;
-        /* Legacy alias mappings for compatibility with legacy CSS using --panel/--bg */
-        --bg: var(--color-bg-primary);
-        --panel: var(--color-bg-surface);
-        --line: var(--color-border);
-        --text: var(--color-text-primary);
-        --muted: var(--color-text-secondary);
-        --accent: var(--color-accent);
-        --danger: #dc2626;
-            /* Input tokens (light theme values) */
-            --input-bg: rgba(0,0,0,0.06);
-            --input-bg-weak: rgba(0,0,0,0.08);
-            --input-hover-bg: rgba(0,0,0,0.04);
-            --shadow-strong: rgba(0,0,0,0.12);
-            /* Light theme scrollbar overrides */
-            --scrollbar-track: rgba(0,0,0,0.04);
-            --scrollbar-thumb: rgba(0,0,0,0.18);
-            --scrollbar-thumb-hover: rgba(0,0,0,0.28);
-            --scrollbar-thumb-active: rgba(0,0,0,0.36);
-            --scrollbar-width: 10px;
+        --color-bg-primary:       #f0f0f4;
+        --color-bg-secondary:     #e8e8ee;
+        --color-bg-tertiary:      #d4d4dc;
+        --color-bg-surface:       #ffffff;
+
+        --color-text-primary:     #1a1a2e;
+        --color-text-secondary:   #555568;
+
+        --color-accent:           #0284c7;
+        --color-accent-hover:     #0369a1;
+        --color-accent-faint:     rgba(2, 132, 199, 0.08);
+
+        --color-border:           rgba(0, 0, 0, 0.10);
+
+        --color-toolbar:          #e0e0e8;
+        --color-statusbar:        #d8d8e2;
+        --color-playhead:         #dc2626;
+        --color-overlay-bg:       rgba(0, 0, 0, 0.40);
+
+        --color-danger:           #dc2626;
+        --color-danger-soft:      rgba(220, 38, 38, 0.10);
+
+        --input-bg:               rgba(0, 0, 0, 0.06);
+        --input-bg-weak:          rgba(0, 0, 0, 0.08);
+        --input-hover-bg:         rgba(0, 0, 0, 0.04);
+        --shadow-strong:          rgba(0, 0, 0, 0.12);
+
+        --scrollbar-track:        rgba(0, 0, 0, 0.04);
+        --scrollbar-thumb:        rgba(0, 0, 0, 0.18);
+        --scrollbar-thumb-hover:  rgba(0, 0, 0, 0.28);
+        --scrollbar-thumb-active: rgba(0, 0, 0, 0.36);
     }
 }
 
-/*
-  Central token file for Audio-Workbench. Add new variables here and
-  replace per-file :root declarations with `@import "../src/styles/tokens.css"`.
-*/
-
-/* Theme override: allow explicit theme toggle via `html[data-theme="light"]`.
-     This takes precedence over the `prefers-color-scheme` media query when set.
-*/
+/* ═══════════════════════════════════════════════════════
+   Light theme — explicit toggle via html[data-theme="light"]
+   Takes precedence over the media query above.
+   ═══════════════════════════════════════════════════════ */
 html[data-theme="light"] {
-        --color-bg-primary: #f0f0f4;
-        --color-bg-secondary: #e8e8ee;
-        --color-bg-tertiary: #d4d4dc;
-        --color-bg-surface: #ffffff;
-        --color-text-primary: #1a1a2e;
-        --color-text-secondary: #555568;
-        --color-accent: #0284c7;
-        --color-accent-hover: #0369a1;
-        --color-playhead: #dc2626;
-        --color-border: rgba(0,0,0,0.1);
-        --color-toolbar: #e0e0e8;
-        --color-statusbar: #d8d8e2;
-    /* Mirror legacy aliases so old demo CSS picks up light values */
-    --bg: var(--color-bg-primary);
-    --panel: var(--color-bg-surface);
-    --line: var(--color-border);
-    --text: var(--color-text-primary);
-    --muted: var(--color-text-secondary);
-    --accent: var(--color-accent);
-    --danger: #dc2626;
-            /* Input tokens (explicit light mapping) */
-            --input-bg: rgba(0,0,0,0.06);
-            --input-bg-weak: rgba(0,0,0,0.08);
-            --input-hover-bg: rgba(0,0,0,0.04);
-            --shadow-strong: rgba(0,0,0,0.12);
-            /* Explicit light theme scrollbar tokens for html[data-theme="light"] */
-            --scrollbar-track: rgba(0,0,0,0.04);
-            --scrollbar-thumb: rgba(0,0,0,0.18);
-            --scrollbar-thumb-hover: rgba(0,0,0,0.28);
-            --scrollbar-thumb-active: rgba(0,0,0,0.36);
-            --scrollbar-width: 10px;
-}
+    --color-bg-primary:       #f0f0f4;
+    --color-bg-secondary:     #e8e8ee;
+    --color-bg-tertiary:      #d4d4dc;
+    --color-bg-surface:       #ffffff;
 
+    --color-text-primary:     #1a1a2e;
+    --color-text-secondary:   #555568;
+
+    --color-accent:           #0284c7;
+    --color-accent-hover:     #0369a1;
+    --color-accent-faint:     rgba(2, 132, 199, 0.08);
+
+    --color-border:           rgba(0, 0, 0, 0.10);
+
+    --color-toolbar:          #e0e0e8;
+    --color-statusbar:        #d8d8e2;
+    --color-playhead:         #dc2626;
+    --color-overlay-bg:       rgba(0, 0, 0, 0.40);
+
+    --color-danger:           #dc2626;
+    --color-danger-soft:      rgba(220, 38, 38, 0.10);
+
+    --input-bg:               rgba(0, 0, 0, 0.06);
+    --input-bg-weak:          rgba(0, 0, 0, 0.08);
+    --input-hover-bg:         rgba(0, 0, 0, 0.04);
+    --shadow-strong:          rgba(0, 0, 0, 0.12);
+
+    --scrollbar-track:        rgba(0, 0, 0, 0.04);
+    --scrollbar-thumb:        rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb-hover:  rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb-active: rgba(0, 0, 0, 0.36);
+}

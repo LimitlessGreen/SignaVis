@@ -8,8 +8,8 @@
   align-items: center;
   gap: 5px;
   padding: 4px 8px 4px 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
   flex-shrink: 0;
 }
 .label-active-set-label {
@@ -17,7 +17,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 .label-active-set-select {
@@ -25,12 +25,12 @@
   min-width: 0;
   height: 22px;
   padding: 0 5px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
 }
-.label-active-set-select:focus { border-color: var(--accent); outline: none; }
+.label-active-set-select:focus { border-color: var(--color-accent); outline: none; }
 
 .label-list-scroll {
   flex: 1;
@@ -52,9 +52,9 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  color: var(--muted);
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 .label-origin-add-set-btn {
   margin-left: auto;
@@ -64,9 +64,9 @@
   height: 16px;
   line-height: 1;
   border-radius: 3px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: var(--accent);
+  color: var(--color-accent);
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.12s, background 0.12s;
@@ -75,7 +75,7 @@
 .label-origin-add-set-btn:hover { opacity: 1; background: var(--color-accent-faint); }
 
 /* ── Annotation set section ───────────────────────────────────────────── */
-.label-set-section { border-bottom: 1px solid var(--line); }
+.label-set-section { border-bottom: 1px solid var(--color-border); }
 
 .label-set-header {
   display: flex;
@@ -89,12 +89,12 @@
   transition: background 0.1s;
 }
 .label-set-header:hover { background: rgba(56, 189, 248, 0.07); }
-.label-set-section.expanded > .label-set-header { border-bottom-color: var(--line); }
+.label-set-section.expanded > .label-set-header { border-bottom-color: var(--color-border); }
 
 .label-set-chevron {
   flex-shrink: 0;
   font-size: 9px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   width: 10px;
   text-align: center;
   transition: transform 0.15s ease;
@@ -130,7 +130,7 @@
 .label-set-name:hover {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--color-accent);
 }
 
 /* Origin badge on set header */
@@ -144,12 +144,12 @@
   line-height: 1.4;
   white-space: nowrap;
 }
-.label-set-origin--manual      { background: rgba(255,255,255,0.07); color: var(--muted); }
-.label-set-origin--xeno-canto  { background: rgba(56,189,248,0.15); color: var(--accent); }
+.label-set-origin--manual      { background: rgba(255,255,255,0.07); color: var(--color-text-secondary); }
+.label-set-origin--xeno-canto  { background: rgba(56,189,248,0.15); color: var(--color-accent); }
 .label-set-origin--birdnet     { background: rgba(16,185,129,0.15); color: #6ee7b7; }
 .label-set-link {
   font-size: 9px;
-  color: var(--accent);
+  color: var(--color-accent);
   text-decoration: none;
   margin-left: 4px;
   opacity: 0.7;
@@ -160,7 +160,7 @@
 
 .label-set-creator {
   font-size: 9px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -180,7 +180,7 @@
   padding: 1px 6px;
   border-radius: 8px;
   background: rgba(56, 189, 248, 0.1);
-  color: var(--accent);
+  color: var(--color-accent);
   font-weight: 700;
 }
 
@@ -196,19 +196,19 @@
   border-radius: 3px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
   padding: 0;
 }
 .label-set-header:hover .label-set-action-btn { opacity: 1; }
-.label-set-action-btn:hover { background: var(--color-accent-faint); color: var(--accent); border-color: var(--line); }
+.label-set-action-btn:hover { background: var(--color-accent-faint); color: var(--color-accent); border-color: var(--color-border); }
 .label-set-action-btn.danger:hover { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.4); }
 
 /* Drag-over highlight on set headers */
 .label-set-header.drag-over {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--color-accent);
   outline-offset: -2px;
   background: rgba(56, 189, 248, 0.1);
 }
@@ -217,7 +217,7 @@
 .label-instance.dragging { opacity: 0.35; }
 
 /* ── Species group ────────────────────────────────────────────────────── */
-.label-group { border-bottom: 1px solid var(--line); }
+.label-group { border-bottom: 1px solid var(--color-border); }
 
 /* Groups inside a set section have slightly less separation */
 .label-set-body .label-group { border-bottom-color: rgba(255, 255, 255, 0.05); }
@@ -241,7 +241,7 @@
   width: 12px;
   flex-shrink: 0;
   font-size: 9px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   text-align: center;
   transition: transform 0.15s ease;
   transform-origin: center;
@@ -270,7 +270,7 @@
 .label-group-name:hover {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--color-accent);
 }
 
 
@@ -279,7 +279,7 @@
   padding: 0 5px;
   border-radius: 8px;
   background: var(--color-accent-faint);
-  color: var(--accent);
+  color: var(--color-accent);
   font-weight: 600;
   line-height: 16px;
   flex-shrink: 0;
@@ -290,7 +290,7 @@
 
 /* Italic scientific name below group header (shown when sci ≠ display name) */
 .label-group-sci {
-  color: var(--muted);
+  color: var(--color-text-secondary);
   font-style: italic;
   font-size: 10px;
   padding: 0 10px 3px 28px;
@@ -320,7 +320,7 @@
   position: relative;
   padding: 4px 8px 4px 14px;
   cursor: pointer;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   transition: background 0.1s;
   overflow: hidden;
 }
@@ -340,10 +340,10 @@
 
 .label-instance:hover { background: var(--color-accent-faint); }
 .label-instance.highlighted { background: rgba(56, 189, 248, 0.08); }
-.label-instance.selected { background: rgba(56, 189, 248, 0.13); box-shadow: inset 3px 0 0 var(--accent); }
+.label-instance.selected { background: rgba(56, 189, 248, 0.13); box-shadow: inset 3px 0 0 var(--color-accent); }
 .label-instance.multi-selected {
   background: rgba(56, 189, 248, 0.17);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
   outline: 1px solid rgba(56, 189, 248, 0.3);
   outline-offset: -1px;
 }
@@ -364,7 +364,7 @@
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.1s;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 .label-instance:hover .label-instance-cb,
 .label-instance-cb:checked,
@@ -386,7 +386,7 @@
 .lbl-freq {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 9px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
@@ -400,7 +400,7 @@
 .label-instance:hover .edit-toggle,
 .label-instance:hover .species-edit-btn,
 .label-instance.expanded .edit-toggle { opacity: 1; }
-.label-instance.expanded .edit-toggle { color: var(--accent); }
+.label-instance.expanded .edit-toggle { color: var(--color-accent); }
 
 /* ── Always-visible tag pills ─────────────────────────────────────────── */
 .label-instance-tags {
@@ -432,23 +432,23 @@
 /* Sound type */
 .lbl-pill--sound       { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
 /* Confidence (BirdNET) */
-.lbl-pill--conf        { background: rgba(56, 189, 248, 0.12); color: var(--accent); }
+.lbl-pill--conf        { background: rgba(56, 189, 248, 0.12); color: var(--color-accent); }
 /* Custom / unknown tags */
-.lbl-pill--custom      { background: rgba(255, 255, 255, 0.07); color: var(--muted); }
+.lbl-pill--custom      { background: rgba(255, 255, 255, 0.07); color: var(--color-text-secondary); }
 
 /* ── Expandable detail section ────────────────────────────────────────── */
 .label-card-detail {
   padding: 5px 0 3px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   margin-top: 4px;
   overflow: hidden;
 }
 .detail-row { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; min-width: 0; }
-.detail-label { font-size: 10px; color: var(--muted); width: 56px; text-transform: capitalize; flex-shrink: 0; }
+.detail-label { font-size: 10px; color: var(--color-text-secondary); width: 56px; text-transform: capitalize; flex-shrink: 0; }
 .detail-row .esel { flex: 1; min-width: 0; overflow: hidden; }
 .detail-row .esel-trigger { width: 100%; min-width: 0; height: 20px; font-size: 10px; padding: 0 14px 0 4px; background-position: right 3px center; }
-.detail-select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 11px; padding: 3px 5px; cursor: pointer; }
-.detail-select option { background: var(--panel); color: var(--text); }
+.detail-select { flex: 1; min-width: 0; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-bg-surface); color: var(--color-text-primary); font-size: 11px; padding: 3px 5px; cursor: pointer; }
+.detail-select option { background: var(--color-bg-surface); color: var(--color-text-primary); }
 .detail-custom-tags { padding: 2px 0 4px; }
 
 /* ── Multi-select toolbar ─────────────────────────────────────────────── */
@@ -458,17 +458,17 @@
   gap: 6px;
   padding: 5px 10px;
   background: var(--color-accent-faint);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
   font-size: 11px;
   flex-shrink: 0;
 }
-.label-multi-toolbar .label-multi-info { color: var(--accent); font-weight: 600; flex: 1; }
+.label-multi-toolbar .label-multi-info { color: var(--color-accent); font-weight: 600; flex: 1; }
 .label-multi-toolbar .tb-btn { font-size: 10px; padding: 2px 8px; height: 22px; }
 
 /* Multi-select on table rows (label-table.js) */
 tr.multi-selected {
   background: rgba(56, 189, 248, 0.18);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
   outline: 1px solid rgba(56, 189, 248, 0.35);
 }
 

@@ -3,13 +3,13 @@
 .jsoneditor,
 .jsoneditor * {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .jsoneditor {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  color: var(--text);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   border-radius: 6px;
 }
 
@@ -21,7 +21,7 @@
 .jsoneditor .jsoneditor-search,
 .jsoneditor .jsoneditor-main {
   background: transparent;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 /* Token colours (dark theme defaults) */
@@ -35,20 +35,20 @@
 .jsoneditor div.jsoneditor-field .jsoneditor-property {
   color: #8fbcbb;
 }
-.jsoneditor .jsoneditor-icon { color: var(--muted); }
+.jsoneditor .jsoneditor-icon { color: var(--color-text-secondary); }
 
 .jsoneditor .jsoneditor-selected { background: rgba(56,189,248,0.12); }
-.jsoneditor .jsoneditor-selected .jsoneditor-property { color: var(--accent); }
+.jsoneditor .jsoneditor-selected .jsoneditor-property { color: var(--color-accent); }
 
-.jsoneditor .jsoneditor-menu { border-bottom: 1px solid var(--line); padding: 6px; }
-.jsoneditor .jsoneditor-menu button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 4px 8px; border-radius: 4px; }
-.jsoneditor .jsoneditor-menu button:hover { background: rgba(255,255,255,0.03); color: var(--text); border-color: rgba(255,255,255,0.04); }
+.jsoneditor .jsoneditor-menu { border-bottom: 1px solid var(--color-border); padding: 6px; }
+.jsoneditor .jsoneditor-menu button { background: transparent; border: 1px solid transparent; color: var(--color-text-secondary); padding: 4px 8px; border-radius: 4px; }
+.jsoneditor .jsoneditor-menu button:hover { background: rgba(255,255,255,0.03); color: var(--color-text-primary); border-color: rgba(255,255,255,0.04); }
 
 /* Stronger overrides for the top/header area (override vendor defaults)
    Ensure the top bar/tree uses app tokens in dark mode and when theme toggles. */
 .jsoneditor div.jsoneditor-tree {
-  background: var(--panel) !important;
-  color: var(--text) !important;
+  background: var(--color-bg-surface) !important;
+  color: var(--color-text-primary) !important;
 }
 .jsoneditor .jsoneditor-menu,
 .jsoneditor .jsoneditor-search,
@@ -56,18 +56,18 @@
 .jsoneditor .jsoneditor-outer,
 .jsoneditor .jsoneditor-inner {
   background: transparent !important;
-  color: var(--text) !important;
+  color: var(--color-text-primary) !important;
 }
 .jsoneditor .jsoneditor-menu {
-  background: var(--panel) !important;
-  border-bottom: 1px solid var(--line) !important;
+  background: var(--color-bg-surface) !important;
+  border-bottom: 1px solid var(--color-border) !important;
 }
 
 /* If JSONEditor modal header is used, make it follow tokens too */
 .jsoneditor-modal .pico-modal-header {
-  background: var(--panel) !important;
-  color: var(--text) !important;
-  border-bottom: 1px solid var(--line) !important;
+  background: var(--color-bg-surface) !important;
+  color: var(--color-text-primary) !important;
+  border-bottom: 1px solid var(--color-border) !important;
 }
 
 /* Breadcrumb / treepath (top white strip) */
@@ -75,13 +75,13 @@
 .jsoneditor .jsoneditor-treepath *,
 .jsoneditor .jsoneditor-treepath .jsoneditor-path,
 .jsoneditor .jsoneditor-treepath .jsoneditor-preview {
-  background: var(--panel) !important;
-  color: var(--text) !important;
-  border-color: var(--line) !important;
+  background: var(--color-bg-surface) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border) !important;
 }
 
 /* Light theme overrides */
-html[data-theme="light"] .jsoneditor { background: var(--panel); color: var(--text); border-color: var(--line); }
+html[data-theme="light"] .jsoneditor { background: var(--color-bg-surface); color: var(--color-text-primary); border-color: var(--color-border); }
 html[data-theme="light"] .jsoneditor .jsoneditor-value-string { color: #0369a1; }
 html[data-theme="light"] .jsoneditor .jsoneditor-value-number { color: #b45309; }
 html[data-theme="light"] .jsoneditor .jsoneditor-value-boolean { color: #b45309; }
