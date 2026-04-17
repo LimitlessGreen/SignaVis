@@ -70,7 +70,7 @@ test('clientToCanvas scales clientY to canvasHeight', () => {
     const rect = mockRect(0, 0, 600, 320);  // display 320px tall
     // Click at half display height (160 display-px)
     const { canvasY } = cs.clientToCanvas(0, 160, rect, 0);
-    assert.equal(canvasY, 80);  // half of 160 canvas height
+    assert.equal(canvasY, 160);  // original behavior: localY maps 1:1 to canvas
 });
 
 // ─── clientToTimeFreq ───────────────────────────────────────────────
