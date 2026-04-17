@@ -83,8 +83,10 @@ class MelSpecLayerSimple extends tf.layers.Layer {
 tf.serialization.registerClass(MelSpecLayerSimple);
 
 /* ── Worker message handler ── */
-let model  = null;
-let labels = [];
+let model     = null;
+let areaModel = null;
+let labels    = [];
+let geoscores = null; // Float32Array, same length as labels; null = no geo filter
 
 self.onmessage = async (e) => {
   var type = e.data.type;
@@ -113,10 +115,46 @@ self.onmessage = async (e) => {
           : { scientific: s, common: '' };
       });
 
-      self.postMessage({ id: id, type: 'loaded', labelCount: labels.length });
+      self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
+      try {
+        areaModel = await tf.loadGraphModel(base + 'area-model/model.json');
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true });
+      } catch (_) {
+        // Area model is optional — continue without it
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: false });
+      }
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
     }
+  }
+
+  if (type === 'set-location') {
+    if (!areaModel) {
+      self.postMessage({ id: id, type: 'no-area-model' });
+      return;
+    }
+    try {
+      // Calculate ISO week number for current date
+      var now = new Date();
+      var jan4 = new Date(now.getFullYear(), 0, 4);
+      var weekStart = new Date(jan4);
+      weekStart.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+      var week = Math.round((now - weekStart) / 604800000) + 1;
+      week = Math.max(1, Math.min(52, week));
+
+      var input = tf.tensor2d([[e.data.latitude, e.data.longitude, week]]);
+      var scores = await areaModel.predict(input).data();
+      input.dispose();
+      geoscores = scores;
+      self.postMessage({ id: id, type: 'area-scores-set', count: scores.length });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'clear-location') {
+    geoscores = null;
+    self.postMessage({ id: id, type: 'location-cleared' });
   }
 
   if (type === 'predict') {
@@ -134,6 +172,7 @@ self.onmessage = async (e) => {
             scientific: labels[i].scientific,
             common:     labels[i].common,
             confidence: probs[i],
+            geoscore:   geoscores ? geoscores[i] : 1,
           });
         }
       }
@@ -171,10 +210,14 @@ export class BirdNETInference {
   /** @type {Map<number, function>} */ #pending = new Map();
   #nextId = 0;
   #loaded = false;
+  #hasAreaModel = false;
   /** @type {function | null} */ #onLoadProgress = null;
 
   /** Whether the model has been loaded successfully. */
   get loaded() { return this.#loaded; }
+
+  /** Whether the area (geo) model was found and loaded alongside the main model. */
+  get hasAreaModel() { return this.#hasAreaModel; }
 
   /**
    * Load the BirdNET model into a Web Worker.
@@ -183,7 +226,7 @@ export class BirdNETInference {
    * @param {string}   opts.modelUrl    Base URL of the TF.js model directory
    *                                    (must contain model.json + shards + labels.json).
    * @param {function} [opts.onProgress] Called with (message, percent) during loading.
-   * @returns {Promise<{ labelCount: number }>}
+   * @returns {Promise<{ labelCount: number, hasAreaModel: boolean }>}
    */
   async load({ modelUrl, onProgress }) {
     if (!modelUrl) throw new Error('modelUrl is required');
@@ -218,7 +261,31 @@ export class BirdNETInference {
     this.#onLoadProgress = null;
     if (result.type === 'error') throw new Error(result.message);
     this.#loaded = true;
-    return { labelCount: result.labelCount };
+    this.#hasAreaModel = result.hasAreaModel === true;
+    return { labelCount: result.labelCount, hasAreaModel: this.#hasAreaModel };
+  }
+
+  /**
+   * Update the geographic location used to weight species occurrence probabilities.
+   * Requires the area model to be present alongside the main model.
+   *
+   * @param {number} latitude
+   * @param {number} longitude
+   * @returns {Promise<boolean>} `true` if geoscores were updated, `false` if no area model.
+   */
+  async setLocation(latitude, longitude) {
+    if (!this.#loaded) return false;
+    const result = await this.#send('set-location', { latitude, longitude });
+    return result.type === 'area-scores-set';
+  }
+
+  /**
+   * Clear the geographic location, disabling geo-filtering.
+   * @returns {Promise<void>}
+   */
+  async clearLocation() {
+    if (!this.#loaded) return;
+    await this.#send('clear-location', {});
   }
 
   /**
@@ -228,12 +295,13 @@ export class BirdNETInference {
    * @param {object}       [opts]
    * @param {number}       [opts.sampleRate]     Source sample rate in Hz.
    * @param {number}       [opts.overlap]        Overlap between chunks in seconds (0–2.5).
-   * @param {number}       [opts.minConfidence]  Minimum confidence to keep a detection.
+   * @param {number}       [opts.minConfidence]  Minimum confidence to keep a detection (0–1).
+   * @param {number}       [opts.geoThreshold]   Minimum geoscore to keep a detection (0 = disabled).
    * @param {function}     [opts.onProgress]     Called with a number 0–100 representing %.
-   * @returns {Promise<Array<{ start: number, end: number, scientific: string, common: string, confidence: number }>>}
+   * @returns {Promise<Array<{ start: number, end: number, scientific: string, common: string, confidence: number, geoscore: number }>>}
    */
   async analyze(channelData, opts = {}) {
-    const { overlap = 0, minConfidence = 0.25, onProgress } = opts;
+    const { overlap = 0, minConfidence = 0.25, geoThreshold = 0, onProgress } = opts;
     const sampleRate = opts.sampleRate || TARGET_SR;
     if (!this.#loaded) throw new Error('Model not loaded — call load() first.');
 
@@ -264,13 +332,14 @@ export class BirdNETInference {
       const endSec = startSec + CHUNK_SECONDS;
 
       for (const pred of result.predictions) {
-        if (pred.confidence >= minConfidence) {
+        if (pred.confidence >= minConfidence && pred.geoscore >= geoThreshold) {
           detections.push({
             start: startSec,
             end: Math.min(endSec, pcm.length / TARGET_SR),
             scientific: pred.scientific,
             common: pred.common,
             confidence: pred.confidence,
+            geoscore: pred.geoscore,
           });
         }
       }
@@ -288,6 +357,7 @@ export class BirdNETInference {
     }
     this.#pending.clear();
     this.#loaded = false;
+    this.#hasAreaModel = false;
     this.#onLoadProgress = null;
   }
 

@@ -6,6 +6,7 @@
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoCantoRecordingsApi.js';
 import ModalManager from '../../src/modal-manager.js';
+import { openMapModal } from './geo-map-modal.js';
 
 const API_KEY_STORAGE     = 'audio-workbench.xc-api-key.v1';
 const SET_META_STORAGE    = 'audio-workbench.xc-set-meta.v2';
@@ -384,14 +385,44 @@ export class XenoCantoPanel {
     const meta = this._getRecordingEditMeta?.() || {};
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
+
+    // Keep references to lat/lng inputs for cross-field map interaction
+    let latInput = null, lngInput = null;
+
     for (const f of RECORDING_EDIT_FIELDS) {
-      const { dt, dd } = buildField(f, meta[f.key] || '', (val) => {
+      const { dt, dd, input } = buildField(f, meta[f.key] || '', (val) => {
         this._onRecordingEditMetaChange?.({ [f.key]: val });
       });
+      if (f.key === 'lat') latInput = input;
+      if (f.key === 'lng') lngInput = input;
       dl.appendChild(dt);
       dl.appendChild(dd);
     }
+
+    // Map button row — opens map modal, writes both lat and lng on confirm
+    const mapRow = document.createElement('div');
+    mapRow.className = 'props-map-row';
+    const mapBtn = document.createElement('button');
+    mapBtn.type = 'button';
+    mapBtn.className = 'sidebar-action-btn secondary props-map-open-btn';
+    mapBtn.innerHTML = '🗺&nbsp;Pick on Map';
+    mapBtn.addEventListener('click', () => {
+      const lat = parseFloat(latInput?.value) || 51;
+      const lon = parseFloat(lngInput?.value) || 10;
+      openMapModal({
+        lat: isFinite(lat) ? lat : 51,
+        lon: isFinite(lon) ? lon : 10,
+        zoom: (isFinite(lat) && isFinite(lon)) ? 10 : 5,
+        onConfirm: ({ lat: lt, lon: ln }) => {
+          if (latInput) { latInput.value = lt.toFixed(5); latInput.dispatchEvent(new Event('change')); }
+          if (lngInput) { lngInput.value = ln.toFixed(5); lngInput.dispatchEvent(new Event('change')); }
+          this._onRecordingEditMetaChange?.({ lat: String(lt.toFixed(5)), lng: String(ln.toFixed(5)) });
+        },
+      });
+    });
+    mapRow.appendChild(mapBtn);
     el.appendChild(dl);
+    el.appendChild(mapRow);
   }
 
   // ── Set section: selector + form ────────────────────────────────────

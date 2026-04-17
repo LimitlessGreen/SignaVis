@@ -25,9 +25,11 @@
  *   });
  */
 import ModalManager from '../../src/modal-manager.js';
+import { openMapModal } from './geo-map-modal.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
-const STORAGE_KEY = 'audio-workbench.birdnet-model-url.v2';
+const STORAGE_KEY     = 'audio-workbench.birdnet-model-url.v2';
+const STORAGE_GEO_KEY = 'audio-workbench.birdnet-geo-coords';
 let DETECTION_COLOR = 'var(--color-detection)';
 if (typeof window !== 'undefined' && window.getComputedStyle) {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--color-detection') || '';
@@ -84,11 +86,20 @@ export class BirdNETPanel {
    * @param {() => AudioBuffer|null} opts.getAudioBuffer
    * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
    * @param {(labels: any[]) => void} opts.onResults
+   * -- Geo / location (all optional) --
+   * @param {HTMLInputElement} [opts.latInput]
+   * @param {HTMLInputElement} [opts.lonInput]
+   * @param {HTMLButtonElement} [opts.geoBtn]
+   * @param {HTMLButtonElement} [opts.mapBtn]
+   * @param {HTMLInputElement} [opts.geoThresholdInput]
+   * @param {HTMLElement} [opts.geoThresholdVal]
+   * @param {HTMLElement} [opts.geoStatusEl]
    */
   constructor(opts) {
     Object.assign(this, opts);
     this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
     this._restoreModelUrl();
+    this._restoreGeoCoords();
     this._bindEvents();
   }
 
@@ -125,6 +136,42 @@ export class BirdNETPanel {
     }
   }
 
+  _restoreGeoCoords() {
+    try {
+      const raw = localStorage.getItem(STORAGE_GEO_KEY);
+      if (!raw) return;
+      const { lat, lon } = JSON.parse(raw);
+      if (this.latInput && isFinite(lat)) this.latInput.value = lat;
+      if (this.lonInput && isFinite(lon)) this.lonInput.value = lon;
+    } catch { /* ignore */ }
+  }
+
+  _saveGeoCoords(lat, lon) {
+    try { localStorage.setItem(STORAGE_GEO_KEY, JSON.stringify({ lat, lon })); } catch { /* ignore */ }
+  }
+
+  _getCoords() {
+    if (!this.latInput || !this.lonInput) return null;
+    const lat = parseFloat(this.latInput.value);
+    const lon = parseFloat(this.lonInput.value);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return { lat, lon };
+  }
+
+  _geoStatus(msg) {
+    // Show in the dedicated geo status span AND the main status line.
+    if (this.geoStatusEl) this.geoStatusEl.textContent = msg ? `(${msg})` : '';
+    if (this.statusEl) this.statusEl.textContent = msg || '';
+  }
+
+  _setCoords(lat, lon) {
+    if (this.latInput) this.latInput.value = lat.toFixed(5);
+    if (this.lonInput) this.lonInput.value = lon.toFixed(5);
+    this._saveGeoCoords(lat, lon);
+    this._geoStatus(`${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+  }
+
   _bindEvents() {
     this.openBtn?.addEventListener('click', () => this.open());
     this.cancelBtn?.addEventListener('click', () => this.close());
@@ -132,7 +179,67 @@ export class BirdNETPanel {
     this.confidenceInput.addEventListener('input', () => {
       this.confidenceVal.textContent = this.confidenceInput.value;
     });
+    if (this.geoThresholdInput && this.geoThresholdVal) {
+      this.geoThresholdInput.addEventListener('input', () => {
+        this.geoThresholdVal.textContent = this.geoThresholdInput.value;
+      });
+    }
     this.analyzeBtn.addEventListener('click', () => this._analyze());
+
+    // ── Geolocation button ──
+    this.geoBtn?.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        this._geoStatus('Geolocation not supported by this browser.');
+        return;
+      }
+      // Geolocation requires a secure context (https or localhost).
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        this._geoStatus('Requires HTTPS or localhost.');
+        return;
+      }
+      this._geoStatus('Locating…');
+      this.geoBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          this.geoBtn.disabled = false;
+          this._setCoords(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          this.geoBtn.disabled = false;
+          const msg = err.code === 1 ? 'Permission denied — check browser site settings.'
+                    : err.code === 2 ? 'Position unavailable.'
+                    : 'Timeout — try again.';
+          this._geoStatus(msg);
+        },
+        { timeout: 8000, maximumAge: 60000 }
+      );
+    });
+
+    // ── Map button ──
+    this.mapBtn?.addEventListener('click', () => {
+      const coords = this._getCoords();
+      openMapModal({
+        lat: coords?.lat ?? 51,
+        lon: coords?.lon ?? 10,
+        onConfirm: ({ lat, lon }) => this._setCoords(lat, lon),
+      });
+    });
+
+    // Persist coords when user types manually
+    this.latInput?.addEventListener('change', () => {
+      const c = this._getCoords();
+      if (c) {
+        this._saveGeoCoords(c.lat, c.lon);
+        if (this.geoStatusEl) this.geoStatusEl.textContent = `(${c.lat.toFixed(3)}, ${c.lon.toFixed(3)})`;
+      }
+    });
+    this.lonInput?.addEventListener('change', () => {
+      const c = this._getCoords();
+      if (c) {
+        this._saveGeoCoords(c.lat, c.lon);
+        if (this.geoStatusEl) this.geoStatusEl.textContent = `(${c.lat.toFixed(3)}, ${c.lon.toFixed(3)})`;
+      }
+    });
   }
 
   async _analyze() {
@@ -150,8 +257,10 @@ export class BirdNETPanel {
 
     try { localStorage.setItem(STORAGE_KEY, modelUrl); } catch { /* ignore */ }
 
-    const confidence = parseFloat(this.confidenceInput.value) || 0.25;
-    const overlap = parseFloat(this.overlapSelect.value) || 0;
+    const confidence    = parseFloat(this.confidenceInput.value) || 0.25;
+    const overlap       = parseFloat(this.overlapSelect.value) || 0;
+    const geoThreshold  = parseFloat(this.geoThresholdInput?.value ?? 0) || 0;
+    const coords        = this._getCoords();
 
     this.analyzeBtn.disabled = true;
     this.progressWrap.style.display = '';
@@ -160,13 +269,22 @@ export class BirdNETPanel {
     try {
       if (!this.birdnet.loaded) {
         this.statusEl.textContent = 'Loading TF.js + model…';
-        await this.birdnet.load({
+        const loadResult = await this.birdnet.load({
           modelUrl,
           onProgress: (msg, pct) => {
             this.statusEl.textContent = msg;
             this.progressBar.style.width = pct + '%';
           },
         });
+        if (loadResult.hasAreaModel) {
+          this.statusEl.textContent = 'Area model loaded ✓';
+        }
+      }
+
+      // Apply geographic priors if coordinates are set and area model is available
+      if (coords && this.birdnet.hasAreaModel) {
+        this.statusEl.textContent = 'Applying location filter…';
+        await this.birdnet.setLocation(coords.lat, coords.lon);
       }
 
       this.statusEl.textContent = 'Analyzing…';
@@ -177,6 +295,7 @@ export class BirdNETPanel {
         sampleRate: audioBuffer.sampleRate,
         overlap,
         minConfidence: confidence,
+        geoThreshold: coords ? geoThreshold : 0,
         onProgress: (pct) => { this.progressBar.style.width = pct + '%'; },
       });
 

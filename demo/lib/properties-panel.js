@@ -15,6 +15,7 @@
 
 import { TAG_PRESETS } from './label-table.js';
 import { createEditableSelect } from './editable-select.js';
+import { openMapModal } from './geo-map-modal.js';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -324,6 +325,25 @@ export class PropertiesPanel {
       dt.textContent = f.label;
       const dd = document.createElement('dd');
       dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
+
+      // Lat row: add a map button if both lat and lng are present
+      if (f.key === 'lat' && data.lng != null && data.lng !== '') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'props-map-btn';
+        btn.title = 'Show on map';
+        btn.textContent = '🗺';
+        btn.addEventListener('click', () => {
+          openMapModal({
+            lat: parseFloat(data.lat),
+            lon: parseFloat(data.lng),
+            zoom: 10,
+            onConfirm: () => {}, // read-only context — no action needed
+          });
+        });
+        dd.appendChild(btn);
+      }
+
       dl.appendChild(dt);
       dl.appendChild(dd);
     }
