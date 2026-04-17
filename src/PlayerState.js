@@ -235,6 +235,14 @@ export class PlayerState {
         // ── Event listeners ──
         this._cleanups = [];
         this._bindEvents();
+
+        // ── Restore persisted overview label section state ──
+        try {
+            if (localStorage.getItem('aw-label-section-collapsed') === '1') {
+                this._toggleOverviewLabelSection(true);
+            }
+        } catch {}
+
         if (this.options.enableTouchGestures !== false) {
             this._bindTouchGestures();
         }
@@ -486,6 +494,8 @@ export class PlayerState {
             overviewHandleLeft:     q('overviewHandleLeft'),
             overviewHandleRight:    q('overviewHandleRight'),
             overviewLabelTracks:    q('overviewLabelTracks'),
+            overviewLabelSection:   q('overviewLabelSection'),
+            overviewLabelToggle:    q('overviewLabelToggle'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
             scaleSelect:            q('scaleSelect'),
@@ -1741,6 +1751,24 @@ export class PlayerState {
                 if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
                 this._drawMainWaveform();
                 this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
+            }
+        });
+    }
+
+    _toggleOverviewLabelSection(force) {
+        const section = this.d.overviewLabelSection;
+        const btn     = this.d.overviewLabelToggle;
+        if (!section) return;
+        const collapsed = force !== undefined ? force : !section.classList.contains('collapsed');
+        section.classList.toggle('collapsed', collapsed);
+        if (btn) btn.setAttribute('aria-expanded', String(!collapsed));
+        try { localStorage.setItem('aw-label-section-collapsed', collapsed ? '1' : '0'); } catch {}
+        // Collapsing/expanding changes layout height — trigger spectrogram resize handling.
+        requestAnimationFrame(() => {
+            this._invalidateSpectrogramHeightCache?.();
+            if (this.audioBuffer) {
+                if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+                this._drawMainWaveform();
             }
         });
     }
@@ -3440,6 +3468,7 @@ export class PlayerState {
             const xNorm = clamp((e.clientX - rect.left) / rect.width, 0, 1);
             this._seekToTime(xNorm * this.audioBuffer.duration, true);
         });
+        on(this.d.overviewLabelToggle, 'click', () => this._toggleOverviewLabelSection());
 
         // ── Window ──
         on(window, 'resize', () => {

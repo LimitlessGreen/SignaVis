@@ -428,7 +428,15 @@ export function createPlayerHTML(opts = {}) {
                 <div class="handle right" data-aw="overviewHandleRight"></div>
             </div>
         </div>
-        <div class="overview-label-tracks" data-aw="overviewLabelTracks"${hide(o.showOverview)}></div>
+        <div class="overview-label-section" data-aw="overviewLabelSection"${hide(o.showOverview)}>
+            <button class="overview-label-tab" data-aw="overviewLabelToggle" type="button" title="Toggle label overview" aria-expanded="true">
+                <svg class="overview-label-tab-chevron" width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
+                    <polyline points="1,2.5 4.5,6.5 8,2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="overview-label-tab-text">Labels</span>
+            </button>
+            <div class="overview-label-tracks" data-aw="overviewLabelTracks"></div>
+        </div>
     </div>
 
     <!-- ═══ Status Bar ═══ -->
