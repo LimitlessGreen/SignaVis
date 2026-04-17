@@ -19,15 +19,8 @@
       <input id="fileInput" type="file" accept="audio/*" hidden />
       <span class="tb-spacer"></span>
 
-      <!-- Species search bar -->
-      <div class="species-search" id="speciesSearch">
-        <div class="species-search-inner">
-          <svg class="species-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="species-search-input" id="speciesSearchInput" placeholder="Species / Label…" autocomplete="off" spellcheck="false">
-          <button class="species-search-clear hidden" id="speciesSearchClear" title="Clear selection" type="button">&times;</button>
-        </div>
-        <div class="species-search-dropdown hidden" id="speciesSearchDropdown"></div>
-      </div>
+      <!-- Species search bar — mounted by JS via createSpeciesSearchWidget -->
+      <div class="species-search" id="speciesSearchMount"></div>
 
       <span class="tb-spacer"></span>
       <span class="tb-meta" id="selectionMeta"></span>
@@ -1533,31 +1526,15 @@
 
     // ── Species search bar (topbar) ───────────────────────────────────
     {
-      const wrapper  = document.getElementById('speciesSearch');
-      const input    = /** @type {HTMLInputElement} */ (document.getElementById('speciesSearchInput'));
-      const clearBtn = document.getElementById('speciesSearchClear');
-      const dropdown = document.getElementById('speciesSearchDropdown');
-      let activeIndex = -1;
-      let items = [];
-
-      function escHtml(s) {
-        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      }
-
-      async function renderDropdown() {
-        const query = input.value.trim();
-        dropdown.innerHTML = '';
-        items = [];
-        activeIndex = -1;
-
-        // Multilingual taxonomy search via player suggestion provider
-        const suggestions = query
-          ? player.getLabelEditorSuggestions(query, 20)
-          : [];
-
-        // Existing labels from the player (always shown when empty query)
+      /**
+       * Build the merged suggestion list for the topbar search:
+       * - existing labels + background species (always shown on empty query)
+       * - taxonomy results merged in for non-empty queries
+       */
+      function getTopbarSuggestions(query, limit = 20) {
         const labelEntries = [];
         const seenKeys = new Set();
+
         for (const lbl of player._linkedLabels?.values?.() || []) {
           const name = (lbl.label || lbl.species || '').trim();
           if (!name) continue;
@@ -1566,12 +1543,11 @@
           seenKeys.add(key);
           labelEntries.push({
             name,
-            color: lbl.color || colorForName(name),
+            color: lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : colorForName(name),
             scientificName: lbl.scientificName || '',
-            origin: lbl.origin || '',
+            detail: lbl.origin && lbl.origin !== 'manual' ? lbl.origin : '',
           });
         }
-        // Background species
         for (const bg of player._backgroundSpecies || []) {
           const name = (bg.name || '').trim();
           if (!name) continue;
@@ -1582,127 +1558,55 @@
             name,
             color: colorForName(name),
             scientificName: bg.scientificName || '',
-            origin: 'background',
+            detail: 'background',
           });
         }
 
-        // Merge: for queries, taxonomy results first, then matching label entries
-        let merged;
-        if (query) {
-          const lq = query.toLowerCase();
-          const matchingLabels = labelEntries.filter(
-            (l) => l.name.toLowerCase().includes(lq) || l.scientificName.toLowerCase().includes(lq),
-          );
-          // Taxonomy suggestions (deduplicate against matching labels)
-          const labelKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
-          const taxonomyOnly = suggestions
-            .filter((s) => !labelKeys.has(s.name.toLowerCase()))
-            .map((s) => ({
-              name: s.name,
-              color: s.color || colorForName(s.name),
-              scientificName: s.scientificName || '',
-              origin: 'taxonomy',
-            }));
-          merged = [...matchingLabels, ...taxonomyOnly];
-        } else {
-          // No query: show existing labels sorted alphabetically
-          merged = labelEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
-        }
+        if (!query) return labelEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
 
-        if (merged.length === 0 && query) {
-          const row = document.createElement('button');
-          row.type = 'button';
-          row.className = 'species-search-item';
-          row.innerHTML = `<span class="search-name">Create: <b>${escHtml(query)}</b></span>`;
-          row.addEventListener('click', () => selectEntry({ name: query, color: '', scientificName: '' }));
-          dropdown.appendChild(row);
-          items.push(row);
-        }
-
-        for (const lbl of merged) {
-          const row = document.createElement('button');
-          row.type = 'button';
-          row.className = 'species-search-item';
-          const hex = lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : '';
-          let html = '';
-          if (hex) html += `<span class="search-dot" style="background:${hex}"></span>`;
-          html += `<span class="search-name">${escHtml(lbl.name)}</span>`;
-          if (lbl.scientificName) html += `<span class="search-sci">${escHtml(lbl.scientificName)}</span>`;
-          if (lbl.origin && lbl.origin !== 'manual') html += `<span class="search-badge">${escHtml(lbl.origin)}</span>`;
-          row.innerHTML = html;
-          row.addEventListener('click', () => selectEntry(lbl));
-          row.addEventListener('pointerenter', () => { activeIndex = items.indexOf(row); updateHighlight(); });
-          dropdown.appendChild(row);
-          items.push(row);
-        }
-
-        dropdown.classList.toggle('hidden', items.length === 0);
+        const lq = query.toLowerCase();
+        const matchingLabels = labelEntries.filter(
+          (l) => l.name.toLowerCase().includes(lq) || l.scientificName.toLowerCase().includes(lq),
+        );
+        const labelKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
+        const taxonomyResults = player.getLabelEditorSuggestions(query, limit);
+        const taxonomyOnly = taxonomyResults
+          .filter((s) => !labelKeys.has(s.name.toLowerCase()))
+          .map((s) => ({
+            name: s.name,
+            color: s.color ? (getOverlayColorStyle(s.color)?.hex || s.color) : colorForName(s.name),
+            scientificName: s.scientificName || '',
+            detail: 'taxonomy',
+          }));
+        return [...matchingLabels, ...taxonomyOnly];
       }
 
-      function updateHighlight() {
-        for (let i = 0; i < items.length; i++) items[i].classList.toggle('active', i === activeIndex);
-        if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
-      }
-
-      function selectEntry(lbl) {
-        const name = (lbl.name || '').trim();
-        input.value = name;
-        input.classList.toggle('has-selection', !!name);
-        clearBtn.classList.toggle('hidden', !name);
-        dropdown.classList.add('hidden');
-        player.setSpeciesBar(name, { color: lbl.color || '', scientificName: lbl.scientificName || '' });
-      }
-
-      function clearSelection() {
-        input.value = '';
-        input.classList.remove('has-selection');
-        clearBtn.classList.add('hidden');
-        player.setSpeciesBar('');
-      }
-
-      input.addEventListener('focus', () => renderDropdown());
-      input.addEventListener('input', () => renderDropdown());
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          if (items.length) { activeIndex = (activeIndex + 1) % items.length; updateHighlight(); }
-        } else if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          if (items.length) { activeIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1; updateHighlight(); }
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          if (activeIndex >= 0 && items[activeIndex]) {
-            items[activeIndex].click();
-          } else if (input.value.trim()) {
-            selectEntry({ name: input.value.trim(), color: '', scientificName: '' });
-          }
-          input.blur();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          dropdown.classList.add('hidden');
-          input.blur();
-        }
-      });
-      clearBtn.addEventListener('click', () => { clearSelection(); input.focus(); });
-
-      document.addEventListener('pointerdown', (e) => {
-        if (!wrapper.contains(/** @type {Node} */ (e.target))) dropdown.classList.add('hidden');
+      const topbarWidget = createSpeciesSearchWidget({
+        getSuggestions: getTopbarSuggestions,
+        onSelect: (item) => {
+          player.setSpeciesBar(item.name, { color: item.color || '', scientificName: item.scientificName || '' });
+        },
+        onClear: () => player.setSpeciesBar(''),
+        placeholder: 'Species / Label…',
       });
 
-      // Sync input when player updates species bar programmatically (e.g. XC import)
+      // Mount into the placeholder div, applying topbar layout class
+      const mount = document.getElementById('speciesSearchMount');
+      topbarWidget.el.classList.add('species-search');
+      mount.replaceWith(topbarWidget.el);
+
+      // Sync display value when player updates species bar programmatically (e.g. XC import)
       player.on('speciesbarchange', (e) => {
-        const sel = e?.detail?.selection;
-        const name = sel?.name || '';
-        if (input.value !== name) {
-          input.value = name;
-          input.classList.toggle('has-selection', !!name);
-          clearBtn.classList.toggle('hidden', !name);
-        }
+        const name = e?.detail?.selection?.name || '';
+        if (topbarWidget.input.value !== name) topbarWidget.setValue(name);
       });
 
-      // Refresh dropdown when labels change
+      // Refresh open dropdown when labels change
       player.on('labelsync', () => {
-        if (!dropdown.classList.contains('hidden')) renderDropdown();
+        // The dropdown is portalled to body — check the input instead of DOM
+        if (document.activeElement === topbarWidget.input) {
+          topbarWidget.input.dispatchEvent(new Event('input'));
+        }
       });
     }
 

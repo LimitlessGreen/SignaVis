@@ -155,17 +155,26 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
 /**
  * Create a reusable species autocomplete widget (input + floating dropdown).
  *
- * Mirrors the top-bar species search visually and functionally.
- * The dropdown is appended to `document.body` and positioned under the anchor.
+ * The dropdown is appended to `document.body` and fixed-positioned under the
+ * anchor so it works correctly inside any scroll container.
+ *
+ * Suggestion objects may include optional fields that are rendered in the row:
+ *   `color`          — hex string, rendered as a coloured dot
+ *   `scientificName` — italic secondary line
+ *   `detail`         — small badge (e.g. origin / language code)
+ *
+ * `onSelect` receives the full suggestion object (including `color` etc.) so
+ * callers do not need to look up the item again.
  *
  * @param {object} opts
- * @param {(query: string, limit?: number) => Array<{name:string,scientificName:string,detail?:string}>} opts.getSuggestions
- * @param {(item: {name:string, scientificName:string}) => void} opts.onSelect
+ * @param {(query: string, limit?: number) => Array<{name:string, scientificName?:string, color?:string, detail?:string}>} opts.getSuggestions
+ * @param {(item: {name:string, scientificName:string, color?:string, [k:string]:any}) => void} opts.onSelect
+ * @param {() => void} [opts.onClear]   Called when the user explicitly clears the field via the × button.
  * @param {string}  [opts.placeholder]
  * @param {string}  [opts.initialValue]
- * @returns {{ el: HTMLElement, input: HTMLInputElement, destroy: () => void }}
+ * @returns {{ el: HTMLElement, input: HTMLInputElement, setValue: (v:string)=>void, destroy: () => void }}
  */
-export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholder = 'Species / Label…', initialValue = '' }) {
+export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, placeholder = 'Species / Label…', initialValue = '' }) {
   function escHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -257,7 +266,9 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholde
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'species-search-item';
-      let html = `<span class="search-name">${escHtml(s.name)}</span>`;
+      let html = '';
+      if (s.color) html += `<span class="search-dot" style="background:${escHtml(s.color)}"></span>`;
+      html += `<span class="search-name">${escHtml(s.name)}</span>`;
       if (s.scientificName) html += `<span class="search-sci">${escHtml(s.scientificName)}</span>`;
       if (s.detail) html += `<span class="search-badge">${escHtml(s.detail)}</span>`;
       row.innerHTML = html;
@@ -276,7 +287,16 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholde
     input.classList.toggle('has-selection', !!name);
     clearBtn.classList.toggle('hidden', !name);
     dropdown.classList.add('hidden');
-    onSelect({ name, scientificName: item.scientificName || '' });
+    // Pass the full item so callers can access color, detail, etc. without re-lookup.
+    onSelect({ ...item, name, scientificName: item.scientificName || '' });
+  }
+
+  /** Programmatically update the displayed value without triggering onSelect. */
+  function setValue(name) {
+    input.value = name || '';
+    input.classList.toggle('has-selection', !!name);
+    clearBtn.classList.toggle('hidden', !name);
+    dropdown.classList.add('hidden');
   }
 
   function destroy() {
@@ -294,7 +314,15 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholde
   }
 
   input.addEventListener('focus', () => renderDropdown());
-  input.addEventListener('input', () => renderDropdown());
+  input.addEventListener('input', () => {
+    // Any manual edit invalidates the confirmed selection.
+    if (input.classList.contains('has-selection')) {
+      input.classList.remove('has-selection');
+      clearBtn.classList.toggle('hidden', !input.value);
+      onClear?.();
+    }
+    renderDropdown();
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, items.length - 1); updateHighlight(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); updateHighlight(); }
@@ -314,6 +342,7 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholde
     input.value = '';
     input.classList.remove('has-selection');
     clearBtn.classList.add('hidden');
+    onClear?.();
     input.focus();
     renderDropdown();
   });
@@ -321,5 +350,5 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, placeholde
   window.addEventListener('scroll', positionDropdown, true);
   window.addEventListener('resize', positionDropdown);
 
-  return { el: wrap, input, destroy };
+  return { el: wrap, input, setValue, destroy };
 }
