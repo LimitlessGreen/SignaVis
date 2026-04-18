@@ -17,7 +17,7 @@ const _colorCtx = (() => {
     }
 })();
 
-function _parseColorToRgb(color) {
+export function parseColorToRgb(color) {
     const raw = String(color || '').trim();
     if (!raw || !_colorCtx) return null;
     try {
@@ -58,7 +58,7 @@ function _rgbToHex({ r, g, b }) {
 }
 
 export function getOverlayColorStyle(color) {
-    const rgb = _parseColorToRgb(color);
+    const rgb = parseColorToRgb(color);
     if (!rgb) return null;
     return {
         fill: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`,
@@ -95,7 +95,7 @@ function _autoAssignColor(existingLabels) {
     // Extract existing hues
     const usedHues = [];
     for (const lbl of existingLabels) {
-        const rgb = _parseColorToRgb(lbl.color);
+        const rgb = parseColorToRgb(lbl.color);
         if (!rgb) continue;
         const r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -578,53 +578,59 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
  * @property {string} [color]
  */
 
-export class AnnotationLayer {
+// ═══════════════════════════════════════════════════════════════════════
+// AnnotationLayerBase — shared lifecycle, CRUD, and selection for all
+// annotation/label overlay layers.
+// ═══════════════════════════════════════════════════════════════════════
+
+class AnnotationLayerBase {
     constructor() {
         this.player = null;
         this.overlay = null;
-        this.annotations = [];
+        /** @type {any[]} */
+        this._items = [];
         this._liveLinkedId = null;
         this._unsubs = [];
         this._domCleanups = [];
-        /**
-         * @type {{id:string,mode?:string,startX?:number,startRegion?:object,element?:HTMLElement,pending?:boolean,moved?:boolean,forceSuppressClick?:boolean}|null}
-         */
+        /** @type {any} */
         this._editing = null;
         this._suppressClickUntil = 0;
         /** @type {Set<string>} */
         this._multiSelectedIds = new Set();
+        this._lastPointerX = 0;
+        this._lastPointerY = 0;
+        this._grabbing = false;
     }
 
-    setMultiSelected(ids) {
-        this._multiSelectedIds = new Set(ids);
-        this._updateMultiSelectedVisual();
-    }
+    // ── Template-method hooks (override in subclass) ─────────────────
+    /** CSS class name for the created overlay element. */
+    get _overlayClassName() { return 'annotation-layer-base'; }
+    /** CSS selector matching all item elements within the overlay. */
+    get _itemElSelector() { return '.annotation-item'; }
+    /** Return the DOM root element to mount the overlay into. */
+    _getRoot() { return null; }
+    /** Subscribe player events. Called inside attach(), after overlay creation. */
+    _subscribePlayerEvents() {}
+    /** Bind mouse/pointer interactions. Called inside attach(), after overlay creation. */
+    _bindInteractions(_root) {}
+    /** Normalize a raw item object (must return object with .id). @abstract */
+    _normalize(_item) { throw new Error(`${this.constructor.name}._normalize not implemented`); }
+    /** Emit a player event when a new item is created via add(). */
+    _emitCreate(_item) {}
+    /** Emit a player event when an item is updated after drag/resize. */
+    _emitUpdate(_item) {}
 
-    _updateMultiSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = /** @type {HTMLElement} */ (el);
-            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
-        }
-    }
-
+    // ── Lifecycle ────────────────────────────────────────────────────
     attach(player) {
         this.detach();
         this.player = player;
-
-        const root = this.player?._state?.d?.waveformContent || this.player?.root?.querySelector('.waveform-content');
+        const root = this._getRoot();
         if (!root) return;
-
         this.overlay = document.createElement('div');
-        this.overlay.className = 'annotation-layer';
+        this.overlay.className = this._overlayClassName;
         root.appendChild(this.overlay);
-
-        this._unsubs.push(this.player.on('ready', () => this.render()));
-        this._unsubs.push(this.player.on('zoomchange', () => this.render()));
-        this._unsubs.push(this.player.on('viewresize', () => this.render()));
-        this._unsubs.push(this.player.on('seek', (e) => this.highlightActiveRegion(e.detail.currentTime)));
-        this._unsubs.push(this.player.on('timeupdate', (e) => this.highlightActiveRegion(e.detail.currentTime)));
-        this._bindEditingInteractions(root);
+        this._subscribePlayerEvents();
+        this._bindInteractions(root);
         this.render();
     }
 
@@ -639,36 +645,98 @@ export class AnnotationLayer {
         this._editing = null;
     }
 
-    add(annotation) {
-        const region = this._normalize(annotation);
-        this.annotations.push(region);
+    // ── CRUD ─────────────────────────────────────────────────────────
+    add(item) {
+        const region = this._normalize(item);
+        this._items.push(region);
         this.render();
-        this.player?._emit?.('annotationcreate', { annotation: { ...region } });
+        this._emitCreate(region);
         return region.id;
     }
 
-    set(regions = []) {
-        this.annotations = regions.map((r) => this._normalize(r));
+    set(items = []) {
+        this._items = items.map((i) => this._normalize(i));
         this.render();
     }
 
     clear() {
-        this.annotations = [];
+        this._items = [];
         this.render();
     }
 
     remove(id) {
-        this.annotations = this.annotations.filter((a) => a.id !== id);
+        this._items = this._items.filter((i) => i.id !== id);
         this.render();
     }
 
     getAll() {
-        return [...this.annotations];
+        return [...this._items];
     }
 
+    // ── Linked / Selection ───────────────────────────────────────────
     setLiveLinkedId(id = null) {
         this._liveLinkedId = id || null;
     }
+
+    setMultiSelected(ids) {
+        this._multiSelectedIds = new Set(ids);
+        this._updateMultiSelectedVisual();
+    }
+
+    toggleMultiSelected(id) {
+        if (this._multiSelectedIds.has(id)) this._multiSelectedIds.delete(id);
+        else this._multiSelectedIds.add(id);
+        this._updateMultiSelectedVisual();
+    }
+
+    _updateMultiSelectedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
+            const h = /** @type {HTMLElement} */ (el);
+            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
+        }
+    }
+
+    // ── Edit interaction shared finish ───────────────────────────────
+    _finishEditInteraction() {
+        if (!this._editing) return;
+        const editing = /** @type {any} */ (this._editing);
+        const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
+        editing.element?.classList?.remove('editing');
+        const item = this._items.find((i) => i.id === editing.id);
+        if (item && editing.moved) this._emitUpdate(item);
+        this._editing = null;
+        if (shouldSuppressClick) {
+            this._suppressClickUntil = performance.now() + 250;
+            this.render();
+        }
+    }
+}
+
+export class AnnotationLayer extends AnnotationLayerBase {
+    // ── Template-method overrides ────────────────────────────────────
+    get _overlayClassName() { return 'annotation-layer'; }
+    get _itemElSelector() { return '.annotation-region'; }
+
+    _getRoot() {
+        return this.player?._state?.d?.waveformContent || this.player?.root?.querySelector('.waveform-content');
+    }
+
+    _subscribePlayerEvents() {
+        this._unsubs.push(this.player.on('ready', () => this.render()));
+        this._unsubs.push(this.player.on('zoomchange', () => this.render()));
+        this._unsubs.push(this.player.on('viewresize', () => this.render()));
+        this._unsubs.push(this.player.on('seek', (e) => this.highlightActiveRegion(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('timeupdate', (e) => this.highlightActiveRegion(e.detail.currentTime)));
+    }
+
+    _bindInteractions(root) { this._bindEditingInteractions(root); }
+
+    _emitCreate(region) { this.player?._emit?.('annotationcreate', { annotation: { ...region } }); }
+    _emitUpdate(item) { this.player?._emit?.('annotationupdate', { annotation: { ...item } }); }
+
+    /** Public alias for the internal items array (backward compat). */
+    get annotations() { return this._items; }
 
     highlightActiveRegion(currentTime) {
         if (!this.overlay) return;
@@ -680,7 +748,7 @@ export class AnnotationLayer {
         }
     }
 
-    exportRavenFormat(regions = this.annotations) {
+    exportRavenFormat(regions = this._items) {
         return regions
             .map((r) => `${r.start}\t${r.end}\t${r.species || ''}\t${r.confidence ?? ''}`)
             .join('\n');
@@ -698,7 +766,7 @@ export class AnnotationLayer {
         this.overlay.innerHTML = '';
 
         // Swimlane row assignment: stack overlapping regions into rows
-        const sorted = [...this.annotations].sort((a, b) => a.start - b.start || a.end - b.end);
+        const sorted = [...this._items].sort((a, b) => a.start - b.start || a.end - b.end);
         const rowEnds = []; // rowEnds[i] = end time of last region in row i
         const rowMap = new Map();
         for (const region of sorted) {
@@ -767,7 +835,7 @@ export class AnnotationLayer {
             }
         }
 
-        for (const region of this.annotations) {
+        for (const region of this._items) {
             const el = this._createRegionElement(region, pps);
             const layout = localLayout.get(region.id);
             if (layout && layout.depth > 1) {
@@ -889,7 +957,7 @@ export class AnnotationLayer {
     }
 
     _startEditInteraction(id, mode, clientX, element) {
-        const region = this.annotations.find((a) => a.id === id);
+        const region = this._items.find((a) => a.id === id);
         if (!region) return;
         this._editing = {
             id,
@@ -907,7 +975,7 @@ export class AnnotationLayer {
     _updateEditInteraction(clientX) {
         if (!this._editing) return;
         const editing = /** @type {any} */ (this._editing);
-        const region = this.annotations.find((a) => a.id === editing.id);
+        const region = this._items.find((a) => a.id === editing.id);
         if (!region) return;
         const pps = this.player?._state?.pixelsPerSecond || 100;
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -946,25 +1014,11 @@ export class AnnotationLayer {
         }
     }
 
-    _finishEditInteraction() {
-        if (!this._editing) return;
-        const editing = /** @type {any} */ (this._editing);
-        const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
-        editing.element?.classList?.remove('editing');
-        const region = this.annotations.find((a) => a.id === editing.id);
-        if (region && editing.moved) this.player?._emit?.('annotationupdate', { annotation: { ...region } });
-        this._editing = null;
-        if (shouldSuppressClick) {
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
-        }
-    }
-
     /**
      * Blender-style grab for waveform annotations (horizontal only).
      */
     startGrab(annotationId) {
-        const region = this.annotations.find((a) => a.id === annotationId);
+        const region = this._items.find((a) => a.id === annotationId);
         if (!region || this._grabbing) return;
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         if (!el) return;
@@ -1021,7 +1075,7 @@ export class AnnotationLayer {
     }
 
     _renameRegionPrompt(id) {
-        const region = this.annotations.find((a) => a.id === id);
+        const region = this._items.find((a) => a.id === id);
         if (!region) return;
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
@@ -1071,11 +1125,9 @@ export class AnnotationLayer {
  * @property {string} [color]
  */
 
-export class SpectrogramLabelLayer {
+export class SpectrogramLabelLayer extends AnnotationLayerBase {
     constructor() {
-        this.player = null;
-        this.overlay = null;
-        this.labels = [];
+        super();
         this.drawMode = true;
         // stampMode: click-to-stamp the last or focused label (see Player: Ctrl+D)
         this.stampMode = false;
@@ -1083,37 +1135,26 @@ export class SpectrogramLabelLayer {
         this._stampAxisLock = false;   // X pressed → lock freq to reference
         this._stampRefLabelId = null;  // persistent clicked-label ref for stamp
         this._axisConstraint = null;   // 'x' | 'y' | null  (Blender-style)
-        this._liveLinkedId = null;
-        this._unsubs = [];
-        this._domCleanups = [];
         this._draftEl = null;
         this._drawing = null;
-        /**
-         * @type {{id:string,mode?:string,startX?:number,startY?:number,startTime?:number,startFreq?:number,startCanvasY?:number,startLabel?:object,element?:HTMLElement,pending?:boolean,moved?:boolean,forceSuppressClick?:boolean}|null}
-         */
-        this._editing = null;
         this._counter = 1;
-        this._suppressClickUntil = 0;
         this._suppressContextMenuUntil = 0;
         this._focusedLabelId = null;
         this._selectedLabelId = null;
         /** @type {Set<string>} ids of labels whose set is locked — no drag/resize/edit */
         this._lockedIds = new Set();
-        /** @type {Set<string>} ids toggled via Ctrl+Click for bulk actions */
-        this._multiSelectedIds = new Set();
         this._clipboard = null;
     }
 
-    attach(player) {
-        this.detach();
-        this.player = player;
-        const root = this.player?._state?.d?.canvasWrapper || this.player?.root?.querySelector('.canvas-wrapper');
-        if (!root) return;
+    // ── Template-method overrides ────────────────────────────────────
+    get _overlayClassName() { return 'spectrogram-label-layer'; }
+    get _itemElSelector() { return '.spectrogram-label-region'; }
 
-        this.overlay = document.createElement('div');
-        this.overlay.className = 'spectrogram-label-layer';
-        root.appendChild(this.overlay);
+    _getRoot() {
+        return this.player?._state?.d?.canvasWrapper || this.player?.root?.querySelector('.canvas-wrapper');
+    }
 
+    _subscribePlayerEvents() {
         this._unsubs.push(this.player.on('ready', () => this.render()));
         this._unsubs.push(this.player.on('zoomchange', () => this.render()));
         this._unsubs.push(this.player.on('viewresize', () => this.render()));
@@ -1131,59 +1172,31 @@ export class SpectrogramLabelLayer {
                 this._updateFocusedVisual();
             }
         }));
-        this._bindDrawingInteractions(root);
-        this.render();
     }
 
+    _bindInteractions(root) { this._bindDrawingInteractions(root); }
+
+    _emitCreate(region) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...region } }); }
+    _emitUpdate(item) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...item } }); }
+
+    /** Public alias for the internal items array (backward compat). */
+    get labels() { return this._items; }
+
     detach() {
-        for (const unsub of this._unsubs) unsub();
-        this._unsubs = [];
-        for (const cleanup of this._domCleanups) cleanup();
-        this._domCleanups = [];
-        if (this.overlay?.parentNode) this.overlay.parentNode.removeChild(this.overlay);
-        this.overlay = null;
-        this.player = null;
+        super.detach();
         this._draftEl = null;
         this._drawing = null;
-        this._editing = null;
         this._stampGhostEl = null;
         this._stampAxisLock = false;
     }
 
-    add(label) {
-        const region = this._normalize(label);
-        this.labels.push(region);
-        this.render();
-        this.player?._emit?.('spectrogramlabelcreate', { label: { ...region } });
-        return region.id;
-    }
-
-    set(labels = []) {
-        this.labels = labels.map((l) => this._normalize(l));
-        this.render();
-    }
-
-    clear() {
-        this.labels = [];
-        this.render();
-    }
-
-    remove(id) {
-        this.labels = this.labels.filter((l) => l.id !== id);
-        this.render();
-    }
-
     /** Accept a suggestion label — change its origin to 'manual'. */
     _acceptSuggestion(id) {
-        const label = this.labels.find((l) => l.id === id);
+        const label = this._items.find((l) => l.id === id);
         if (!label) return;
         label.origin = 'manual';
         this.render();
         this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
-    }
-
-    getAll() {
-        return [...this.labels];
     }
 
     /**
@@ -1195,12 +1208,8 @@ export class SpectrogramLabelLayer {
         this.render();
     }
 
-    setLiveLinkedId(id = null) {
-        this._liveLinkedId = id || null;
-    }
-
     copyLabel(id) {
-        const label = this.labels.find((l) => l.id === id);
+        const label = this._items.find((l) => l.id === id);
         if (!label) return;
         this._clipboard = { ...label };
     }
@@ -1233,14 +1242,14 @@ export class SpectrogramLabelLayer {
      */
     _getReferenceLabelForDefaults() {
         if (this._stampRefLabelId) {
-            const ref = this.labels.find((l) => l.id === this._stampRefLabelId);
+            const ref = this._items.find((l) => l.id === this._stampRefLabelId);
             if (ref) return ref;
         }
         if (this._focusedLabelId) {
-            const focused = this.labels.find((l) => l.id === this._focusedLabelId);
+            const focused = this._items.find((l) => l.id === this._focusedLabelId);
             if (focused) return focused;
         }
-        return this.labels.length ? this.labels[this.labels.length - 1] : null;
+        return this._items.length ? this._items[this._items.length - 1] : null;
     }
 
     highlightActiveLabel(currentTime) {
@@ -1271,28 +1280,6 @@ export class SpectrogramLabelLayer {
         }
     }
 
-    /** Set .multi-selected class on all Ctrl+Click selected labels. */
-    _updateMultiSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = /** @type {HTMLElement} */ (el);
-            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
-        }
-    }
-
-    /** Toggle a label id in the multi-selection set (called from host app or Ctrl+Click). */
-    toggleMultiSelected(id) {
-        if (this._multiSelectedIds.has(id)) this._multiSelectedIds.delete(id);
-        else this._multiSelectedIds.add(id);
-        this._updateMultiSelectedVisual();
-    }
-
-    /** Replace the multi-selection set entirely (e.g. sync from label list). */
-    setMultiSelected(ids) {
-        this._multiSelectedIds = new Set(ids);
-        this._updateMultiSelectedVisual();
-    }
-
     render() {
         if (!this.overlay || !this.player) return;
         if (this._editing) return;
@@ -1308,7 +1295,7 @@ export class SpectrogramLabelLayer {
 
         const elements = [];
         const geometries = [];
-        for (const label of this.labels) {
+        for (const label of this._items) {
             const el = this._createLabelElement(label, width, height);
             const geo = this._toGeometry(label, width, height);
             this.overlay.appendChild(el);
@@ -1849,7 +1836,7 @@ export class SpectrogramLabelLayer {
         // Collect unique labels with their colors for quick pick
         const seen = new Set();
         const existingLabels = [];
-        for (const l of this.labels) {
+        for (const l of this._items) {
             const name = (l.label || '').trim();
             if (!name) continue;
             const key = name.toLowerCase();
@@ -1860,7 +1847,7 @@ export class SpectrogramLabelLayer {
         // Pre-fill from focused/last label (skip XC metadata)
         const ref = this._getReferenceLabelForDefaults();
         const isXcRef = ref?.origin === 'xeno-canto';
-        const initialColor = ref?.color || _autoAssignColor(this.labels);
+        const initialColor = ref?.color || _autoAssignColor(this._items);
         const refName = (ref?.label || '').trim().toLowerCase();
         const initialHex = (getOverlayColorStyle(initialColor)?.hex || '').toLowerCase();
         openLabelNameEditor({
@@ -1885,7 +1872,7 @@ export class SpectrogramLabelLayer {
     }
 
     _startEditInteraction(labelId, mode, clientX, clientY, element) {
-        const label = this.labels.find((l) => l.id === labelId);
+        const label = this._items.find((l) => l.id === labelId);
         if (!label) return;
         this._editing = {
             id: labelId,
@@ -1907,7 +1894,7 @@ export class SpectrogramLabelLayer {
     _updateEditInteraction(clientX, clientY) {
         if (!this._editing) return;
         const editing = /** @type {any} */ (this._editing);
-        const label = this.labels.find((l) => l.id === editing.id);
+        const label = this._items.find((l) => l.id === editing.id);
         if (!label) return;
 
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -2028,25 +2015,11 @@ export class SpectrogramLabelLayer {
         }
     }
 
-    _finishEditInteraction() {
-        if (!this._editing) return;
-        const editing = /** @type {any} */ (this._editing);
-        const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
-        editing.element?.classList?.remove('editing');
-        const label = this.labels.find((l) => l.id === editing.id);
-        if (label && editing.moved) this.player?._emit?.('spectrogramlabelupdate', { label: { ...label } });
-        this._editing = null;
-        if (shouldSuppressClick) {
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
-        }
-    }
-
     /**
      * Blender-style grab: label follows the mouse until click (confirm) or Escape (cancel).
      */
     startGrab(labelId) {
-        const label = this.labels.find((l) => l.id === labelId);
+        const label = this._items.find((l) => l.id === labelId);
         if (!label || this._grabbing) return;
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
         if (!el) return;
@@ -2122,7 +2095,7 @@ export class SpectrogramLabelLayer {
     }
 
     _renameSpectrogramLabelPrompt(id) {
-        const label = this.labels.find((l) => l.id === id);
+        const label = this._items.find((l) => l.id === id);
         if (!label) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
@@ -2143,7 +2116,7 @@ export class SpectrogramLabelLayer {
                 if (nextSci) label.scientificName = nextSci;
                 // Apply color to all labels with the same name
                 const labelKey = name.toLowerCase();
-                for (const other of this.labels) {
+                for (const other of this._items) {
                     if (other.id !== label.id && (other.label || '').toLowerCase() === labelKey) {
                         other.color = color;
                         this.player?._emit?.('spectrogramlabelupdate', { label: { ...other } });
@@ -2161,7 +2134,7 @@ export class SpectrogramLabelLayer {
 
     _renameBulkPrompt(ids) {
         if (!ids || ids.length === 0) return;
-        const labels = ids.map((id) => this.labels.find((l) => l.id === id)).filter(Boolean);
+        const labels = ids.map((id) => this._items.find((l) => l.id === id)).filter(Boolean);
         if (labels.length === 0) return;
         const first = labels[0];
         const anchorEl = this.overlay || null;

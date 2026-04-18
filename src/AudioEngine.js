@@ -5,15 +5,17 @@
 // bandpass-filtered segment playback.
 //
 // Events emitted (via EventTarget):
-//   'ready'           — { duration, sampleRate }
-//   'timeupdate'      — { currentTime, duration }
-//   'play'            — {}
-//   'pause'           — {}
-//   'finish'          — {}
-//   'segmentstart'    — { start, end, loop, filter? }
-//   'segmentend'      — { start, end }
-//   'segmentloop'     — { start, end, filter }
-//   'error'           — { message }
+//   'ready'                — { duration, sampleRate }
+//   'uiupdate'             — { time, fromPlayback, centerView?, emitSeek?, immediate? }
+//   'timeupdate'           — { currentTime, duration }   (throttled to ~15 fps)
+//   'transportstatechange' — { state, reason }
+//   'play'                 — {}
+//   'pause'                — {}
+//   'finish'               — {}
+//   'segmentstart'         — { start, end, loop?, filter? }
+//   'segmentend'           — { end }
+//   'segmentloop'          — { start, end, filter }
+//   'error'                — { message }
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp, parseNativeSampleRate } from './utils.js';
@@ -60,27 +62,19 @@ async function decodeArrayBuffer(arrayBuffer) {
 }
 
 /**
- * AudioEngine — Abstrahiert WaveSurfer und Audio-Wiedergabe.
- * Erbt von EventTarget für Event-Emission.
+ * AudioEngine — Wraps WaveSurfer and audio playback.
+ * Extends EventTarget for event emission.
  */
 export class AudioEngine extends EventTarget {
   /**
    * @param {Function} WaveSurferCtor - WaveSurfer constructor (loaded at runtime)
    * @param {Object} [options]
    * @param {HTMLElement} [options.container] - Container element for WaveSurfer
-   * @param {Function} [options.onUiUpdate] - Callback for UI updates: (time, fromPlayback, options) => void
-   * @param {Function} [options.onTransportStateChange] - Callback: (state, reason) => void
-   * @param {Function} [options.onPlayPauseBtnUpdate] - Callback: (hasPlayingClass) => void
-   * @param {Function} [options.onReady] - Callback fired when WaveSurfer 'ready' fires
    */
   constructor(WaveSurferCtor, options = {}) {
     super();
     this._WaveSurferCtor = WaveSurferCtor;
     this._container = options.container || null;
-    this._onUiUpdate = options.onUiUpdate || (() => {});
-    this._onTransportStateChange = options.onTransportStateChange || (() => {});
-    this._onPlayPauseBtnUpdate = options.onPlayPauseBtnUpdate || (() => {});
-    this._onReady = options.onReady || null;
 
     // ── State ──────────────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */
@@ -126,9 +120,9 @@ export class AudioEngine extends EventTarget {
   // ── Public API ───────────────────────────────────────────────────────
 
   /**
-   * Lädt Audio aus einem ArrayBuffer
+   * Loads audio from an ArrayBuffer.
    * @param {ArrayBuffer} arrayBuffer
-   * @param {string} [name] - Dateiname für Anzeige
+   * @param {string} [name] - Display filename
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
   async loadFromArrayBuffer(arrayBuffer, name) {
@@ -141,7 +135,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Lädt Audio von einer URL
+   * Loads audio from a URL.
    * @param {string} url
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
@@ -160,7 +154,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Lädt Audio aus einem File-Objekt (WaveSurfer lädt das File direkt per loadBlob)
+   * Loads audio from a File object (WaveSurfer loads the file directly via loadBlob).
    * @param {File} file
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
@@ -173,7 +167,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Spielt ab / pausiert
+   * Toggles playback (play/pause).
    */
   playPause() {
     if (this._customSegmentPlayback) {
@@ -185,7 +179,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Stoppt Wiedergabe
+   * Stops playback and seeks to the beginning.
    */
   stop() {
     if (this._customSegmentPlayback) {
@@ -195,12 +189,12 @@ export class AudioEngine extends EventTarget {
     this._clearActiveSegment();
     this.wavesurfer.pause();
     this.seekToTime(0);
-    this._onTransportStateChange('stopped', 'stop-control');
-    this._onPlayPauseBtnUpdate(false);
+    this._emit('transportstatechange', { state: 'stopped', reason: 'stop-control' });
+    this._emit('pause', {});
   }
 
   /**
-   * Spult zu einer bestimmten Zeit
+   * Seeks to a specific time.
    * @param {number} timeSec
    * @param {boolean} [centerView=false]
    * @param {Object} [options]
@@ -212,11 +206,11 @@ export class AudioEngine extends EventTarget {
     }
     const t = clamp(timeSec, 0, this.audioBuffer.duration);
     if (this.wavesurfer) this.wavesurfer.setTime(t);
-    this._onUiUpdate(t, false, { centerView, emitSeek: true, immediate: true });
+    this._emit('uiupdate', { time: t, fromPlayback: false, centerView, emitSeek: true, immediate: true });
   }
 
   /**
-   * Spult relativ
+   * Seeks relative to the current time.
    * @param {number} deltaSec
    */
   seekByDelta(deltaSec) {
@@ -225,7 +219,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Gibt aktuelle Zeit zurück
+   * Returns the current playback time.
    * @returns {number}
    */
   getCurrentTime() {
@@ -234,7 +228,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Spielt ein Segment ab
+   * Plays a time segment using WaveSurfer's native segment playback.
    * @param {number} startSec
    * @param {number} endSec
    * @param {Object} [options]
@@ -297,7 +291,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Spielt ein bandpass-gefiltertes Segment ab
+   * Plays a bandpass-filtered segment via a dedicated AudioContext graph.
    * @param {number} startSec
    * @param {number} endSec
    * @param {number} freqMinHz
@@ -373,7 +367,7 @@ export class AudioEngine extends EventTarget {
     };
     this._customSegmentPlayback = playback;
     this._startCustomSegmentSource(playback);
-    this._onTransportStateChange('playing_segment', 'bandpass-segment-start');
+    this._emit('transportstatechange', { state: 'playing_segment', reason: 'bandpass-segment-start' });
     this._emit('segmentstart', { start, end, filter: { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi } });
 
     const onFrame = () => {
@@ -381,7 +375,7 @@ export class AudioEngine extends EventTarget {
       const elapsed = Math.max(0, ctx.currentTime - playback.startAtCtx);
       const t = Math.min(playback.endSec, playback.runStartSec + elapsed);
       playback.currentTimeSec = t;
-      this._onUiUpdate(t, true);
+      this._emit('uiupdate', { time: t, fromPlayback: true });
       if (t >= playback.endSec - 0.002) {
         if (this.loopPlayback) {
           this._loopCustomSegmentPlayback(playback);
@@ -398,7 +392,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Stoppt Segment-Wiedergabe
+   * Stops active segment playback.
    * @param {string} [reason]
    * @param {number|null} [targetTimeSec]
    */
@@ -407,8 +401,8 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Setzt Lautstärke
-   * @param {number} val - 0 bis 1
+   * Sets the playback volume.
+   * @param {number} val - 0 to 1
    */
   setVolume(val) {
     this.volume = clamp(val, 0, 1);
@@ -419,7 +413,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Toggle Stumm
+   * Toggles mute on/off.
    */
   toggleMute() {
     if (this.muted) {
@@ -434,7 +428,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Prüft ob gerade gespielt wird
+   * Returns whether audio is currently playing.
    * @returns {boolean}
    */
   isPlaying() {
@@ -442,8 +436,8 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Aktualisiert ein aktives Segment basierend auf einem Label
-   * @param {Object} label - Label mit start, end, freqMin, freqMax
+   * Updates the active segment based on a label.
+   * @param {Object} label - Label with start, end, freqMin, freqMax
    */
   updateActiveSegmentFromLabel(label) {
     if (!label || this.playbackMode !== 'segment') return;
@@ -470,9 +464,8 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Beendet ein normales (nicht-Bandpass) Segment, setzt Segment-State zurück und pausiert.
-   * Wird von PlayerState aufgerufen, wenn während normaler WaveSurfer-Wiedergabe das
-   * Segment-Ende erreicht wird.
+   * Ends a normal (non-bandpass) segment, resets segment state, and pauses playback.
+   * Called by PlayerState when the segment end is reached during normal WaveSurfer playback.
    * @param {number} targetTimeSec
    */
   endNormalSegment(targetTimeSec) {
@@ -485,7 +478,7 @@ export class AudioEngine extends EventTarget {
   }
 
   /**
-   * Zerstört Engine und gibt Ressourcen frei
+   * Destroys the engine and releases all resources.
    */
   destroy() {
     if (this._customSegmentPlayback) {
@@ -537,12 +530,15 @@ export class AudioEngine extends EventTarget {
       ws.setVolume(this.volume);
       this.seekToTime(0, true);
       this._lastTimeupdateEmitAt = 0;
-      this._onReady?.();
+      this._emit('ready', {
+        duration: this.audioBuffer?.duration || 0,
+        sampleRate: this.audioBuffer?.sampleRate || 0,
+      });
     });
 
     ws.on('timeupdate', (t) => {
       // Drive the UI on every frame during normal WaveSurfer playback
-      this._onUiUpdate(t, true);
+      this._emit('uiupdate', { time: t, fromPlayback: true });
       const now = performance.now();
       if (now - this._lastTimeupdateEmitAt >= 66) {
         this._lastTimeupdateEmitAt = now;
@@ -554,12 +550,12 @@ export class AudioEngine extends EventTarget {
     });
 
     ws.on('play', () => {
-      this._onPlayPauseBtnUpdate(true);
+      this._emit('play', {});
       if (this.playbackMode === 'segment') {
-        this._onTransportStateChange('playing_segment', 'engine-play');
+        this._emit('transportstatechange', { state: 'playing_segment', reason: 'engine-play' });
         return;
       }
-      this._onTransportStateChange(this.loopPlayback ? 'playing_loop' : 'playing', 'engine-play');
+      this._emit('transportstatechange', { state: this.loopPlayback ? 'playing_loop' : 'playing', reason: 'engine-play' });
     });
 
     ws.on('pause', () => {
@@ -567,14 +563,14 @@ export class AudioEngine extends EventTarget {
         this._suppressNextPauseHandler = false;
         return;
       }
-      this._onPlayPauseBtnUpdate(false);
+      this._emit('pause', {});
       if (this.playbackMode === 'segment' && this._activeSegmentEnd != null) {
-        this._onTransportStateChange('paused_segment', 'engine-pause');
+        this._emit('transportstatechange', { state: 'paused_segment', reason: 'engine-pause' });
       } else if (this.audioBuffer) {
         const atEnd = ws.getCurrentTime() >= this.audioBuffer.duration - 0.01;
-        this._onTransportStateChange(atEnd ? 'stopped' : 'paused', 'engine-pause');
+        this._emit('transportstatechange', { state: atEnd ? 'stopped' : 'paused', reason: 'engine-pause' });
       } else {
-        this._onTransportStateChange('paused', 'engine-pause');
+        this._emit('transportstatechange', { state: 'paused', reason: 'engine-pause' });
       }
     });
 
@@ -587,9 +583,9 @@ export class AudioEngine extends EventTarget {
         ws.play();
         return;
       }
-      this._onPlayPauseBtnUpdate(false);
-      this._onTransportStateChange('stopped', 'engine-finish');
-      if (this.audioBuffer) this._onUiUpdate(this.audioBuffer.duration, false, { immediate: true });
+      this._emit('finish', {});
+      this._emit('transportstatechange', { state: 'stopped', reason: 'engine-finish' });
+      if (this.audioBuffer) this._emit('uiupdate', { time: this.audioBuffer.duration, fromPlayback: false, immediate: true });
     });
 
     this.wavesurfer = ws;
@@ -630,7 +626,7 @@ export class AudioEngine extends EventTarget {
   _loopCustomSegmentPlayback(playback) {
     if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
     playback.currentTimeSec = playback.startSec;
-    this._onUiUpdate(playback.startSec, false, { immediate: true });
+    this._emit('uiupdate', { time: playback.startSec, fromPlayback: false, immediate: true });
     this._emit('segmentloop', { start: playback.startSec, end: playback.endSec, filter: 'bandpass' });
     this._startCustomSegmentSource(playback);
   }
@@ -678,7 +674,7 @@ export class AudioEngine extends EventTarget {
       playback.source = null;
     }
     playback.currentTimeSec = atSec;
-    this._onUiUpdate(atSec, false, { immediate: true });
+    this._emit('uiupdate', { time: atSec, fromPlayback: false, immediate: true });
     this._startCustomSegmentSource(playback, null, atSec);
   }
 
@@ -706,10 +702,10 @@ export class AudioEngine extends EventTarget {
     this._clearActiveSegment();
 
     if (Number.isFinite(targetTimeSec)) {
-      this._onUiUpdate(targetTimeSec, false, { immediate: true });
+      this._emit('uiupdate', { time: targetTimeSec, fromPlayback: false, immediate: true });
     }
-    this._onPlayPauseBtnUpdate(false);
-    this._onTransportStateChange(reason === 'paused' ? 'paused_segment' : 'stopped', 'bandpass-segment-stop');
+    this._emit('pause', {});
+    this._emit('transportstatechange', { state: reason === 'paused' ? 'paused_segment' : 'stopped', reason: 'bandpass-segment-stop' });
     if (options.emitEnd) {
       this._emit('segmentend', { end: targetTimeSec ?? 0 });
     }

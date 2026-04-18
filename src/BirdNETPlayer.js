@@ -13,7 +13,7 @@ import { createPlayerHTML, DEFAULT_OPTIONS } from './template.js';
 import { DEFAULT_SAMPLE_RATE } from './constants.js';
 import { clamp } from './utils.js';
 import { PlayerState } from './PlayerState.js';
-import { AnnotationLayer, SpectrogramLabelLayer, colorForName } from './annotations.js';
+import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb } from './annotations.js';
 import { UndoStack } from './undoStack.js';
 import './styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
@@ -378,7 +378,7 @@ export class BirdNETPlayer {
      */
     async setSpectrogramData(data, nFrames, nMels, options = {}) {
         await this.ready;
-        return this._state?._setExternalSpectrogram(data, nFrames, nMels, options);
+        return this._state?._spectro.setExternalData(data, nFrames, nMels, options);
     }
 
     /**
@@ -393,7 +393,7 @@ export class BirdNETPlayer {
      */
     async setSpectrogramImage(image, options = {}) {
         await this.ready;
-        return this._state?._setExternalSpectrogramImage(image, options);
+        return this._state?._spectro.setExternalImage(image, options);
     }
 
     /**
@@ -402,10 +402,9 @@ export class BirdNETPlayer {
     async clearExternalSpectrogram() {
         await this.ready;
         if (!this._state) return;
-        this._state._externalSpectrogram = false;
-        this._state._externalImageConfig = null;
-        this._state._setDspControlsEnabled(true);
-        if (this._state.audioBuffer) this._state._generateSpectrogram();
+        this._state._spectro.clearExternalMode();
+        this._state._spectro.setDspControlsEnabled(true);
+        if (this._state.audioBuffer) this._state._spectro.generate();
     }
 
     setPlaybackViewportConfig(config = {}) {
@@ -424,7 +423,7 @@ export class BirdNETPlayer {
         s._drawMainWaveform();
         s._drawOverviewWaveform();
         s._syncOverviewWindowToViewport();
-        if (s.spectrogramData && s.spectrogramFrames > 0) s._drawSpectrogram();
+        if (s._spectro.hasData) s._drawSpectrogram();
         s._emit('viewresize', {
             waveformHeight: s.waveformDisplayHeight,
             spectrogramHeight: s.spectrogramDisplayHeight,
@@ -460,12 +459,12 @@ export class BirdNETPlayer {
                 }
             }
         });
-        this.on('annotationpreview', (e) => this._previewFromAnnotationEvent(e.detail.annotation));
-        this.on('spectrogramlabelpreview', (e) => this._previewFromSpectrogramEvent(e.detail.label));
-        this.on('annotationcreate', (e) => this._upsertFromAnnotationEvent(e.detail.annotation));
-        this.on('annotationupdate', (e) => this._upsertFromAnnotationEvent(e.detail.annotation));
-        this.on('spectrogramlabelcreate', (e) => this._upsertFromSpectrogramEvent(e.detail.label));
-        this.on('spectrogramlabelupdate', (e) => this._upsertFromSpectrogramEvent(e.detail.label));
+        this.on('annotationpreview',      (e) => this._previewFromLayer('annotation',  e.detail.annotation));
+        this.on('spectrogramlabelpreview', (e) => this._previewFromLayer('spectrogram', e.detail.label));
+        this.on('annotationcreate',        (e) => this._upsertFromLayer('annotation',  e.detail.annotation));
+        this.on('annotationupdate',        (e) => this._upsertFromLayer('annotation',  e.detail.annotation));
+        this.on('spectrogramlabelcreate',  (e) => this._upsertFromLayer('spectrogram', e.detail.label));
+        this.on('spectrogramlabelupdate',  (e) => this._upsertFromLayer('spectrogram', e.detail.label));
         this.on('spectrogramlabelremove', (e) => this._removeFromLinkedLabels(e.detail.label));
         this.on('annotationremove', (e) => this._removeFromLinkedLabels(e.detail.annotation));
     }
@@ -660,80 +659,68 @@ export class BirdNETPlayer {
         return this._backgroundSpecies.map((s) => ({ ...s }));
     }
 
-    _previewFromAnnotationEvent(annotation) {
-        if (this._isSyncingLabels || !annotation) return;
-        const id = annotation.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+    /**
+     * Live preview of an in-progress drag/resize — update _linkedLabels and
+     * mirror the change into the OTHER layer so both views stay in sync.
+     * @param {'annotation'|'spectrogram'} source
+     * @param {object} item
+     */
+    _previewFromLayer(source, item) {
+        if (this._isSyncingLabels || !item) return;
+        const id = item.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
-        const next = this._normalizeLinkedLabel({
-            ...existing,
-            ...annotation,
-            id,
-            label: annotation?.species ?? existing?.label ?? 'Label',
-        });
+        const next = this._normalizeItemFromSource(source, { ...item, id }, existing);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
-        this.spectrogramLabels.setLiveLinkedId(id);
-        this.spectrogramLabels.set(this._toSpectrogramLabelList());
+        if (source === 'annotation') {
+            this.spectrogramLabels.setLiveLinkedId(id);
+            this.spectrogramLabels.set(this._toSpectrogramLabelList());
+        } else {
+            this.annotations.setLiveLinkedId(id);
+            this.annotations.set(this._toAnnotationList());
+        }
     }
 
-    _previewFromSpectrogramEvent(label) {
-        if (this._isSyncingLabels || !label) return;
-        const id = label.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+    /**
+     * Commit a create/update event — persist into _linkedLabels and sync both layers.
+     * @param {'annotation'|'spectrogram'} source
+     * @param {object} item
+     */
+    _upsertFromLayer(source, item) {
+        if (this._isSyncingLabels || !item) return;
+        const id = item.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
-        const nextName = String(label?.label || label?.species || existing?.label || existing?.species || 'Label').trim();
-        const next = this._normalizeLinkedLabel({
-            ...existing,
-            ...label,
-            id,
-            species: nextName,
-            label: nextName,
-        });
-        this._linkedLabels.set(id, next);
-        this._state?.updateActiveSegmentFromLabel?.(next);
-        this.annotations.setLiveLinkedId(id);
-        this.annotations.set(this._toAnnotationList());
-    }
-
-    _upsertFromAnnotationEvent(annotation) {
-        if (this._isSyncingLabels || !annotation) return;
-        const id = annotation.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
-        const existing = this._linkedLabels.get(id);
-        const next = this._normalizeLinkedLabel({
-            ...existing,
-            ...annotation,
-            id,
-            label: annotation?.species ?? existing?.label ?? 'Label',
-        });
+        const next = this._normalizeItemFromSource(source, { ...item, id }, existing);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
         this.annotations.setLiveLinkedId(null);
         this.spectrogramLabels.setLiveLinkedId(null);
         this._syncLinkedLabelsToLayers();
+    }
+
+    /**
+     * Build the normalized label name from the source layer's field conventions.
+     * - annotation layer: canonical name field is `species`
+     * - spectrogram layer: canonical name field is `label`
+     * @param {'annotation'|'spectrogram'} source
+     * @param {object} item   item with .id already set
+     * @param {object} [existing]
+     */
+    _normalizeItemFromSource(source, item, existing) {
+        if (source === 'spectrogram') {
+            const nextName = String(item?.label || item?.species || existing?.label || existing?.species || 'Label').trim();
+            return this._normalizeLinkedLabel({ ...existing, ...item, species: nextName, label: nextName });
+        }
+        return this._normalizeLinkedLabel({
+            ...existing, ...item,
+            label: item?.species ?? existing?.label ?? 'Label',
+        });
     }
 
     _removeFromLinkedLabels(label) {
         if (this._isSyncingLabels || !label?.id) return;
         this._linkedLabels.delete(label.id);
         if (this._activeLabelId === label.id) this._activeLabelId = null;
-        this.annotations.setLiveLinkedId(null);
-        this.spectrogramLabels.setLiveLinkedId(null);
-        this._syncLinkedLabelsToLayers();
-    }
-
-    _upsertFromSpectrogramEvent(label) {
-        if (this._isSyncingLabels || !label) return;
-        const id = label.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
-        const existing = this._linkedLabels.get(id);
-        const nextName = String(label?.label || label?.species || existing?.label || existing?.species || 'Label').trim();
-        const next = this._normalizeLinkedLabel({
-            ...existing,
-            ...label,
-            id,
-            species: nextName,
-            label: nextName,
-        });
-        this._linkedLabels.set(id, next);
-        this._state?.updateActiveSegmentFromLabel?.(next);
         this.annotations.setLiveLinkedId(null);
         this.spectrogramLabels.setLiveLinkedId(null);
         this._syncLinkedLabelsToLayers();
@@ -859,7 +846,7 @@ export class BirdNETPlayer {
                 row.className = 'overview-label-row';
                 row.title = name;
                 if (color) {
-                    const rgb = this._parseLabelColorRgb(color);
+                    const rgb = parseColorToRgb(color);
                     if (rgb) {
                         row.style.setProperty('--label-tint', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`);
                     }
@@ -919,20 +906,6 @@ export class BirdNETPlayer {
     }
 
     /** @param {string} color @returns {{r:number,g:number,b:number}|null} */
-    _parseLabelColorRgb(color) {
-        if (!color) return null;
-        const s = String(color).trim();
-        const hexMatch = s.match(/^#?([0-9a-f]{3,6})$/i);
-        if (hexMatch) {
-            let h = hexMatch[1];
-            if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-            return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
-        }
-        const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (rgbMatch) return { r: +rgbMatch[1], g: +rgbMatch[2], b: +rgbMatch[3] };
-        return null;
-    }
-
     _normalizeTaxonomy(taxonomy) {
         const used = new Set();
         const list = [];

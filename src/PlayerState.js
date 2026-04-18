@@ -8,13 +8,7 @@ import {
     DEFAULT_WAVEFORM_HEIGHT, DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
     MIN_WAVEFORM_HEIGHT, MIN_SPECTROGRAM_DISPLAY_HEIGHT,
     SEEK_FINE_SEC, SEEK_COARSE_SEC, MIN_WINDOW_NORM,
-    PROGRESSIVE_CHUNK_SECONDS, PROGRESSIVE_MIN_DURATION_SEC,
     PERCH_FRAME_RATE,
-    DSP_PROFILES,
-    QUALITY_LEVELS,
-    CQT_FMIN, CQT_BINS_PER_OCTAVE,
-    windowHopFromOverlap,
-    fftSizeFromOversampling,
 } from './constants.js';
 
 import { clamp, formatTime, formatSecondsShort, isTypingContext, escapeHtml, clampNumber } from './utils.js';
@@ -24,25 +18,10 @@ import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from './transport
 import { InteractionState } from './interactionState.js';
 import { CoordinateSystem } from './coordinateSystem.js';
 
-import {
-    computeAmplitudePeak,
-    updateSpectrogramStats as computeSpectrogramStats,
-    autoContrastStats,
-    detectMaxFrequency,
-    buildSpectrogramGrayscale,
-    colorizeSpectrogram,
-    GpuColorizer,
-    renderSpectrogram,
-    createSpectrogramProcessor,
-} from './spectrogram.js';
-
-import { computeReassignedSpectrogram } from './dsp.js';
-
-
-
-const LS_USER_PRESETS = 'aw-user-presets';
-const LS_FAV_PRESET   = 'aw-favourite-preset';
-const LS_LAST_SETTINGS = 'aw-last-settings';
+import { computeAmplitudePeak } from './spectrogram.js';
+import { PresetManager } from './PresetManager.js';
+import { SpectrogramController } from './SpectrogramController.js';
+import { FrequencyViewport } from './FrequencyViewport.js';
 
 import {
     renderMainWaveform,
@@ -87,23 +66,34 @@ export class PlayerState {
 
         this.container = container;
         this.d = this._queryDom(container);
-        this._populatePresetDropdown();
-        this._applyFavouritePresetControls();
+        this._presets = new PresetManager(this.d, {
+            onRegenerateSpectrogram: (opts) => { if (this.audioBuffer) this._spectro.generate(opts); },
+            onStage1Rebuild: () => {
+                if (this._spectro.hasData) {
+                    this._spectro.buildGrayscale();
+                    this._spectro.buildBaseImage(this._presets.currentColorScheme);
+                    this._drawSpectrogram();
+                }
+            },
+        });
+        this._presets.populatePresetDropdown();
+        this._presets.applyFavouritePresetControls();
         this.WaveSurfer = WaveSurfer;
 
         // ── AudioEngine: owns WaveSurfer, decoding, segment playback, volume state ──
-        this._engine = new AudioEngine(WaveSurfer, {
-            container: this.d.audioEngineHost,
-            onUiUpdate: (t, fromPlayback, opts) => this._scheduleUiUpdate({ time: t, fromPlayback, ...opts }),
-            onTransportStateChange: (state, reason) => this._setTransportState(state, reason),
-            onReady: () => {
-                this._lastSelectionEmitAt = 0;
-                this._lastSelectionStart = NaN;
-                this._lastSelectionEnd = NaN;
-            },
-        });
+        this._engine = new AudioEngine(WaveSurfer, { container: this.d.audioEngineHost });
 
-        // Map AudioEngine EventTarget events to host events
+        // ── Map AudioEngine events to PlayerState handlers ──────────────
+        this._engine.addEventListener('uiupdate', (e) => this._scheduleUiUpdate(/** @type {CustomEvent} */ (e).detail));
+        this._engine.addEventListener('transportstatechange', (e) => {
+            const { state, reason } = /** @type {CustomEvent} */ (e).detail;
+            this._setTransportState(state, reason);
+        });
+        this._engine.addEventListener('ready', () => {
+            this._lastSelectionEmitAt = 0;
+            this._lastSelectionStart = NaN;
+            this._lastSelectionEnd = NaN;
+        });
         this._engine.addEventListener('timeupdate', (e) => {
             this._perf.timeupdateEvents += 1;
             this._emit('timeupdate', /** @type {CustomEvent} */ (e).detail);
@@ -130,24 +120,34 @@ export class PlayerState {
             && !(this.options.transportOverlay && this._viewMode === 'waveform');
         this._playbackViewportConfig = this._sanitizePlaybackViewportConfig(this.options || {});
 
-        this.processor = createSpectrogramProcessor();
-        this.colorizer = new GpuColorizer();
+        // ── Spectrogram pipeline (data + rendering) ──
+        this._spectro = new SpectrogramController(this.d, {
+            enableProgressive: this.options.enableProgressiveSpectrogram === true,
+        });
+        this._spectro.addEventListener('transportstatechange', (e) => {
+            const { state, reason } = /** @type {CustomEvent} */ (e).detail;
+            this._setTransportState(state, reason);
+        });
+        this._spectro.addEventListener('progress',    (e) => this._emit('progress',     /** @type {CustomEvent} */ (e).detail));
+        this._spectro.addEventListener('computetime', (e) => this._emit('computeTime',  /** @type {CustomEvent} */ (e).detail));
+        this._spectro.addEventListener('ready',       (e) => this._emit('ready',        /** @type {CustomEvent} */ (e).detail));
+        this._spectro.addEventListener('error',       (e) => this._emit('error',        /** @type {CustomEvent} */ (e).detail));
+        this._spectro.addEventListener('scalechange', (e) => {
+            this._emit('spectrogramscalechange', /** @type {CustomEvent} */ (e).detail);
+            this._updateCoords();
+            this._createFrequencyLabels();
+        });
+        this._spectro.addEventListener('needsredraw', () => {
+            this._updateCoords();
+            this._createFrequencyLabels();
+            this._drawSpectrogram();
+            this._syncOverviewWindowToViewport();
+        });
 
         // ── Audio / analysis state ──
         // audioBuffer and wavesurfer are owned by this._engine (accessed via getters)
-        this.spectrogramData = null;
-        this.spectrogramFrames = 0;
-        this.spectrogramMels = 0;
-        this.spectrogramBaseCanvas = null;
-        this.spectrogramGrayInfo = null;  // { gray: Uint8Array, width, height }
-        this._gpuReady = false;
-        this.spectrogramAbsLogMin = 0;   // absolute range (full data)
-        this.spectrogramAbsLogMax = 1;
         this.sampleRateHz = DEFAULT_SAMPLE_RATE;
-        this._externalSpectrogram = false; // true when externally-injected data/image
-        this._externalImageConfig = null; // { freqRange, freqScale } for external images
         this.amplitudePeakAbs = 1;
-        this.currentColorScheme = this.d.colorSchemeSelect.value || 'grayscale';
         // volume, muted, preMuteVolume — owned by this._engine (accessed via getters)
 
         // ── Zoom / viewport ──
@@ -158,10 +158,8 @@ export class PlayerState {
         this.windowEndNorm = 1;
 
         // ── Vertical frequency zoom viewport ──
-        /** @type {number | null} */
-        this._freqViewMin = null;
-        /** @type {number | null} */
-        this._freqViewMax = null;
+        this._freqView = new FrequencyViewport();
+        this._freqView.addEventListener('change', () => this._applyFreqViewChange());
 
         // ── Playback toggles ──
         this.followMode = 'follow'; // 'free' | 'follow' | 'smooth'
@@ -243,7 +241,7 @@ export class PlayerState {
             this._bindTouchGestures();
         }
         this._refreshCompactToolbarLayout();
-        this._updatePcenSectionDimming();
+        this._presets.updatePcenSectionDimming();
         requestAnimationFrame(() => this._refreshCompactToolbarLayout());
     }
 
@@ -557,46 +555,6 @@ export class PlayerState {
         };
     }
 
-    _populatePresetDropdown() {
-        const sel = this.d.presetSelect;
-        if (!sel) return;
-        sel.innerHTML = '';
-        const empty = document.createElement('option');
-        empty.value = '';
-        empty.textContent = '— Custom —';
-        sel.appendChild(empty);
-        // Built-in presets
-        for (const name of Object.keys(DSP_PROFILES)) {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name.charAt(0).toUpperCase() + name.slice(1);
-            sel.appendChild(opt);
-        }
-        // User presets
-        const userPresets = this._loadUserPresets();
-        const userNames = Object.keys(userPresets);
-        if (userNames.length) {
-            const sep = document.createElement('option');
-            sep.disabled = true;
-            sep.textContent = '──────────';
-            sel.appendChild(sep);
-            const fav = this._getFavouritePreset();
-            for (const name of userNames) {
-                const opt = document.createElement('option');
-                opt.value = `user:${name}`;
-                opt.textContent = (fav === `user:${name}` ? '⭐ ' : '') + name;
-                sel.appendChild(opt);
-            }
-        }
-        // Select favourite or default
-        const fav = this._getFavouritePreset();
-        if (fav && Array.from(sel.options).some(o => o.value === fav)) {
-            sel.value = fav;
-        } else {
-            sel.value = 'birder';
-        }
-    }
-
     // ═════════════════════════════════════════════════════════════════
     //  Disposal
     // ═════════════════════════════════════════════════════════════════
@@ -633,14 +591,10 @@ export class PlayerState {
             this._perf.panel.parentNode.removeChild(this._perf.panel);
             this._perf.panel = null;
         }
-        if (typeof this._freqAxisRafId === 'number') {
-            cancelAnimationFrame(this._freqAxisRafId);
-            this._freqAxisRafId = 0;
-        }
         for (let i = this._cleanups.length - 1; i >= 0; i--) this._cleanups[i]();
         this._cleanups.length = 0;
-        this.processor.dispose();
-        this.colorizer.dispose();
+        this._presets.dispose();
+        this._spectro.destroy();
         this._engine.destroy();
     }
 
@@ -694,7 +648,8 @@ export class PlayerState {
         this.sampleRateHz = sampleRate;
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
-        this._updateMaxFreqOptions();
+        this._spectro.setAudio(this._engine.audioBuffer, sampleRate);
+        this._spectro.updateMaxFreqOptions(sampleRate);
 
         this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
         this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
@@ -707,7 +662,7 @@ export class PlayerState {
         this._setTransportState('ready', readyReason);
         this.d.fileInfo.classList.remove('loading');
 
-        await this._generateSpectrogram({ autoAdjust: true });
+        await this._spectro.generate({ autoAdjust: true });
         this._drawMainWaveform();
         this._drawOverviewWaveform();
         this._createFrequencyLabels();
@@ -834,445 +789,38 @@ export class PlayerState {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    //  Spectrogram Pipeline
+    //  Spectrogram — thin wrappers around SpectrogramController
     // ═════════════════════════════════════════════════════════════════
 
-    async _generateSpectrogram({ autoAdjust = false } = {}) {
-        if (!this.audioBuffer) return;
-        if (this._externalSpectrogram) return; // external data — do not overwrite
-        if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = false;
-        this._setTransportState('rendering', 'spectrogram-generate');
-
-        // Yield to the browser so the "Computing…" overlay is painted
-        // before the heavy synchronous DSP work blocks the main thread.
-        await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
-
-        const scale = this.d.scaleSelect?.value || 'mel';
-        const colourScale = this.d.colourScaleSelect?.value || 'dbSquared';
-        const windowSize = parseInt(this.d.windowSizeSelect?.value || '1024', 10);
-        const overlapLevel = parseInt(this.d.overlapSelect?.value || '2', 10);
-        const oversamplingLevel = parseInt(this.d.oversamplingSelect?.value || '0', 10);
-        const hopSize = windowHopFromOverlap(windowSize, overlapLevel);
-        const fftSize = fftSizeFromOversampling(windowSize, oversamplingLevel);
-        const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
-        const nMels = Math.max(16, Math.min(512, parseInt(this.d.nMelsInput?.value || '160', 10) || 160));
-        const useReassigned = this.d.reassignedCheck?.checked ?? false;
-
-        // CQT: compute nMels from octave range if CQT scale is selected
-        const effectiveNMels = scale === 'cqt'
-            ? Math.ceil(Math.log2((this.audioBuffer.sampleRate / 2) / CQT_FMIN) * CQT_BINS_PER_OCTAVE)
-            : nMels;
-
-        const options = {
-            scale,
-            colourScale,
-            sampleRate: this.audioBuffer.sampleRate,
-            fftSize,
-            windowFunction,
-            nMels: effectiveNMels,
-            frameRate: PERCH_FRAME_RATE,
-            usePcen: this.d.pcenEnabledCheck?.checked ?? true,
-            pcenGain: parseFloat(this.d.pcenGainInput?.value || '0.8'),
-            pcenBias: parseFloat(this.d.pcenBiasInput?.value || '0.01'),
-            pcenRoot: parseFloat(this.d.pcenRootInput?.value || '4.0'),
-            pcenSmoothing: parseFloat(this.d.pcenSmoothingInput?.value || '0.025'),
-            windowSize,
-            hopSize,
+    /** Build draw-params object from current viewport/layout state. */
+    _getSpectrogramDrawParams() {
+        return {
+            show:           this._showSpectrogram,
+            pixelsPerSecond: this.pixelsPerSecond,
+            freqViewMin:    this._freqView.min,
+            freqViewMax:    this._freqView.max,
+            coords:         this.coords,
+            effectiveHeight: this._getEffectiveSpectrogramHeight(),
+            colorScheme:    this._presets.currentColorScheme,
+            scrollLeft:     this.d.canvasWrapper?.scrollLeft ?? 0,
+            viewportWidth:  this.d.canvasWrapper?.clientWidth ?? 0,
         };
-
-        // Remember actual scale for grayscale / coordinate system
-        this._activeScale = scale;
-
-        const t0 = performance.now();
-        try {
-            const channelData = this.audioBuffer.getChannelData(0);
-            let result;
-
-            if (useReassigned) {
-                // Reassigned spectrogram runs synchronously on main thread
-                result = computeReassignedSpectrogram({
-                    channelData,
-                    ...options,
-                });
-            } else {
-                const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true
-                    && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
-                    && typeof this.processor.computeProgressive === 'function';
-
-                if (shouldUseProgressive) {
-                    const chunkResults = [];
-                    for await (const progress of this.processor.computeProgressive(channelData, {
-                        ...options,
-                        chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
-                    })) {
-                        chunkResults.push(progress.result);
-                        this._emit('progress', {
-                            chunk: progress.chunk,
-                            totalChunks: progress.totalChunks,
-                            percent: progress.percent,
-                        });
-                    }
-                    result = this._mergeProgressiveResults(chunkResults, options.nMels);
-                } else {
-                    result = await this.processor.compute(channelData, options);
-                }
-            }
-
-            this.spectrogramData = result.data;
-            this.spectrogramFrames = result.nFrames;
-            this.spectrogramMels = result.nMels;
-            this.spectrogramHopSize = result.hopSize || Math.max(1, Math.floor(this.sampleRateHz / PERCH_FRAME_RATE));
-            this.spectrogramWinLength = result.winLength || 4 * this.spectrogramHopSize;
-            this._colourScale = result.colourScale || colourScale;
-
-            this._updateSpectrogramStats();
-            if (autoAdjust) {
-                const gainMode = this.d.gainModeSelect?.value || 'auto';
-                if (gainMode === 'auto') this._autoContrast();
-                const freqMode = this.d.maxFreqModeSelect?.value || 'auto';
-                if (freqMode === 'auto') {
-                    this._autoFrequency();
-                } else if (freqMode === 'nyquist') {
-                    this._setMaxFreqToNyquist();
-                }
-                // 'fixed' → keep current maxFreqSelect value
-            }
-
-            // Recompute coordinate system & frequency axis (scale/maxFreq may have changed)
-            this._updateCoords();
-            this._createFrequencyLabels();
-
-            // Stage 1: build grayscale (expensive, once)
-            this._buildSpectrogramGrayscale();
-            // Stage 2: colorize (fast, GPU or JS)
-            this._buildSpectrogramBaseImage();
-            this._drawSpectrogram();
-            this._syncOverviewWindowToViewport();
-            if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
-            this._setTransportState('ready', 'spectrogram-ready');
-
-            const computeMs = performance.now() - t0;
-            this._emit('computeTime', { durationMs: Math.round(computeMs) });
-            this._emit('ready', {
-                duration: this.audioBuffer.duration,
-                sampleRate: this.audioBuffer.sampleRate,
-                nFrames: this.spectrogramFrames,
-                nMels: this.spectrogramMels,
-            });
-        } catch (error) {
-            if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
-            this._setTransportState('error', 'spectrogram-error');
-            this._emit('error', { message: error?.message || String(error), source: 'spectrogram' });
-            throw error;
-        }
     }
 
-    // ── External Spectrogram Injection ────────────────────────────
-
-    /**
-     * Mode 1: Raw data — enter pipeline at Stage 1 (grayscale → colorize → render).
-     * Contrast sliders, color map selection, and frequency controls all remain functional.
-     */
-    _setExternalSpectrogram(data, nFrames, nMels, options = {}) {
-        // Decode base64 string → Float32Array
-        let floats;
-        if (typeof data === 'string') {
-            const binary = atob(data);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            floats = new Float32Array(bytes.buffer);
-        } else if (data instanceof ArrayBuffer) {
-            floats = new Float32Array(data);
-        } else if (data instanceof Float32Array) {
-            floats = data;
-        } else {
-            throw new Error('setSpectrogramData: data must be Float32Array, ArrayBuffer, or base64 string');
-        }
-
-        if (floats.length !== nFrames * nMels) {
-            throw new Error(`setSpectrogramData: data.length (${floats.length}) !== nFrames*nMels (${nFrames}*${nMels}=${nFrames * nMels})`);
-        }
-
-        this._externalSpectrogram = true;
-        this.spectrogramData = floats;
-        this.spectrogramFrames = nFrames;
-        this.spectrogramMels = nMels;
-
-        if (options.sampleRate) {
-            this.sampleRateHz = options.sampleRate;
-            this._updateMaxFreqOptions();
-        }
-        if (options.scale && this.d.scaleSelect) {
-            this.d.scaleSelect.value = options.scale;
-        }
-
-        this._updateSpectrogramStats();
-        const gainMode = this.d.gainModeSelect?.value || 'auto';
-        if (gainMode === 'auto') this._autoContrast();
-        const freqMode = this.d.maxFreqModeSelect?.value || 'auto';
-        if (freqMode === 'auto') {
-            this._autoFrequency();
-        } else if (freqMode === 'nyquist') {
-            this._setMaxFreqToNyquist();
-        }
-        this._buildSpectrogramGrayscale();
-        this._buildSpectrogramBaseImage();
-        this._drawSpectrogram();
-        this._syncOverviewWindowToViewport();
-        this._setTransportState('ready', 'spectrogram-external-data');
-
-        this._emit('ready', {
-            duration: this.audioBuffer?.duration || 0,
-            sampleRate: this.sampleRateHz,
-            nFrames: this.spectrogramFrames,
-            nMels: this.spectrogramMels,
-            external: true,
-        });
-    }
-
-    /**
-     * Mode 2: Pre-rendered image — bypasses entire DSP + colorization pipeline.
-     * Contrast/color controls have no effect; the image is drawn as-is.
-     */
-    _setExternalSpectrogramImage(image, options = {}) {
-        return /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
-            const apply = (img) => {
-                // Draw image onto an offscreen canvas for the rendering pipeline
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth || img.width;
-                canvas.height = img.naturalHeight || img.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) { reject(new Error('Could not get 2d context')); return; }
-                ctx.drawImage(img, 0, 0);
-
-                this._externalSpectrogram = true;
-                this.spectrogramBaseCanvas = canvas;
-                this.spectrogramData = new Float32Array(0); // placeholder
-                this.spectrogramFrames = canvas.width;
-                this.spectrogramMels = canvas.height;
-                this.spectrogramGrayInfo = null;
-
-                // Store frequency mapping metadata for CoordinateSystem
-                if (options.freqRange || options.freqScale) {
-                    this._externalImageConfig = {
-                        freqRange: options.freqRange || null,
-                        freqScale: options.freqScale || null,
-                    };
-                } else {
-                    this._externalImageConfig = null;
-                }
-
-                if (options.sampleRate) {
-                    this.sampleRateHz = options.sampleRate;
-                    this._updateMaxFreqOptions();
-                }
-
-                // Disable DSP controls that have no effect on pre-rendered images
-                this._setDspControlsEnabled(false);
-
-                this._drawSpectrogram();
-                this._syncOverviewWindowToViewport();
-                this._setTransportState('ready', 'spectrogram-external-image');
-
-                this._emit('ready', {
-                    duration: this.audioBuffer?.duration || 0,
-                    sampleRate: this.sampleRateHz,
-                    nFrames: this.spectrogramFrames,
-                    nMels: this.spectrogramMels,
-                    external: true,
-                    externalImage: true,
-                    freqRange: options.freqRange || null,
-                    freqScale: options.freqScale || null,
-                });
-                resolve();
-            };
-
-            if (image instanceof HTMLCanvasElement || (image instanceof HTMLImageElement && image.complete)) {
-                apply(image);
-            } else if (image instanceof HTMLImageElement) {
-                image.onload = () => apply(image);
-                image.onerror = reject;
-            } else if (typeof image === 'string') {
-                const img = new Image();
-                img.onload = () => apply(img);
-                img.onerror = reject;
-                img.src = image; // data:image/png;base64,... or URL
-            } else {
-                reject(new Error('setSpectrogramImage: unsupported image type'));
-            }
-        }));
-    }
-
-    /**
-     * Enable or disable DSP/display controls that have no effect on
-     * pre-rendered spectrogram images.
-     * @param {boolean} enabled
-     */
-    _setDspControlsEnabled(enabled) {
-        const settingsRows = [
-            this.d.scaleSelect, this.d.windowSizeSelect,
-            this.d.windowFunctionSelect, this.d.overlapSelect,
-            this.d.oversamplingSelect, this.d.nMelsInput,
-            this.d.floorSlider, this.d.ceilSlider,
-            this.d.colorSchemeSelect, this.d.maxFreqSelect,
-        ];
-        for (const el of settingsRows) {
-            if (!el) continue;
-            el.disabled = !enabled;
-            const row = el.closest('.settings-row');
-            if (row) row.style.opacity = enabled ? '' : '0.35';
-        }
-        // Buttons
-        for (const btn of [this.d.autoContrastBtn, this.d.autoFreqBtn]) {
-            if (btn) btn.disabled = !enabled;
-        }
-        // PCEN section
-        const pcen = this.d.pcenSection || this.container.querySelector('[data-aw="pcenSection"]');
-        if (pcen) pcen.style.display = enabled ? '' : 'none';
-        // Presets
-        if (this.d.presetSelect) this.d.presetSelect.disabled = !enabled;
-    }
-
-    _mergeProgressiveResults(chunkResults, nMels) {
-        if (!chunkResults.length) return { data: new Float32Array(0), nFrames: 0, nMels, hopSize: 0, winLength: 0 };
-
-        // Use the nMels actually returned by the chunks (may differ from options.nMels
-        // if a worker timed out and the main-thread fallback computed a different shape).
-        const actualNMels = chunkResults[0].nMels || nMels;
-
-        // Compute total size from actual data lengths (not nFrames) to avoid
-        // RangeError: offset is out of bounds when chunks are trimmed or rounded.
-        let totalSize = 0;
-        for (const chunk of chunkResults) totalSize += chunk.data.length;
-        const totalFrames = Math.floor(totalSize / actualNMels);
-
-        const data = new Float32Array(totalFrames * actualNMels);
-        let offset = 0;
-        for (const chunk of chunkResults) {
-            const toCopy = Math.min(chunk.data.length, data.length - offset);
-            if (toCopy > 0) data.set(chunk.data.subarray(0, toCopy), offset);
-            offset += toCopy;
-        }
-        const first = chunkResults[0] || {};
-        return { data, nFrames: totalFrames, nMels: actualNMels, hopSize: first.hopSize, winLength: first.winLength };
-    }
-
-    _updateSpectrogramStats() {
-        const stats = computeSpectrogramStats(this.spectrogramData);
-        this.spectrogramAbsLogMin = stats.logMin;
-        this.spectrogramAbsLogMax = stats.logMax;
-    }
-
-    // ── Auto-Contrast ───────────────────────────────────────────────
-
-    /** Compute optimal floor/ceil from percentiles.
-     *  Pass redraw=true when called from a button click. */
-    _autoContrast(redraw = false) {
-        if (!this.spectrogramData) return;
-        const stats = autoContrastStats(this.spectrogramData, 2, 98);
-        const range = this.spectrogramAbsLogMax - this.spectrogramAbsLogMin;
-        if (range < 1e-8) return;
-
-        const floorPct = clamp(((stats.logMin - this.spectrogramAbsLogMin) / range) * 100, 0, 100);
-        const ceilPct  = clamp(((stats.logMax - this.spectrogramAbsLogMin) / range) * 100, 0, 100);
-
-        this.d.floorSlider.value = Math.round(floorPct);
-        this.d.ceilSlider.value  = Math.round(ceilPct);
-        if (redraw) {
-            this._buildSpectrogramBaseImage();
-            this._drawSpectrogram();
-        }
-    }
-
-    // ── Max-Frequency Options ────────────────────────────────────────
-
-    /**
-     * Rebuild the max-frequency <select> options so they cover the full
-     * Nyquist range of the currently loaded audio.
-     */
-    _updateMaxFreqOptions() {
-        const nyquist = this.sampleRateHz / 2;
-        const select = this.d.maxFreqSelect;
-        if (!select) return;
-
-        // Candidate steps (Hz) — sparse at the bottom, denser near typical ranges
-        const candidates = [
-            1000, 2000, 4000, 6000, 8000, 10000, 12000,
-            16000, 20000, 24000, 32000, 44100, 48000,
-        ];
-        const prev = parseFloat(select.value) || 10000;
-
-        // Keep only those ≤ Nyquist, always include Nyquist itself
-        const kept = candidates.filter(f => f <= nyquist);
-        if (!kept.length || kept[kept.length - 1] < nyquist) {
-            kept.push(nyquist);
-        }
-
-        select.innerHTML = '';
-        for (const hz of kept) {
-            const opt = document.createElement('option');
-            opt.value = String(hz);
-            if (hz === nyquist) {
-                const label = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
-                opt.textContent = `${label} (Nyquist)`;
-            } else {
-                opt.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(hz % 1000 ? 1 : 0)} kHz` : `${hz} Hz`;
-            }
-            select.appendChild(opt);
-        }
-
-        // Restore previous selection if it still exists, else pick closest
-        const values = kept;
-        if (values.includes(prev)) {
-            select.value = String(prev);
-        } else {
-            let best = values[values.length - 1];
-            for (const v of values) {
-                if (v >= prev) { best = v; break; }
-            }
-            select.value = String(best);
-        }
-    }
-
-    // ── Auto-Frequency ──────────────────────────────────────────────
-
-    /** Detect best maxFreq. Pass redraw=true when called from button click. */
-    _autoFrequency(redraw = false) {
-        if (!this.spectrogramData) return;
-        const hzValue = detectMaxFrequency(
-            this.spectrogramData,
-            this.spectrogramFrames,
-            this.spectrogramMels,
-            this.sampleRateHz,
-            this.d.scaleSelect?.value || 'mel',
-        );
-        const options = Array.from(this.d.maxFreqSelect.options);
-        let best = options[options.length - 1];
-        for (const opt of options) {
-            if (parseFloat(opt.value) >= hzValue) { best = opt; break; }
-        }
-        this.d.maxFreqSelect.value = best.value;
-        this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
+    /** Render the spectrogram with current viewport state. */
+    _drawSpectrogram() {
+        if (!this._showSpectrogram) return;
+        if (!this._spectro.hasData) return;
+        this._spectro.draw(this._getSpectrogramDrawParams());
         this._updateCoords();
-        this._createFrequencyLabels();
-        if (redraw) {
-            this._buildSpectrogramGrayscale();  // maxFreq changed → Stage 1
-            this._buildSpectrogramBaseImage();
-            this._drawSpectrogram();
-        }
+        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
     }
 
-    /** Set maxFreq dropdown to the Nyquist frequency. */
-    _setMaxFreqToNyquist() {
-        const nyquist = this.sampleRateHz / 2;
-        const options = Array.from(this.d.maxFreqSelect.options);
-        // Pick the last option (always Nyquist)
-        const last = options[options.length - 1];
-        if (last) this.d.maxFreqSelect.value = last.value;
-        this._emit('spectrogramscalechange', { maxFreq: nyquist });
-        this._updateCoords();
-        this._createFrequencyLabels();
-    }
+    // The remaining pipeline methods (_generateSpectrogram, _setExternalSpectrogram,
+    // _setExternalSpectrogramImage, _autoContrast, _autoFrequency, _buildSpectrogramGrayscale,
+    // etc.) now live in SpectrogramController. PlayerState delegates via this._spectro.
+
+    // ── OLD PIPELINE METHODS DELETED — see SpectrogramController.js ──
 
     // ── Volume ──────────────────────────────────────────────────────
 
@@ -1303,117 +851,12 @@ export class PlayerState {
         btn.classList.toggle('muted', vol < 0.01);
     }
 
-    /** Stage 1 — expensive: spectrogram data → float32 grayscale. Run once per audio/fft/freq change. */
-    _buildSpectrogramGrayscale() {
-        this.spectrogramGrayInfo = buildSpectrogramGrayscale({
-            spectrogramData: this.spectrogramData,
-            spectrogramFrames: this.spectrogramFrames,
-            spectrogramMels: this.spectrogramMels,
-            sampleRateHz: this.sampleRateHz,
-            maxFreq: parseFloat(this.d.maxFreqSelect.value),
-            spectrogramAbsLogMin: this.spectrogramAbsLogMin,
-            spectrogramAbsLogMax: this.spectrogramAbsLogMax,
-            scale: this._activeScale || this.d.scaleSelect?.value || 'mel',
-            colourScale: this._colourScale || this.d.colourScaleSelect?.value || 'dbSquared',
-            noiseReduction: this.d.noiseReductionCheck?.checked ?? false,
-            clahe: this.d.claheCheck?.checked ?? false,
-        });
-        // Upload to GPU if available
-        if (this.spectrogramGrayInfo && this.colorizer.ok) {
-            const { gray, width, height } = this.spectrogramGrayInfo;
-            this._gpuReady = this.colorizer.uploadGrayscale(gray, width, height);
-        } else {
-            this._gpuReady = false;
-        }
-    }
-
-    /** Stage 2 — fast: grayscale → colored canvas.
-     *  GPU path: ~0.1 ms.  JS fallback: ~20-80 ms.
-     *  Calls _buildSpectrogramGrayscale() lazily if spectrogramGrayInfo is missing. */
-    _buildSpectrogramBaseImage() {
-        if (!this.spectrogramGrayInfo) this._buildSpectrogramGrayscale();
-        const floor01 = parseFloat(this.d.floorSlider.value) / 100;
-        const ceil01  = parseFloat(this.d.ceilSlider.value)  / 100;
-
-        if (this._gpuReady && this.spectrogramGrayInfo) {
-            this.colorizer.uploadColorLut(this.currentColorScheme);
-            this.colorizer.render(floor01, ceil01);
-            this.spectrogramBaseCanvas = this.colorizer.canvas;
-        } else {
-            this.spectrogramBaseCanvas = colorizeSpectrogram(
-                this.spectrogramGrayInfo, floor01, ceil01, this.currentColorScheme,
-            );
-        }
-        return this.spectrogramBaseCanvas;
-    }
-
-    _drawSpectrogram() {
-        if (!this._showSpectrogram) return;
-        if (!this.audioBuffer || !this.spectrogramData || this.spectrogramFrames <= 0) return;
-        if (!this.spectrogramBaseCanvas) this._buildSpectrogramBaseImage();
-        if (!this.spectrogramBaseCanvas) return;
-
-        const effectiveSpectrogramHeight = this._getEffectiveSpectrogramHeight();
-
-        // Compute frequency viewport crop for vertical zoom
-        let freqViewSrcCrop = null;
-        if (this._freqViewMin != null && this._freqViewMax != null) {
-            const baseH = this.spectrogramBaseCanvas.height;
-            const srcYTop = this.coords.frequencyToBaseYFraction(this._freqViewMax) * baseH;
-            const srcYBottom = this.coords.frequencyToBaseYFraction(this._freqViewMin) * baseH;
-            const srcH = Math.max(1, srcYBottom - srcYTop);
-            freqViewSrcCrop = { srcY: srcYTop, srcH };
-        }
-
-        // Use the same formula as renderMainWaveform so both views always have
-        // identical total widths — independent of DOM measurement timing.
-        const totalWidth = Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond));
-
-        renderSpectrogram({
-            duration: this.audioBuffer.duration,
-            spectrogramCanvas: this.d.spectrogramCanvas,
-            pixelsPerSecond: this.pixelsPerSecond,
-            canvasHeight: effectiveSpectrogramHeight,
-            baseCanvas: this.spectrogramBaseCanvas,
-            freqViewSrcCrop,
-            canvasSizer:   this.d.canvasSizer,
-            scrollLeft:    this.d.canvasWrapper?.scrollLeft ?? 0,
-            viewportWidth: this.d.canvasWrapper?.clientWidth ?? 0,
-            totalWidth,
-        });
-
-        this._updateCoords();
-        this._syncFreqAxisHeight();
-        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
-    }
-
-    // Keep the freq axis height in sync with the canvas height (needed when the
-    // horizontal scrollbar is visible and reduces the canvas height by ~6 px).
-    // Guards against no-op writes so repeated zoom events don't dirty layout.
-    _syncFreqAxisHeight() {
-        const h = this.d.spectrogramCanvas?.height;
-        if (!h || !this.d.freqAxisSpacer) return;
-        if (this._lastFreqAxisH === h) return; // nothing changed
-        this._lastFreqAxisH = h;
-        // Defer the style write to after the current paint so it doesn't
-        // force a synchronous reflow in the middle of a wheel event chain.
-        // _freqAxisRafId may be undefined; only cancel when it's a number.
-        if (typeof this._freqAxisRafId === 'number') cancelAnimationFrame(this._freqAxisRafId);
-        this._freqAxisRafId = requestAnimationFrame(() => {
-            const ch = this.d.spectrogramCanvas?.height;
-            if (ch > 0) {
-                this.d.freqAxisSpacer.style.height = `${ch}px`;
-                if (this.d.crosshairCanvas) this.d.crosshairCanvas.style.marginTop = `-${ch}px`;
-            }
-        });
-    }
-
     _requestSpectrogramRedraw() {
         if (this._zoomRedrawRafId) return;
         this._zoomRedrawRafId = requestAnimationFrame(() => {
             this._zoomRedrawRafId = 0;
             if (!this.audioBuffer) return;
-            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+            if (this._spectro.hasData) this._drawSpectrogram();
             this._drawMainWaveform();
             // Coords are now in sync with actual canvas dims — notify label layers.
             this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
@@ -1562,7 +1005,7 @@ export class PlayerState {
             if (this.audioBuffer && redraw) {
                 // Redraw BEFORE emitting zoomchange so that canvas dimensions
                 // and coords are up-to-date when listeners (e.g. label layers) run.
-                if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+                if (this._spectro.hasData) this._drawSpectrogram();
                 this._drawMainWaveform();
                 this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
             } else {
@@ -1743,7 +1186,7 @@ export class PlayerState {
             if (!redraw) {
                 // Draw inline (same frame) so the spectrogram update is
                 // synchronous with the scroll — matching the native scrollbar path.
-                if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+                if (this._spectro.hasData) this._drawSpectrogram();
                 this._drawMainWaveform();
                 this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
             }
@@ -1762,7 +1205,7 @@ export class PlayerState {
         requestAnimationFrame(() => {
             this._invalidateSpectrogramHeightCache?.();
             if (this.audioBuffer) {
-                if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+                if (this._spectro.hasData) this._drawSpectrogram();
                 this._drawMainWaveform();
             }
         });
@@ -1824,8 +1267,8 @@ export class PlayerState {
         this.interaction.ctx.panStartScroll = source === 'waveform'
             ? this.d.waveformWrapper.scrollLeft
             : this.d.canvasWrapper.scrollLeft;
-        this.interaction.ctx.panStartFreqViewMin = this._freqViewMin;
-        this.interaction.ctx.panStartFreqViewMax = this._freqViewMax;
+        this.interaction.ctx.panStartFreqViewMin = this._freqView.min;
+        this.interaction.ctx.panStartFreqViewMax = this._freqView.max;
         this.interaction.ctx.panIsMiddle = event.button === 1;
         this.interaction.ctx.panSource = source;
         document.body.style.cursor = 'grabbing';
@@ -1839,7 +1282,7 @@ export class PlayerState {
 
         // Middle mouse: also pan vertically
         if (this.interaction.ctx.panIsMiddle && this.interaction.ctx.panSource !== 'waveform'
-            && this._showSpectrogram && (this._freqViewMin != null || this._freqViewMax != null)) {
+            && this._showSpectrogram && this._freqView.isZoomed) {
             const wrapper = this.d.canvasWrapper;
             const height = wrapper?.getBoundingClientRect().height || 1;
             const boundedMax = this.coords.boundedMaxFreq;
@@ -1852,9 +1295,7 @@ export class PlayerState {
             let newMax = startMax + deltaHz;
             if (newMin < 0) { newMin = 0; newMax = range; }
             if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-            this._freqViewMin = Math.max(0, newMin);
-            this._freqViewMax = Math.min(boundedMax, newMax);
-            this._applyFreqViewChange();
+            this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
         }
     }
 
@@ -1886,7 +1327,7 @@ export class PlayerState {
                 * (this.d.spectrogramCanvas?.height || rect.height);
             const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
             const zoomIn = event.deltaY < 0;
-            this._verticalFreqZoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
+            this._freqView.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor, this.coords.boundedMaxFreq);
             return;
         }
 
@@ -1896,96 +1337,6 @@ export class PlayerState {
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    //  Vertical Frequency Zoom
-    // ═════════════════════════════════════════════════════════════════
-
-    _verticalFreqZoom(factor, anchorFreq) {
-        const boundedMax = this.coords.boundedMaxFreq;
-        const currentMin = this._freqViewMin ?? 0;
-        const currentMax = this._freqViewMax ?? boundedMax;
-        const anchor = clamp(anchorFreq, currentMin, currentMax);
-
-        // Scale distances from anchor
-        let newMin = anchor - (anchor - currentMin) / factor;
-        let newMax = anchor + (currentMax - anchor) / factor;
-
-        // Enforce minimum range (100 Hz or 5% of full range)
-        const minRange = Math.max(100, boundedMax * 0.05);
-        if (newMax - newMin < minRange) {
-            const mid = (newMin + newMax) / 2;
-            newMin = mid - minRange / 2;
-            newMax = mid + minRange / 2;
-        }
-
-        // Clamp to valid range
-        newMin = Math.max(0, newMin);
-        newMax = Math.min(boundedMax, newMax);
-
-        // If (near) full range, reset viewport
-        if (newMin <= 1 && newMax >= boundedMax - 1) {
-            this._freqViewMin = null;
-            this._freqViewMax = null;
-        } else {
-            this._freqViewMin = newMin;
-            this._freqViewMax = newMax;
-        }
-
-        this._applyFreqViewChange();
-    }
-
-    _resetFreqView() {
-        if (this._freqViewMin == null && this._freqViewMax == null) return;
-        this._freqViewMin = null;
-        this._freqViewMax = null;
-        this._applyFreqViewChange();
-    }
-
-    /** Shift the frequency viewport up/down by deltaHz (positive = up). */
-    _verticalFreqPan(deltaHz) {
-        const boundedMax = this.coords.boundedMaxFreq;
-        const currentMin = this._freqViewMin ?? 0;
-        const currentMax = this._freqViewMax ?? boundedMax;
-        if (currentMin <= 0 && currentMax >= boundedMax) return; // not zoomed
-
-        let newMin = currentMin + deltaHz;
-        let newMax = currentMax + deltaHz;
-        const range = currentMax - currentMin;
-
-        // Clamp so viewport stays within [0, boundedMax]
-        if (newMin < 0) { newMin = 0; newMax = range; }
-        if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-
-        this._freqViewMin = Math.max(0, newMin);
-        this._freqViewMax = Math.min(boundedMax, newMax);
-        this._applyFreqViewChange();
-    }
-
-    /** Set Y-zoom to a specific level (0 = full range, 100 = max zoom). */
-    _setFreqZoomFromSlider(sliderValue) {
-        const boundedMax = this.coords.boundedMaxFreq;
-        if (sliderValue <= 0) {
-            this._resetFreqView();
-            return;
-        }
-        // Exponential mapping: 0→full, 100→5% of full range
-        const fraction = Math.max(0.05, 1 - sliderValue / 100 * 0.95);
-        const range = boundedMax * fraction;
-
-        // Keep centered on current midpoint or center of full range
-        const currentMid = (this._freqViewMin != null && this._freqViewMax != null)
-            ? (this._freqViewMin + this._freqViewMax) / 2
-            : boundedMax / 2;
-        let newMin = currentMid - range / 2;
-        let newMax = currentMid + range / 2;
-        if (newMin < 0) { newMin = 0; newMax = range; }
-        if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-
-        this._freqViewMin = newMin;
-        this._freqViewMax = newMax;
-        this._applyFreqViewChange();
-    }
-
     _applyFreqViewChange() {
         this._updateCoords();
         this._drawSpectrogram();
@@ -1993,7 +1344,7 @@ export class PlayerState {
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
         // Toggle Y-zoom reset button visibility
         const btn = this.d.freqZoomResetBtn;
-        if (btn) btn.hidden = this._freqViewMin == null;
+        if (btn) btn.hidden = !this._freqView.isZoomed;
         // Update scrollbar
         this._updateFreqScrollbar();
         // Sync slider
@@ -2007,16 +1358,16 @@ export class PlayerState {
         const thumb = this.d.freqScrollbarThumb;
         if (!bar || !thumb) return;
 
-        if (this._freqViewMin == null || this._freqViewMax == null) {
+        if (!this._freqView.isZoomed) {
             bar.hidden = true;
             return;
         }
         bar.hidden = false;
         const boundedMax = this.coords.boundedMaxFreq;
-        const viewRange = this._freqViewMax - this._freqViewMin;
+        const viewRange = this._freqView.max - this._freqView.min;
         const thumbFrac = Math.min(1, viewRange / boundedMax);
         // top=0 is highest freq, bottom=100% is 0 Hz
-        const topFrac = 1 - this._freqViewMax / boundedMax;
+        const topFrac = 1 - this._freqView.max / boundedMax;
         thumb.style.height = `${Math.max(8, thumbFrac * 100)}%`;
         thumb.style.top = `${topFrac * 100}%`;
     }
@@ -2024,12 +1375,12 @@ export class PlayerState {
     _syncFreqZoomSlider() {
         const slider = this.d.freqZoomSlider;
         if (!slider) return;
-        if (this._freqViewMin == null || this._freqViewMax == null) {
+        if (!this._freqView.isZoomed) {
             slider.value = '0';
             return;
         }
         const boundedMax = this.coords.boundedMaxFreq;
-        const fraction = (this._freqViewMax - this._freqViewMin) / boundedMax;
+        const fraction = (this._freqView.max - this._freqView.min) / boundedMax;
         // Inverse of exponential mapping: fraction = 1 - val/100*0.95
         const val = (1 - fraction) / 0.95 * 100;
         slider.value = String(clamp(Math.round(val), 0, 100));
@@ -2102,7 +1453,7 @@ export class PlayerState {
 
     /** Rebuild the shared CoordinateSystem whenever any mapping parameter changes. */
     _updateCoords() {
-        const extCfg = this._externalImageConfig;
+        const extCfg = this._spectro.externalImageConfig;
         // canvasWidth must be the TOTAL spectrogram width (duration × pps), not the
         // viewport-sized canvas element width. pixelXToTime / timeToPixelX rely on
         // canvasWidth representing the full scrollable range.
@@ -2116,14 +1467,14 @@ export class PlayerState {
             canvasWidth: totalSpectrogramWidth,
             canvasHeight: this.d.spectrogramCanvas?.height || 0,
             maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
-            spectrogramMels: this.spectrogramMels,
+            spectrogramMels: this._spectro.nMels,
             scale: this.d.scaleSelect?.value || 'mel',
             frameRate: PERCH_FRAME_RATE,
-            hopSize: this.spectrogramHopSize || 0,
+            hopSize: this._spectro.hopSize || 0,
             freqRange: extCfg?.freqRange || null,
             freqScale: extCfg?.freqScale || null,
-            freqViewMin: this._freqViewMin,
-            freqViewMax: this._freqViewMax,
+            freqViewMin: this._freqView.min,
+            freqViewMax: this._freqView.max,
         });
     }
 
@@ -2165,7 +1516,7 @@ export class PlayerState {
         if (!this.audioBuffer) return;
         this._queueResizeRedraw({
             redrawWaveform: redrawWav,
-            redrawSpectrogram: this.spectrogramData && this.spectrogramFrames > 0,
+            redrawSpectrogram: this._spectro.hasData,
         });
     }
 
@@ -2273,546 +1624,6 @@ export class PlayerState {
         }
     }
 
-    /** Apply a DSP preset (fills all controls, triggers regeneration). */
-    _applyPreset(name) {
-        let p;
-        if (name.startsWith('user:')) {
-            const userPresets = this._loadUserPresets();
-            p = userPresets[name.slice(5)];
-        } else {
-            p = DSP_PROFILES[name];
-        }
-        if (!p) return;
-        if (this.d.scaleSelect) this.d.scaleSelect.value = p.scale || 'mel';
-        // Window size + overlap + oversampling
-        if (this.d.windowSizeSelect && p.windowSize != null) this.d.windowSizeSelect.value = String(p.windowSize);
-        if (this.d.overlapSelect && p.overlapLevel != null) this.d.overlapSelect.value = String(p.overlapLevel);
-        if (this.d.oversamplingSelect && p.oversamplingLevel != null) this.d.oversamplingSelect.value = String(p.oversamplingLevel);
-        // Window function
-        if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction;
-        // nMels
-        if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels);
-        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = !!p.usePcen;
-        if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain);
-        if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias);
-        if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot);
-        if (this.d.pcenSmoothingInput) this.d.pcenSmoothingInput.value = String(p.pcenSmoothing);
-        // Color palette
-        if (p.colorScheme && this.d.colorSchemeSelect) {
-            this.d.colorSchemeSelect.value = p.colorScheme;
-            this.currentColorScheme = p.colorScheme;
-        }
-        // Reassignment
-        if (this.d.reassignedCheck) this.d.reassignedCheck.checked = !!p.reassigned;
-        // User preset extras: colourScale, noiseReduction, CLAHE
-        if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
-        if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
-        if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
-        // Gain mode
-        const gainMode = p.gainMode || 'auto';
-        if (this.d.gainModeSelect) this.d.gainModeSelect.value = gainMode;
-        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
-            if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
-            if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
-        }
-        // Max frequency mode
-        const maxFreqMode = p.maxFreqMode || 'auto';
-        if (this.d.maxFreqModeSelect) this.d.maxFreqModeSelect.value = maxFreqMode;
-        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && this.d.maxFreqSelect) {
-            this.d.maxFreqSelect.value = String(p.maxFreqHz);
-        }
-        // Sync dropdown
-        if (this.d.presetSelect) this.d.presetSelect.value = name;
-        this._updatePresetButtons();
-        this._syncQualitySlider();
-        this._updatePcenSectionDimming();
-        if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
-    }
-
-    _clearPresetHighlight() {
-        if (this.d.presetSelect) this.d.presetSelect.value = '';
-        this._updatePresetButtons();
-        this._persistCurrentSettings();
-    }
-
-    // ── User Presets (localStorage) ─────────────────────────────────
-
-    _loadUserPresets() {
-        try {
-            const raw = localStorage.getItem(LS_USER_PRESETS);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-            }
-        } catch { /* corrupt data — ignore */ }
-        return {};
-    }
-
-    _saveUserPresetsToStorage(presets) {
-        try { localStorage.setItem(LS_USER_PRESETS, JSON.stringify(presets)); } catch { /* quota */ }
-    }
-
-    /** Persist current control state so it survives page reload / new file load. */
-    _persistCurrentSettings() {
-        try {
-            const s = this._getCurrentPresetSettings();
-            localStorage.setItem(LS_LAST_SETTINGS, JSON.stringify(s));
-        } catch { /* quota */ }
-    }
-
-    /** Load last-used settings from localStorage (returns null if none). */
-    _loadLastSettings() {
-        try {
-            const raw = localStorage.getItem(LS_LAST_SETTINGS);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-            }
-        } catch { /* corrupt */ }
-        return null;
-    }
-
-    _getFavouritePreset() {
-        try { return localStorage.getItem(LS_FAV_PRESET) || ''; } catch { return ''; }
-    }
-
-    _setFavouritePreset(key) {
-        try { localStorage.setItem(LS_FAV_PRESET, key); } catch { /* quota */ }
-    }
-
-    /** Snapshot current DSP controls into a preset object. */
-    _getCurrentPresetSettings() {
-        const gainMode = this.d.gainModeSelect?.value || 'auto';
-        const preset = {
-            scale:             this.d.scaleSelect?.value || 'mel',
-            colourScale:       this.d.colourScaleSelect?.value || 'dbSquared',
-            windowSize:        parseInt(this.d.windowSizeSelect?.value || '1024', 10),
-            overlapLevel:      parseInt(this.d.overlapSelect?.value || '2', 10),
-            oversamplingLevel: parseInt(this.d.oversamplingSelect?.value || '0', 10),
-            windowFunction:    this.d.windowFunctionSelect?.value || 'hann',
-            nMels:             parseInt(this.d.nMelsInput?.value || '160', 10),
-            usePcen:           this.d.pcenEnabledCheck?.checked ?? true,
-            pcenGain:          parseFloat(this.d.pcenGainInput?.value || '0.8'),
-            pcenBias:          parseFloat(this.d.pcenBiasInput?.value || '0.01'),
-            pcenRoot:          parseFloat(this.d.pcenRootInput?.value || '4.0'),
-            pcenSmoothing:     parseFloat(this.d.pcenSmoothingInput?.value || '0.025'),
-            colorScheme:       this.d.colorSchemeSelect?.value || 'grayscale',
-            reassigned:        this.d.reassignedCheck?.checked ?? false,
-            noiseReduction:    this.d.noiseReductionCheck?.checked ?? false,
-            clahe:             this.d.claheCheck?.checked ?? false,
-            gainMode,
-            maxFreqMode:       this.d.maxFreqModeSelect?.value || 'auto',
-        };
-        if (gainMode === 'fixed') {
-            preset.gainFloor = parseInt(this.d.floorSlider?.value || '0', 10);
-            preset.gainCeil  = parseInt(this.d.ceilSlider?.value || '100', 10);
-        }
-        if (preset.maxFreqMode === 'fixed') {
-            preset.maxFreqHz = parseFloat(this.d.maxFreqSelect?.value || '10000');
-        }
-        return preset;
-    }
-
-    _promptSaveUserPreset() {
-        if (!this.d.presetSaveRow) return;
-        const isOpen = !this.d.presetSaveRow.hidden;
-        this.d.presetSaveRow.hidden = isOpen;
-        if (!isOpen) {
-            const inp = this.d.presetSaveInput;
-            if (inp) { inp.value = ''; inp.focus(); }
-        }
-    }
-
-    _confirmSaveUserPreset() {
-        const inp = this.d.presetSaveInput;
-        if (!inp) return;
-        const clean = (inp.value || '').trim();
-        if (!clean) return;
-        if (DSP_PROFILES[clean.toLowerCase()]) {
-            this._showPresetStatus('Built-in name — choose another', true);
-            return;
-        }
-        const presets = this._loadUserPresets();
-        presets[clean] = this._getCurrentPresetSettings();
-        this._saveUserPresetsToStorage(presets);
-        this._populatePresetDropdown();
-        if (this.d.presetSelect) this.d.presetSelect.value = `user:${clean}`;
-        this._updatePresetButtons();
-        this.d.presetSaveRow.hidden = true;
-        this._renderPresetManagerList();
-        this._showPresetStatus(`Saved "${clean}"`);
-    }
-
-    _cancelSaveUserPreset() {
-        if (this.d.presetSaveRow) this.d.presetSaveRow.hidden = true;
-    }
-
-    _toggleFavouritePreset() {
-        const val = this.d.presetSelect?.value || '';
-        if (!val) return;
-        const current = this._getFavouritePreset();
-        if (current === val) {
-            this._setFavouritePreset('');
-        } else {
-            this._setFavouritePreset(val);
-        }
-        this._populatePresetDropdown();
-        if (this.d.presetSelect) this.d.presetSelect.value = val;
-        this._updatePresetButtons();
-        this._renderPresetManagerList();
-    }
-
-    _updatePresetButtons() {
-        const val = this.d.presetSelect?.value || '';
-        const isAny = val !== '';
-        if (this.d.presetFavBtn) {
-            this.d.presetFavBtn.disabled = !isAny;
-            const isFav = isAny && this._getFavouritePreset() === val;
-            this.d.presetFavBtn.classList.toggle('active', isFav);
-            this.d.presetFavBtn.title = isFav ? 'Remove as default preset' : 'Set as default preset';
-        }
-    }
-
-    /** Show a transient status message in the preset manager panel. */
-    _showPresetStatus(msg, isError = false) {
-        const el = this.d.presetStatus;
-        if (!el) return;
-        el.textContent = msg;
-        el.classList.toggle('pm-status-error', isError);
-        el.classList.remove('pm-status-visible');
-        // Force reflow for animation
-        void el.offsetWidth;
-        el.classList.add('pm-status-visible');
-        clearTimeout(this._pmStatusTimer);
-        this._pmStatusTimer = setTimeout(() => el.classList.remove('pm-status-visible'), 2500);
-    }
-
-    // ── Preset Manager (inline panel) ─────────────────────────────────
-
-    _openPresetManager() {
-        if (!this.d.presetManagerPanel) return;
-        const isOpen = !this.d.presetManagerPanel.hidden;
-        this.d.presetManagerPanel.hidden = isOpen;
-        this.d.presetManageBtn?.classList.toggle('active', !isOpen);
-        if (!isOpen) this._renderPresetManagerList();
-    }
-
-    _closePresetManager() {
-        if (this.d.presetManagerPanel) this.d.presetManagerPanel.hidden = true;
-        this.d.presetManageBtn?.classList.remove('active');
-    }
-
-    _renderPresetManagerList() {
-        const list = this.d.presetManagerList;
-        if (!list) return;
-        list.innerHTML = '';
-        const fav = this._getFavouritePreset();
-        const starSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
-        const starFilledSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
-        const trashSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
-        const pencilSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 00-3.986-3.987L3.842 16.174a2 2 0 00-.5.83l-1.321 4.352a.5.5 0 00.62.62l4.352-1.321a2 2 0 00.83-.497z"/></svg>`;
-
-        // Built-in presets
-        for (const name of Object.keys(DSP_PROFILES)) {
-            const key = name;
-            const isFav = fav === key;
-            const row = document.createElement('div');
-            row.className = 'pm-item';
-            row.innerHTML = `
-                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
-                <span class="pm-name" title="Click to apply">${name.charAt(0).toUpperCase() + name.slice(1)}</span>
-                <span class="pm-badge">built-in</span>`;
-            /** @type {HTMLElement} */ (row.querySelector('.pm-fav-btn')).onclick = () => {
-                this._setFavouritePreset(isFav ? '' : key);
-                this._populatePresetDropdown(); this._updatePresetButtons();
-                this._renderPresetManagerList();
-            };
-            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).onclick = () => {
-                this._applyPreset(key);
-                this._persistCurrentSettings();
-            };
-            list.appendChild(row);
-        }
-
-        // User presets
-        const userPresets = this._loadUserPresets();
-        for (const name of Object.keys(userPresets)) {
-            const key = `user:${name}`;
-            const isFav = fav === key;
-            const row = document.createElement('div');
-            row.className = 'pm-item';
-            row.innerHTML = `
-                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
-                <span class="pm-name" title="Click to apply"></span>
-                <button class="pm-icon-btn pm-rename-btn" title="Rename">${pencilSvg}</button>
-                <button class="pm-icon-btn pm-delete-btn" title="Delete">${trashSvg}</button>`;
-            // Use textContent to prevent XSS from preset names
-            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).textContent = name;
-            /** @type {HTMLElement} */ (row.querySelector('.pm-fav-btn')).onclick = () => {
-                this._setFavouritePreset(isFav ? '' : key);
-                this._populatePresetDropdown(); this._updatePresetButtons();
-                this._renderPresetManagerList();
-            };
-            /** @type {HTMLElement} */ (row.querySelector('.pm-name')).onclick = () => {
-                this._applyPreset(key);
-                this._persistCurrentSettings();
-            };
-            /** @type {HTMLElement} */ (row.querySelector('.pm-rename-btn')).onclick = () => this._inlineRenamePreset(name, row);
-            const delBtn = /** @type {HTMLElement} */ (row.querySelector('.pm-delete-btn'));
-            delBtn.onclick = () => {
-                if (delBtn.classList.contains('pm-confirm-delete')) {
-                    // Second click — confirmed
-                    this._deleteUserPresetDirect(name);
-                } else {
-                    // First click — arm confirmation
-                    delBtn.classList.add('pm-confirm-delete');
-                    delBtn.title = 'Click again to confirm';
-                    setTimeout(() => { delBtn.classList.remove('pm-confirm-delete'); delBtn.title = 'Delete'; }, 2000);
-                }
-            };
-            list.appendChild(row);
-        }
-
-        if (!Object.keys(DSP_PROFILES).length && !Object.keys(userPresets).length) {
-            const empty = document.createElement('div');
-            empty.className = 'pm-empty';
-            empty.textContent = 'No presets yet.';
-            list.appendChild(empty);
-        }
-    }
-
-    /** Replace the name span with an inline input for renaming. */
-    _inlineRenamePreset(oldName, row) {
-        const nameSpan = row.querySelector('.pm-name');
-        if (!nameSpan || row.querySelector('.pm-rename-input')) return;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'pm-rename-input';
-        input.value = oldName;
-        input.maxLength = 40;
-        nameSpan.replaceWith(input);
-        input.focus();
-        input.select();
-
-        const commit = () => {
-            const clean = (input.value || '').trim();
-            if (!clean || clean === oldName) { this._renderPresetManagerList(); return; }
-            if (DSP_PROFILES[clean.toLowerCase()]) {
-                this._showPresetStatus('Built-in name — choose another', true);
-                this._renderPresetManagerList(); return;
-            }
-            const presets = this._loadUserPresets();
-            if (presets[clean]) {
-                this._showPresetStatus(`"${clean}" already exists`, true);
-                this._renderPresetManagerList(); return;
-            }
-            presets[clean] = presets[oldName];
-            delete presets[oldName];
-            this._saveUserPresetsToStorage(presets);
-            const oldKey = `user:${oldName}`;
-            const newKey = `user:${clean}`;
-            if (this._getFavouritePreset() === oldKey) this._setFavouritePreset(newKey);
-            this._populatePresetDropdown();
-            this._updatePresetButtons();
-            this._renderPresetManagerList();
-        };
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') this._renderPresetManagerList();
-        });
-        input.addEventListener('blur', commit);
-    }
-
-    _deleteUserPresetDirect(name) {
-        const presets = this._loadUserPresets();
-        delete presets[name];
-        this._saveUserPresetsToStorage(presets);
-        const key = `user:${name}`;
-        if (this._getFavouritePreset() === key) this._setFavouritePreset('');
-        this._populatePresetDropdown();
-        this._updatePresetButtons();
-        this._renderPresetManagerList();
-    }
-
-    _exportPresets() {
-        const userPresets = this._loadUserPresets();
-        const fav = this._getFavouritePreset();
-        const data = { version: 1, favourite: fav, presets: userPresets };
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'audio-workbench-presets.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        this._showPresetStatus('Exported');
-    }
-
-    _importPresets() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json,application/json';
-        input.onchange = () => {
-            const file = input.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-                try {
-                    const data = JSON.parse(/** @type {string} */ (reader.result));
-                    if (!data || typeof data !== 'object' || typeof data.presets !== 'object' || Array.isArray(data.presets)) {
-                        this._showPresetStatus('Invalid preset file', true); return;
-                    }
-                    for (const [k, v] of Object.entries(data.presets)) {
-                        if (!v || typeof v !== 'object' || Array.isArray(v)) {
-                            this._showPresetStatus(`Invalid entry: "${k}"`, true); return;
-                        }
-                    }
-                    const existing = this._loadUserPresets();
-                    let imported = 0;
-                    for (const [k, v] of Object.entries(data.presets)) {
-                        if (DSP_PROFILES[k.toLowerCase()]) continue;
-                        existing[k] = v;
-                        imported++;
-                    }
-                    this._saveUserPresetsToStorage(existing);
-                    if (data.favourite && typeof data.favourite === 'string' && data.favourite.startsWith('user:')) {
-                        const favName = data.favourite.slice(5);
-                        if (existing[favName]) this._setFavouritePreset(data.favourite);
-                    }
-                    this._populatePresetDropdown();
-                    this._updatePresetButtons();
-                    this._renderPresetManagerList();
-                    this._showPresetStatus(`Imported ${imported} preset(s)`);
-                } catch {
-                    this._showPresetStatus('Failed to parse file', true);
-                }
-            };
-            reader.readAsText(file);
-        };
-        input.click();
-    }
-
-    /** Apply favourite preset or last-used settings on init (no spectrogram yet). */
-    _applyFavouritePresetControls() {
-        const fav = this._getFavouritePreset();
-        let p;
-        if (fav) {
-            if (fav.startsWith('user:')) {
-                const userPresets = this._loadUserPresets();
-                p = userPresets[fav.slice(5)];
-            } else {
-                p = DSP_PROFILES[fav];
-            }
-        }
-        // Fall back to last-used custom settings
-        if (!p) {
-            p = this._loadLastSettings();
-            // Show "Custom" in dropdown when restoring last-used settings
-            if (p && this.d.presetSelect) this.d.presetSelect.value = '';
-        }
-        // Fall back to default built-in preset so controls match the dropdown
-        if (!p) {
-            const defaultKey = this.d.presetSelect?.value || 'birder';
-            p = DSP_PROFILES[defaultKey];
-        }
-        if (!p) return;
-        // Set all controls to preset values (same as _applyPreset but skip regeneration)
-        if (this.d.scaleSelect) this.d.scaleSelect.value = p.scale || 'mel';
-        if (this.d.windowSizeSelect && p.windowSize != null) this.d.windowSizeSelect.value = String(p.windowSize);
-        if (this.d.overlapSelect && p.overlapLevel != null) this.d.overlapSelect.value = String(p.overlapLevel);
-        if (this.d.oversamplingSelect && p.oversamplingLevel != null) this.d.oversamplingSelect.value = String(p.oversamplingLevel);
-        if (this.d.windowFunctionSelect) this.d.windowFunctionSelect.value = p.windowFunction || 'hann';
-        if (this.d.nMelsInput) this.d.nMelsInput.value = String(p.nMels || 160);
-        if (this.d.pcenEnabledCheck) this.d.pcenEnabledCheck.checked = !!p.usePcen;
-        if (this.d.pcenGainInput) this.d.pcenGainInput.value = String(p.pcenGain ?? 0.8);
-        if (this.d.pcenBiasInput) this.d.pcenBiasInput.value = String(p.pcenBias ?? 0.01);
-        if (this.d.pcenRootInput) this.d.pcenRootInput.value = String(p.pcenRoot ?? 4.0);
-        if (this.d.pcenSmoothingInput) this.d.pcenSmoothingInput.value = String(p.pcenSmoothing ?? 0.025);
-        if (p.colorScheme && this.d.colorSchemeSelect) {
-            this.d.colorSchemeSelect.value = p.colorScheme;
-            this.currentColorScheme = p.colorScheme;
-        }
-        if (this.d.reassignedCheck) this.d.reassignedCheck.checked = !!p.reassigned;
-        if (p.colourScale != null && this.d.colourScaleSelect) this.d.colourScaleSelect.value = p.colourScale;
-        if (p.noiseReduction != null && this.d.noiseReductionCheck) this.d.noiseReductionCheck.checked = !!p.noiseReduction;
-        if (p.clahe != null && this.d.claheCheck) this.d.claheCheck.checked = !!p.clahe;
-        // Gain mode
-        const gainMode = p.gainMode || 'auto';
-        if (this.d.gainModeSelect) this.d.gainModeSelect.value = gainMode;
-        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
-            if (this.d.floorSlider) this.d.floorSlider.value = String(p.gainFloor);
-            if (this.d.ceilSlider) this.d.ceilSlider.value = String(p.gainCeil);
-        }
-        // Max-freq mode
-        const maxFreqMode = p.maxFreqMode || 'auto';
-        if (this.d.maxFreqModeSelect) this.d.maxFreqModeSelect.value = maxFreqMode;
-        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && this.d.maxFreqSelect) {
-            this.d.maxFreqSelect.value = String(p.maxFreqHz);
-        }
-        this._updatePresetButtons();
-    }
-
-    // ── Quality Slider (Performance ↔ Ultra) ────────────────────────
-
-    _applyQualityLevel(index) {
-        const level = QUALITY_LEVELS[index];
-        if (!level) return;
-        if (this.d.windowSizeSelect)    this.d.windowSizeSelect.value    = String(level.windowSize);
-        if (this.d.overlapSelect)       this.d.overlapSelect.value       = String(level.overlapLevel);
-        if (this.d.oversamplingSelect)  this.d.oversamplingSelect.value  = String(level.oversamplingLevel);
-        if (this.d.nMelsInput)          this.d.nMelsInput.value          = String(level.nMels);
-        if (this.d.qualityLevelDisplay) this.d.qualityLevelDisplay.textContent = level.label;
-        this._clearPresetHighlight();
-        if (this.audioBuffer) this._generateSpectrogram();
-    }
-
-    /** Match current controls back to a quality level (or show "Custom"). */
-    _syncQualitySlider() {
-        if (!this.d.qualitySlider) return;
-        const ws = parseInt(this.d.windowSizeSelect?.value || '0', 10);
-        const ol = parseInt(this.d.overlapSelect?.value || '-1', 10);
-        const os = parseInt(this.d.oversamplingSelect?.value || '-1', 10);
-        const nm = parseInt(this.d.nMelsInput?.value || '0', 10);
-        const idx = QUALITY_LEVELS.findIndex(l =>
-            l.windowSize === ws && l.overlapLevel === ol &&
-            l.oversamplingLevel === os && l.nMels === nm);
-        if (idx >= 0) {
-            this.d.qualitySlider.value = String(idx);
-            if (this.d.qualityLevelDisplay) this.d.qualityLevelDisplay.textContent = QUALITY_LEVELS[idx].label;
-        } else {
-            if (this.d.qualityLevelDisplay) this.d.qualityLevelDisplay.textContent = 'Custom';
-        }
-    }
-
-    _updatePcenSectionDimming() {
-        if (this.d.pcenSection) {
-            const enabled = this.d.pcenEnabledCheck?.checked ?? true;
-            this.d.pcenSection.style.opacity = enabled ? '' : '0.45';
-            // Disable/enable the individual inputs
-            for (const el of [
-                this.d.pcenGainInput, this.d.pcenBiasInput,
-                this.d.pcenRootInput, this.d.pcenSmoothingInput,
-            ]) {
-                if (el) el.disabled = !enabled;
-            }
-        }
-    }
-
-    _updateColourScaleConstraints() {
-        const cs = this.d.colourScaleSelect?.value || 'dbSquared';
-        // Phase mode: PCEN is meaningless → disable
-        if (this.d.pcenEnabledCheck) {
-            if (cs === 'phase') {
-                this.d.pcenEnabledCheck.checked = false;
-                this.d.pcenEnabledCheck.disabled = true;
-            } else {
-                this.d.pcenEnabledCheck.disabled = false;
-            }
-            this._updatePcenSectionDimming();
-        }
-    }
-
     _setTransportEnabled(enabled) {
         [
             this.d.playPauseBtn, this.d.stopBtn,
@@ -2867,7 +1678,7 @@ export class PlayerState {
 
     /** @param {MouseEvent} e */
     _updateCrosshair(e) {
-        if (!this._crosshairEnabled || !this.audioBuffer || !this.spectrogramData) return;
+        if (!this._crosshairEnabled || !this.audioBuffer || !this._spectro.data) return;
         const wrapper = this.d.canvasWrapper;
         const overlay = this.d.crosshairCanvas;
         const readout = this.d.crosshairReadout;
@@ -2885,9 +1696,9 @@ export class PlayerState {
         }
 
         // Amplitude at this position
-        const frame = c.timeToFrame(time, this.spectrogramFrames);
+        const frame = c.timeToFrame(time, this._spectro.nFrames);
         const bin = c.pixelYToBin(canvasY);
-        const amplitude = this.spectrogramData[frame * this.spectrogramMels + bin] || 0;
+        const amplitude = this._spectro.data[frame * this._spectro.nMels + bin] || 0;
 
         // Draw crosshair lines on overlay canvas.
         // Canvas is viewport-sized (sticky rendering), so use localX not canvasX.
@@ -3118,188 +1929,30 @@ export class PlayerState {
         on(this.d.followToggleBtn, 'click', () => this._cycleFollowMode());
         on(this.d.loopToggleBtn, 'click', () => { this.loopPlayback = !this.loopPlayback; this._updateToggleButtons(); });
         on(this.d.crosshairToggleBtn, 'click', () => this._toggleCrosshair());
-        on(this.d.freqZoomResetBtn, 'click', () => this._resetFreqView());
+        on(this.d.freqZoomResetBtn, 'click', () => this._freqView.reset());
         on(this.d.fitViewBtn, 'click', () => this._fitEntireTrackInView());
         on(this.d.resetViewBtn, 'click', () => {
             this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, true);
             this._setLinkedScrollLeft(0);
-            this._resetFreqView();
+            this._freqView.reset();
             this._syncOverviewWindowToViewport();
         });
 
-        // ── Freq axis: left-drag = vertical pan ──
-        {
-            let dragging = false;
-            let startY = 0;
-            let startMin = 0;
-            let startMax = 0;
-            const onMove = (e) => {
-                if (!dragging) return;
-                const spacer = this.d.freqAxisSpacer;
-                const spacerH = spacer.getBoundingClientRect().height;
-                const dy = e.clientY - startY;
-                const boundedMax = this.coords.boundedMaxFreq;
-                const range = startMax - startMin;
-                const deltaHz = (dy / spacerH) * range;
-                let newMin = startMin + deltaHz;
-                let newMax = startMax + deltaHz;
-                if (newMin < 0) { newMin = 0; newMax = range; }
-                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                this._freqViewMin = Math.max(0, newMin);
-                this._freqViewMax = Math.min(boundedMax, newMax);
-                this._applyFreqViewChange();
-            };
-            const onUp = () => {
-                if (!dragging) return;
-                dragging = false;
-                document.body.style.cursor = '';
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-            };
-            on(this.d.freqAxisSpacer, 'pointerdown', (e) => {
-                if (e.button !== 0 || !this._showSpectrogram) return;
-                if (this._freqViewMin == null && this._freqViewMax == null) return;
-                e.preventDefault();
-                dragging = true;
-                startY = e.clientY;
-                startMin = this._freqViewMin ?? 0;
-                startMax = this._freqViewMax ?? this.coords.boundedMaxFreq;
-                document.body.style.cursor = 'ns-resize';
-                document.addEventListener('pointermove', onMove);
-                document.addEventListener('pointerup', onUp);
-            });
-        }
+        this._bindFreqViewportEvents(on);
 
-        // ── Freq axis: wheel = vertical zoom ──
-        on(this.d.freqAxisSpacer, 'wheel', (e) => {
-            if (!this.audioBuffer || !this._showSpectrogram) return;
-            e.preventDefault();
-            const rect = this.d.freqAxisSpacer.getBoundingClientRect();
-            const localY = e.clientY - rect.top;
-            // Map pixel Y to frequency using canvas coordinates
-            const canvasH = this.d.spectrogramCanvas?.height || rect.height;
-            const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
-            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
-            const zoomIn = e.deltaY < 0;
-            this._verticalFreqZoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
-        }, { passive: false });
-
-        // ── Freq zoom slider ──
-        on(this.d.freqZoomSlider, 'input', (e) => {
-            this._setFreqZoomFromSlider(parseInt(e.target.value, 10));
-        });
-
-        // ── Freq scrollbar drag ──
-        {
-            let dragging = false;
-            let startY = 0;
-            let startMin = 0;
-            let startMax = 0;
-            const onMove = (e) => {
-                if (!dragging) return;
-                const bar = this.d.freqScrollbar;
-                const barH = bar.getBoundingClientRect().height;
-                const dy = e.clientY - startY;
-                const boundedMax = this.coords.boundedMaxFreq;
-                const range = startMax - startMin;
-                // dy positive = drag down = lower freqs
-                const deltaFrac = dy / barH;
-                const deltaHz = deltaFrac * boundedMax;
-                let newMin = startMin - deltaHz;
-                let newMax = startMax - deltaHz;
-                if (newMin < 0) { newMin = 0; newMax = range; }
-                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                this._freqViewMin = Math.max(0, newMin);
-                this._freqViewMax = Math.min(boundedMax, newMax);
-                this._applyFreqViewChange();
-            };
-            const onUp = () => {
-                if (!dragging) return;
-                dragging = false;
-                this.d.freqScrollbar?.classList.remove('active');
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-            };
-            on(this.d.freqScrollbarThumb, 'pointerdown', (e) => {
-                if (this._freqViewMin == null) return;
-                e.preventDefault();
-                e.stopPropagation();
-                dragging = true;
-                startY = e.clientY;
-                startMin = this._freqViewMin ?? 0;
-                startMax = this._freqViewMax ?? this.coords.boundedMaxFreq;
-                this.d.freqScrollbar?.classList.add('active');
-                document.addEventListener('pointermove', onMove);
-                document.addEventListener('pointerup', onUp);
-            });
-        }
-
-        // ── Settings ──
-        on(this.d.scaleSelect, 'change', () => {
-            this._clearPresetHighlight();
-            if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
-        });
-        on(this.d.colourScaleSelect, 'change', () => {
-            this._clearPresetHighlight();
-            this._updateColourScaleConstraints();
-            if (this.audioBuffer) this._generateSpectrogram({ autoAdjust: true });
-        });
-        on(this.d.presetSelect, 'change', () => {
-            const val = this.d.presetSelect?.value;
-            if (val) this._applyPreset(val);
-            this._updatePresetButtons();
-            this._persistCurrentSettings();
-        });
-        on(this.d.presetSaveBtn, 'click', () => this._promptSaveUserPreset());
-        on(this.d.presetFavBtn, 'click', () => this._toggleFavouritePreset());
-        on(this.d.presetManageBtn, 'click', () => this._openPresetManager());
-        on(this.d.presetSaveConfirm, 'click', () => this._confirmSaveUserPreset());
-        on(this.d.presetSaveCancel, 'click', () => this._cancelSaveUserPreset());
-        on(this.d.presetSaveInput, 'keydown', (e) => { if (e.key === 'Enter') this._confirmSaveUserPreset(); if (e.key === 'Escape') this._cancelSaveUserPreset(); });
-        on(this.d.presetImportBtn, 'click', () => this._importPresets());
-        on(this.d.presetExportBtn, 'click', () => this._exportPresets());
-        on(this.d.qualitySlider, 'input', () => {
-            this._applyQualityLevel(parseInt(this.d.qualitySlider.value, 10));
-        });
-        on(this.d.nMelsInput, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.pcenEnabledCheck, 'change', () => { this._updatePcenSectionDimming(); this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.pcenGainInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.pcenBiasInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.pcenRootInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.pcenSmoothingInput, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.windowSizeSelect, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.overlapSelect, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.oversamplingSelect, 'change', () => { this._clearPresetHighlight(); this._syncQualitySlider(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.windowFunctionSelect, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        on(this.d.reassignedCheck, 'change', () => { this._clearPresetHighlight(); if (this.audioBuffer) this._generateSpectrogram(); });
-        // Noise reduction and CLAHE only need Stage 1 rebuild (no new FFT)
-        on(this.d.noiseReductionCheck, 'change', () => {
-            this._persistCurrentSettings();
-            if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
-        });
-        on(this.d.claheCheck, 'change', () => {
-            this._persistCurrentSettings();
-            if (this.spectrogramData) { this._buildSpectrogramGrayscale(); this._buildSpectrogramBaseImage(); this._drawSpectrogram(); }
-        });
+        // ── Settings — preset manager, DSP controls, quality slider ──
+        // All owned by PresetManager; it calls back via onRegenerateSpectrogram / onStage1Rebuild.
+        this._presets.bindEvents(on);
         on(this.d.maxFreqSelect, 'change', () => {
-            if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
-                this._freqViewMin = null;
-                this._freqViewMax = null;
+            if (this.audioBuffer && this._spectro.hasData) {
+                this._freqView.resetSilent();
                 this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
                 this._updateCoords();
                 this._createFrequencyLabels();
-                this._buildSpectrogramGrayscale();  // maxFreq affects spatial layout
-                this._buildSpectrogramBaseImage();
+                this._spectro.buildGrayscale();
+                this._spectro.buildBaseImage(this._presets.currentColorScheme);
                 this._drawSpectrogram();
                 if (this.d.freqZoomResetBtn) this.d.freqZoomResetBtn.hidden = true;
-            }
-        });
-        on(this.d.colorSchemeSelect, 'change', () => {
-            this.currentColorScheme = this.d.colorSchemeSelect.value;
-            this._persistCurrentSettings();
-            if (this.audioBuffer && this.spectrogramData && this.spectrogramFrames > 0) {
-                this._buildSpectrogramBaseImage();
-                this._drawSpectrogram();
             }
         });
         on(this.d.zoomSlider, 'input', (e) => {
@@ -3307,7 +1960,7 @@ export class PlayerState {
             this._requestSpectrogramRedraw();
         });
         on(this.d.zoomSlider, 'change', () => {
-            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
+            if (this._spectro.hasData) this._drawSpectrogram();
         });
 
         // ── Volume ──
@@ -3319,79 +1972,29 @@ export class PlayerState {
 
         // ── Display Floor / Ceiling (Stage 2 only — fast) ──
         const rebuildDisplay = () => {
-            if (!this.spectrogramData || this.spectrogramFrames <= 0) return;
-            this._buildSpectrogramBaseImage();
+            if (!this._spectro.hasData) return;
+            this._spectro.buildBaseImage(this._presets.currentColorScheme);
             this._drawSpectrogram();
         };
         on(this.d.gainModeSelect, 'change', () => {
-            this._persistCurrentSettings();
-            if (this.d.gainModeSelect.value === 'auto' && this.spectrogramData) {
-                this._autoContrast(true);
+            this._presets.persistCurrentSettings();
+            if (this.d.gainModeSelect.value === 'auto' && this._spectro.data) {
+                this._spectro.autoContrast(true);
             }
         });
         on(this.d.maxFreqModeSelect, 'change', () => {
-            this._persistCurrentSettings();
+            this._presets.persistCurrentSettings();
             if (!this.audioBuffer) return;
             const mode = this.d.maxFreqModeSelect.value;
-            if (mode === 'auto') this._autoFrequency(true);
-            else if (mode === 'nyquist') { this._setMaxFreqToNyquist(); this._generateSpectrogram(); }
+            if (mode === 'auto') this._spectro.autoFrequency(true);
+            else if (mode === 'nyquist') { this._spectro.setMaxFreqToNyquist(); this._spectro.generate(); }
         });
-        on(this.d.floorSlider, 'input', () => { this._persistCurrentSettings(); rebuildDisplay(); });
-        on(this.d.ceilSlider, 'input', () => { this._persistCurrentSettings(); rebuildDisplay(); });
-        on(this.d.autoContrastBtn, 'click', () => this._autoContrast(true));
-        on(this.d.autoFreqBtn, 'click', () => this._autoFrequency(true));
+        on(this.d.floorSlider, 'input', () => { this._presets.persistCurrentSettings(); rebuildDisplay(); });
+        on(this.d.ceilSlider, 'input', () => { this._presets.persistCurrentSettings(); rebuildDisplay(); });
+        on(this.d.autoContrastBtn, 'click', () => this._spectro.autoContrast(true));
+        on(this.d.autoFreqBtn, 'click', () => this._spectro.autoFrequency(true));
 
-        // ── Canvas interaction ──
-        on(this.d.canvasWrapper, 'click', (e) => this._handleCanvasClick(e));
-        on(this.d.canvasWrapper, 'dblclick', (e) => {
-            if (e.shiftKey) { e.preventDefault(); this._resetFreqView(); }
-        });
-        on(this.d.canvasWrapper, 'mousemove', (e) => this._updateCrosshair(e));
-        on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
-        on(this.d.waveformWrapper, 'click', (e) => this._handleWaveformClick(e));
-        on(this.d.canvasWrapper, 'scroll', () => {
-            if (this.scrollSyncLock) return;
-            if (this._getPrimaryScrollWrapper() !== this.d.canvasWrapper) return;
-            this._setLinkedScrollLeft(this.d.canvasWrapper.scrollLeft);
-            // Viewport-rendering: synchronous redraw so the canvas doesn't lag
-            // behind the label overlay which the browser scrolls natively.
-            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
-        });
-        on(this.d.waveformWrapper, 'scroll', () => {
-            if (this.scrollSyncLock) return;
-            if (this._getPrimaryScrollWrapper() !== this.d.waveformWrapper) return;
-            this._setLinkedScrollLeft(this.d.waveformWrapper.scrollLeft);
-            // Sync the spectrogram viewport when the waveform is the primary scroller.
-            if (this.spectrogramData && this.spectrogramFrames > 0) this._drawSpectrogram();
-        });
-        on(this.d.canvasWrapper, 'wheel', (e) => this._handleWheel(e, 'spectrogram'), { passive: false });
-        on(this.d.waveformWrapper, 'wheel', (e) => this._handleWheel(e, 'waveform'), { passive: false });
-        on(this.d.canvasWrapper, 'keydown', (e) => {
-            if (!this.audioBuffer) return;
-            if (isTypingContext(e.target)) return;
-            switch (e.key) {
-                case 'ArrowLeft':
-                    e.preventDefault();
-                    this._seekByDelta(-SEEK_FINE_SEC);
-                    break;
-                case 'ArrowRight':
-                    e.preventDefault();
-                    this._seekByDelta(SEEK_FINE_SEC);
-                    break;
-                case 'Home':
-                    e.preventDefault();
-                    this._seekToTime(0, true);
-                    break;
-                case 'End':
-                    e.preventDefault();
-                    this._seekToTime(this.audioBuffer.duration, true);
-                    break;
-                default:
-                    break;
-            }
-        });
-        on(this.d.canvasWrapper, 'pointerdown', (e) => this._startViewportPan(e, 'spectrogram'));
-        on(this.d.waveformWrapper, 'pointerdown', (e) => this._startViewportPan(e, 'waveform'));
+        this._bindCanvasInteractionEvents(on);
 
         // ── Playhead drag ──
         on(this.d.playhead, 'pointerdown', (e) => this._startPlayheadDrag(e, 'spectrogram'));
@@ -3440,7 +2043,174 @@ export class PlayerState {
             this._setCompactToolbarOpen(false);
         });
 
-        // ── Overview ──
+        this._bindOverviewEvents(on);
+
+        // ── Window ──
+        on(window, 'resize', () => {
+            this._queueCompactToolbarLayoutRefresh();
+            if (!this._shouldCompactToolbarBeActive()) this._setCompactToolbarOpen(false);
+            if (!this.audioBuffer) return;
+            this._invalidateSpectrogramHeightCache();
+            this._drawSpectrogram();
+            this._drawMainWaveform();
+            this._drawOverviewWaveform();
+            this._syncOverviewWindowToViewport();
+            this._emit('viewresize', {
+                waveformHeight: this.waveformDisplayHeight,
+                spectrogramHeight: this.spectrogramDisplayHeight,
+            });
+        });
+        on(window, 'beforeunload', () => this.dispose());
+    }
+
+    /** Frequency viewport — axis drag pan, wheel zoom, zoom slider, scrollbar drag. */
+    _bindFreqViewportEvents(on) {
+        // ── Freq axis: left-drag = vertical pan ──
+        {
+            let dragging = false;
+            let startY = 0;
+            let startMin = 0;
+            let startMax = 0;
+            const onMove = (e) => {
+                if (!dragging) return;
+                const spacer = this.d.freqAxisSpacer;
+                const spacerH = spacer.getBoundingClientRect().height;
+                const dy = e.clientY - startY;
+                const boundedMax = this.coords.boundedMaxFreq;
+                const range = startMax - startMin;
+                const deltaHz = (dy / spacerH) * range;
+                let newMin = startMin + deltaHz;
+                let newMax = startMax + deltaHz;
+                if (newMin < 0) { newMin = 0; newMax = range; }
+                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+                this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                document.body.style.cursor = '';
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+            };
+            on(this.d.freqAxisSpacer, 'pointerdown', (e) => {
+                if (e.button !== 0 || !this._showSpectrogram) return;
+                if (!this._freqView.isZoomed) return;
+                e.preventDefault();
+                dragging = true;
+                startY = e.clientY;
+                startMin = this._freqView.min ?? 0;
+                startMax = this._freqView.max ?? this.coords.boundedMaxFreq;
+                document.body.style.cursor = 'ns-resize';
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
+
+        // ── Freq axis: wheel = vertical zoom ──
+        on(this.d.freqAxisSpacer, 'wheel', (e) => {
+            if (!this.audioBuffer || !this._showSpectrogram) return;
+            e.preventDefault();
+            const rect = this.d.freqAxisSpacer.getBoundingClientRect();
+            const localY = e.clientY - rect.top;
+            const canvasH = this.d.spectrogramCanvas?.height || rect.height;
+            const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
+            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
+            const zoomIn = e.deltaY < 0;
+            this._freqView.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor, this.coords.boundedMaxFreq);
+        }, { passive: false });
+
+        // ── Freq zoom slider ──
+        on(this.d.freqZoomSlider, 'input', (e) => {
+            this._freqView.setFromSlider(parseInt(e.target.value, 10), this.coords.boundedMaxFreq);
+        });
+
+        // ── Freq scrollbar drag ──
+        {
+            let dragging = false;
+            let startY = 0;
+            let startMin = 0;
+            let startMax = 0;
+            const onMove = (e) => {
+                if (!dragging) return;
+                const bar = this.d.freqScrollbar;
+                const barH = bar.getBoundingClientRect().height;
+                const dy = e.clientY - startY;
+                const boundedMax = this.coords.boundedMaxFreq;
+                const range = startMax - startMin;
+                // dy positive = drag down = lower freqs
+                const deltaFrac = dy / barH;
+                const deltaHz = deltaFrac * boundedMax;
+                let newMin = startMin - deltaHz;
+                let newMax = startMax - deltaHz;
+                if (newMin < 0) { newMin = 0; newMax = range; }
+                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
+                this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                this.d.freqScrollbar?.classList.remove('active');
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+            };
+            on(this.d.freqScrollbarThumb, 'pointerdown', (e) => {
+                if (!this._freqView.isZoomed) return;
+                e.preventDefault();
+                e.stopPropagation();
+                dragging = true;
+                startY = e.clientY;
+                startMin = this._freqView.min ?? 0;
+                startMax = this._freqView.max ?? this.coords.boundedMaxFreq;
+                this.d.freqScrollbar?.classList.add('active');
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
+    }
+
+    /** Canvas and waveform scroll/click/key/pointer interactions. */
+    _bindCanvasInteractionEvents(on) {
+        on(this.d.canvasWrapper, 'click', (e) => this._handleCanvasClick(e));
+        on(this.d.canvasWrapper, 'dblclick', (e) => {
+            if (e.shiftKey) { e.preventDefault(); this._freqView.reset(); }
+        });
+        on(this.d.canvasWrapper, 'mousemove', (e) => this._updateCrosshair(e));
+        on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
+        on(this.d.waveformWrapper, 'click', (e) => this._handleWaveformClick(e));
+        on(this.d.canvasWrapper, 'scroll', () => {
+            if (this.scrollSyncLock) return;
+            if (this._getPrimaryScrollWrapper() !== this.d.canvasWrapper) return;
+            this._setLinkedScrollLeft(this.d.canvasWrapper.scrollLeft);
+            // Viewport-rendering: synchronous redraw so the canvas doesn't lag
+            // behind the label overlay which the browser scrolls natively.
+            if (this._spectro.hasData) this._drawSpectrogram();
+        });
+        on(this.d.waveformWrapper, 'scroll', () => {
+            if (this.scrollSyncLock) return;
+            if (this._getPrimaryScrollWrapper() !== this.d.waveformWrapper) return;
+            this._setLinkedScrollLeft(this.d.waveformWrapper.scrollLeft);
+            // Sync the spectrogram viewport when the waveform is the primary scroller.
+            if (this._spectro.hasData) this._drawSpectrogram();
+        });
+        on(this.d.canvasWrapper, 'wheel', (e) => this._handleWheel(e, 'spectrogram'), { passive: false });
+        on(this.d.waveformWrapper, 'wheel', (e) => this._handleWheel(e, 'waveform'), { passive: false });
+        on(this.d.canvasWrapper, 'keydown', (e) => {
+            if (!this.audioBuffer) return;
+            if (isTypingContext(e.target)) return;
+            switch (e.key) {
+                case 'ArrowLeft':  e.preventDefault(); this._seekByDelta(-SEEK_FINE_SEC); break;
+                case 'ArrowRight': e.preventDefault(); this._seekByDelta(SEEK_FINE_SEC); break;
+                case 'Home': e.preventDefault(); this._seekToTime(0, true); break;
+                case 'End':  e.preventDefault(); this._seekToTime(this.audioBuffer.duration, true); break;
+                default: break;
+            }
+        });
+        on(this.d.canvasWrapper, 'pointerdown', (e) => this._startViewportPan(e, 'spectrogram'));
+        on(this.d.waveformWrapper, 'pointerdown', (e) => this._startViewportPan(e, 'waveform'));
+    }
+
+    /** Overview waveform: handle drag, window drag, click-to-seek, label toggle. */
+    _bindOverviewEvents(on) {
         on(this.d.overviewHandleLeft, 'pointerdown', (e) => {
             if (!this._showOverview) return;
             e.preventDefault();
@@ -3466,23 +2236,6 @@ export class PlayerState {
             this._seekToTime(xNorm * this.audioBuffer.duration, true);
         });
         on(this.d.overviewLabelToggle, 'click', () => this._toggleOverviewLabelSection());
-
-        // ── Window ──
-        on(window, 'resize', () => {
-            this._queueCompactToolbarLayoutRefresh();
-            if (!this._shouldCompactToolbarBeActive()) this._setCompactToolbarOpen(false);
-            if (!this.audioBuffer) return;
-            this._invalidateSpectrogramHeightCache();
-            this._drawSpectrogram();
-            this._drawMainWaveform();
-            this._drawOverviewWaveform();
-            this._syncOverviewWindowToViewport();
-            this._emit('viewresize', {
-                waveformHeight: this.waveformDisplayHeight,
-                spectrogramHeight: this.spectrogramDisplayHeight,
-            });
-        });
-        on(window, 'beforeunload', () => this.dispose());
     }
 
     _bindTouchGestures() {
