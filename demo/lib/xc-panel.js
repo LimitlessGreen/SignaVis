@@ -110,6 +110,7 @@ export function defaultSetInfo(partial = {}) {
     id: '',
     origin: 'manual',
     name: '',
+    locked: false,
     license: '',
     creator: '',
     creatorId: '',

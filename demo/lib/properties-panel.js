@@ -51,7 +51,6 @@ const RECORDING_FIELDS = [
 const LABEL_FIELDS = [
   { key: 'label',            label: 'Name',            edit: 'text' },
   { key: 'scientificName',   label: 'Scientific name', edit: 'text' },
-  { key: 'commonName',       label: 'Common name',     edit: 'text' },
   { key: 'start',            label: 'Start',           edit: 'number', step: 0.001, suffix: 's', fmt: (v) => `${Number(v).toFixed(3)} s` },
   { key: 'end',              label: 'End',             edit: 'number', step: 0.001, suffix: 's', fmt: (v) => `${Number(v).toFixed(3)} s` },
   { key: 'freqMin',          label: 'Freq min',        edit: 'number', step: 1,     suffix: 'Hz', fmt: (v) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
@@ -173,6 +172,25 @@ export class PropertiesPanel {
   /** @returns {object|null} The currently displayed label */
   get displayedLabel() {
     return this._hoverLabel || this._pinnedLabel;
+  }
+
+  /**
+   * Scroll the label section into view and briefly highlight it.
+   * Call this after pinLabel() when navigating from another tab.
+   */
+  highlightLabelSection() {
+    const section = this._lblSection;
+    if (!section) return;
+    // Remove class first so the animation can restart
+    section.classList.remove('props-section--highlight');
+    // Force reflow so removing + re-adding triggers the animation fresh
+    void section.offsetWidth;
+    section.classList.add('props-section--highlight');
+    section.addEventListener('animationend', () => {
+      section.classList.remove('props-section--highlight');
+    }, { once: true });
+    // Scroll into view (smooth, but fallback gracefully)
+    try { section.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch {}
   }
 
   /**

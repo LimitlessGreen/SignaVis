@@ -1,0 +1,99 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Reusable context menu
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  padding: 4px 0;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.2);
+  outline: none;
+  user-select: none;
+
+  // Open animation
+  opacity: 0;
+  transform: scale(0.93);
+  transform-origin: top left;
+  transition: opacity 0.1s ease, transform 0.1s ease;
+  pointer-events: none;
+
+  &.ctx-menu--open {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+}
+
+/* ── Item ──────────────────────────────────────────────────────────────── */
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.08s;
+
+  &:hover,
+  &.ctx-item--active {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+  }
+
+  &.ctx-item--danger {
+    color: #ef4444;
+
+    &:hover,
+    &.ctx-item--active {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+    }
+  }
+
+  &.ctx-item--disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+  }
+}
+
+/* ── Icon wrapper ──────────────────────────────────────────────────────── */
+.ctx-item-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    display: block;
+  }
+}
+
+/* ── Separator ─────────────────────────────────────────────────────────── */
+.ctx-sep {
+  height: 1px;
+  background: var(--color-border);
+  margin: 3px 0;
+}

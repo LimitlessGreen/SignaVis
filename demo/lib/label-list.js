@@ -14,7 +14,10 @@
  */
 
 import { TAG_PRESETS } from './label-table.js';
-import { createEditableSelect } from './editable-select.js';
+import { showContextMenu } from './context-menu.js';
+
+const BIRD_IMG_BASE = 'https://birdnet.cornell.edu/api2/bird/';
+const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 // Tags that belong to the set header — never shown as per-instance badges
@@ -102,11 +105,12 @@ export class LabelList {
     this._onRenameSet = opts.onRenameSet || null;
     this._onDeleteSet = opts.onDeleteSet || null;
     this._onAssignSet = opts.onAssignSet || null;
+    this._onAssignSpecies = opts.onAssignSpecies || null;
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
+    this._onToggleLockSet = opts.onToggleLockSet || null;
     /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._cardMap = new Map();
-    this._esInstances = [];
     this._selectedId = null;
     /** @type {Set<string>} */
     this._multiSelectedIds = new Set();
@@ -115,8 +119,6 @@ export class LabelList {
     this._expandedGroups = new Set();
     /** @type {Set<string>} annotation set keys that are expanded */
     this._expandedSets = new Set();
-    /** @type {Set<string>} label ids whose detail section is open */
-    this._detailOpenIds = new Set();
     /** @type {HTMLElement|null} */
     this._bulkToolbar = null;
   }
@@ -147,12 +149,11 @@ export class LabelList {
     for (const id of this._multiSelectedIds) {
       if (!idSet.has(id)) this._multiSelectedIds.delete(id);
     }
-    for (const es of this._esInstances) es.destroy();
-    this._esInstances = [];
     this._container.innerHTML = '';
     this._cardMap = new Map();
     if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
-    this._emptyEl.style.display = labels.length ? 'none' : '';
+    const hasSets = this._getSets ? this._getSets().size > 0 : false;
+    this._emptyEl.style.display = (labels.length || hasSets) ? 'none' : '';
 
     const ORIGIN_ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
     const setsRegistry = this._getSets ? this._getSets() : new Map();
@@ -161,6 +162,12 @@ export class LabelList {
     // Labels with no set are grouped into a virtual '' key (rendered without a set header)
     /** @type {Map<string, {setInfo: any, origin: string, nameMap: Map<string, any[]>}>} */
     const setGroups = new Map();
+
+    // Pre-seed empty sets so they appear even with no labels
+    for (const [setId, setInfo] of setsRegistry) {
+      const origin = setInfo.origin || 'manual';
+      if (!setGroups.has(setId)) setGroups.set(setId, { setInfo, origin, nameMap: new Map() });
+    }
 
     for (const lbl of labels) {
       const origin = lbl.origin || 'manual';
@@ -196,19 +203,20 @@ export class LabelList {
       const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
 
       if (setKey) {
+        const locked = !!setInfo?.locked;
         const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
           const frag = document.createDocumentFragment();
           for (const name of names) {
             const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
-            frag.appendChild(this._buildGroup(instances));
+            frag.appendChild(this._buildGroup(instances, locked));
           }
           return frag;
-        });
+        }, locked);
         this._container.appendChild(setSection);
       } else {
         for (const name of names) {
           const instances = nameMap.get(name).slice().sort((a, b) => a.start - b.start);
-          this._container.appendChild(this._buildGroup(instances));
+          this._container.appendChild(this._buildGroup(instances, false));
         }
       }
     }
@@ -348,8 +356,10 @@ export class LabelList {
     if (group && !group.classList.contains('expanded')) {
       // Ensure parent set body is visible so measurements work
       const setBody = inst.closest('.label-set-body');
-      if (setBody && setBody.hidden) {
-        setBody.hidden = false;
+      if (setBody && setBody.style.maxHeight === '0px') {
+        setBody.style.maxHeight = 'none';
+        setBody.style.opacity = '1';
+        setBody.style.overflow = 'visible';
         const sec = setBody.closest('.label-set-section');
         if (sec) sec.classList.add('expanded');
       }
@@ -427,9 +437,10 @@ export class LabelList {
 
   // ── Annotation set section ──────────────────────────────────────────
 
-  _buildSetSection(setInfo, setKey, totalCount, buildBody) {
+  _buildSetSection(setInfo, setKey, totalCount, buildBody, locked = false) {
     const section = document.createElement('div');
     section.className = 'label-set-section';
+    if (locked) section.classList.add('label-set-section--locked');
 
     const isExpanded = this._expandedSets.has(setKey) !== false;  // expanded by default
     if (!this._expandedSets.has(setKey + '__init')) {
@@ -444,7 +455,7 @@ export class LabelList {
 
     const chevron = document.createElement('span');
     chevron.className = 'label-set-chevron';
-    chevron.textContent = '▸';
+    chevron.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
     hdr.appendChild(chevron);
 
     const nameWrap = document.createElement('div');
@@ -542,6 +553,17 @@ export class LabelList {
       convBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onConvertSetToManual(setKey); });
       setActions.appendChild(convBtn);
     }
+    if (this._onToggleLockSet) {
+      const lockBtn = document.createElement('button');
+      lockBtn.className = 'act-btn label-set-action-btn label-set-lock-btn';
+      lockBtn.title = locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)';
+      lockBtn.innerHTML = locked
+        ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>'
+        : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0"/></svg>';
+      if (locked) lockBtn.classList.add('label-set-lock-btn--locked');
+      lockBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleLockSet(setKey, !locked); });
+      setActions.appendChild(lockBtn);
+    }
     if (this._onRenameSet) {
       const renBtn = document.createElement('button');
       renBtn.className = 'act-btn label-set-action-btn';
@@ -606,7 +628,6 @@ export class LabelList {
     // ── Collapsible body ──
     const body = document.createElement('div');
     body.className = 'label-set-body';
-    body.hidden = !expanded;
     section.classList.toggle('expanded', expanded);
 
     // Build group content lazily on first expand
@@ -616,18 +637,66 @@ export class LabelList {
       built = true;
       body.appendChild(buildBody());
     };
-    if (expanded) ensureBuilt();
+
+    // Set initial state without animation
+    if (expanded) {
+      ensureBuilt();
+      body.style.maxHeight = 'none';
+      body.style.opacity = '1';
+      body.style.overflow = 'visible';
+    } else {
+      body.style.maxHeight = '0px';
+      body.style.opacity = '0';
+      body.style.overflow = 'hidden';
+    }
+
+    const expandSet = () => {
+      ensureBuilt();
+      body.style.overflow = 'hidden';
+      body.style.display = '';
+      const height = body.scrollHeight;
+      body.style.maxHeight = '0px';
+      body.style.opacity = '0';
+      requestAnimationFrame(() => {
+        body.style.transition = 'max-height 260ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease';
+        body.style.maxHeight = height + 'px';
+        body.style.opacity = '1';
+      });
+      const onEnd = (e) => {
+        if (e.target !== body || e.propertyName !== 'max-height') return;
+        body.style.maxHeight = 'none';
+        body.style.overflow = 'visible';
+        body.style.transition = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      body.addEventListener('transitionend', onEnd);
+      section.classList.add('expanded');
+      this._expandedSets.add(setKey);
+    };
+
+    const collapseSet = () => {
+      const height = body.scrollHeight || body.offsetHeight || 0;
+      body.style.overflow = 'hidden';
+      body.style.maxHeight = height + 'px';
+      body.style.opacity = '1';
+      requestAnimationFrame(() => {
+        body.style.transition = 'max-height 200ms cubic-bezier(.2,.8,.2,1), opacity 140ms ease';
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+      });
+      const onEnd = (e) => {
+        if (e.target !== body || e.propertyName !== 'max-height') return;
+        body.style.transition = '';
+        body.removeEventListener('transitionend', onEnd);
+      };
+      body.addEventListener('transitionend', onEnd);
+      section.classList.remove('expanded');
+      this._expandedSets.delete(setKey);
+    };
 
     hdr.addEventListener('click', () => {
-      const wasExpanded = !body.hidden;
-      body.hidden = wasExpanded;
-      section.classList.toggle('expanded', !wasExpanded);
-      if (!wasExpanded) {
-        ensureBuilt();
-        this._expandedSets.add(setKey);
-      } else {
-        this._expandedSets.delete(setKey);
-      }
+      if (section.classList.contains('expanded')) collapseSet();
+      else expandSet();
     });
 
     section.appendChild(body);
@@ -636,7 +705,7 @@ export class LabelList {
 
   // ── Species group builder ───────────────────────────────────────────
 
-  _buildGroup(instances) {
+  _buildGroup(instances, locked = false) {
     const representative = instances[0];
     const { display, scientific } = this._resolveName(representative);
     const origin = representative.origin || 'manual';
@@ -652,10 +721,40 @@ export class LabelList {
 
     const chevron = document.createElement('span');
     chevron.className = 'label-group-chevron';
-    chevron.textContent = '▸';
+    chevron.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
     row.appendChild(chevron);
 
-    if (representative.color) {
+    // Bird thumbnail — shown once per species group, not per instance
+    const sciName = representative.scientificName || scientific || null;
+    if (sciName) {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'lbl-group-img-wrap';
+      const img = document.createElement('img');
+      img.className = 'lbl-group-img';
+      const imgSrc = `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp`;
+      img.src = imgSrc;
+      img.alt = sciName;
+      img.loading = 'lazy';
+      let imgFailed = false;
+      img.addEventListener('error', () => { imgFailed = true; img.src = BIRD_IMG_FALLBACK; }, { once: true });
+      imgWrap.appendChild(img);
+
+      // Hover popover — larger preview
+      const popover = document.createElement('div');
+      popover.className = 'lbl-img-popover';
+      const popImg = document.createElement('img');
+      popImg.src = imgSrc;
+      popImg.alt = sciName;
+      popImg.addEventListener('error', () => { popImg.src = BIRD_IMG_FALLBACK; }, { once: true });
+      const popCaption = document.createElement('span');
+      popCaption.className = 'lbl-img-popover-caption';
+      popCaption.textContent = sciName;
+      popover.appendChild(popImg);
+      popover.appendChild(popCaption);
+      imgWrap.appendChild(popover);
+
+      row.appendChild(imgWrap);
+    } else if (representative.color) {
       const dot = document.createElement('span');
       dot.className = 'color-dot';
       dot.style.background = representative.color;
@@ -665,11 +764,13 @@ export class LabelList {
     const nameEl = document.createElement('span');
     nameEl.className = 'label-group-name';
     nameEl.textContent = display;
-    nameEl.title = 'Click to inline-edit name';
-    nameEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._startGroupInlineEdit(nameEl, instances, display);
-    });
+    if (!locked) {
+      nameEl.title = 'Click to inline-edit name';
+      nameEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._startGroupInlineEdit(nameEl, instances, display);
+      });
+    }
     row.appendChild(nameEl);
 
     if (instances.length > 1) {
@@ -683,21 +784,42 @@ export class LabelList {
     spacer.style.flex = '1';
     row.appendChild(spacer);
 
-    const editBtn = document.createElement('button');
-    editBtn.className = 'act-btn';
-    editBtn.textContent = '✎';
-    editBtn.title = instances.length > 1
-      ? `Edit species for all ${instances.length} instances`
-      : 'Edit species';
-    editBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (instances.length > 1 && this._onBulkEdit) {
-        this._onBulkEdit(instances.map((l) => l.id));
-      } else {
-        this._onEdit?.(representative.id);
-      }
-    });
-    row.appendChild(editBtn);
+    if (!locked) {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'act-btn';
+      editBtn.textContent = '✎';
+      editBtn.title = instances.length > 1
+        ? `Edit species for all ${instances.length} instances`
+        : 'Edit species';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (instances.length > 1 && this._onBulkEdit) {
+          this._onBulkEdit(instances.map((l) => l.id));
+        } else {
+          this._onEdit?.(representative.id);
+        }
+      });
+      row.appendChild(editBtn);
+    }
+
+    // Drop a label instance onto a group row → rename to this species
+    if (this._onAssignSpecies) {
+      row.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes('text/label-id')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', (e) => {
+        if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const labelId = e.dataTransfer.getData('text/label-id');
+        if (labelId) this._onAssignSpecies(labelId, representative);
+      });
+    }
 
     group.appendChild(row);
 
@@ -712,7 +834,7 @@ export class LabelList {
     instanceList.className = 'label-group-instances';
 
     for (const lbl of instances) {
-      const inst = this._buildInstance(lbl);
+      const inst = this._buildInstance(lbl, locked);
       instanceList.appendChild(inst);
       this._cardMap.set(lbl.id, inst);
     }
@@ -743,15 +865,15 @@ export class LabelList {
 
   // ── Instance builder ────────────────────────────────────────────────
 
-  _buildInstance(lbl) {
+  _buildInstance(lbl, locked = false) {
     const inst = document.createElement('div');
     inst.className = 'label-instance';
+    if (locked) inst.classList.add('label-instance--locked');
     inst.dataset.labelId = lbl.id;
-    // Color left border via CSS variable
     if (lbl.color) inst.style.setProperty('--lbl-color', lbl.color);
 
     // ── Drag to set ──
-    if (this._onAssignSet) {
+    if (this._onAssignSet && !locked) {
       inst.draggable = true;
       inst.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/label-id', lbl.id);
@@ -760,6 +882,31 @@ export class LabelList {
       });
       inst.addEventListener('dragend', () => inst.classList.remove('dragging'));
     }
+
+    // ── Content wrapper ──
+    const content = document.createElement('div');
+    content.className = 'lbl-content';
+
+    inst.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const items = locked
+        ? [{ label: 'Locked — unlock set to edit', disabled: true }]
+        : [
+            {
+              label: 'Rename',
+              icon: '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>',
+              action: () => this._onEdit?.(lbl.id),
+            },
+            { separator: true },
+            {
+              label: 'Delete',
+              icon: '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>',
+              action: () => this._onRemove?.(lbl),
+              danger: true,
+            },
+          ];
+      showContextMenu({ x: e.clientX, y: e.clientY, items });
+    });
 
     inst.addEventListener('click', (e) => {
       if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.esel')) return;
@@ -786,7 +933,7 @@ export class LabelList {
     inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
     inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
 
-    // ── Header row ──
+    // ── Header row (inside content wrapper) ──
     const header = document.createElement('div');
     header.className = 'label-instance-header';
 
@@ -828,60 +975,61 @@ export class LabelList {
     spacer.style.flex = '1';
     header.appendChild(spacer);
 
-    // Actions (hidden until hover)
+    // Actions (hidden until hover; suppressed when set is locked)
     const actions = document.createElement('div');
     actions.className = 'label-instance-actions';
 
-    const speciesBtn = document.createElement('button');
-    speciesBtn.className = 'act-btn species-edit-btn';
-    // Use inline SVG for consistent styling with other action icons
-    speciesBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3 3 11l8 8 9.59-5.59z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
-    speciesBtn.title = 'Change species for this label';
-    speciesBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
-    actions.appendChild(speciesBtn);
+    if (!locked) {
+      const speciesBtn = document.createElement('button');
+      speciesBtn.className = 'act-btn species-edit-btn';
+      speciesBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3 3 11l8 8 9.59-5.59z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
+      speciesBtn.title = 'Change species for this label';
+      speciesBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
+      actions.appendChild(speciesBtn);
 
-    const editToggle = document.createElement('button');
-    editToggle.className = 'act-btn edit-toggle';
-    editToggle.title = 'Edit tags';
-    editToggle.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-    actions.appendChild(editToggle);
+      const propsBtn = document.createElement('button');
+      propsBtn.className = 'act-btn props-btn';
+      propsBtn.title = 'Edit in Properties tab';
+      propsBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+      propsBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
+      actions.appendChild(propsBtn);
 
-    const delBtn = document.createElement('button');
-    delBtn.className = 'act-btn danger';
-    delBtn.textContent = '×';
-    delBtn.title = 'Remove';
-    delBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onRemove?.(lbl); });
-    actions.appendChild(delBtn);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'act-btn danger';
+      delBtn.textContent = '×';
+      delBtn.title = 'Remove';
+      delBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onRemove?.(lbl); });
+      actions.appendChild(delBtn);
+    }
 
     header.appendChild(actions);
-    inst.appendChild(header);
+    content.appendChild(header);
+
+    // ── Confidence bar (when available — replaces confidence pill) ──
+    if (lbl.confidence != null) {
+      const confPct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
+      const confRow = document.createElement('div');
+      confRow.className = 'lbl-conf-row';
+      confRow.innerHTML = `
+        <div class="lbl-conf-bar-track" role="progressbar"
+             aria-valuenow="${confPct}" aria-valuemin="0" aria-valuemax="100">
+          <div class="lbl-conf-bar-fill" style="width:${confPct}%"></div>
+        </div>
+        <span class="lbl-conf-pct">${confPct}%</span>`;
+      content.appendChild(confRow);
+    }
 
     // ── Tag pills row (always visible) ──
     const tagsEl = this._buildTagPills(lbl);
-    inst.appendChild(tagsEl);
+    content.appendChild(tagsEl);
 
-    // ── Expandable detail ──
-    const detail = this._buildDetail(lbl);
-    const isOpen = this._detailOpenIds.has(lbl.id);
-    detail.style.display = isOpen ? '' : 'none';
-    tagsEl.style.display = isOpen ? 'none' : '';
-    inst.classList.toggle('expanded', isOpen);
-    inst.appendChild(detail);
+    inst.appendChild(content);
 
-    const toggleDetail = () => {
-      const open = detail.style.display !== 'none';
-      detail.style.display = open ? 'none' : '';
-      tagsEl.style.display = open ? '' : 'none';
-      inst.classList.toggle('expanded', !open);
-      if (open) this._detailOpenIds.delete(lbl.id);
-      else this._detailOpenIds.add(lbl.id);
-    };
-
-    editToggle.addEventListener('click', (e) => { e.stopPropagation(); toggleDetail(); });
     inst.addEventListener('dblclick', (e) => {
+      if (locked) return;
       if (e.target.closest('.act-btn') || e.target.closest('input') || e.target.closest('select') || e.target.closest('.esel')) return;
       e.stopPropagation();
-      toggleDetail();
+      this._onEdit?.(lbl.id);
     });
 
     return inst;
@@ -929,111 +1077,12 @@ export class LabelList {
       el.appendChild(p);
     }
 
-    if (lbl.confidence != null) {
-      const p = document.createElement('span');
-      p.className = 'lbl-pill lbl-pill--conf';
-      p.textContent = Math.round(Number(lbl.confidence) * 100) + '%';
-      el.appendChild(p);
-    }
+    // confidence is shown as a bar in _buildInstance, not as a pill here
 
     return el;
   }
 
   // ── Expandable detail section ───────────────────────────────────────
-
-  _buildDetail(lbl) {
-    const detail = document.createElement('div');
-    detail.className = 'label-card-detail';
-    const store = this._tagStore;
-
-    for (const preset of TAG_PRESETS) {
-      const row = document.createElement('div');
-      row.className = 'detail-row';
-      const label = document.createElement('label');
-      label.className = 'detail-label';
-      label.textContent = preset.key;
-      row.appendChild(label);
-
-      const items = store
-        ? store.getMerged(preset.key, preset.options)
-        : preset.options.map((v) => ({ value: v, custom: false }));
-      const es = createEditableSelect({
-        placeholder: '–',
-        value: lbl.tags?.[preset.key] || '',
-        items,
-        onChange: (val) => {
-          if (!lbl.tags) lbl.tags = {};
-          if (val) lbl.tags[preset.key] = val;
-          else delete lbl.tags[preset.key];
-          this._onSync();
-        },
-        onAdd: store ? (val) => store.add(preset.key, val) : undefined,
-        onRemove: store ? (val) => store.remove(preset.key, val) : undefined,
-        onRename: store ? (old, nw) => store.rename(preset.key, old, nw) : undefined,
-      });
-      es.el.addEventListener('click', (e) => e.stopPropagation());
-      this._esInstances.push(es);
-      row.appendChild(es.el);
-      detail.appendChild(row);
-    }
-
-    // Annotator (read-only if from XC)
-    if (lbl.author) {
-      const row = document.createElement('div');
-      row.className = 'detail-row detail-row--meta';
-      const lbl2 = document.createElement('span');
-      lbl2.className = 'detail-label';
-      lbl2.textContent = 'annotator';
-      const val = document.createElement('span');
-      val.className = 'detail-value-muted';
-      val.textContent = lbl.author;
-      row.appendChild(lbl2);
-      row.appendChild(val);
-      detail.appendChild(row);
-    }
-
-    const customTags = document.createElement('div');
-    customTags.className = 'detail-custom-tags';
-    this._renderCustomTags(customTags, lbl);
-    detail.appendChild(customTags);
-
-    const addRow = document.createElement('div');
-    addRow.className = 'detail-row';
-    const addBtn = document.createElement('button');
-    addBtn.className = 'tag-add-btn';
-    addBtn.textContent = '+ Tag';
-    addBtn.addEventListener('click', (e) => { e.stopPropagation(); this._showCustomTagPopover(customTags, lbl, addBtn); });
-    addRow.appendChild(addBtn);
-    detail.appendChild(addRow);
-
-    return detail;
-  }
-
-  _renderCustomTags(container, lbl) {
-    container.innerHTML = '';
-    const tags = lbl.tags || {};
-    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k) && !SET_TAG_KEYS.has(k));
-    for (const [k, v] of custom) {
-      const badge = document.createElement('span');
-      badge.className = 'label-tag-badge';
-      const keySpan = document.createElement('span');
-      keySpan.className = 'tag-key';
-      keySpan.textContent = k;
-      badge.appendChild(keySpan);
-      badge.appendChild(document.createTextNode(': ' + v + ' '));
-      const del = document.createElement('button');
-      del.className = 'label-tag-badge-del';
-      del.textContent = '×';
-      del.addEventListener('click', (e) => {
-        e.stopPropagation();
-        delete lbl.tags[k];
-        this._renderCustomTags(container, lbl);
-        this._onSync();
-      });
-      badge.appendChild(del);
-      container.appendChild(badge);
-    }
-  }
 
   // ── Inline name editing (group-level) ──────────────────────────────
 
@@ -1098,65 +1147,4 @@ export class LabelList {
     }
   }
 
-  // ── Custom tag popover ──────────────────────────────────────────────
-
-  _showCustomTagPopover(customTagsContainer, lbl, anchorBtn) {
-    document.querySelector('.tag-popover')?.remove();
-    const pop = document.createElement('div');
-    pop.className = 'tag-popover';
-    pop.addEventListener('click', (e) => e.stopPropagation());
-
-    const rect = anchorBtn.getBoundingClientRect();
-    pop.style.left = rect.left + 'px';
-    pop.style.top = (rect.bottom + 4) + 'px';
-    requestAnimationFrame(() => {
-      const pr = pop.getBoundingClientRect();
-      if (pr.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - pr.width - 8) + 'px';
-      if (pr.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, rect.top - pr.height - 4) + 'px';
-    });
-
-    const row = document.createElement('div');
-    row.className = 'tag-pop-row';
-    const keyInput = document.createElement('input');
-    keyInput.placeholder = 'key';
-    keyInput.style.width = '60px';
-    const valInput = document.createElement('input');
-    valInput.placeholder = 'value';
-    valInput.style.flex = '1';
-    const okBtn = document.createElement('button');
-    okBtn.className = 'tag-add-btn';
-    okBtn.textContent = '✓';
-
-    const commitCustom = () => {
-      const k = keyInput.value.trim();
-      const v = valInput.value.trim();
-      if (k && v) {
-        if (!lbl.tags) lbl.tags = {};
-        lbl.tags[k] = v;
-        pop.remove();
-        this._renderCustomTags(customTagsContainer, lbl);
-        this._onSync();
-      }
-    };
-    okBtn.addEventListener('click', (e) => { e.stopPropagation(); commitCustom(); });
-    valInput.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Enter') { e.preventDefault(); commitCustom(); }
-    });
-    keyInput.addEventListener('keydown', (e) => e.stopPropagation());
-    row.appendChild(keyInput);
-    row.appendChild(valInput);
-    row.appendChild(okBtn);
-    pop.appendChild(row);
-
-    const closeHandler = (e) => {
-      if (!pop.contains(e.target) && e.target !== anchorBtn) {
-        pop.remove();
-        document.removeEventListener('pointerdown', closeHandler, true);
-      }
-    };
-    setTimeout(() => document.addEventListener('pointerdown', closeHandler, true), 0);
-    document.body.appendChild(pop);
-    keyInput.focus();
-  }
 }

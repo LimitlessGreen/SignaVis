@@ -1097,6 +1097,8 @@ export class SpectrogramLabelLayer {
         this._suppressContextMenuUntil = 0;
         this._focusedLabelId = null;
         this._selectedLabelId = null;
+        /** @type {Set<string>} ids of labels whose set is locked — no drag/resize/edit */
+        this._lockedIds = new Set();
         /** @type {Set<string>} ids toggled via Ctrl+Click for bulk actions */
         this._multiSelectedIds = new Set();
         this._clipboard = null;
@@ -1182,6 +1184,15 @@ export class SpectrogramLabelLayer {
 
     getAll() {
         return [...this.labels];
+    }
+
+    /**
+     * Mark a set of label ids as locked (no drag, resize, edit, delete).
+     * @param {Set<string>|string[]} ids
+     */
+    setLockedIds(ids = []) {
+        this._lockedIds = new Set(ids);
+        this.render();
     }
 
     setLiveLinkedId(id = null) {
@@ -1376,6 +1387,8 @@ export class SpectrogramLabelLayer {
     _createLabelElement(label, canvasWidth, canvasHeight) {
         const el = document.createElement('div');
         el.className = 'spectrogram-label-region';
+        const isLocked = this._lockedIds.has(label.id);
+        if (isLocked) el.classList.add('spectrogram-label-region--locked');
         const isSuggestion = label.origin && label.origin !== 'manual' && label.origin !== 'xeno-canto';
         if (isSuggestion) el.classList.add('suggestion');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
@@ -1431,7 +1444,8 @@ export class SpectrogramLabelLayer {
         `;
 
         const editBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-edit-btn'));
-        if (editBtn) {
+        if (isLocked && editBtn) editBtn.style.display = 'none';
+        if (editBtn && !isLocked) {
             editBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1444,7 +1458,8 @@ export class SpectrogramLabelLayer {
         }
 
         const deleteBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-delete-btn'));
-        if (deleteBtn) {
+        if (isLocked && deleteBtn) deleteBtn.style.display = 'none';
+        if (deleteBtn && !isLocked) {
             deleteBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1505,11 +1520,13 @@ export class SpectrogramLabelLayer {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (isLocked) return;
             this._suppressClickUntil = performance.now() + 250;
             this._renameSpectrogramLabelPrompt(label.id);
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
+            if (isLocked) { event.preventDefault(); event.stopPropagation(); return; }
             // In stamp mode, clicking a label sets the stamp reference — do NOT start move
             if (this.stampMode) {
                 this._stampRefLabelId = label.id;

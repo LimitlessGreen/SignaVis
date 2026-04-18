@@ -108,6 +108,19 @@
 .props-tag-header { margin-top: 8px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-secondary); }
 .props-color-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .props-section-title.props-hover-hint { color: var(--color-accent); font-style: italic; }
+
+/* Highlight animation — triggered when navigating from label list */
+@keyframes props-section-highlight {
+  0%   { box-shadow: none; background: transparent; }
+  15%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(57, 181, 255, 0.08); }
+  60%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(57, 181, 255, 0.08); }
+  100% { box-shadow: none; background: transparent; }
+}
+.props-section--highlight {
+  animation: props-section-highlight 0.9s ease-in-out;
+  border-radius: 4px;
+}
+
 /* Annotation set section — subtle tint to distinguish from recording/label sections */
 .props-section--set .props-section-title { color: rgba(56, 189, 248, 0.65); }
 .props-section--set .props-section-body { background: rgba(56, 189, 248, 0.03); }

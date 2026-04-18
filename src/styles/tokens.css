@@ -73,6 +73,48 @@
 }
 
 /* ═══════════════════════════════════════════════════════
+   Dark theme — explicit toggle via html[data-theme="dark"]
+   Overrides prefers-color-scheme: light when user toggles.
+   ═══════════════════════════════════════════════════════ */
+html[data-theme="dark"] {
+    --color-bg-primary:       #1a1a2e;
+    --color-bg-secondary:     #16213e;
+    --color-bg-tertiary:      #0f3460;
+    --color-bg-surface:       #1a1a2e;
+
+    --color-text-primary:     #e0e0e0;
+    --color-text-secondary:   #8892a4;
+
+    --color-accent:           #38bdf8;
+    --color-accent-hover:     #0ea5e9;
+    --color-accent-faint:     rgba(56, 189, 248, 0.08);
+
+    --color-border:           rgba(255, 255, 255, 0.08);
+
+    --color-toolbar:          #12121f;
+    --color-statusbar:        #0e0e1a;
+    --color-playhead:         #ef4444;
+    --color-overlay-bg:       rgba(0, 0, 0, 0.55);
+
+    --color-danger:           #f87171;
+    --color-danger-soft:      rgba(248, 113, 113, 0.10);
+    --color-success:          #4ade80;
+    --color-success-soft:     rgba(74, 222, 128, 0.35);
+    --color-success-faint:    rgba(74, 222, 128, 0.08);
+    --color-detection:        #f59e0b;
+
+    --input-bg:               rgba(255, 255, 255, 0.03);
+    --input-bg-weak:          rgba(255, 255, 255, 0.06);
+    --input-hover-bg:         rgba(255, 255, 255, 0.04);
+    --shadow-strong:          rgba(0, 0, 0, 0.50);
+
+    --scrollbar-track:        rgba(255, 255, 255, 0.03);
+    --scrollbar-thumb:        rgba(255, 255, 255, 0.12);
+    --scrollbar-thumb-hover:  rgba(255, 255, 255, 0.18);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.22);
+}
+
+/* ═══════════════════════════════════════════════════════
    Light theme — system preference
    ═══════════════════════════════════════════════════════ */
 @media (prefers-color-scheme: light) {

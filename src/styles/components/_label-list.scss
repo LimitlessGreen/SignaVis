@@ -74,31 +74,54 @@
 .label-origin-header:hover .label-origin-add-set-btn,
 .label-origin-add-set-btn:hover { opacity: 1; background: var(--color-accent-faint); }
 
-/* ── Annotation set section ───────────────────────────────────────────── */
-.label-set-section { border-bottom: 1px solid var(--color-border); }
+/* ── Annotation set section — LEVEL 1 ────────────────────────────────── */
+// Each set is a visually distinct card/block separated from siblings
+.label-set-section {
+  border-bottom: 2px solid var(--color-bg-primary);  // thick gap acts as visual separator
+  // 4px left accent, colored by origin (always visible)
+  border-left: 4px solid rgba(255,255,255,0.08);
+}
+.label-set-section:has(.label-set-origin--birdnet)  { border-left-color: rgba(16,185,129,0.5); }
+.label-set-section:has(.label-set-origin--xeno-canto) { border-left-color: rgba(56,189,248,0.5); }
+.label-set-section:has(.label-set-origin--manual)   { border-left-color: rgba(148,163,184,0.35); }
+
+// Locked set
+.label-set-section--locked {
+  opacity: 0.88;
+  > .label-set-header { cursor: default; }
+  .label-set-lock-btn--locked { opacity: 1 !important; color: #fbbf24 !important; }
+}
 
 .label-set-header {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px 5px 8px;
+  padding: 7px 10px 7px 8px;
   cursor: pointer;
   user-select: none;
-  background: rgba(0, 0, 0, 0.15);
+  // Noticeably darker than the group rows — makes SET feel like a "folder"
+  background: rgba(0, 0, 0, 0.28);
   border-bottom: 1px solid transparent;
   transition: background 0.1s;
 }
-.label-set-header:hover { background: rgba(56, 189, 248, 0.07); }
-.label-set-section.expanded > .label-set-header { border-bottom-color: var(--color-border); }
+.label-set-header:hover { background: rgba(0, 0, 0, 0.2); }
+.label-set-section.expanded > .label-set-header {
+  border-bottom-color: var(--color-border);
+  background: rgba(0, 0, 0, 0.22);
+}
 
 .label-set-chevron {
   flex-shrink: 0;
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   color: var(--color-text-secondary);
-  width: 10px;
-  text-align: center;
-  transition: transform 0.15s ease;
+  transition: transform 0.18s ease, color 0.15s;
+  svg { width: 14px; height: 14px; display: block; }
 }
+.label-set-header:hover .label-set-chevron { color: var(--color-text-primary); }
 .label-set-section.expanded > .label-set-header .label-set-chevron { transform: rotate(90deg); }
 
 .label-set-name-wrap {
@@ -115,7 +138,7 @@
   min-width: 0;
 }
 .label-set-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -213,39 +236,112 @@
   background: rgba(56, 189, 248, 0.1);
 }
 
+/* Group row drop target */
+.label-group-row.drag-over {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -2px;
+  background: rgba(56, 189, 248, 0.1);
+}
+
 /* Dragging instance */
 .label-instance.dragging { opacity: 0.35; }
 
-/* ── Species group ────────────────────────────────────────────────────── */
+/* ── Bird thumbnail in group header ─────────────────────────────────── */
+.lbl-group-img-wrap {
+  flex-shrink: 0;
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  overflow: visible;
+  background: var(--color-bg-tertiary);
+  cursor: zoom-in;
+}
+.lbl-group-img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  display: block;
+  border-radius: 4px;
+}
+
+/* Hover popover — larger bird image preview */
+.lbl-img-popover {
+  position: absolute;
+  left: 38px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.92);
+  z-index: 200;
+  width: 160px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+
+  img {
+    width: 160px;
+    height: 120px;
+    object-fit: cover;
+    display: block;
+  }
+}
+.lbl-img-popover-caption {
+  display: block;
+  padding: 5px 8px 6px;
+  font-size: 10px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lbl-group-img-wrap:hover .lbl-img-popover {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* ── Species group — LEVEL 2 ──────────────────────────────────────────── */
 .label-group { border-bottom: 1px solid var(--color-border); }
 
-/* Groups inside a set section have slightly less separation */
-.label-set-body .label-group { border-bottom-color: rgba(255, 255, 255, 0.05); }
+/* Groups inside a set: lighter border, no bottom on last */
+.label-set-body .label-group { border-bottom-color: rgba(255,255,255,0.05); }
 .label-set-body .label-group:last-child { border-bottom: none; }
 
 .label-group-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 4px 8px 4px 10px;
   cursor: pointer;
   user-select: none;
   transition: background 0.1s;
+  min-height: 36px;
 }
 .label-group-row:hover { background: var(--color-accent-faint); }
 
-/* Groups inside a set are indented */
-.label-set-body .label-group-row { padding-left: 20px; }
+/* LEVEL 2 inside set: indent + slightly lighter bg to distinguish from set header */
+.label-set-body .label-group-row {
+  padding-left: 16px;
+  background: rgba(255,255,255,0.025);
+}
+.label-set-body .label-group-row:hover { background: var(--color-accent-faint); }
 
 .label-group-chevron {
-  width: 12px;
   flex-shrink: 0;
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   color: var(--color-text-secondary);
-  text-align: center;
-  transition: transform 0.15s ease;
-  transform-origin: center;
+  transition: transform 0.18s ease, color 0.15s;
+  svg { width: 13px; height: 13px; display: block; }
 }
+.label-group-row:hover .label-group-chevron { color: var(--color-text-primary); }
 .label-group.expanded > .label-group-row > .label-group-chevron { transform: rotate(90deg); }
 
 .color-dot {
@@ -318,24 +414,66 @@
 /* ── Single label instance card ──────────────────────────────────────── */
 .label-instance {
   position: relative;
-  padding: 4px 8px 4px 14px;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  padding-left: 24px;   // indented: 8px empty + 3px bar + 13px content gap
   cursor: pointer;
   border-top: 1px solid var(--color-border);
   transition: background 0.1s;
   overflow: hidden;
 }
 
-/* Colored left accent bar via --lbl-color CSS custom property */
+/* Content wrapper */
+.lbl-content {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Confidence bar row */
+.lbl-conf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  padding-left: 17px;  // same alignment as tags and time text
+}
+.lbl-conf-bar-track {
+  flex: 1;
+  height: 3px;
+  background: var(--color-bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.lbl-conf-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.lbl-conf-pct {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  line-height: 1;
+}
+
+/* Colored left accent bar — indented to show hierarchy under group */
 .label-instance::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  left: 10px;   // indented from the card edge
+  top: 4px;
+  bottom: 4px;
   width: 3px;
   background: var(--lbl-color, transparent);
-  border-radius: 0 2px 2px 0;
-  opacity: 0.8;
+  border-radius: 2px;
+  opacity: 0.9;
 }
 
 .label-instance:hover { background: var(--color-accent-faint); }
@@ -348,9 +486,14 @@
   outline-offset: -1px;
 }
 
-/* Extra indentation for instances inside a set section */
-.label-set-body .label-instance { padding-left: 24px; }
-.label-set-body .label-instance::before { left: 10px; }
+/* LEVEL 3: instances inside a set — bar shifts right with the extra indent */
+.label-set-body .label-instance {
+  padding-left: 34px;
+  background: rgba(0,0,0,0.08);
+  border-top-color: rgba(255,255,255,0.04);
+}
+.label-set-body .label-instance::before { left: 20px; }
+.label-set-body .label-instance:hover { background: var(--color-accent-faint); }
 
 /* ── Instance header row ─────────────────────────────────────────────── */
 .label-instance-header { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -408,6 +551,7 @@
   flex-wrap: wrap;
   gap: 3px;
   margin-top: 3px;
+  padding-left: 17px;  // aligns with time text: checkbox(12px) + gap(5px)
 }
 .label-instance-tags:empty { display: none; }
 
@@ -477,3 +621,30 @@ tr.multi-selected {
   color: var(--color-text-primary) !important;
   font-weight: 800 !important;
 }
+
+/* ── Lock button — always visible when set is locked ─────────────────── */
+.label-set-lock-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.label-set-lock-btn--locked {
+  opacity: 1 !important;
+  color: #fbbf24 !important;  // amber — makes locked state obvious
+}
+
+/* ── Locked instance card ─────────────────────────────────────────────── */
+.label-instance--locked {
+  pointer-events: auto;   // still clickable (select / seek)
+  cursor: default;
+
+  // Subtle visual cue: slight desaturation + left border uses muted tint
+  &::before { opacity: 0.4; }
+
+  // No hover affordance (no actions to show)
+  &:hover { background: transparent !important; }
+}
+
+/* ── Visual hierarchy helpers ─────────────────────────────────────────── */
+
+// Scientific name indented to align with group name inside set
+.label-set-body .label-group-sci { padding-left: 34px; }

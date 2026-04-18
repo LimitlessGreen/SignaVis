@@ -164,6 +164,19 @@ export class Sidebar {
 
   get activePanel() { return this._activeId; }
 
+  /**
+   * Briefly animate an activity-bar button to draw attention (without switching tabs).
+   * Safe to call when the panel is already active.
+   */
+  flashTab(id) {
+    const panel = this._panels.get(id);
+    if (!panel) return;
+    panel.btn.classList.remove('activity-btn--flash');
+    void panel.btn.offsetWidth; // force reflow so animation restarts
+    panel.btn.classList.add('activity-btn--flash');
+    panel.btn.addEventListener('animationend', () => panel.btn.classList.remove('activity-btn--flash'), { once: true });
+  }
+
   // ── DOM construction ──────────────────────────────────────────────
 
   _build() {

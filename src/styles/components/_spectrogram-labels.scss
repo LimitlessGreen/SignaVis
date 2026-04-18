@@ -455,3 +455,14 @@
     border-color: rgba(239, 68, 68, 0.85);
     color: #fca5a5;
 }
+
+/* Locked labels — no resize handles, no-drop cursor */
+.spectrogram-label-region--locked {
+    cursor: not-allowed;
+}
+.spectrogram-label-region--locked .label-handle {
+    display: none !important;
+}
+.spectrogram-label-region--locked:hover .label-handle {
+    display: none !important;
+}

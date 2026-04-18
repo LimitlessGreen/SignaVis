@@ -345,6 +345,7 @@
     import { TAG_PRESETS } from './lib/label-table.js';
     import { createAboutPanel } from './lib/about-panel.js';
     import { ExplorePanel } from './lib/explore-panel.js';
+    import { showContextMenu } from './lib/context-menu.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
     import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/audioTransforms.js';
 
@@ -632,7 +633,16 @@
 
     function assignLabelToSet(labelId, setId) {
       const lbl = state.labels.find((l) => l.id === labelId);
-      if (lbl) { lbl.setId = setId || null; syncToPlayer(); }
+      if (!lbl) return;
+      // Move all occurrences of the same species from the same source set together,
+      // so the species group doesn't appear split across two sets.
+      const sourceSetId = lbl.setId ?? null;
+      const speciesName = lbl.label || null;
+      const siblings = speciesName
+        ? state.labels.filter(l => l.label === speciesName && (l.setId ?? null) === sourceSetId)
+        : [lbl];
+      for (const l of siblings) l.setId = setId || null;
+      syncToPlayer();
     }
 
     function convertSetToManual(setId) {
@@ -843,7 +853,13 @@
       tagStore,
       accordion: true,
       onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
-      onEdit:  (id) => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id),
+      onEdit:  (id) => {
+        selectLabel(id, {});
+        sidebar.setActive('properties');
+        sidebar.flashTab('properties');
+        // Delay so the panel is visible before scrolling + highlighting
+        setTimeout(() => propsPanel.highlightLabelSection(), 60);
+      },
       onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
       onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
       onFocus: (id, src) => {
@@ -859,7 +875,29 @@
       onRenameSet: (id, name) => renameLabelSet(id, name),
       onDeleteSet: (id) => deleteLabelSet(id),
       onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
+      onAssignSpecies: (labelId, representative) => {
+        const lbl = state.labels.find(l => l.id === labelId);
+        if (!lbl) return;
+        // Don't do anything if dropped onto its own group
+        if (lbl.label === representative.label) return;
+        lbl.label = representative.label || lbl.label;
+        lbl.scientificName = representative.scientificName || '';
+        lbl.commonName = representative.commonName || '';
+        lbl.color = representative.color || lbl.color;
+        syncToPlayer();
+      },
       onConvertSetToManual: (setId) => convertSetToManual(setId),
+      onToggleLockSet: (setId, lock) => {
+        const s = state.labelSets.get(setId);
+        if (s) {
+          s.locked = lock;
+          const lockedIds = state.labels
+            .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+            .map(l => l.id);
+          player.spectrogramLabels?.setLockedIds?.(lockedIds);
+          labelList.render(state.labels);
+        }
+      },
     });
     labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
@@ -949,7 +987,13 @@
         };
       },
       onResults: (labels) => {
-        for (const lbl of labels) state.labels.push(lbl);
+        // Find or lazily create the shared BirdNET set
+        let birdnetSetId = [...state.labelSets.entries()].find(([, s]) => s.origin === 'BirdNET')?.[0];
+        if (!birdnetSetId) {
+          const set = createLabelSet({ name: 'BirdNET', origin: 'BirdNET', locked: true });
+          birdnetSetId = set.id;
+        }
+        for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId });
         syncToPlayer();
         sidebar.setActive('labels');
       },
@@ -984,6 +1028,10 @@
     let _skipPropsRefresh = false;
     function syncToPlayer() {
       player.setSpectrogramLabels(state.labels);
+      const _lockedIds = state.labels
+        .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+        .map(l => l.id);
+      player.spectrogramLabels?.setLockedIds?.(_lockedIds);
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
       explorePanel.notifyLabelsChanged();
@@ -998,6 +1046,10 @@
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
     function syncToPlayerSoft() {
       player.setSpectrogramLabels(state.labels);
+      const _lockedIds = state.labels
+        .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+        .map(l => l.id);
+      player.spectrogramLabels?.setLockedIds?.(_lockedIds);
       sidebar.setBadge('labels', state.labels.length || '');
       if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
         const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
@@ -1506,8 +1558,16 @@
     function upsertLabel(label) {
       if (!label?.id) return;
       const idx = state.labels.findIndex((l) => l.id === label.id);
-      if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...label };
-      else {
+      if (idx >= 0) {
+        const prev = state.labels[idx];
+        let merged = { ...prev, ...label };
+        // When a non-manual label is accepted (origin → 'manual'), move it to the active set
+        const wasNonManual = prev.origin && prev.origin !== 'manual';
+        if (wasNonManual && label.origin === 'manual' && state.activeSetId) {
+          merged.setId = state.activeSetId;
+        }
+        state.labels[idx] = merged;
+      } else {
         // Assign the active annotation set to newly created labels
         const setId = label.setId ?? (state.activeSetId || null);
         state.labels.push({ ...label, origin: label.origin || 'manual', setId });
@@ -1525,12 +1585,18 @@
     propsPanel.onChange = (id, updates) => {
       const idx = state.labels.findIndex((l) => l.id === id);
       if (idx < 0) return;
-      state.labels[idx] = { ...state.labels[idx], ...updates };
+      const prev = state.labels[idx];
+      state.labels[idx] = { ...prev, ...updates };
+      const nameChanged = updates.label !== undefined || updates.scientificName !== undefined;
       _skipPropsRefresh = true;
-      syncToPlayerSoft();
+      if (nameChanged) {
+        // Re-group fully — name change affects which group this label belongs to
+        syncToPlayer();
+      } else {
+        syncToPlayerSoft();
+        labelList.updateBadges(id, state.labels[idx]);
+      }
       _skipPropsRefresh = false;
-      // Soft-update the label list tag badges without full re-render
-      labelList.updateBadges(id, state.labels[idx]);
     };
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
@@ -1541,6 +1607,67 @@
       state.labels = state.labels.filter((l) => l.id !== id);
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
+    });
+
+    // ── Context menus on label surfaces ─────────────────────────────────────
+    const ICON_RENAME = '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>';
+    const ICON_DELETE = '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>';
+
+    /** Show rename/delete context menu for a spectrogram label id. */
+    function showLabelContextMenu(e, id) {
+      const lbl = state.labels.find((l) => l.id === id);
+      if (!lbl) return;
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu({
+        x: e.clientX, y: e.clientY,
+        items: [
+          { label: 'Rename', icon: ICON_RENAME,
+            action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
+          { separator: true },
+          { label: 'Delete', icon: ICON_DELETE, danger: true,
+            action: () => {
+              player.spectrogramLabels?.remove(id);
+              player._emit?.('spectrogramlabelremove', { label: { ...lbl } });
+            } },
+        ],
+      });
+    }
+
+    // Spectrogram view
+    player.spectrogramLabels?.overlay?.addEventListener('contextmenu', (e) => {
+      const region = e.target.closest('.spectrogram-label-region');
+      if (region) showLabelContextMenu(e, region.dataset.id);
+    });
+
+    // Amplitude / waveform view — annotations use their own rename/remove API
+    player.annotations?.overlay?.addEventListener('contextmenu', (e) => {
+      const region = e.target.closest('.annotation-region');
+      if (!region) return;
+      const id = region.dataset.id;
+      const ann = player.annotations?.annotations?.find?.((a) => a.id === id);
+      if (!ann) return;
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu({
+        x: e.clientX, y: e.clientY,
+        items: [
+          { label: 'Rename', icon: ICON_RENAME,
+            action: () => player.annotations?._renameRegionPrompt?.(id) },
+          { separator: true },
+          { label: 'Delete', icon: ICON_DELETE, danger: true,
+            action: () => {
+              player.annotations?.remove(id);
+              player._emit?.('annotationremove', { annotation: { ...ann } });
+            } },
+        ],
+      });
+    });
+
+    // Overview label tracks
+    player._state?.d?.overviewLabelTracks?.addEventListener('contextmenu', (e) => {
+      const seg = e.target.closest('.overview-label-segment');
+      if (seg) showLabelContextMenu(e, seg.dataset.id);
     });
 
     taxonomyLangSelect.addEventListener('change', () => {

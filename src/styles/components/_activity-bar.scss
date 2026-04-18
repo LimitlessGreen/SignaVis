@@ -36,6 +36,18 @@
 .activity-btn-label { writing-mode: vertical-lr; text-orientation: mixed; font-size: 9px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; pointer-events: none; user-select: none; }
 .activity-badge { position: absolute; top: 2px; right: 2px; min-width: 13px; height: 13px; border-radius: 7px; background: var(--color-accent); color: #000; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 2px; line-height: 1; }
 
+/* Flash animation — draws attention to a tab without switching */
+@keyframes activity-btn-flash {
+  0%   { box-shadow: none; background: transparent; }
+  20%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(57,181,255,0.5); background: rgba(57,181,255,0.2); }
+  50%  { box-shadow: none; background: transparent; }
+  70%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(57,181,255,0.5); background: rgba(57,181,255,0.2); }
+  100% { box-shadow: none; background: transparent; }
+}
+.activity-btn--flash {
+  animation: activity-btn-flash 0.7s ease-in-out;
+}
+
 @media (max-width: 700px) {
   .activity-bar { width: 30px; }
   .activity-btn-label { font-size: 8px; }
