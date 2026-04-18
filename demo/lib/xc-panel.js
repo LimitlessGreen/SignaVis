@@ -6,7 +6,7 @@
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoCantoRecordingsApi.js';
 import ModalManager from '../../src/modal-manager.js';
-import { openMapModal } from './geo-map-modal.js';
+import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 const API_KEY_STORAGE     = 'audio-workbench.xc-api-key.v1';
 const SET_META_STORAGE    = 'audio-workbench.xc-set-meta.v2';
@@ -404,8 +404,8 @@ export class XenoCantoPanel {
     mapRow.className = 'props-map-row';
     const mapBtn = document.createElement('button');
     mapBtn.type = 'button';
-    mapBtn.className = 'sidebar-action-btn secondary props-map-open-btn';
-    mapBtn.innerHTML = '🗺&nbsp;Pick on Map';
+    mapBtn.className = 'geo-action-btn';
+    mapBtn.innerHTML = `${GEO_ICONS.map}\u00a0Pick on Map`;
     mapBtn.addEventListener('click', () => {
       const lat = parseFloat(latInput?.value) || 51;
       const lon = parseFloat(lngInput?.value) || 10;

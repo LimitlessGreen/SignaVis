@@ -1,0 +1,333 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Explore panel — two-tab species explorer (Explore + Statistics)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Panel shell ─────────────────────────────────────────────────────── */
+.explore-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────── */
+.ep-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.ep-tab {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+
+  &.active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+
+  &:hover:not(.active) {
+    color: var(--color-text-primary);
+  }
+}
+
+/* ── Controls row (Explore pane only) ───────────────────────────────── */
+.ep-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.ep-status {
+  flex: 1;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Pane content area ───────────────────────────────────────────────── */
+.ep-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+
+  &.ep-pane--hidden { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Species card grid
+   ═══════════════════════════════════════════════════════════════════════ */
+.sp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+}
+
+.sp-cards-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+/* ── Individual card ─────────────────────────────────────────────────── */
+.sp-card {
+  position: relative;   // anchor for the checkmark badge
+  display: flex;
+  align-items: stretch;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  // NOTE: no overflow:hidden here — that would clip the checkmark badge.
+  // Image clipping is handled by .sp-card-img-wrap below.
+  transition: border-color 0.12s, box-shadow 0.12s;
+
+  &.sp-card--clickable {
+    cursor: pointer;
+  }
+
+  &.sp-card--clickable:hover {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+
+  &.sp-card--clickable:active {
+    background: var(--color-accent-faint);
+  }
+
+  &.sp-card--flash {
+    background: var(--color-accent-faint);
+    border-color: var(--color-accent);
+    transition: background 0s, border-color 0s;
+  }
+
+  // Green checkmark badge — overlay on the photo, bottom-right corner
+  // Positioned relative to .sp-card (not the wrapper) so overflow:hidden
+  // on the wrapper doesn't clip it.
+  &.sp-card--labeled::after {
+    content: '✓';
+    position: absolute;
+    bottom: 5px;
+    left: 46px;    // image is 68px wide; badge is 18px; gap 4px → 68-18-4 = 46
+    z-index: 2;
+    width: 18px;
+    height: 18px;
+    background: #22c55e;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+}
+
+/* Bird photo wrapper — clips image to rounded left corners */
+.sp-card-img-wrap {
+  flex-shrink: 0;
+  width: 68px;
+  height: 68px;
+  overflow: hidden;
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+.sp-card-img {
+  width: 68px;
+  height: 68px;
+  object-fit: cover;
+  background: var(--color-bg-tertiary);
+  display: block;
+}
+
+/* Card content */
+.sp-card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Top row: common name + badge */
+.sp-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sp-card-common {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+/* Occurrence % or detection count badge */
+.sp-card-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  background: var(--color-accent-faint);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  line-height: 1.5;
+}
+
+/* Scientific name */
+.sp-card-sci {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Occurrence / confidence bar */
+.sp-card-bar-track {
+  height: 3px;
+  background: var(--color-bg-tertiary);
+  border-radius: 2px;
+  margin-top: 5px;
+  overflow: hidden;
+}
+
+.sp-card-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.35s ease;
+}
+
+/* Meta row at the bottom */
+.sp-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.sp-card-meta-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-card-meta-r { flex-shrink: 0; }
+
+/* ── Statistics section header ───────────────────────────────────────── */
+.sp-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 8px 4px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sp-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-secondary);
+}
+
+.sp-section-count {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-left: auto;
+}
+
+/* ── Explore: inline model-load progress ────────────────────────────── */
+.ep-progress-wrap {
+  width: 80%;
+  max-width: 220px;
+  height: 3px;
+  background: var(--color-bg-tertiary);
+  border-radius: 2px;
+  margin: 0 auto 8px;
+  overflow: hidden;
+}
+
+.ep-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.ep-load-status {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ── Explore: informational infobox ───────────────────────────────────── */
+.ep-infobox {
+  margin: 8px 10px;
+  padding: 8px 10px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.ep-infobox strong {
+  display: block;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.ep-infobox-text {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ── Explore: single-action empty state ─────────────────────────────── */
+.ep-action-msg {
+  margin-bottom: 12px;
+}
+
+.ep-action-btn {
+  margin: 0 auto;
+}

@@ -25,7 +25,7 @@
  *   });
  */
 import ModalManager from '../../src/modal-manager.js';
-import { openMapModal } from './geo-map-modal.js';
+import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
 const STORAGE_KEY     = 'audio-workbench.birdnet-model-url.v2';
@@ -93,6 +93,8 @@ export class BirdNETPanel {
    * @param {HTMLButtonElement} [opts.mapBtn]
    * @param {HTMLInputElement} [opts.geoThresholdInput]
    * @param {HTMLElement} [opts.geoThresholdVal]
+   * @param {HTMLInputElement} [opts.geoFilterCheckbox]   Checkbox: enable/disable geo filter
+   * @param {HTMLElement} [opts.geoFilterSliderWrap]      Wrapper shown/hidden with checkbox
    * @param {HTMLElement} [opts.geoStatusEl]
    */
   constructor(opts) {
@@ -159,6 +161,44 @@ export class BirdNETPanel {
     return { lat, lon };
   }
 
+  /**
+   * Pre-fill coordinates (and optionally recording date) from recording metadata.
+   * Called after XC import so the BirdNET geo filter uses the correct season.
+   *
+   * @param {{ lat?: string|number, lng?: string|number, date?: string }|null} meta
+   */
+  setLocationFromMeta(meta) {
+    if (!meta) return;
+    // Store the recording date for season-aware area-model queries
+    this._recordingDate = meta.date || null;
+
+    if (!this.latInput || !this.lonInput) return;
+    const lat = parseFloat(meta.lat);
+    const lon = parseFloat(meta.lng);
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    // Metadata coordinates are authoritative for the loaded file — always apply them.
+    this._setCoords(lat, lon);
+  }
+
+  /** Clear coordinates and recording date (e.g. when a new non-geotagged file is loaded). */
+  clearLocation() {
+    if (this.latInput) this.latInput.value = '';
+    if (this.lonInput) this.lonInput.value = '';
+    this._recordingDate = null;
+    this._geoStatus('');
+    try { localStorage.removeItem(STORAGE_GEO_KEY); } catch { /* ignore */ }
+  }
+
+  /**
+   * Clear coordinates (e.g. when a non-geotagged file is loaded).
+   */
+  clearLocation() {
+    if (this.latInput) this.latInput.value = '';
+    if (this.lonInput) this.lonInput.value = '';
+    this._geoStatus('');
+    try { localStorage.removeItem(STORAGE_GEO_KEY); } catch { /* ignore */ }
+  }
+
   _geoStatus(msg) {
     // Show in the dedicated geo status span AND the main status line.
     if (this.geoStatusEl) this.geoStatusEl.textContent = msg ? `(${msg})` : '';
@@ -182,6 +222,11 @@ export class BirdNETPanel {
     if (this.geoThresholdInput && this.geoThresholdVal) {
       this.geoThresholdInput.addEventListener('input', () => {
         this.geoThresholdVal.textContent = this.geoThresholdInput.value;
+      });
+    }
+    if (this.geoFilterCheckbox && this.geoFilterSliderWrap) {
+      this.geoFilterCheckbox.addEventListener('change', () => {
+        this.geoFilterSliderWrap.hidden = !this.geoFilterCheckbox.checked;
       });
     }
     this.analyzeBtn.addEventListener('click', () => this._analyze());
@@ -259,7 +304,8 @@ export class BirdNETPanel {
 
     const confidence    = parseFloat(this.confidenceInput.value) || 0.25;
     const overlap       = parseFloat(this.overlapSelect.value) || 0;
-    const geoThreshold  = parseFloat(this.geoThresholdInput?.value ?? 0) || 0;
+    const geoEnabled    = this.geoFilterCheckbox?.checked ?? false;
+    const geoThreshold  = geoEnabled ? (parseFloat(this.geoThresholdInput?.value) || 0.01) : 0;
     const coords        = this._getCoords();
 
     this.analyzeBtn.disabled = true;
@@ -284,7 +330,15 @@ export class BirdNETPanel {
       // Apply geographic priors if coordinates are set and area model is available
       if (coords && this.birdnet.hasAreaModel) {
         this.statusEl.textContent = 'Applying location filter…';
-        await this.birdnet.setLocation(coords.lat, coords.lon);
+        const geoResult = await this.birdnet.setLocation(coords.lat, coords.lon, {
+          date: this._recordingDate || undefined,
+        });
+        if (geoResult.ok && geoResult.week) {
+          const dateLabel = this._recordingDate
+            ? `recording date (week ${geoResult.week})`
+            : `today (week ${geoResult.week})`;
+          this.statusEl.textContent = `Location filter applied — ${dateLabel}`;
+        }
       }
 
       this.statusEl.textContent = 'Analyzing…';

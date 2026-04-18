@@ -134,8 +134,11 @@ self.onmessage = async (e) => {
       return;
     }
     try {
-      // Calculate ISO week number for current date
-      var now = new Date();
+      // Use provided date or fall back to today
+      var refDate = e.data.date ? new Date(e.data.date) : new Date();
+      if (isNaN(refDate.getTime())) refDate = new Date();
+      // Calculate ISO week number
+      var now = refDate;
       var jan4 = new Date(now.getFullYear(), 0, 4);
       var weekStart = new Date(jan4);
       weekStart.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
@@ -146,7 +149,7 @@ self.onmessage = async (e) => {
       var scores = await areaModel.predict(input).data();
       input.dispose();
       geoscores = scores;
-      self.postMessage({ id: id, type: 'area-scores-set', count: scores.length });
+      self.postMessage({ id: id, type: 'area-scores-set', count: scores.length, week: week });
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
     }
@@ -271,12 +274,17 @@ export class BirdNETInference {
    *
    * @param {number} latitude
    * @param {number} longitude
-   * @returns {Promise<boolean>} `true` if geoscores were updated, `false` if no area model.
+   * @param {object}  [opts]
+   * @param {string|Date} [opts.date]  Recording date — used to determine the season week.
+   *                                   Falls back to today if not provided or invalid.
+   * @returns {Promise<{ok:boolean, week?:number}>}
    */
-  async setLocation(latitude, longitude) {
-    if (!this.#loaded) return false;
-    const result = await this.#send('set-location', { latitude, longitude });
-    return result.type === 'area-scores-set';
+  async setLocation(latitude, longitude, { date } = {}) {
+    if (!this.#loaded) return { ok: false };
+    const dateStr = date instanceof Date ? date.toISOString() : (date ?? null);
+    const result = await this.#send('set-location', { latitude, longitude, date: dateStr });
+    if (result.type === 'area-scores-set') return { ok: true, week: result.week };
+    return { ok: false };
   }
 
   /**

@@ -1,5 +1,6 @@
 /* Geo-map modal — Leaflet/OSM location picker */
 
+/* ── Modal backdrop & shell ── */
 .geo-map-backdrop {
   position: fixed;
   inset: 0;
@@ -19,7 +20,7 @@
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
 
@@ -42,14 +43,20 @@
 }
 
 .geo-map-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   background: none;
   border: none;
+  border-radius: 4px;
   color: var(--color-text-secondary);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
-  padding: 0 4px;
   cursor: pointer;
-  &:hover { color: var(--color-text-primary); }
+  transition: background 0.1s, color 0.1s;
+  &:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
 }
 
 /* ── Coordinate input bar ── */
@@ -81,21 +88,18 @@
   }
 }
 
-.geo-map-locate-btn {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  padding: 4px 10px;
-  flex-shrink: 0;
+// Read-only coordinate display (view mode — no inputs)
+.geo-map-coord-readonly {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
 }
 
 /* ── Map container ── */
 .geo-map-container {
   flex: 1;
   min-height: 380px;
-  /* Leaflet renders inside here */
 }
 
 .geo-map-attribution-hint {
@@ -118,19 +122,61 @@
   flex-shrink: 0;
 }
 
-.geo-map-btn-secondary {
+/* ── Shared geo action button ──────────────────────────────────────────
+   Extends .tb-btn look with geo-specific sizing. Used in:
+   - BirdNET panel (Locate / Map pair)
+   - Properties panel (Show on Map)
+   - XC panel (Pick on Map)
+   - Map modal coord bar (Locate)
+   ─────────────────────────────────────────────────────────────────── */
+.geo-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   background: transparent;
-  border-color: var(--color-border);
   color: var(--color-text-secondary);
-  width: auto;
-  &:hover { background: var(--color-bg-tertiary); }
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+
+  svg { flex-shrink: 0; }
+
+  &:hover {
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  // Primary variant — used for "Confirm" and "Pick on Map" (primary action)
+  &.primary {
+    background: var(--color-accent-faint);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    &:hover { background: var(--color-accent-faint); filter: brightness(1.15); }
+  }
 }
 
-.geo-map-btn-confirm {
-  width: auto;
+// Row that holds a pair of geo-action-btns side by side
+.geo-action-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+
+  .geo-action-btn { flex: 1; justify-content: center; }
 }
 
-/* ── BirdNET panel — geo section ── */
+/* ── BirdNET panel — coordinate inputs ── */
 .geo-input-row {
   display: flex;
   gap: 6px;
@@ -143,63 +189,41 @@
   }
 }
 
-.geo-btn-row {
+/* ── Properties panel — inline coordinate + map button ── */
+
+// The dd cell that holds a coordinate value + inline map icon
+.props-coord-cell {
   display: flex;
-  gap: 6px;
-  margin-bottom: 4px;
-
-  > button {
-    flex: 1;
-    font-size: 11px;
-    padding: 5px 8px;
-  }
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
 
-.sidebar-action-btn.secondary {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text-secondary);
-  &:hover {
-    background: var(--color-bg-tertiary);
-    color: var(--color-text-primary);
-  }
-}
-
-/* ── Properties panel & XC panel map integration ── */
-
-// Small inline map button next to read-only lat value
-.props-map-btn {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 4px;
+// Small icon-only map button that sits right next to the lat value
+.props-coord-map-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 18px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--color-text-muted);
   cursor: pointer;
-  vertical-align: middle;
-  opacity: 0.7;
-  transition: opacity 0.12s;
-  &:hover { opacity: 1; background: var(--color-bg-tertiary); }
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+
+  svg { display: block; }
+
+  &:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    background: var(--color-accent-faint);
+  }
 }
 
-// Full-width "Pick on Map" button row below lat/lng edit fields
-.props-map-row {
-  padding: 6px 0 2px;
-}
-
-.props-map-open-btn {
-  width: 100%;
-  font-size: 11px;
-  padding: 5px 10px;
-}
-
-/* ── Leaflet overrides to respect app theme ── */
-.leaflet-container {
-  font-family: inherit;
-}
-
-.leaflet-control-attribution {
-  font-size: 9px !important;
-}
+/* ── Leaflet overrides ── */
+.leaflet-container { font-family: inherit; }
+.leaflet-control-attribution { font-size: 9px !important; }

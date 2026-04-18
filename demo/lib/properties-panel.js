@@ -15,7 +15,7 @@
 
 import { TAG_PRESETS } from './label-table.js';
 import { createEditableSelect } from './editable-select.js';
-import { openMapModal } from './geo-map-modal.js';
+import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -245,7 +245,14 @@ export class PropertiesPanel {
       this._recBody.innerHTML = '<div class="props-empty">No recording loaded.</div>';
       return;
     }
-    this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
+
+    const lat = parseFloat(merged.lat);
+    const lon = parseFloat(merged.lng);
+    const hasCoords = isFinite(lat) && isFinite(lon);
+
+    this._recBody.appendChild(
+      this._buildReadonlyGrid(RECORDING_FIELDS, merged, hasCoords ? { lat, lon } : null)
+    );
   }
 
   _renderSet() {
@@ -314,8 +321,13 @@ export class PropertiesPanel {
 
   // ── Grid builders ─────────────────────────────────────────────────
 
-  /** Read-only DL grid (for recording metadata). */
-  _buildReadonlyGrid(fields, data) {
+  /**
+   * Read-only DL grid for recording metadata.
+   * @param {Array} fields
+   * @param {object} data
+   * @param {{lat:number, lon:number}|null} [mapCoords]  When set, lat/lng rows get a map trigger.
+   */
+  _buildReadonlyGrid(fields, data, mapCoords = null) {
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
     for (const f of fields) {
@@ -324,24 +336,27 @@ export class PropertiesPanel {
       const dt = document.createElement('dt');
       dt.textContent = f.label;
       const dd = document.createElement('dd');
-      dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
 
-      // Lat row: add a map button if both lat and lng are present
-      if (f.key === 'lat' && data.lng != null && data.lng !== '') {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'props-map-btn';
-        btn.title = 'Show on map';
-        btn.textContent = '🗺';
-        btn.addEventListener('click', () => {
-          openMapModal({
-            lat: parseFloat(data.lat),
-            lon: parseFloat(data.lng),
-            zoom: 10,
-            onConfirm: () => {}, // read-only context — no action needed
-          });
-        });
-        dd.appendChild(btn);
+      if (mapCoords && (f.key === 'lat' || f.key === 'lng')) {
+        // Render as a clickable coordinate value
+        dd.className = 'props-coord-cell';
+        const span = document.createElement('span');
+        span.textContent = f.fmt ? f.fmt(raw) : String(raw);
+        dd.appendChild(span);
+        if (f.key === 'lat') {
+          // Map icon button — only on the lat row to avoid duplication
+          const mapBtn = document.createElement('button');
+          mapBtn.type = 'button';
+          mapBtn.className = 'props-coord-map-btn';
+          mapBtn.title = `Show on map (${mapCoords.lat.toFixed(4)}, ${mapCoords.lon.toFixed(4)})`;
+          mapBtn.innerHTML = GEO_ICONS.map;
+          mapBtn.addEventListener('click', () =>
+            openMapModal({ lat: mapCoords.lat, lon: mapCoords.lon, zoom: 10, readOnly: true })
+          );
+          dd.appendChild(mapBtn);
+        }
+      } else {
+        dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
       }
 
       dl.appendChild(dt);
