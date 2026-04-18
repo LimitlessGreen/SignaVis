@@ -834,7 +834,8 @@ export class LabelList {
 
     const speciesBtn = document.createElement('button');
     speciesBtn.className = 'act-btn species-edit-btn';
-    speciesBtn.textContent = '🏷';
+    // Use inline SVG for consistent styling with other action icons
+    speciesBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3 3 11l8 8 9.59-5.59z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
     speciesBtn.title = 'Change species for this label';
     speciesBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
     actions.appendChild(speciesBtn);
