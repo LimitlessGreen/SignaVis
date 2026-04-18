@@ -299,6 +299,13 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
     dropdown.classList.add('hidden');
   }
 
+  /** Re-render the dropdown in place, but only if it is already visible. */
+  function refresh() {
+    if (!destroyed && !dropdown.classList.contains('hidden')) {
+      renderDropdown();
+    }
+  }
+
   function destroy() {
     destroyed = true;
     dropdown.remove();
@@ -333,6 +340,7 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
     } else if (e.key === 'Escape') {
       dropdown.classList.add('hidden');
       activeIndex = -1;
+      input.blur();
     }
   });
   input.addEventListener('blur', () => {
@@ -350,5 +358,5 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
   window.addEventListener('scroll', positionDropdown, true);
   window.addEventListener('resize', positionDropdown);
 
-  return { el: wrap, input, setValue, destroy };
+  return { el: wrap, input, setValue, refresh, destroy };
 }

@@ -189,14 +189,39 @@ export class BirdNETPanel {
     try { localStorage.removeItem(STORAGE_GEO_KEY); } catch { /* ignore */ }
   }
 
+  /** Return current {lat, lon} or null if not set / invalid. */
+  getCoords() { return this._getCoords(); }
+
+  /** Return the recording date string used for season-aware geo filtering, or null. */
+  getRecordingDate() { return this._recordingDate || null; }
+
   /**
-   * Clear coordinates (e.g. when a non-geotagged file is loaded).
+   * Load the BirdNET model without running analysis.
+   * Shows progress in the BirdNET panel's status bar.
+   *
+   * @param {(msg:string, pct:number) => void} [onProgress]  Optional extra progress callback.
+   * @returns {Promise<{labelCount:number, hasAreaModel:boolean}>}
    */
-  clearLocation() {
-    if (this.latInput) this.latInput.value = '';
-    if (this.lonInput) this.lonInput.value = '';
-    this._geoStatus('');
-    try { localStorage.removeItem(STORAGE_GEO_KEY); } catch { /* ignore */ }
+  async loadModel(onProgress) {
+    const modelUrl = this.modelUrlInput?.value?.trim();
+    if (!modelUrl) throw new Error('No model URL configured in the BirdNET panel.');
+    this.progressWrap.style.display = '';
+    this.progressBar.style.width = '0%';
+    try {
+      const result = await this.birdnet.load({
+        modelUrl,
+        onProgress: (msg, pct) => {
+          if (this.statusEl)   this.statusEl.textContent   = msg;
+          if (this.progressBar) this.progressBar.style.width = pct + '%';
+          onProgress?.(msg, pct);
+        },
+      });
+      if (this.statusEl) this.statusEl.textContent =
+        result.hasAreaModel ? 'Area model loaded ✓' : 'Model loaded ✓';
+      return result;
+    } finally {
+      this.progressWrap.style.display = 'none';
+    }
   }
 
   _geoStatus(msg) {

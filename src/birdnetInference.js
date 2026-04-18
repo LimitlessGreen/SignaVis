@@ -117,7 +117,7 @@ self.onmessage = async (e) => {
 
       self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
       try {
-        areaModel = await tf.loadGraphModel(base + 'area-model/model.json');
+        areaModel = await tf.loadGraphModel(base + 'mdata/model.json');
         self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true });
       } catch (_) {
         // Area model is optional — continue without it
@@ -158,6 +158,19 @@ self.onmessage = async (e) => {
   if (type === 'clear-location') {
     geoscores = null;
     self.postMessage({ id: id, type: 'location-cleared' });
+  }
+
+  if (type === 'get-species-list') {
+    var specList = [];
+    for (var i = 0; i < labels.length; i++) {
+      specList.push({
+        scientific: labels[i].scientific,
+        common:     labels[i].common,
+        geoscore:   geoscores ? geoscores[i] : null,
+      });
+    }
+    self.postMessage({ id: id, type: 'species-list', species: specList });
+    return;
   }
 
   if (type === 'predict') {
@@ -285,6 +298,18 @@ export class BirdNETInference {
     const result = await this.#send('set-location', { latitude, longitude, date: dateStr });
     if (result.type === 'area-scores-set') return { ok: true, week: result.week };
     return { ok: false };
+  }
+
+  /**
+   * Return all loaded species with their current geoscores (occurrence probabilities).
+   * Geoscore is null for each species if no location has been set yet.
+   *
+   * @returns {Promise<Array<{ scientific: string, common: string, geoscore: number|null }>>}
+   */
+  async getAllSpecies() {
+    if (!this.#loaded) return [];
+    const result = await this.#send('get-species-list', {});
+    return result.type === 'species-list' ? result.species : [];
   }
 
   /**

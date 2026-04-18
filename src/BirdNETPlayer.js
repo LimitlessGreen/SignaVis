@@ -162,7 +162,7 @@ export class BirdNETPlayer {
     /** Load audio from a File object (e.g. from an <input type="file">) */
     async loadFile(file) {
         await this.ready;
-        return this._state?._handleFileSelect({ target: { files: [file] } });
+        return this._state?.loadFile(file);
     }
 
     /** Current playback time in seconds */
@@ -656,6 +656,9 @@ export class BirdNETPlayer {
             typeof s === 'string' ? { name: s } : { name: s.name || '', scientificName: s.scientificName || '' },
         ).filter((s) => s.name);
     }
+    getBackgroundSpecies() {
+        return this._backgroundSpecies.map((s) => ({ ...s }));
+    }
 
     _previewFromAnnotationEvent(annotation) {
         if (this._isSyncingLabels || !annotation) return;
@@ -711,6 +714,7 @@ export class BirdNETPlayer {
     _removeFromLinkedLabels(label) {
         if (this._isSyncingLabels || !label?.id) return;
         this._linkedLabels.delete(label.id);
+        if (this._activeLabelId === label.id) this._activeLabelId = null;
         this.annotations.setLiveLinkedId(null);
         this.spectrogramLabels.setLiveLinkedId(null);
         this._syncLinkedLabelsToLayers();
@@ -879,7 +883,6 @@ export class BirdNETPlayer {
                     s.style.left = `${leftPct}%`;
                     s.style.width = `${Math.max(0.3, widthPct)}%`;
                     s.addEventListener('pointerenter', () => {
-                        if (seg.id) this._activeLabelId = seg.id;
                         this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'hover' });
                     });
                     s.addEventListener('pointerleave', () => {

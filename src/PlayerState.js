@@ -96,10 +96,6 @@ export class PlayerState {
             container: this.d.audioEngineHost,
             onUiUpdate: (t, fromPlayback, opts) => this._scheduleUiUpdate({ time: t, fromPlayback, ...opts }),
             onTransportStateChange: (state, reason) => this._setTransportState(state, reason),
-            onPlayPauseBtnUpdate: (playing) => {
-                if (playing) this.d.playPauseBtn.classList.add('playing');
-                else this.d.playPauseBtn.classList.remove('playing');
-            },
             onReady: () => {
                 this._lastSelectionEmitAt = 0;
                 this._lastSelectionStart = NaN;
@@ -267,19 +263,12 @@ export class PlayerState {
     get preMuteVolume()             { return this._engine.preMuteVolume; }
     get playbackMode()              { return this._engine.playbackMode; }
     get loopPlayback()              { return this._engine.loopPlayback; }
-    get _activeSegmentLabelId()     { return this._engine._activeSegmentLabelId; }
-    get _activeSegmentFilter()      { return this._engine._activeSegmentFilter; }
     get _activeSegmentStart()       { return this._engine._activeSegmentStart; }
     get _activeSegmentEnd()         { return this._engine._activeSegmentEnd; }
     get _customSegmentPlayback()    { return this._engine._customSegmentPlayback; }
-    get _suppressNextPauseHandler() { return this._engine._suppressNextPauseHandler; }
-    get _segmentPlayToken()         { return this._engine._segmentPlayToken; }
-    get _lastTimeupdateEmitAt()     { return this._engine._lastTimeupdateEmitAt; }
 
     set muted(v)                     { this._engine.muted = v; }
     set loopPlayback(v)              { this._engine.loopPlayback = v; }
-    set _suppressNextPauseHandler(v) { this._engine._suppressNextPauseHandler = v; }
-    set _lastTimeupdateEmitAt(v)     { this._engine._lastTimeupdateEmitAt = v; }
 
     _sanitizePlaybackViewportConfig(partial = {}) {
         const cfg = this._playbackViewportConfig || {};
@@ -387,12 +376,21 @@ export class PlayerState {
         if (!canTransitionTransportState(fromState, nextState)) {
             this._perf.blockedTransitions += 1;
             this._emit('transporttransitionblocked', { from: fromState, to: nextState, reason });
+            return;
         }
         this.transportState = nextState;
+        this._updatePlayPauseButton();
         this._perf.transitionEvents += 1;
         this._perf.lastTransition = `${fromState || '∅'} → ${nextState}${reason ? ` (${reason})` : ''}`;
         this._setPlayState(TRANSPORT_STATE_LABELS[nextState] || nextState);
         this._emit('transportstatechange', { state: nextState, reason });
+    }
+
+    _updatePlayPauseButton() {
+        const isPlaying = this.transportState === 'playing'
+            || this.transportState === 'playing_loop'
+            || this.transportState === 'playing_segment';
+        this.d.playPauseBtn?.classList.toggle('playing', isPlaying);
     }
 
     _scheduleUiUpdate({
@@ -635,10 +633,15 @@ export class PlayerState {
             this._perf.panel.parentNode.removeChild(this._perf.panel);
             this._perf.panel = null;
         }
+        if (typeof this._freqAxisRafId === 'number') {
+            cancelAnimationFrame(this._freqAxisRafId);
+            this._freqAxisRafId = 0;
+        }
         for (let i = this._cleanups.length - 1; i >= 0; i--) this._cleanups[i]();
         this._cleanups.length = 0;
         this.processor.dispose();
         this.colorizer.dispose();
+        this._engine.destroy();
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -648,40 +651,21 @@ export class PlayerState {
     async _handleFileSelect(e) {
         const file = e?.target?.files?.[0];
         if (!file) return;
+        await this.loadFile(file);
+    }
+
+    async loadFile(file) {
+        if (!file) return;
 
         this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
         this.d.fileInfo.classList.add('loading');
         this._setTransportState('loading', 'file-load');
 
         try {
-            const { duration, sampleRate } = await this._engine.loadFromFile(file);
-            this.sampleRateHz = sampleRate;
-            this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
-            this._updateAmplitudeLabels();
-            this._updateMaxFreqOptions();
-
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span> <span>${formatTime(duration)}</span>`;
-            this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
-            this.d.totalTimeDisplay.textContent = formatTime(duration);
-            this.d.currentTimeDisplay.textContent = formatTime(0);
-
-            this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
-            this._setTransportEnabled(true);
-            this._updateToggleButtons();
-            this._setTransportState('ready', 'file-loaded');
-            this.d.fileInfo.classList.remove('loading');
-
-            await this._generateSpectrogram({ autoAdjust: true });
-            this._drawMainWaveform();
-            this._drawOverviewWaveform();
-            this._createFrequencyLabels();
-            this._seekToTime(0, true);
+            const result = await this._engine.loadFromFile(file);
+            await this._onAudioLoaded(result, file.name, 'file-loaded');
         } catch (error) {
-            console.error('Error loading file:', error);
-            this._setTransportState('error', 'file-load-failed');
-            this.d.fileInfo.classList.remove('loading');
-            this._emit('error', { message: error?.message || String(error), source: 'file' });
-            alert('Error loading audio file');
+            this._onAudioLoadError(error, 'file');
         }
     }
 
@@ -695,37 +679,46 @@ export class PlayerState {
         this._setTransportState('loading', 'url-load');
 
         try {
-            const { duration, sampleRate } = await this._engine.loadFromUrl(url);
-            this.sampleRateHz = sampleRate;
-            this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
-            this._updateAmplitudeLabels();
-            this._updateMaxFreqOptions();
-
+            const result = await this._engine.loadFromUrl(url);
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(name)}</span> <span>${formatTime(duration)}</span>`;
-            this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
-            this.d.totalTimeDisplay.textContent = formatTime(duration);
-            this.d.currentTimeDisplay.textContent = formatTime(0);
-
-            this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
-            this._setTransportEnabled(true);
-            this._updateToggleButtons();
-            this._setTransportState('ready', 'url-loaded');
-            this.d.fileInfo.classList.remove('loading');
-
-            await this._generateSpectrogram({ autoAdjust: true });
-            this._drawMainWaveform();
-            this._drawOverviewWaveform();
-            this._createFrequencyLabels();
-            this._seekToTime(0, true);
+            await this._onAudioLoaded(result, name, 'url-loaded');
         } catch (error) {
-            console.error('Error loading audio URL:', error);
-            this._setTransportState('error', 'url-load-failed');
-            this.d.fileInfo.classList.remove('loading');
-            this._emit('error', { message: error?.message || String(error), source: 'url' });
+            this._onAudioLoadError(error, 'url');
+            throw error;
         }
+    }
+
+    async _onAudioLoaded({ duration, sampleRate }, displayName, readyReason) {
+        this.sampleRateHz = sampleRate;
+        this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
+        this._updateAmplitudeLabels();
+        this._updateMaxFreqOptions();
+
+        this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
+        this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
+        this.d.totalTimeDisplay.textContent = formatTime(duration);
+        this.d.currentTimeDisplay.textContent = formatTime(0);
+
+        this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
+        this._setTransportEnabled(true);
+        this._updateToggleButtons();
+        this._setTransportState('ready', readyReason);
+        this.d.fileInfo.classList.remove('loading');
+
+        await this._generateSpectrogram({ autoAdjust: true });
+        this._drawMainWaveform();
+        this._drawOverviewWaveform();
+        this._createFrequencyLabels();
+        this._seekToTime(0, true);
+    }
+
+    _onAudioLoadError(error, source) {
+        console.error(`Error loading audio (${source}):`, error);
+        this._setTransportState('error', `${source}-load-failed`);
+        this.d.fileInfo.classList.remove('loading');
+        this._emit('error', { message: error?.message || String(error), source });
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -773,10 +766,6 @@ export class PlayerState {
     _seekByDelta(deltaSec) {
         if (!this.audioBuffer) return;
         this._seekToTime(this._getCurrentTime() + deltaSec, false);
-    }
-
-    _seekRelative(deltaSec) {
-        this._seekByDelta(deltaSec);
     }
 
     _getCurrentTime() { return this._engine.getCurrentTime(); }
@@ -839,7 +828,6 @@ export class PlayerState {
                 return;
             }
             this._engine.endNormalSegment(end);
-            this.d.playPauseBtn.classList.remove('playing');
             this._setTransportState('stopped', 'segment-end');
             this._emit('segmentplayend', { end });
         }
@@ -867,7 +855,7 @@ export class PlayerState {
         const hopSize = windowHopFromOverlap(windowSize, overlapLevel);
         const fftSize = fftSizeFromOversampling(windowSize, oversamplingLevel);
         const windowFunction = this.d.windowFunctionSelect?.value || 'hann';
-        const nMels = parseInt(this.d.nMelsInput?.value || '160', 10) || 160;
+        const nMels = Math.max(16, Math.min(512, parseInt(this.d.nMelsInput?.value || '160', 10) || 160));
         const useReassigned = this.d.reassignedCheck?.checked ?? false;
 
         // CQT: compute nMels from octave range if CQT scale is selected
@@ -907,28 +895,28 @@ export class PlayerState {
                     ...options,
                 });
             } else {
-            const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true
-                && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
-                && typeof this.processor.computeProgressive === 'function';
+                const shouldUseProgressive = this.options.enableProgressiveSpectrogram === true
+                    && this.audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
+                    && typeof this.processor.computeProgressive === 'function';
 
-            if (shouldUseProgressive) {
-                const chunkResults = [];
-                for await (const progress of this.processor.computeProgressive(channelData, {
-                    ...options,
-                    chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
-                })) {
-                    chunkResults.push(progress.result);
-                    this._emit('progress', {
-                        chunk: progress.chunk,
-                        totalChunks: progress.totalChunks,
-                        percent: progress.percent,
-                    });
+                if (shouldUseProgressive) {
+                    const chunkResults = [];
+                    for await (const progress of this.processor.computeProgressive(channelData, {
+                        ...options,
+                        chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
+                    })) {
+                        chunkResults.push(progress.result);
+                        this._emit('progress', {
+                            chunk: progress.chunk,
+                            totalChunks: progress.totalChunks,
+                            percent: progress.percent,
+                        });
+                    }
+                    result = this._mergeProgressiveResults(chunkResults, options.nMels);
+                } else {
+                    result = await this.processor.compute(channelData, options);
                 }
-                result = this._mergeProgressiveResults(chunkResults, options.nMels);
-            } else {
-                result = await this.processor.compute(channelData, options);
             }
-            } // end if(useReassigned) else
 
             this.spectrogramData = result.data;
             this.spectrogramFrames = result.nFrames;
@@ -1019,8 +1007,14 @@ export class PlayerState {
         }
 
         this._updateSpectrogramStats();
-        this._autoContrast();
-        this._autoFrequency();
+        const gainMode = this.d.gainModeSelect?.value || 'auto';
+        if (gainMode === 'auto') this._autoContrast();
+        const freqMode = this.d.maxFreqModeSelect?.value || 'auto';
+        if (freqMode === 'auto') {
+            this._autoFrequency();
+        } else if (freqMode === 'nyquist') {
+            this._setMaxFreqToNyquist();
+        }
         this._buildSpectrogramGrayscale();
         this._buildSpectrogramBaseImage();
         this._drawSpectrogram();
@@ -1334,7 +1328,8 @@ export class PlayerState {
     }
 
     /** Stage 2 — fast: grayscale → colored canvas.
-     *  GPU path: ~0.1 ms.  JS fallback: ~20-80 ms. */
+     *  GPU path: ~0.1 ms.  JS fallback: ~20-80 ms.
+     *  Calls _buildSpectrogramGrayscale() lazily if spectrogramGrayInfo is missing. */
     _buildSpectrogramBaseImage() {
         if (!this.spectrogramGrayInfo) this._buildSpectrogramGrayscale();
         const floor01 = parseFloat(this.d.floorSlider.value) / 100;
@@ -3055,6 +3050,11 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     _handleKeyboardShortcuts(event) {
+        // Close compact toolbar on Escape regardless of audio state
+        if (event.key === 'Escape' && this._compactToolbarOpen) {
+            this._setCompactToolbarOpen(false);
+            return;
+        }
         if (!this.audioBuffer || isTypingContext(event.target)) return;
 
         switch (event.code) {
@@ -3434,9 +3434,6 @@ export class PlayerState {
 
         // ── Keyboard ──
         on(document, 'keydown', (e) => this._handleKeyboardShortcuts(e));
-        on(document, 'keydown', (e) => {
-            if (e.key === 'Escape' && this._compactToolbarOpen) this._setCompactToolbarOpen(false);
-        });
         on(document, 'pointerdown', (e) => {
             if (!this._compactToolbarOpen) return;
             if (this.d.toolbarRoot?.contains(e.target)) return;
@@ -3494,7 +3491,7 @@ export class PlayerState {
             const rec = new GestureRecognizer(element);
             const offSwipe = rec.on('swipe', ({ dx }) => {
                 if (!this.audioBuffer) return;
-                this._seekRelative(dx / Math.max(1, this.pixelsPerSecond));
+                this._seekByDelta(dx / Math.max(1, this.pixelsPerSecond));
             });
             const offPinch = rec.on('pinch', ({ scale, centerX }) => {
                 if (!this.audioBuffer) return;

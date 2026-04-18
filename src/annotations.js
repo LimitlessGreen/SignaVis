@@ -261,18 +261,48 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             tagsRow.appendChild(badge);
         }
 
-        // "+" button to add custom tag
+        // "+" button to add custom tag — inline form, no blocking prompt()
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
         addBtn.className = 'label-tag-add';
         addBtn.textContent = '+ Tag';
         addBtn.addEventListener('click', () => {
-            const key = prompt('Tag name (e.g. territoryStatus):');
-            if (!key?.trim()) return;
-            const val = prompt(`Value for "${key.trim()}":`);
-            if (val == null) return;
-            currentTags[key.trim()] = val.trim();
-            renderTags();
+            addBtn.hidden = true;
+            const form = document.createElement('span');
+            form.className = 'label-tag-inline-form';
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.placeholder = 'key';
+            keyInput.className = 'label-tag-inline-input';
+            const valInput = document.createElement('input');
+            valInput.type = 'text';
+            valInput.placeholder = 'value';
+            valInput.className = 'label-tag-inline-input';
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.textContent = '✓';
+            confirmBtn.className = 'label-tag-inline-confirm';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = '✕';
+            cancelBtn.className = 'label-tag-inline-cancel';
+
+            const commit = () => {
+                const k = keyInput.value.trim();
+                const v = valInput.value.trim();
+                if (k) currentTags[k] = v;
+                renderTags();
+            };
+            confirmBtn.addEventListener('click', commit);
+            cancelBtn.addEventListener('click', () => renderTags());
+            valInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                if (e.key === 'Escape') renderTags();
+            });
+
+            form.append(keyInput, valInput, confirmBtn, cancelBtn);
+            tagsRow.appendChild(form);
+            keyInput.focus();
         });
         tagsRow.appendChild(addBtn);
     };
@@ -785,6 +815,7 @@ export class AnnotationLayer {
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)`;
+        el.setAttribute('aria-label', el.title);
         el.innerHTML = `
             <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
             <span class="annotation-confidence">${region.confidence != null ? `${Math.round(region.confidence * 100)}%` : ''}</span>
@@ -1363,6 +1394,7 @@ export class SpectrogramLabelLayer {
         el.dataset.start = String(label.start);
         el.dataset.end = String(label.end);
         el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+        el.setAttribute('aria-label', el.title);
         el.innerHTML = `
             <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
             <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>

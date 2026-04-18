@@ -35,8 +35,9 @@ export function getAxisWidth(fallback) {
 }
 
 export function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(1);
+    const s = Math.max(0, seconds);
+    const mins = Math.floor(s / 60);
+    const secs = (s % 60).toFixed(1);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(4, '0')}`;
 }
 
@@ -102,22 +103,22 @@ export function colorWithAlpha(color, alpha = 1) {
 }
 
 /**
- * Parse the native sample rate from an audio file header (WAV, FLAC, OGG Vorbis/Opus).
+ * Parse the native sample rate from an audio file header (WAV, FLAC, OGG Vorbis/Opus, MP3).
  * Returns 0 if the format is unrecognised or the buffer is too short.
  * @param {ArrayBuffer} buf
  * @returns {number}
  */
 export function parseNativeSampleRate(buf) {
-    if (buf.byteLength < 44) return 0;
+    if (buf.byteLength < 10) return 0;
     const view = new DataView(buf);
 
     // ── WAV: "RIFF" … "WAVE", sample rate at byte 24 (LE uint32) ──
-    if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
+    if (buf.byteLength >= 28 && view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
         return view.getUint32(24, true);
     }
 
     // ── FLAC: "fLaC", STREAMINFO sample rate = 20 bits at byte 18 ──
-    if (view.getUint32(0) === 0x664C6143) {
+    if (buf.byteLength >= 21 && view.getUint32(0) === 0x664C6143) {
         return (view.getUint8(18) << 12) | (view.getUint8(19) << 4) | (view.getUint8(20) >> 4);
     }
 
@@ -136,6 +137,36 @@ export function parseNativeSampleRate(buf) {
                 view.getUint32(dataOffset + 4) === 0x48656164 /* "Head" */) {
                 return view.getUint32(dataOffset + 12, true);
             }
+        }
+    }
+
+    // ── MP3: optional ID3v2 tag, then first MPEG frame sync ──
+    // Sample rate is encoded in bits 11-10 of the 4-byte frame header.
+    {
+        const MP3_SAMPLE_RATES = [
+            [11025, 12000, 8000],   // MPEG 2.5 (version bits = 00)
+            [0, 0, 0],              // reserved  (version bits = 01)
+            [22050, 24000, 16000],  // MPEG 2    (version bits = 10)
+            [44100, 48000, 32000],  // MPEG 1    (version bits = 11)
+        ];
+        let scanStart = 0;
+        // Skip ID3v2 tag ("ID3" + syncsafe 4-byte size at offset 6)
+        if (view.getUint8(0) === 0x49 && view.getUint8(1) === 0x44 && view.getUint8(2) === 0x33) {
+            const id3Size = ((view.getUint8(6) & 0x7F) << 21) |
+                            ((view.getUint8(7) & 0x7F) << 14) |
+                            ((view.getUint8(8) & 0x7F) << 7)  |
+                             (view.getUint8(9) & 0x7F);
+            scanStart = 10 + id3Size;
+        }
+        const scanEnd = Math.min(buf.byteLength - 3, scanStart + 4096);
+        for (let i = scanStart; i < scanEnd; i++) {
+            if (view.getUint8(i) !== 0xFF || (view.getUint8(i + 1) & 0xE0) !== 0xE0) continue;
+            const h = view.getUint32(i);
+            const version = (h >>> 19) & 0x3;
+            const layer   = (h >>> 17) & 0x3;
+            const srIndex = (h >>> 10) & 0x3;
+            if (version === 0x1 || layer === 0x0 || srIndex === 0x3) continue; // reserved
+            return MP3_SAMPLE_RATES[version][srIndex];
         }
     }
 
