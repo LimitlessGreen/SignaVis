@@ -409,7 +409,6 @@
     const aboutPanelEl = createAboutPanel();
     sidebar.addPanel('about',  { icon: ICONS.about,   label: 'About',    element: aboutPanelEl });
     sidebar.addPanel('help',   { icon: ICONS.help,    label: 'Help',     element: document.getElementById('panelHelp') });
-    sidebar.setActive('labels');
 
     // About panel simplified to a GitHub link (no extra runtime handlers)
 
@@ -978,6 +977,8 @@
       element: explorePanel.el,
       onActivate: () => explorePanel.activate(),
     });
+    // Ensure Labels is the default active panel on initial load
+    sidebar.setActive('labels');
 
     // ── Sync & export ─────────────────────────────────────────────────
     let _skipPropsRefresh = false;
