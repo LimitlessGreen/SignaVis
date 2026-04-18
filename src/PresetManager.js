@@ -1,0 +1,686 @@
+// ═══════════════════════════════════════════════════════════════════════
+// PresetManager.js — DSP preset CRUD, storage, quality slider, PCEN controls
+//
+// Owns:
+//   • localStorage read/write for user presets, favourite, and last settings
+//   • Reading and writing all DSP control inputs (scaleSelect, windowSizeSelect, …)
+//   • Preset dropdown, favourite button, preset manager panel (CRUD/rename/export/import)
+//   • Quality slider sync
+//   • PCEN section dimming and colour-scale constraints
+//   • currentColorScheme state (exposed via getter)
+//
+// Delegates back to PlayerState via two callbacks:
+//   • onRegenerateSpectrogram(opts) — full FFT re-run needed
+//   • onStage1Rebuild()             — display-only rebuild (no FFT)
+// ═══════════════════════════════════════════════════════════════════════
+
+import { DSP_PROFILES, QUALITY_LEVELS } from './constants.js';
+
+const LS_USER_PRESETS  = 'aw-user-presets';
+const LS_FAV_PRESET    = 'aw-favourite-preset';
+const LS_LAST_SETTINGS = 'aw-last-settings';
+
+export class PresetManager {
+    /** @type {any} DOM-refs object (subset of PlayerState.d) */
+    #d;
+    /** @type {(opts?: object) => void} */
+    #onRegen;
+    /** @type {() => void} */
+    #onStage1;
+    #statusTimer = 0;
+    #cleanups = [];
+    #currentColorScheme = 'grayscale';
+
+    /**
+     * @param {object} d  Subset of PlayerState DOM-refs (all preset-related elements).
+     * @param {object} callbacks
+     * @param {(opts?: object) => void} callbacks.onRegenerateSpectrogram
+     * @param {() => void}              callbacks.onStage1Rebuild
+     */
+    constructor(d, { onRegenerateSpectrogram, onStage1Rebuild }) {
+        this.#d       = d;
+        this.#onRegen  = onRegenerateSpectrogram;
+        this.#onStage1 = onStage1Rebuild;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Public API (called by PlayerState)
+    // ─────────────────────────────────────────────────────────────────
+
+    /** The current spectrogram colour scheme (kept in sync with the colorSchemeSelect). */
+    get currentColorScheme() { return this.#currentColorScheme; }
+
+    /**
+     * Bind all preset/DSP-control event listeners.
+     * The caller is responsible for removing them on dispose — pass the same
+     * `on(target, type, fn)` helper used in PlayerState._bindEvents so that
+     * cleanup is registered in the central _cleanups array.
+     *
+     * @param {(target: EventTarget, type: string, fn: EventListener) => void} on
+     */
+    bindEvents(on) {
+        const d = this.#d;
+
+        // ── Preset dropdown & buttons ──
+        on(d.presetSelect, 'change', () => {
+            const val = d.presetSelect?.value;
+            if (val) this.applyPreset(val);
+            this.updatePresetButtons();
+            this.persistCurrentSettings();
+        });
+        on(d.presetSaveBtn,    'click',   () => this.#promptSaveUserPreset());
+        on(d.presetFavBtn,     'click',   () => this.#toggleFavouritePreset());
+        on(d.presetManageBtn,  'click',   () => this.#openPresetManager());
+        on(d.presetSaveConfirm,'click',   () => this.#confirmSaveUserPreset());
+        on(d.presetSaveCancel, 'click',   () => this.#cancelSaveUserPreset());
+        on(d.presetSaveInput,  'keydown', (e) => {
+            if (e.key === 'Enter')  this.#confirmSaveUserPreset();
+            if (e.key === 'Escape') this.#cancelSaveUserPreset();
+        });
+        on(d.presetImportBtn, 'click', () => this.#importPresets());
+        on(d.presetExportBtn, 'click', () => this.#exportPresets());
+
+        // ── Quality slider ──
+        on(d.qualitySlider, 'input', () => {
+            this.applyQualityLevel(parseInt(d.qualitySlider.value, 10));
+        });
+
+        // ── Scale / colour-scale ──
+        on(d.scaleSelect, 'change', () => {
+            this.clearPresetHighlight();
+            this.#onRegen({ autoAdjust: true });
+        });
+        on(d.colourScaleSelect, 'change', () => {
+            this.clearPresetHighlight();
+            this.updateColourScaleConstraints();
+            this.#onRegen({ autoAdjust: true });
+        });
+        on(d.colorSchemeSelect, 'change', () => {
+            this.#currentColorScheme = d.colorSchemeSelect.value;
+            this.persistCurrentSettings();
+            this.#onStage1();
+        });
+
+        // ── DSP controls that trigger a full re-run ──
+        // Each entry: DOM-ref key, whether to sync the quality slider afterward.
+        const DSP_CONTROLS = [
+            { el: 'nMelsInput',          syncQuality: true  },
+            { el: 'windowSizeSelect',    syncQuality: true  },
+            { el: 'overlapSelect',       syncQuality: true  },
+            { el: 'oversamplingSelect',  syncQuality: true  },
+            { el: 'windowFunctionSelect',syncQuality: false },
+            { el: 'reassignedCheck',     syncQuality: false },
+            { el: 'pcenGainInput',       syncQuality: false },
+            { el: 'pcenBiasInput',       syncQuality: false },
+            { el: 'pcenRootInput',       syncQuality: false },
+            { el: 'pcenSmoothingInput',  syncQuality: false },
+        ];
+        for (const { el, syncQuality } of DSP_CONTROLS) {
+            if (!d[el]) continue;
+            on(d[el], 'change', () => {
+                this.clearPresetHighlight();
+                if (syncQuality) this.syncQualitySlider();
+                this.#onRegen();
+            });
+        }
+
+        // PCEN enabled is special: also updates section dimming before re-run.
+        if (d.pcenEnabledCheck) {
+            on(d.pcenEnabledCheck, 'change', () => {
+                this.updatePcenSectionDimming();
+                this.clearPresetHighlight();
+                this.#onRegen();
+            });
+        }
+
+        // ── Stage-1-only controls (no FFT, just display rebuild) ──
+        on(d.noiseReductionCheck, 'change', () => { this.persistCurrentSettings(); this.#onStage1(); });
+        on(d.claheCheck,          'change', () => { this.persistCurrentSettings(); this.#onStage1(); });
+    }
+
+    /** Populate preset dropdown from built-ins + user presets. */
+    populatePresetDropdown() {
+        const sel = this.#d.presetSelect;
+        if (!sel) return;
+        sel.innerHTML = '';
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = '— Custom —';
+        sel.appendChild(empty);
+        for (const name of Object.keys(DSP_PROFILES)) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+            sel.appendChild(opt);
+        }
+        const userPresets = this.loadUserPresets();
+        const userNames = Object.keys(userPresets);
+        if (userNames.length) {
+            const sep = document.createElement('option');
+            sep.disabled = true;
+            sep.textContent = '──────────';
+            sel.appendChild(sep);
+            const fav = this.getFavouritePreset();
+            for (const name of userNames) {
+                const opt = document.createElement('option');
+                opt.value = `user:${name}`;
+                opt.textContent = (fav === `user:${name}` ? '⭐ ' : '') + name;
+                sel.appendChild(opt);
+            }
+        }
+        const fav = this.getFavouritePreset();
+        if (fav && Array.from(sel.options).some(o => o.value === fav)) {
+            sel.value = fav;
+        } else {
+            sel.value = 'birder';
+        }
+    }
+
+    /** Enable/disable and style the favourite button based on the current selection. */
+    updatePresetButtons() {
+        const val = this.#d.presetSelect?.value || '';
+        const isAny = val !== '';
+        const btn = this.#d.presetFavBtn;
+        if (btn) {
+            btn.disabled = !isAny;
+            const isFav = isAny && this.getFavouritePreset() === val;
+            btn.classList.toggle('active', isFav);
+            btn.title = isFav ? 'Remove as default preset' : 'Set as default preset';
+        }
+    }
+
+    /**
+     * Apply a named preset (built-in or user): writes DOM controls, then calls
+     * onRegenerateSpectrogram so the caller decides whether audio is available.
+     */
+    applyPreset(name) {
+        const p = name.startsWith('user:')
+            ? this.loadUserPresets()[name.slice(5)]
+            : DSP_PROFILES[name];
+        if (!p) return;
+        this.#applyControls(p);
+        if (this.#d.presetSelect) this.#d.presetSelect.value = name;
+        this.updatePresetButtons();
+        this.syncQualitySlider();
+        this.updatePcenSectionDimming();
+        this.#onRegen({ autoAdjust: true });
+    }
+
+    /**
+     * Apply favourite preset or last-used settings to controls on init (no audio yet,
+     * so does NOT call onRegenerateSpectrogram).
+     */
+    applyFavouritePresetControls() {
+        const fav = this.getFavouritePreset();
+        let p;
+        if (fav) {
+            p = fav.startsWith('user:')
+                ? this.loadUserPresets()[fav.slice(5)]
+                : DSP_PROFILES[fav];
+        }
+        if (!p) p = this.loadLastSettings();
+        if (!p) {
+            const defaultKey = this.#d.presetSelect?.value || 'birder';
+            p = DSP_PROFILES[defaultKey];
+        }
+        if (!p) return;
+        this.#applyControls(p);
+        // Restore "Custom" label when last-used settings don't match a named preset
+        if (!fav && !DSP_PROFILES[this.#d.presetSelect?.value || '']) {
+            if (this.#d.presetSelect) this.#d.presetSelect.value = '';
+        }
+        this.updatePresetButtons();
+    }
+
+    /** Clear preset dropdown selection (set to Custom), persist settings. */
+    clearPresetHighlight() {
+        if (this.#d.presetSelect) this.#d.presetSelect.value = '';
+        this.updatePresetButtons();
+        this.persistCurrentSettings();
+    }
+
+    // ── Quality slider ───────────────────────────────────────────────
+
+    applyQualityLevel(index) {
+        const level = QUALITY_LEVELS[index];
+        if (!level) return;
+        const d = this.#d;
+        if (d.windowSizeSelect)    d.windowSizeSelect.value    = String(level.windowSize);
+        if (d.overlapSelect)       d.overlapSelect.value       = String(level.overlapLevel);
+        if (d.oversamplingSelect)  d.oversamplingSelect.value  = String(level.oversamplingLevel);
+        if (d.nMelsInput)          d.nMelsInput.value          = String(level.nMels);
+        if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = level.label;
+        this.clearPresetHighlight();
+        this.#onRegen();
+    }
+
+    syncQualitySlider() {
+        const d = this.#d;
+        if (!d.qualitySlider) return;
+        const ws = parseInt(d.windowSizeSelect?.value   || '0',  10);
+        const ol = parseInt(d.overlapSelect?.value      || '-1', 10);
+        const os = parseInt(d.oversamplingSelect?.value || '-1', 10);
+        const nm = parseInt(d.nMelsInput?.value         || '0',  10);
+        const idx = QUALITY_LEVELS.findIndex(l =>
+            l.windowSize === ws && l.overlapLevel === ol &&
+            l.oversamplingLevel === os && l.nMels === nm,
+        );
+        if (idx >= 0) {
+            d.qualitySlider.value = String(idx);
+            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = QUALITY_LEVELS[idx].label;
+        } else {
+            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = 'Custom';
+        }
+    }
+
+    // ── PCEN / colour-scale constraints ─────────────────────────────
+
+    updatePcenSectionDimming() {
+        const d = this.#d;
+        if (!d.pcenSection) return;
+        const enabled = d.pcenEnabledCheck?.checked ?? true;
+        d.pcenSection.style.opacity = enabled ? '' : '0.45';
+        for (const el of [d.pcenGainInput, d.pcenBiasInput, d.pcenRootInput, d.pcenSmoothingInput]) {
+            if (el) el.disabled = !enabled;
+        }
+    }
+
+    updateColourScaleConstraints() {
+        const d = this.#d;
+        const cs = d.colourScaleSelect?.value || 'dbSquared';
+        if (d.pcenEnabledCheck) {
+            if (cs === 'phase') {
+                d.pcenEnabledCheck.checked  = false;
+                d.pcenEnabledCheck.disabled = true;
+            } else {
+                d.pcenEnabledCheck.disabled = false;
+            }
+            this.updatePcenSectionDimming();
+        }
+    }
+
+    // ── Settings snapshot / persistence ─────────────────────────────
+
+    /** Snapshot current DSP controls into a preset-shape object. */
+    getCurrentPresetSettings() {
+        const d = this.#d;
+        const gainMode = d.gainModeSelect?.value || 'auto';
+        const preset = {
+            scale:             d.scaleSelect?.value              || 'mel',
+            colourScale:       d.colourScaleSelect?.value        || 'dbSquared',
+            windowSize:        parseInt(d.windowSizeSelect?.value    || '1024', 10),
+            overlapLevel:      parseInt(d.overlapSelect?.value       || '2',    10),
+            oversamplingLevel: parseInt(d.oversamplingSelect?.value  || '0',    10),
+            windowFunction:    d.windowFunctionSelect?.value     || 'hann',
+            nMels:             parseInt(d.nMelsInput?.value          || '160',  10),
+            usePcen:           d.pcenEnabledCheck?.checked           ?? true,
+            pcenGain:          parseFloat(d.pcenGainInput?.value     || '0.8'),
+            pcenBias:          parseFloat(d.pcenBiasInput?.value     || '0.01'),
+            pcenRoot:          parseFloat(d.pcenRootInput?.value     || '4.0'),
+            pcenSmoothing:     parseFloat(d.pcenSmoothingInput?.value|| '0.025'),
+            colorScheme:       d.colorSchemeSelect?.value        || 'grayscale',
+            reassigned:        d.reassignedCheck?.checked            ?? false,
+            noiseReduction:    d.noiseReductionCheck?.checked        ?? false,
+            clahe:             d.claheCheck?.checked                 ?? false,
+            gainMode,
+            maxFreqMode:       d.maxFreqModeSelect?.value        || 'auto',
+        };
+        if (gainMode === 'fixed') {
+            preset.gainFloor = parseInt(d.floorSlider?.value || '0',   10);
+            preset.gainCeil  = parseInt(d.ceilSlider?.value  || '100', 10);
+        }
+        if (preset.maxFreqMode === 'fixed') {
+            preset.maxFreqHz = parseFloat(d.maxFreqSelect?.value || '10000');
+        }
+        return preset;
+    }
+
+    persistCurrentSettings() {
+        try {
+            localStorage.setItem(LS_LAST_SETTINGS, JSON.stringify(this.getCurrentPresetSettings()));
+        } catch { /* quota */ }
+    }
+
+    loadLastSettings() {
+        try {
+            const raw = localStorage.getItem(LS_LAST_SETTINGS);
+            if (raw) {
+                const p = JSON.parse(raw);
+                if (p && typeof p === 'object' && !Array.isArray(p)) return p;
+            }
+        } catch { /* corrupt */ }
+        return null;
+    }
+
+    loadUserPresets() {
+        try {
+            const raw = localStorage.getItem(LS_USER_PRESETS);
+            if (raw) {
+                const p = JSON.parse(raw);
+                if (p && typeof p === 'object' && !Array.isArray(p)) return p;
+            }
+        } catch { /* corrupt */ }
+        return {};
+    }
+
+    saveUserPresetsToStorage(presets) {
+        try { localStorage.setItem(LS_USER_PRESETS, JSON.stringify(presets)); } catch { /* quota */ }
+    }
+
+    getFavouritePreset() {
+        try { return localStorage.getItem(LS_FAV_PRESET) || ''; } catch { return ''; }
+    }
+
+    setFavouritePreset(key) {
+        try { localStorage.setItem(LS_FAV_PRESET, key); } catch { /* quota */ }
+    }
+
+    dispose() {
+        clearTimeout(this.#statusTimer);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Private helpers
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Write all DSP control DOM elements from a preset object.
+     * Shared by applyPreset() and applyFavouritePresetControls().
+     */
+    #applyControls(p) {
+        const d = this.#d;
+        if (d.scaleSelect)          d.scaleSelect.value          = p.scale          || 'mel';
+        if (d.windowSizeSelect    && p.windowSize        != null) d.windowSizeSelect.value    = String(p.windowSize);
+        if (d.overlapSelect       && p.overlapLevel      != null) d.overlapSelect.value       = String(p.overlapLevel);
+        if (d.oversamplingSelect  && p.oversamplingLevel != null) d.oversamplingSelect.value  = String(p.oversamplingLevel);
+        if (d.windowFunctionSelect) d.windowFunctionSelect.value = p.windowFunction  || 'hann';
+        if (d.nMelsInput)           d.nMelsInput.value           = String(p.nMels    ?? 160);
+        if (d.pcenEnabledCheck)     d.pcenEnabledCheck.checked   = !!p.usePcen;
+        if (d.pcenGainInput)        d.pcenGainInput.value        = String(p.pcenGain      ?? 0.8);
+        if (d.pcenBiasInput)        d.pcenBiasInput.value        = String(p.pcenBias      ?? 0.01);
+        if (d.pcenRootInput)        d.pcenRootInput.value        = String(p.pcenRoot      ?? 4.0);
+        if (d.pcenSmoothingInput)   d.pcenSmoothingInput.value   = String(p.pcenSmoothing ?? 0.025);
+        if (p.colorScheme && d.colorSchemeSelect) {
+            d.colorSchemeSelect.value  = p.colorScheme;
+            this.#currentColorScheme   = p.colorScheme;
+        }
+        if (d.reassignedCheck)      d.reassignedCheck.checked    = !!p.reassigned;
+        if (p.colourScale    != null && d.colourScaleSelect)   d.colourScaleSelect.value   = p.colourScale;
+        if (p.noiseReduction != null && d.noiseReductionCheck) d.noiseReductionCheck.checked = !!p.noiseReduction;
+        if (p.clahe          != null && d.claheCheck)          d.claheCheck.checked          = !!p.clahe;
+        const gainMode = p.gainMode || 'auto';
+        if (d.gainModeSelect) d.gainModeSelect.value = gainMode;
+        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
+            if (d.floorSlider) d.floorSlider.value = String(p.gainFloor);
+            if (d.ceilSlider)  d.ceilSlider.value  = String(p.gainCeil);
+        }
+        const maxFreqMode = p.maxFreqMode || 'auto';
+        if (d.maxFreqModeSelect) d.maxFreqModeSelect.value = maxFreqMode;
+        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && d.maxFreqSelect) {
+            d.maxFreqSelect.value = String(p.maxFreqHz);
+        }
+    }
+
+    #showPresetStatus(msg, isError = false) {
+        const el = this.#d.presetStatus;
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.toggle('pm-status-error', isError);
+        el.classList.remove('pm-status-visible');
+        void el.offsetWidth; // force reflow for animation
+        el.classList.add('pm-status-visible');
+        clearTimeout(this.#statusTimer);
+        this.#statusTimer = setTimeout(() => el.classList.remove('pm-status-visible'), 2500);
+    }
+
+    #openPresetManager() {
+        const d = this.#d;
+        if (!d.presetManagerPanel) return;
+        const isOpen = !d.presetManagerPanel.hidden;
+        d.presetManagerPanel.hidden = isOpen;
+        d.presetManageBtn?.classList.toggle('active', !isOpen);
+        if (!isOpen) this.#renderPresetManagerList();
+    }
+
+    #closePresetManager() {
+        if (this.#d.presetManagerPanel) this.#d.presetManagerPanel.hidden = true;
+        this.#d.presetManageBtn?.classList.remove('active');
+    }
+
+    #renderPresetManagerList() {
+        const list = this.#d.presetManagerList;
+        if (!list) return;
+        list.innerHTML = '';
+        const fav = this.getFavouritePreset();
+
+        const starSvg       = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+        const starFilledSvg = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+        const trashSvg      = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+        const pencilSvg     = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 00-3.986-3.987L3.842 16.174a2 2 0 00-.5.83l-1.321 4.352a.5.5 0 00.62.62l4.352-1.321a2 2 0 00.83-.497z"/></svg>`;
+
+        // Built-in presets
+        for (const name of Object.keys(DSP_PROFILES)) {
+            const key   = name;
+            const isFav = fav === key;
+            const row   = document.createElement('div');
+            row.className = 'pm-item';
+            row.innerHTML = `
+                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
+                <span class="pm-name" title="Click to apply">${name.charAt(0).toUpperCase() + name.slice(1)}</span>
+                <span class="pm-badge">built-in</span>`;
+            row.querySelector('.pm-fav-btn').onclick = () => {
+                this.setFavouritePreset(isFav ? '' : key);
+                this.populatePresetDropdown();
+                this.updatePresetButtons();
+                this.#renderPresetManagerList();
+            };
+            row.querySelector('.pm-name').onclick = () => {
+                this.applyPreset(key);
+                this.persistCurrentSettings();
+            };
+            list.appendChild(row);
+        }
+
+        // User presets
+        const userPresets = this.loadUserPresets();
+        for (const name of Object.keys(userPresets)) {
+            const key   = `user:${name}`;
+            const isFav = fav === key;
+            const row   = document.createElement('div');
+            row.className = 'pm-item';
+            row.innerHTML = `
+                <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
+                <span class="pm-name" title="Click to apply"></span>
+                <button class="pm-icon-btn pm-rename-btn" title="Rename">${pencilSvg}</button>
+                <button class="pm-icon-btn pm-delete-btn" title="Delete">${trashSvg}</button>`;
+            row.querySelector('.pm-name').textContent = name; // textContent avoids XSS
+            row.querySelector('.pm-fav-btn').onclick = () => {
+                this.setFavouritePreset(isFav ? '' : key);
+                this.populatePresetDropdown();
+                this.updatePresetButtons();
+                this.#renderPresetManagerList();
+            };
+            row.querySelector('.pm-name').onclick = () => {
+                this.applyPreset(key);
+                this.persistCurrentSettings();
+            };
+            row.querySelector('.pm-rename-btn').onclick = () => this.#inlineRenamePreset(name, row);
+            const delBtn = row.querySelector('.pm-delete-btn');
+            delBtn.onclick = () => {
+                if (delBtn.classList.contains('pm-confirm-delete')) {
+                    this.#deleteUserPreset(name);
+                } else {
+                    delBtn.classList.add('pm-confirm-delete');
+                    delBtn.title = 'Click again to confirm';
+                    setTimeout(() => { delBtn.classList.remove('pm-confirm-delete'); delBtn.title = 'Delete'; }, 2000);
+                }
+            };
+            list.appendChild(row);
+        }
+
+        if (!Object.keys(DSP_PROFILES).length && !Object.keys(userPresets).length) {
+            const empty = document.createElement('div');
+            empty.className = 'pm-empty';
+            empty.textContent = 'No presets yet.';
+            list.appendChild(empty);
+        }
+    }
+
+    #promptSaveUserPreset() {
+        const d = this.#d;
+        if (!d.presetSaveRow) return;
+        const isOpen = !d.presetSaveRow.hidden;
+        d.presetSaveRow.hidden = isOpen;
+        if (!isOpen && d.presetSaveInput) { d.presetSaveInput.value = ''; d.presetSaveInput.focus(); }
+    }
+
+    #confirmSaveUserPreset() {
+        const d = this.#d;
+        const inp = d.presetSaveInput;
+        if (!inp) return;
+        const clean = (inp.value || '').trim();
+        if (!clean) return;
+        if (DSP_PROFILES[clean.toLowerCase()]) {
+            this.#showPresetStatus('Built-in name — choose another', true);
+            return;
+        }
+        const presets = this.loadUserPresets();
+        presets[clean] = this.getCurrentPresetSettings();
+        this.saveUserPresetsToStorage(presets);
+        this.populatePresetDropdown();
+        if (d.presetSelect) d.presetSelect.value = `user:${clean}`;
+        this.updatePresetButtons();
+        d.presetSaveRow.hidden = true;
+        this.#renderPresetManagerList();
+        this.#showPresetStatus(`Saved "${clean}"`);
+    }
+
+    #cancelSaveUserPreset() {
+        if (this.#d.presetSaveRow) this.#d.presetSaveRow.hidden = true;
+    }
+
+    #toggleFavouritePreset() {
+        const val = this.#d.presetSelect?.value || '';
+        if (!val) return;
+        const current = this.getFavouritePreset();
+        this.setFavouritePreset(current === val ? '' : val);
+        this.populatePresetDropdown();
+        if (this.#d.presetSelect) this.#d.presetSelect.value = val;
+        this.updatePresetButtons();
+        this.#renderPresetManagerList();
+    }
+
+    #inlineRenamePreset(oldName, row) {
+        const nameSpan = row.querySelector('.pm-name');
+        if (!nameSpan || row.querySelector('.pm-rename-input')) return;
+        const input = document.createElement('input');
+        input.type      = 'text';
+        input.className = 'pm-rename-input';
+        input.value     = oldName;
+        input.maxLength = 40;
+        nameSpan.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const commit = () => {
+            const clean = (input.value || '').trim();
+            if (!clean || clean === oldName) { this.#renderPresetManagerList(); return; }
+            if (DSP_PROFILES[clean.toLowerCase()]) {
+                this.#showPresetStatus('Built-in name — choose another', true);
+                this.#renderPresetManagerList();
+                return;
+            }
+            const presets = this.loadUserPresets();
+            if (presets[clean]) {
+                this.#showPresetStatus(`"${clean}" already exists`, true);
+                this.#renderPresetManagerList();
+                return;
+            }
+            presets[clean] = presets[oldName];
+            delete presets[oldName];
+            this.saveUserPresetsToStorage(presets);
+            const oldKey = `user:${oldName}`;
+            const newKey = `user:${clean}`;
+            if (this.getFavouritePreset() === oldKey) this.setFavouritePreset(newKey);
+            this.populatePresetDropdown();
+            this.updatePresetButtons();
+            this.#renderPresetManagerList();
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter')  commit();
+            if (e.key === 'Escape') this.#renderPresetManagerList();
+        });
+        input.addEventListener('blur', commit);
+    }
+
+    #deleteUserPreset(name) {
+        const presets = this.loadUserPresets();
+        delete presets[name];
+        this.saveUserPresetsToStorage(presets);
+        const key = `user:${name}`;
+        if (this.getFavouritePreset() === key) this.setFavouritePreset('');
+        this.populatePresetDropdown();
+        this.updatePresetButtons();
+        this.#renderPresetManagerList();
+    }
+
+    #exportPresets() {
+        const data = {
+            version: 1,
+            favourite: this.getFavouritePreset(),
+            presets: this.loadUserPresets(),
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = 'audio-workbench-presets.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        this.#showPresetStatus('Exported');
+    }
+
+    #importPresets() {
+        const input    = document.createElement('input');
+        input.type     = 'file';
+        input.accept   = '.json,application/json';
+        input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const data = JSON.parse(/** @type {string} */ (reader.result));
+                    if (!data || typeof data !== 'object' || typeof data.presets !== 'object' || Array.isArray(data.presets)) {
+                        this.#showPresetStatus('Invalid preset file', true); return;
+                    }
+                    for (const [k, v] of Object.entries(data.presets)) {
+                        if (!v || typeof v !== 'object' || Array.isArray(v)) {
+                            this.#showPresetStatus(`Invalid entry: "${k}"`, true); return;
+                        }
+                    }
+                    const existing = this.loadUserPresets();
+                    let imported   = 0;
+                    for (const [k, v] of Object.entries(data.presets)) {
+                        if (DSP_PROFILES[k.toLowerCase()]) continue;
+                        existing[k] = v;
+                        imported++;
+                    }
+                    this.saveUserPresetsToStorage(existing);
+                    if (typeof data.favourite === 'string' && data.favourite.startsWith('user:')) {
+                        const favName = data.favourite.slice(5);
+                        if (existing[favName]) this.setFavouritePreset(data.favourite);
+                    }
+                    this.populatePresetDropdown();
+                    this.updatePresetButtons();
+                    this.#renderPresetManagerList();
+                    this.#showPresetStatus(`Imported ${imported} preset(s)`);
+                } catch {
+                    this.#showPresetStatus('Failed to parse file', true);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+}
