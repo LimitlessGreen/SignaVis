@@ -34,6 +34,7 @@ import {
 } from './spectrogram.js';
 
 import { computeReassignedSpectrogram } from './dsp.js';
+import { spectrogramCache } from './SpectrogramCache.js';
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -124,6 +125,9 @@ export class SpectrogramController extends EventTarget {
         this._nMels = 0;
         this._baseCanvas = null;
         this._grayInfo = null;
+        // Rebuild the max-freq <select> immediately so Nyquist options reflect the
+        // new recording's sample rate before generate() / cache lookup runs.
+        this.updateMaxFreqOptions(sampleRateHz);
     }
 
     /** Reset external mode without clearing audio (used on zoom / reload). */
@@ -186,6 +190,50 @@ export class SpectrogramController extends EventTarget {
 
         try {
             const channelData = this._audioBuffer.getChannelData(0);
+
+            // ── Cache lookup ─────────────────────────────────────────────
+            const cacheKey = await spectrogramCache.computeKey(
+                channelData,
+                this._audioBuffer.sampleRate,
+                options,
+            );
+            const cached = await spectrogramCache.get(cacheKey);
+            if (cached) {
+                this._data        = new Float32Array(cached.dataBuffer);
+                this._nFrames     = cached.nFrames;
+                this._nMels       = cached.nMels;
+                this._hopSize     = cached.hopSize;
+                this._winLength   = cached.winLength;
+                this._colourScale = cached.colourScale || colourScale;
+                this._updateStats();
+                // Apply the same auto-adjust logic as the DSP path so that
+                // gain and freq settings (including Nyquist) are correct even
+                // when the sample rate differs from the previous recording.
+                if (autoAdjust) {
+                    const gainMode = d.gainModeSelect?.value || 'auto';
+                    if (gainMode === 'auto') this.autoContrast(false);
+                    const freqMode = d.maxFreqModeSelect?.value || 'auto';
+                    if (freqMode === 'auto') {
+                        this.autoFrequency(false);
+                    } else if (freqMode === 'nyquist') {
+                        this.setMaxFreqToNyquist();
+                    }
+                }
+                this._emit('needsredraw');
+                if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
+                this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-ready' });
+                this._emit('computetime', { durationMs: 0 });
+                this._emit('ready', {
+                    duration: this._audioBuffer.duration,
+                    sampleRate: this._audioBuffer.sampleRate,
+                    nFrames: this._nFrames,
+                    nMels: this._nMels,
+                    fromCache: true,
+                });
+                return;
+            }
+            // ── Cache miss: run DSP ──────────────────────────────────────
+
             let result;
 
             if (useReassigned) {
@@ -220,6 +268,16 @@ export class SpectrogramController extends EventTarget {
             this._hopSize   = result.hopSize || Math.max(1, Math.floor(this._sampleRateHz / PERCH_FRAME_RATE));
             this._winLength = result.winLength || 4 * this._hopSize;
             this._colourScale = result.colourScale || colourScale;
+
+            // Persist to cache (non-blocking)
+            spectrogramCache.set(cacheKey, {
+                dataBuffer: this._data.buffer.slice(0),
+                nFrames:    this._nFrames,
+                nMels:      this._nMels,
+                hopSize:    this._hopSize,
+                winLength:  this._winLength,
+                colourScale: this._colourScale,
+            }).catch(() => {/* ignore storage errors */});
 
             this._updateStats();
 
