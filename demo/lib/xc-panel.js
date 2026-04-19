@@ -8,6 +8,15 @@ import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoC
 import ModalManager from '../../src/modal-manager.js';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
+// ── Annotator profile field definitions ─────────────────────────────
+
+const AUTHOR_FIELDS = [
+  { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },
+  { key: 'xcUsername', label: 'XC Username',   type: 'text', placeholder: 'xeno-canto login', required: true },
+  { key: 'license',    label: 'Default License', type: 'select', options: ['', 'CC-BY-4.0', 'CC-BY-NC-4.0', 'CC-BY-SA-4.0', 'CC-BY-NC-SA-4.0', 'CC0-1.0'] },
+  { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
+];
+
 const API_KEY_STORAGE     = 'audio-workbench.xc-api-key.v1';
 const SET_META_STORAGE    = 'audio-workbench.xc-set-meta.v2';
 // Profile fields that are auto-saved per manual set (persisted by labeling-app.html)
@@ -123,6 +132,8 @@ export function defaultSetInfo(partial = {}) {
     funding: '',
     taxonCoverage: '',
     completeness: '',
+    /** xcId string of the recording this was auto-created for (fallback XC sets only) */
+    xcFallbackId: null,
     ...partial,
   };
 }
@@ -205,10 +216,13 @@ export class XenoCantoPanel {
    * @param {HTMLButtonElement} [opts.openBtn]
    * @param {HTMLElement}       [opts.recordingMetaEl]     Read-only recording metadata container
    * @param {HTMLElement}       [opts.recordingEditEl]     Editable recording metadata container
-   * @param {HTMLElement}       [opts.setContainerEl]      Container for set selector + form
+   * @param {HTMLElement}       [opts.setContainerEl]      Container for set form
+   * @param {HTMLElement}       [opts.authorContainerEl]   Container for annotator profile form
+   * @param {HTMLElement}       [opts.onboardingBannerEl]  Onboarding banner element
    * @param {HTMLElement}       [opts.uploadBtn]
    * @param {HTMLElement}       [opts.exportSetBtn]
    * @param {HTMLElement}       [opts.statusEl]
+   * @param {import('./annotator-profile.js').AnnotatorProfile} [opts.annotatorProfile]
    * @param {() => Map<string,object>}       [opts.getLabelSets]
    * @param {(setId:string, updates:object) => void} [opts.onSetChange]
    * @param {(partial:object) => object}    [opts.onCreateSet]
@@ -224,9 +238,14 @@ export class XenoCantoPanel {
     this.recordingMetaEl  = opts.recordingMetaEl || null;
     this.recordingEditEl  = opts.recordingEditEl || null;
     this.setContainerEl   = opts.setContainerEl || null;
+    this.authorContainerEl  = opts.authorContainerEl || null;
+    this.onboardingBannerEl = opts.onboardingBannerEl || null;
     this.uploadBtn        = opts.uploadBtn || null;
     this.exportSetBtn     = opts.exportSetBtn || null;
     this.statusEl         = opts.statusEl || null;
+
+    /** @type {import('./annotator-profile.js').AnnotatorProfile|null} */
+    this._annotatorProfile = opts.annotatorProfile || null;
 
     // External state callbacks
     this._getLabelSets             = opts.getLabelSets || null;
@@ -265,6 +284,7 @@ export class XenoCantoPanel {
     this._bindEvents();
     this._updateButtonState();
     this._buildSetSection();
+    this._buildAuthorSection();
     // Recording edit section is built lazily (hidden by default)
   }
 
@@ -298,7 +318,7 @@ export class XenoCantoPanel {
       const res = await fetch(directUrl);
       if (res.ok) {
         const buf = await res.arrayBuffer();
-        if (buf && buf.byteLength >= 10_000) return { xcId: clean, buffer: buf };
+        if (buf && buf.byteLength >= 10_000) return { xcId: clean, buffer: buf, audioUrl: directUrl };
         lastError = new Error('Direct response too small to be valid audio.');
       } else { lastError = new Error(`HTTP ${res.status}`); }
     } catch (err) { lastError = err; }
@@ -316,7 +336,7 @@ export class XenoCantoPanel {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();
         if (!buf || buf.byteLength < 10_000) throw new Error('Response too small.');
-        return { xcId: clean, buffer: buf };
+        return { xcId: clean, buffer: buf, audioUrl: directUrl };
       } catch (err) { lastError = err; }
     }
     throw new Error(`Could not download XC${clean}: ${lastError?.message || 'unknown error'}`);
@@ -433,55 +453,14 @@ export class XenoCantoPanel {
     if (!el) return;
     el.innerHTML = '';
 
+    // Auto-select the one session set (single-set model — no dropdown shown)
     const sets = this._getLabelSets?.() || new Map();
-    const hasExternalSets = sets.size > 0;
-
-    // ── Active set selector ──
-    const selectorWrap = document.createElement('div');
-    selectorWrap.className = 'xc-set-selector-wrap';
-
-    const selLabel = document.createElement('label');
-    selLabel.className = 'field-label';
-    selLabel.textContent = 'Active Set';
-    selectorWrap.appendChild(selLabel);
-
-    const selectorRow = document.createElement('div');
-    selectorRow.className = 'xc-set-selector-row';
-
-    const sel = document.createElement('select');
-    sel.className = 'field-select';
-    const optAll = document.createElement('option');
-    optAll.value = '';
-    optAll.textContent = hasExternalSets ? '— All labels (no set) —' : '— No sets yet —';
-    sel.appendChild(optAll);
-    for (const [id, s] of sets) {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = `${s.origin === 'xeno-canto' ? '🌍 ' : '📝 '}${s.name || id}`;
-      sel.appendChild(opt);
+    if (sets.size > 0) {
+      const firstId = sets.keys().next().value;
+      if (!this._activeSetId || !sets.has(this._activeSetId)) {
+        this._activeSetId = firstId;
+      }
     }
-    if (this._activeSetId && sets.has(this._activeSetId)) sel.value = this._activeSetId;
-    sel.addEventListener('change', () => {
-      this._activeSetId = sel.value || null;
-      this._rebuildSetForm();
-      this._updateUploadState();
-    });
-    selectorRow.appendChild(sel);
-
-    const newSetBtn = document.createElement('button');
-    newSetBtn.type = 'button';
-    newSetBtn.className = 'tb-btn';
-    newSetBtn.title = 'Create new annotation set';
-    newSetBtn.textContent = '+ New';
-    newSetBtn.addEventListener('click', () => {
-      if (!this._onCreateSet) return;
-      const newSet = this._onCreateSet({ origin: 'manual', name: 'New annotation set' });
-      this._activeSetId = newSet.id;
-      this._rebuildSetSection();
-    });
-    selectorRow.appendChild(newSetBtn);
-    selectorWrap.appendChild(selectorRow);
-    el.appendChild(selectorWrap);
 
     // ── Set form ──
     this._setFormEl = document.createElement('div');
@@ -492,6 +471,55 @@ export class XenoCantoPanel {
 
   /** Rebuild set selector + form (call after external set registry changes). */
   _rebuildSetSection() { this._buildSetSection(); }
+
+  // ── Author section: annotator profile form + onboarding banner ──────
+
+  _buildAuthorSection() {
+    const el = this.authorContainerEl;
+    if (!el) return;
+    el.innerHTML = '';
+
+    const profile = this._annotatorProfile;
+    if (!profile) {
+      el.innerHTML = '<div class="props-empty">No profile available.</div>';
+      return;
+    }
+
+    // Onboarding banner: show if profile incomplete, dismiss permanently on button click
+    const banner = this.onboardingBannerEl;
+    if (banner) {
+      const showBanner = !profile.onboardingDone && !profile.isComplete();
+      banner.hidden = !showBanner;
+      // Listen to dismiss button inside the banner
+      banner.querySelector('#xcOnboardingDismiss')?.addEventListener('click', () => {
+        profile.onboardingDone = true;
+        banner.hidden = true;
+      }, { once: true });
+      // Auto-hide when profile becomes complete
+      profile.addEventListener('change', () => {
+        if (profile.isComplete()) banner.hidden = true;
+      });
+    }
+
+    // Build form
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid';
+
+    for (const f of AUTHOR_FIELDS) {
+      const { dt, dd } = buildField(f, profile[f.key] ?? '', (val) => {
+        profile[f.key] = val;
+        // Sync required fields back to the session set
+        if ((f.key === 'name' || f.key === 'xcUsername' || f.key === 'license' || f.key === 'owner') && this._activeSetId && this._onSetChange) {
+          const setKey = f.key === 'name' ? 'creator' : f.key === 'xcUsername' ? 'creatorId' : f.key;
+          this._onSetChange(this._activeSetId, { [setKey]: val });
+        }
+      });
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
+
+    el.appendChild(dl);
+  }
 
   _rebuildSetForm() {
     const el = this._setFormEl;
@@ -579,6 +607,13 @@ export class XenoCantoPanel {
     }
     if (!sm) sm = this.setMeta; // fallback to legacy internal
 
+    // Merge annotator profile fields as fallbacks (profile provides defaults when set fields are empty)
+    const prof = this._annotatorProfile;
+    const effectiveCreator   = sm.creator   || (prof?.name       ?? '');
+    const effectiveCreatorId = sm.creatorId || (prof?.xcUsername ?? '');
+    const effectiveLicense   = sm.license   || (prof?.license    ?? '');
+    const effectiveOwner     = sm.owner     || (prof?.owner      ?? '');
+
     // Filter labels to the active set if one is selected
     let targetLabels = labels || [];
     if (this._activeSetId) {
@@ -591,8 +626,8 @@ export class XenoCantoPanel {
       .map((l, i) => ({
         annotation_source_id: String(i + 1),
         xc_nr: xcNr,
-        annotator: l.author || sm.creator || '',
-        annotator_xc_id: sm.creatorId || '',
+        annotator: l.author || effectiveCreator,
+        annotator_xc_id: effectiveCreatorId,
         start_time: Number(l.start).toFixed(6),
         end_time: Number(l.end).toFixed(6),
         frequency_low: Number(l.freqMin || 0).toFixed(1),
@@ -632,10 +667,10 @@ export class XenoCantoPanel {
       set_uri: sm.uri || '',
       set_name: sm.name || `Audio Workbench annotations ${new Date().toISOString().slice(0, 16)}`,
       annotation_software_name_and_version: 'Audio Workbench',
-      set_creator: sm.creator || '',
-      set_creator_id: sm.creatorId || '',
-      set_owner: sm.owner || '',
-      set_license: sm.license || '',
+      set_creator: effectiveCreator,
+      set_creator_id: effectiveCreatorId,
+      set_owner: effectiveOwner,
+      set_license: effectiveLicense,
       project_uri: sm.projectUri || '',
       project_name: sm.projectName || '',
       funding: sm.funding || '',
@@ -715,13 +750,12 @@ export class XenoCantoPanel {
     };
     const recording = result?.recording || {};
     const recSci = String(recording?.gen && recording?.sp ? `${recording.gen} ${recording.sp}` : '').trim();
-    add(recording?.en, recSci); add(recSci, recSci); add(recording?.type, recSci);
+    add(recording?.en, recSci); add(recording?.type, recSci);
     for (const raw of result?.rawLabels || []) {
       const sci = String(raw?.scientific_name || raw?.scientificName || recSci).trim();
       add(raw?.sound_type || raw?.soundType, sci);
       add(raw?.annotation_remarks || raw?.comment || raw?.description, sci);
       add(raw?.label || raw?.name || raw?.value, sci);
-      if (sci) add(sci, sci);
     }
     return Array.from(pool.values());
   }

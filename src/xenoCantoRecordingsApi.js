@@ -155,6 +155,7 @@ function _buildXcLabel(src, index, meta) {
         scientificName: resolvedSciName,
         commonName: resolvedCommonName,
         origin: 'xeno-canto',
+        readonly: true,
         author: annotator || recordist || '',
         tags,
         ...(annotationSet ? { annotationSet } : {}),

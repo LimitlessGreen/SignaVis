@@ -466,3 +466,49 @@
 .spectrogram-label-region--locked:hover .label-handle {
     display: none !important;
 }
+
+/* ── Readonly labels (XC-imported, not editable) ── */
+.spectrogram-label-region--readonly {
+    cursor: default;
+    border-style: dashed;
+    opacity: 0.75;
+}
+.spectrogram-label-region--readonly:hover {
+    opacity: 0.9;
+}
+.spectrogram-label-region--readonly .label-handle {
+    display: none !important;
+}
+.spectrogram-label-region--readonly:hover .label-handle {
+    display: none !important;
+}
+
+.spectrogram-label-lock {
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-size: 9px;
+    line-height: 1.4;
+    padding: 0 3px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 0 0 0 3px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.spectrogram-label-ai-badge {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 4px 2px;
+    background: rgba(99, 102, 241, 0.8);
+    color: #e0e7ff;
+    border-top: 1px solid rgba(165, 180, 252, 0.5);
+    border-right: 1px solid rgba(165, 180, 252, 0.5);
+    border-radius: 0 3px 0 0;
+    pointer-events: none;
+    z-index: 2;
+}

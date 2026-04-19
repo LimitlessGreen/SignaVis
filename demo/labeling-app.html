@@ -74,12 +74,8 @@
       <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
       <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
     </div>
-    <!-- Active annotation set selector -->
-    <div class="label-active-set-bar">
-      <span class="label-active-set-label">Set</span>
-      <select id="labelActiveSetSelect" class="label-active-set-select"></select>
-      <button class="tb-btn" id="labelNewSetBtn" type="button" title="New annotation set">+</button>
-    </div>
+    <!-- Recording explorer — populated by RecordingExplorer widget -->
+    <div id="recordingExplorerMount"></div>
     <div class="panel-hint">
       <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit · <kbd>Ctrl</kbd>+click multi-select
     </div>
@@ -188,12 +184,24 @@
       <div id="xcRecordingEdit" class="props-section-body xc-recording-edit" hidden></div>
     </div>
 
-    <!-- ── 3. Annotation Set ── -->
-    <div class="props-section props-section--set">
-      <div class="props-section-title xc-section-hdr">
-        <span>Annotation Set</span>
+    <!-- ── 3. Author / Set sub-tabs ── -->
+    <div class="xc-sub-tabs-wrap">
+      <nav class="xc-sub-tabs" role="tablist" aria-label="Xeno-canto sub-sections">
+        <button class="xc-sub-tab active" id="xcTabAuthorBtn" type="button" role="tab" aria-selected="true"  aria-controls="xcTabAuthor">Author</button>
+        <button class="xc-sub-tab"        id="xcTabSetBtn"    type="button" role="tab" aria-selected="false" aria-controls="xcTabSet">Set</button>
+      </nav>
+      <!-- Author tab: annotator profile + onboarding banner -->
+      <div id="xcTabAuthor" class="xc-sub-tab-content" role="tabpanel" aria-labelledby="xcTabAuthorBtn">
+        <div id="xcOnboardingBanner" class="xc-onboarding-banner" hidden>
+          <p>Fill in your <strong>name</strong> and <strong>XC username</strong> before uploading annotations to Xeno-canto.</p>
+          <button class="xc-onboarding-dismiss" id="xcOnboardingDismiss" type="button">Got it</button>
+        </div>
+        <div id="xcAuthorContainer" class="xc-author-container"></div>
       </div>
-      <div id="xcSetContainer" class="xc-set-container"></div>
+      <!-- Set tab: session set metadata -->
+      <div id="xcTabSet" class="xc-sub-tab-content" role="tabpanel" aria-labelledby="xcTabSetBtn" hidden>
+        <div id="xcSetContainer" class="xc-set-container"></div>
+      </div>
     </div>
 
     <!-- ── 4. API Key ── -->
@@ -339,7 +347,11 @@
     import { LabelList } from './lib/label-list.js';
     import { BirdNETPanel } from './lib/birdnet-panel.js';
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from './lib/xc-panel.js';
+    import { AnnotatorProfile } from './lib/annotator-profile.js';
+    import { RecordingManager, defaultRecordingEntry } from './lib/recording-manager.js';
+    import { RecordingExplorer } from './lib/recording-explorer.js';
     import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
+    import { spectrogramCache } from '../src/SpectrogramCache.js';
     import { PropertiesPanel } from './lib/properties-panel.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
@@ -434,6 +446,25 @@
     // ── Right sidebar ─────────────────────────────────────────────────
     const specPanel = new SpectrogramSettingsPanel(player);
     specPanel.relocate();
+
+    // Add "Clear spectrogram cache" button at the bottom of the spectrogram settings panel
+    (() => {
+      const sec = document.createElement('div');
+      sec.className = 'settings-section';
+      sec.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sidebar-action-btn secondary';
+      btn.textContent = 'Clear spectrogram cache';
+      btn.title = 'Delete all cached spectrogram data from IndexedDB';
+      btn.addEventListener('click', async () => {
+        await spectrogramCache.clear();
+        btn.textContent = 'Cache cleared ✓';
+        setTimeout(() => { btn.textContent = 'Clear spectrogram cache'; }, 2000);
+      });
+      sec.appendChild(btn);
+      specPanel.el.appendChild(sec);
+    })();
 
     const propsPanel = new PropertiesPanel({
       getSetInfo: (setId) => state.labelSets?.get(setId) || null,
@@ -569,44 +600,27 @@
       sampleRate: 32000,
       activeObjectUrl: null,
       taxonomyLang: 'en_uk',
+      /**
+       * RecordingEntry id whose annotations are currently loaded into state.labels.
+       * null on page load until an entry's annotations have been explicitly loaded.
+       * Guards against saving the empty initial state over persisted annotations.
+       */
+      _labelsEntryId: null,
     };
 
     // ── Label set CRUD ────────────────────────────────────────────────
     function _genSetId() { return 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
 
-    function rebuildActiveSetDropdown() {
-      const sel = document.getElementById('labelActiveSetSelect');
-      if (!sel) return;
-      sel.innerHTML = '';
-      // None option
-      const noneOpt = document.createElement('option');
-      noneOpt.value = '';
-      noneOpt.textContent = '— none —';
-      sel.appendChild(noneOpt);
-      for (const [id, s] of state.labelSets) {
-        const opt = document.createElement('option');
-        opt.value = id;
-        const originTag = s.origin === 'xeno-canto' ? '[XC]' : s.origin === 'BirdNET' ? '[BN]' : '';
-        opt.textContent = (originTag ? originTag + ' ' : '') + (s.name || id);
-        sel.appendChild(opt);
-      }
-      sel.value = state.activeSetId || '';
-    }
-
-    /** Set the active annotation set for new labels (Labels tab). */
+    /** Set the active annotation set ID. With single-set model, this is called once on init. */
     function setActiveSet(id) {
       state.activeSetId = id || null;
-      const sel = document.getElementById('labelActiveSetSelect');
-      if (sel) sel.value = id || '';
     }
 
-    function createLabelSet(partial = {}) {
+    function createLabelSet(partial = {}, { silent = false } = {}) {
       const set = defaultSetInfo({ id: _genSetId(), ...partial });
       if (!set.id) set.id = _genSetId();
       state.labelSets.set(set.id, set);
-      syncToPlayer();
-      rebuildActiveSetDropdown();
-      xcPanel._rebuildSetSection?.();
+      if (!silent) { syncToPlayer(); xcPanel._rebuildSetSection?.(); }
       return set;
     }
 
@@ -615,7 +629,6 @@
       if (s) {
         s.name = newName;
         syncToPlayer();
-        rebuildActiveSetDropdown();
         xcPanel._rebuildSetSection?.();
       }
     }
@@ -627,7 +640,6 @@
       state.labelSets.delete(id);
       if (state.activeSetId === id) state.activeSetId = null;
       syncToPlayer();
-      rebuildActiveSetDropdown();
       xcPanel._rebuildSetSection?.();
     }
 
@@ -662,8 +674,7 @@
       _setRenderTimer = setTimeout(() => {
         syncToPlayer();
         labelList.render(state.labels);                      // set header name/license in label list
-        rebuildActiveSetDropdown();                          // set name in Labels tab dropdown
-        xcPanel._rebuildSetSection?.();                      // set selector + form in XC tab
+        xcPanel._rebuildSetSection?.();                      // set form in XC tab
         const displayed = propsPanel.displayedLabel;
         if (displayed) propsPanel.refreshLabel(displayed);  // set section in Properties tab
         saveSessionSets();
@@ -708,13 +719,15 @@
         if (activeSetId && state.labelSets.has(activeSetId)) {
           state.activeSetId = activeSetId;
         }
-        rebuildActiveSetDropdown();
         xcPanel._rebuildSetSection?.();
         return true;
       } catch { return false; }
     }
 
     // No local last-click tracking needed; clear/add highlight by querying overlay.
+
+    // ── Annotator profile ─────────────────────────────────────────────
+    const annotatorProfile = new AnnotatorProfile();
 
     // ── Xeno-canto panel ──────────────────────────────────────────────
     /** XC ID of the currently loaded recording (survives failed label import). */
@@ -726,19 +739,272 @@
       recordingMetaEl:       document.getElementById('xcRecordingMeta'),
       recordingEditEl:       document.getElementById('xcRecordingEdit'),
       setContainerEl:        document.getElementById('xcSetContainer'),
+      authorContainerEl:     document.getElementById('xcAuthorContainer'),
+      onboardingBannerEl:    document.getElementById('xcOnboardingBanner'),
       uploadBtn:             document.getElementById('xcUploadBtn'),
       exportSetBtn:          document.getElementById('xcExportSetBtn'),
       statusEl:              document.getElementById('xcStatus'),
+      annotatorProfile,
       getLabelSets:          () => state.labelSets,
       onSetChange:           (setId, updates) => updateSet(setId, updates),
       onCreateSet:           (partial) => createLabelSet(partial),
       getRecordingEditMeta:  () => state.recordingEditMeta,
       onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
     });
+
+    // ── XC sub-tab switching ──────────────────────────────────────────
+    (function initXcSubTabs() {
+      const tabs = [
+        { btn: document.getElementById('xcTabAuthorBtn'), panel: document.getElementById('xcTabAuthor') },
+        { btn: document.getElementById('xcTabSetBtn'),    panel: document.getElementById('xcTabSet')    },
+      ];
+      tabs.forEach(({ btn, panel }) => {
+        btn?.addEventListener('click', () => {
+          tabs.forEach(t => {
+            const active = t.btn === btn;
+            t.btn?.classList.toggle('active', active);
+            t.btn?.setAttribute('aria-selected', String(active));
+            if (t.panel) t.panel.hidden = !active;
+          });
+        });
+      });
+    })();
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
       try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
     };
+
+    // ── Recording Manager + Session Set ─────────────────────────────
+    const recordingManager = new RecordingManager();
+
+    // One annotation set for the whole session — shared across all recordings.
+    // Created once here; never recreated on recording switch.
+    (() => {
+      const _sp = loadSetProfile();
+      const _ss = createLabelSet({
+        name: annotatorProfile.name ? `${annotatorProfile.name}'s Annotations` : 'My Annotations',
+        origin: 'manual',
+        creator:   _sp.creator   || annotatorProfile.name      || '',
+        creatorId: _sp.creatorId || annotatorProfile.xcUsername || '',
+        license:   _sp.license   || annotatorProfile.license   || '',
+        owner:     _sp.owner     || annotatorProfile.owner     || '',
+      }, { silent: true }); // UI not ready yet — skip syncToPlayer
+      state._sessionSetId = _ss.id;
+      setActiveSet(_ss.id);
+    })();
+
+    /**
+     * Switch the player to a different RecordingEntry.
+     * Saves current labels, loads the new entry's audio, restores its labels.
+     */
+    async function activateRecordingEntry(entry) {
+      // 1. Save current labels into the leaving entry — only when state.labels actually
+      //    belongs to the leaving entry (guards against clobbering on page reload where
+      //    state.labels is still [] but activeId was restored from sessionStorage).
+      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId) {
+        recordingManager.saveAnnotations(state.labels);
+      }
+
+      // 2. Reset per-recording state (keep labelSets — session set + imported XC sets persist)
+      state.labels = [];
+      state._labelsEntryId = null;
+      state.xcLabelPool = [];
+      state.recordingEditMeta = defaultRecordingEditMeta();
+      state.recordingMeta = entry.xcRecordingMeta || null;
+      // Use the stored sample rate for this recording immediately so any UI reads
+      // before player.on('ready') fires still see the correct value.
+      state.sampleRate = entry.sampleRate || 0;
+      state.selected = null;
+      selectionMeta.textContent = '';
+      currentXcId = entry.xcId || null;
+      xcPanel._activeSetId = null;
+      setActiveSet(state._sessionSetId);
+      // Revoke any previous blob object URL
+      if (state.activeObjectUrl) {
+        try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+        state.activeObjectUrl = null;
+      }
+
+      // 3. Mark new entry as active
+      recordingManager.setActive(entry.id);
+
+      // 4. Load audio
+      if (entry.audioUrl || entry.xcId) {
+        try {
+          if (entry.xcId) {
+            // Re-fetch through xcPanel so CORS proxy fallback is active
+            const audio = await xcPanel.fetchAudio(entry.xcId, (msg) => {
+              fileLabel.textContent = msg;
+              player.showLoadingOverlay(msg);
+            });
+            const blob = new Blob([audio.buffer], { type: 'audio/mpeg' });
+            player.showLoadingOverlay('Decoding…');
+            await player.loadFile(new File([blob], entry.filename, { type: 'audio/mpeg' }));
+          } else {
+            // Blob URL (local file) — same origin, no CORS issue
+            player.showLoadingOverlay('Loading…');
+            await player.loadUrl(entry.audioUrl);
+          }
+        } catch (e) {
+          player.hideLoadingOverlay();
+          selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
+        }
+      }
+      fileLabel.textContent = entry.filename;
+
+      // 5. Restore annotations — mark state.labels as belonging to this entry
+      state.labels = (entry.annotations || []).map(a => ({ ...a }));
+      state._labelsEntryId = entry.id;
+
+      // 6. Update all per-recording displays
+      if (entry.xcId) {
+        xcPanel.xcId = entry.xcId;
+        xcPanel.recordingMeta = entry.xcRecordingMeta || null;
+        xcPanel.renderRecordingMeta();
+        xcPanel._updateUploadState?.();
+        updateUrlXcId(entry.xcId);
+
+        // Restore species bar and background species from stored XC metadata
+        const meta = entry.xcRecordingMeta;
+        const gen = meta?.gen || '';
+        const sp  = meta?.sp  || '';
+        const en  = meta?.en  || '';
+        const isSoundscape = gen.toLowerCase() === 'sonus';
+        if (!isSoundscape && en) {
+          const sciName = (gen && sp) ? `${gen} ${sp}`.trim() : '';
+          player.setSpeciesBar(en, { scientificName: sciName });
+        } else {
+          player.setSpeciesBar('', {});
+        }
+        const also = meta?.also;
+        player.setBackgroundSpecies(Array.isArray(also) ? also : []);
+        birdnetPanel.setLocationFromMeta(meta);
+      } else {
+        updateUrlXcId(null);
+        player.setSpeciesBar('', {});
+        player.setBackgroundSpecies([]);
+        birdnetPanel.setLocationFromMeta(null);
+      }
+      xcPanel._rebuildSetSection?.();
+      const _entryMeta = entry.xcRecordingMeta;
+      const _entryGen  = _entryMeta?.gen || '';
+      const _entryEn   = _entryMeta?.en  || '';
+      const _isSoundscape = _entryGen.toLowerCase() === 'sonus';
+      propsPanel.setRecordingMeta(state.recordingMeta, {
+        source: entry.xcId ? `XC${entry.xcId}` : '',
+        sampleRate: entry.sampleRate || state.sampleRate,
+        duration: player.duration || 0,
+        filename: entry.filename,
+        species: _isSoundscape ? '' : _entryEn,
+      });
+
+      syncToPlayer();
+
+      // 7. If this recording was flagged for re-import (e.g. after a reset), do it now
+      if (entry.needsXcImport && entry.xcId) {
+        recordingManager.update(entry.id, { needsXcImport: false });
+        player.showLoadingOverlay('Importing XC labels…');
+        try {
+          const r = await importXenoCantoLabels(entry.xcId);
+          selectionMeta.textContent = r.imported > 0
+            ? `Imported ${r.imported} XC labels`
+            : `No XC labels for XC${r.xcId}`;
+        } catch (err) {
+          if (!handleInvalidKeyError(err))
+            selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+        } finally {
+          player.hideLoadingOverlay();
+        }
+      }
+    }
+
+    const recordingExplorer = new RecordingExplorer({
+      container:  document.getElementById('recordingExplorerMount'),
+      manager:    recordingManager,
+      getSetName: () => state.labelSets.get(state._sessionSetId)?.name || 'My Annotations',
+      onActivate: (entry) => activateRecordingEntry(entry),
+      onAddXc: async (xcId) => {
+        const input = document.getElementById('xcIdInput');
+        if (input) input.value = xcId;
+        document.getElementById('xcLoadBtn')?.click();
+      },
+      onResetRecording: async (entry) => {
+        // Remove XC fallback sets tied to this recording (named XC sets stay — re-import matches by uri/name)
+        for (const [id, s] of [...state.labelSets]) {
+          if (s.origin === 'xeno-canto' && s.xcFallbackId === entry.xcId) state.labelSets.delete(id);
+        }
+        if (entry.id === recordingManager.activeId) {
+          // Active recording: clear live state, sync, then re-import from XC
+          state.labels = [];
+          state._labelsEntryId = entry.id;
+          recordingManager.update(entry.id, { annotations: [], needsXcImport: false });
+          syncToPlayer();
+          if (entry.xcId) {
+            player.showLoadingOverlay('Importing XC labels…');
+            try {
+              const r = await importXenoCantoLabels(entry.xcId);
+              selectionMeta.textContent = r.imported > 0
+                ? `Imported ${r.imported} XC labels`
+                : `No XC labels for XC${r.xcId}`;
+            } catch (err) {
+              if (!handleInvalidKeyError(err))
+                selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+            } finally {
+              player.hideLoadingOverlay();
+            }
+          }
+        } else {
+          // Not active: clear stored annotations and mark for re-import on next activation
+          recordingManager.update(entry.id, { annotations: [], needsXcImport: !!entry.xcId });
+        }
+      },
+      onResetSet: async () => {
+        // Remove all XC fallback sets (named sets stay — re-import will match them by uri/name)
+        for (const [id, s] of [...state.labelSets]) {
+          if (s.origin === 'xeno-canto') state.labelSets.delete(id);
+        }
+        // Clear all entries; mark non-active XC recordings for re-import
+        for (const e of recordingManager.getAll()) {
+          const isActive = e.id === recordingManager.activeId;
+          recordingManager.update(e.id, { annotations: [], needsXcImport: !isActive && !!e.xcId });
+        }
+        if (recordingManager.activeId) {
+          state.labels = [];
+          state._labelsEntryId = recordingManager.activeId;
+          syncToPlayer();
+          const _active = recordingManager.getActive();
+          if (_active?.xcId) {
+            player.showLoadingOverlay('Importing XC labels…');
+            try {
+              const r = await importXenoCantoLabels(_active.xcId);
+              selectionMeta.textContent = r.imported > 0
+                ? `Imported ${r.imported} XC labels`
+                : `No XC labels for XC${r.xcId}`;
+            } catch (err) {
+              if (!handleInvalidKeyError(err))
+                selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+            } finally {
+              player.hideLoadingOverlay();
+            }
+          }
+        }
+      },
+    });
+    recordingExplorer.render();
+
+    // Keep session set metadata in sync with annotator profile changes
+    annotatorProfile.addEventListener('change', () => {
+      const s = state.labelSets.get(state._sessionSetId);
+      if (s) {
+        if (annotatorProfile.name) s.name = `${annotatorProfile.name}'s Annotations`;
+        if (annotatorProfile.name)      s.creator   = annotatorProfile.name;
+        if (annotatorProfile.xcUsername) s.creatorId = annotatorProfile.xcUsername;
+        if (annotatorProfile.license)   s.license   = annotatorProfile.license;
+        if (annotatorProfile.owner)     s.owner     = annotatorProfile.owner;
+      }
+      recordingExplorer.render();
+      xcPanel._rebuildSetSection?.();
+    });
 
     // ── XC key visibility toggle (eye button inside input) ────────────
     const xcKeyToggleVisibility = document.getElementById('xcKeyToggleVisibility');
@@ -874,6 +1140,7 @@
       onCreateSet: (partial) => createLabelSet(partial),
       onRenameSet: (id, name) => renameLabelSet(id, name),
       onDeleteSet: (id) => deleteLabelSet(id),
+      canDeleteSet: (id) => id !== state._sessionSetId,
       onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
       onAssignSpecies: (labelId, representative) => {
         const lbl = state.labels.find(l => l.id === labelId);
@@ -886,13 +1153,13 @@
         lbl.color = representative.color || lbl.color;
         syncToPlayer();
       },
-      onConvertSetToManual: (setId) => convertSetToManual(setId),
+      // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
       onToggleLockSet: (setId, lock) => {
         const s = state.labelSets.get(setId);
         if (s) {
           s.locked = lock;
           const lockedIds = state.labels
-            .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+            .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
             .map(l => l.id);
           player.spectrogramLabels?.setLockedIds?.(lockedIds);
           labelList.render(state.labels);
@@ -993,7 +1260,8 @@
           const set = createLabelSet({ name: 'BirdNET', origin: 'BirdNET', locked: true });
           birdnetSetId = set.id;
         }
-        for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId });
+        const _bnRecordingId = recordingManager?.activeId || null;
+        for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
         syncToPlayer();
         sidebar.setActive('labels');
       },
@@ -1027,9 +1295,11 @@
     // ── Sync & export ─────────────────────────────────────────────────
     let _skipPropsRefresh = false;
     function syncToPlayer() {
+      if (recordingManager?.activeId && state._labelsEntryId === recordingManager.activeId)
+        recordingManager.saveAnnotations(state.labels);
       player.setSpectrogramLabels(state.labels);
       const _lockedIds = state.labels
-        .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+        .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
         .map(l => l.id);
       player.spectrogramLabels?.setLockedIds?.(_lockedIds);
       labelList.render(state.labels);
@@ -1047,7 +1317,7 @@
     function syncToPlayerSoft() {
       player.setSpectrogramLabels(state.labels);
       const _lockedIds = state.labels
-        .filter(l => l.setId && state.labelSets.get(l.setId)?.locked)
+        .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
         .map(l => l.id);
       player.spectrogramLabels?.setLockedIds?.(_lockedIds);
       sidebar.setBadge('labels', state.labels.length || '');
@@ -1087,34 +1357,17 @@
       return out;
     }
 
-    let _defaultSetCounter = 0;
-
     // ── File loading ──────────────────────────────────────────────────
     async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
-      // Reset label + set state when loading a new file
+      // Reset per-recording state; the session set is kept intact
       state.labels = [];
-      state.labelSets.clear();
-      state.activeSetId = null;
+      state._labelsEntryId = null;  // labels no longer belong to any entry
       state.xcLabelPool = [];
       state.recordingEditMeta = defaultRecordingEditMeta();
       xcPanel._activeSetId = null;
-
-      // Auto-create a default manual set pre-filled with persisted labeler profile
-      _defaultSetCounter++;
-      const profile = loadSetProfile();
-      const defaultSet = createLabelSet({
-        name: `Annotation Set #${_defaultSetCounter}`,
-        origin: 'manual',
-        creator:   profile.creator   || '',
-        creatorId: profile.creatorId || '',
-        license:   profile.license   || '',
-        owner:     profile.owner     || '',
-      });
-      try { localStorage.removeItem(SESSION_SETS_KEY); } catch {}
-      setActiveSet(defaultSet.id);
+      setActiveSet(state._sessionSetId);
 
       xcPanel._rebuildSetSection?.();
-      rebuildActiveSetDropdown();
       syncToPlayer();
       if (state.activeObjectUrl) {
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
@@ -1165,10 +1418,29 @@
         player.setBackgroundSpecies(also);
       }
 
+      // Always persist XC recording metadata regardless of whether labels were found.
+      // This ensures species info + location survive page reload via sessionStorage.
+      const _activeEntryAfterImport = recordingManager.getActive();
+      if (_activeEntryAfterImport) {
+        const _metaToSave = result.recordingMeta ? { ...result.recordingMeta } : {};
+        if (result.recording) {
+          if (result.recording.gen)  _metaToSave.gen  = result.recording.gen;
+          if (result.recording.sp)   _metaToSave.sp   = result.recording.sp;
+          if (result.recording.en)   _metaToSave.en   = result.recording.en;
+          if (result.recording.also) _metaToSave.also = result.recording.also;
+        }
+        recordingManager.update(_activeEntryAfterImport.id, {
+          xcId: result.xcId,
+          xcRecordingMeta: Object.keys(_metaToSave).length ? _metaToSave : null,
+        });
+      }
+
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
 
       // ── Promote embedded annotationSet objects into the set registry ──
       const setIdMap = new Map(); // "uri||name" → setId
+      // Fallback set key for XC labels without per-annotation set metadata
+      const _xcFallbackKey = `xc-fallback-${result.xcId}`;
       for (const lbl of result.labels) {
         if (lbl.annotationSet) {
           const as = lbl.annotationSet;
@@ -1178,17 +1450,21 @@
             let existingId = null;
             for (const [id, s] of state.labelSets) {
               if ((as.uri && s.uri === as.uri) || (as.name && s.name === as.name)) {
-                existingId = id; break;
+                existingId = id;
+                // Ensure existing XC sets are locked
+                if (!s.locked) s.locked = true;
+                break;
               }
             }
             if (!existingId) {
               const newSet = createLabelSet({
-                name: as.name || `XC${result.xcId} set`,
+                name: as.name || `XC${result.xcId}`,
                 license: as.license || '',
                 creator: as.creator || '',
                 uri: as.uri || '',
                 date: as.date || '',
                 origin: 'xeno-canto',
+                locked: true,
               });
               existingId = newSet.id;
             }
@@ -1197,13 +1473,34 @@
           lbl.setId = key ? (setIdMap.get(key) || null) : null;
           delete lbl.annotationSet; // migrate to flat setId reference
         } else {
-          lbl.setId = null;
+          // No per-annotation set metadata — group under a fallback "XC{id} Imported" set
+          if (!setIdMap.has(_xcFallbackKey)) {
+            let existingFallbackId = null;
+            for (const [id, s] of state.labelSets) {
+              if (s.origin === 'xeno-canto' && s.xcFallbackId === result.xcId) {
+                existingFallbackId = id;
+                if (!s.locked) s.locked = true;
+                break;
+              }
+            }
+            if (!existingFallbackId) {
+              const fallbackSet = createLabelSet({
+                name: `XC${result.xcId} Imported`,
+                origin: 'xeno-canto',
+                locked: true,
+                xcFallbackId: result.xcId,
+              });
+              existingFallbackId = fallbackSet.id;
+            }
+            setIdMap.set(_xcFallbackKey, existingFallbackId);
+          }
+          lbl.setId = setIdMap.get(_xcFallbackKey);
         }
       }
 
       state.labels = result.labels;
+      if (recordingManager?.activeId) state._labelsEntryId = recordingManager.activeId;
       syncToPlayer();
-      rebuildActiveSetDropdown();
       return { xcId: result.xcId, imported: result.labels.length };
     }
 
@@ -1316,12 +1613,31 @@
     xcLoadBtn.addEventListener('click', async () => {
       const raw = xcIdInput.value.trim();
       if (!raw) return;
+      // Deduplicate: if this XC ID is already in the session, just switch to it
+      const _preCheckId = raw.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
+      const _preExisting = recordingManager.findByXcId(_preCheckId);
+      if (_preExisting) {
+        if (_preExisting.id !== recordingManager.activeId) await activateRecordingEntry(_preExisting);
+        sidebar.setActive('labels');
+        return;
+      }
       xcLoadBtn.disabled = true;
       xcLoadBtn.textContent = '…';
       try {
         const audio = await xcPanel.fetchAudio(raw, (msg) => { fileLabel.textContent = msg; });
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
+        // Save current annotations to the leaving entry, then create a new RecordingEntry
+        if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
+          recordingManager.saveAnnotations(state.labels);
+        const _xcEntry = recordingManager.add({
+          xcId: audio.xcId,
+          filename: `XC${audio.xcId}.mp3`,
+          audioUrl: audio.audioUrl || `https://xeno-canto.org/${audio.xcId}/download`,
+          isBlobUrl: false,
+        });
+        recordingManager.setActive(_xcEntry.id);
+        state._labelsEntryId = _xcEntry.id;  // empty labels now belong to the new entry
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
         showXcNokeyModal();
         try {
@@ -1434,10 +1750,26 @@
       const p = new URLSearchParams(window.location.search || '');
       const xcid = p.get('xcid') || p.get('XCID') || p.get('xc') || p.get('XC');
       if (!xcid) return;
+      // Deduplicate: entry already in session (e.g. from previous page load) — just activate it
+      const _autoNorm = xcid.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
+      const _autoExisting = recordingManager.findByXcId(_autoNorm);
+      if (_autoExisting) {
+        await activateRecordingEntry(_autoExisting);
+        return;
+      }
       try {
         const audio = await xcPanel.fetchAudio(xcid, (msg) => { fileLabel.textContent = msg; });
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
+        // Create a RecordingEntry for this auto-loaded XC recording
+        const _autoEntry = recordingManager.add({
+          xcId: audio.xcId,
+          filename: `XC${audio.xcId}.mp3`,
+          audioUrl: audio.audioUrl || `https://xeno-canto.org/${audio.xcId}/download`,
+          isBlobUrl: false,
+        });
+        recordingManager.setActive(_autoEntry.id);
+        state._labelsEntryId = _autoEntry.id;  // empty labels now belong to the new entry
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
         showXcNokeyModal();
         try {
@@ -1460,8 +1792,13 @@
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
+      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
+        recordingManager.saveAnnotations(state.labels);
+      recordingManager.setActive(null);
       state.xcLabelPool = [];
       state.labels = [];
+      state._labelsEntryId = null;
       state.labelSets.clear();
       state.recordingMeta = null;
       currentXcId = null;
@@ -1472,12 +1809,26 @@
       // Clear any saved original when a new file is explicitly loaded by the user
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;
+      // Create a RecordingEntry for this local file (blob URL for in-session re-activation)
+      const _blobUrl = URL.createObjectURL(file);
+      const _fileEntry = recordingManager.add({
+        filename: file.name,
+        audioUrl: _blobUrl,
+        isBlobUrl: true,
+      });
+      recordingManager.setActive(_fileEntry.id);
+      state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
       fileInput.value = '';
     });
 
     loadSampleBtn.addEventListener('click', async () => {
+      // Save then detach so syncToPlayer doesn't clobber the leaving entry
+      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
+        recordingManager.saveAnnotations(state.labels);
+      recordingManager.setActive(null);
       state.xcLabelPool = [];
       state.labels = [];
+      state._labelsEntryId = null;
       state.labelSets.clear();
       state.recordingMeta = null;
       currentXcId = null;
@@ -1491,7 +1842,10 @@
     });
 
     player.on('ready', (e) => {
-      if (e.detail?.sampleRate) state.sampleRate = e.detail.sampleRate;
+      if (e.detail?.sampleRate) {
+        state.sampleRate = e.detail.sampleRate;
+        if (recordingManager?.activeId) recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate });
+      }
       propsPanel.setRecordingMeta(state.recordingMeta, {
         sampleRate: state.sampleRate,
         duration: player.duration || 0,
@@ -1506,18 +1860,6 @@
       if (end > start) selectionMeta.textContent = `${fmt(start)} – ${fmt(end)}`;
     });
 
-    // Active set dropdown
-    document.getElementById('labelActiveSetSelect')?.addEventListener('change', (e) => {
-      setActiveSet(e.target.value || null);
-    });
-    document.getElementById('labelNewSetBtn')?.addEventListener('click', () => {
-      const name = prompt('New annotation set name:', 'My Set');
-      if (!name?.trim()) return;
-      const set = createLabelSet({ name: name.trim(), origin: 'manual' });
-      setActiveSet(set.id);
-      labelList.render(state.labels);
-    });
-
     clearAllBtn.addEventListener('click', () => {
       state.labels = [];
       state.labelSets.clear();
@@ -1526,8 +1868,9 @@
       selectionMeta.textContent = '';
       player.clearSpectrogramLabels();
       labelList.render(state.labels);
-      rebuildActiveSetDropdown();
       sidebar.setBadge('labels', '');
+      // Persist the cleared state into the active RecordingEntry
+      if (recordingManager?.activeId) recordingManager.saveAnnotations([]);
     });
 
     exportJsonBtn.addEventListener('click', () => {

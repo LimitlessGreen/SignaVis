@@ -116,3 +116,199 @@ html, body {
   /* Activity bar and sidebar responsive rules moved to respective component partials */
   .panel-hint { display: none; }
 }
+
+/* ── Recording Explorer ── */
+.recording-explorer {
+  display: flex;
+  flex-direction: column;
+  /* Distinct background + bottom border separates explorer from the label list */
+  background: var(--color-bg-secondary, rgba(0,0,0,0.18));
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: 4px;
+}
+
+/* Set header (hierarchy parent node) */
+.rec-set-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  /* Taller hit target so the whole header row is comfortable to click */
+  padding: 8px 10px 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.08s;
+}
+.rec-set-header:hover {
+  background: var(--color-bg-hover, rgba(255,255,255,0.05));
+}
+.rec-set-header:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+/* Chevron — bigger and easier to read */
+.rec-set-chevron {
+  font-size: 11px;
+  width: 13px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  line-height: 1;
+  transition: color 0.1s;
+}
+.rec-set-header:hover .rec-set-chevron { color: var(--color-text-primary); }
+/* Set name — larger than the child recording rows */
+.rec-set-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* Body — indented children */
+.rec-set-body {
+  padding-left: 12px;
+}
+.rec-set-body[hidden] { display: none; }
+
+.recording-explorer-empty {
+  padding: 5px 12px;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.recording-explorer-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+}
+
+.recording-explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: background 0.08s, color 0.08s;
+  border-radius: 0;
+}
+.recording-explorer-row:hover {
+  background: var(--color-bg-hover, rgba(255,255,255,0.05));
+  color: var(--color-text-primary);
+}
+.recording-explorer-row.active {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.recording-explorer-icon {
+  font-size: 9px;
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+.recording-explorer-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shared base for hover-action buttons on rows and header */
+.recording-explorer-remove,
+.recording-explorer-reset {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.recording-explorer-row:hover .recording-explorer-remove,
+.recording-explorer-row:hover .recording-explorer-reset { opacity: 1; }
+.recording-explorer-remove:hover { color: var(--color-danger); }
+.recording-explorer-reset:hover { color: var(--color-accent); }
+
+/* Set-level reset in header */
+.recording-explorer-reset-set {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  padding: 0 2px;
+}
+.rec-set-header:hover .recording-explorer-reset-set { opacity: 1; }
+.recording-explorer-reset-set:hover { color: var(--color-accent); }
+
+.recording-explorer-add-row {
+  padding: 3px 10px 5px;
+}
+
+.recording-explorer-add-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.1s;
+}
+.recording-explorer-add-btn:hover { color: var(--color-accent); }
+.recording-explorer-add-btn span { font-size: 14px; line-height: 1; }
+
+/* ── Add recording popover ── */
+.recording-explorer-popover {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  min-width: 260px;
+}
+
+.rec-pop-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.rec-pop-input {
+  flex: 1;
+  height: 24px;
+  font-size: 11px;
+}
+
+.rec-pop-hint {
+  font-size: 10px;
+  color: var(--color-warning, #f59e0b);
+  padding: 2px 2px 0;
+}

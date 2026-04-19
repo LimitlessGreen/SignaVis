@@ -96,10 +96,16 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
 
     for (const item of getPool()) {
       const name = String(item?.name || '').trim();
-      const sci = String(item?.scientificName || '').trim();
+      const sci  = String(item?.scientificName || '').trim();
       if (!name) continue;
-      const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
-      if (!dedupe.has(key)) dedupe.set(key, { name, scientificName: sci });
+      // Resolve via taxonomy so XC English names become localized and bare
+      // scientific names (e.g. background species) get a canonical sci: key.
+      const resolvedSci  = sci || (taxonomy.data ? taxonomy.resolve(name)?.s : '') || '';
+      const record       = resolvedSci ? taxonomy.resolve(resolvedSci) : null;
+      const localName    = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : name;
+      const finalSci     = record?.s || sci;
+      const key = finalSci ? `sci:${finalSci}` : `name:${localName.toLowerCase()}`;
+      if (!dedupe.has(key)) dedupe.set(key, { name: localName, scientificName: finalSci });
     }
 
     for (const lbl of getLabels()) {

@@ -122,3 +122,39 @@
     cursor: ns-resize;
     transform: none;
 }
+
+/* ── Readonly annotations (XC-imported, not editable) ── */
+.annotation-region--readonly {
+    cursor: default;
+    border-style: dashed;
+    opacity: 0.75;
+}
+.annotation-region--readonly:hover {
+    opacity: 0.9;
+}
+.annotation-region--readonly .annotation-handle {
+    display: none !important;
+}
+
+.annotation-lock {
+    font-size: 9px;
+    line-height: 1;
+    opacity: 0.85;
+    margin-left: 2px;
+    pointer-events: none;
+}
+
+.annotation-ai-badge {
+    display: inline-block;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 2px;
+    background: rgba(99, 102, 241, 0.75);
+    color: #e0e7ff;
+    border: 1px solid rgba(165, 180, 252, 0.5);
+    vertical-align: middle;
+    pointer-events: none;
+    margin-left: 2px;
+}

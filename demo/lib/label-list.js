@@ -81,6 +81,7 @@ export class LabelList {
    * @param {(id: string) => void}      [opts.onDeleteSet]
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
+   * @param {(setId: string) => boolean} [opts.canDeleteSet]  Return false to hide the delete button for a specific set
    * @param {((anchor: HTMLElement, onSelect: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
    */
   constructor(opts) {
@@ -108,6 +109,7 @@ export class LabelList {
     this._onAssignSpecies = opts.onAssignSpecies || null;
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
     this._onToggleLockSet = opts.onToggleLockSet || null;
+    this._canDeleteSet = opts.canDeleteSet || null;
     /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._cardMap = new Map();
@@ -203,7 +205,9 @@ export class LabelList {
       const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
 
       if (setKey) {
-        const locked = !!setInfo?.locked;
+        // Hide XC-imported sets that have no labels in the current recording
+        if (totalInSet === 0 && setInfo?.origin === 'xeno-canto') continue;
+        const locked = !!(setInfo?.locked || setInfo?.origin === 'xeno-canto');
         const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
           const frag = document.createDocumentFragment();
           for (const name of names) {
@@ -596,7 +600,8 @@ export class LabelList {
       });
       setActions.appendChild(renBtn);
     }
-    if (this._onDeleteSet) {
+    const _deletable = this._onDeleteSet && (this._canDeleteSet ? this._canDeleteSet(setKey) : true);
+    if (_deletable) {
       const delBtn = document.createElement('button');
       delBtn.className = 'act-btn label-set-action-btn danger';
       delBtn.title = 'Delete set (labels remain without a set)';

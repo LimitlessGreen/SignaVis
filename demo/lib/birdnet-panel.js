@@ -100,9 +100,17 @@ export class BirdNETPanel {
   constructor(opts) {
     Object.assign(this, opts);
     this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
+    this._loadedModelUrl = null;
     this._restoreModelUrl();
     this._restoreGeoCoords();
     this._bindEvents();
+  }
+
+  /** Extract BirdNET version string from the currently configured model URL. */
+  _getModelVersion() {
+    const url = this._loadedModelUrl || this.modelUrlInput?.value || '';
+    const m = url.match(/birdnet[^/]*?v?([\d]+\.[\d]+(?:\.[\d]+)?)/i);
+    return m ? `v${m[1]}` : 'unknown';
   }
 
   open() {
@@ -216,6 +224,7 @@ export class BirdNETPanel {
           onProgress?.(msg, pct);
         },
       });
+      this._loadedModelUrl = modelUrl;
       if (this.statusEl) this.statusEl.textContent =
         result.hasAreaModel ? 'Area model loaded ✓' : 'Model loaded ✓';
       return result;
@@ -347,6 +356,7 @@ export class BirdNETPanel {
             this.progressBar.style.width = pct + '%';
           },
         });
+        this._loadedModelUrl = modelUrl;
         if (loadResult.hasAreaModel) {
           this.statusEl.textContent = 'Area model loaded ✓';
         }
@@ -380,6 +390,7 @@ export class BirdNETPanel {
 
       const author = this.authorInput.value.trim();
       const mergeOverlapping = this.mergeCheckbox.checked;
+      const modelVersion = this._getModelVersion();
       const newLabels = detections.map((det) => ({
         ...this.resolveLabel(det, audioBuffer),
         id: `bn_${Math.random().toString(36).slice(2, 10)}`,
@@ -391,6 +402,7 @@ export class BirdNETPanel {
         confidence: det.confidence,
         origin: 'BirdNET',
         author: author || '',
+        aiSuggested: { model: 'BirdNET', version: modelVersion, confidence: det.confidence },
       }));
 
       const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;

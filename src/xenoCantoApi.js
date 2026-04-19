@@ -115,7 +115,16 @@ function mapAnnotationRow(row, normalizedMeta) {
         collection_date: '',
         collection_specimen: '',
         temperature: '',
-        annotation_remarks: safeField(r.notes ?? r['Notes']),
+        annotation_remarks: (() => {
+            const base = safeField(r.notes ?? r['Notes']);
+            if (r.aiSuggested?.model) {
+                const ai = r.aiSuggested;
+                const conf = ai.confidence != null ? ` (${(ai.confidence * 100).toFixed(0)}%)` : '';
+                const aiNote = `AI: ${ai.model}${ai.version ? ' ' + ai.version : ''}${conf}`;
+                return base ? `${base}; ${aiNote}` : aiNote;
+            }
+            return base;
+        })(),
         overlap: '',
     };
 }
@@ -330,13 +339,21 @@ export function buildXenoCantoAnnotationSet(params = {}) {
 
     const meta = normalizeMetadata(metadata);
     if (!meta.xcFileNo) errors.push("Missing metadata field 'xcfileno' (Xeno-canto file number).");
-    if (!annotations.length) errors.push('No annotations provided.');
 
-    if (errors.length) {
-        return { ok: false, payload: null, warnings, errors };
+    // Exclude readonly annotations (XC-imported from other users) from upload
+    const uploadable = annotations.filter((a) => !a.readonly);
+    if (uploadable.length < annotations.length) {
+        const skipped = annotations.length - uploadable.length;
+        warnings.push(`${skipped} read-only annotation(s) excluded from upload.`);
     }
 
-    const mappedAnnotations = annotations.map((row) => mapAnnotationRow(row, meta));
+    if (!uploadable.length) errors.push('No annotations provided.');
+
+    if (errors.length) {
+        return { ok: false, payload: null, warnings, errors, xcUploadEligible: 0 };
+    }
+
+    const mappedAnnotations = uploadable.map((row) => mapAnnotationRow(row, meta));
     const missingTimeRows = mappedAnnotations.filter((a) => a.start_time === '' || a.end_time === '');
     if (missingTimeRows.length) warnings.push(`${missingTimeRows.length} annotation(s) have missing start/end times.`);
 
@@ -361,5 +378,5 @@ export function buildXenoCantoAnnotationSet(params = {}) {
         annotations: mappedAnnotations,
     };
 
-    return { ok: true, payload, warnings, errors: [] };
+    return { ok: true, payload, warnings, errors: [], xcUploadEligible: uploadable.length };
 }

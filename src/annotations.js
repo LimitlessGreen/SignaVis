@@ -865,6 +865,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         const coords = this.player?._state?.coords;
         const el = document.createElement('div');
         el.className = 'annotation-region';
+        if (region.readonly) el.classList.add('annotation-region--readonly');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -882,13 +883,20 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.dataset.id = region.id;
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
-        el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)`;
+        const readonlyNote = region.readonly ? ' [read-only]' : '';
+        el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
+        const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
+        const aiTag = region.aiSuggested ? `<span class="annotation-ai-badge" title="AI: ${escapeHtml(region.aiSuggested.model || '')} ${escapeHtml(region.aiSuggested.version || '')}">AI</span>` : '';
+        const lockIcon = region.readonly ? `<span class="annotation-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
             <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
-            <span class="annotation-confidence">${region.confidence != null ? `${Math.round(region.confidence * 100)}%` : ''}</span>
+            <span class="annotation-confidence">${confidenceStr}</span>
+            ${aiTag}${lockIcon}
+            ${region.readonly ? '' : `
             <span class="annotation-handle handle-l" data-mode="resize-l"></span>
             <span class="annotation-handle handle-r" data-mode="resize-r"></span>
+            `}
         `;
 
         el.addEventListener('click', (event) => {
@@ -906,11 +914,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (region.readonly) return;
             this._suppressClickUntil = performance.now() + 250;
             this._renameRegionPrompt(region.id);
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
+            if (region.readonly) { event.preventDefault(); event.stopPropagation(); return; }
             const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.annotation-handle');
             const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
@@ -958,7 +968,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _startEditInteraction(id, mode, clientX, element) {
         const region = this._items.find((a) => a.id === id);
-        if (!region) return;
+        if (!region || region.readonly) return;
         this._editing = {
             id,
             mode,
@@ -1110,6 +1120,9 @@ export class AnnotationLayer extends AnnotationLayerBase {
             species: annotation?.species || '',
             confidence: annotation?.confidence,
             color: String(annotation?.color || '').trim(),
+            readonly: annotation?.readonly === true,
+            aiSuggested: annotation?.aiSuggested ?? null,
+            recordingId: annotation?.recordingId ?? null,
         };
     }
 }
@@ -1375,7 +1388,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const el = document.createElement('div');
         el.className = 'spectrogram-label-region';
         const isLocked = this._lockedIds.has(label.id);
+        const isReadonly = label.readonly === true;
+        const isBlocked = isLocked || isReadonly;
         if (isLocked) el.classList.add('spectrogram-label-region--locked');
+        if (isReadonly) el.classList.add('spectrogram-label-region--readonly');
         const isSuggestion = label.origin && label.origin !== 'manual' && label.origin !== 'xeno-canto';
         if (isSuggestion) el.classList.add('suggestion');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
@@ -1393,11 +1409,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.dataset.id = label.id;
         el.dataset.start = String(label.start);
         el.dataset.end = String(label.end);
-        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+        const readonlyNote = isReadonly ? ' [read-only]' : '';
+        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
+        const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
+        const lockIconHtml = isReadonly ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
             <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
             <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>
+            ${aiTagHtml}${lockIconHtml}
+            ${!isBlocked ? `
             <button class="label-edit-btn" type="button" title="Edit label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -1416,6 +1437,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="label-handle handle-r" data-mode="resize-r"></span>
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
+            ` : ''}
             ${isSuggestion ? `
             <button class="label-accept-btn" type="button" title="Accept label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -1431,8 +1453,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         `;
 
         const editBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-edit-btn'));
-        if (isLocked && editBtn) editBtn.style.display = 'none';
-        if (editBtn && !isLocked) {
+        if (editBtn && !isBlocked) {
             editBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1445,8 +1466,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
 
         const deleteBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-delete-btn'));
-        if (isLocked && deleteBtn) deleteBtn.style.display = 'none';
-        if (deleteBtn && !isLocked) {
+        if (deleteBtn && !isBlocked) {
             deleteBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1507,13 +1527,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isLocked) return;
+            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
             this._renameSpectrogramLabelPrompt(label.id);
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            if (isLocked) { event.preventDefault(); event.stopPropagation(); return; }
+            if (isBlocked) { event.preventDefault(); event.stopPropagation(); return; }
             // In stamp mode, clicking a label sets the stamp reference — do NOT start move
             if (this.stampMode) {
                 this._stampRefLabelId = label.id;
@@ -2221,6 +2241,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             origin: String(label?.origin || '').trim(),
             author: String(label?.author || '').trim(),
             tags: (label?.tags && typeof label.tags === 'object') ? { ...label.tags } : {},
+            readonly: label?.readonly === true,
+            aiSuggested: label?.aiSuggested ?? null,
+            recordingId: label?.recordingId ?? null,
         };
     }
 }
