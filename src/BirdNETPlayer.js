@@ -153,6 +153,26 @@ export class BirdNETPlayer {
 
     // ── Public API ──────────────────────────────────────────────────
 
+    /**
+     * Show the spectrogram loading overlay with a custom message.
+     * Useful for displaying feedback during network fetches before DSP starts.
+     * Pass no argument (or call hideLoadingOverlay) to dismiss it.
+     * @param {string} [text]
+     */
+    showLoadingOverlay(text = 'Loading…') {
+        const overlay = this._state?._dom?.recomputingOverlay;
+        if (!overlay) return;
+        const textEl = overlay.querySelector('span:last-child');
+        if (textEl) textEl.textContent = text;
+        overlay.hidden = false;
+    }
+
+    /** Hide the loading overlay that was shown via showLoadingOverlay(). */
+    hideLoadingOverlay() {
+        const overlay = this._state?._dom?.recomputingOverlay;
+        if (overlay) overlay.hidden = true;
+    }
+
     /** Load audio from a URL (http, blob:, data: URLs all supported) */
     async loadUrl(url) {
         await this.ready;
