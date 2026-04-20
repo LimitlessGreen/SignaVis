@@ -10,18 +10,19 @@ on:
 
 permissions:
   contents: read
-  packages: write
   actions: read
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ["20.19", "22.12"]
+        node-version: ["20.19", "22.14"]
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -29,7 +30,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -49,11 +50,12 @@ jobs:
       - name: Check npm package archive
         run: npm pack
 
-      - name: Upload build artifacts
-        if: ${{ matrix.node-version == '22.12' }}
-        uses: actions/upload-artifact@v7
+      - name: Upload JS artifacts
+        if: ${{ matrix.node-version == '22.14' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ github.run_id }}
+          name: js-dist-${{ github.run_id }}
+          if-no-files-found: error
           path: |
             dist/
             types/
@@ -72,105 +74,143 @@ jobs:
           python -m build
           python -m twine check dist/*
 
+      - name: Upload Python artifacts
+        if: ${{ matrix.node-version == '22.14' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            python-wrapper/dist/*
+
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
+      - name: Download JS artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: dist-${{ github.run_id }}
+          name: js-dist-${{ github.run_id }}
+          path: release-assets/js
+
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist-${{ github.run_id }}
+          path: release-assets/python
 
       - name: Generate release notes
         id: notes
+        shell: bash
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1)
+          PREV_TAG="$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -n1 || true)"
+
           if [ -n "${PREV_TAG}" ]; then
             RANGE="${PREV_TAG}..${TAG}"
           else
             RANGE="${TAG}"
           fi
+
           {
             echo 'NOTES<<EOF'
-            git log --pretty=format:'- %s (%h)' "${RANGE}" -- ':!VERSION' ':!package.json' ':!python-wrapper/pyproject.toml'
-            echo ''
+            echo "## Changes"
+            git log --pretty=format:'- %s (%h)' "${RANGE}" -- ':!VERSION' ':!package.json' ':!python-wrapper/pyproject.toml' || true
+            echo
+            echo
+            echo "## Artifacts"
+            find release-assets -maxdepth 2 -type f | sort | sed 's#^#- #'
             echo 'EOF'
           } >> "${GITHUB_OUTPUT}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ steps.notes.outputs.NOTES }}
-          files: dist/**
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/js/**/*.tgz
+            release-assets/js/dist/**/*
+            release-assets/js/types/**/*
+            release-assets/python/**/*
 
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
+      id-token: write
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "22.12"
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Ensure npm always-auth
-        run: npm config set always-auth true
+      - name: Ensure modern npm for trusted publishing
+        run: npm install -g npm@11.5.1
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
+      - name: Download JS artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: dist-${{ github.run_id }}
+          name: js-dist-${{ github.run_id }}
+          path: publish-js
 
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
 
-      - name: Setup npm for trusted publishing
-        run: npm install -g npm@11.5.1
-
-      - name: Publish npm (use packed tarball if available)
+      - name: Publish npm
+        shell: bash
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
         run: |
           set -euo pipefail
-          TAR=$(ls *.tgz 2>/dev/null | head -n1 || true)
-          if [ -n "$TAR" ]; then
-            echo "Publishing tarball $TAR"
-            npm publish "$TAR" --access public
+          shopt -s nullglob
+          tarballs=(publish-js/*.tgz)
+
+          if [ ${#tarballs[@]} -gt 0 ]; then
+            echo "Publishing tarball ${tarballs[0]}"
+            npm publish "${tarballs[0]}" --access public --provenance
           else
-            echo "No tarball found - falling back to project-level publish (this may run build scripts)."
-            npm publish --access public
+            echo "No tarball found, falling back to project-level publish."
+            npm publish --access public --provenance
           fi
 
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: dist-${{ github.run_id }}
+          name: python-dist-${{ github.run_id }}
+          path: python-wrapper/dist
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -180,23 +220,28 @@ jobs:
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
 
-      - name: Sync assets & publish Python package
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Verify Python distributions
+        shell: bash
         run: |
           set -euo pipefail
-          # ensure python wrapper has up-to-date assets, then build/upload from python-wrapper
-          bash ./scripts/sync-assets.sh --no-build
-          cd python-wrapper
-          python -m pip install --upgrade pip build twine
-          python -m build
+          python -m pip install --upgrade pip twine
           shopt -s nullglob
-          packages=(dist/*.tar.gz dist/*.whl dist/*.zip)
+          packages=(python-wrapper/dist/*.tar.gz python-wrapper/dist/*.whl python-wrapper/dist/*.zip)
           if [ ${#packages[@]} -eq 0 ]; then
             echo "No distribution files found in python-wrapper/dist"
-            ls -la dist || true
+            ls -la python-wrapper/dist || true
             exit 1
           fi
           python -m twine check "${packages[@]}"
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(python-wrapper/dist/*.tar.gz python-wrapper/dist/*.whl python-wrapper/dist/*.zip)
+          python -m pip install --upgrade pip twine
           python -m twine upload --non-interactive -u "$TWINE_USERNAME" -p "$TWINE_PASSWORD" "${packages[@]}"
