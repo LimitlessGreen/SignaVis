@@ -768,7 +768,11 @@
       const set = defaultSetInfo({ id: _genSetId(), ...partial });
       if (!set.id) set.id = _genSetId();
       state.labelSets.set(set.id, set);
-      if (!silent) { syncToPlayer(); xcPanel._rebuildSetSection?.(); }
+      if (!silent) {
+        syncToPlayer();
+        xcPanel._rebuildSetSection?.();
+        try { saveSessionSets(state); } catch (e) { /* ignore */ }
+      }
       return set;
     }
 
