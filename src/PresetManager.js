@@ -74,8 +74,9 @@ export class PresetManager {
         on(d.presetSaveConfirm,'click',   () => this.#confirmSaveUserPreset());
         on(d.presetSaveCancel, 'click',   () => this.#cancelSaveUserPreset());
         on(d.presetSaveInput,  'keydown', (e) => {
-            if (e.key === 'Enter')  this.#confirmSaveUserPreset();
-            if (e.key === 'Escape') this.#cancelSaveUserPreset();
+            const ev = /** @type {KeyboardEvent} */ (e);
+            if (ev.key === 'Enter')  this.#confirmSaveUserPreset();
+            if (ev.key === 'Escape') this.#cancelSaveUserPreset();
         });
         on(d.presetImportBtn, 'click', () => this.#importPresets());
         on(d.presetExportBtn, 'click', () => this.#exportPresets());
@@ -468,16 +469,24 @@ export class PresetManager {
                 <button class="pm-fav-btn${isFav ? ' active' : ''}" title="Set as default">${isFav ? starFilledSvg : starSvg}</button>
                 <span class="pm-name" title="Click to apply">${name.charAt(0).toUpperCase() + name.slice(1)}</span>
                 <span class="pm-badge">built-in</span>`;
-            row.querySelector('.pm-fav-btn').onclick = () => {
-                this.setFavouritePreset(isFav ? '' : key);
-                this.populatePresetDropdown();
-                this.updatePresetButtons();
-                this.#renderPresetManagerList();
-            };
-            row.querySelector('.pm-name').onclick = () => {
-                this.applyPreset(key);
-                this.persistCurrentSettings();
-            };
+            const favBtn = row.querySelector('.pm-fav-btn');
+            if (favBtn) {
+                const favEl = /** @type {HTMLElement} */ (favBtn);
+                favEl.addEventListener('click', () => {
+                    this.setFavouritePreset(isFav ? '' : key);
+                    this.populatePresetDropdown();
+                    this.updatePresetButtons();
+                    this.#renderPresetManagerList();
+                });
+            }
+            const nameEl = row.querySelector('.pm-name');
+            if (nameEl) {
+                const nameHTMLElement = /** @type {HTMLElement} */ (nameEl);
+                nameHTMLElement.addEventListener('click', () => {
+                    this.applyPreset(key);
+                    this.persistCurrentSettings();
+                });
+            }
             list.appendChild(row);
         }
 
@@ -493,28 +502,48 @@ export class PresetManager {
                 <span class="pm-name" title="Click to apply"></span>
                 <button class="pm-icon-btn pm-rename-btn" title="Rename">${pencilSvg}</button>
                 <button class="pm-icon-btn pm-delete-btn" title="Delete">${trashSvg}</button>`;
-            row.querySelector('.pm-name').textContent = name; // textContent avoids XSS
-            row.querySelector('.pm-fav-btn').onclick = () => {
-                this.setFavouritePreset(isFav ? '' : key);
-                this.populatePresetDropdown();
-                this.updatePresetButtons();
-                this.#renderPresetManagerList();
-            };
-            row.querySelector('.pm-name').onclick = () => {
-                this.applyPreset(key);
-                this.persistCurrentSettings();
-            };
-            row.querySelector('.pm-rename-btn').onclick = () => this.#inlineRenamePreset(name, row);
+            const nameSpan = row.querySelector('.pm-name');
+            if (nameSpan) (/** @type {HTMLElement} */ (nameSpan)).textContent = name;
+
+            const favBtnUser = row.querySelector('.pm-fav-btn');
+            if (favBtnUser) {
+                const favUserEl = /** @type {HTMLElement} */ (favBtnUser);
+                favUserEl.addEventListener('click', () => {
+                    this.setFavouritePreset(isFav ? '' : key);
+                    this.populatePresetDropdown();
+                    this.updatePresetButtons();
+                    this.#renderPresetManagerList();
+                });
+            }
+
+            const nameBtnUser = row.querySelector('.pm-name');
+            if (nameBtnUser) {
+                const nameUserEl = /** @type {HTMLElement} */ (nameBtnUser);
+                nameUserEl.addEventListener('click', () => {
+                    this.applyPreset(key);
+                    this.persistCurrentSettings();
+                });
+            }
+
+            const renameBtn = row.querySelector('.pm-rename-btn');
+            if (renameBtn) {
+                const renameEl = /** @type {HTMLElement} */ (renameBtn);
+                renameEl.addEventListener('click', () => this.#inlineRenamePreset(name, row));
+            }
+
             const delBtn = row.querySelector('.pm-delete-btn');
-            delBtn.onclick = () => {
-                if (delBtn.classList.contains('pm-confirm-delete')) {
-                    this.#deleteUserPreset(name);
-                } else {
-                    delBtn.classList.add('pm-confirm-delete');
-                    delBtn.title = 'Click again to confirm';
-                    setTimeout(() => { delBtn.classList.remove('pm-confirm-delete'); delBtn.title = 'Delete'; }, 2000);
-                }
-            };
+            if (delBtn) {
+                const db = /** @type {HTMLElement} */ (delBtn);
+                db.addEventListener('click', () => {
+                    if (db.classList.contains('pm-confirm-delete')) {
+                        this.#deleteUserPreset(name);
+                    } else {
+                        db.classList.add('pm-confirm-delete');
+                        db.title = 'Click again to confirm';
+                        setTimeout(() => { db.classList.remove('pm-confirm-delete'); db.title = 'Delete'; }, 2000);
+                    }
+                });
+            }
             list.appendChild(row);
         }
 

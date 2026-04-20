@@ -18,14 +18,14 @@ const DB_VERSION  = 1;
 
 /**
  * @typedef {object} CacheEntry
- * @property {string}       key
- * @property {ArrayBuffer}  dataBuffer   — Float32Array data as ArrayBuffer
+ * @property {string}       [key]
+ * @property {ArrayBuffer}  dataBuffer   - Float32Array data as ArrayBuffer
  * @property {number}       nFrames
  * @property {number}       nMels
  * @property {number}       hopSize
  * @property {number}       winLength
  * @property {string}       colourScale
- * @property {number}       timestamp    — Date.now() of last access
+ * @property {number}       [timestamp]    - Date.now() of last access
  */
 
 export class SpectrogramCache {
@@ -128,7 +128,7 @@ export class SpectrogramCache {
             const countReq = store.count();
             countReq.onsuccess = () => {
                 const count = countReq.result;
-                if (count <= MAX_ENTRIES) { resolve(); return; }
+                if (count <= MAX_ENTRIES) { resolve(undefined); return; }
                 // Load all, sort by timestamp ascending, delete oldest
                 const allReq = store.getAll();
                 allReq.onsuccess = () => {
@@ -137,12 +137,12 @@ export class SpectrogramCache {
                         .sort((a, b) => a.timestamp - b.timestamp)
                         .slice(0, count - MAX_ENTRIES);
                     for (const e of toEvict) store.delete(e.key);
-                    resolve();
+                    resolve(undefined);
                 };
-                allReq.onerror = () => resolve();
+                allReq.onerror = () => resolve(undefined);
             };
-            countReq.onerror = () => resolve();
-            tx.onerror = () => resolve();
+            countReq.onerror = () => resolve(undefined);
+            tx.onerror = () => resolve(undefined);
         });
     }
 
@@ -156,8 +156,8 @@ export class SpectrogramCache {
             const tx    = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const req   = store.clear();
-            req.onsuccess = () => resolve();
-            req.onerror   = () => resolve();
+            req.onsuccess = () => resolve(undefined);
+            req.onerror   = () => resolve(undefined);
         });
     }
 
@@ -170,13 +170,17 @@ export class SpectrogramCache {
             if (typeof indexedDB === 'undefined') { resolve(null); return; }
             const req = indexedDB.open(DB_NAME, DB_VERSION);
             req.onupgradeneeded = (e) => {
-                const db = e.target.result;
+                const rt = /** @type {IDBOpenDBRequest | null} */ (e.target);
+                if (!rt) return;
+                const db = /** @type {IDBDatabase} */ (rt.result);
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: 'key' });
                 }
             };
             req.onsuccess = (e) => {
-                this._db = e.target.result;
+                const rt = /** @type {IDBOpenDBRequest | null} */ (e.target);
+                if (!rt) { this._opening = null; resolve(null); return; }
+                this._db = /** @type {IDBDatabase} */ (rt.result);
                 this._opening = null;
                 resolve(this._db);
             };

@@ -160,7 +160,7 @@ export class BirdNETPlayer {
      * @param {string} [text]
      */
     showLoadingOverlay(text = 'Loading…') {
-        const overlay = this._state?._dom?.recomputingOverlay;
+        const overlay = this._state?.d?.recomputingOverlay;
         if (!overlay) return;
         const textEl = overlay.querySelector('span:last-child');
         if (textEl) textEl.textContent = text;
@@ -169,7 +169,7 @@ export class BirdNETPlayer {
 
     /** Hide the loading overlay that was shown via showLoadingOverlay(). */
     hideLoadingOverlay() {
-        const overlay = this._state?._dom?.recomputingOverlay;
+        const overlay = this._state?.d?.recomputingOverlay;
         if (overlay) overlay.hidden = true;
     }
 
@@ -925,7 +925,11 @@ export class BirdNETPlayer {
         }
     }
 
-    /** @param {string} color @returns {{r:number,g:number,b:number}|null} */
+    /**
+     * Normalize taxonomy array into internal compact shape.
+     * @param {Array<{name: string, color?: string, shortcut?: string}>} taxonomy
+     * @returns {Array<{name: string, color: string, shortcut: string}>}
+     */
     _normalizeTaxonomy(taxonomy) {
         const used = new Set();
         const list = [];

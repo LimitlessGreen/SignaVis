@@ -46,6 +46,7 @@ export const DEFAULT_XC_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotati
  * @property {Object|null} payload
  * @property {string[]} warnings
  * @property {string[]} errors
+ * @property {number} [xcUploadEligible]
  */
 
 function isRetryableStatus(status) {

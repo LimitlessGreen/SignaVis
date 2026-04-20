@@ -608,12 +608,18 @@ class AnnotationLayerBase {
     /** CSS selector matching all item elements within the overlay. */
     get _itemElSelector() { return '.annotation-item'; }
     /** Return the DOM root element to mount the overlay into. */
+    /** @returns {HTMLElement|null} */
     _getRoot() { return null; }
     /** Subscribe player events. Called inside attach(), after overlay creation. */
     _subscribePlayerEvents() {}
     /** Bind mouse/pointer interactions. Called inside attach(), after overlay creation. */
     _bindInteractions(_root) {}
-    /** Normalize a raw item object (must return object with .id). @abstract */
+    /**
+     * Normalize a raw item object (must return object with .id).
+     * @param {*} _item
+     * @returns {{id: string}}
+     * @abstract
+     */
     _normalize(_item) { throw new Error(`${this.constructor.name}._normalize not implemented`); }
     /** Emit a player event when a new item is created via add(). */
     _emitCreate(_item) {}
@@ -621,6 +627,9 @@ class AnnotationLayerBase {
     _emitUpdate(_item) {}
 
     // ── Lifecycle ────────────────────────────────────────────────────
+    /** Render the overlay. Override in subclasses; default no-op for base typing. */
+    render() {}
+
     attach(player) {
         this.detach();
         this.player = player;
@@ -1194,6 +1203,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     /** Public alias for the internal items array (backward compat). */
     get labels() { return this._items; }
+    set labels(v) {
+        if (!Array.isArray(v)) {
+            this._items = [];
+            return;
+        }
+        // Ensure incoming items are normalized (IDs, defaults)
+        this._items = v.map((i) => this._normalize(i));
+    }
 
     detach() {
         super.detach();

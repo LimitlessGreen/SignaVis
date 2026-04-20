@@ -648,7 +648,9 @@ export class PlayerState {
         this.sampleRateHz = sampleRate;
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
-        this._spectro.setAudio(this._engine.audioBuffer, sampleRate);
+        if (this._engine.audioBuffer) {
+            this._spectro.setAudio(this._engine.audioBuffer, sampleRate);
+        }
         this._spectro.updateMaxFreqOptions(sampleRate);
 
         this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
@@ -802,6 +804,7 @@ export class PlayerState {
             coords:         this.coords,
             effectiveHeight: this._getEffectiveSpectrogramHeight(),
             colorScheme:    this._presets.currentColorScheme,
+            currentTime:    this._getCurrentTime(),
             scrollLeft:     this.d.canvasWrapper?.scrollLeft ?? 0,
             viewportWidth:  this.d.canvasWrapper?.clientWidth ?? 0,
         };

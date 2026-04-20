@@ -271,7 +271,7 @@ export class SpectrogramController extends EventTarget {
 
             // Persist to cache (non-blocking)
             spectrogramCache.set(cacheKey, {
-                dataBuffer: this._data.buffer.slice(0),
+                dataBuffer: new Uint8Array((/** @type {Float32Array} */ (this._data)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,
                 hopSize:    this._hopSize,
@@ -443,7 +443,7 @@ export class SpectrogramController extends EventTarget {
      */
     buildGrayscale() {
         const d = this._d;
-        this._grayInfo = buildSpectrogramGrayscale({
+        this._grayInfo = /** @type {{gray: Uint8Array, width: number, height: number}|null} */ (buildSpectrogramGrayscale({
             spectrogramData:    this._data,
             spectrogramFrames:  this._nFrames,
             spectrogramMels:    this._nMels,
@@ -455,7 +455,7 @@ export class SpectrogramController extends EventTarget {
             colourScale: this._colourScale || d.colourScaleSelect?.value || 'dbSquared',
             noiseReduction: d.noiseReductionCheck?.checked ?? false,
             clahe:          d.claheCheck?.checked ?? false,
-        });
+        }));
         if (this._grayInfo && this.colorizer.ok) {
             const { gray, width, height } = this._grayInfo;
             this._gpuReady = this.colorizer.uploadGrayscale(gray, width, height);
