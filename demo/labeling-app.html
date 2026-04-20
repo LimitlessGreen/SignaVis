@@ -478,6 +478,7 @@
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from './lib/taxonomy-ui.js';
     import { LabelList } from './lib/label-list.js';
     import { BirdNETPanel } from './lib/birdnet-panel.js';
+    import { saveSessionSets, restoreSessionSets } from './lib/session-sets.js';
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from './lib/xc-panel.js';
     import { AnnotatorProfile } from './lib/annotator-profile.js';
     import { RecordingManager, defaultRecordingEntry } from './lib/recording-manager.js';
@@ -824,7 +825,7 @@
         xcPanel._rebuildSetSection?.();                      // set form in XC tab
         const displayed = propsPanel.displayedLabel;
         if (displayed) propsPanel.refreshLabel(displayed);  // set section in Properties tab
-        saveSessionSets();
+        saveSessionSets(state);
       }, 300);
     }
 
@@ -846,44 +847,7 @@
       try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; }
     }
 
-    // Persist set registry so values survive page reload (cleared on new file load)
-    const SESSION_SETS_KEY = 'audio-workbench.session-sets.v1';
-    function saveSessionSets() {
-      try {
-        localStorage.setItem(SESSION_SETS_KEY, JSON.stringify({
-          sets: [...state.labelSets.entries()],
-          activeSetId: state.activeSetId,
-        }));
-      } catch {}
-    }
-    function restoreSessionSets() {
-      try {
-        const raw = localStorage.getItem(SESSION_SETS_KEY);
-        if (!raw) return false;
-        const { sets, activeSetId } = JSON.parse(raw);
-        if (!Array.isArray(sets) || !sets.length) return false;
-        state.labelSets = new Map(sets);
-        // Restore active session set id when available so the in-memory
-        // `state._sessionSetId` (used as the session's canonical set id)
-        // matches the restored sets and labels that reference it.
-        if (activeSetId && state.labelSets.has(activeSetId)) {
-          state.activeSetId = activeSetId;
-          state._sessionSetId = activeSetId;
-        } else {
-          // Fallback: use the first restored set as the session set if none
-          // was explicitly active. This prevents creating a new empty
-          // session set that would orphan annotations that reference the
-          // persisted set id.
-          const first = (sets && sets.length && sets[0] && sets[0][0]) ? sets[0][0] : null;
-          if (first && state.labelSets.has(first)) {
-            if (!state.activeSetId) state.activeSetId = first;
-            state._sessionSetId = first;
-          }
-        }
-        xcPanel._rebuildSetSection?.();
-        return true;
-      } catch { return false; }
-    }
+    // Persist/restore session sets — delegated to demo/lib/session-sets.js
 
     // No local last-click tracking needed; clear/add highlight by querying overlay.
 
@@ -2466,7 +2430,9 @@
     // Restore sets from last session (only if no URL params will load a recording)
     if (!new URLSearchParams(window.location.search).has('xc') &&
         !new URLSearchParams(window.location.search).has('XC')) {
-      restoreSessionSets();
+      // Pass `state` so the module can restore into the current runtime state
+      // and allow a UI rebuild callback to re-render set sections.
+      restoreSessionSets(state, { rebuild: () => xcPanel._rebuildSetSection?.() });
     }
     labelList.render(state.labels);
     await loadBirdnetTaxonomy();
