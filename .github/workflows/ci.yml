@@ -158,61 +158,45 @@ jobs:
     permissions:
       contents: read
       id-token: write
-
+  
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
-
+  
       - name: Ensure tags are present
         run: git fetch --force --tags origin
-
+  
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
+  
       - name: Ensure modern npm for trusted publishing
         run: npm install -g npm@11.5.1
-
-      - name: Download JS artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: js-dist-${{ github.run_id }}
-          path: publish-js
-
-      - name: Debug git state
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "ref=${GITHUB_REF}"
-          echo "ref_name=${GITHUB_REF_NAME}"
-          git status --short || true
-          git rev-parse HEAD
-          git tag --list | tail -n 20
-
+  
+      - name: Install dependencies
+        run: npm ci
+  
       - name: Check version sync (incl. tag)
         run: bash ./scripts/check-version-sync.sh
-
+  
+      - name: Build library + types
+        run: npm run build
+  
+      - name: Verify tarball before publish
+        run: |
+          npm pack
+          echo "Tarball created successfully for version $(npm version --json | jq -r .version)"
+  
       - name: Publish npm
         shell: bash
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          tarballs=(publish-js/*.tgz)
-
-          if [ ${#tarballs[@]} -gt 0 ]; then
-            echo "Publishing tarball ${tarballs[0]}"
-            npm publish "${tarballs[0]}" --access public --provenance
-          else
-            echo "No tarball found, falling back to project-level publish."
-            npm publish --access public --provenance
-          fi
+        run: npm publish --access public --provenance
 
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
