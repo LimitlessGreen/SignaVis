@@ -33,7 +33,7 @@
     }
   },
   "dependencies": {
-    "jsoneditor": "^9.10.0"
+    "jsoneditor": "^10.4.3"
   },
   "keywords": [
     "audio",
