@@ -14,6 +14,8 @@ html, body {
 .app {
   display: grid;
   grid-template-rows: 40px 1fr;
+  /* Reserve space for the app footer so content is not hidden when footer is fixed */
+  padding-bottom: var(--statusbar-height);
   width: 100%; height: 100%;
 }
 
@@ -82,6 +84,24 @@ html, body {
 .main-area { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 5px; }
 #playerRoot { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; background: var(--color-bg-secondary); }
+
+/* App footer — keep visual style consistent with statusbar but fixed to viewport bottom */
+.app-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  height: var(--statusbar-height);
+  min-height: var(--statusbar-height);
+  padding: 0 10px;
+  background: var(--color-statusbar);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
 
 /* Panel helpers */
 /* ── Help ── */

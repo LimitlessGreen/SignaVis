@@ -46,6 +46,20 @@ jobs:
           <meta http-equiv="refresh" content="0; url=demo/storybook.html">
           <a href="demo/storybook.html">Audio Workbench Storybook</a>
           EOF
+      - name: Write version.json for deployment
+        run: |
+          mkdir -p _site
+          VERSION="$(node -e "try{const p=require('./package.json'); console.log(p.version||'');}catch(e){console.log('')}")"
+          if [ -z "$VERSION" ] && [ -f VERSION ]; then
+            VERSION="$(cat VERSION)"
+          fi
+          COMMIT_SHORT="$(git rev-parse --short HEAD || echo '')"
+          COMMIT_FULL="$(git rev-parse HEAD || echo '')"
+          COMMIT_DATE="$(git show -s --format=%cI HEAD || date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          BUILT_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          cat > _site/version.json <<EOF
+{"version":"$VERSION","commit":"$COMMIT_SHORT","commitFull":"$COMMIT_FULL","commitDate":"$COMMIT_DATE","builtAt":"$BUILT_AT"}
+EOF
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
