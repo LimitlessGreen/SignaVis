@@ -343,7 +343,7 @@
     </div>
     <div class="statusbar-section">
       <span>Commit</span>
-      <span class="statusbar-label" id="appCommit">—</span>
+      <a class="statusbar-label" id="appCommit" href="#" target="_blank" rel="noopener noreferrer">—</a>
     </div>
     <div class="statusbar-spacer"></div>
     <div class="statusbar-section" style="white-space:nowrap">
@@ -351,6 +351,9 @@
       <span id="appCommitAge">—</span>
     </div>
   </footer>
+
+  <!-- Demo notice: centered above the statusbar -->
+  <div aria-hidden="true" id="demoFooterNotice" style="position:fixed;left:0;right:0;bottom:calc(var(--statusbar-height) + 6px);text-align:center;color:var(--color-text-secondary);font-size:0.85rem;pointer-events:none">This app is not production ready.</div>
 
   <script>
     (function () {
@@ -401,8 +404,31 @@
             const commit = json.commit || json.commitShort || '';
             const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
             versionEl.textContent = v || '—';
-            commitEl.textContent = commit || '—';
-            if (json.commitFull) commitEl.title = json.commitFull;
+            const displayedCommit = commit || '';
+            if (commitEl) {
+              if (displayedCommit) {
+                commitEl.textContent = displayedCommit;
+                const fullSha = (json.commitFull || json.commit || '').toString().trim();
+                if (fullSha) {
+                  // Link to GitHub commit
+                  try {
+                    commitEl.href = `https://github.com/LimitlessGreen/Audio-Workbench/commit/${fullSha}`;
+                    commitEl.target = '_blank';
+                    commitEl.rel = 'noopener noreferrer';
+                    commitEl.title = json.commitFull || '';
+                  } catch (e) {
+                    // ignore
+                  }
+                } else {
+                  commitEl.removeAttribute('href');
+                  commitEl.title = '';
+                }
+              } else {
+                commitEl.textContent = '—';
+                commitEl.removeAttribute('href');
+                commitEl.title = '';
+              }
+            }
             function updateAge() {
               ageEl.textContent = commitDate ? timeAgo(commitDate) : '—';
             }
