@@ -440,9 +440,15 @@
           }
         }
 
-        // Fallback for local/dev: show 'dev' indicators
+        // Fallback for local/dev: show 'dev' indicators and remove any link
         versionEl.textContent = 'dev';
-        commitEl.textContent = 'local';
+        if (commitEl) {
+          commitEl.textContent = 'local';
+          try { commitEl.removeAttribute('href'); } catch (e) {}
+          try { commitEl.removeAttribute('target'); } catch (e) {}
+          try { commitEl.removeAttribute('rel'); } catch (e) {}
+          commitEl.title = '';
+        }
         ageEl.textContent = '';
       }
 
