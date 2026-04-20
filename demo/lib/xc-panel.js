@@ -623,28 +623,32 @@ export class XenoCantoPanel {
 
     const annotations = targetLabels
       .filter(l => l.start != null && l.end != null)
-      .map((l, i) => ({
-        annotation_source_id: String(i + 1),
-        xc_nr: xcNr,
-        annotator: l.author || effectiveCreator,
-        annotator_xc_id: effectiveCreatorId,
-        start_time: Number(l.start).toFixed(6),
-        end_time: Number(l.end).toFixed(6),
-        frequency_low: Number(l.freqMin || 0).toFixed(1),
-        frequency_high: Number(l.freqMax || 0).toFixed(1),
-        scientific_name: l.scientificName || '',
-        sound_type: l.tags?.soundType || '',
-        date_identified: '',
-        sex: l.tags?.sex || '',
-        life_stage: l.tags?.lifeStage || '',
-        animal_seen: l.tags?.animalSeen || '',
-        playback_used: l.tags?.playbackUsed || '',
-        collection_date: recMeta.dateTime ? recMeta.dateTime.slice(0, 10) : '',
-        collection_specimen: '',
-        temperature: '',
-        annotation_remarks: l.tags?.remarks || '',
-        overlap: '',
-      }));
+      .map((l, i) => {
+        // Allow per-label override of xc number (used when exporting sets spanning multiple recordings)
+        const labelXcNr = (l && (l.xc_nr || l.xcId)) || xcNr || '';
+        return {
+          annotation_source_id: String(i + 1),
+          xc_nr: labelXcNr,
+          annotator: l.author || effectiveCreator,
+          annotator_xc_id: effectiveCreatorId,
+          start_time: Number(l.start).toFixed(6),
+          end_time: Number(l.end).toFixed(6),
+          frequency_low: Number(l.freqMin || 0).toFixed(1),
+          frequency_high: Number(l.freqMax || 0).toFixed(1),
+          scientific_name: l.scientificName || '',
+          sound_type: l.tags?.soundType || '',
+          date_identified: '',
+          sex: l.tags?.sex || '',
+          life_stage: l.tags?.lifeStage || '',
+          animal_seen: l.tags?.animalSeen || '',
+          playback_used: l.tags?.playbackUsed || '',
+          collection_date: recMeta.dateTime ? recMeta.dateTime.slice(0, 10) : '',
+          collection_specimen: '',
+          temperature: '',
+          annotation_remarks: l.tags?.remarks || '',
+          overlap: '',
+        };
+      });
 
     // Build recording context for upload
     const recContext = {

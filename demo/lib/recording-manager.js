@@ -124,7 +124,41 @@ export class RecordingManager extends EventTarget {
         if (!this._activeId) return;
         const entry = this._entries.get(this._activeId);
         if (entry) {
-            entry.annotations = annotations.map(a => ({ ...a }));
+            try {
+                const count = Array.isArray(annotations) ? annotations.length : 0;
+                console.debug('[RecordingManager] saveAnnotations', { id: this._activeId, count });
+            } catch (e) {}
+
+            // Normalize numeric fields and deduplicate annotations before persisting.
+            // This prevents tiny floating-point variations from producing
+            // multiple near-identical annotations across repeated saves.
+            const seen = new Set();
+            const normalized = [];
+            const makeKey = (l) => {
+                if (!l) return '';
+                if (l.id) return `id:${l.id}`;
+                const setId = l.setId || '';
+                const start = Number.isFinite(Number(l.start)) ? Math.round(Number(l.start) * 1e6) / 1e6 : 0;
+                const end = Number.isFinite(Number(l.end)) ? Math.round(Number(l.end) * 1e6) / 1e6 : 0;
+                const sci = l.scientificName || '';
+                const fmin = (l.freqMin != null && !isNaN(Number(l.freqMin))) ? Math.round(Number(l.freqMin) * 10) / 10 : '';
+                const fmax = (l.freqMax != null && !isNaN(Number(l.freqMax))) ? Math.round(Number(l.freqMax) * 10) / 10 : '';
+                return `${setId}:${start}:${end}:${sci}:${fmin}:${fmax}`;
+            };
+
+            for (const a of (annotations || [])) {
+                const key = makeKey(a);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                const copy = { ...a };
+                if (copy.start != null) copy.start = Number.isFinite(Number(copy.start)) ? Math.round(Number(copy.start) * 1e6) / 1e6 : copy.start;
+                if (copy.end != null) copy.end = Number.isFinite(Number(copy.end)) ? Math.round(Number(copy.end) * 1e6) / 1e6 : copy.end;
+                if (copy.freqMin != null && !isNaN(Number(copy.freqMin))) copy.freqMin = Math.round(Number(copy.freqMin) * 10) / 10;
+                if (copy.freqMax != null && !isNaN(Number(copy.freqMax))) copy.freqMax = Math.round(Number(copy.freqMax) * 10) / 10;
+                normalized.push(copy);
+            }
+
+            entry.annotations = normalized;
             this._save();
         }
     }

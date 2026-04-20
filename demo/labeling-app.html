@@ -14,6 +14,10 @@
       <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
       <span class="tb-sep"></span>
       <span class="file-label" id="fileLabel">No file loaded</span>
+      <select id="modeSelect" class="tb-select" title="Mode">
+        <option value="multifile">Multi-file</option>
+        <option value="standalone">Standalone</option>
+      </select>
       <button class="tb-btn" id="browseBtn" type="button">Browse</button>
       <button class="tb-btn" id="loadSampleBtn" type="button">Demo</button>
       <input id="fileInput" type="file" accept="audio/*" hidden />
@@ -331,6 +335,83 @@
       </div>
     </div>
   </div>
+  <!-- App footer: version & commit injected at Pages deployment (version.json) -->
+  <footer class="statusbar app-footer" id="appFooter" role="contentinfo" aria-label="App version">
+    <div class="statusbar-section">
+      <span>Version</span>
+      <span class="statusbar-label" id="appVersion">—</span>
+    </div>
+    <div class="statusbar-section">
+      <span>Commit</span>
+      <span class="statusbar-label" id="appCommit">—</span>
+    </div>
+    <div class="statusbar-spacer"></div>
+    <div class="statusbar-section" style="white-space:nowrap">
+      <span>Updated</span>
+      <span id="appCommitAge">—</span>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const versionEl = document.getElementById('appVersion');
+      const commitEl = document.getElementById('appCommit');
+      const ageEl = document.getElementById('appCommitAge');
+
+      function timeAgo(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d)) return '—';
+        const s = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (s < 5) return 'just now';
+        const units = [
+          ['year', 31536000],
+          ['month', 2592000],
+          ['day', 86400],
+          ['hour', 3600],
+          ['minute', 60],
+          ['second', 1],
+        ];
+        for (const [name, val] of units) {
+          if (s >= val) {
+            const n = Math.floor(s / val);
+            return n + ' ' + name + (n > 1 ? 's' : '') + ' ago';
+          }
+        }
+        return 'just now';
+      }
+
+      async function loadVersion() {
+        try {
+          const res = await fetch('/version.json', { cache: 'no-store' });
+          if (!res.ok) throw new Error('no version');
+          const json = await res.json();
+          const v = json.version || json.VERSION || '';
+          const commit = json.commit || json.commitShort || '';
+          const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
+          versionEl.textContent = v || '—';
+          commitEl.textContent = commit || '—';
+          if (json.commitFull) commitEl.title = json.commitFull;
+          function updateAge() {
+            ageEl.textContent = commitDate ? timeAgo(commitDate) : '—';
+          }
+          updateAge();
+          setInterval(updateAge, 15 * 1000);
+        } catch (e) {
+          // Fallback for local/dev: show 'dev' indicators
+          versionEl.textContent = 'dev';
+          commitEl.textContent = 'local';
+          ageEl.textContent = '';
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadVersion);
+      } else {
+        loadVersion();
+      }
+    })();
+  </script>
 
   <script type="module">
     import '../src/styles/main.scss';
@@ -387,6 +468,7 @@
     const fileLabel       = document.getElementById('fileLabel');
     const fileInput       = document.getElementById('fileInput');
     const browseBtn       = document.getElementById('browseBtn');
+    const modeSelect      = document.getElementById('modeSelect');
     const loadSampleBtn   = document.getElementById('loadSampleBtn');
     const clearAllBtn     = document.getElementById('clearAllBtn');
     const exportJsonBtn   = document.getElementById('exportJsonBtn');
@@ -608,6 +690,20 @@
       _labelsEntryId: null,
     };
 
+    // Mode persistence (multifile vs standalone)
+    const MODE_KEY = 'audio-workbench.mode.v1';
+    function saveMode() { try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {} }
+    function loadMode() { try { return localStorage.getItem(MODE_KEY) || null; } catch (e) { return null; } }
+    // Initialize mode (default: multifile)
+    state.mode = loadMode() || 'multifile';
+    if (modeSelect) {
+      modeSelect.value = state.mode;
+      modeSelect.addEventListener('change', () => {
+        state.mode = modeSelect.value;
+        saveMode();
+      });
+    }
+
     // ── Label set CRUD ────────────────────────────────────────────────
     function _genSetId() { return 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
 
@@ -798,12 +894,9 @@
      * Saves current labels, loads the new entry's audio, restores its labels.
      */
     async function activateRecordingEntry(entry) {
-      // 1. Save current labels into the leaving entry — only when state.labels actually
-      //    belongs to the leaving entry (guards against clobbering on page reload where
-      //    state.labels is still [] but activeId was restored from sessionStorage).
-      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId) {
-        recordingManager.saveAnnotations(state.labels);
-      }
+      // 1. Save current labels into the leaving entry (guarded helper avoids
+      //    accidental overwrites on page reload and handles edge-cases).
+      saveCurrentAnnotationsIfNeeded();
 
       // 2. Reset per-recording state (keep labelSets — session set + imported XC sets persist)
       state.labels = [];
@@ -1294,9 +1387,45 @@
 
     // ── Sync & export ─────────────────────────────────────────────────
     let _skipPropsRefresh = false;
-    function syncToPlayer() {
-      if (recordingManager?.activeId && state._labelsEntryId === recordingManager.activeId)
+    /**
+     * Save current state.labels into the active RecordingEntry when appropriate.
+     * Guards against overwriting stored annotations with an empty in-memory state
+     * on page reload. Also handles the case where state.labels contains labels
+     * but state._labelsEntryId wasn't set (race/edge cases) by saving them
+     * into the currently active entry and marking ownership.
+     */
+    function saveCurrentAnnotationsIfNeeded() {
+      if (!recordingManager?.activeId) return;
+      // If the in-memory labels are already marked as belonging to the active
+      // entry, persist them (including the empty-array case when user cleared).
+      if (state._labelsEntryId === recordingManager.activeId) {
         recordingManager.saveAnnotations(state.labels);
+        return;
+      }
+      // If we have labels in memory but they aren't marked as belonging to the
+      // active entry, assume they should be saved to the active entry and mark
+      // ownership to avoid future ambiguity.
+      if (Array.isArray(state.labels) && state.labels.length > 0) {
+        recordingManager.saveAnnotations(state.labels);
+        state._labelsEntryId = recordingManager.activeId;
+      }
+    }
+    // Remove duplicate labels while preserving order. Keys by `id` when present,
+    // otherwise falls back to a composite key of setId/start/end/scientificName.
+    function dedupeLabels(labels) {
+      if (!Array.isArray(labels)) return [];
+      const seen = new Set();
+      const out = [];
+      for (const l of labels) {
+        const key = l && (l.id || `${l.setId || ''}:${l.start || ''}:${l.end || ''}:${l.scientificName || ''}`);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(l);
+      }
+      return out;
+    }
+    function syncToPlayer() {
+      saveCurrentAnnotationsIfNeeded();
       player.setSpectrogramLabels(state.labels);
       const _lockedIds = state.labels
         .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
@@ -1628,8 +1757,9 @@
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Save current annotations to the leaving entry, then create a new RecordingEntry
-        if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
-          recordingManager.saveAnnotations(state.labels);
+        saveCurrentAnnotationsIfNeeded();
+        // In standalone mode, clear previous entries so the session contains only this recording
+        if (state.mode === 'standalone') recordingManager.clear();
         const _xcEntry = recordingManager.add({
           xcId: audio.xcId,
           filename: `XC${audio.xcId}.mp3`,
@@ -1668,8 +1798,72 @@
 
     // Initialize extracted export modal and wire it to xcPanel
     window.xcExportModalApi = createXcExportModal({
-      buildPayload: () => xcPanel.buildAnnotationSetPayload(state.labels, state.labelSets, state.recordingEditMeta),
-      upload: () => xcPanel.uploadToXenoCanto(state.labels, state.labelSets, state.recordingEditMeta),
+      buildPayload: () => {
+        // Prefer the global active set from the demo state; fall back to xcPanel internal.
+        try {
+            // Ensure any in-memory active labels are persisted to their RecordingEntry
+            // so aggregation can rely on per-entry `annotations` and avoid double-including
+            // the active recording's labels.
+            saveCurrentAnnotationsIfNeeded();
+            const activeSetId = state.activeSetId || xcPanel._activeSetId;
+            if (state.mode === 'multifile' && activeSetId) {
+            const all = recordingManager.getAll();
+            const aggregated = [];
+            for (const entry of all) {
+              const anns = entry.annotations || [];
+              for (const a of anns) {
+                if (a.setId === activeSetId) {
+                  const copy = { ...a };
+                  if (entry.xcId) copy.xc_nr = entry.xcId;
+                  aggregated.push(copy);
+                }
+              }
+            }
+              // At this point the active recording's labels (if any) have been
+              // saved into the corresponding entry by
+              // `saveCurrentAnnotationsIfNeeded()`, so iterating `entry.annotations`
+              // above is sufficient and avoids adding `state.labels` again.
+              console.debug('[XC export] buildPayload aggregated (from entries)', { count: aggregated.length, activeSetId, recordingIds: all.map(r => r.id) });
+            const deduped = dedupeLabels(aggregated);
+            console.debug('[XC export] buildPayload deduped', { before: aggregated.length, after: deduped.length, activeSetId });
+            return xcPanel.buildAnnotationSetPayload(deduped, state.labelSets, state.recordingEditMeta);
+          }
+        } catch (e) { /* fallback to single-recording export on error */ }
+        console.debug('[XC export] buildPayload single-recording', { count: (state.labels || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
+        const singleDedup = dedupeLabels(state.labels || []);
+        console.debug('[XC export] buildPayload single-recording deduped', { before: (state.labels || []).length, after: singleDedup.length, activeSetId: state.activeSetId || xcPanel._activeSetId });
+        return xcPanel.buildAnnotationSetPayload(singleDedup, state.labelSets, state.recordingEditMeta);
+      },
+      upload: () => {
+          try {
+          // Ensure in-memory active labels are persisted before upload aggregation
+          saveCurrentAnnotationsIfNeeded();
+          const activeSetId = state.activeSetId || xcPanel._activeSetId;
+          if (state.mode === 'multifile' && activeSetId) {
+            const all = recordingManager.getAll();
+            const aggregated = [];
+            for (const entry of all) {
+              const anns = entry.annotations || [];
+              for (const a of anns) {
+                if (a.setId === activeSetId) {
+                  const copy = { ...a };
+                  if (entry.xcId) copy.xc_nr = entry.xcId;
+                  aggregated.push(copy);
+                }
+              }
+            }
+            // active labels already persisted; aggregated entries include them
+            console.debug('[XC export] upload aggregated (from entries)', { count: aggregated.length, activeSetId, recordingIds: all.map(r => r.id) });
+            const deduped = dedupeLabels(aggregated);
+            console.debug('[XC export] upload deduped', { before: aggregated.length, after: deduped.length, activeSetId });
+            return xcPanel.uploadToXenoCanto(deduped, state.labelSets, state.recordingEditMeta);
+          }
+        } catch (e) { /* fallthrough to default */ }
+        console.debug('[XC export] upload single-recording', { count: (state.labels || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
+        const singleDedupUp = dedupeLabels(state.labels || []);
+        console.debug('[XC export] upload single-recording deduped', { before: (state.labels || []).length, after: singleDedupUp.length, activeSetId: state.activeSetId || xcPanel._activeSetId });
+        return xcPanel.uploadToXenoCanto(singleDedupUp, state.labelSets, state.recordingEditMeta);
+      },
       getApiKey: () => xcPanel.apiKey,
       getFilename: () => (xcPanel.xcId ? `XC${xcPanel.xcId}_annotation_set.json` : 'annotation_set.json'),
       defaultCollapseDepth: 1,
@@ -1683,7 +1877,33 @@
       xcUploadBtn.disabled = true;
       xcPanel._setStatus('Uploading…', 'info');
       try {
-        const result = await xcPanel.uploadToXenoCanto(state.labels, state.labelSets, state.recordingEditMeta);
+        // If multifile + active set, aggregate labels across recordings
+        let labelsToUpload = state.labels;
+        try {
+          // Persist active in-memory labels first so we can aggregate from
+          // per-entry `annotations` without separately adding `state.labels`.
+          saveCurrentAnnotationsIfNeeded();
+          const activeSetId = state.activeSetId || xcPanel._activeSetId;
+          if (state.mode === 'multifile' && activeSetId) {
+            const all = recordingManager.getAll();
+            const aggregated = [];
+            for (const entry of all) {
+              const anns = entry.annotations || [];
+              for (const a of anns) {
+                if (a.setId === activeSetId) {
+                  const copy = { ...a };
+                  if (entry.xcId) copy.xc_nr = entry.xcId;
+                  aggregated.push(copy);
+                }
+              }
+            }
+            // Use annotations from entries (active entry already saved above).
+            labelsToUpload = dedupeLabels(aggregated);
+          }
+        } catch (e) { /* fallback */ }
+
+          console.debug('[XC uploadBtn] labelsToUpload', { count: (labelsToUpload || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
+          const result = await xcPanel.uploadToXenoCanto(labelsToUpload, state.labelSets, state.recordingEditMeta);
         if (result.ok) {
           xcPanel._setStatus(result.message, 'success');
         } else {
@@ -1762,6 +1982,8 @@
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Create a RecordingEntry for this auto-loaded XC recording
+        // In standalone mode, clear previous entries so the session contains only this recording
+        if (state.mode === 'standalone') recordingManager.clear();
         const _autoEntry = recordingManager.add({
           xcId: audio.xcId,
           filename: `XC${audio.xcId}.mp3`,
@@ -1793,13 +2015,14 @@
       const file = fileInput.files?.[0];
       if (!file) return;
       // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
-      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
-        recordingManager.saveAnnotations(state.labels);
+      saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
+      // In standalone mode, don't accumulate entries — clear existing list so the new file replaces it
+      if (state.mode === 'standalone') recordingManager.clear();
       state.xcLabelPool = [];
       state.labels = [];
       state._labelsEntryId = null;
-      state.labelSets.clear();
+      if (state.mode === 'standalone') state.labelSets.clear();
       state.recordingMeta = null;
       currentXcId = null;
       updateUrlXcId(null);
@@ -1823,13 +2046,16 @@
 
     loadSampleBtn.addEventListener('click', async () => {
       // Save then detach so syncToPlayer doesn't clobber the leaving entry
-      if (recordingManager.activeId && state._labelsEntryId === recordingManager.activeId)
-        recordingManager.saveAnnotations(state.labels);
+      saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
       state.xcLabelPool = [];
       state.labels = [];
       state._labelsEntryId = null;
-      state.labelSets.clear();
+      // In standalone mode, ensure previous recordings are cleared so the sample stands alone
+      if (state.mode === 'standalone') {
+        state.labelSets.clear();
+        recordingManager.clear();
+      }
       state.recordingMeta = null;
       currentXcId = null;
       updateUrlXcId(null);
