@@ -22,7 +22,7 @@ test('buildXenoCantoAnnotationSet maps metadata + annotations', () => {
             annname: 'Tester',
             setname: 'Set A',
             setcreator: 'Team A',
-            set_license: 'CC-BY-4.0',
+            set_license: 'CC-BY',
         },
         annotations: [
             {

@@ -863,8 +863,22 @@
         const { sets, activeSetId } = JSON.parse(raw);
         if (!Array.isArray(sets) || !sets.length) return false;
         state.labelSets = new Map(sets);
+        // Restore active session set id when available so the in-memory
+        // `state._sessionSetId` (used as the session's canonical set id)
+        // matches the restored sets and labels that reference it.
         if (activeSetId && state.labelSets.has(activeSetId)) {
           state.activeSetId = activeSetId;
+          state._sessionSetId = activeSetId;
+        } else {
+          // Fallback: use the first restored set as the session set if none
+          // was explicitly active. This prevents creating a new empty
+          // session set that would orphan annotations that reference the
+          // persisted set id.
+          const first = (sets && sets.length && sets[0] && sets[0][0]) ? sets[0][0] : null;
+          if (first && state.labelSets.has(first)) {
+            if (!state.activeSetId) state.activeSetId = first;
+            state._sessionSetId = first;
+          }
         }
         xcPanel._rebuildSetSection?.();
         return true;

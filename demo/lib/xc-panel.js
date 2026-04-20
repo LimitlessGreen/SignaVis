@@ -13,7 +13,7 @@ import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 const AUTHOR_FIELDS = [
   { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },
   { key: 'xcUsername', label: 'XC Username',   type: 'text', placeholder: 'xeno-canto login', required: true },
-  { key: 'license',    label: 'Default License', type: 'select', options: ['', 'CC-BY-4.0', 'CC-BY-NC-4.0', 'CC-BY-SA-4.0', 'CC-BY-NC-SA-4.0', 'CC0-1.0'] },
+  { key: 'license',    label: 'Default License', type: 'select', options: ['', 'CC-BY-NC-SA', 'CC-BY-NC-ND', 'CC-BY-SA', 'CC-BY-NC', 'CC-BY', 'CC0'] },
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];
 
@@ -71,11 +71,12 @@ export function defaultRecordingEditMeta() {
 
 const SET_LICENSES = [
   '',
-  'CC-BY-4.0',
-  'CC-BY-NC-4.0',
-  'CC-BY-SA-4.0',
-  'CC-BY-NC-SA-4.0',
-  'CC0-1.0',
+  'CC-BY-NC-SA',
+  'CC-BY-NC-ND',
+  'CC-BY-SA',
+  'CC-BY-NC',
+  'CC-BY',
+  'CC0',
 ];
 
 // ── Set metadata field groups ────────────────────────────────────────
@@ -120,7 +121,7 @@ export function defaultSetInfo(partial = {}) {
     origin: 'manual',
     name: '',
     locked: false,
-    license: '',
+    license: 'CC-BY-NC',
     creator: '',
     creatorId: '',
     owner: '',
@@ -136,6 +137,42 @@ export function defaultSetInfo(partial = {}) {
     xcFallbackId: null,
     ...partial,
   };
+}
+
+/**
+ * Normalize a free-form license string into one of the accepted XC codes.
+ * Returns the normalized code (e.g. 'CC-BY-NC-SA') or an empty string when unknown.
+ */
+function normalizeLicenseValue(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim().toUpperCase();
+  // Remove common version tokens like '4.0' and stray punctuation
+  s = s.replace(/\b4\.0\b/g, '');
+  // Tokenise on non-alphanumerics and join with hyphens
+  const tokens = s.split(/[^A-Z0-9]+/).filter(Boolean);
+  if (!tokens.length) return '';
+  const candidate = tokens.join('-');
+  const allowed = new Set(['CC-BY-NC-SA','CC-BY-NC-ND','CC-BY-SA','CC-BY-NC','CC-BY','CC0']);
+  if (allowed.has(candidate)) return candidate;
+  // Try without hyphens (e.g. CCBYNCSA)
+  const compact = tokens.join('');
+  const compactMap = {
+    'CCBYNCSA': 'CC-BY-NC-SA',
+    'CCBYNCND': 'CC-BY-NC-ND',
+    'CCBYSA': 'CC-BY-SA',
+    'CCBYNC': 'CC-BY-NC',
+    'CCBY': 'CC-BY',
+    'CC0': 'CC0',
+  };
+  if (compactMap[compact]) return compactMap[compact];
+  // Fallback heuristics
+  if (compact.includes('CC') && compact.includes('BY') && compact.includes('NC') && compact.includes('SA')) return 'CC-BY-NC-SA';
+  if (compact.includes('CC') && compact.includes('BY') && compact.includes('NC') && compact.includes('ND')) return 'CC-BY-NC-ND';
+  if (compact.includes('CC') && compact.includes('BY') && compact.includes('SA')) return 'CC-BY-SA';
+  if (compact.includes('CC') && compact.includes('BY') && compact.includes('NC')) return 'CC-BY-NC';
+  if (compact.includes('CC') && compact.includes('BY')) return 'CC-BY';
+  if (compact.startsWith('CC0')) return 'CC0';
+  return '';
 }
 
 // ── Helper: build a dt/dd pair for use inside a props-grid <dl> ──────
@@ -611,7 +648,8 @@ export class XenoCantoPanel {
     const prof = this._annotatorProfile;
     const effectiveCreator   = sm.creator   || (prof?.name       ?? '');
     const effectiveCreatorId = sm.creatorId || (prof?.xcUsername ?? '');
-    const effectiveLicense   = sm.license   || (prof?.license    ?? '');
+    const effectiveLicenseRaw= sm.license   || (prof?.license    ?? '');
+    const effectiveLicense   = normalizeLicenseValue(effectiveLicenseRaw) || 'CC-BY-NC';
     const effectiveOwner     = sm.owner     || (prof?.owner      ?? '');
 
     // Filter labels to the active set if one is selected

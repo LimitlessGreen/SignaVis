@@ -51,8 +51,8 @@ function getAnnotationSet(lbl) {
 }
 
 const LICENSE_COLORS = {
-  'CC0': '#6366f1', 'CC-BY-4.0': '#10b981', 'CC-BY-NC-4.0': '#f59e0b',
-  'CC-BY-SA-4.0': '#3b82f6', 'CC-BY-NC-SA-4.0': '#ef4444',
+  'CC0': '#6366f1', 'CC-BY': '#10b981', 'CC-BY-NC': '#f59e0b',
+  'CC-BY-SA': '#3b82f6', 'CC-BY-NC-SA': '#ef4444',
 };
 function licenseColor(lic) {
   for (const [k, v] of Object.entries(LICENSE_COLORS)) {
