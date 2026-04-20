@@ -57,9 +57,8 @@ jobs:
           COMMIT_FULL="$(git rev-parse HEAD || echo '')"
           COMMIT_DATE="$(git show -s --format=%cI HEAD || date -u +"%Y-%m-%dT%H:%M:%SZ")"
           BUILT_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          cat > _site/version.json <<EOF
-{"version":"$VERSION","commit":"$COMMIT_SHORT","commitFull":"$COMMIT_FULL","commitDate":"$COMMIT_DATE","builtAt":"$BUILT_AT"}
-EOF
+          printf '{"version":"%s","commit":"%s","commitFull":"%s","commitDate":"%s","builtAt":"%s"}\n' \
+            "$VERSION" "$COMMIT_SHORT" "$COMMIT_FULL" "$COMMIT_DATE" "$BUILT_AT" > _site/version.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
