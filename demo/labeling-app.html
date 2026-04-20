@@ -382,27 +382,42 @@
       }
 
       async function loadVersion() {
+        // Try several candidate locations for version.json so the demo
+        // works both on user/org pages and on project pages where the
+        // repo name is part of the path (e.g. /Audio-Workbench/version.json).
+        const candidates = [];
         try {
-          const res = await fetch('/version.json', { cache: 'no-store' });
-          if (!res.ok) throw new Error('no version');
-          const json = await res.json();
-          const v = json.version || json.VERSION || '';
-          const commit = json.commit || json.commitShort || '';
-          const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
-          versionEl.textContent = v || '—';
-          commitEl.textContent = commit || '—';
-          if (json.commitFull) commitEl.title = json.commitFull;
-          function updateAge() {
-            ageEl.textContent = commitDate ? timeAgo(commitDate) : '—';
+          const m = location.pathname.match(/^\/([^\/]+)/);
+          if (m && m[1]) candidates.push(`/${m[1]}/version.json`);
+        } catch (e) {}
+        candidates.push('/version.json', './version.json', '../version.json', '/demo/version.json');
+
+        for (const url of candidates) {
+          try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) continue;
+            const json = await res.json();
+            const v = json.version || json.VERSION || '';
+            const commit = json.commit || json.commitShort || '';
+            const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
+            versionEl.textContent = v || '—';
+            commitEl.textContent = commit || '—';
+            if (json.commitFull) commitEl.title = json.commitFull;
+            function updateAge() {
+              ageEl.textContent = commitDate ? timeAgo(commitDate) : '—';
+            }
+            updateAge();
+            setInterval(updateAge, 15 * 1000);
+            return; // success
+          } catch (err) {
+            // try next candidate
           }
-          updateAge();
-          setInterval(updateAge, 15 * 1000);
-        } catch (e) {
-          // Fallback for local/dev: show 'dev' indicators
-          versionEl.textContent = 'dev';
-          commitEl.textContent = 'local';
-          ageEl.textContent = '';
         }
+
+        // Fallback for local/dev: show 'dev' indicators
+        versionEl.textContent = 'dev';
+        commitEl.textContent = 'local';
+        ageEl.textContent = '';
       }
 
       if (document.readyState === 'loading') {
