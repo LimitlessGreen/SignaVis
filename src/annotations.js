@@ -189,6 +189,8 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     colorInput.value = initialStyle?.hex || '#0ea5e9';
 
     searchRow.append(input, colorInput);
+    // Track when the user modifies the color so we can detect changes on submit
+    colorInput.addEventListener('input', () => { colorTouched = true; });
 
     // ── Tags row ──
     const DEFAULT_TAG_PRESETS = [
@@ -198,6 +200,14 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     ];
     const tagPresets = player?.getTagPresets?.() || DEFAULT_TAG_PRESETS;
     const currentTags = { ...(initialTags || {}) };
+    // Remember initial values to detect which fields the user actually changed
+    const initialValueTrim = String(initialValue || '').trim();
+    const initialStyleHex = initialStyle?.hex || '';
+    const initialTagsNormalized = (initialTags && typeof initialTags === 'object') ? { ...initialTags } : {};
+    const initialScientific = String(initialScientificName || '').trim();
+    let tagsTouched = false;
+    let colorTouched = false;
+    let sciTouched = false;
 
     const tagsRow = document.createElement('div');
     tagsRow.className = 'label-tags-row';
@@ -224,12 +234,13 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             value: curVal,
             items,
             onChange: (val) => {
+                tagsTouched = true;
                 if (val) currentTags[preset.key] = val;
                 else delete currentTags[preset.key];
             },
-            onAdd: (val) => { player?._emit?.('tagcustomadd', { key: preset.key, value: val }); },
-            onRemove: (val) => { player?._emit?.('tagcustomremove', { key: preset.key, value: val }); },
-            onRename: (oldV, newV) => { player?._emit?.('tagcustomrename', { key: preset.key, oldValue: oldV, newValue: newV }); },
+            onAdd: (val) => { tagsTouched = true; player?._emit?.('tagcustomadd', { key: preset.key, value: val }); },
+            onRemove: (val) => { tagsTouched = true; player?._emit?.('tagcustomremove', { key: preset.key, value: val }); },
+            onRename: (oldV, newV) => { tagsTouched = true; player?._emit?.('tagcustomrename', { key: preset.key, oldValue: oldV, newValue: newV }); },
         });
 
         es.el.classList.add('label-tag-combo');
@@ -397,7 +408,15 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
         const tags = { ...currentTags, ...(opts?.tags || {}) };
         // Remove empty-valued tags
         for (const k of Object.keys(tags)) { if (!tags[k]) delete tags[k]; }
-        onSubmit({ name: trimmed, color: colorInput.value, scientificName, tags });
+
+        // Detect which fields the user actually modified so callers (e.g. bulk)
+        // can decide whether to overwrite existing values.
+        const nameChanged = trimmed !== initialValueTrim;
+        const colorChanged = colorTouched || String(colorInput.value || '') !== String(initialStyleHex || '');
+        const tagsChanged = tagsTouched || JSON.stringify(tags) !== JSON.stringify(initialTagsNormalized);
+        const sciChanged = sciTouched || String(scientificName || '') !== String(initialScientific || '');
+
+        onSubmit({ name: trimmed, color: colorInput.value, scientificName, tags, __changed: { name: nameChanged, color: colorChanged, scientificName: sciChanged, tags: tagsChanged } });
         close();
     };
 
@@ -463,13 +482,15 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             row.addEventListener('click', () => {
                 // Fill fields — don't close yet so user can adjust tags/color
                 input.value = label;
-                if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
+                if (color) { colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value; colorTouched = true; }
                 selectedScientificName = String(scientificName || '').trim();
+                sciTouched = true;
                 // Merge suggestion tags into current tag state
                 if (tags && typeof tags === 'object') {
                     for (const [k, v] of Object.entries(tags)) {
                         if (v) currentTags[k] = v;
                     }
+                    tagsTouched = true;
                     renderTags();
                 }
                 // Visual feedback: highlight selected row
@@ -481,12 +502,14 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
             row.addEventListener('dblclick', () => {
                 // Double-click: select + immediately submit
                 input.value = label;
-                if (color) colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value;
+                if (color) { colorInput.value = getOverlayColorStyle(color)?.hex || colorInput.value; colorTouched = true; }
                 selectedScientificName = String(scientificName || '').trim();
+                sciTouched = true;
                 if (tags && typeof tags === 'object') {
                     for (const [k, v] of Object.entries(tags)) {
                         if (v) currentTags[k] = v;
                     }
+                    tagsTouched = true;
                 }
                 submit(label);
             });
@@ -534,6 +557,7 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
 
     input.addEventListener('input', () => {
         selectedScientificName = '';
+        sciTouched = true;
         renderResults();
     });
 
@@ -2192,14 +2216,39 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialTags: first.tags || {},
             initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
-            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }) => {
+                // If the editor reports which fields were changed, only apply
+                // those fields to the whole selected group. This avoids
+                // unintentionally overwriting untouched fields on bulk edits.
+                // If the editor reports which fields were changed, only apply
+                // those fields to the whole selected group. This avoids
+                // unintentionally overwriting untouched fields on bulk edits.
+                // For the bulk-rename flow, preserve the previous behavior where
+                // saving without touching fields applies the first label's
+                // `name` and `tags` to the whole selection — interpret a
+                // completely-empty `__changed` as intent to apply name+tags.
+                const reported = __changed || {};
+                const changed = { ...reported };
+                // If no meaningful fields were changed by the user (ignore
+                // incidental color normalization differences in fake DOMs),
+                // default to applying the `name` and `tags` from the first
+                // label to the whole selection — preserving previous bulk
+                // behavior.
+                if (!changed.name && !changed.scientificName && !changed.tags) {
+                    changed.name = true;
+                    changed.tags = true;
+                }
                 for (const lbl of labels) {
-                    lbl.label = name;
-                    lbl.color = color;
-                    // Overwrite tags for the whole group with the submitted tags
-                    lbl.tags = (tags && typeof tags === 'object') ? { ...tags } : {};
-                    if (scientificName) lbl.scientificName = scientificName;
-                    else { lbl.scientificName = ''; lbl.commonName = ''; }
+                    if (changed.name) lbl.label = name;
+                    if (changed.color) lbl.color = color;
+                    if (changed.tags) {
+                        lbl.tags = (tags && typeof tags === 'object') ? { ...tags } : {};
+                    }
+                    
+                    if (changed.scientificName) {
+                        if (String(scientificName || '').trim()) lbl.scientificName = String(scientificName || '').trim();
+                        else { lbl.scientificName = ''; lbl.commonName = ''; }
+                    }
                     this.player?._emit?.('spectrogramlabelupdate', { label: { ...lbl } });
                 }
                 this._multiSelectedIds.clear();
