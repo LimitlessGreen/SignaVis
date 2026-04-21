@@ -3,7 +3,7 @@ import ModalManager from './modal-manager.js';
 const DEFAULT_TIPS = [
   {
     title: 'Quick labeling shortcuts',
-    text: 'Draw regions with Shift + Drag, move with Drag, double‑click to edit; press Esc to close editors.'
+    text: 'Draw regions with Shift + Drag, move with Drag or press G, double‑click to edit; press Esc to close editors. Delete with X, Del, or Backspace.'
   },
   {
     title: 'Playback & seeking',
@@ -14,20 +14,12 @@ const DEFAULT_TIPS = [
     text: 'Ctrl / Cmd + Scroll to zoom horizontally; Shift + Scroll to zoom vertically. Use pinch gestures on touch.'
   },
   {
-    title: 'Quick presets',
-    text: 'Press 1–9 to apply taxonomy presets to the selected label quickly.'
-  },
-  {
     title: 'Copy, paste & undo',
     text: 'Ctrl / Cmd + C / V to copy & paste labels; Ctrl / Cmd + Z to undo, Ctrl / Cmd + Y to redo.'
   },
   {
     title: 'Tags & metadata',
     text: 'Add Sex, Life stage and Sound type tags to improve searchability and export quality.'
-  },
-  {
-    title: 'Export often',
-    text: 'Use Export JSON regularly as a quick backup of your annotations while you work.'
   },
 ];
 
