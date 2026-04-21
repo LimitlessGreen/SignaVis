@@ -2199,6 +2199,12 @@
         labelList.updateBadges(id, state.labels[idx]);
       }
       _skipPropsRefresh = false;
+      // Ensure properties panel UI reflects the latest label object after inline edits.
+      // We intentionally refresh here because we temporarily suppressed automatic
+      // propsPanel sync while updating the player/list to avoid redundant reflows.
+      if (propsPanel.displayedLabel?.id === id) {
+        propsPanel.refreshLabel(state.labels[idx]);
+      }
     };
 
     player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
