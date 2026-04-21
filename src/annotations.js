@@ -158,7 +158,7 @@ function _hslToHex(h, s, l) {
  * @param {(string|{name:string, color?:string, scientificName?:string, tags?:Record<string,string>})[]|null} [opts.existingLabels]
  * @param {string|null} [opts.initialScientificName]
  * @param {string|null} [opts.title]
- * @param {function({name:string, color:string, scientificName?:string, tags?:Record<string,string>}):void} opts.onSubmit
+ * @param {function({name:string, color:string, scientificName?:string, tags?:Record<string,string>, __changed?:{name?:boolean, color?:boolean, scientificName?:boolean, tags?:boolean}}):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]
  */
 function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, initialTags = null, existingLabels = null, initialScientificName = null, title = null, onSubmit, onDelete = null }) {
