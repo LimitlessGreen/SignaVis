@@ -70,7 +70,6 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - **Properties panel** — pin or hover to inspect label details; inline editing
 - **Crosshair overlay** — real-time time + frequency readout
 - **Compact preview modes** — hero transport, overlay mode, small embeds
- - **~231 tests** (as of 2026-04-14) — DSP, spectrogram utils, coordinate system, interaction state, transport state
 
 ## Install
 
