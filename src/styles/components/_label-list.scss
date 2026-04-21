@@ -77,9 +77,13 @@
 /* ── Annotation set section — LEVEL 1 ────────────────────────────────── */
 // Each set is a visually distinct card/block separated from siblings
 .label-set-section {
-  border-bottom: 2px solid var(--color-bg-primary);  // thick gap acts as visual separator
+  // Use spacing between set cards so headers can appear as floating cards
+  margin-bottom: 12px;
+  padding-bottom: 0;
   // 4px left accent, colored by origin (always visible)
   border-left: 4px solid rgba(255,255,255,0.08);
+  // keep stacking context for shadows
+  position: relative;
 }
 .label-set-section:has(.label-set-origin--birdnet)  { border-left-color: rgba(16,185,129,0.5); }
 .label-set-section:has(.label-set-origin--xeno-canto) { border-left-color: rgba(56,189,248,0.5); }
@@ -95,19 +99,27 @@
 .label-set-header {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 10px 7px 8px;
+  gap: 8px;
+  padding: 10px 12px;
   cursor: pointer;
   user-select: none;
-  // Noticeably darker than the group rows — makes SET feel like a "folder"
-  background: rgba(0, 0, 0, 0.28);
-  border-bottom: 1px solid transparent;
-  transition: background 0.1s;
+  /* Floating card look for set header */
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  position: relative;
+  z-index: 3;
 }
-.label-set-header:hover { background: rgba(0, 0, 0, 0.2); }
+.label-set-header:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.34);
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface);
+}
 .label-set-section.expanded > .label-set-header {
   border-bottom-color: var(--color-border);
-  background: rgba(0, 0, 0, 0.22);
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
 }
 
 .label-set-chevron {
@@ -233,7 +245,19 @@
 .label-set-header.drag-over {
   outline: 2px dashed var(--color-accent);
   outline-offset: -2px;
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+/* Set body — visual container under the floating header */
+.label-set-body {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.06);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  position: relative;
+  z-index: 1;
 }
 
 /* Group row drop target */

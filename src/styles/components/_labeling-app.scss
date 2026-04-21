@@ -152,23 +152,32 @@ html, body {
   display: flex;
   align-items: center;
   gap: 7px;
-  /* Taller hit target so the whole header row is comfortable to click */
-  padding: 8px 10px 7px 10px;
+  /* Slightly taller hit target for comfortable clicking */
+  padding: 10px 12px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--color-text-primary);
   cursor: pointer;
   user-select: none;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  transition: background 0.08s;
+  /* Floating card look */
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  position: relative;
+  z-index: 2;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 .rec-set-header:hover {
-  background: var(--color-bg-hover, rgba(255,255,255,0.05));
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.32);
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface);
 }
 .rec-set-header:focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 0 0 4px rgba(56,189,248,0.06);
 }
 /* Chevron — bigger and easier to read */
 .rec-set-chevron {
@@ -191,7 +200,14 @@ html, body {
 
 /* Body — indented children */
 .rec-set-body {
+  margin-top: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding-left: 12px;
+  position: relative;
+  z-index: 1;
 }
 .rec-set-body[hidden] { display: none; }
 

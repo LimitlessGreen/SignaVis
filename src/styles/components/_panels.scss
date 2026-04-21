@@ -215,12 +215,12 @@ select::-ms-expand { display: none; }
 .xc-field .xc-textarea { height: auto; min-height: 44px; padding: 3px 5px; font-size: 11px; border-radius: 3px; resize: vertical; }
 
 /* Collapsible sub-section (Project / Scope) */
-.xc-collapsible { border-top: 1px solid var(--color-border); margin-top: 4px; }
+.xc-collapsible { margin-top: 10px; position: relative; }
 .xc-collapsible-hdr {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 0 4px 2px;
+  gap: 8px;
+  padding: 10px 12px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -228,12 +228,18 @@ select::-ms-expand { display: none; }
   color: var(--color-text-secondary);
   cursor: pointer;
   user-select: none;
-  transition: color 0.1s;
+  transition: color 0.12s, transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  z-index: 2;
 }
-.xc-collapsible-hdr:hover { color: var(--color-text-primary); }
+.xc-collapsible-hdr:hover { color: var(--color-text-primary); transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.32); background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface); }
+.xc-collapsible-hdr:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 0 0 4px rgba(56,189,248,0.06); }
 .xc-collapsible-chevron { font-size: 14px; line-height: 1; margin-right: 6px; transition: transform 0.15s ease; display: inline-block; }
 .xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); }
-.xc-collapsible-body { display: none; }
+.xc-collapsible-body { display: none; margin-top: 10px; padding: 10px 12px; background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.28); z-index: 1; }
 .xc-collapsible.expanded .xc-collapsible-body { display: flex; flex-direction: column; gap: 0; }
 
 /* BibTeX collapsible in About panel: use theme colors instead of hardcoded light background */
