@@ -156,11 +156,12 @@ function _hslToHex(h, s, l) {
  * @param {string|null} opts.initialColor
  * @param {Record<string,string>|null} [opts.initialTags]
  * @param {(string|{name:string, color?:string, scientificName?:string, tags?:Record<string,string>})[]|null} [opts.existingLabels]
+ * @param {string|null} [opts.initialScientificName]
  * @param {string|null} [opts.title]
  * @param {function({name:string, color:string, scientificName?:string, tags?:Record<string,string>}):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]
  */
-function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, initialTags = null, existingLabels = null, title = null, onSubmit, onDelete = null }) {
+function openLabelNameEditor({ player, anchorEl = null, initialValue, initialColor, initialTags = null, existingLabels = null, initialScientificName = null, title = null, onSubmit, onDelete = null }) {
     const host = player?.root || player?.container || document.body;
     if (!host || typeof onSubmit !== 'function') return;
 
@@ -365,7 +366,9 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
 
     let activeIndex = -1;
     let resultItems = [];
-    let selectedScientificName = '';
+    // Seed selectedScientificName from caller-provided initial value so
+    // saving the dialog without re-selecting preserves existing data.
+    let selectedScientificName = String(initialScientificName || '').trim();
 
     const close = () => {
         // Destroy any editable-select instances to remove portal dropdowns
@@ -567,6 +570,9 @@ function openLabelNameEditor({ player, anchorEl = null, initialValue, initialCol
     input.select();
     renderResults();
 }
+
+// Export helper for tests that need to exercise the label editor behavior
+export { openLabelNameEditor };
 
 /**
  * @typedef {Object} AnnotationRegion
@@ -1103,6 +1109,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             anchorEl: el || this.overlay,
             initialValue: current,
             initialColor: region.color,
+            initialScientificName: region.scientificName || '',
             onSubmit: ({ name, color }) => {
                 const currentHex = getOverlayColorStyle(region.color)?.hex || '';
                 if (name === current && color === currentHex) return;
@@ -1892,6 +1899,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialValue: ref?.label || '',
             initialColor,
             initialTags: isXcRef ? null : (ref?.tags || null),
+            initialScientificName: ref?.scientificName || '',
             existingLabels,
             title: 'New Label',
             onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
@@ -2142,6 +2150,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialValue: current,
             initialColor: label.color,
             initialTags: label.tags || {},
+            initialScientificName: label.scientificName || '',
             onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
                 const currentHex = getOverlayColorStyle(label.color)?.hex || '';
                 const nextSci = String(scientificName || '').trim();
@@ -2181,6 +2190,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialValue: first.label || '',
             initialColor: first.color,
             initialTags: null,
+            initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
             onSubmit: ({ name, color, scientificName = '' }) => {
                 for (const lbl of labels) {
