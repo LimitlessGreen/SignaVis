@@ -2189,13 +2189,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             anchorEl,
             initialValue: first.label || '',
             initialColor: first.color,
-            initialTags: null,
+            initialTags: first.tags || {},
             initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
-            onSubmit: ({ name, color, scientificName = '' }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
                 for (const lbl of labels) {
                     lbl.label = name;
                     lbl.color = color;
+                    // Overwrite tags for the whole group with the submitted tags
+                    lbl.tags = (tags && typeof tags === 'object') ? { ...tags } : {};
                     if (scientificName) lbl.scientificName = scientificName;
                     else { lbl.scientificName = ''; lbl.commonName = ''; }
                     this.player?._emit?.('spectrogramlabelupdate', { label: { ...lbl } });
