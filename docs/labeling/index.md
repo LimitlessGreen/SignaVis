@@ -1,7 +1,7 @@
 ---
-Title: Labeling App
+title: Labeling App
 ---
 # Labeling App
 The Labeling App is the interactive annotation tool of the Audio‑Workbench demo. It lets you create, edit, and export time/frequency labels directly in the browser.
 
-- Demo page: [demo/labeling-app.html](../demo/labeling-app.html)
+- Demo page: [Labeling App demo](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html)

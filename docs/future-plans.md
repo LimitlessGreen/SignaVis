@@ -54,8 +54,3 @@ title: Future Plans
 - [ ] Clean up quickfixes and workarounds
 - [ ] Validate single source of truth for state
 - [ ] Save labels immediately on modification (not only on leaving a recording)
-
-
----
-
-Source: [Audio-Workbench/TODO.md](Audio-Workbench/TODO.md)
