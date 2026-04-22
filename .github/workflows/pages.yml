@@ -29,23 +29,41 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install JS dependencies
         run: npm ci
+
+      - name: Install docs dependencies
+        run: |
+          pip install mkdocs-material
 
       - name: Build demo site
         run: |
           npx vite build --config demo/vite.demo.config.js
-          # Copy sample audio files (not handled by Vite)
           mkdir -p _site/demo/samples
           cp demo/samples/*.wav _site/demo/samples/
           cp demo/samples/README.md _site/demo/samples/ 2>/dev/null || true
-          # Root redirect → storybook
+
+      - name: Build docs into /docs
+        run: |
+          mkdocs build --config-file mkdocs.yml --strict --site-dir _site/docs
+
+      - name: Root redirect
+        run: |
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=demo/storybook.html">
-          <a href="demo/storybook.html">Audio Workbench Storybook</a>
+          <h1>Audio Workbench</h1>
+          <ul>
+            <li><a href="demo/storybook.html">Demo / Storybook</a></li>
+            <li><a href="docs/">Dokumentation</a></li>
+          </ul>
           EOF
+
       - name: Write version.json for deployment
         run: |
           mkdir -p _site

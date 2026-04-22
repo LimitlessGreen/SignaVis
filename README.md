@@ -55,21 +55,15 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
   - [Contributing](#contributing)
   - [License](#license)
 
-## Features
+## ✨ Highlights
 
-- **Dual spectrogram presets** — Perch (mel + PCEN) and Classic (linear + dB)
-- **Waveform + spectrogram** rendered side-by-side with synchronized scrolling and zoom
-- **Vertical frequency zoom** — Shift+Wheel, dedicated V-slider, draggable scrollbar, freq-axis drag
-- **Label annotations** — draw, drag, resize time×frequency boxes on the spectrogram
-- **Label taxonomy** — customizable species presets with colors and keyboard shortcuts
-- **Suggestion labels** — BirdNET detections shown with distinct "construction-fence" styling; accept (✓) to promote to manual or discard (✕)
-- **Bandpass-filtered playback** — isolate and play back a specific time×frequency region via Web Audio
-- **Xeno-canto integration** — search, preview and import recordings; auto-enrich labels with XC metadata
-- **External spectrogram injection** — supply pre-computed Float32 data or a rendered image
-- **Settings side-panel** — FFT size, max frequency, color scheme, display gain, auto contrast, zoom
-- **Properties panel** — pin or hover to inspect label details; inline editing
-- **Crosshair overlay** — real-time time + frequency readout
-- **Compact preview modes** — hero transport, overlay mode, small embeds
+- **Customizable spectrogram rendering** — adjust scale, contrast, gain, color mapping, and more
+- **Synced waveform + spectrogram** with zoom and scroll
+- **Label annotation** — draw, drag, resize, undo, redo
+- **BirdNET suggestions** — accept or discard detections in one click
+- **Xeno-canto integration** — search, import, and enrich recordings
+- **Bandpass playback** — listen to specific frequency regions
+- **Fast frequency zoom** — wheel, slider, and drag controls
 
 ## Install
 

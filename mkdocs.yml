@@ -1,0 +1,40 @@
+site_name: Audio-Workbench Docs
+site_url: https://limitlessgreen.github.io/Audio-Workbench/docs
+copyright: Copyright &copy; 2026 LimitlessGreen
+
+site_author: LimitlessGreen
+
+# Repository
+repo_name: LimitlessGreen/Audio-Workbench
+repo_url: https://github.com/LimitlessGreen/Audio-Workbench
+edit_uri: blob/main/docs/
+
+
+theme:
+  name: material
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - search.highlight
+    - search.share
+    - search.suggest
+
+docs_dir: docs
+
+markdown_extensions:
+  - pymdownx.keys
+  - pymdownx.tasklist:
+      custom_checkbox: true
+nav:
+  - Home: index.md
+  - Labeling:
+      - Labeling App: labeling/index.md
+      - Shortcuts: labeling/shortcuts.md
+  - Future Plans: future-plans.md
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
