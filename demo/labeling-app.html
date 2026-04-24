@@ -408,6 +408,7 @@
             const commit = json.commit || json.commitShort || '';
             const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
             versionEl.textContent = v || '—';
+            try { window.AUDIO_WORKBENCH_VERSION = v || ''; } catch (e) {}
             const displayedCommit = commit || '';
             if (commitEl) {
               if (displayedCommit) {
@@ -446,6 +447,7 @@
 
         // Fallback for local/dev: show 'dev' indicators and remove any link
         versionEl.textContent = 'dev';
+        try { window.AUDIO_WORKBENCH_VERSION = 'dev'; } catch (e) {}
         if (commitEl) {
           commitEl.textContent = 'local';
           try { commitEl.removeAttribute('href'); } catch (e) {}
@@ -466,13 +468,13 @@
 
   <script type="module">
     import '../src/styles/main.scss';
-    import { BirdNETPlayer } from '../src/BirdNETPlayer.js';
-    import { colorForName, getOverlayColorStyle } from '../src/annotations.js';
-    import { TaxonomyResolver } from '../src/taxonomyResolver.js';
-    import { BirdNETInference } from '../src/birdnetInference.js';
-    import ModalManager from '../src/modal-manager.js';
+    import { BirdNETPlayer } from '../src/app/BirdNETPlayer.ts';
+    import { colorForName, getOverlayColorStyle } from '../src/domain/annotations.ts';
+    import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
+    import { BirdNETInference } from '../src/infrastructure/birdnetInference.ts';
+    import ModalManager from '../src/ui/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
-    import { initDailyTips, showTip } from '../src/daily-tips.js';
+    import { initDailyTips, showTip } from '../src/ui/daily-tips.ts';
 
     import { Sidebar } from './lib/sidebar.js';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from './lib/taxonomy-ui.js';
@@ -484,7 +486,7 @@
     import { RecordingManager, defaultRecordingEntry } from './lib/recording-manager.js';
     import { RecordingExplorer } from './lib/recording-explorer.js';
     import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
-    import { spectrogramCache } from '../src/SpectrogramCache.js';
+    import { spectrogramCache } from '../src/infrastructure/SpectrogramCache.js';
     import { PropertiesPanel } from './lib/properties-panel.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
@@ -492,7 +494,7 @@
     import { ExplorePanel } from './lib/explore-panel.js';
     import { showContextMenu } from './lib/context-menu.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
-    import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/audioTransforms.js';
+    import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {

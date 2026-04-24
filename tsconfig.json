@@ -11,15 +11,13 @@
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
     "noImplicitThis": true,
-    /* Off for now — enable once JSDoc @param annotations are added:
     "noImplicitAny": true,
-    "strictPropertyInitialization": true,
-    */
 
     /* ── Module & target (match Vite config) ── */
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "isolatedModules": true,
 

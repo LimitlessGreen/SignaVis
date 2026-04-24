@@ -19,8 +19,8 @@ import {
     createCQTFilterbank,
     buildCQTFrequencies,
     computeReassignedSpectrogram,
-} from '../src/dsp.js';
-import { windowHopFromOverlap, fftSizeFromOversampling } from '../src/constants.js';
+} from '../src/domain/dsp.ts';
+import { windowHopFromOverlap, fftSizeFromOversampling } from '../src/shared/constants.ts';
 
 // ─── Mel Scale ──────────────────────────────────────────────────────
 

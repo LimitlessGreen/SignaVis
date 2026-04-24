@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SpectrogramLabelLayer } from '../src/annotations.js';
+import { SpectrogramLabelLayer } from '../src/domain/annotations.ts';
 
 // ── Helpers ──
 

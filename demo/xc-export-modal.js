@@ -1,4 +1,4 @@
-import ModalManager from '../src/modal-manager.js';
+import ModalManager from '../src/ui/modal-manager.ts';
 import JSONEditor from 'jsoneditor';
 import 'jsoneditor/dist/jsoneditor.css';
 

@@ -182,7 +182,7 @@ test('label editor preserves initial scientificName when saving without selectin
       _emit: () => {},
     };
 
-    const { openLabelNameEditor } = await import('../src/annotations.js');
+    const { openLabelNameEditor } = await import('../src/domain/annotations.ts');
 
     let received = null;
     openLabelNameEditor({

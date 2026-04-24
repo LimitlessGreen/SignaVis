@@ -55,7 +55,7 @@ test('bulk rename applies tags to whole group', async () => {
     const root = fakeDoc.createElement('div'); root.className = 'player-root'; fakeDoc.body.appendChild(root);
     const player = { root, _emit: () => {}, getTagPresets: () => [] };
 
-    const { SpectrogramLabelLayer } = await import('../src/annotations.js');
+    const { SpectrogramLabelLayer } = await import('../src/domain/annotations.ts');
     const layer = new SpectrogramLabelLayer();
     layer.player = player;
     layer.overlay = root;

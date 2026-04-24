@@ -5,7 +5,7 @@ import {
     canTransitionInteraction,
     OVERVIEW_MODES,
     VIEW_RESIZE_MODES,
-} from '../src/interactionState.js';
+} from '../src/app/interactionState.ts';
 
 // ── Transition validation ──
 

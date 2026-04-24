@@ -10,10 +10,11 @@ const SAMPLE_SWEEP = './samples/sweep-200-8000.wav';
 /* ── Categories ── */
 
 export const categories = [
-  { id: 'presets',  label: 'Presets' },
-  { id: 'embeds',   label: 'Embeds' },
-  { id: 'features', label: 'Features' },
-  { id: 'tools',    label: 'Tools' },
+  { id: 'presets',   label: 'Presets' },
+  { id: 'embeds',    label: 'Embeds' },
+  { id: 'features',  label: 'Features' },
+  { id: 'tools',     label: 'Tools' },
+  { id: 'headless',  label: 'Headless / Integration' },
 ];
 
 /* ── Helpers ── */
@@ -341,6 +342,123 @@ export const stories = [
 
       await mount();
       return { destroy() { mounted?.destroy(); } };
+    },
+  },
+
+  // ══════════════════════════════════════════════════════════════════
+  //  Headless / Integration Stories
+  // ══════════════════════════════════════════════════════════════════
+
+  {
+    id: 'headless-mock-engine',
+    title: 'MockAudioEngine (no WaveSurfer)',
+    description: `
+      Demonstrates the player with \`MockAudioEngine\` — no WaveSurfer, no AudioContext.
+      Useful for Gradio/Streamlit embeds where Python handles DSP and the browser
+      only needs the spectrogram overlay and label editing UI.
+      The spectrogram is generated as a synthetic gradient image.
+    `,
+    category: 'headless',
+    async run(root) {
+      const { BirdNETPlayer, MockAudioEngine, InMemoryStorageAdapter } = globalThis.BirdNETPlayerModule;
+
+      const el = document.createElement('div');
+      Object.assign(el.style, { height: '520px', width: '100%', borderRadius: '10px', overflow: 'hidden' });
+      root.innerHTML = '';
+      root.appendChild(el);
+
+      // Headless engine + in-memory storage
+      const engine  = new MockAudioEngine();
+      const storage = new InMemoryStorageAdapter({ 'aw-favourite-preset': 'perch' });
+
+      const player = new BirdNETPlayer(el, {
+        engine,
+        storage,
+        showFileOpen: false,
+        viewMode: 'spectrogram',
+      });
+      await player.ready;
+
+      // Simulate Python providing a pre-computed spectrogram
+      await engine.loadFromUrl('https://example.com/bird.wav');
+
+      // Generate a synthetic gradient spectrogram (stands in for real DSP output)
+      const nFrames = 600, nMels = 160;
+      const data = new Float32Array(nFrames * nMels);
+      for (let f = 0; f < nFrames; f++) {
+        for (let m = 0; m < nMels; m++) {
+          // Simple synthetic bird-call pattern
+          const freq = m / nMels;
+          const time = f / nFrames;
+          data[f * nMels + m] = Math.max(0,
+            0.3 * Math.exp(-((freq - 0.6) ** 2) / 0.02) *
+            Math.exp(-((time - 0.4) ** 2) / 0.01) +
+            0.2 * Math.random()
+          );
+        }
+      }
+      await player.setSpectrogramData(data, nFrames, nMels, { mode: 'mel', sampleRate: 32000 });
+
+      // Pre-load some labels (as Python would send them)
+      player.setSpectrogramLabels([
+        { id: 'lbl1', start: 1.2, end: 3.8, freqMin: 2000, freqMax: 8000, label: 'Bird Call', color: '#0ea5e9' },
+        { id: 'lbl2', start: 5.0, end: 7.5, freqMin: 1500, freqMax: 6000, label: 'Song',      color: '#22c55e' },
+      ]);
+
+      return player;
+    },
+  },
+
+  {
+    id: 'headless-external-spectrogram',
+    title: 'External Spectrogram Image',
+    description: `
+      Shows how to inject a pre-rendered spectrogram image from Python.
+      The image bypasses all DSP computation — useful when the server
+      provides PNG/JPEG spectrograms directly (e.g. librosa output).
+    `,
+    category: 'headless',
+    defaultSample: SAMPLE_BIRD,
+    async run(root, audioUrl) {
+      const el = document.createElement('div');
+      Object.assign(el.style, { height: '520px', width: '100%', borderRadius: '10px', overflow: 'hidden' });
+      root.innerHTML = '';
+      root.appendChild(el);
+
+      const player = new globalThis.BirdNETPlayerModule.BirdNETPlayer(el, {
+        showFileOpen: false,
+        viewMode: 'spectrogram',
+      });
+      await player.ready;
+      if (audioUrl) await player.loadUrl(audioUrl);
+
+      // Synthesize a fake "server-provided" spectrogram PNG via canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = 800; canvas.height = 160;
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createLinearGradient(0, 160, 0, 0);
+      grad.addColorStop(0,   '#0a0a1a');
+      grad.addColorStop(0.3, '#1e3a5f');
+      grad.addColorStop(0.6, '#0ea5e9');
+      grad.addColorStop(1,   '#ffffff');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 800, 160);
+      // Add some fake activity
+      for (let i = 0; i < 20; i++) {
+        ctx.fillStyle = `rgba(255,255,100,${0.3 + Math.random() * 0.4})`;
+        ctx.fillRect(
+          Math.random() * 700, 20 + Math.random() * 100,
+          10 + Math.random() * 40, 5 + Math.random() * 20,
+        );
+      }
+
+      await player.setSpectrogramImage(canvas, {
+        sampleRate: 32000,
+        freqRange: [0, 16000],
+        freqScale: 'linear',
+      });
+
+      return player;
     },
   },
 ];

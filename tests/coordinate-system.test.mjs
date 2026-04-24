@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CoordinateSystem } from '../src/coordinateSystem.js';
+import { CoordinateSystem } from '../src/domain/coordinateSystem.ts';
 
 // ─── Helper: simulate a wrapper DOMRect ─────────────────────────────
 

@@ -1,1 +1,1 @@
-export { createEditableSelect } from '../../src/editable-select.js';
+export { createEditableSelect } from '../../src/ui/editable-select.ts';

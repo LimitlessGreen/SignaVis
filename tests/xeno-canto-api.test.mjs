@@ -5,7 +5,7 @@ import {
     buildXenoCantoAnnotationSet,
     XenoCantoApiClient,
     XenoCantoApiError,
-} from '../src/xenoCantoApi.js';
+} from '../src/infrastructure/xeno-canto/xenoCantoApi.ts';
 
 test('buildXenoCantoAnnotationSet fails without required fields', () => {
     const res = buildXenoCantoAnnotationSet({ metadata: {}, annotations: [] });

@@ -34,10 +34,10 @@ function esc(s) {
 export class ExplorePanel {
   /**
    * @param {object} opts
-   * @param {import('../../src/birdnetInference.js').BirdNETInference} opts.birdnet
+   * @param {import('../../src/infrastructure/birdnetInference.ts').BirdNETInference} opts.birdnet
    * @param {() => any[]}    opts.getLabels
    * @param {() => string}   opts.getLang
-   * @param {import('../../src/taxonomyResolver.js').TaxonomyResolver} opts.taxonomy
+   * @param {import('../../src/infrastructure/taxonomyResolver.ts').TaxonomyResolver} opts.taxonomy
    * @param {() => {lat:number,lon:number}|null}  opts.getCoords
    * @param {() => string|null}                   opts.getRecordingDate
    * @param {(onProgress?: (msg:string,pct:number)=>void) => Promise<any>} [opts.loadModel]

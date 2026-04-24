@@ -5,9 +5,9 @@ import {
     safeArray, safeString, safeField,
     firstNonEmpty, toFiniteNumber,
     normalizeXcId, resolveFetch, parseJsonSafe, sleep,
-} from '../src/xcHelpers.js';
+} from '../src/infrastructure/xeno-canto/xcHelpers.ts';
 
-import { TaxonomyResolver } from '../src/taxonomyResolver.js';
+import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
 
 // ── xcHelpers ──────────────────────────────────────────────────────────
 

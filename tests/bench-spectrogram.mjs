@@ -2,7 +2,7 @@
  * Quick benchmark: computeSpectrogram on synthetic audio.
  * Run: node tests/bench-spectrogram.mjs
  */
-import { computeSpectrogram } from '../src/dsp.js';
+import { computeSpectrogram } from '../src/domain/dsp.ts';
 
 const SR = 32000;
 const DURATION_SEC = 30;     // 30 s test signal

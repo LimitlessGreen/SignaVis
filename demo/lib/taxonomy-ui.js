@@ -49,7 +49,7 @@ export function buildMatchDetail(record, query, displayLang) {
  * Populate a `<select>` element with taxonomy languages + scientific option.
  *
  * @param {HTMLSelectElement} selectEl
- * @param {import('../../src/taxonomyResolver.js').TaxonomyResolver} taxonomy
+ * @param {import('../../src/infrastructure/taxonomyResolver.ts').TaxonomyResolver} taxonomy
  * @param {string} [defaultLang]  Language code to pre-select (from URL param etc.)
  * @returns {string} The resolved initial language value
  */
@@ -80,7 +80,7 @@ export function populateLanguageSelect(selectEl, taxonomy, defaultLang = '') {
  * Create a label-suggestion provider function.
  *
  * @param {object} opts
- * @param {import('../../src/taxonomyResolver.js').TaxonomyResolver} opts.taxonomy
+ * @param {import('../../src/infrastructure/taxonomyResolver.ts').TaxonomyResolver} opts.taxonomy
  * @param {() => string} opts.getLang    Returns current display language
  * @param {() => Array}  opts.getLabels  Returns current label array
  * @param {() => Array}  opts.getPool    Returns XC label pool array

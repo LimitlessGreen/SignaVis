@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canTransitionTransportState } from '../src/transportState.js';
+import { canTransitionTransportState } from '../src/domain/transportState.ts';
 
 test('allows stable self-transitions', () => {
     assert.equal(canTransitionTransportState('ready', 'ready'), true);

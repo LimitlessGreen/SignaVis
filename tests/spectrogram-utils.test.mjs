@@ -14,9 +14,9 @@ import {
     frequencyToPixelY,
     spectralSubtract,
     applyCLAHE,
-} from '../src/spectrogram.js';
-import { computeSpectrogram, buildMelFrequencies } from '../src/dsp.js';
-import { MAX_BASE_SPECTROGRAM_WIDTH } from '../src/constants.js';
+} from '../src/domain/spectrogram.ts';
+import { computeSpectrogram, buildMelFrequencies } from '../src/domain/dsp.ts';
+import { MAX_BASE_SPECTROGRAM_WIDTH } from '../src/shared/constants.ts';
 
 // ─── computeAmplitudePeak ───────────────────────────────────────────
 

@@ -4,8 +4,8 @@
  * and XC-format JSON export.
  */
 
-import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/xenoCantoRecordingsApi.js';
-import ModalManager from '../../src/modal-manager.js';
+import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import ModalManager from '../../src/ui/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 // ── Annotator profile field definitions ─────────────────────────────
@@ -704,11 +704,15 @@ export class XenoCantoPanel {
       comments: recMeta.comments || '',
     };
 
+    // Attach app version when available (injected by the demo page at runtime)
+    const softwareVersion = (typeof window !== 'undefined' && window.AUDIO_WORKBENCH_VERSION) ? ` ${window.AUDIO_WORKBENCH_VERSION}` : '';
+    const softwareNameAndVersion = `Audio Workbench${softwareVersion}`;
+
     return {
       set_source: sm.source || '',
       set_uri: sm.uri || '',
       set_name: sm.name || `Audio Workbench annotations ${new Date().toISOString().slice(0, 16)}`,
-      annotation_software_name_and_version: 'Audio Workbench',
+      annotation_software_name_and_version: softwareNameAndVersion,
       set_creator: effectiveCreator,
       set_creator_id: effectiveCreatorId,
       set_owner: effectiveOwner,

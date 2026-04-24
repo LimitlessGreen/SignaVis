@@ -24,7 +24,7 @@
  *     onResults:       (labels) => { ... },
  *   });
  */
-import ModalManager from '../../src/modal-manager.js';
+import ModalManager from '../../src/ui/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
@@ -82,7 +82,7 @@ export class BirdNETPanel {
    * @param {HTMLButtonElement} opts.analyzeBtn
    * @param {HTMLButtonElement} opts.cancelBtn
    * @param {HTMLButtonElement} [opts.openBtn]
-   * @param {import('../../src/birdnetInference.js').BirdNETInference} opts.birdnet
+   * @param {import('../../src/infrastructure/birdnetInference.ts').BirdNETInference} opts.birdnet
    * @param {() => AudioBuffer|null} opts.getAudioBuffer
    * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
    * @param {(labels: any[]) => void} opts.onResults

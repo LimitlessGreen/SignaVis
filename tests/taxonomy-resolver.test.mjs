@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TaxonomyResolver } from '../src/taxonomyResolver.js';
+import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
 
 const MOCK_TAXONOMY = {
     modelVersion: '2.4',

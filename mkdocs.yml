@@ -19,19 +19,37 @@ theme:
     - search.highlight
     - search.share
     - search.suggest
+    - content.tabs.link
+    - navigation.indexes
 
 docs_dir: docs
 
 markdown_extensions:
+  - admonition
   - pymdownx.keys
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
 nav:
   - Home: index.md
   - Labeling:
       - Labeling App: labeling/index.md
       - Shortcuts: labeling/shortcuts.md
+      - Species format: labeling/species-format.md
+      - Xeno-canto format: labeling/xeno-canto-format.md
+      - Python integration: labeling/python-integration.md
   - Future Plans: future-plans.md
+
+#plugins:
+#  - git-committers
 
 validation:
   omitted_files: warn

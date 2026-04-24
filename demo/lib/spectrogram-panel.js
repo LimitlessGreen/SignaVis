@@ -9,7 +9,7 @@
 
 export class SpectrogramSettingsPanel {
   /**
-   * @param {import('../../src/BirdNETPlayer.js').BirdNETPlayer} player
+   * @param {import('../../src/app/BirdNETPlayer.ts').BirdNETPlayer} player
    */
   constructor(player) {
     /** @type {HTMLElement} */
