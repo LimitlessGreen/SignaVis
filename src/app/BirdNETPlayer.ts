@@ -185,8 +185,10 @@ export class BirdNETPlayer {
         /** @type {{ name: string, color: string, scientificName: string } | null} */
         this._speciesBarSelection = null;
 
-        this.on = (event: string, callback: (detail: unknown) => void, options?: AddEventListenerOptions) =>
-            this._events.on(event, callback, options);
+        // Public API keeps the CustomEvent-style signature (e.detail.xxx) for
+        // backward compat with external consumers and demo code.
+        this.on = (event: string, callback: (e: { detail: unknown }) => void, options?: AddEventListenerOptions) =>
+            this._events.on(event, (detail) => callback({ detail }), options);
 
         this.off = (event: string, listener: EventListenerOrEventListenerObject, options?: EventListenerOptions) =>
             this._events.off(event, listener, options);

@@ -17,7 +17,6 @@ function getCssVar(name: string, fallback = '') {
 
 function installThemeObserver(canvas: any, redrawFn: () => void) {
     if (canvas.dataset?.awThemeObserverInstalled) return;
-    canvas.dataset = canvas.dataset || {};
     canvas.dataset.awThemeObserverInstalled = '1';
     const mo = new MutationObserver((mutations) => {
         for (const m of mutations) {
