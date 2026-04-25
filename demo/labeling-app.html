@@ -2201,6 +2201,7 @@
         labelList.updateBadges(id, state.labels[idx]);
       }
       _skipPropsRefresh = false;
+      saveCurrentAnnotationsIfNeeded();
       // Ensure properties panel UI reflects the latest label object after inline edits.
       // We intentionally refresh here because we temporarily suppressed automatic
       // propsPanel sync while updating the player/list to avoid redundant reflows.
@@ -2209,14 +2210,15 @@
       }
     };
 
-    player.on('spectrogramlabelcreate', (e) => upsertLabel(e.detail?.label));
-    player.on('spectrogramlabelupdate', (e) => upsertLabel(e.detail?.label));
+    player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); saveCurrentAnnotationsIfNeeded(); });
+    player.on('spectrogramlabelupdate', (e) => { upsertLabel(e.detail?.label); saveCurrentAnnotationsIfNeeded(); });
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;
       if (!id) return;
       state.labels = state.labels.filter((l) => l.id !== id);
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
+      saveCurrentAnnotationsIfNeeded();
     });
 
     // ── Context menus on label surfaces ─────────────────────────────────────
