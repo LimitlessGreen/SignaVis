@@ -20,7 +20,11 @@ import {
     CQT_FMIN, CQT_BINS_PER_OCTAVE,
     windowHopFromOverlap,
     fftSizeFromOversampling,
+    TILE_MODE_MIN_DURATION_SEC,
+    TILE_SECONDS,
 } from '../shared/constants.ts';
+
+import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
 
 import {
     updateSpectrogramStats as computeSpectrogramStats,
@@ -64,6 +68,7 @@ export class SpectrogramController extends EventTarget {
     _externalMode: boolean;
     _externalImageConfig: { freqRange: [number, number] | null; freqScale: string | null } | null;
     _audioBuffer: AudioBuffer | null;
+    _tileManager: SpectrogramTileManager | null;
     _sampleRateHz: number;
     _zoomRedrawRafId: number;
     _freqAxisRafId: number | undefined;
@@ -107,6 +112,7 @@ export class SpectrogramController extends EventTarget {
         /** @type {AudioBuffer|null} */
         this._audioBuffer = null;
         this._sampleRateHz = 44100;
+        this._tileManager = null;
 
         // Internal redraw debounce rAF id
         this._zoomRedrawRafId = 0;
@@ -131,7 +137,8 @@ export class SpectrogramController extends EventTarget {
     get externalMode()        { return this._externalMode; }
     get externalImageConfig() { return this._externalImageConfig; }
     /** True when there is valid spectrogram data to render. */
-    get hasData()             { return this._data !== null && this._nFrames > 0; }
+    get hasData()             { return this._tileManager ? this._tileManager.hasTiles : (this._data !== null && this._nFrames > 0); }
+    get isTileMode()          { return this._tileManager !== null; }
 
     // ── Host-side audio reference ────────────────────────────────────
 
@@ -141,6 +148,8 @@ export class SpectrogramController extends EventTarget {
      * @param {number} sampleRateHz
      */
     setAudio(audioBuffer: AudioBuffer, sampleRateHz: number) {
+        this._tileManager?.dispose();
+        this._tileManager = null;
         this._audioBuffer = audioBuffer;
         this._sampleRateHz = sampleRateHz;
         this._externalMode = false;
@@ -211,6 +220,13 @@ export class SpectrogramController extends EventTarget {
         };
 
         this._activeScale = scale;
+
+        // ── Tile mode for long audio ─────────────────────────────────────
+        if (this._audioBuffer.duration >= TILE_MODE_MIN_DURATION_SEC) {
+            await this._startTileMode(options, autoAdjust);
+            return;
+        }
+
         const t0 = performance.now();
 
         try {
@@ -231,6 +247,11 @@ export class SpectrogramController extends EventTarget {
                 this._winLength   = cached.winLength;
                 this._colourScale = cached.colourScale || colourScale;
                 this._updateStats();
+                // Invalidate stage-1/2 so draw() recomputes grayscale and
+                // colorization with the new scale/colourScale settings.
+                this._grayInfo    = null;
+                this._baseCanvas  = null;
+                this._gpuReady    = false;
                 // Apply the same auto-adjust logic as the DSP path so that
                 // gain and freq settings (including Nyquist) are correct even
                 // when the sample rate differs from the previous recording.
@@ -306,6 +327,12 @@ export class SpectrogramController extends EventTarget {
 
             this._updateStats();
 
+            // Invalidate stage-1/2 so draw() recomputes grayscale and
+            // colorization with the new settings.
+            this._grayInfo   = null;
+            this._baseCanvas = null;
+            this._gpuReady   = false;
+
             if (autoAdjust) {
                 const gainMode = d.gainModeSelect?.value || 'auto';
                 if (gainMode === 'auto') this.autoContrast(false);
@@ -336,6 +363,87 @@ export class SpectrogramController extends EventTarget {
             this._emit('error', { message: error?.message || String(error), source: 'spectrogram' });
             throw error;
         }
+    }
+
+    // ── Tile mode ─────────────────────────────────────────────────────
+
+    private async _startTileMode(dspOptions: Record<string, any>, autoAdjust: boolean): Promise<void> {
+        const d = this._d;
+        if (d.recomputingOverlay) d.recomputingOverlay.hidden = false;
+        this._emit('transportstatechange', { state: 'rendering', reason: 'spectrogram-generate' });
+
+        // Dispose any previous tile manager.
+        this._tileManager?.dispose();
+        this._tileManager = null;
+        this._data = null;
+        this._nFrames = 0;
+        this._grayInfo = null;
+        this._baseCanvas = null;
+
+        const channelData = this._audioBuffer!.getChannelData(0);
+        const tm = new SpectrogramTileManager({
+            channelData,
+            sampleRate:    this._audioBuffer!.sampleRate,
+            totalDuration: this._audioBuffer!.duration,
+            nMels:         dspOptions.nMels,
+            dspOptions,
+            colorOptions:  this._getCurrentColorOptions(),
+        });
+
+        this._tileManager = tm;
+        this._nMels = dspOptions.nMels;
+
+        // Forward tile-ready events as needsredraw to PlayerState.
+        tm.addEventListener('tileready', () => {
+            // Sync absLogMin/Max so autoContrast works correctly.
+            this._absLogMin = tm.globalMin;
+            this._absLogMax = tm.globalMax;
+            this._emit('needsredraw');
+        });
+
+        // Compute first tile synchronously so auto-adjust has real data.
+        await tm.computeFirstTile();
+
+        if (this._tileManager !== tm) return; // superseded by a newer generate() call
+
+        this._absLogMin = tm.globalMin;
+        this._absLogMax = tm.globalMax;
+
+        if (autoAdjust) {
+            const gainMode = d.gainModeSelect?.value || 'auto';
+            if (gainMode === 'auto') this.autoContrast(false);
+            const freqMode = d.maxFreqModeSelect?.value || 'auto';
+            if (freqMode === 'auto') {
+                this.autoFrequency(false);
+            } else if (freqMode === 'nyquist') {
+                this.setMaxFreqToNyquist();
+            }
+        }
+
+        if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
+        this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-ready' });
+        this._emit('computetime', { durationMs: 0 });
+        this._emit('ready', {
+            duration:   this._audioBuffer!.duration,
+            sampleRate: this._audioBuffer!.sampleRate,
+            nFrames:    0,
+            nMels:      dspOptions.nMels,
+        });
+        this._emit('needsredraw');
+    }
+
+    private _getCurrentColorOptions(): TileColorOptions {
+        const d = this._d;
+        return {
+            colorScheme:    d.colorSchemeSelect?.value    || 'grayscale',
+            maxFreq:        parseFloat(d.maxFreqSelect?.value || '10000'),
+            floor01:        parseFloat(d.floorSlider?.value   || '0')   / 100,
+            ceil01:         parseFloat(d.ceilSlider?.value    || '100') / 100,
+            noiseReduction: d.noiseReductionCheck?.checked ?? false,
+            clahe:          d.claheCheck?.checked          ?? false,
+            scale:          d.scaleSelect?.value           || 'mel',
+            colourScale:    d.colourScaleSelect?.value     || 'dbSquared',
+        };
     }
 
     // ── External injection ────────────────────────────────────────────
@@ -467,6 +575,10 @@ export class SpectrogramController extends EventTarget {
      * Run once per audio/FFT/frequency change.
      */
     buildGrayscale() {
+        if (this._tileManager) {
+            this._tileManager.updateColorOptions(this._getCurrentColorOptions());
+            return;
+        }
         if (!this._data) return;
         const d = this._d;
         this._grayInfo = buildSpectrogramGrayscale({
@@ -497,6 +609,10 @@ export class SpectrogramController extends EventTarget {
      * @returns {HTMLCanvasElement|OffscreenCanvas|null}
      */
     buildBaseImage(colorScheme: any) {
+        if (this._tileManager) {
+            this._tileManager.updateColorOptions(this._getCurrentColorOptions());
+            return null;
+        }
         if (!this._grayInfo) this.buildGrayscale();
         const d = this._d;
         const floor01 = parseFloat(d.floorSlider?.value || '0')  / 100;
@@ -529,7 +645,52 @@ export class SpectrogramController extends EventTarget {
      */
     draw(p: any) {
         if (!p.show) return;
-        if (!this._audioBuffer || !this._data || this._nFrames <= 0) return;
+        if (!this._audioBuffer) return;
+
+        // ── Tile mode ──────────────────────────────────────────────────
+        if (this._tileManager) {
+            const tm           = this._tileManager;
+            const duration     = this._audioBuffer.duration;
+            const totalWidth   = Math.max(1, Math.floor(duration * p.pixelsPerSecond));
+            const canvasHeight = Math.max(140, Math.floor(p.effectiveHeight));
+            const vw           = p.viewportWidth ?? 0;
+            const width        = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
+            const sl           = vw > 0 ? (p.scrollLeft ?? 0) : 0;
+
+            if (this._d.canvasSizer) this._d.canvasSizer.style.width = `${totalWidth}px`;
+            this._d.spectrogramCanvas.width  = width;
+            this._d.spectrogramCanvas.height = canvasHeight;
+
+            const ctx = this._d.spectrogramCanvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, width, canvasHeight);
+
+                let freqViewSrcCrop = null;
+                if (p.freqViewMin != null && p.freqViewMax != null) {
+                    const baseH    = tm.nMels;
+                    const srcYTop  = p.coords.frequencyToBaseYFraction(p.freqViewMax) * baseH;
+                    const srcYBot  = p.coords.frequencyToBaseYFraction(p.freqViewMin) * baseH;
+                    freqViewSrcCrop = { srcY: srcYTop, srcH: Math.max(1, srcYBot - srcYTop) };
+                }
+
+                tm.renderToCanvas(ctx, {
+                    duration, totalDisplayWidth: totalWidth,
+                    canvasHeight, scrollLeft: sl, viewportWidth: width,
+                    freqViewSrcCrop,
+                });
+            }
+
+            // Schedule background loading for the visible viewport.
+            const startTime = sl / p.pixelsPerSecond;
+            const endTime   = (sl + width) / p.pixelsPerSecond;
+            tm.requestViewport(startTime, endTime);
+
+            this._syncFreqAxisHeight();
+            return;
+        }
+
+        // ── Standard (non-tile) mode ───────────────────────────────────
+        if (!this._data || this._nFrames <= 0) return;
         if (!this._baseCanvas) this.buildBaseImage(p.colorScheme);
         if (!this._baseCanvas) return;
 
@@ -544,15 +705,15 @@ export class SpectrogramController extends EventTarget {
         const totalWidth = Math.max(1, Math.floor(this._audioBuffer.duration * p.pixelsPerSecond));
 
         renderSpectrogram({
-            duration:       this._audioBuffer.duration,
+            duration:          this._audioBuffer.duration,
             spectrogramCanvas: this._d.spectrogramCanvas,
-            pixelsPerSecond: p.pixelsPerSecond,
-            canvasHeight:   p.effectiveHeight,
-            baseCanvas:     this._baseCanvas,
+            pixelsPerSecond:   p.pixelsPerSecond,
+            canvasHeight:      p.effectiveHeight,
+            baseCanvas:        this._baseCanvas,
             freqViewSrcCrop,
-            canvasSizer:    this._d.canvasSizer,
-            scrollLeft:     p.scrollLeft,
-            viewportWidth:  p.viewportWidth,
+            canvasSizer:       this._d.canvasSizer,
+            scrollLeft:        p.scrollLeft,
+            viewportWidth:     p.viewportWidth,
             totalWidth,
         });
 
@@ -579,13 +740,16 @@ export class SpectrogramController extends EventTarget {
      * @param {boolean} [redraw=false]
      */
     autoContrast(redraw = false) {
-        if (!this._data) return;
-        const stats = autoContrastStats(this._data, 2, 98);
-        const range = this._absLogMax - this._absLogMin;
+        const data = this._tileManager ? this._tileManager.firstReadyTileData() : this._data;
+        if (!data) return;
+        const absMin = this._tileManager ? this._tileManager.globalMin : this._absLogMin;
+        const absMax = this._tileManager ? this._tileManager.globalMax : this._absLogMax;
+        const stats = autoContrastStats(data, 2, 98);
+        const range = absMax - absMin;
         if (range < 1e-8) return;
 
-        const floorPct = this._clamp(((stats.logMin - this._absLogMin) / range) * 100, 0, 100);
-        const ceilPct  = this._clamp(((stats.logMax - this._absLogMin) / range) * 100, 0, 100);
+        const floorPct = this._clamp(((stats.logMin - absMin) / range) * 100, 0, 100);
+        const ceilPct  = this._clamp(((stats.logMax - absMin) / range) * 100, 0, 100);
 
         if (this._d.floorSlider) this._d.floorSlider.value = Math.round(floorPct);
         if (this._d.ceilSlider)  this._d.ceilSlider.value  = Math.round(ceilPct);
@@ -598,11 +762,16 @@ export class SpectrogramController extends EventTarget {
      * @param {boolean} [redraw=false]
      */
     autoFrequency(redraw = false) {
-        if (!this._data) return;
+        const data = this._tileManager ? this._tileManager.firstReadyTileData() : this._data;
+        const nMels = this._tileManager ? this._tileManager.nMels : this._nMels;
+        const nFrames = this._tileManager
+            ? Math.floor((data?.length ?? 0) / nMels)
+            : this._nFrames;
+        if (!data) return;
         const hzValue = detectMaxFrequency(
-            this._data,
-            this._nFrames,
-            this._nMels,
+            data,
+            nFrames,
+            nMels,
             this._sampleRateHz,
             this._d.scaleSelect?.value || 'mel',
         );

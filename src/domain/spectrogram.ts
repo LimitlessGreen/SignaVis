@@ -552,7 +552,7 @@ export function frequencyToPixelY(freq: number, displayHeight: number, maxFreq: 
 
 // scrollLeft: how many px the canvas-wrapper is scrolled (viewport offset).
 // Grid lines are drawn in viewport coords (x = absoluteX - scrollLeft).
-function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number; scrollLeft?: number }) {
+export function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number; scrollLeft?: number }) {
     if (width <= 0) return;
     const css = getComputedStyle(document.documentElement);
     const majorColor = css.getPropertyValue('--color-text-secondary').trim() || '#cbd5e1';

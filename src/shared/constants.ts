@@ -16,6 +16,11 @@ export const MAX_BASE_SPECTROGRAM_WIDTH = 24000;
 export const MIN_WINDOW_NORM = 0.02;
 export const PROGRESSIVE_CHUNK_SECONDS = 10;
 export const PROGRESSIVE_MIN_DURATION_SEC = 60;
+
+// ─── Tile-based lazy rendering (for long audio files) ──────────────
+export const TILE_MODE_MIN_DURATION_SEC = 300; // activate tile mode above 5 minutes
+export const TILE_SECONDS = 30;                // audio seconds covered by one tile
+export const TILE_MAX_IN_MEMORY = 16;          // LRU limit (16 × 30 s = 8 min in RAM)
 export const PERCH_FRAME_RATE = 100;
 export const PERCH_N_MELS = 160;
 export const PERCH_PCEN_GAIN = 0.8;
