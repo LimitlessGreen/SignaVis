@@ -11,7 +11,7 @@ export { normalizeXcId } from './xcHelpers.ts';
 
 export const DEFAULT_XC_RECORDINGS_ENDPOINT = 'https://xeno-canto.org/api/3/recordings';
 
-export function getRecordingScientificName(rec: unknown) {
+export function getRecordingScientificName(rec: any) {
     if (!rec || typeof rec !== 'object') return '';
     const sci = firstNonEmpty([
         rec.scientific_name,
@@ -25,7 +25,7 @@ export function getRecordingScientificName(rec: unknown) {
     return (gen && sp) ? `${gen} ${sp}` : '';
 }
 
-export async function fetchXenoCantoRecording(xcId: unknown, options = {}) {
+export async function fetchXenoCantoRecording(xcId: any, options: any = {}) {
     const clean = normalizeXcId(xcId);
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
 
@@ -61,7 +61,7 @@ export async function fetchXenoCantoRecording(xcId: unknown, options = {}) {
     return { xcId: clean, recording, raw: data };
 }
 
-export function extractXenoCantoRawLabels(recording: unknown) {
+export function extractXenoCantoRawLabels(recording: any) {
     if (!recording || typeof recording !== 'object') return [];
     const annotationSet = recording['annotation-set'] ?? recording.annotationSet ?? null;
     if (annotationSet && Array.isArray(annotationSet.annotations)) return annotationSet.annotations;
@@ -84,7 +84,7 @@ export function extractXenoCantoRawLabels(recording: unknown) {
     return [];
 }
 
-function _buildXcLabel(src: unknown, index: unknown, meta: unknown) {
+function _buildXcLabel(src: any, index: number, meta: any) {
     const {
         xcId, idPrefix, scientificName, recordingCommonName, recordist, nyquist,
         recSex, recType, recStage, recAnimalSeen, recPlaybackUsed,
@@ -114,7 +114,7 @@ function _buildXcLabel(src: unknown, index: unknown, meta: unknown) {
     const annotationId = firstNonEmpty([src.annotation_xc_id, src.id, index + 1]);
 
     // Build tags: per-annotation values override recording-level values
-    const tags = {};
+    const tags: any = {};
     const sex = firstNonEmpty([src.sex, src.Sex, recSex]);
     const soundType = firstNonEmpty([src.sound_type, src.soundType, src.type, recType]);
     const lifeStage = firstNonEmpty([src.stage, src.life_stage, src.lifeStage, src.age, recStage]);
@@ -162,7 +162,7 @@ function _buildXcLabel(src: unknown, index: unknown, meta: unknown) {
     };
 }
 
-export function mapXenoCantoLabelsToSpectrogram(rawLabels: unknown, options = {}) {
+export function mapXenoCantoLabelsToSpectrogram(rawLabels: any, options: any = {}) {
     const arr = Array.isArray(rawLabels) ? rawLabels : [];
     const xcId = normalizeXcId(options.xcId || '');
     const scientificName = getRecordingScientificName(options.recording || {});
@@ -211,7 +211,7 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels: unknown, options = {}
     }
 
     // Recording-level metadata (shared, not duplicated per label)
-    const recordingMeta = {};
+    const recordingMeta: any = {};
     if (recCountry) recordingMeta.country = recCountry;
     if (recLocality) recordingMeta.locality = recLocality;
     if (recDate) recordingMeta.date = recDate;
@@ -231,7 +231,7 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels: unknown, options = {}
     return { labels, recordingMeta };
 }
 
-export async function importXenoCantoSpectrogramLabels(xcId: unknown, options = {}) {
+export async function importXenoCantoSpectrogramLabels(xcId: any, options: any = {}) {
     const { recording, xcId: clean } = await fetchXenoCantoRecording(xcId, options);
     const rawLabels = extractXenoCantoRawLabels(recording);
     const { labels, recordingMeta } = mapXenoCantoLabelsToSpectrogram(rawLabels, {

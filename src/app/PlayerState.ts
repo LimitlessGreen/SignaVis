@@ -106,13 +106,57 @@ export function sanitizePlaybackViewportConfig(partial: Partial<PlaybackViewport
 // ═════════════════════════════════════════════════════════════════════
 
 export class PlayerState {
+    d: any;
+    interaction: InteractionState;
+    coords: CoordinateSystem;
+    container: any;
+    _storage: any;
+    _presets: any;
+    _spectro: any;
+    WaveSurfer: any;
+    _engine: any;
+    _viewport: any;
+    _perf: any;
+    _emitHostEvent: any;
+    options: any;
+    _viewMode: any;
+    _showWaveform: any;
+    _showSpectrogram: any;
+    _showOverview: any;
+    _transportOverlay: any;
+    _compactToolbarMode: any;
+    _compactToolbarOpen: any;
+    _settingsPanelOpen: any;
+    _compactToolbarLayoutRaf: any;
+    _showWaveformTimeline: any;
+    _playbackViewportConfig: any;
+    sampleRateHz: any;
+    amplitudePeakAbs: number;
+    _freqView: any;
+    transportState: any;
+    _lastTimeReadoutText: any;
+    _uiFrameId: any;
+    _uiPending: any;
+    _crosshairEnabled: any;
+    _crosshairRafId: any;
+    waveformDisplayHeight: any;
+    spectrogramDisplayHeight: any;
+    _viewResizeFrameId: any;
+    _viewResizeNeedsWaveformRedraw: any;
+    _viewResizeNeedsSpectrogramRedraw: any;
+    _cleanups: any;
+    target: any;
+    name: any;
+    message: any;
+    userInitiated: any;
+    _cachedSpectrogramHeight: any;
     /**
      * @param {HTMLElement} container
      * @param {any} WaveSurfer
      * @param {((event: string, detail: any) => void) | null} [emitHostEvent]
      * @param {PlayerOptions} [options]
      */
-    constructor(container: HTMLElement, WaveSurfer: unknown, emitHostEvent: ((name: string, detail: unknown) => void) | null = null, options: Record<string, unknown> = {}) {
+    constructor(container: HTMLElement, WaveSurfer: unknown, emitHostEvent: ((name: string, detail: unknown) => void) | null = null, options: any = {}) {
         if (!container) throw new Error('PlayerState: container element required');
         if (!WaveSurfer && !options.engine) throw new Error('PlayerState: WaveSurfer reference or options.engine required');
 
@@ -147,9 +191,9 @@ export class PlayerState {
             : new AudioEngine(WaveSurfer, { container: this.d.audioEngineHost }));
 
         // ── Map AudioEngine events to PlayerState handlers ──────────────
-        this._engine.addEventListener('uiupdate', (e: unknown) => this._scheduleUiUpdate(/** @type {CustomEvent} */ (e).detail));
-        this._engine.addEventListener('transportstatechange', (e: unknown) => {
-            const { state, reason } = /** @type {CustomEvent} */ (e).detail;
+        this._engine.addEventListener('uiupdate', (e: CustomEvent<any>) => this._scheduleUiUpdate(e.detail));
+        this._engine.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
+            const { state, reason } = e.detail;
             this._setTransportState(state, reason);
         });
         this._engine.addEventListener('ready', () => {
@@ -157,13 +201,13 @@ export class PlayerState {
             this._viewport._lastSelectionStart  = NaN;
             this._viewport._lastSelectionEnd    = NaN;
         });
-        this._engine.addEventListener('timeupdate', (e: unknown) => {
+        this._engine.addEventListener('timeupdate', (e: CustomEvent<any>) => {
             this._perf.timeupdateEvents += 1;
-            this._emit('timeupdate', /** @type {CustomEvent} */ (e).detail);
+            this._emit('timeupdate', e.detail);
         });
-        this._engine.addEventListener('segmentstart', (e: unknown) => this._emit('segmentplaystart', /** @type {CustomEvent} */ (e).detail));
-        this._engine.addEventListener('segmentend', (e: unknown) => this._emit('segmentplayend', /** @type {CustomEvent} */ (e).detail));
-        this._engine.addEventListener('segmentloop', (e: unknown) => this._emit('segmentloop', /** @type {CustomEvent} */ (e).detail));
+        this._engine.addEventListener('segmentstart', (e: CustomEvent<any>) => this._emit('segmentplaystart', e.detail));
+        this._engine.addEventListener('segmentend', (e: CustomEvent<any>) => this._emit('segmentplayend', e.detail));
+        this._engine.addEventListener('segmentloop', (e: CustomEvent<any>) => this._emit('segmentloop', e.detail));
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
         this.options = options || {};
         this._viewMode = this.options.viewMode === 'waveform' || this.options.viewMode === 'spectrogram'
@@ -187,16 +231,16 @@ export class PlayerState {
         this._spectro = new SpectrogramController(this.d, {
             enableProgressive: this.options.enableProgressiveSpectrogram === true,
         });
-        this._spectro.addEventListener('transportstatechange', (e: unknown) => {
-            const { state, reason } = /** @type {CustomEvent} */ (e).detail;
+        this._spectro.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
+            const { state, reason } = e.detail;
             this._setTransportState(state, reason);
         });
-        this._spectro.addEventListener('progress',    (e: unknown) => this._emit('progress',     /** @type {CustomEvent} */ (e).detail));
-        this._spectro.addEventListener('computetime', (e: unknown) => this._emit('computeTime',  /** @type {CustomEvent} */ (e).detail));
-        this._spectro.addEventListener('ready',       (e: unknown) => this._emit('ready',        /** @type {CustomEvent} */ (e).detail));
-        this._spectro.addEventListener('error',       (e: unknown) => this._emit('error',        /** @type {CustomEvent} */ (e).detail));
-        this._spectro.addEventListener('scalechange', (e: unknown) => {
-            this._emit('spectrogramscalechange', /** @type {CustomEvent} */ (e).detail);
+        this._spectro.addEventListener('progress',    (e: CustomEvent<any>) => this._emit('progress',     e.detail));
+        this._spectro.addEventListener('computetime', (e: CustomEvent<any>) => this._emit('computeTime',  e.detail));
+        this._spectro.addEventListener('ready',       (e: CustomEvent<any>) => this._emit('ready',        e.detail));
+        this._spectro.addEventListener('error',       (e: CustomEvent<any>) => this._emit('error',        e.detail));
+        this._spectro.addEventListener('scalechange', (e: CustomEvent<any>) => {
+            this._emit('spectrogramscalechange', e.detail);
             this._updateCoords();
             this._createFrequencyLabels();
         });
@@ -254,6 +298,8 @@ export class PlayerState {
             showSpectrogram: this._showSpectrogram,
             showWaveform:    this._showWaveform,
             showOverview:    this._showOverview,
+            spectrogramHeight: DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
+            waveformHeight: DEFAULT_WAVEFORM_HEIGHT,
         };
         this._viewport = new ViewportManager({
             d:             this.d,
@@ -263,13 +309,13 @@ export class PlayerState {
             playbackViewportConfig: this._playbackViewportConfig,
             getAudioBuffer:  () => this.audioBuffer,
             getWavesurfer:   () => this.wavesurfer,
-            scheduleUiUpdate: (detail) => this._scheduleUiUpdate(detail),
+            scheduleUiUpdate: (detail?: any) => this._scheduleUiUpdate(detail as any),
             onRedrawNeeded: () => {
                 if (this._spectro.hasData) this._drawSpectrogram();
                 this._drawMainWaveform();
             },
             getSpectroHasData: () => this._spectro.hasData,
-            emit: (event, detail) => this._emit(event, detail),
+            emit: (event: string, detail?: any) => this._emit(event, detail),
         });
 
         // ── Crosshair ──
@@ -310,7 +356,7 @@ export class PlayerState {
         requestAnimationFrame(() => this._refreshCompactToolbarLayout());
     }
 
-    _emit(event: unknown, detail = {}) {
+    _emit(event: string, detail: unknown = {}) {
         if (!this._emitHostEvent) return;
         this._emitHostEvent(event, detail);
     }
@@ -397,7 +443,7 @@ export class PlayerState {
         }, 500);
     }
 
-    _perfOnFrame(ts: unknown) {
+    _perfOnFrame(ts: number) {
         if (!this._perf.enabled) return;
         this._perf.frames += 1;
         if (this._perf.lastFrameTs > 0) {
@@ -433,7 +479,7 @@ export class PlayerState {
         this._perf.maxFrameMs = 0;
     }
 
-    _setTransportState(nextState: unknown, reason = '') {
+    _setTransportState(nextState: string, reason = '') {
         if (!nextState || this.transportState === nextState) return;
         const fromState = this.transportState || '';
         if (!canTransitionTransportState(fromState, nextState)) {
@@ -445,7 +491,7 @@ export class PlayerState {
         this._updatePlayPauseButton();
         this._perf.transitionEvents += 1;
         this._perf.lastTransition = `${fromState || '∅'} → ${nextState}${reason ? ` (${reason})` : ''}`;
-        this._setPlayState(TRANSPORT_STATE_LABELS[nextState] || nextState);
+        this._setPlayState((TRANSPORT_STATE_LABELS as any)[nextState] || nextState);
         this._emit('transportstatechange', { state: nextState, reason });
     }
 
@@ -462,7 +508,7 @@ export class PlayerState {
         centerView = false,
         emitSeek = false,
         immediate = false,
-    } = {}) {
+    }: { time?: number; fromPlayback?: boolean; centerView?: boolean; emitSeek?: boolean; immediate?: boolean } = {}) {
         this._uiPending = this._uiPending || {
             time: 0,
             fromPlayback: false,
@@ -486,7 +532,7 @@ export class PlayerState {
         this._uiFrameId = requestAnimationFrame((ts) => this._flushUiUpdate(ts));
     }
 
-    _flushUiUpdate(_ts: unknown) {
+    _flushUiUpdate(_ts: number) {
         this._uiFrameId = 0;
         const pending = this._uiPending;
         this._uiPending = null;
@@ -512,8 +558,8 @@ export class PlayerState {
     //  DOM Query (scoped to container)
     // ═════════════════════════════════════════════════════════════════
 
-    _queryDom(root: unknown) {
-        const q = (id: unknown) => root.querySelector(`[data-aw="${id}"]`);
+    _queryDom(root: HTMLElement) {
+        const q = (id: string) => root.querySelector(`[data-aw="${id}"]`) as any;
         return {
             openFileBtn:            q('openFileBtn'),
             toolbarRoot:            q('toolbarRoot'),
@@ -659,13 +705,14 @@ export class PlayerState {
     //  File Loading
     // ═════════════════════════════════════════════════════════════════
 
-    async _handleFileSelect(e: unknown) {
-        const file = e?.target?.files?.[0];
+    async _handleFileSelect(e: Event) {
+        const input = e.target as HTMLInputElement | null;
+        const file = input?.files?.[0] ?? null;
         if (!file) return;
         await this.loadFile(file);
     }
 
-    async loadFile(file: unknown) {
+    async loadFile(file: File) {
         if (!file) return;
 
         this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
@@ -684,7 +731,7 @@ export class PlayerState {
     //  Load from URL (programmatic)
     // ═════════════════════════════════════════════════════════════════
 
-    async loadUrl(url: unknown) {
+    async loadUrl(url: string) {
         this.d.fileInfo.innerHTML = `<span class="statusbar-label">Loading…</span>`;
         this.d.fileInfo.classList.add('loading');
         this._setTransportState('loading', 'url-load');
@@ -701,7 +748,7 @@ export class PlayerState {
         }
     }
 
-    async _onAudioLoaded({ duration, sampleRate }, displayName: unknown, readyReason: unknown) {
+    async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string) {
         this.sampleRateHz = sampleRate;
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
@@ -728,7 +775,7 @@ export class PlayerState {
         this._seekToTime(0, true);
     }
 
-    _onAudioLoadError(error: unknown, source: unknown) {
+    _onAudioLoadError(error: any, source: string) {
         console.error(`Error loading audio (${source}):`, error);
         this._setTransportState('error', `${source}-load-failed`);
         this.d.fileInfo.classList.remove('loading');
@@ -743,15 +790,15 @@ export class PlayerState {
 
     _stopPlayback() { this._engine.stop(); }
 
-    playSegment(startSec: unknown, endSec: unknown, options = {}) {
+    playSegment(startSec: number, endSec: number, options: any = {}) {
         this._engine.playSegment(startSec, endSec, options);
     }
 
-    playBandpassedSegment(startSec: unknown, endSec: unknown, freqMinHz: unknown, freqMaxHz: unknown, options = {}) {
+    playBandpassedSegment(startSec: number, endSec: number, freqMinHz: number, freqMaxHz: number, options: any = {}) {
         this._engine.playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options);
     }
 
-    updateActiveSegmentFromLabel(label: unknown) {
+    updateActiveSegmentFromLabel(label: any) {
         this._engine.updateActiveSegmentFromLabel(label);
     }
 
@@ -768,7 +815,7 @@ export class PlayerState {
         this._engine._clearPlaybackFilter();
     }
 
-    _seekToTime(timeSec: unknown, centerView = false, options = {}) {
+    _seekToTime(timeSec: number, centerView = false, options: any = {}) {
         if (!this.audioBuffer) return;
         if (options.userInitiated) {
             this._viewport.markSeekFocus();
@@ -777,14 +824,14 @@ export class PlayerState {
         this._engine.seekToTime(timeSec, centerView, options);
     }
 
-    _seekByDelta(deltaSec: unknown) {
+    _seekByDelta(deltaSec: number) {
         if (!this.audioBuffer) return;
         this._seekToTime(this._getCurrentTime() + deltaSec, false);
     }
 
     _getCurrentTime() { return this._engine.getCurrentTime(); }
 
-    _updateTimeReadout(t: unknown) {
+    _updateTimeReadout(t: number) {
         const nextText = formatTime(t);
         if (nextText !== this._lastTimeReadoutText) {
             this._lastTimeReadoutText = nextText;
@@ -793,7 +840,7 @@ export class PlayerState {
         this._updateAriaPlaybackPosition(t);
     }
 
-    _updateAriaPlaybackPosition(currentTimeSec: unknown) {
+    _updateAriaPlaybackPosition(currentTimeSec: number) {
         const slider = this.d.canvasWrapper;
         if (!slider) return;
         const duration = this.audioBuffer?.duration || 0;
@@ -808,7 +855,7 @@ export class PlayerState {
     //  Playhead & Follow
     // ═════════════════════════════════════════════════════════════════
 
-    _updatePlayhead(currentTime: unknown, fromPlayback: unknown) {
+    _updatePlayhead(currentTime: number, fromPlayback: boolean) {
         if (!this.audioBuffer) return;
 
         const position = this.coords.timeToScrollX(currentTime);
@@ -951,7 +998,7 @@ export class PlayerState {
         const timelineH = this._showWaveformTimeline ? clamp(Math.round(clampedH * 0.22), 18, 32) : 0;
         const ampH = Math.max(32, clampedH - timelineH);
 
-        const fmt = (v: unknown) => {
+        const fmt = (v: number) => {
             const a = Math.abs(v);
             return a >= 1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toFixed(3);
         };
@@ -983,15 +1030,15 @@ export class PlayerState {
     _getPrimaryScrollLeft() { return this._viewport.getPrimaryScrollLeft(); }
     _getViewportWidth() { return this._viewport.getViewportWidth(); }
     _setLinkedScrollLeft(nextLeft: unknown) { return this._viewport._setLinkedScrollLeft(nextLeft); }
-    _setPixelsPerSecond(nextPps: unknown, redraw: unknown, anchorTime: unknown, anchorPixel: unknown) {
+    _setPixelsPerSecond(nextPps: number, redraw: boolean, anchorTime?: number, anchorPixel?: number) {
         return this._viewport.setPixelsPerSecond(nextPps, redraw, anchorTime, anchorPixel);
     }
     _fitEntireTrackInView() { this._viewport.fitEntireTrackInView(); }
-    _zoomByScale(scale: unknown, centerClientX: unknown, source = 'spectrogram') {
+    _zoomByScale(scale: number, centerClientX: number, source = 'spectrogram') {
         this._viewport.zoomByScale(scale, centerClientX, /** @type {'spectrogram'|'waveform'} */ (source));
     }
-    _centerViewportAtTime(timeSec: unknown) { this._viewport.centerViewportAtTime(timeSec); }
-    _clientXToTime(clientX: unknown, source = 'spectrogram') {
+    _centerViewportAtTime(timeSec: number) { this._viewport.centerViewportAtTime(timeSec); }
+    _clientXToTime(clientX: number, source = 'spectrogram') {
         return this._viewport.clientXToTime(clientX, /** @type {'spectrogram'|'waveform'} */ (source));
     }
 
@@ -1006,7 +1053,7 @@ export class PlayerState {
     _updateOverviewDrag(clientX: unknown) { this._viewport.updateOverviewDrag(clientX); }
     _queueOverviewViewportApply(redrawFinal = false) { this._viewport.queueOverviewViewportApply(redrawFinal); }
 
-    _toggleOverviewLabelSection(force: unknown) {
+    _toggleOverviewLabelSection(force?: boolean) {
         const section = this.d.overviewLabelSection;
         const btn     = this.d.overviewLabelToggle;
         if (!section) return;
@@ -1030,14 +1077,14 @@ export class PlayerState {
     //  Click / Pointer / Drag
     // ═════════════════════════════════════════════════════════════════
 
-    _handleCanvasClick(e: unknown) {
+    _handleCanvasClick(e: MouseEvent | PointerEvent) {
         if (this.interaction.isSeekBlocked()) return;
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
         this._seekToTime(this._clientXToTime(e.clientX, 'spectrogram'), false, { userInitiated: true });
     }
 
-    _handleWaveformClick(e: unknown) {
+    _handleWaveformClick(e: MouseEvent | PointerEvent) {
         if (this.interaction.isSeekBlocked()) return;
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
@@ -1048,7 +1095,7 @@ export class PlayerState {
         this.interaction.blockSeekClicks(ms);
     }
 
-    _startPlayheadDrag(event: unknown, source: unknown) {
+    _startPlayheadDrag(event: PointerEvent, source: string) {
         if (!this.audioBuffer) return;
         event.preventDefault();
         if (!this.interaction.enter('playhead-drag')) return;
@@ -1056,12 +1103,12 @@ export class PlayerState {
         this._seekFromClientX(event.clientX, source);
     }
 
-    _seekFromClientX(clientX: unknown, source = 'spectrogram') {
+    _seekFromClientX(clientX: number, source: 'spectrogram'|'waveform'|string = 'spectrogram') {
         if (!this.audioBuffer) return;
         this._seekToTime(this._clientXToTime(clientX, source), false);
     }
 
-    _startViewportPan(event: unknown, source: unknown) {
+    _startViewportPan(event: PointerEvent, source: string) {
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
         if (event.target === this.d.playhead || event.target === this.d.waveformPlayhead) return;
@@ -1081,11 +1128,11 @@ export class PlayerState {
         document.body.style.cursor = 'grabbing';
     }
 
-    _updateViewportPan(clientX: unknown, clientY: unknown) {
-        const dx = clientX - this.interaction.ctx.panStartX;
-        const dy = clientY - (this.interaction.ctx.panStartY || 0);
+    _updateViewportPan(clientX: number, clientY: number) {
+        const dx = clientX - (this.interaction.ctx.panStartX ?? 0);
+        const dy = clientY - (this.interaction.ctx.panStartY ?? 0);
         this.interaction.ctx.panSuppressClick = Math.abs(dx) > 3 || Math.abs(dy) > 3;
-        this._setLinkedScrollLeft(this.interaction.ctx.panStartScroll - dx);
+        this._setLinkedScrollLeft((this.interaction.ctx.panStartScroll ?? 0) - dx);
 
         // Middle mouse: also pan vertically
         if (this.interaction.ctx.panIsMiddle && this.interaction.ctx.panSource !== 'waveform'
@@ -1110,7 +1157,7 @@ export class PlayerState {
     //  Wheel Zoom / Scroll
     // ═════════════════════════════════════════════════════════════════
 
-    _handleWheel(event: unknown, source: unknown) {
+    _handleWheel(event: WheelEvent, source: 'spectrogram'|'waveform'|string) {
         if (!this.audioBuffer) return;
         this._cancelFollowCatchupAnimation();
 
@@ -1288,9 +1335,9 @@ export class PlayerState {
         this._viewport?.updateCoords(this.coords);
     }
 
-    _startViewResize(mode: unknown, clientY: unknown) {
+    _startViewResize(mode: string, clientY: number) {
         /** @type {Record<string, import('./interactionState.ts').InteractionMode>} */
-        const modeMap = { split: 'view-resize-split', spectrogram: 'view-resize-spectrogram' };
+        const modeMap: Record<string, import('./interactionState.ts').InteractionMode> = { split: 'view-resize-split', spectrogram: 'view-resize-spectrogram' };
         if (!this.interaction.enter(modeMap[mode])) return;
         this.interaction.ctx.resizeStartY = clientY;
         this.interaction.ctx.resizeStartWaveformH = this.waveformDisplayHeight;
@@ -1298,18 +1345,18 @@ export class PlayerState {
         document.body.style.cursor = 'row-resize';
     }
 
-    _updateViewResize(clientY: unknown) {
+    _updateViewResize(clientY: number) {
         const sub = this.interaction.viewResizeSubMode;
         if (!sub) return;
         if ((sub === 'split' && (!this._showWaveform || !this._showSpectrogram))
             || (sub === 'spectrogram' && !this._showSpectrogram)) return;
         const ctx = this.interaction.ctx;
-        const dy = clientY - ctx.resizeStartY;
+        const dy = clientY - (ctx.resizeStartY ?? 0);
         let redrawWav = false;
 
         if (sub === 'split') {
-            const total = ctx.resizeStartWaveformH + ctx.resizeStartSpectrogramH;
-            let nextWav = ctx.resizeStartWaveformH + dy;
+            const total = (ctx.resizeStartWaveformH ?? 0) + (ctx.resizeStartSpectrogramH ?? 0);
+            let nextWav = (ctx.resizeStartWaveformH ?? 0) + dy;
             nextWav = clamp(nextWav, MIN_WAVEFORM_HEIGHT, total - MIN_SPECTROGRAM_DISPLAY_HEIGHT);
             this.waveformDisplayHeight = nextWav;
             this.spectrogramDisplayHeight = total - nextWav;
@@ -1317,7 +1364,7 @@ export class PlayerState {
         } else {
             this.spectrogramDisplayHeight = Math.max(
                 MIN_SPECTROGRAM_DISPLAY_HEIGHT,
-                ctx.resizeStartSpectrogramH + dy,
+                (ctx.resizeStartSpectrogramH ?? 0) + dy,
             );
         }
 
@@ -1486,8 +1533,8 @@ export class PlayerState {
         if (!this._crosshairEnabled) this._hideCrosshair();
     }
 
-    /** @param {MouseEvent} e */
-    _updateCrosshair(e: unknown) {
+    /** @param {MouseEvent|PointerEvent} e */
+    _updateCrosshair(e: MouseEvent | PointerEvent) {
         if (!this._crosshairEnabled || !this.audioBuffer || !this._spectro.data) return;
         const wrapper = this.d.canvasWrapper;
         const overlay = this.d.crosshairCanvas;
@@ -1547,7 +1594,7 @@ export class PlayerState {
      * @param {number} w
      * @param {number} h
      */
-    _drawCrosshairLines(overlay: unknown, cx: unknown, cy: unknown, w: unknown, h: unknown) {
+    _drawCrosshairLines(overlay: HTMLCanvasElement, cx: number, cy: number, w: number, h: number) {
         if (overlay.width !== w || overlay.height !== h) {
             overlay.width = w;
             overlay.height = h;
@@ -1592,8 +1639,8 @@ export class PlayerState {
     }
 
     _cancelFollowCatchupAnimation() { this._viewport._cancelFollowCatchupAnimation(); }
-    _animateFollowCatchupTo(targetScrollLeft: unknown) { this._viewport._animateFollowCatchupTo(targetScrollLeft); }
-    _applySmoothFollow(position: unknown, viewportWidth: unknown) { this._viewport._applySmoothFollow(position, viewportWidth); }
+    _animateFollowCatchupTo(targetScrollLeft: number) { this._viewport._animateFollowCatchupTo(targetScrollLeft); }
+    _applySmoothFollow(position: number, viewportWidth: number) { this._viewport._applySmoothFollow(position, viewportWidth); }
 
     _setInitialPlayheadPositions() {
         if (this.d.playhead) {
@@ -1610,7 +1657,7 @@ export class PlayerState {
     //  Keyboard
     // ═════════════════════════════════════════════════════════════════
 
-    _handleKeyboardShortcuts(event: unknown) {
+    _handleKeyboardShortcuts(event: KeyboardEvent) {
         // Close compact toolbar on Escape regardless of audio state
         if (event.key === 'Escape' && this._compactToolbarOpen) {
             this._setCompactToolbarOpen(false);
@@ -1655,21 +1702,21 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     _bindEvents() {
-        const on = (target: unknown, type: unknown, fn: unknown, opts: unknown) => {
-            target.addEventListener(type, fn, opts);
-            this._cleanups.push(() => target.removeEventListener(type, fn, opts));
+        const on = (target: any, type: string, fn: any, opts: AddEventListenerOptions | boolean | undefined = undefined) => {
+            target.addEventListener(type, fn, opts as any);
+            this._cleanups.push(() => target.removeEventListener(type, fn, opts as any));
         };
 
         // ── File / transport ──
         on(this.d.openFileBtn, 'click', () => this.d.audioFile.click());
-        on(this.d.compactMoreBtn, 'click', (e: unknown) => {
+        on(this.d.compactMoreBtn, 'click', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
             this._setCompactToolbarOpen(!this._compactToolbarOpen);
         });
         on(this.d.settingsToggleBtn, 'click', () => this._toggleSettingsPanel());
         on(this.d.settingsPanelClose, 'click', () => this._setSettingsPanelOpen(false));
-        on(this.d.audioFile, 'change', (e: unknown) => this._handleFileSelect(e));
+        on(this.d.audioFile, 'change', (e: Event) => this._handleFileSelect(e));
         on(this.d.playPauseBtn, 'click', () => this._togglePlayPause());
         on(this.d.stopBtn, 'click', () => this._stopPlayback());
         on(this.d.jumpStartBtn, 'click', () => this._seekToTime(0, true));
@@ -1705,8 +1752,9 @@ export class PlayerState {
                 if (this.d.freqZoomResetBtn) this.d.freqZoomResetBtn.hidden = true;
             }
         });
-        on(this.d.zoomSlider, 'input', (e: unknown) => {
-            this._setPixelsPerSecond(parseFloat(e.target.value), false);
+        on(this.d.zoomSlider, 'input', (e: Event) => {
+            const val = (e.target as HTMLInputElement).value;
+            this._setPixelsPerSecond(parseFloat(val), false);
             this._requestSpectrogramRedraw();
         });
         on(this.d.zoomSlider, 'change', () => {
@@ -1714,9 +1762,10 @@ export class PlayerState {
         });
 
         // ── Volume ──
-        on(this.d.volumeSlider, 'input', (e: unknown) => {
+        on(this.d.volumeSlider, 'input', (e: Event) => {
             this.muted = false;
-            this._setVolume(parseFloat(e.target.value) / 100);
+            const val = (e.target as HTMLInputElement).value;
+            this._setVolume(parseFloat(val) / 100);
         });
         on(this.d.volumeToggleBtn, 'click', () => this._toggleMute());
 
@@ -1747,23 +1796,23 @@ export class PlayerState {
         this._bindCanvasInteractionEvents(on);
 
         // ── Playhead drag ──
-        on(this.d.playhead, 'pointerdown', (e: unknown) => this._startPlayheadDrag(e, 'spectrogram'));
-        on(this.d.waveformPlayhead, 'pointerdown', (e: unknown) => this._startPlayheadDrag(e, 'waveform'));
+        on(this.d.playhead, 'pointerdown', (e: PointerEvent) => this._startPlayheadDrag(e, 'spectrogram'));
+        on(this.d.waveformPlayhead, 'pointerdown', (e: PointerEvent) => this._startPlayheadDrag(e, 'waveform'));
 
         // ── View resize ──
-        on(this.d.viewSplitHandle, 'pointerdown', (e: unknown) => {
+        on(this.d.viewSplitHandle, 'pointerdown', (e: PointerEvent) => {
             if (!this._showWaveform || !this._showSpectrogram) return;
             e.preventDefault();
             this._startViewResize('split', e.clientY);
         });
-        on(this.d.spectrogramResizeHandle, 'pointerdown', (e: unknown) => {
+        on(this.d.spectrogramResizeHandle, 'pointerdown', (e: PointerEvent) => {
             if (!this._showSpectrogram) return;
             e.preventDefault();
             this._startViewResize('spectrogram', e.clientY);
         });
 
         // ── Document-level pointer ──
-        on(document, 'pointermove', (e: unknown) => {
+        on(document, 'pointermove', (e: PointerEvent) => {
             if (this.interaction.isViewResize) { this._updateViewResize(e.clientY); return; }
             if (this.interaction.isDraggingViewport) this._updateViewportPan(e.clientX, e.clientY);
             if (this.interaction.isDraggingPlayhead) this._seekFromClientX(e.clientX, this.interaction.ctx.playheadSource);
@@ -1786,10 +1835,10 @@ export class PlayerState {
         on(document, 'pointercancel', releaseAll);
 
         // ── Keyboard ──
-        on(document, 'keydown', (e: unknown) => this._handleKeyboardShortcuts(e));
-        on(document, 'pointerdown', (e: unknown) => {
+        on(document, 'keydown', (e: KeyboardEvent) => this._handleKeyboardShortcuts(e));
+        on(document, 'pointerdown', (e: PointerEvent) => {
             if (!this._compactToolbarOpen) return;
-            if (this.d.toolbarRoot?.contains(e.target)) return;
+            if (this.d.toolbarRoot?.contains(e.target as Node)) return;
             this._setCompactToolbarOpen(false);
         });
 
@@ -1814,14 +1863,14 @@ export class PlayerState {
     }
 
     /** Frequency viewport — axis drag pan, wheel zoom, zoom slider, scrollbar drag. */
-    _bindFreqViewportEvents(on: unknown) {
+    _bindFreqViewportEvents(on: any) {
         // ── Freq axis: left-drag = vertical pan ──
         {
             let dragging = false;
             let startY = 0;
             let startMin = 0;
             let startMax = 0;
-            const onMove = (e: unknown) => {
+            const onMove = (e: PointerEvent) => {
                 if (!dragging) return;
                 const spacer = this.d.freqAxisSpacer;
                 const spacerH = spacer.getBoundingClientRect().height;
@@ -1842,7 +1891,7 @@ export class PlayerState {
                 document.removeEventListener('pointermove', onMove);
                 document.removeEventListener('pointerup', onUp);
             };
-            on(this.d.freqAxisSpacer, 'pointerdown', (e: unknown) => {
+            on(this.d.freqAxisSpacer, 'pointerdown', (e: PointerEvent) => {
                 if (e.button !== 0 || !this._showSpectrogram) return;
                 if (!this._freqView.isZoomed) return;
                 e.preventDefault();
@@ -1857,7 +1906,7 @@ export class PlayerState {
         }
 
         // ── Freq axis: wheel = vertical zoom ──
-        on(this.d.freqAxisSpacer, 'wheel', (e: unknown) => {
+        on(this.d.freqAxisSpacer, 'wheel', (e: WheelEvent) => {
             if (!this.audioBuffer || !this._showSpectrogram) return;
             e.preventDefault();
             const rect = this.d.freqAxisSpacer.getBoundingClientRect();
@@ -1870,8 +1919,9 @@ export class PlayerState {
         }, { passive: false });
 
         // ── Freq zoom slider ──
-        on(this.d.freqZoomSlider, 'input', (e: unknown) => {
-            this._freqView.setFromSlider(parseInt(e.target.value, 10), this.coords.boundedMaxFreq);
+        on(this.d.freqZoomSlider, 'input', (e: Event) => {
+            const val = (e.target as HTMLInputElement).value;
+            this._freqView.setFromSlider(parseInt(val, 10), this.coords.boundedMaxFreq);
         });
 
         // ── Freq scrollbar drag ──
@@ -1880,7 +1930,7 @@ export class PlayerState {
             let startY = 0;
             let startMin = 0;
             let startMax = 0;
-            const onMove = (e: unknown) => {
+            const onMove = (e: PointerEvent) => {
                 if (!dragging) return;
                 const bar = this.d.freqScrollbar;
                 const barH = bar.getBoundingClientRect().height;
@@ -1903,7 +1953,7 @@ export class PlayerState {
                 document.removeEventListener('pointermove', onMove);
                 document.removeEventListener('pointerup', onUp);
             };
-            on(this.d.freqScrollbarThumb, 'pointerdown', (e: unknown) => {
+            on(this.d.freqScrollbarThumb, 'pointerdown', (e: PointerEvent) => {
                 if (!this._freqView.isZoomed) return;
                 e.preventDefault();
                 e.stopPropagation();
@@ -1919,14 +1969,14 @@ export class PlayerState {
     }
 
     /** Canvas and waveform scroll/click/key/pointer interactions. */
-    _bindCanvasInteractionEvents(on: unknown) {
-        on(this.d.canvasWrapper, 'click', (e: unknown) => this._handleCanvasClick(e));
-        on(this.d.canvasWrapper, 'dblclick', (e: unknown) => {
+    _bindCanvasInteractionEvents(on: any) {
+        on(this.d.canvasWrapper, 'click', (e: MouseEvent) => this._handleCanvasClick(e));
+        on(this.d.canvasWrapper, 'dblclick', (e: MouseEvent) => {
             if (e.shiftKey) { e.preventDefault(); this._freqView.reset(); }
         });
-        on(this.d.canvasWrapper, 'mousemove', (e: unknown) => this._updateCrosshair(e));
+        on(this.d.canvasWrapper, 'mousemove', (e: MouseEvent) => this._updateCrosshair(e));
         on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
-        on(this.d.waveformWrapper, 'click', (e: unknown) => this._handleWaveformClick(e));
+        on(this.d.waveformWrapper, 'click', (e: MouseEvent) => this._handleWaveformClick(e));
         on(this.d.canvasWrapper, 'scroll', () => {
             if (this.scrollSyncLock) return;
             if (this._getPrimaryScrollWrapper() !== this.d.canvasWrapper) return;
@@ -1942,9 +1992,9 @@ export class PlayerState {
             // Sync the spectrogram viewport when the waveform is the primary scroller.
             if (this._spectro.hasData) this._drawSpectrogram();
         });
-        on(this.d.canvasWrapper, 'wheel', (e: unknown) => this._handleWheel(e, 'spectrogram'), { passive: false });
-        on(this.d.waveformWrapper, 'wheel', (e: unknown) => this._handleWheel(e, 'waveform'), { passive: false });
-        on(this.d.canvasWrapper, 'keydown', (e: unknown) => {
+        on(this.d.canvasWrapper, 'wheel', (e: any) => this._handleWheel(e, 'spectrogram'), { passive: false });
+        on(this.d.waveformWrapper, 'wheel', (e: any) => this._handleWheel(e, 'waveform'), { passive: false });
+        on(this.d.canvasWrapper, 'keydown', (e: any) => {
             if (!this.audioBuffer) return;
             if (isTypingContext(e.target)) return;
             switch (e.key) {
@@ -1955,29 +2005,29 @@ export class PlayerState {
                 default: break;
             }
         });
-        on(this.d.canvasWrapper, 'pointerdown', (e: unknown) => this._startViewportPan(e, 'spectrogram'));
-        on(this.d.waveformWrapper, 'pointerdown', (e: unknown) => this._startViewportPan(e, 'waveform'));
+        on(this.d.canvasWrapper, 'pointerdown', (e: any) => this._startViewportPan(e, 'spectrogram'));
+        on(this.d.waveformWrapper, 'pointerdown', (e: any) => this._startViewportPan(e, 'waveform'));
     }
 
     /** Overview waveform: handle drag, window drag, click-to-seek, label toggle. */
-    _bindOverviewEvents(on: unknown) {
-        on(this.d.overviewHandleLeft, 'pointerdown', (e: unknown) => {
+    _bindOverviewEvents(on: any) {
+        on(this.d.overviewHandleLeft, 'pointerdown', (e: any) => {
             if (!this._showOverview) return;
             e.preventDefault();
             this._startOverviewDrag('left', e.clientX);
         });
-        on(this.d.overviewHandleRight, 'pointerdown', (e: unknown) => {
+        on(this.d.overviewHandleRight, 'pointerdown', (e: any) => {
             if (!this._showOverview) return;
             e.preventDefault();
             this._startOverviewDrag('right', e.clientX);
         });
-        on(this.d.overviewWindow, 'pointerdown', (e: unknown) => {
+        on(this.d.overviewWindow, 'pointerdown', (e: any) => {
             if (!this._showOverview) return;
             if (e.target === this.d.overviewHandleLeft || e.target === this.d.overviewHandleRight) return;
             e.preventDefault();
             this._startOverviewDrag('move', e.clientX);
         });
-        on(this.d.overviewCanvas, 'click', (e: unknown) => {
+        on(this.d.overviewCanvas, 'click', (e: any) => {
             if (this.interaction.isOverviewClickBlocked()) return;
             if (!this._showOverview) return;
             if (!this.audioBuffer) return;
@@ -1989,9 +2039,9 @@ export class PlayerState {
     }
 
     _bindTouchGestures() {
-        const bindRecognizer = (element: unknown, source: unknown) => {
+        const bindRecognizer = (element: HTMLElement | null, source: string) => {
             if (!element) return;
-            const rec = new GestureRecognizer(element);
+            const rec = new GestureRecognizer(element as HTMLElement);
             const offSwipe = rec.on('swipe', ({ dx }) => {
                 if (!this.audioBuffer) return;
                 this._seekByDelta(dx / Math.max(1, this.pixelsPerSecond));

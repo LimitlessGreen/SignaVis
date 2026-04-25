@@ -15,7 +15,7 @@ self.onmessage = (event) => {
         ...options,
     });
 
-    const msg = {
+    const msg = /** @type {any} */ ({
         requestId,
         data: result.data.buffer,
         nFrames: result.nFrames,
@@ -23,7 +23,7 @@ self.onmessage = (event) => {
         hopSize: result.hopSize,
         winLength: result.winLength,
         colourScale: result.colourScale,
-    };
+    });
     const transfer = [result.data.buffer];
     if (result.smoothState) {
         msg.smoothState = result.smoothState.buffer;

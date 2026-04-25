@@ -53,12 +53,12 @@ export function parseColorToRgb(color: unknown): { r: number; g: number; b: numb
     }
 }
 
-function _rgbToHex({ r, g, b }) {
-    const toHex = (n: unknown) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
+function _rgbToHex({ r, g, b }: { r: number; g: number; b: number }) {
+    const toHex = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-export function getOverlayColorStyle(color: unknown): { background: string; border: string } | null {
+export function getOverlayColorStyle(color: unknown): { fill: string; edge: string; soft: string; hex: string } | null {
     const rgb = parseColorToRgb(color);
     if (!rgb) return null;
     return {
@@ -92,7 +92,7 @@ export function colorForName(name: unknown): string {
  * @param {Array<{color?:string}>} existingLabels
  * @returns {string} hex color
  */
-function _autoAssignColor(existingLabels: unknown) {
+function _autoAssignColor(existingLabels: any[]) {
     // Extract existing hues
     const usedHues = [];
     for (const lbl of existingLabels) {
@@ -137,11 +137,11 @@ function _autoAssignColor(existingLabels: unknown) {
     return _hslToHex(bestHue, S, L);
 }
 
-function _hslToHex(h: unknown, s: unknown, l: unknown) {
+function _hslToHex(h: number, s: number, l: number) {
     s /= 100;
     l /= 100;
     const a = s * Math.min(l, 1 - l);
-    const f = (n: unknown) => {
+    const f = (n: number) => {
         const k = (n + h / 30) % 12;
         const color = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
         return Math.round(255 * clamp(color, 0, 1));
@@ -168,15 +168,15 @@ function _hslToHex(h: unknown, s: unknown, l: unknown) {
  * instead of calling player._emit() directly — eliminating the circular dependency.
  * @param {any} opts
  */
-function openLabelNameEditor(opts: unknown) {
-    const layer = opts.layer;
+function openLabelNameEditor(opts: any) {
+    const layer = opts?.layer;
     const rest  = { ...opts };
     delete rest.layer;
     // Wire onLayerEmit: dispatch tag events on the layer (which BirdNETPlayer
     // already listens to), or fall back to player._emit for legacy callers.
     const onLayerEmit = layer
-        ? (event: unknown, detail: unknown) => layer.dispatchEvent(new CustomEvent(event, { detail }))
-        : (event: unknown, detail: unknown) => opts.player?._emit?.(event, detail);
+        ? (event: string, detail: any) => layer.dispatchEvent(new CustomEvent(String(event), { detail }))
+        : (event: string, detail: any) => opts.player?._emit?.(event, detail);
     const modal = new LabelEditorModal({ ...rest, onLayerEmit });
     modal.open();
     return modal;
@@ -207,6 +207,32 @@ export interface AnnotationRegion {
 // ═══════════════════════════════════════════════════════════════════════
 
 class AnnotationLayerBase extends EventTarget {
+    declare player: any;
+    declare overlay: HTMLElement | null;
+    declare _items: any[];
+    declare _liveLinkedId: string | null;
+    declare _unsubs: Array<() => void>;
+    declare _domCleanups: Array<() => void>;
+    declare _editing: any | null;
+    declare _suppressClickUntil: number;
+    declare _multiSelectedIds: Set<string>;
+    declare _lastPointerX: number | null;
+    declare _lastPointerY: number | null;
+    declare _grabbing: boolean;
+    declare drawMode: boolean;
+    declare stampMode: boolean;
+    declare _stampGhostEl: HTMLElement | null;
+    declare _stampAxisLock: boolean;
+    declare _stampRefLabelId: string | null;
+    declare _axisConstraint: 'x' | 'y' | null;
+    declare _draftEl: HTMLElement | null;
+    declare _drawing: any | null;
+    declare _counter: number;
+    declare _suppressContextMenuUntil: number;
+    declare _focusedLabelId: string | null;
+    declare _selectedLabelId: string | null;
+    declare _lockedIds: Set<string>;
+    declare _clipboard: any | null;
     constructor() {
         super();
         this.player = null;
@@ -232,23 +258,22 @@ class AnnotationLayerBase extends EventTarget {
     /** CSS selector matching all item elements within the overlay. */
     get _itemElSelector() { return '.annotation-item'; }
     /** Return the DOM root element to mount the overlay into. */
-    /** @returns {HTMLElement|null} */
-    _getRoot() { return null; }
+    _getRoot(): HTMLElement | null { return null; }
     /** Subscribe player events. Called inside attach(), after overlay creation. */
     _subscribePlayerEvents() {}
     /** Bind mouse/pointer interactions. Called inside attach(), after overlay creation. */
-    _bindInteractions(_root: unknown) {}
+    _bindInteractions(_root: HTMLElement) {}
     /**
      * Normalize a raw item object (must return object with .id).
      * @param {*} _item
      * @returns {{id: string}}
      * @abstract
      */
-    _normalize(_item: unknown) { throw new Error(`${this.constructor.name}._normalize not implemented`); }
+    _normalize(_item: any): any { throw new Error(`${this.constructor.name}._normalize not implemented`); }
     /** Emit a player event when a new item is created via add(). */
-    _emitCreate(_item: unknown) {}
+    _emitCreate(_item: any) {}
     /** Emit a player event when an item is updated after drag/resize. */
-    _emitUpdate(_item: unknown) {}
+    _emitUpdate(_item: any) {}
 
     // ── Lifecycle ────────────────────────────────────────────────────
     /** Render the overlay. Override in subclasses; default no-op for base typing. */
@@ -298,7 +323,7 @@ class AnnotationLayerBase extends EventTarget {
     }
 
     remove(id: string): void {
-        this._items = this._items.filter((i: unknown) => i.id !== id);
+        this._items = this._items.filter((i: any) => i.id !== id);
         this.render();
     }
 
@@ -325,7 +350,7 @@ class AnnotationLayerBase extends EventTarget {
     _updateMultiSelectedVisual() {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
-            const h = /** @type {HTMLElement} */ (el);
+            const h = el as HTMLElement;
             h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
         }
     }
@@ -333,10 +358,10 @@ class AnnotationLayerBase extends EventTarget {
     // ── Edit interaction shared finish ───────────────────────────────
     _finishEditInteraction() {
         if (!this._editing) return;
-        const editing = /** @type {any} */ (this._editing);
+        const editing = this._editing as any;
         const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
         editing.element?.classList?.remove('editing');
-        const item = this._items.find((i: unknown) => i.id === editing.id);
+        const item = this._items.find((i: any) => i.id === editing.id);
         if (item && editing.moved) this._emitUpdate(item);
         this._editing = null;
         if (shouldSuppressClick) {
@@ -347,6 +372,40 @@ class AnnotationLayerBase extends EventTarget {
 }
 
 export class AnnotationLayer extends AnnotationLayerBase {
+    overlay: any;
+    _items: any;
+    _liveLinkedId: any;
+    _unsubs: any;
+    _domCleanups: any;
+    _editing: any;
+    _suppressClickUntil: any;
+    _multiSelectedIds: any;
+    _lastPointerX: any;
+    _lastPointerY: any;
+    _grabbing: any;
+    appendChild: any;
+    closest: any;
+    preventDefault: any;
+    stopPropagation: any;
+    drawMode: any;
+    stampMode: any;
+    _stampGhostEl: any;
+    _stampAxisLock: any;
+    _stampRefLabelId: any;
+    _axisConstraint: any;
+    _draftEl: any;
+    _drawing: any;
+    _counter: any;
+    _suppressContextMenuUntil: any;
+    _focusedLabelId: any;
+    _selectedLabelId: any;
+    _lockedIds: any;
+    _clipboard: any;
+    detail: any;
+    target: any;
+    length: any;
+    map: any;
+    name: any;
     // ── Template-method overrides ────────────────────────────────────
     get _overlayClassName() { return 'annotation-layer'; }
     get _itemElSelector() { return '.annotation-region'; }
@@ -359,22 +418,22 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('ready', () => this.render()));
         this._unsubs.push(this.player.on('zoomchange', () => this.render()));
         this._unsubs.push(this.player.on('viewresize', () => this.render()));
-        this._unsubs.push(this.player.on('seek', (e: unknown) => this.highlightActiveRegion(e.detail.currentTime)));
-        this._unsubs.push(this.player.on('timeupdate', (e: unknown) => this.highlightActiveRegion(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('seek', (e: any) => this.highlightActiveRegion(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('timeupdate', (e: any) => this.highlightActiveRegion(e.detail.currentTime)));
     }
 
-    _bindInteractions(root: unknown) { this._bindEditingInteractions(root); }
+    _bindInteractions(root: HTMLElement) { this._bindEditingInteractions(root); }
 
-    _emitCreate(region: unknown) { this.player?._emit?.('annotationcreate', { annotation: { ...region } }); }
-    _emitUpdate(item: unknown) { this.player?._emit?.('annotationupdate', { annotation: { ...item } }); }
+    _emitCreate(region: any) { this.player?._emit?.('annotationcreate', { annotation: { ...(region as any) } }); }
+    _emitUpdate(item: any) { this.player?._emit?.('annotationupdate', { annotation: { ...(item as any) } }); }
 
     /** Public alias for the internal items array (backward compat). */
     get annotations() { return this._items; }
 
-    highlightActiveRegion(currentTime: unknown) {
+    highlightActiveRegion(currentTime: number) {
         if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = /** @type {HTMLElement} */ (el);
+            for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
+                const h = el as HTMLElement;
             const start = parseFloat(h.dataset.start || '0');
             const end = parseFloat(h.dataset.end || '0');
             el.classList.toggle('active', currentTime >= start && currentTime <= end);
@@ -383,7 +442,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     exportRavenFormat(regions = this._items) {
         return regions
-            .map((r: unknown) => `${r.start}\t${r.end}\t${r.species || ''}\t${r.confidence ?? ''}`)
+            .map((r: any) => `${r.start}\t${r.end}\t${r.species || ''}\t${r.confidence ?? ''}`)
             .join('\n');
     }
 
@@ -423,16 +482,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
         // (directly or transitively) form a cluster and share a uniform depth
         // so their top/height positioning never conflicts visually.
         // Isolated regions or non-overlapping clusters keep independent sizing.
-        /** @type {Map<string, {depth: number, localRow: number}>} */
-        const localLayout = new Map();
+        const localLayout = new Map<string, { depth: number; localRow: number }>();
         if (totalRows > 1) {
-            /** @type {Map<string, string>} */
-            const par = new Map();
-            /** @param {string} x */
-            const find = (x: unknown) => {
+            const par = new Map<string, string>();
+            const find = (x: string) => {
                 while (par.get(x) !== x) {
-                    par.set(x, /** @type {string} */ (par.get(/** @type {string} */ (par.get(x)) || x) || x));
-                    x = /** @type {string} */ (par.get(x));
+                    par.set(x, (par.get(par.get(x) || x) || x) as string);
+                    x = String(par.get(x));
                 }
                 return x;
             };
@@ -448,17 +504,16 @@ export class AnnotationLayer extends AnnotationLayerBase {
             }
 
             // Group regions by cluster root
-            /** @type {Map<string, Array<{id: string, row: number}>>} */
-            const clusters = new Map();
+            const clusters = new Map<string, Array<{ id: string; row: number }>>();
             for (const r of sorted) {
                 const root = find(r.id);
                 if (!clusters.has(root)) clusters.set(root, []);
-                /** @type {Array<{id: string, row: number}>} */ (clusters.get(root)).push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
+                (clusters.get(root) as Array<{ id: string; row: number }>).push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
             }
 
             for (const [, members] of clusters) {
                 if (members.length < 2) continue;
-                const rowSet = new Set(members.map((m: unknown) => m.row));
+                const rowSet = new Set(members.map((m: any) => m.row));
                 const rowsSorted = [...rowSet].sort((a, b) => a - b);
                 const depth = rowsSorted.length;
                 if (depth < 2) continue;
@@ -482,19 +537,19 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
-            const editing = /** @type {any} */ (this._editing);
+            const editing = this._editing as any;
             const freshEl = this.overlay.querySelector(
                 `.annotation-region[data-id="${editing.id}"]`,
             );
             if (freshEl) {
-                editing.element = /** @type {HTMLElement} */ (freshEl);
+                editing.element = freshEl as HTMLElement;
                 freshEl.classList.add('editing');
             }
         }
         this._updateMultiSelectedVisual();
     }
 
-    _createRegionElement(region: unknown, pixelsPerSecond: unknown) {
+    _createRegionElement(region: any, pixelsPerSecond: number): HTMLElement {
         const coords = this.player?._state?.coords;
         const el = document.createElement('div');
         el.className = 'annotation-region';
@@ -554,8 +609,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
             if (region.readonly) { event.preventDefault(); event.stopPropagation(); return; }
-            const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.annotation-handle');
-            const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
+            const handle = (event.target as Element | null)?.closest?.('.annotation-handle') as HTMLElement | null;
+            const mode = handle?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
             event.preventDefault();
             event.stopPropagation();
@@ -576,15 +631,15 @@ export class AnnotationLayer extends AnnotationLayerBase {
         return el;
     }
 
-    _bindEditingInteractions(root: unknown) {
-        const onPointerMove = (e: unknown) => {
+    _bindEditingInteractions(root: HTMLElement) {
+        const onPointerMove = (e: PointerEvent) => {
             if (!this._editing) return;
             this._updateEditInteraction(e.clientX);
             e.preventDefault();
             e.stopPropagation();
         };
 
-        const onPointerUp = (e: unknown) => {
+        const onPointerUp = (e: PointerEvent) => {
             if (!this._editing) return;
             this._finishEditInteraction();
             e.preventDefault();
@@ -599,15 +654,15 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._domCleanups.push(() => document.removeEventListener('pointercancel', onPointerUp, true));
     }
 
-    _startEditInteraction(id: unknown, mode: unknown, clientX: unknown, element: unknown) {
-        const region = this._items.find((a: unknown) => a.id === id);
+    _startEditInteraction(id: any, mode: any, clientX: number, element: any) {
+        const region = this._items.find((a: any) => a.id === id);
         if (!region || region.readonly) return;
         this._editing = {
             id,
             mode,
             startX: clientX,
             startRegion: { ...region },
-            element: /** @type {HTMLElement} */ (element),
+            element: element as HTMLElement,
             pending: mode === 'move',
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
@@ -615,10 +670,10 @@ export class AnnotationLayer extends AnnotationLayerBase {
         if (mode !== 'move') element.classList.add('editing');
     }
 
-    _updateEditInteraction(clientX: unknown) {
+    _updateEditInteraction(clientX: number) {
         if (!this._editing) return;
-        const editing = /** @type {any} */ (this._editing);
-        const region = this._items.find((a: unknown) => a.id === editing.id);
+        const editing = this._editing as any;
+        const region = this._items.find((a: any) => a.id === editing.id);
         if (!region) return;
         const pps = this.player?._state?.pixelsPerSecond || 100;
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -660,9 +715,9 @@ export class AnnotationLayer extends AnnotationLayerBase {
     /**
      * Blender-style grab for waveform annotations (horizontal only).
      */
-    startGrab(annotationId: unknown) {
-        const region = this._items.find((a: unknown) => a.id === annotationId);
-        if (!region || this._grabbing) return;
+    startGrab(annotationId: any) {
+        const region = this._items.find((a: any) => a.id === annotationId);
+        if (!region || this._grabbing) return; 
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         if (!el) return;
 
@@ -675,23 +730,23 @@ export class AnnotationLayer extends AnnotationLayerBase {
             mode: 'move',
             startX,
             startRegion: snapshot,
-            element: /** @type {HTMLElement} */ (el),
+            element: el as HTMLElement,
             pending: false,
             moved: true,
             forceSuppressClick: true,
         };
         this._grabbing = true;
 
-        const onMove = (e: unknown) => {
+        const onMove = (e: PointerEvent) => {
             this._updateEditInteraction(e.clientX);
         };
-        const confirm = (e: unknown) => {
+        const confirm = (e: Event) => {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
             this._finishEditInteraction();
         };
-        const cancel = (e: unknown) => {
+        const cancel = (e: Event) => {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
@@ -701,9 +756,9 @@ export class AnnotationLayer extends AnnotationLayerBase {
             this._suppressClickUntil = performance.now() + 250;
             this.render();
         };
-        const onKey = (e: unknown) => {
-            if (e.key === 'Escape') cancel(e);
-            if (e.key === 'g') confirm(e);
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') cancel(e as Event);
+            if (e.key === 'g') confirm(e as Event);
         };
         const cleanup = () => {
             this._grabbing = false;
@@ -717,9 +772,9 @@ export class AnnotationLayer extends AnnotationLayerBase {
         document.addEventListener('keydown', onKey, true);
     }
 
-    _renameRegionPrompt(id: unknown) {
-        const region = this._items.find((a: unknown) => a.id === id);
-        if (!region) return;
+    _renameRegionPrompt(id: any) {
+        const region = this._items.find((a: any) => a.id === id);
+        if (!region) return; 
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         openLabelNameEditor({
@@ -729,7 +784,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             initialValue: current,
             initialColor: region.color,
             initialScientificName: region.scientificName || '',
-            onSubmit: ({ name, color }) => {
+            onSubmit: ({ name, color }: any) => {
                 const currentHex = getOverlayColorStyle(region.color)?.hex || '';
                 if (name === current && color === currentHex) return;
                 region.species = name;
@@ -740,7 +795,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         });
     }
 
-    _normalize(annotation: unknown) {
+    _normalize(annotation: any) {
         const start = Number(annotation?.start ?? 0);
         const end = Number(annotation?.end ?? start);
         if (!Number.isFinite(start) || !Number.isFinite(end)) {
@@ -776,9 +831,48 @@ export interface SpectrogramLabel {
     origin?: string;
     author?: string;
     tags?: Record<string, string>;
+    readonly?: boolean;
+    aiSuggested?: { model?: string; version?: string } | null;
+    confidence?: number;
+    recordingId?: string | null;
 }
 
 export class SpectrogramLabelLayer extends AnnotationLayerBase {
+    overlay: HTMLElement | null = null;
+    player: any;
+    _items: SpectrogramLabel[] = [];
+    _liveLinkedId: any = null;
+    _unsubs: any[] = [];
+    _domCleanups: any[] = [];
+    _editing: any = null;
+    _suppressClickUntil: number = 0;
+    _multiSelectedIds: Set<string> = new Set();
+    _lastPointerX: number | null = null;
+    _lastPointerY: number | null = null;
+    _grabbing: boolean = false;
+    appendChild: any;
+    closest: any;
+    preventDefault: any;
+    stopPropagation: any;
+    drawMode: boolean = true;
+    stampMode: boolean = false;
+    _stampGhostEl: any = null;
+    _stampAxisLock: any = false;
+    _stampRefLabelId: any = null;
+    _axisConstraint: any = null;
+    _draftEl: any = null;
+    _drawing: any = null;
+    _counter: number = 0;
+    _suppressContextMenuUntil: number = 0;
+    _focusedLabelId: any = null;
+    _selectedLabelId: any = null;
+    _lockedIds: Set<string> = new Set();
+    _clipboard: any = null;
+    detail: any;
+    target: any;
+    length: any;
+    map: any;
+    name: any;
     constructor() {
         super();
         this.drawMode = true;
@@ -812,8 +906,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('zoomchange', () => this.render()));
         this._unsubs.push(this.player.on('viewresize', () => this.render()));
         this._unsubs.push(this.player.on('spectrogramscalechange', () => this.render()));
-        this._unsubs.push(this.player.on('timeupdate', (e: unknown) => this.highlightActiveLabel(e.detail.currentTime)));
-        this._unsubs.push(this.player.on('labelfocus', (e: unknown) => {
+        this._unsubs.push(this.player.on('timeupdate', (e: any) => this.highlightActiveLabel(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('labelfocus', (e: any) => {
             const id = e?.detail?.id || null;
             const interaction = e?.detail?.interaction;
             if (interaction === 'click') {
@@ -827,10 +921,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }));
     }
 
-    _bindInteractions(root: unknown) { this._bindDrawingInteractions(root); }
+    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); }
 
-    _emitCreate(region: unknown) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...region } }); }
-    _emitUpdate(item: unknown) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...item } }); }
+    _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
+    _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
 
     /** Public alias for the internal items array (backward compat). */
     get labels() { return this._items; }
@@ -852,8 +946,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     }
 
     /** Accept a suggestion label — change its origin to 'manual'. */
-    _acceptSuggestion(id: unknown) {
-        const label = this._items.find((l: unknown) => l.id === id);
+    _acceptSuggestion(id: any) {
+        const label = this._items.find((l: any) => l.id === id);
         if (!label) return;
         label.origin = 'manual';
         this.render();
@@ -869,8 +963,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this.render();
     }
 
-    copyLabel(id: unknown) {
-        const label = this._items.find((l: unknown) => l.id === id);
+    copyLabel(id: any) {
+        const label = this._items.find((l: any) => l.id === id);
         if (!label) return;
         this._clipboard = { ...label };
     }
@@ -901,22 +995,22 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * Returns the reference label for stamp/paste defaults.
      * Priority: 1) explicit stamp ref  2) click-focused  3) last label
      */
-    _getReferenceLabelForDefaults() {
+    _getReferenceLabelForDefaults(): any {
         if (this._stampRefLabelId) {
-            const ref = this._items.find((l: unknown) => l.id === this._stampRefLabelId);
-            if (ref) return ref;
+            const ref = this._items.find((l: any) => l.id === this._stampRefLabelId);
+            if (ref) return ref as any;
         }
         if (this._focusedLabelId) {
-            const focused = this._items.find((l: unknown) => l.id === this._focusedLabelId);
-            if (focused) return focused;
+            const focused = this._items.find((l: any) => l.id === this._focusedLabelId);
+            if (focused) return focused as any;
         }
-        return this._items.length ? this._items[this._items.length - 1] : null;
+        return this._items.length ? (this._items[this._items.length - 1] as any) : null;
     }
 
-    highlightActiveLabel(currentTime: unknown) {
+    highlightActiveLabel(currentTime: number) {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = /** @type {HTMLElement} */ (el);
+            const h = el as HTMLElement;
             const start = parseFloat(h.dataset.start || '0');
             const end = parseFloat(h.dataset.end || '0');
             el.classList.toggle('active', currentTime >= start && currentTime <= end);
@@ -927,7 +1021,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _updateFocusedVisual() {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = /** @type {HTMLElement} */ (el);
+            const h = el as HTMLElement;
             h.classList.toggle('focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
         }
     }
@@ -936,7 +1030,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _updateSelectedVisual() {
         if (!this.overlay) return;
         for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = /** @type {HTMLElement} */ (el);
+            const h = el as HTMLElement;
             h.classList.toggle('selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
         }
     }
@@ -968,12 +1062,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
-            const editing = /** @type {any} */ (this._editing);
+            const editing = this._editing as any;
             const freshEl = this.overlay.querySelector(
                 `.spectrogram-label-region[data-id="${editing.id}"]`,
             );
             if (freshEl) {
-                editing.element = /** @type {HTMLElement} */ (freshEl);
+                editing.element = freshEl as HTMLElement;
                 freshEl.classList.add('editing');
             }
         }
@@ -996,13 +1090,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * @param {HTMLElement[]} elements
      * @param {Array<{left: number, top: number, width: number, height: number}>} geometries
      */
-    _resolveTextCollisions(elements: unknown, geometries: unknown) {
+    _resolveTextCollisions(elements: HTMLElement[], geometries: Array<{ left: number; top: number; width: number; height: number }>) {
         const TEXT_H = 16;
-        const occupiedRects = [];
+        const occupiedRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
 
         for (let i = 0; i < elements.length; i++) {
             const geo = geometries[i];
-            const textEl = elements[i].querySelector('.spectrogram-label-text');
+            const textEl = elements[i].querySelector('.spectrogram-label-text') as HTMLElement | null;
             if (!textEl) continue;
 
             const textWidth = clamp(geo.width * 0.7, 100, 200);
@@ -1032,7 +1126,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
     }
 
-    _createLabelElement(label: unknown, canvasWidth: unknown, canvasHeight: unknown) {
+    _createLabelElement(label: SpectrogramLabel, canvasWidth: number, canvasHeight: number): HTMLElement {
         const el = document.createElement('div');
         el.className = 'spectrogram-label-region';
         const isLocked = this._lockedIds.has(label.id);
@@ -1058,13 +1152,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.dataset.start = String(label.start);
         el.dataset.end = String(label.end);
         const readonlyNote = isReadonly ? ' [read-only]' : '';
-        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz${readonlyNote}`;
+        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
         const lockIconHtml = isReadonly ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
             <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
-            <span class="spectrogram-label-meta">${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz</span>
+            <span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>
             ${aiTagHtml}${lockIconHtml}
             ${!isBlocked ? `
             <button class="label-edit-btn" type="button" title="Edit label">
@@ -1100,7 +1194,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ` : ''}
         `;
 
-        const editBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-edit-btn'));
+        const editBtn = el.querySelector('.label-edit-btn') as HTMLButtonElement | null;
         if (editBtn && !isBlocked) {
             editBtn.addEventListener('click', (event) => {
                 event.preventDefault();
@@ -1113,7 +1207,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             });
         }
 
-        const deleteBtn = /** @type {HTMLButtonElement | null} */ (el.querySelector('.label-delete-btn'));
+        const deleteBtn = el.querySelector('.label-delete-btn') as HTMLButtonElement | null;
         if (deleteBtn && !isBlocked) {
             deleteBtn.addEventListener('click', (event) => {
                 event.preventDefault();
@@ -1167,8 +1261,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             this.player?.playBandpassedSegment?.(
                 label.start,
                 label.end,
-                label.freqMin,
-                label.freqMax,
+                label.freqMin ?? 0,
+                label.freqMax ?? 0,
                 { labelId: label.id },
             );
         });
@@ -1189,8 +1283,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 event.stopPropagation();
                 return;
             }
-            const handle = /** @type {HTMLElement | null} */ (event.target)?.closest?.('.label-handle');
-            const mode = /** @type {HTMLElement | null} */ (handle)?.dataset?.mode || 'move';
+            const handle = (event.target as Element | null)?.closest?.('.label-handle') as HTMLElement | null;
+            const mode = handle?.dataset?.mode || 'move';
             this._startEditInteraction(label.id, mode, event.clientX, event.clientY, el);
             event.preventDefault();
             event.stopPropagation();
@@ -1212,21 +1306,21 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return el;
     }
 
-    _applyGeometryToElement(el: unknown, geometry: unknown) {
+    _applyGeometryToElement(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
         el.style.left = `${geometry.left}px`;
         el.style.top = `${geometry.top}px`;
         el.style.width = `${geometry.width}px`;
         el.style.height = `${geometry.height}px`;
     }
 
-    _toGeometry(label: unknown, canvasWidth: unknown, canvasHeight: unknown) {
+    _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {
         const c = this.player?._state?.coords;
         const duration = c?.duration || Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
 
         const x1 = c ? clamp(c.timeToPixelX(label.start), 0, canvasWidth) : clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = c ? clamp(c.timeToPixelX(label.end), 0, canvasWidth) : clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
-        const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax), 0, canvasHeight) : 0;
-        const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin), 0, canvasHeight) : canvasHeight;
+        const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax ?? 0), 0, canvasHeight) : 0;
+        const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin ?? 0), 0, canvasHeight) : canvasHeight;
 
         return {
             left: Math.min(x1, x2),
@@ -1250,7 +1344,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._stampGhostEl = null;
     }
 
-    _updateStampGhost(clientX: unknown, clientY: unknown) {
+    _updateStampGhost(clientX: number, clientY: number) {
         if (!this.stampMode || !this.overlay) { this._removeStampGhost(); return; }
         const ref = this._getReferenceLabelForDefaults();
         if (!ref) { this._removeStampGhost(); return; }
@@ -1258,9 +1352,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const t = this._clientXToTime(clientX);
         const duration = Math.max(0.01, (ref.end - ref.start) || 0.01);
         const freq = this._stampAxisLock ? null : this._clientYToFreq(clientY);
-        const freqSpan = ref.freqMax - ref.freqMin;
-        const freqMin = freq != null ? (freq - freqSpan / 2) : ref.freqMin;
-        const freqMax = freq != null ? (freq + freqSpan / 2) : ref.freqMax;
+        const freqSpan = (ref.freqMax ?? 0) - (ref.freqMin ?? 0);
+        const freqMin = freq != null ? (freq - freqSpan / 2) : (ref.freqMin ?? 0);
+        const freqMax = freq != null ? (freq + freqSpan / 2) : (ref.freqMax ?? 0);
         const width = parseFloat(this.overlay.style.width) || 1;
         const height = parseFloat(this.overlay.style.height) || 1;
         const ghost = { start: t, end: t + duration, freqMin, freqMax, label: ref.label };
@@ -1291,8 +1385,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this.dispatchEvent(new CustomEvent('stampmodechange', { detail: { active: false } }));
     }
 
-    _bindDrawingInteractions(wrapper: unknown) {
-        const onPointerDown = (e: unknown) => {
+    _bindDrawingInteractions(wrapper: any) {
+        const onPointerDown = (e: PointerEvent) => {
             // Stamp mode: left-click places label, right-click exits mode
             if (this.stampMode) {
                 if (e.button === 2) {
@@ -1309,7 +1403,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                     const t = this._clientXToTime(e.clientX);
                     const duration = Math.max(0.01, (ref.end - ref.start) || 0.01);
                     const freq = this._stampAxisLock ? null : this._clientYToFreq(e.clientY);
-                    const freqSpan = ref.freqMax - ref.freqMin;
+                    const freqSpan = (ref.freqMax ?? 0) - (ref.freqMin ?? 0);
                     const isXc = ref.origin === 'xeno-canto';
                     this.add({
                         start: t,
@@ -1330,7 +1424,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 }
             }
 
-            if (e.target?.closest?.('.spectrogram-label-region')) return;
+            if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
             if ((!e.shiftKey && !this.drawMode) || e.button !== 0) return;
             if (!this.player?._state?.audioBuffer) return;
 
@@ -1343,7 +1437,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             e.stopPropagation();
         };
 
-        const onPointerMove = (e: unknown) => {
+        const onPointerMove = (e: PointerEvent) => {
             // Update ghost stamp preview
             if (this.stampMode) {
                 this._updateStampGhost(e.clientX, e.clientY);
@@ -1363,7 +1457,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             }
         };
 
-        const onPointerUp = (e: unknown) => {
+        const onPointerUp = (e: PointerEvent) => {
             if (this._editing) {
                 this._finishEditInteraction();
                 e.preventDefault();
@@ -1382,17 +1476,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         };
 
         // Prevent browser context-menu in stamp mode (and briefly after exiting via right-click)
-        const onContextMenu = (e: unknown) => {
+        const onContextMenu = (e: Event) => {
             if (this.stampMode || this._suppressContextMenuUntil > performance.now()) {
                 e.preventDefault(); e.stopPropagation();
             }
         };
 
         // Keyboard: X/Y = axis lock (stamp + grab), Escape = exit stamp
-        const onKeyDown = (e: unknown) => {
+        const onKeyDown = (e: KeyboardEvent) => {
             // Don't intercept when user is typing in an input
-            const tag = e?.target?.tagName?.toLowerCase?.() || '';
-            if (tag === 'input' || tag === 'textarea' || e?.target?.isContentEditable) return;
+            const tag = ((e.target as HTMLElement)?.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || (e.target as any)?.isContentEditable) return;
 
             // Escape exits stamp mode
             if (this.stampMode && e.key === 'Escape') {
@@ -1489,7 +1583,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._draftEl = null;
     }
 
-    _openNewLabelPicker(region: unknown) {
+    _openNewLabelPicker(region: any) {
         // If species search bar has a selection, skip the dialog entirely
         const barSel = this.player?.getSpeciesBarSelection?.();
         if (barSel && barSel.name) {
@@ -1527,7 +1621,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialScientificName: ref?.scientificName || '',
             existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {} }: any) => {
                 // If user typed a different name but didn't manually change color,
                 // auto-assign a deterministic color for the new name.
                 const nameChanged = name.trim().toLowerCase() !== refName;
@@ -1541,8 +1635,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         });
     }
 
-    _startEditInteraction(labelId: unknown, mode: unknown, clientX: unknown, clientY: unknown, element: unknown) {
-        const label = this._items.find((l: unknown) => l.id === labelId);
+    _startEditInteraction(labelId: any, mode: any, clientX: number, clientY: number, element: any) {
+        const label = this._items.find((l: any) => l.id === labelId);
         if (!label) return;
         this._editing = {
             id: labelId,
@@ -1553,7 +1647,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             startFreq: this._clientYToFreq(clientY),
             startCanvasY: this._clientYToCanvasY(clientY),
             startLabel: { ...label },
-            element: /** @type {HTMLElement} */ (element),
+            element: element as HTMLElement,
             pending: mode === 'move',
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
@@ -1561,10 +1655,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (mode !== 'move') element.classList.add('editing');
     }
 
-    _updateEditInteraction(clientX: unknown, clientY: unknown) {
+    _updateEditInteraction(clientX: number, clientY: number) {
         if (!this._editing) return;
-        const editing = /** @type {any} */ (this._editing);
-        const label = this._items.find((l: unknown) => l.id === editing.id);
+        const editing = this._editing as any;
+        const label = this._items.find((l: any) => l.id === editing.id) as any;
         if (!label) return;
 
         const duration = Math.max(0.001, this.player?.duration || this.player?._state?.audioBuffer?.duration || 0.001);
@@ -1585,14 +1679,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const currentCanvasY = this._clientYToCanvasY(clientY);
         const deltaCanvasY = currentCanvasY - editing.startCanvasY;
 
-        const src = editing.startLabel;
+        const src = editing.startLabel as any;
 
         // Pixel-Y positions of the original label edges (via CoordinateSystem)
         const srcMaxPy = c ? c.frequencyToPixelY(src.freqMax) : 0;
         const srcMinPy = c ? c.frequencyToPixelY(src.freqMin) : height;
 
         /** Shift a frequency edge by deltaCanvasY in pixel space, then convert back to Hz. */
-        const shiftedFreq = (origFreq: unknown) => {
+        const shiftedFreq = (origFreq: number) => {
             if (!c) return origFreq;
             const origPy = c.frequencyToPixelY(origFreq);
             return c.pixelYToFrequency(origPy + deltaCanvasY);
@@ -1655,18 +1749,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             // Keep the original pixel height: shift freqMax from freqMin's
             // new pixel position by the original pixel span.
             const origPixelSpan = Math.abs(srcMinPy - srcMaxPy);
-            const newMinPy = c ? c.frequencyToPixelY(next.freqMin) : height;
+            const newMinPy = c ? c.frequencyToPixelY(next.freqMin ?? 0) : height;
             const newMaxPy = newMinPy - origPixelSpan;  // top = lower Y
-            next.freqMax = c ? c.pixelYToFrequency(Math.max(0, newMaxPy)) : next.freqMax;
+            next.freqMax = c ? c.pixelYToFrequency(Math.max(0, newMaxPy)) : (next.freqMax ?? 0);
 
             if (next.end > duration) {
                 const shift = next.end - duration;
                 next.start = Math.max(0, next.start - shift);
                 next.end = duration;
             }
-            if (next.freqMax > maxFreq) {
-                const shift = next.freqMax - maxFreq;
-                next.freqMin = Math.max(0, next.freqMin - shift);
+            if ((next.freqMax ?? 0) > maxFreq) {
+                const shift = (next.freqMax ?? 0) - maxFreq;
+                next.freqMin = Math.max(0, (next.freqMin ?? 0) - shift);
                 next.freqMax = maxFreq;
             }
         }
@@ -1677,11 +1771,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (editing.element) {
             editing.element.dataset.start = String(label.start);
             editing.element.dataset.end = String(label.end);
-            editing.element.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+            editing.element.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
             const geometry = this._toGeometry(label, width, height);
             this._applyGeometryToElement(editing.element, geometry);
             const meta = editing.element.querySelector('.spectrogram-label-meta');
-            if (meta) meta.textContent = `${Math.round(label.freqMin)}-${Math.round(label.freqMax)} Hz`;
+            if (meta) meta.textContent = `${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
         }
     }
 
@@ -1689,7 +1783,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * Blender-style grab: label follows the mouse until click (confirm) or Escape (cancel).
      */
     startGrab(labelId: unknown) {
-        const label = this._items.find((l: unknown) => l.id === labelId);
+        const label = this._items.find((l: any) => l.id === labelId) as any;
         if (!label || this._grabbing) return;
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
         if (!el) return;
@@ -1710,7 +1804,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             startFreq: this._clientYToFreq(startY),
             startCanvasY: this._clientYToCanvasY(startY),
             startLabel: snapshot,
-            element: /** @type {HTMLElement} */ (el),
+            element: el as HTMLElement,
             pending: false,
             moved: true,
             forceSuppressClick: true,
@@ -1718,16 +1812,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._grabbing = true;
         this._axisConstraint = null;
 
-        const onMove = (e: unknown) => {
+        const onMove = (e: PointerEvent) => {
             this._updateEditInteraction(e.clientX, e.clientY);
         };
-        const confirm = (e: unknown) => {
+        const confirm = (e: Event) => {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
             this._finishEditInteraction();
         };
-        const cancel = (e: unknown) => {
+        const cancel = (e: Event) => {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
@@ -1738,9 +1832,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             this._suppressClickUntil = performance.now() + 250;
             this.render();
         };
-        const onKey = (e: unknown) => {
-            if (e.key === 'Escape') cancel(e);
-            if (e.key === 'g') confirm(e);
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') cancel(e as Event);
+            if (e.key === 'g') confirm(e as Event);
             // Blender-style axis constraints during grab
             if (e.key === 'x' || e.key === 'X') {
                 e.preventDefault();
@@ -1764,8 +1858,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         document.addEventListener('keydown', onKey, true);
     }
 
-    _renameSpectrogramLabelPrompt(id: unknown) {
-        const label = this._items.find((l: unknown) => l.id === id);
+    _renameSpectrogramLabelPrompt(id: any) {
+        const label = this._items.find((l: any) => l.id === id);
         if (!label) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
@@ -1777,7 +1871,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialColor: label.color,
             initialTags: label.tags || {},
             initialScientificName: label.scientificName || '',
-            onSubmit: ({ name, color, scientificName = '', tags = {} }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {} }: any) => {
                 const currentHex = getOverlayColorStyle(label.color)?.hex || '';
                 const nextSci = String(scientificName || '').trim();
                 const prevSci = String(label.scientificName || '').trim();
@@ -1804,9 +1898,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         });
     }
 
-    _renameBulkPrompt(ids: unknown) {
+    _renameBulkPrompt(ids: any[]) {
         if (!ids || ids.length === 0) return;
-        const labels = ids.map((id: unknown) => this._items.find((l: unknown) => l.id === id)).filter(Boolean);
+        const labels = ids.map((id: any) => this._items.find((l: any) => l.id === id)).filter(Boolean) as any[];
         if (labels.length === 0) return;
         const first = labels[0];
         const anchorEl = this.overlay || null;
@@ -1819,7 +1913,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialTags: first.tags || {},
             initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
-            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
                 // If the editor reports which fields were changed, only apply
                 // those fields to the whole selected group. This avoids
                 // unintentionally overwriting untouched fields on bulk edits.
@@ -1861,11 +1955,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         });
     }
 
-    _clientXToTime(clientX: unknown) {
+    _clientXToTime(clientX: number) {
         return this.player?._state?._clientXToTime?.(clientX, 'spectrogram') || 0;
     }
 
-    _clientYToCanvasY(clientY: unknown) {
+    _clientYToCanvasY(clientY: number) {
         const state = this.player?._state;
         const c = state?.coords;
         const wrapper = state?.d?.canvasWrapper;
@@ -1875,7 +1969,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return localY / Math.max(1, rect.height) * c.canvasHeight;
     }
 
-    _clientYToFreq(clientY: unknown) {
+    _clientYToFreq(clientY: number) {
         const state = this.player?._state;
         const c = state?.coords;
         const wrapper = state?.d?.canvasWrapper;
@@ -1893,7 +1987,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return clamp(selected, 1, nyquist);
     }
 
-    _normalize(label: unknown) {
+    _normalize(label: any) {
         const start = Number(label?.start ?? 0);
         const end = Number(label?.end ?? start);
         const freqMin = Number(label?.freqMin ?? 0);

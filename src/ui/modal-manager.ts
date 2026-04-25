@@ -23,6 +23,11 @@
  * @property {(() => void)|null|undefined} [onClose]
  */
 export default class ModalManager {
+  backdrop: HTMLElement | null;
+  dialog: HTMLElement | null;
+  _onClose: (() => void) | null;
+  _lastActive: Element | null;
+  _closeBtn: HTMLButtonElement | null;
   /**
    * @param {ModalManagerOptions} [opts]
    */
@@ -30,7 +35,8 @@ export default class ModalManager {
     /** @type {HTMLElement|null} */
     this.backdrop = backdrop || null;
     /** @type {HTMLElement|null} */
-    this.dialog = dialog || (this.backdrop && this.backdrop.querySelector('.modal, .xc-nokey-dialog, [role="dialog"], dialog')) || null;
+    const candidateDialog = dialog ?? (backdrop ? (backdrop as HTMLElement).querySelector('.modal, .xc-nokey-dialog, [role="dialog"], dialog') : null);
+    this.dialog = candidateDialog as HTMLElement | null;
     /** @type {(() => void)|null} Called instead of close() for user-initiated dismiss (Escape, backdrop, ×) */
     this._onClose = onClose || null;
 
@@ -55,11 +61,10 @@ export default class ModalManager {
       if (title && !title.id) title.id = this._generateId('modal-title');
       if (title) this.dialog.setAttribute('aria-labelledby', title.id);
 
-      /** @type {HTMLButtonElement|null} */
-      let btn = /** @type {HTMLButtonElement|null} */ (this.dialog.querySelector('.modal-close'));
+      let btn = this.dialog.querySelector('.modal-close') as HTMLButtonElement | null;
       if (!btn) {
         // Inject a close button if the dialog doesn't already have one
-        const newBtn = /** @type {HTMLButtonElement} */ (document.createElement('button'));
+        const newBtn = document.createElement('button') as HTMLButtonElement;
         newBtn.type = 'button';
         newBtn.className = 'modal-close modal-close--injected';
         newBtn.setAttribute('aria-label', 'Close');
@@ -135,7 +140,7 @@ export default class ModalManager {
     this.backdrop?.removeEventListener('pointerdown', this._onBackdropClick);
   }
 
-  _onKeydown(e: unknown) {
+  _onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && this.backdrop?.classList.contains('show')) {
       e.preventDefault();
       this._handleCloseRequest();
@@ -146,7 +151,7 @@ export default class ModalManager {
     }
   }
 
-  _onBackdropClick(e: unknown) {
+  _onBackdropClick(e: Event) {
     if (e.target === this.backdrop) this._handleCloseRequest();
   }
 
@@ -160,7 +165,7 @@ export default class ModalManager {
     return Array.prototype.slice.call(nodes).filter(n => n.offsetWidth || n.offsetHeight || n.getClientRects().length);
   }
 
-  _trapTab(e: unknown) {
+  _trapTab(e: KeyboardEvent) {
     const focusable = this._getFocusable();
     if (!focusable.length) { e.preventDefault(); return; }
     const first = focusable[0];

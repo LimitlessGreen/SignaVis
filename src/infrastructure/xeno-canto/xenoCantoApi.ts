@@ -49,7 +49,7 @@ export const DEFAULT_XC_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotati
  * @property {number} [xcUploadEligible]
  */
 
-function isRetryableStatus(status: unknown) {
+function isRetryableStatus(status: number) {
     return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
 }
 
@@ -59,23 +59,23 @@ function encodeBasicAuth(credential: unknown) {
     throw new Error('No base64 encoder available for Basic auth header.');
 }
 
-function extractMessage(body: unknown, fallback = '') {
+function extractMessage(body: any, fallback = '') {
     if (!body || typeof body !== 'object') return fallback;
     if (typeof body.message === 'string' && body.message) return body.message;
     if (typeof body.status === 'string' && body.status) return body.status;
     return fallback;
 }
 
-function collectWarnings(body: unknown) {
+function collectWarnings(body: any) {
     return safeArray(body?.warnings).map((v) => safeString(v)).filter(Boolean);
 }
 
-function collectErrors(body: unknown) {
+function collectErrors(body: any) {
     return safeArray(body?.errors).map((v) => safeString(v)).filter(Boolean);
 }
 
-function normalizeMetadata(metadata: unknown) {
-    const m = metadata || {};
+function normalizeMetadata(metadata: any) {
+    const m: any = metadata || {};
     const xcFileNo = safeString(
         m.xcfileno
         ?? m['Xeno-canto file no']
@@ -94,8 +94,8 @@ function normalizeMetadata(metadata: unknown) {
     };
 }
 
-function mapAnnotationRow(row: unknown, normalizedMeta: unknown) {
-    const r = row || {};
+function mapAnnotationRow(row: any, normalizedMeta: any) {
+    const r: any = row || {};
     return {
         annotation_source_id: safeField(r.Selection ?? r.selection ?? r['Selection']),
         sound_file: '',
@@ -131,12 +131,19 @@ function mapAnnotationRow(row: unknown, normalizedMeta: unknown) {
 }
 
 export class XenoCantoApiError extends Error {
+    status: any;
+    retryable: any;
+    response: any;
+    rawText: any;
+    warnings: any;
+    errors: any;
+    cause: any;
     /**
      * @param {string} message
      * @param {Object} [details]
      */
-    constructor(message: unknown, details = {}) {
-        super(message);
+    constructor(message: any, details: any = {}) {
+        super(String(message));
         this.name = 'XenoCantoApiError';
         this.status = Number.isFinite(details.status) ? details.status : 0;
         this.retryable = details.retryable === true;
@@ -149,10 +156,19 @@ export class XenoCantoApiError extends Error {
 }
 
 export class XenoCantoApiClient {
+    _apiKey: any;
+    _endpoint: any;
+    _timeoutMs: any;
+    _retries: any;
+    _retryDelayMs: any;
+    _keyHeaderName: any;
+    _basicAuthCredential: any;
+    _sendBasicAuth: any;
+    _fetch: any;
     /**
      * @param {XenoCantoClientOptions} [options]
      */
-    constructor(options = {}) {
+    constructor(options: any = {}) {
         this._apiKey = safeString(options.apiKey);
         this._endpoint = safeString(options.endpoint) || DEFAULT_XC_ENDPOINT;
         this._timeoutMs = Math.max(1000, Number(options.timeoutMs) || 20000);
@@ -206,7 +222,7 @@ export class XenoCantoApiClient {
      * @param {{ signal?: AbortSignal }} [options]
      * @returns {Promise<XenoCantoUploadResult>}
      */
-    async uploadAnnotationSet(payload: unknown, options = {}) {
+    async uploadAnnotationSet(payload: any, options: any = {}) {
         if (!this._apiKey) {
             throw new XenoCantoApiError('Xeno-canto API key is required.');
         }
@@ -240,7 +256,7 @@ export class XenoCantoApiClient {
      * @param {Object} payload
      * @param {{ signal?: AbortSignal }} [options]
      */
-    async uploadAnnotationSetSafe(payload: unknown, options = {}) {
+    async uploadAnnotationSetSafe(payload: any, options: any = {}) {
         try {
             const result = await this.uploadAnnotationSet(payload, options);
             return { ok: true, result, error: null };
@@ -249,7 +265,7 @@ export class XenoCantoApiClient {
         }
     }
 
-    async _uploadOnce(body: unknown, externalSignal: unknown) {
+    async _uploadOnce(body: any, externalSignal: any) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort('timeout'), this._timeoutMs);
         const signal = controller.signal;
@@ -260,8 +276,8 @@ export class XenoCantoApiClient {
             else externalSignal.addEventListener('abort', abortExternal, { once: true });
         }
 
-        try {
-            const headers = {
+            try {
+                const headers: any = {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
                 [this._keyHeaderName]: this._apiKey,
@@ -332,7 +348,7 @@ export class XenoCantoApiClient {
  * @param {BuildAnnotationSetParams} params
  * @returns {BuildAnnotationSetResult}
  */
-export function buildXenoCantoAnnotationSet(params = {}) {
+export function buildXenoCantoAnnotationSet(params: any = {}) {
     const metadata = params.metadata || {};
     const annotations = safeArray(params.annotations);
     const warnings = [];

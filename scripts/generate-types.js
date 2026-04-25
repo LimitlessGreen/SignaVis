@@ -65,6 +65,8 @@ try {
             '',
             '// ── Public API ──────────────────────────────────────────────────',
             "export * from './generated/app/BirdNETPlayer';",
+            "export { EventBus } from './generated/shared/EventBus';",
+            "export type { EventHandler } from './generated/shared/EventBus';",
             '',
             '// ── Headless / testing utilities ────────────────────────────────',
             "export { AudioEngineBase } from './generated/infrastructure/audio/AudioEngineBase';",

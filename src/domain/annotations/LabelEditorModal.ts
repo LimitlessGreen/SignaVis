@@ -22,6 +22,39 @@ const DEFAULT_TAG_PRESETS = [
 ];
 
 export class LabelEditorModal {
+    _player: any;
+    _anchorEl: any;
+    _onSubmit: any;
+    _onDelete: any;
+    _title: any;
+    _existingLabels: any;
+    _onLayerEmit: any;
+    _initialValueTrim: any;
+    _initialStyleHex: any;
+    hex: any;
+    _initialTagsNorm: any;
+    _initialScientific: any;
+    _currentTags: any;
+    _selectedSci: any;
+    _colorTouched: any;
+    _tagsTouched: any;
+    _sciTouched: any;
+    _activeIndex: any;
+    _resultItems: any;
+    _esInstances: any;
+    _modal: any;
+    _backdrop: any;
+    _panel: any;
+    _input: any;
+    _colorInput: any;
+    _tagsRow: any;
+    _results: any;
+    _confirmBtn: any;
+    _tagPresets: any;
+    _initialColor: any;
+    _initialValue: any;
+    scientificName: any;
+    tags: any;
     /**
      * @param {object} opts
      * @param {object}   opts.player          - BirdNETPlayer instance
@@ -40,7 +73,7 @@ export class LabelEditorModal {
      */
     constructor({ player, anchorEl, initialValue, initialColor, initialTags,
                   existingLabels, initialScientificName, title,
-                  onSubmit, onDelete, onLayerEmit }) {
+                  onSubmit, onDelete, onLayerEmit }: { player: any; anchorEl?: any; initialValue?: any; initialColor?: any; initialTags?: any; existingLabels?: any; initialScientificName?: any; title?: any; onSubmit: any; onDelete?: any; onLayerEmit?: any }) {
         this._player         = player;
         this._anchorEl       = anchorEl;
         this._onSubmit       = onSubmit;
@@ -52,7 +85,7 @@ export class LabelEditorModal {
         this._onLayerEmit    = onLayerEmit ?? null;
 
         // ── State ────────────────────────────────────────────────────
-        const initialStyle = getOverlayColorStyle(initialColor);
+        const initialStyle = getOverlayColorStyle(initialColor) as any;
         this._initialValueTrim = String(initialValue || '').trim();
         this._initialStyleHex  = initialStyle?.hex || '';
         this._initialTagsNorm  = (initialTags && typeof initialTags === 'object') ? { ...initialTags } : {};
@@ -94,11 +127,8 @@ export class LabelEditorModal {
         this._renderTags();
         this._renderResults();
 
-        this._modal = new ModalManager({
-            backdrop: this._backdrop,
-            dialog:   this._panel,
-            onClose:  () => this.close(),
-        });
+        const _mm_opts: any = { backdrop: this._backdrop, dialog: this._panel, onClose: () => this.close() };
+        this._modal = new ModalManager(_mm_opts);
         this._modal.open();
 
         setTimeout(() => {
@@ -202,7 +232,7 @@ export class LabelEditorModal {
             this._sciTouched = true;
             this._renderResults();
         });
-        this._input.addEventListener('keydown', (e: unknown) => this._handleKeydown(e));
+        this._input.addEventListener('keydown', (e: KeyboardEvent) => this._handleKeydown(e));
     }
 
     // ── Private: tag management ───────────────────────────────────────
@@ -218,7 +248,7 @@ export class LabelEditorModal {
         }
 
         // Custom tag badges
-        const customKeys = Object.keys(this._currentTags).filter((k) => !this._tagPresets.some((p: unknown) => p.key === k));
+        const customKeys = Object.keys(this._currentTags).filter((k) => !this._tagPresets.some((p: any) => p.key === k));
         for (const key of customKeys) {
             const badge = document.createElement('span');
             badge.className = 'label-tag-badge';
@@ -265,15 +295,15 @@ export class LabelEditorModal {
         this._tagsRow.appendChild(addBtn);
     }
 
-    _makeTagCombobox(preset: unknown) {
-        const presetDef     = this._tagPresets.find((p: unknown) => p.key === preset.key) || preset;
-        const defaultDef    = DEFAULT_TAG_PRESETS.find((p) => p.key === preset.key) || preset;
+    _makeTagCombobox(preset: any) {
+        const presetDef     = this._tagPresets.find((p: any) => p.key === preset.key) || preset;
+        const defaultDef    = DEFAULT_TAG_PRESETS.find((p: any) => p.key === preset.key) || preset;
         const presetOptions = Array.isArray(presetDef.options) ? presetDef.options.slice() : (preset.options || []);
         const baseOptions   = Array.isArray(defaultDef.options) ? defaultDef.options.slice() : (preset.options || []);
         const curVal        = this._currentTags[preset.key] || '';
 
-        const items = presetOptions.map((v: unknown) => ({ value: v, custom: !baseOptions.includes(v) }));
-        if (curVal && !items.some((it: unknown) => it.value === curVal)) {
+        const items = presetOptions.map((v: any) => ({ value: v, custom: !baseOptions.includes(v) }));
+        if (curVal && !items.some((it: any) => it.value === curVal)) {
             items.push({ value: curVal, custom: !baseOptions.includes(curVal) });
         }
 
@@ -281,14 +311,14 @@ export class LabelEditorModal {
             placeholder: preset.label || '–',
             value: curVal,
             items,
-            onChange: (val: unknown) => {
+            onChange: (val: any) => {
                 this._tagsTouched = true;
                 if (val) this._currentTags[preset.key] = val;
                 else     delete this._currentTags[preset.key];
             },
-            onAdd:    (val: unknown)        => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomadd',    { key: preset.key, value: val }); },
-            onRemove: (val: unknown)        => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomremove', { key: preset.key, value: val }); },
-            onRename: (oldV: unknown, newV: unknown) => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomrename', { key: preset.key, oldValue: oldV, newValue: newV }); },
+            onAdd:    (val: any)        => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomadd',    { key: preset.key, value: val }); },
+            onRemove: (val: any)        => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomremove', { key: preset.key, value: val }); },
+            onRename: (oldV: any, newV: any) => { this._tagsTouched = true; this._onLayerEmit?.('tagcustomrename', { key: preset.key, oldValue: oldV, newValue: newV }); },
         });
         es.el.classList.add('label-tag-combo');
         const trig = es.el.querySelector('.esel-trigger');
@@ -313,7 +343,7 @@ export class LabelEditorModal {
         this._activeIndex = -1;
 
         const seen = new Set();
-        const addResult = ({ name, scientificName = '', color = '', detail = '', tags = {} }) => {
+        const addResult = ({ name, scientificName = '', color = '', detail = '', tags = {} }: any) => {
             const label = String(name || '').trim();
             if (!label) return;
             const key = label.toLowerCase();
@@ -373,7 +403,7 @@ export class LabelEditorModal {
             this._resultItems.push(row);
         };
 
-        if (this._existingLabels?.length) {
+            if (this._existingLabels?.length) {
             for (const item of this._existingLabels) {
                 if (typeof item === 'string') addResult({ name: item });
                 else addResult({ name: item.name, color: item.color || '', scientificName: item.scientificName || '', tags: item.tags || {} });
@@ -398,8 +428,8 @@ export class LabelEditorModal {
         }
     }
 
-    _handleKeydown(e: unknown) {
-        const key = /** @type {KeyboardEvent} */ (e).key;
+    _handleKeydown(e: KeyboardEvent) {
+        const key = e.key;
         if (key === 'ArrowDown') {
             e.preventDefault();
             if (this._resultItems.length) {
@@ -426,7 +456,7 @@ export class LabelEditorModal {
         }
     }
 
-    _submit(value: unknown, opts = {}) {
+    _submit(value: any, opts: any = {}) {
         const trimmed = String(value || '').trim();
         if (!trimmed) return;
         const scientificName = String(opts?.scientificName || this._selectedSci || '').trim();

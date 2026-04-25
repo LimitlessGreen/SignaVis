@@ -7,10 +7,28 @@ import { clamp, getTimeGridSteps } from '../shared/utils.ts';
 import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.ts';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.ts';
 
+type NumArray = Float32Array | ArrayLike<number>;
+
+type GrayInfo = { gray: Float32Array; width: number; height: number } | null | undefined;
+
+interface BuildSpectrogramOpts {
+    spectrogramData: NumArray;
+    spectrogramFrames: number;
+    spectrogramMels: number;
+    sampleRateHz: number;
+    maxFreq: number;
+    spectrogramAbsLogMin: number;
+    spectrogramAbsLogMax: number;
+    scale?: string;
+    colourScale?: string;
+    noiseReduction?: boolean;
+    clahe?: boolean;
+}
+
 // Worker constructor - loaded lazily via Vite's ?worker&inline.
 // Dynamic import so Node.js tests (no Vite) don't crash on this module.
-let _WorkerCtor = null;
-let _workerCtorResolved = false;
+let _WorkerCtor: any = null;
+let _workerCtorResolved: boolean = false;
 async function getWorkerCtor() {
     if (_workerCtorResolved) return _WorkerCtor;
     _workerCtorResolved = true;
@@ -25,10 +43,10 @@ async function getWorkerCtor() {
 
 // ─── Signal Utilities ───────────────────────────────────────────────
 
-export function computeAmplitudePeak(channelData: unknown) {
+export function computeAmplitudePeak(channelData: NumArray) {
     let peak = 0;
-    for (let i = 0; i < channelData.length; i++) {
-        const abs = Math.abs(channelData[i]);
+    for (let i = 0; i < (channelData as any).length; i++) {
+        const abs = Math.abs((channelData as any)[i]);
         if (abs > peak) peak = abs;
     }
     return Math.max(1e-6, peak);
@@ -148,7 +166,7 @@ const COLOR_MAPS = {
 
 // ─── Color Utilities (private) ──────────────────────────────────────
 
-function sampleColorMap(stops: unknown, t: unknown) {
+function sampleColorMap(stops: number[][], t: number) {
     if (!stops || stops.length === 0) return { r: 0, g: 0, b: 0 };
     if (stops.length === 1) return { r: stops[0][0], g: stops[0][1], b: stops[0][2] };
 
@@ -164,7 +182,7 @@ function sampleColorMap(stops: unknown, t: unknown) {
     };
 }
 
-function getSpectrogramColor(value: unknown, colorScheme: unknown) {
+function getSpectrogramColor(value: number, colorScheme: string) {
     const x = clamp(value, 0, 1);
     if (colorScheme === 'grayscale') {
         const v = Math.round((1 - x) * 255);
@@ -182,7 +200,8 @@ function getSpectrogramColor(value: unknown, colorScheme: unknown) {
         const b = Math.round(255 * clamp((x - 0.45) / 0.55, 0, 1));
         return { r, g, b };
     }
-    return sampleColorMap(COLOR_MAPS[colorScheme] || COLOR_MAPS.inferno, x);
+    const maps = COLOR_MAPS as Record<string, number[][]>;
+    return sampleColorMap(maps[colorScheme] || COLOR_MAPS.inferno, x);
 }
 
 // ─── GPU-accelerated Colorizer (WebGL2) ─────────────────────────────
@@ -210,6 +229,25 @@ void main() {
 }`;
 
 export class GpuColorizer {
+    length = 0;
+    _canvas: HTMLCanvasElement;
+    _gl: WebGL2RenderingContext | null = null;
+    _maxTex = 0;
+    _prog: WebGLProgram | null = null;
+    _uFloor: WebGLUniformLocation | null = null;
+    _uRcpRange: WebGLUniformLocation | null = null;
+    _uGray: WebGLUniformLocation | null = null;
+    _uLut: WebGLUniformLocation | null = null;
+    _vao: WebGLVertexArrayObject | null = null;
+    _grayTex: WebGLTexture | null = null;
+    _lutTex: WebGLTexture | null = null;
+    _w = 0;
+    _h = 0;
+    _lutScheme: string | null = null;
+    gray: Float32Array | null = null;
+    width = 0;
+    height = 0;
+    smoothState?: Float32Array;
     constructor() {
         this._canvas = document.createElement('canvas');
         const gl = this._canvas.getContext('webgl2', {
@@ -263,7 +301,7 @@ export class GpuColorizer {
         this._lutScheme = null;
     }
 
-    /** @private */ _sh(type: unknown, src: unknown) {
+    /** @private */ _sh(type: number, src: string): WebGLShader | null {
         const gl = this._gl;
         if (!gl) return null;
         const s = gl.createShader(type);
@@ -277,7 +315,7 @@ export class GpuColorizer {
     get canvas() { return this._canvas; }
 
     /** Upload Float32 grayscale map (values 0-1) as a R32F texture. Returns success. */
-    uploadGrayscale(gray: unknown, width: unknown, height: unknown) {
+    uploadGrayscale(gray: Float32Array, width: number, height: number): boolean {
         const gl = this._gl;
         if (!gl || width > this._maxTex || height > this._maxTex) return false;
         this._w = width;  this._h = height;
@@ -285,7 +323,7 @@ export class GpuColorizer {
 
         gl.bindTexture(gl.TEXTURE_2D, this._grayTex);
         // Float32Array → R32F (full precision, no 8-bit quantisation)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, gray);
+        gl.texImage2D(gl.TEXTURE_2D, 0, (gl as any).R32F, width, height, 0, gl.RED, gl.FLOAT, gray);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -294,7 +332,7 @@ export class GpuColorizer {
     }
 
     /** Build 256-entry RGBA color look-up texture from a color scheme. */
-    uploadColorLut(scheme: unknown) {
+    uploadColorLut(scheme: string) {
         if (scheme === this._lutScheme) return;
         const gl = this._gl;  if (!gl) return;
         this._lutScheme = scheme;
@@ -314,7 +352,7 @@ export class GpuColorizer {
     }
 
     /** Render colorized spectrogram. floor01/ceil01 ∈ [0,1]. ~0.1 ms. */
-    render(floor01: unknown, ceil01: unknown) {
+    render(floor01: number, ceil01: number) {
         const gl = this._gl;
         if (!gl || !this._w || !this._prog || !this._vao) return;
         gl.viewport(0, 0, this._w, this._h);
@@ -346,7 +384,7 @@ export class GpuColorizer {
 
 // ─── Spectrogram Stats ──────────────────────────────────────────────
 
-export function updateSpectrogramStats(spectrogramData: unknown) {
+export function updateSpectrogramStats(spectrogramData: NumArray) {
     if (!spectrogramData || spectrogramData.length === 0) {
         return { logMin: 0, logMax: 1 };
     }
@@ -355,7 +393,7 @@ export function updateSpectrogramStats(spectrogramData: unknown) {
     let maxLog = Number.NEGATIVE_INFINITY;
     const stride = Math.max(1, Math.floor(spectrogramData.length / 120000));
     for (let i = 0; i < spectrogramData.length; i += stride) {
-        const mapped = spectrogramData[i] || 0;
+        const mapped = (spectrogramData as any)[i] || 0;
         if (mapped < minLog) minLog = mapped;
         if (mapped > maxLog) maxLog = mapped;
     }
@@ -376,14 +414,14 @@ export function updateSpectrogramStats(spectrogramData: unknown) {
  * @param {number} [loPercentile=2]       - lower percentile (black point)
  * @param {number} [hiPercentile=98]      - upper percentile (white point)
  */
-export function autoContrastStats(spectrogramData: unknown, loPercentile = 2, hiPercentile = 98) {
+export function autoContrastStats(spectrogramData: NumArray, loPercentile = 2, hiPercentile = 98) {
     if (!spectrogramData || spectrogramData.length === 0) return { logMin: 0, logMax: 1 };
 
     // Sub-sample for speed - max ~200k values
     const stride = Math.max(1, Math.floor(spectrogramData.length / 200000));
-    const mapped = [];
+    const mapped: number[] = [];
     for (let i = 0; i < spectrogramData.length; i += stride) {
-        mapped.push(spectrogramData[i] || 0);
+        mapped.push((spectrogramData as any)[i] || 0);
     }
     mapped.sort((a, b) => a - b);
 
@@ -411,7 +449,7 @@ export function autoContrastStats(spectrogramData: unknown, loPercentile = 2, hi
  * @param {string} [scale='mel'] - 'mel' or 'linear'
  * @param {number} [energyThreshold=0.08] - fraction of peak-bin energy
  */
-export function detectMaxFrequency(spectrogramData: unknown, nFrames: unknown, nMels: unknown, sampleRate: unknown, scale = 'mel', energyThreshold = 0.08) {
+export function detectMaxFrequency(spectrogramData: NumArray, nFrames: number, nMels: number, sampleRate: number, scale = 'mel', energyThreshold = 0.08) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
 
     // Accumulate mean energy per bin
@@ -421,7 +459,7 @@ export function detectMaxFrequency(spectrogramData: unknown, nFrames: unknown, n
     for (let f = 0; f < nFrames; f += stride) {
         const base = f * nMels;
         for (let m = 0; m < nMels; m++) {
-            binEnergy[m] += spectrogramData[base + m] || 0;
+            binEnergy[m] += (spectrogramData as any)[base + m] || 0;
         }
         sampledFrames++;
     }
@@ -444,7 +482,7 @@ export function detectMaxFrequency(spectrogramData: unknown, nFrames: unknown, n
     // Collect all active bins and use the 95th percentile as the upper bound.
     // This is more robust than a single top-down scan which can be thrown off
     // by isolated noise in a single high bin.
-    const activeBins = [];
+    const activeBins: number[] = [];
     for (let m = 0; m < nMels; m++) {
         if (binEnergy[m] > threshold) activeBins.push(m);
     }
@@ -455,7 +493,7 @@ export function detectMaxFrequency(spectrogramData: unknown, nFrames: unknown, n
     const upperBin = activeBins[p95Idx];
 
     // Map bin to Hz
-    let detectedHz;
+    let detectedHz: number;
     if (scale === 'linear') {
         const binHz = (sampleRate / 2) / nMels;
         detectedHz = Math.min(nMels - 1, upperBin) * binHz;
@@ -489,7 +527,7 @@ export function detectMaxFrequency(spectrogramData: unknown, nFrames: unknown, n
  * @param {string} scale - 'mel' or 'linear'
  * @returns {number} Frequency in Hz
  */
-export function pixelYToFrequency(displayY: unknown, displayHeight: unknown, maxFreq: unknown, sampleRateHz: unknown, spectrogramMels: unknown, scale: unknown) {
+export function pixelYToFrequency(displayY: number, displayHeight: number, maxFreq: number, sampleRateHz: number, spectrogramMels: number, scale: string) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
     const cs = new CoordinateSystem({
         canvasHeight: displayHeight, maxFreq, sampleRate: sampleRateHz,
@@ -501,7 +539,7 @@ export function pixelYToFrequency(displayY: unknown, displayHeight: unknown, max
 /**
  * Inverse of pixelYToFrequency: maps a frequency (Hz) → display pixel Y.
  */
-export function frequencyToPixelY(freq: unknown, displayHeight: unknown, maxFreq: unknown, sampleRateHz: unknown, spectrogramMels: unknown, scale: unknown) {
+export function frequencyToPixelY(freq: number, displayHeight: number, maxFreq: number, sampleRateHz: number, spectrogramMels: number, scale: string) {
     if (displayHeight <= 1 || spectrogramMels <= 0) return 0;
     const cs = new CoordinateSystem({
         canvasHeight: displayHeight, maxFreq, sampleRate: sampleRateHz,
@@ -514,7 +552,7 @@ export function frequencyToPixelY(freq: unknown, displayHeight: unknown, maxFreq
 
 // scrollLeft: how many px the canvas-wrapper is scrolled (viewport offset).
 // Grid lines are drawn in viewport coords (x = absoluteX - scrollLeft).
-function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }) {
+function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number; scrollLeft?: number }) {
     if (width <= 0) return;
     const css = getComputedStyle(document.documentElement);
     const majorColor = css.getPropertyValue('--color-text-secondary').trim() || '#cbd5e1';
@@ -562,7 +600,7 @@ export function buildSpectrogramGrayscale({
     colourScale = 'dbSquared',
     noiseReduction = false,
     clahe = false,
-}) {
+}: BuildSpectrogramOpts) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
     const width  = clamp(spectrogramFrames, 1, MAX_BASE_SPECTROGRAM_WIDTH);
@@ -659,15 +697,15 @@ export function buildSpectrogramGrayscale({
  * then subtract it so stationary noise is suppressed.
  * Returns a new Float32Array with the same layout.
  */
-export function spectralSubtract(spectrogramData: unknown, nFrames: unknown, nMels: unknown) {
-    const result = new Float32Array(spectrogramData.length);
+export function spectralSubtract(spectrogramData: NumArray, nFrames: number, nMels: number) {
+    const result = new Float32Array((spectrogramData as any).length);
 
     for (let m = 0; m < nMels; m++) {
         // Sample up to 2000 frames for median estimation (speed)
         const stride = Math.max(1, Math.floor(nFrames / 2000));
-        const vals = [];
+        const vals: number[] = [];
         for (let f = 0; f < nFrames; f += stride) {
-            vals.push(spectrogramData[f * nMels + m]);
+            vals.push((spectrogramData as any)[f * nMels + m]);
         }
         vals.sort((a, b) => a - b);
         const median = vals[Math.floor(vals.length / 2)] || 0;
@@ -675,7 +713,7 @@ export function spectralSubtract(spectrogramData: unknown, nFrames: unknown, nMe
         // Subtract median (half-wave rectification)
         for (let f = 0; f < nFrames; f++) {
             const idx = f * nMels + m;
-            result[idx] = Math.max(0, spectrogramData[idx] - median);
+            result[idx] = Math.max(0, (spectrogramData as any)[idx] - median);
         }
     }
     return result;
@@ -695,7 +733,7 @@ export function spectralSubtract(spectrogramData: unknown, nFrames: unknown, nMe
  * @param {number} [nTilesY=4]  - number of vertical tiles
  * @param {number} [clipLimit=2.5] - contrast limit (higher = more contrast, 1 = no enhancement)
  */
-export function applyCLAHE(gray: unknown, width: unknown, height: unknown, nTilesX = 8, nTilesY = 4, clipLimit = 2.5) {
+export function applyCLAHE(gray: Float32Array, width: number, height: number, nTilesX = 8, nTilesY = 4, clipLimit = 2.5) {
     const nBins = 256;
     const tilesX = Math.min(nTilesX, width);
     const tilesY = Math.min(nTilesY, height);
@@ -777,7 +815,7 @@ export function applyCLAHE(gray: unknown, width: unknown, height: unknown, nTile
  * Stage 2 - Cheap JS fallback, called on every floor/ceil/colorScheme change.
  * Builds a 256-entry RGBA look-up table, then paints the Float32 grayscale map.
  */
-export function colorizeSpectrogram(grayInfo: unknown, floor01: unknown, ceil01: unknown, colorScheme: unknown) {
+export function colorizeSpectrogram(grayInfo: GrayInfo, floor01: number, ceil01: number, colorScheme: string) {
     if (!grayInfo) return null;
     const { gray, width, height } = grayInfo;
 
@@ -825,13 +863,13 @@ export function renderSpectrogram({
     scrollLeft = 0,   // canvasWrapper.scrollLeft
     viewportWidth,    // canvasWrapper.clientWidth (null → legacy full-width)
     totalWidth: explicitTotalWidth, // override computed width (sync to waveform width)
-}) {
+}: { duration: number; spectrogramCanvas: HTMLCanvasElement; pixelsPerSecond: number; canvasHeight: number; baseCanvas: HTMLCanvasElement; freqViewSrcCrop?: { srcY?: number; srcH?: number } | null; canvasSizer?: HTMLElement | null; scrollLeft?: number; viewportWidth?: number; totalWidth?: number }) {
     if (!baseCanvas) return;
     const ctx = spectrogramCanvas.getContext('2d');
     if (!ctx) return;
 
-    const totalWidth = explicitTotalWidth > 0
-        ? explicitTotalWidth
+    const totalWidth = (explicitTotalWidth ?? 0) > 0
+        ? explicitTotalWidth!
         : Math.max(1, Math.round(duration * pixelsPerSecond));
     const height = Math.max(140, Math.floor(canvasHeight));
 
@@ -840,8 +878,9 @@ export function renderSpectrogram({
 
     // Canvas width = visible viewport (capped at totalWidth).
     // Falls back to full-width if viewportWidth is not supplied.
-    const width = viewportWidth > 0 ? Math.min(viewportWidth, totalWidth) : totalWidth;
-    const sl = viewportWidth > 0 ? scrollLeft : 0; // scroll offset applied in drawing
+    const vw = (viewportWidth ?? 0);
+    const width = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
+    const sl = vw > 0 ? (scrollLeft ?? 0) : 0; // scroll offset applied in drawing
 
     spectrogramCanvas.width = width;
     spectrogramCanvas.height = height;
@@ -904,17 +943,21 @@ export function renderSpectrogram({
 // ─── Worker-based Spectrogram Processor ─────────────────────────────
 
 export function createSpectrogramProcessor() {
-    let worker = null;
+    type WorkerPending = { resolve: (v: any) => void; reject: (e: any) => void };
+    type SpectrogramResult = { data: Float32Array; nFrames: number; nMels: number; hopSize: number; winLength: number; colourScale: string; smoothState?: Float32Array };
+
+    let worker: Worker | null = null;
     let workerFailed = false;
     let requestCounter = 0;
-    const pendingRequests = new Map();
+    const pendingRequests = new Map<number, WorkerPending>();
 
     // ── Main-thread fallback - delegates directly to dsp.js ────────
-    const computeMainThread = (channelData: unknown, options: unknown) => {
-        return computeSpectrogram({
-            channelData: channelData,
-            ...options,
-        });
+    const computeMainThread = (channelData: Float32Array, options: Record<string, any>): Promise<SpectrogramResult> => {
+        const res = computeSpectrogram({
+            channelData: channelData as any,
+            ...(options as any),
+        } as any);
+        return Promise.resolve(res as SpectrogramResult);
     };
 
     // ── Worker setup - uses Vite-inlined module Worker ──────────────
@@ -925,20 +968,21 @@ export function createSpectrogramProcessor() {
             if (!Ctor) throw new Error('Worker constructor unavailable');
             worker = new Ctor();
 
-            worker.onmessage = (event: unknown) => {
-                const { requestId, data, nFrames, nMels, smoothState, hopSize, winLength, colourScale } = event.data;
-                const pending = pendingRequests.get(requestId);
+            (worker as Worker).onmessage = (event: MessageEvent) => {
+                const payload = event.data as any;
+                const { requestId, data: bufferData, nFrames, nMels, smoothState, hopSize, winLength, colourScale } = payload;
+                const pending = pendingRequests.get(requestId as number);
                 if (!pending) return;
-                pendingRequests.delete(requestId);
-                const result = { data: new Float32Array(data), nFrames, nMels, hopSize, winLength, colourScale };
+                pendingRequests.delete(requestId as number);
+                const result: SpectrogramResult = { data: new Float32Array(bufferData), nFrames, nMels, hopSize, winLength, colourScale } as any;
                 if (smoothState) result.smoothState = new Float32Array(smoothState);
                 pending.resolve(result);
             };
 
-            worker.onerror = (error: unknown) => {
+            (worker as Worker).onerror = (error: any) => {
                 console.warn('Spectrogram Worker failed, using main-thread fallback:', error);
                 workerFailed = true;
-                worker?.terminate();
+                (worker as Worker)?.terminate();
                 worker = null;
                 pendingRequests.forEach(({ reject }) => reject(error));
                 pendingRequests.clear();
@@ -951,7 +995,7 @@ export function createSpectrogramProcessor() {
     };
 
     // ── Public compute ──────────────────────────────────────────────
-    const compute = async (channelData: unknown, options: unknown) => {
+    const compute = async (channelData: Float32Array, options: Record<string, any>): Promise<SpectrogramResult> => {
         // If Workers don't work in this context, run synchronously
         if (workerFailed) {
             return computeMainThread(channelData, options);
@@ -965,13 +1009,13 @@ export function createSpectrogramProcessor() {
         }
 
         const requestId = ++requestCounter;
-        const audioCopy = new Float32Array(channelData);
+        const audioCopy = new Float32Array(channelData as any);
 
-        const workerPromise = new Promise((resolve, reject) => {
+        const workerPromise = new Promise<SpectrogramResult>((resolve, reject) => {
             pendingRequests.set(requestId, { resolve, reject });
         });
 
-        worker.postMessage(
+        (worker as Worker).postMessage(
             { requestId, channelData: audioCopy.buffer, ...options },
             [audioCopy.buffer],
         );
@@ -979,20 +1023,20 @@ export function createSpectrogramProcessor() {
         // Timeout scales with audio length: 5s base + 2s per 10s of audio.
         // Progressive mode sends 10s chunks, so each chunk gets at least 7s.
         // Full-file compute for short clips: 60s → 17s timeout, plenty of headroom.
-        const durationSec = channelData.length / Math.max(1, options.sampleRate || 44100);
+        const durationSec = (channelData as any).length / Math.max(1, (options as any).sampleRate || 44100);
         const timeoutMs = Math.max(5000, 5000 + Math.ceil(durationSec / 10) * 2000);
 
         try {
             const result = await Promise.race([
                 workerPromise,
-                new Promise((_, reject) =>
+                new Promise<never>((_, reject) =>
                     setTimeout(() => reject(new Error('Worker timeout')), timeoutMs)
                 ),
             ]);
-            return result;
-        } catch (e) {
+            return result as SpectrogramResult;
+        } catch (e: any) {
             // Worker timed out or errored → fall back to main thread
-            console.warn('Worker failed/timed out, computing on main thread:', e.message);
+            console.warn('Worker failed/timed out, computing on main thread:', (e as any)?.message || e);
             pendingRequests.delete(requestId);
             workerFailed = true;
             worker?.terminate();
@@ -1006,16 +1050,16 @@ export function createSpectrogramProcessor() {
     // Each chunk (after the first) is extended backwards by overlapSamples
     // so the FFT windows at chunk boundaries have proper audio context.
     // The overlap frames are trimmed from the result before yielding.
-    const computeProgressive = async function* (channelData: unknown, options: unknown) {
-        const sampleRate = Math.max(1, options.sampleRate || 0);
-        const chunkSeconds = Math.max(1, options.chunkSeconds || 10);
+    const computeProgressive = async function* (channelData: Float32Array, options: Record<string, any>) {
+        const sampleRate = Math.max(1, (options as any).sampleRate || 0);
+        const chunkSeconds = Math.max(1, (options as any).chunkSeconds || 10);
         const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
         const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
 
         // Overlap = one FFT window worth of samples — enough for windowing context.
-        const overlapSamples = options.windowSize || options.fftSize || 2048;
+        const overlapSamples = (options as any).windowSize || (options as any).fftSize || 2048;
 
-        let smoothState = null; // carry-over PCEN smooth state between chunks
+        let smoothState: Float32Array | null = null; // carry-over PCEN smooth state between chunks
 
         for (let chunk = 0; chunk < totalChunks; chunk++) {
             const startSample = chunk * samplesPerChunk;
@@ -1029,14 +1073,14 @@ export function createSpectrogramProcessor() {
 
             const chunkData = channelData.subarray(actualStart, endSample);
             const chunkOptions = smoothState
-                ? { ...options, initialSmooth: smoothState }
+                ? { ...(options as any), initialSmooth: smoothState }
                 : options;
-            const result = await compute(chunkData, chunkOptions);
+            const result: SpectrogramResult = await compute(chunkData, chunkOptions as any);
 
             if (result.smoothState) smoothState = result.smoothState;
 
             // Trim overlap frames from the beginning of non-first chunks.
-            let trimmedResult = result;
+            let trimmedResult: SpectrogramResult = result;
             if (prependedSamples > 0 && result.nFrames > 0) {
                 const hop = result.hopSize || 1;
                 const overlapFrames = Math.min(
@@ -1046,9 +1090,13 @@ export function createSpectrogramProcessor() {
                 if (overlapFrames > 0) {
                     const nMels = result.nMels;
                     trimmedResult = {
-                        ...result,
                         data: result.data.slice(overlapFrames * nMels),
                         nFrames: result.nFrames - overlapFrames,
+                        nMels: result.nMels,
+                        hopSize: result.hopSize,
+                        winLength: result.winLength,
+                        colourScale: result.colourScale,
+                        smoothState: result.smoothState,
                     };
                 }
             }

@@ -4,6 +4,17 @@ export interface SpectrogramCacheOptions {
     maxBytes?: number;
     minFreeBytes?: number;
 }
+export interface CacheEntry {
+    key?: string;
+    dataBuffer?: ArrayBuffer | null;
+    nFrames?: number;
+    nMels?: number;
+    hopSize?: number;
+    winLength?: number;
+    colourScale?: string;
+    timestamp?: number;
+    byteSize?: number;
+}
 // ═══════════════════════════════════════════════════════════════════════
 // SpectrogramCache.ts — IndexedDB-backed spectrogram data cache
 // ═══════════════════════════════════════════════════════════════════════
@@ -49,6 +60,11 @@ const DEFAULT_MIN_FREE_BYTES = 50 * 1024 * 1024;  // skip write if < 50 MB origi
  */
 
 export class SpectrogramCache {
+    _db: IDBDatabase | null = null;
+    _opening: Promise<IDBDatabase | null> | null = null;
+    _maxEntries: number;
+    _maxBytes: number;
+    _minFreeBytes: number;
     /**
      * @param {object} [opts]
      * @param {number} [opts.maxEntries=20]       - max number of cached spectrograms
@@ -76,17 +92,18 @@ export class SpectrogramCache {
      * @param {object}       dspParams   — plain serialisable DSP options
      * @returns {Promise<string>}  hex SHA-256 digest
      */
-    async computeKey(channelData: unknown, sampleRate: unknown, dspParams: unknown) {
+    async computeKey(channelData: Float32Array | number[], sampleRate: number, dspParams: any): Promise<string> {
         const FINGERPRINT_SAMPLES = 4096;
-        const len = channelData.length;
+        const cd = channelData instanceof Float32Array ? channelData : Float32Array.from(channelData as any);
+        const len = cd.length;
 
         const fpLen = Math.min(FINGERPRINT_SAMPLES, len);
         const fp    = new Float32Array(fpLen * 2 + 3);
-        fp.set(channelData.subarray(0, fpLen), 0);
-        fp.set(channelData.subarray(Math.max(0, len - fpLen)), fpLen);
+        fp.set(cd.subarray(0, fpLen), 0);
+        fp.set(cd.subarray(Math.max(0, len - fpLen)), fpLen);
         fp[fpLen * 2]     = sampleRate;
         fp[fpLen * 2 + 1] = len;
-        fp[fpLen * 2 + 2] = len > 0 ? channelData[Math.floor(len / 2)] : 0;
+        fp[fpLen * 2 + 2] = len > 0 ? cd[Math.floor(len / 2)] : 0;
 
         const paramsBytes = new TextEncoder().encode(JSON.stringify(dspParams));
         const combined    = new Uint8Array(fp.buffer.byteLength + paramsBytes.length);
@@ -116,7 +133,7 @@ export class SpectrogramCache {
      * @param {string} key
      * @returns {Promise<CacheEntry|null>}
      */
-    async get(key: unknown) {
+    async get(key: string) {
         const db = await this._open();
         if (!db) return null;
         return new Promise((resolve) => {
@@ -141,7 +158,7 @@ export class SpectrogramCache {
      * @param {string}      key
      * @param {CacheEntry}  entry
      */
-    async set(key: unknown, entry: unknown) {
+    async set(key: string, entry: CacheEntry) {
         // Guard: skip write if origin storage is critically low
         if (this._minFreeBytes > 0 && await this._isStorageCritical()) return;
 
@@ -158,17 +175,17 @@ export class SpectrogramCache {
 
             const allReq = store.getAll();
             allReq.onsuccess = () => {
-                const all    = /** @type {CacheEntry[]} */ (allReq.result);
-                const sorted = all.sort((a: unknown, b: unknown) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+                const all: CacheEntry[] = allReq.result as any[];
+                const sorted = all.sort((a: CacheEntry, b: CacheEntry) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 
                 // Evict by entry count
-                let toEvict = sorted.slice(0, Math.max(0, all.length - this._maxEntries));
+                let toEvict: CacheEntry[] = sorted.slice(0, Math.max(0, all.length - this._maxEntries));
 
                 // Evict additional entries to stay under byte limit
                 if (this._maxBytes > 0) {
-                    const remaining  = sorted.filter((e: unknown) => !toEvict.includes(e));
-                    let totalBytes   = remaining.reduce((s: unknown, e: unknown) => s + (e.byteSize ?? 0), 0);
-                    const byteEvict  = [];
+                    const remaining: CacheEntry[] = sorted.filter((e: CacheEntry) => !toEvict.includes(e));
+                    let totalBytes: number = remaining.reduce((s: number, e: CacheEntry) => s + (e.byteSize ?? 0), 0);
+                    const byteEvict: CacheEntry[] = [];
                     for (const e of remaining) {
                         if (totalBytes <= this._maxBytes) break;
                         byteEvict.push(e);
@@ -204,15 +221,15 @@ export class SpectrogramCache {
      * Returns the approximate total cached bytes (sum of stored byteSize fields).
      * @returns {Promise<number>}
      */
-    async estimateBytesUsed() {
+    async estimateBytesUsed(): Promise<number> {
         const db = await this._open();
         if (!db) return 0;
         return new Promise((resolve) => {
             const tx  = db.transaction(STORE_NAME, 'readonly');
             const req = tx.objectStore(STORE_NAME).getAll();
             req.onsuccess = () => {
-                const total = (/** @type {CacheEntry[]} */ (req.result))
-                    .reduce((s: unknown, e: unknown) => s + (e.byteSize ?? 0), 0);
+                const list: CacheEntry[] = req.result as any[];
+                const total = list.reduce((s: number, e: CacheEntry) => s + (e.byteSize ?? 0), 0);
                 resolve(total);
             };
             req.onerror = () => resolve(0);
@@ -227,10 +244,10 @@ export class SpectrogramCache {
      * @param {CacheEntry} entry
      * @returns {number}
      */
-    _estimateEntryBytes(entry: unknown) {
+    _estimateEntryBytes(entry: CacheEntry) {
         const dataBytes = (entry.dataBuffer?.byteLength ?? 0)
-            || (entry.nFrames ?? 0) * (entry.nMels ?? 0) * 4;
-        return dataBytes + 128;
+            || ((entry.nFrames ?? 0) * (entry.nMels ?? 0) * 4);
+        return (dataBytes || 0) + 128;
     }
 
     /**
@@ -239,34 +256,36 @@ export class SpectrogramCache {
      * Silently returns false when the API is unavailable.
      * @returns {Promise<boolean>}
      */
-    async _isStorageCritical() {
+    async _isStorageCritical(): Promise<boolean> {
         try {
             if (!navigator?.storage?.estimate) return false;
-            const { quota = 0, usage = 0 } = await navigator.storage.estimate();
+            const info = await navigator.storage.estimate();
+            const quota = (info as any).quota ?? 0;
+            const usage = (info as any).usage ?? 0;
             return (quota - usage) < this._minFreeBytes;
         } catch {
             return false;
         }
     }
 
-    _open() {
+    _open(): Promise<IDBDatabase | null> {
         if (this._db)      return Promise.resolve(this._db);
         if (this._opening) return this._opening;
         this._opening = new Promise((resolve) => {
             if (typeof indexedDB === 'undefined') { resolve(null); return; }
             const req = indexedDB.open(DB_NAME, DB_VERSION);
             req.onupgradeneeded = (e) => {
-                const rt = /** @type {IDBOpenDBRequest | null} */ (e.target);
+                const rt = e.target as IDBOpenDBRequest | null;
                 if (!rt) return;
-                const db = /** @type {IDBDatabase} */ (rt.result);
+                const db = rt.result as IDBDatabase;
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: 'key' });
                 }
             };
             req.onsuccess = (e) => {
-                const rt = /** @type {IDBOpenDBRequest | null} */ (e.target);
+                const rt = e.target as IDBOpenDBRequest | null;
                 if (!rt) { this._opening = null; resolve(null); return; }
-                this._db      = /** @type {IDBDatabase} */ (rt.result);
+                this._db      = rt.result as IDBDatabase;
                 this._opening = null;
                 resolve(this._db);
             };

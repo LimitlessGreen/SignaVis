@@ -4,7 +4,7 @@
 
 import { clamp, getTimeGridSteps, hexToRgb, colorWithAlpha } from '../shared/utils.ts';
 
-function getCssVar(name: unknown, fallback = '') {
+function getCssVar(name: string, fallback = '') {
     try {
         const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         return v || fallback;
@@ -15,8 +15,9 @@ function getCssVar(name: unknown, fallback = '') {
 
 // ─── Theme Observer (private helper) ────────────────────────────────
 
-function installThemeObserver(canvas: unknown, redrawFn: unknown) {
-    if (canvas.dataset.awThemeObserverInstalled) return;
+function installThemeObserver(canvas: any, redrawFn: () => void) {
+    if (canvas.dataset?.awThemeObserverInstalled) return;
+    canvas.dataset = canvas.dataset || {};
     canvas.dataset.awThemeObserverInstalled = '1';
     const mo = new MutationObserver((mutations) => {
         for (const m of mutations) {
@@ -25,9 +26,9 @@ function installThemeObserver(canvas: unknown, redrawFn: unknown) {
     });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     try {
-        const mm = window.matchMedia?.('(prefers-color-scheme: light)');
-        if (mm?.addEventListener) mm.addEventListener('change', redrawFn);
-        else if (mm?.addListener) mm.addListener(redrawFn);
+        const mm = (window as any).matchMedia?.('(prefers-color-scheme: light)') as MediaQueryList | undefined | null;
+        if (mm?.addEventListener) mm.addEventListener('change', () => redrawFn());
+        else if (mm?.addListener) mm.addListener(() => redrawFn());
     } catch {}
     canvas._aw_themeObserver = mo;
     canvas._aw_themeRedraw = redrawFn;
@@ -35,9 +36,8 @@ function installThemeObserver(canvas: unknown, redrawFn: unknown) {
 
 // ─── Waveform Timeline (private helper) ─────────────────────────────
 
-function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }) {
+function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number }) {
     if (width <= 0) return;
-    const css = getComputedStyle(document.documentElement);
     const textColor = getCssVar('--color-text-secondary', '#cbd5e1');
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
 
@@ -75,6 +75,15 @@ export function renderMainWaveform({
     waveformHeight = 100,
     amplitudePeakAbs,
     showTimeline = true,
+}: {
+    audioBuffer: AudioBuffer;
+    amplitudeCanvas: HTMLCanvasElement;
+    waveformTimelineCanvas: HTMLCanvasElement;
+    waveformContent: HTMLElement;
+    pixelsPerSecond: number;
+    waveformHeight?: number;
+    amplitudePeakAbs: number;
+    showTimeline?: boolean;
 }) {
     if (!audioBuffer) return;
 
@@ -84,7 +93,7 @@ export function renderMainWaveform({
 
     // persist last render args so we can redraw on theme changes
     try {
-        amplitudeCanvas._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline };
+        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline };
     } catch (e) {}
 
     const width = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
@@ -152,7 +161,7 @@ export function renderMainWaveform({
     }
 
     installThemeObserver(amplitudeCanvas, () => {
-        const s = amplitudeCanvas._aw_lastRender;
+        const s = (amplitudeCanvas as any)._aw_lastRender;
         if (s) requestAnimationFrame(() => { try { renderMainWaveform(s); } catch {} });
     });
 }
@@ -164,6 +173,11 @@ export function renderOverviewWaveform({
     overviewCanvas,
     overviewContainer,
     amplitudePeakAbs,
+}: {
+    audioBuffer: AudioBuffer;
+    overviewCanvas: HTMLCanvasElement;
+    overviewContainer: HTMLElement;
+    amplitudePeakAbs: number;
 }) {
     if (!audioBuffer) return;
 
@@ -172,7 +186,7 @@ export function renderOverviewWaveform({
 
     // persist last render args so we can redraw on theme changes
     try {
-        overviewCanvas._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs };
+        (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs };
     } catch (e) {}
 
     const rect = overviewContainer.getBoundingClientRect();
@@ -208,14 +222,14 @@ export function renderOverviewWaveform({
     }
 
     installThemeObserver(overviewCanvas, () => {
-        const s = overviewCanvas._aw_lastRender;
+        const s = (overviewCanvas as any)._aw_lastRender;
         if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch {} });
     });
 }
 
 // ─── Frequency Labels ───────────────────────────────────────────────
 
-export function renderFrequencyLabels({ labelsElement, coords }) {
+export function renderFrequencyLabels({ labelsElement, coords }: { labelsElement: HTMLElement; coords: any }) {
     labelsElement.innerHTML = '';
 
     // Use frequency viewport if active, otherwise full range

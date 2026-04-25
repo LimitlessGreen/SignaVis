@@ -21,7 +21,7 @@ import type { IStorage } from '../infrastructure/storage/IStorage.ts';
 import type { UndoCommand } from './undoStack.ts';
 
 export interface PresetManagerCallbacks {
-    onRegenerateSpectrogram: () => void;
+    onRegenerateSpectrogram: (opts?: any) => void;
     onStage1Rebuild: () => void;
     storage?: IStorage;
     onDspCommand?: ((cmd: UndoCommand) => void) | null;
@@ -32,25 +32,29 @@ const LS_FAV_PRESET    = 'aw-favourite-preset';
 const LS_LAST_SETTINGS = 'aw-last-settings';
 
 export class PresetManager {
-    /** @type {any} DOM-refs object (subset of PlayerState.d) */
-    #d;
-    /** @type {(opts?: object) => void} */
-    #onRegen;
-    /** @type {() => void} */
-    #onStage1;
+    value: any;
+    options: any;
+    disabled: any;
+    checked: any;
+    gainFloor: any;
+    gainCeil: any;
+    maxFreqHz: any;
+    title: any;
+    #d: any;
+    #onRegen: (opts?: any) => void;
+    #onStage1: () => void;
     #statusTimer = 0;
-    #cleanups = [];
+    #cleanups: Array<() => void> = [];
     #currentColorScheme = 'grayscale';
-    /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
-    #storage;
+    #storage: IStorage;
     /**
      * Optional callback: called after every DSP parameter change with a command
      * object the caller can pass to an UndoStack via record().
      * @type {((cmd: import('./undoStack.ts').UndoCommand) => void) | null}
      */
-    #onDspCommand = null;
-    /** Snapshot captured before a DSP change starts (for undo). @type {object | null} */
-    #dspBeforeSnapshot = null;
+    #onDspCommand: ((cmd: UndoCommand) => void) | null = null;
+    /** Snapshot captured before a DSP change starts (for undo). */
+    #dspBeforeSnapshot: any = null;
 
     /**
      * @param {object} d  Subset of PlayerState DOM-refs (all preset-related elements).
@@ -64,7 +68,7 @@ export class PresetManager {
      *   Called after each DSP parameter change with an undo/redo command object.
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
      */
-    constructor(d: Record<string, HTMLElement>, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand }: PresetManagerCallbacks) {
+    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand }: PresetManagerCallbacks) {
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
         this.#onStage1   = onStage1Rebuild;
@@ -87,7 +91,7 @@ export class PresetManager {
      *
      * @param {(target: EventTarget, type: string, fn: EventListener) => void} on
      */
-    bindEvents(on: unknown) {
+    bindEvents(on: (target: EventTarget, type: string, fn: EventListener) => void) {
         const d = this.#d;
 
         // ── Preset dropdown & buttons ──
@@ -102,8 +106,8 @@ export class PresetManager {
         on(d.presetManageBtn,  'click',   () => this.#openPresetManager());
         on(d.presetSaveConfirm,'click',   () => this.#confirmSaveUserPreset());
         on(d.presetSaveCancel, 'click',   () => this.#cancelSaveUserPreset());
-        on(d.presetSaveInput,  'keydown', (e: unknown) => {
-            const ev = /** @type {KeyboardEvent} */ (e);
+        on(d.presetSaveInput,  'keydown', (e: Event) => {
+            const ev = e as KeyboardEvent;
             if (ev.key === 'Enter')  this.#confirmSaveUserPreset();
             if (ev.key === 'Escape') this.#cancelSaveUserPreset();
         });
@@ -190,7 +194,7 @@ export class PresetManager {
 
     /** Populate preset dropdown from built-ins + user presets. */
     populatePresetDropdown() {
-        const sel = this.#d.presetSelect;
+        const sel = this.#d.presetSelect as HTMLSelectElement | null;
         if (!sel) return;
         sel.innerHTML = '';
         const empty = document.createElement('option');
@@ -243,7 +247,7 @@ export class PresetManager {
      * Apply a named preset (built-in or user): writes DOM controls, then calls
      * onRegenerateSpectrogram so the caller decides whether audio is available.
      */
-    applyPreset(name: unknown) {
+    applyPreset(name: any) {
         const p = name.startsWith('user:')
             ? this.loadUserPresets()[name.slice(5)]
             : DSP_PROFILES[name];
@@ -291,8 +295,8 @@ export class PresetManager {
 
     // ── Quality slider ───────────────────────────────────────────────
 
-    applyQualityLevel(index: unknown) {
-        const level = QUALITY_LEVELS[index];
+    applyQualityLevel(index: number) {
+        const level = QUALITY_LEVELS[index as number];
         if (!level) return;
         const d = this.#d;
         if (d.windowSizeSelect)    d.windowSizeSelect.value    = String(level.windowSize);
@@ -355,7 +359,7 @@ export class PresetManager {
     getCurrentPresetSettings() {
         const d = this.#d;
         const gainMode = d.gainModeSelect?.value || 'auto';
-        const preset = {
+        const preset: any = {
             scale:             d.scaleSelect?.value              || 'mel',
             colourScale:       d.colourScaleSelect?.value        || 'dbSquared',
             windowSize:        parseInt(d.windowSizeSelect?.value    || '1024', 10),
@@ -419,8 +423,8 @@ export class PresetManager {
         return this.#storage.getItem(LS_FAV_PRESET) || '';
     }
 
-    setFavouritePreset(key: unknown) {
-        this.#storage.setItem(LS_FAV_PRESET, key);
+    setFavouritePreset(key: any) {
+        this.#storage.setItem(LS_FAV_PRESET, String(key));
     }
 
     dispose() {
@@ -444,14 +448,14 @@ export class PresetManager {
      * Compares before/after snapshots; records nothing if settings are identical.
      * @param {string} description
      */
-    #commitDspCommand(description: unknown) {
+    #commitDspCommand(description: string) {
         if (!this.#onDspCommand || !this.#dspBeforeSnapshot) return;
         const before = this.#dspBeforeSnapshot;
         this.#dspBeforeSnapshot = null;
         const after = this.getCurrentPresetSettings();
         if (JSON.stringify(before) === JSON.stringify(after)) return;
 
-        this.#onDspCommand({
+        this.#onDspCommand?.({
             type: 'dsp-param',
             description,
             execute: () => {
@@ -481,7 +485,7 @@ export class PresetManager {
      * Write all DSP control DOM elements from a preset object.
      * Shared by applyPreset() and applyFavouritePresetControls().
      */
-    #applyControls(p: unknown) {
+    #applyControls(p: any) {
         const d = this.#d;
         if (d.scaleSelect)          d.scaleSelect.value          = p.scale          || 'mel';
         if (d.windowSizeSelect    && p.windowSize        != null) d.windowSizeSelect.value    = String(p.windowSize);
@@ -515,7 +519,7 @@ export class PresetManager {
         }
     }
 
-    #showPresetStatus(msg: unknown, isError = false) {
+    #showPresetStatus(msg: any, isError = false) {
         const el = this.#d.presetStatus;
         if (!el) return;
         el.textContent = msg;
@@ -628,13 +632,13 @@ export class PresetManager {
             if (delBtn) {
                 const db = /** @type {HTMLElement} */ (delBtn);
                 db.addEventListener('click', () => {
-                    if (db.classList.contains('pm-confirm-delete')) {
-                        this.#deleteUserPreset(name);
-                    } else {
-                        db.classList.add('pm-confirm-delete');
-                        db.title = 'Click again to confirm';
-                        setTimeout(() => { db.classList.remove('pm-confirm-delete'); db.title = 'Delete'; }, 2000);
-                    }
+                            if (db.classList.contains('pm-confirm-delete')) {
+                                this.#deleteUserPreset(name);
+                            } else {
+                                db.classList.add('pm-confirm-delete');
+                                (db as HTMLElement).title = 'Click again to confirm';
+                                setTimeout(() => { db.classList.remove('pm-confirm-delete'); (db as HTMLElement).title = 'Delete'; }, 2000);
+                            }
                 });
             }
             list.appendChild(row);
@@ -692,8 +696,8 @@ export class PresetManager {
         this.#renderPresetManagerList();
     }
 
-    #inlineRenamePreset(oldName: unknown, row: unknown) {
-        const nameSpan = row.querySelector('.pm-name');
+    #inlineRenamePreset(oldName: any, row: any) {
+        const nameSpan = (row as HTMLElement).querySelector('.pm-name');
         if (!nameSpan || row.querySelector('.pm-rename-input')) return;
         const input = document.createElement('input');
         input.type      = 'text';
@@ -735,7 +739,7 @@ export class PresetManager {
         input.addEventListener('blur', commit);
     }
 
-    #deleteUserPreset(name: unknown) {
+    #deleteUserPreset(name: any) {
         const presets = this.loadUserPresets();
         delete presets[name];
         this.saveUserPresetsToStorage(presets);
@@ -772,7 +776,7 @@ export class PresetManager {
             const reader = new FileReader();
             reader.onload = () => {
                 try {
-                    const data = JSON.parse(/** @type {string} */ (reader.result));
+                    const data = JSON.parse(String(reader.result));
                     if (!data || typeof data !== 'object' || typeof data.presets !== 'object' || Array.isArray(data.presets)) {
                         this.#showPresetStatus('Invalid preset file', true); return;
                     }

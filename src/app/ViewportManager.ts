@@ -33,7 +33,7 @@ export interface ViewportManagerOptions {
     d: Record<string, HTMLElement>;
     coords: CoordinateSystem;
     interaction: InteractionState;
-    layout: { spectrogramHeight: number; waveformHeight: number };
+    layout: { spectrogramHeight: number; waveformHeight: number; showSpectrogram?: boolean; showWaveform?: boolean; showOverview?: boolean };
     playbackViewportConfig: PlaybackViewportConfig;
     getAudioBuffer: () => AudioBuffer | null;
     getWavesurfer: () => unknown;
@@ -44,6 +44,34 @@ export interface ViewportManagerOptions {
 }
 
 export class ViewportManager extends EventTarget {
+    _d: any;
+    _coords: any;
+    _interaction: any;
+    _layout: any;
+    _cfg: any;
+    _getAudioBuffer: any;
+    _getWavesurfer: any;
+    _scheduleUiUpdate: any;
+    _onRedrawNeeded: any;
+    _getSpectroHasData: any;
+    _emitHost: any;
+    pixelsPerSecond: any;
+    windowStartNorm: any;
+    windowEndNorm: any;
+    followMode: any;
+    followPlayback: any;
+    scrollSyncLock: any;
+    _smoothSeekFocusUntil: any;
+    _followCatchupRafId: any;
+    _followCatchupAnim: any;
+    _zoomRedrawRafId: any;
+    _overviewViewportRafId: any;
+    _overviewNeedsFinalRedraw: any;
+    _lastSelectionEmitAt: any;
+    _lastSelectionStart: any;
+    _lastSelectionEnd: any;
+    _lastViewRangeTextStart: any;
+    _lastViewRangeTextEnd: any;
     /**
      * @param {object} opts
      * @param {object}   opts.d              - DOM-refs subset (canvasWrapper, waveformWrapper,
@@ -109,7 +137,7 @@ export class ViewportManager extends EventTarget {
      * Called by PlayerState whenever the playback viewport config is updated.
      * @param {import('./PlayerState.ts').PlaybackViewportConfig} cfg
      */
-    updateConfig(cfg: unknown) {
+    updateConfig(cfg: PlaybackViewportConfig) {
         this._cfg = cfg;
     }
 
@@ -117,7 +145,7 @@ export class ViewportManager extends EventTarget {
      * Called by PlayerState when coords are rebuilt.
      * @param {import('../domain/coordinateSystem.ts').CoordinateSystem} coords
      */
-    updateCoords(coords: unknown) {
+    updateCoords(coords: CoordinateSystem) {
         this._coords = coords;
     }
 
@@ -125,7 +153,7 @@ export class ViewportManager extends EventTarget {
      * Called by PlayerState when layout visibility changes.
      * @param {object} layout
      */
-    updateLayout(layout: unknown) {
+    updateLayout(layout: Partial<{ spectrogramHeight: number; waveformHeight: number; showSpectrogram?: boolean; showWaveform?: boolean; showOverview?: boolean }>) {
         this._layout = { ...this._layout, ...layout };
     }
 
@@ -143,7 +171,7 @@ export class ViewportManager extends EventTarget {
      * Called from PlayerState on each `uiupdate` event during playback.
      * @param {number} position  - playhead position in pixels (timeToScrollX result)
      */
-    applyFollowScroll(position: unknown) {
+    applyFollowScroll(position: number) {
         const vw = this._getViewportWidth();
         if (this.followMode === 'smooth') {
             this._applySmoothFollow(position, vw);
@@ -188,7 +216,7 @@ export class ViewportManager extends EventTarget {
      * @param {number}  [anchorTime]   - time in seconds at anchor pixel
      * @param {number}  [anchorPixel]  - pixel X of anchor in viewport
      */
-    setPixelsPerSecond(nextPps: unknown, redraw: unknown, anchorTime: unknown, anchorPixel: unknown) {
+    setPixelsPerSecond(nextPps: number, redraw: boolean, anchorTime?: number, anchorPixel?: number) {
         this._setPixelsPerSecond(nextPps, redraw, anchorTime, anchorPixel);
     }
 
@@ -208,7 +236,7 @@ export class ViewportManager extends EventTarget {
      * @param {number} centerClientX
      * @param {'spectrogram'|'waveform'} [source]
      */
-    zoomByScale(scale: unknown, centerClientX: unknown, source = 'spectrogram') {
+    zoomByScale(scale: number, centerClientX: number, source = 'spectrogram') {
         const buf = this._getAudioBuffer();
         if (!buf) return;
         const wrapper = source === 'waveform' ? this._d.waveformWrapper : this._d.canvasWrapper;
@@ -222,7 +250,7 @@ export class ViewportManager extends EventTarget {
      * Scroll the viewport so that timeSec is horizontally centred.
      * @param {number} timeSec
      */
-    centerViewportAtTime(timeSec: unknown) {
+    centerViewportAtTime(timeSec: number) {
         const buf = this._getAudioBuffer();
         if (!buf) return;
         const vw      = this._getViewportWidth();
@@ -238,7 +266,7 @@ export class ViewportManager extends EventTarget {
      * @param {'spectrogram'|'waveform'} [source]
      * @returns {number}
      */
-    clientXToTime(clientX: unknown, source = 'spectrogram') {
+    clientXToTime(clientX: number, source = 'spectrogram') {
         const wrapper  = source === 'waveform' ? this._d.waveformWrapper : this._d.canvasWrapper;
         const rect     = wrapper.getBoundingClientRect();
         const scrollX  = clientX - rect.left + wrapper.scrollLeft;
@@ -291,7 +319,7 @@ export class ViewportManager extends EventTarget {
      * @param {'move'|'left'|'right'} mode
      * @param {number} clientX
      */
-    startOverviewDrag(mode: unknown, clientX: unknown) {
+    startOverviewDrag(mode: 'move'|'left'|'right', clientX: number) {
         this._startOverviewDrag(mode, clientX);
     }
 
@@ -299,7 +327,7 @@ export class ViewportManager extends EventTarget {
      * Update overview drag in progress.
      * @param {number} clientX
      */
-    updateOverviewDrag(clientX: unknown) {
+    updateOverviewDrag(clientX: number) {
         this._updateOverviewDrag(clientX);
     }
 
@@ -355,7 +383,7 @@ export class ViewportManager extends EventTarget {
         return Math.max(1, primary?.clientWidth || secondary?.clientWidth || 0);
     }
 
-    _setLinkedScrollLeft(nextLeft: unknown) {
+    _setLinkedScrollLeft(nextLeft: number) {
         if (this.scrollSyncLock) return;
         this.scrollSyncLock = true;
 
@@ -374,7 +402,7 @@ export class ViewportManager extends EventTarget {
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false });
     }
 
-    _setPixelsPerSecond(nextPps: unknown, redraw: unknown, anchorTime: unknown, anchorPixel: unknown) {
+    _setPixelsPerSecond(nextPps: number, redraw: boolean, anchorTime?: number, anchorPixel?: number) {
         const d         = this._d;
         const minPps    = Number(d.zoomSlider.min);
         const maxPps    = Number(d.zoomSlider.max);
@@ -509,7 +537,7 @@ export class ViewportManager extends EventTarget {
         };
     }
 
-    _startOverviewDrag(mode: unknown, clientX: unknown) {
+    _startOverviewDrag(mode: 'move'|'left'|'right', clientX: number) {
         /** @type {Record<string, import('./interactionState.ts').InteractionMode>} */
         const modeMap = { move: 'overview-move', left: 'overview-resize-left', right: 'overview-resize-right' };
         if (!this._interaction.enter(modeMap[mode])) return;
@@ -518,7 +546,7 @@ export class ViewportManager extends EventTarget {
         this._interaction.ctx.overviewEndNorm   = this.windowEndNorm;
     }
 
-    _updateOverviewDrag(clientX: unknown) {
+    _updateOverviewDrag(clientX: number) {
         const sub = this._interaction.overviewSubMode;
         const buf = this._getAudioBuffer();
         if (!this._layout.showOverview || !buf || !sub) return;
@@ -592,7 +620,7 @@ export class ViewportManager extends EventTarget {
         this._followCatchupAnim = null;
     }
 
-    _animateFollowCatchupTo(targetScrollLeft: unknown) {
+    _animateFollowCatchupTo(targetScrollLeft: number) {
         const buf = this._getAudioBuffer();
         if (!buf) return;
         const vw  = this._getViewportWidth();
@@ -615,9 +643,9 @@ export class ViewportManager extends EventTarget {
 
         this._cancelFollowCatchupAnimation();
         this._followCatchupAnim = { start, target, startedAt: now, duration };
-        const easeOutCubic = (t: unknown) => 1 - ((1 - t) ** 3);
+        const easeOutCubic = (t: number) => 1 - ((1 - t) ** 3);
 
-        const tick = (ts: unknown) => {
+        const tick = (ts: number) => {
             const anim = this._followCatchupAnim;
             if (!anim) return;
             const t     = clamp((ts - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
@@ -630,7 +658,7 @@ export class ViewportManager extends EventTarget {
         this._followCatchupRafId = requestAnimationFrame(tick);
     }
 
-    _applySmoothFollow(position: unknown, viewportWidth: unknown) {
+    _applySmoothFollow(position: number, viewportWidth?: number) {
         const buf = this._getAudioBuffer();
         if (!buf) return;
         const vw         = Math.max(1, viewportWidth || this._getViewportWidth());

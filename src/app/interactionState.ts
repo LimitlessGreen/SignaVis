@@ -79,7 +79,7 @@ const ALLOWED_TRANSITIONS = {
  * @param {InteractionMode} to
  * @returns {boolean}
  */
-export function canTransitionInteraction(from: unknown, to: unknown) {
+export function canTransitionInteraction(from: InteractionMode, to: InteractionMode) {
     return ALLOWED_TRANSITIONS[from]?.has(to) === true;
 }
 
@@ -115,16 +115,29 @@ function defaultContext() {
  */
 
 export interface InteractionContext {
-    startX?: number;
-    startY?: number;
-    startScrollLeft?: number;
-    startScrollTop?: number;
-    startTime?: number;
-    labelId?: string | null;
-    [key: string]: unknown;
+    playheadSource?: string | undefined;
+    panStartX?: number;
+    panStartY?: number;
+    panStartScroll?: number;
+    panSuppressClick?: boolean;
+    panIsMiddle?: boolean;
+    panSource?: string | undefined;
+    panStartFreqViewMin?: number | null;
+    panStartFreqViewMax?: number | null;
+    overviewStartX?: number;
+    overviewStartNorm?: number;
+    overviewEndNorm?: number;
+    overviewMoved?: boolean;
+    resizeStartY?: number;
+    resizeStartWaveformH?: number;
+    resizeStartSpectrogramH?: number;
 }
 
 export class InteractionState {
+    mode: InteractionMode;
+    ctx: InteractionContext;
+    _blockSeekClickUntil: number;
+    _overviewSuppressClickUntil: number;
     constructor() {
         /** @type {InteractionMode} */
         this.mode = 'idle';
@@ -182,7 +195,7 @@ export class InteractionState {
      * @param {InteractionMode} nextMode
      * @returns {boolean}
      */
-    enter(nextMode: unknown) {
+    enter(nextMode: InteractionMode) {
         if (!canTransitionInteraction(this.mode, nextMode)) return false;
         this.mode = nextMode;
         if (nextMode === 'idle') this.ctx = defaultContext();

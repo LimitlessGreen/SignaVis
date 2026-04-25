@@ -47,6 +47,11 @@ function levenshtein(a: unknown, b: unknown) {
 }
 
 export class TaxonomyResolver {
+    _data: any = null;
+    _byScientific: Map<any, any> = new Map();
+    _byScientificNorm: Map<any, any> = new Map();
+    _byGenus: Map<any, any> = new Map();
+    _cache: Map<any, any> = new Map();
     constructor() {
         this._data = null;
         this._byScientific = new Map();
@@ -61,12 +66,12 @@ export class TaxonomyResolver {
     get modelVersion() { return this._data?.modelVersion ?? ''; }
     get records() { return this._data?.records ?? []; }
 
-    load(data: unknown) {
+    load(data: any) {
         if (!data || !Array.isArray(data.records) || !Array.isArray(data.languages)) {
             throw new Error('Invalid taxonomy format.');
         }
         this._data = data;
-        this._byScientific = new Map(data.records.map((r: unknown) => [r.s, r]));
+        this._byScientific = new Map((data.records as any[]).map((r: any) => [r.s, r]));
         this._byScientificNorm = new Map();
         this._byGenus = new Map();
         this._cache = new Map();
@@ -90,7 +95,7 @@ export class TaxonomyResolver {
         this._cache = new Map();
     }
 
-    resolveCommonName(record: unknown, lang: unknown) {
+    resolveCommonName(record: any, lang: string) {
         if (!record || !record.n) return '';
         return record.n[lang] || record.n.en_uk || Object.values(record.n)[0] || '';
     }

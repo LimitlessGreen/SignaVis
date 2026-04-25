@@ -23,11 +23,13 @@ const DEFAULT_TIPS = [
   },
 ];
 
+type Tip = { title?: string; text?: string };
+
 function _today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function _createButton(text: unknown, cls = '') {
+function _createButton(text: string, cls = '') {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = cls;
@@ -49,7 +51,11 @@ function _createButton(text: unknown, cls = '') {
  * @param {(disabled: boolean) => void} [opts.onDisable]
  * @returns {import('./modal-manager.ts').default}
  */
-export function showTip(tip: unknown, host = document.body, { index = 0, count = 1, onNext, onPrev, onClose, onDisable } = {}) {
+export function showTip(
+  tip: Tip,
+  host: HTMLElement = document.body,
+  { index = 0, count = 1, onNext, onPrev, onClose, onDisable }: { index?: number; count?: number; onNext?: () => void; onPrev?: () => void; onClose?: () => void; onDisable?: (d: boolean) => void } = {}
+) {
   const backdrop = document.createElement('div');
   backdrop.className = 'label-editor-backdrop daily-tip-backdrop';
 
@@ -108,7 +114,7 @@ export function showTip(tip: unknown, host = document.body, { index = 0, count =
   backdrop.appendChild(dialog);
   host.appendChild(backdrop);
 
-  const modal = new ModalManager({ backdrop, dialog });
+  const modal = new ModalManager({ backdrop, dialog } as any);
 
   // cleanup helper removes DOM and disposes modal handlers
   const cleanup = () => {
@@ -178,8 +184,8 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
 
     let index = parseInt(localStorage.getItem(`${storagePrefix}.index`) || '0', 10) || 0;
 
-    const showAt = (idx: unknown) => {
-      const tip = tips[idx % tips.length];
+    const showAt = (idx: number) => {
+      const tip = tips[idx % tips.length] as Tip;
       showTip(tip, host, {
         index: idx,
         count: tips.length,

@@ -16,6 +16,19 @@ function midpoint(a: Touch, b: Touch): { x: number; y: number } {
 }
 
 export class GestureRecognizer {
+    element: HTMLElement;
+    handlers: Map<string, Array<(detail?: any) => void>>;
+    cleanups: Array<() => void>;
+    lastTapTime: number;
+    lastTapX: number;
+    lastTapY: number;
+    touchMode: 'swipe' | 'pinch' | null;
+    swipeStartX: number;
+    swipeStartY: number;
+    swipeLastX: number;
+    swipeLastY: number;
+    lastPinchDistance: number;
+    lastPinchCenter: { x: number; y: number } | null;
     constructor(element: HTMLElement) {
         this.element = element;
         this.handlers = new Map();
@@ -37,20 +50,20 @@ export class GestureRecognizer {
         this._bind();
     }
 
-    on(event: unknown, callback: unknown) {
+    on(event: string, callback: (detail?: any) => void) {
         const arr = this.handlers.get(event) || [];
         arr.push(callback);
         this.handlers.set(event, arr);
         return () => this.off(event, callback);
     }
 
-    off(event: unknown, callback: unknown) {
+    off(event: string, callback: (detail?: any) => void) {
         const arr = this.handlers.get(event);
         if (!arr) return;
-        this.handlers.set(event, arr.filter((cb: unknown) => cb !== callback));
+        this.handlers.set(event, arr.filter((cb) => cb !== callback));
     }
 
-    emit(event: unknown, detail: unknown) {
+    emit(event: string, detail?: any) {
         const arr = this.handlers.get(event);
         if (!arr) return;
         for (const cb of arr) cb(detail);
@@ -63,20 +76,20 @@ export class GestureRecognizer {
     }
 
     _bind() {
-        const on = (name: unknown, fn: unknown, options = { passive: false }) => {
-            this.element.addEventListener(name, fn, options);
-            this.cleanups.push(() => this.element.removeEventListener(name, fn, options));
+        const on = (name: string, fn: (e: Event) => void, options: AddEventListenerOptions = { passive: false }) => {
+            this.element.addEventListener(name, fn as EventListener, options);
+            this.cleanups.push(() => this.element.removeEventListener(name, fn as EventListener, options));
         };
 
-        on('touchstart', (e: unknown) => this._onTouchStart(e));
-        on('touchmove', (e: unknown) => this._onTouchMove(e));
-        on('touchend', (e: unknown) => this._onTouchEnd(e));
+        on('touchstart', (e: Event) => this._onTouchStart(e as TouchEvent));
+        on('touchmove', (e: Event) => this._onTouchMove(e as TouchEvent));
+        on('touchend', (e: Event) => this._onTouchEnd(e as TouchEvent));
         on('touchcancel', () => this._reset());
     }
 
-    _onTouchStart(e: unknown) {
+    _onTouchStart(e: TouchEvent) {
         if (e.touches.length === 1) {
-            const t = e.touches[0];
+            const t = e.touches[0] as Touch;
             this.touchMode = 'swipe';
             this.swipeStartX = t.clientX;
             this.swipeStartY = t.clientY;
@@ -86,8 +99,8 @@ export class GestureRecognizer {
         }
 
         if (e.touches.length >= 2) {
-            const a = e.touches[0];
-            const b = e.touches[1];
+            const a = e.touches[0] as Touch;
+            const b = e.touches[1] as Touch;
             this.touchMode = 'pinch';
             this.lastPinchDistance = distance(a, b);
             this.lastPinchCenter = midpoint(a, b);
@@ -95,10 +108,10 @@ export class GestureRecognizer {
         }
     }
 
-    _onTouchMove(e: unknown) {
+    _onTouchMove(e: TouchEvent) {
         if (this.touchMode === 'pinch' && e.touches.length >= 2) {
-            const a = e.touches[0];
-            const b = e.touches[1];
+            const a = e.touches[0] as Touch;
+            const b = e.touches[1] as Touch;
             const d = Math.max(1, distance(a, b));
             const center = midpoint(a, b);
             const scale = d / Math.max(1, this.lastPinchDistance);
@@ -110,12 +123,12 @@ export class GestureRecognizer {
         }
 
         if (this.touchMode === 'swipe' && e.touches.length === 1) {
-            this.swipeLastX = e.touches[0].clientX;
-            this.swipeLastY = e.touches[0].clientY;
+            this.swipeLastX = (e.touches[0] as Touch).clientX;
+            this.swipeLastY = (e.touches[0] as Touch).clientY;
         }
     }
 
-    _onTouchEnd(e: unknown) {
+    _onTouchEnd(e: TouchEvent) {
         if (this.touchMode === 'pinch') {
             if (e.touches.length < 2) this._reset();
             return;

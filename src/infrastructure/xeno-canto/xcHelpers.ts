@@ -2,8 +2,8 @@
 // xcHelpers.js — Shared utilities for Xeno-canto API modules
 // ═══════════════════════════════════════════════════════════════════════
 
-export function sleep(ms: unknown) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+export function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 export function safeArray(value: unknown) {
@@ -20,7 +20,7 @@ export function safeField(value: unknown) {
     return value ?? '';
 }
 
-export function firstNonEmpty(values: unknown) {
+export function firstNonEmpty(values: any) {
     for (const v of values) {
         const s = String(v ?? '').trim();
         if (s) return s;
@@ -34,7 +34,7 @@ export function toFiniteNumber(value: unknown) {
     return Number.isFinite(n) ? n : NaN;
 }
 
-export function parseJsonSafe(text: unknown) {
+export function parseJsonSafe(text: string | null | undefined) {
     if (!text) return null;
     try { return JSON.parse(text); } catch { return null; }
 }

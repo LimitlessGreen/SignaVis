@@ -44,7 +44,32 @@ import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
  * @param {boolean} [opts.enableProgressive=false]
  */
 export class SpectrogramController extends EventTarget {
-    constructor(d: unknown, opts = {}) {
+    _d: any;
+    _enableProgressive: boolean;
+    enableProgressive: boolean;
+    processor: any;
+    colorizer: any;
+    _data: Float32Array | null;
+    _nFrames: number;
+    _nMels: number;
+    _hopSize: number;
+    _winLength: number;
+    _activeScale: string;
+    _colourScale: string;
+    _absLogMin: number;
+    _absLogMax: number;
+    _baseCanvas: HTMLCanvasElement | null;
+    _grayInfo: { gray: Float32Array; width: number; height: number } | null;
+    _gpuReady: boolean;
+    _externalMode: boolean;
+    _externalImageConfig: { freqRange: [number, number] | null; freqScale: string | null } | null;
+    _audioBuffer: AudioBuffer | null;
+    _sampleRateHz: number;
+    _zoomRedrawRafId: number;
+    _freqAxisRafId: number | undefined;
+    _lastFreqAxisH: number;
+    value: any;
+    constructor(d: any, opts: any = {}) {
         super();
         this._d = d;
         this._enableProgressive = opts.enableProgressive === true;
@@ -115,7 +140,7 @@ export class SpectrogramController extends EventTarget {
      * @param {AudioBuffer} audioBuffer
      * @param {number} sampleRateHz
      */
-    setAudio(audioBuffer: unknown, sampleRateHz: unknown) {
+    setAudio(audioBuffer: AudioBuffer, sampleRateHz: number) {
         this._audioBuffer = audioBuffer;
         this._sampleRateHz = sampleRateHz;
         this._externalMode = false;
@@ -197,7 +222,7 @@ export class SpectrogramController extends EventTarget {
                 this._audioBuffer.sampleRate,
                 options,
             );
-            const cached = await spectrogramCache.get(cacheKey);
+                const cached = await spectrogramCache.get(cacheKey) as any;
             if (cached) {
                 this._data        = new Float32Array(cached.dataBuffer);
                 this._nFrames     = cached.nFrames;
@@ -271,7 +296,7 @@ export class SpectrogramController extends EventTarget {
 
             // Persist to cache (non-blocking)
             spectrogramCache.set(cacheKey, {
-                dataBuffer: new Uint8Array((/** @type {Float32Array} */ (this._data)).buffer).slice().buffer,
+                dataBuffer: new Uint8Array(((this._data as Float32Array)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,
                 hopSize:    this._hopSize,
@@ -318,7 +343,7 @@ export class SpectrogramController extends EventTarget {
     /**
      * Mode 1: inject raw Float32Array data — enters pipeline at Stage 1 (grayscale → colorize → render).
      */
-    setExternalData(data: unknown, nFrames: unknown, nMels: unknown, options = {}) {
+    setExternalData(data: Float32Array | ArrayBuffer | string, nFrames: number, nMels: number, options: any = {}) {
         let floats;
         if (typeof data === 'string') {
             const binary = atob(data);
@@ -376,15 +401,15 @@ export class SpectrogramController extends EventTarget {
      * Mode 2: inject a pre-rendered image — bypasses DSP + colorization.
      * @returns {Promise<void>}
      */
-    setExternalImage(image: unknown, options = {}) {
-        return /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
-            const apply = (img: unknown) => {
+    async setExternalImage(image: HTMLImageElement | HTMLCanvasElement | string, options: any = {}): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const apply = (img: HTMLImageElement | HTMLCanvasElement) => {
                 const canvas = document.createElement('canvas');
-                canvas.width  = img.naturalWidth  || img.width;
-                canvas.height = img.naturalHeight || img.height;
+                canvas.width  = (img as any).naturalWidth  || (img as any).width;
+                canvas.height = (img as any).naturalHeight || (img as any).height;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) { reject(new Error('Could not get 2d context')); return; }
-                ctx.drawImage(img, 0, 0);
+                ctx.drawImage(img as CanvasImageSource, 0, 0);
 
                 this._externalMode  = true;
                 this._baseCanvas    = canvas;
@@ -420,7 +445,7 @@ export class SpectrogramController extends EventTarget {
             };
 
             if (image instanceof HTMLCanvasElement || (image instanceof HTMLImageElement && image.complete)) {
-                apply(image);
+                apply(image as HTMLImageElement | HTMLCanvasElement);
             } else if (image instanceof HTMLImageElement) {
                 image.onload = () => apply(image);
                 image.onerror = reject;
@@ -432,7 +457,7 @@ export class SpectrogramController extends EventTarget {
             } else {
                 reject(new Error('setSpectrogramImage: unsupported image type'));
             }
-        }));
+        });
     }
 
     // ── Rendering stages ─────────────────────────────────────────────
@@ -442,8 +467,9 @@ export class SpectrogramController extends EventTarget {
      * Run once per audio/FFT/frequency change.
      */
     buildGrayscale() {
+        if (!this._data) return;
         const d = this._d;
-        this._grayInfo = /** @type {{gray: Uint8Array, width: number, height: number}|null} */ (buildSpectrogramGrayscale({
+        this._grayInfo = buildSpectrogramGrayscale({
             spectrogramData:    this._data,
             spectrogramFrames:  this._nFrames,
             spectrogramMels:    this._nMels,
@@ -455,7 +481,7 @@ export class SpectrogramController extends EventTarget {
             colourScale: this._colourScale || d.colourScaleSelect?.value || 'dbSquared',
             noiseReduction: d.noiseReductionCheck?.checked ?? false,
             clahe:          d.claheCheck?.checked ?? false,
-        }));
+        }) as { gray: Float32Array; width: number; height: number } | null;
         if (this._grayInfo && this.colorizer.ok) {
             const { gray, width, height } = this._grayInfo;
             this._gpuReady = this.colorizer.uploadGrayscale(gray, width, height);
@@ -470,7 +496,7 @@ export class SpectrogramController extends EventTarget {
      * @param {string} colorScheme
      * @returns {HTMLCanvasElement|OffscreenCanvas|null}
      */
-    buildBaseImage(colorScheme: unknown) {
+    buildBaseImage(colorScheme: any) {
         if (!this._grayInfo) this.buildGrayscale();
         const d = this._d;
         const floor01 = parseFloat(d.floorSlider?.value || '0')  / 100;
@@ -501,7 +527,7 @@ export class SpectrogramController extends EventTarget {
      * @param {number}   p.viewportWidth
      * @param {string}   p.colorScheme       - needed if baseCanvas is missing
      */
-    draw(p: unknown) {
+    draw(p: any) {
         if (!p.show) return;
         if (!this._audioBuffer || !this._data || this._nFrames <= 0) return;
         if (!this._baseCanvas) this.buildBaseImage(p.colorScheme);
@@ -580,12 +606,12 @@ export class SpectrogramController extends EventTarget {
             this._sampleRateHz,
             this._d.scaleSelect?.value || 'mel',
         );
-        const opts = Array.from(this._d.maxFreqSelect?.options || []);
-        let best = opts[opts.length - 1];
+        const opts = Array.from((this._d.maxFreqSelect?.options || []) as any) as HTMLOptionElement[];
+        let best = opts[opts.length - 1] as HTMLOptionElement | undefined;
         for (const opt of opts) {
             if (parseFloat(opt.value) >= hzValue) { best = opt; break; }
         }
-        if (this._d.maxFreqSelect) this._d.maxFreqSelect.value = best.value;
+        if (this._d.maxFreqSelect && best) this._d.maxFreqSelect.value = best.value;
         this._emit('scalechange', { maxFreq: parseFloat(best?.value || '10000') });
         if (redraw) this._emit('needsredraw');
     }
@@ -593,8 +619,8 @@ export class SpectrogramController extends EventTarget {
     /** Set maxFreq select to the Nyquist frequency. */
     setMaxFreqToNyquist() {
         const nyquist = this._sampleRateHz / 2;
-        const opts = Array.from(this._d.maxFreqSelect?.options || []);
-        const last = opts[opts.length - 1];
+        const opts = Array.from((this._d.maxFreqSelect?.options || []) as any) as HTMLOptionElement[];
+        const last = opts[opts.length - 1] as HTMLOptionElement | undefined;
         if (last && this._d.maxFreqSelect) this._d.maxFreqSelect.value = last.value;
         this._emit('scalechange', { maxFreq: nyquist });
     }
@@ -603,7 +629,7 @@ export class SpectrogramController extends EventTarget {
      * Rebuild the max-frequency <select> options for the current sample rate.
      * @param {number} sampleRateHz
      */
-    updateMaxFreqOptions(sampleRateHz: unknown) {
+    updateMaxFreqOptions(sampleRateHz: number) {
         const nyquist = sampleRateHz / 2;
         const select = this._d.maxFreqSelect;
         if (!select) return;
@@ -643,7 +669,7 @@ export class SpectrogramController extends EventTarget {
      * pre-rendered spectrogram images.
      * @param {boolean} enabled
      */
-    setDspControlsEnabled(enabled: unknown) {
+    setDspControlsEnabled(enabled: boolean) {
         const d = this._d;
         const settingsEls = [
             d.scaleSelect, d.windowSizeSelect, d.windowFunctionSelect, d.overlapSelect,
@@ -676,12 +702,13 @@ export class SpectrogramController extends EventTarget {
     // ── Private helpers ──────────────────────────────────────────────
 
     _updateStats() {
-        const stats = computeSpectrogramStats(this._data);
+        if (!this._data) return;
+        const stats = computeSpectrogramStats(this._data as Float32Array);
         this._absLogMin = stats.logMin;
         this._absLogMax = stats.logMax;
     }
 
-    _mergeProgressiveResults(chunkResults: unknown, nMels: unknown) {
+    _mergeProgressiveResults(chunkResults: any[], nMels: number) {
         if (!chunkResults.length) return { data: new Float32Array(0), nFrames: 0, nMels, hopSize: 0, winLength: 0 };
         const actualNMels = chunkResults[0].nMels || nMels;
         let totalSize = 0;
@@ -715,13 +742,13 @@ export class SpectrogramController extends EventTarget {
         });
     }
 
-    _clamp(v: unknown, lo: unknown, hi: unknown) { return v < lo ? lo : v > hi ? hi : v; }
+    _clamp(v: number, lo: number, hi: number) { return v < lo ? lo : v > hi ? hi : v; }
 
     /**
      * @param {string} name
      * @param {any} detail
      */
-    _emit(name: unknown, detail = {}) {
+    _emit(name: string, detail: any = {}) {
         this.dispatchEvent(new CustomEvent(name, { detail }));
     }
 }

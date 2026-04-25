@@ -18,6 +18,24 @@ import { UndoStack } from '../domain/undoStack.ts';
 import '../styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
+import { EventBus } from '../shared/EventBus.ts';
+
+export interface LinkedLabel {
+    id: string;
+    start: number;
+    end: number;
+    freqMin?: number;
+    freqMax?: number;
+    label?: string;
+    species?: string;
+    confidence?: number;
+    color?: string;
+    scientificName?: string;
+    commonName?: string;
+    origin?: string;
+    author?: string;
+    tags?: Record<string, unknown>;
+}
 
 export interface PlaySegmentOptions {
     loop?: boolean;
@@ -83,6 +101,35 @@ export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
 export { BirdNETInference, BIRDNET_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 export class BirdNETPlayer {
+    container: any;
+    options: Record<string, any>;
+    _state: any;
+    _events: EventBus;
+    annotations: AnnotationLayer;
+    spectrogramLabels: SpectrogramLabelLayer;
+    _linkedLabels: Map<string, LinkedLabel>;
+    _isSyncingLabels: boolean;
+    _undoStack: UndoStack;
+    _isRestoring: boolean;
+    _labelLibrary: Map<string, number>;
+    _labelSuggestionProvider: ((q: string, limit: number) => (string | LabelSuggestionItem)[]) | null;
+    _labelEditorSuggestionMode: 'merge' | 'custom-only';
+    _labelTaxonomy: Array<{ name: string; color?: string; shortcut?: string }>;
+    _activeLabelId: string | null;
+    _globalKeyHandler: any;
+    _backgroundSpecies: any;
+    _speciesBarSelection: any;
+    on: any;
+    off: any;
+    ready: any;
+    root: any;
+    WaveSurfer: any;
+    _tagPresets: any;
+    map: any;
+    _stampBtn: any;
+    target: any;
+    _drawBtn: any;
+    trim: any;
     /**
      * @param {HTMLElement} container - the DOM element to mount the player into
      * @param {Object}      [options]
@@ -114,13 +161,13 @@ export class BirdNETPlayer {
      * @param {number}      [options.smoothSeekFocusMs] - slow-follow window after manual seek (default: 1400)
      * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
      */
-    constructor(container: HTMLElement, options: Record<string, unknown> = {}) {
+    constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
         this.container = container;
-        this.options = options;
+        this.options = options as Record<string, any>;
         /** @type {PlayerState | null} */
         this._state = null;
-        this._events = new EventTarget();
+        this._events = new EventBus();
         this.annotations = new AnnotationLayer();
         this.spectrogramLabels = new SpectrogramLabelLayer();
         this._linkedLabels = new Map();
@@ -138,29 +185,11 @@ export class BirdNETPlayer {
         /** @type {{ name: string, color: string, scientificName: string } | null} */
         this._speciesBarSelection = null;
 
-        /**
-         * Subscribe to a player event. Returns an unsubscribe function.
-         * Callbacks receive a `CustomEvent`; access payload via `e.detail`.
-         * Typed event maps are added in a later phase — cast `e` to `CustomEvent` for now.
-         * @param {PlayerEventName} event
-         * @param {Function} callback
-         * @param {AddEventListenerOptions} [options]
-         * @returns {() => void}
-         */
-        this.on = (event: unknown, callback: unknown, options: unknown) => {
-            this._events.addEventListener(event, /** @type {EventListener} */ (callback), options);
-            return () => this.off(event, callback, options);
-        };
+        this.on = (event: string, callback: (detail: unknown) => void, options?: AddEventListenerOptions) =>
+            this._events.on(event, callback, options);
 
-        /**
-         * Unsubscribe from a player event.
-         * @param {PlayerEventName} event
-         * @param {Function} callback
-         * @param {AddEventListenerOptions} [options]
-         */
-        this.off = (event: unknown, callback: unknown, options: unknown) => {
-            this._events.removeEventListener(event, /** @type {EventListener} */ (callback), options);
-        };
+        this.off = (event: string, listener: EventListenerOrEventListenerObject, options?: EventListenerOptions) =>
+            this._events.off(event, listener, options);
 
         this.ready = this._init();
     }
@@ -174,7 +203,7 @@ export class BirdNETPlayer {
 
         // 2. Resolve WaveSurfer (option → global → CDN import)
         const WaveSurfer = this.options.WaveSurfer
-            || /** @type {any} */ (window).WaveSurfer
+            || (window as any).WaveSurfer
             || (await import(/* @vite-ignore */ WAVESURFER_CDN)).default;
 
         // 3. Create internal state machine — wire DSP undo into the shared stack
@@ -184,8 +213,8 @@ export class BirdNETPlayer {
             (event, detail) => this._emit(event, detail),
             {
                 ...this.options,
-                onDspCommand: (cmd: unknown) => {
-                    this._undoStack.record(cmd);
+                onDspCommand: (cmd: any) => {
+                    this._undoStack.record(cmd as any);
                     this._emit('undochange', {
                         canUndo: this._undoStack.canUndo,
                         canRedo: this._undoStack.canRedo,
@@ -205,8 +234,8 @@ export class BirdNETPlayer {
         return this;
     }
 
-    _emit(event: unknown, detail = {}) {
-        this._events.dispatchEvent(new CustomEvent(event, { detail }));
+    _emit(event: string, detail: unknown = {}): void {
+        this._events.emit(event, detail);
     }
 
     // ── Public API ──────────────────────────────────────────────────
@@ -236,7 +265,7 @@ export class BirdNETPlayer {
      * @param {string} url
      * @returns {Promise<void>}
      */
-    async loadUrl(url: unknown) {
+    async loadUrl(url: string) {
         await this.ready;
         return this._state?.loadUrl(url);
     }
@@ -246,7 +275,7 @@ export class BirdNETPlayer {
      * @param {File} file
      * @returns {Promise<void>}
      */
-    async loadFile(file: unknown) {
+    async loadFile(file: File) {
         await this.ready;
         return this._state?.loadFile(file);
     }
@@ -272,7 +301,7 @@ export class BirdNETPlayer {
      * @param {number} endSec
      * @param {PlaySegmentOptions} [options]
      */
-    playSegment(startSec: unknown, endSec: unknown, options: unknown) { this._state?.playSegment(startSec, endSec, options); }
+    playSegment(startSec: number, endSec: number, options?: PlaySegmentOptions) { this._state?.playSegment(startSec, endSec, options); }
 
     /**
      * Play a segment through a bandpass filter centered on the given frequency range.
@@ -282,7 +311,7 @@ export class BirdNETPlayer {
      * @param {number} freqMaxHz
      * @param {PlaySegmentOptions} [options]
      */
-    playBandpassedSegment(startSec: unknown, endSec: unknown, freqMinHz: unknown, freqMaxHz: unknown, options: unknown) {
+    playBandpassedSegment(startSec: number, endSec: number, freqMinHz: number, freqMaxHz: number, options?: PlaySegmentOptions) {
         this._state?.playBandpassedSegment(startSec, endSec, freqMinHz, freqMaxHz, options);
     }
 
@@ -291,14 +320,14 @@ export class BirdNETPlayer {
      * @param {AnnotationInput} annotation
      * @returns {string} id
      */
-    addAnnotation(annotation: unknown) {
-        const id = annotation?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+    addAnnotation(annotation: Partial<LinkedLabel>) {
+        const id = (annotation as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
         const merged = this._normalizeLinkedLabel({
             ...existing,
-            ...annotation,
+            ...(annotation as any),
             id,
-            label: annotation?.label ?? annotation?.species ?? existing?.label ?? 'Label',
+            label: (annotation as any)?.label ?? (annotation as any)?.species ?? existing?.label ?? 'Label',
         });
         this._linkedLabels.set(id, merged);
         this._syncLinkedLabelsToLayers();
@@ -308,16 +337,16 @@ export class BirdNETPlayer {
      * Replace all waveform annotations at once.
      * @param {AnnotationInput[]} annotations
      */
-    setAnnotations(annotations: unknown) {
-        const next = new Map();
+    setAnnotations(annotations: Partial<LinkedLabel>[]) {
+        const next = new Map<string, LinkedLabel>();
         for (const ann of annotations || []) {
-            const id = ann?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+            const id = (ann as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
-                ...ann,
+                ...(ann as any),
                 id,
-                label: ann?.label ?? ann?.species ?? existing?.label ?? 'Label',
+                label: (ann as any)?.label ?? (ann as any)?.species ?? existing?.label ?? 'Label',
             }));
         }
         this._linkedLabels = next;
@@ -337,15 +366,15 @@ export class BirdNETPlayer {
      * @param {SpectrogramLabelInput} label
      * @returns {string} id
      */
-    addSpectrogramLabel(label: unknown) {
-        const id = label?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+    addSpectrogramLabel(label: Partial<LinkedLabel>) {
+        const id = (label as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
         const merged = this._normalizeLinkedLabel({
             ...existing,
-            ...label,
+            ...(label as any),
             id,
-            species: label?.species ?? label?.label ?? existing?.species ?? '',
-            label: label?.label ?? existing?.label ?? label?.species ?? 'Label',
+            species: (label as any)?.species ?? (label as any)?.label ?? existing?.species ?? '',
+            label: (label as any)?.label ?? existing?.label ?? (label as any)?.species ?? 'Label',
         });
         this._linkedLabels.set(id, merged);
         this._syncLinkedLabelsToLayers();
@@ -355,17 +384,17 @@ export class BirdNETPlayer {
      * Replace all spectrogram labels at once.
      * @param {SpectrogramLabelInput[]} labels
      */
-    setSpectrogramLabels(labels: unknown) {
-        const next = new Map();
+    setSpectrogramLabels(labels: Partial<LinkedLabel>[]) {
+        const next = new Map<string, LinkedLabel>();
         for (const lbl of labels || []) {
-            const id = lbl?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+            const id = (lbl as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
-                ...lbl,
+                ...(lbl as any),
                 id,
-                species: lbl?.species ?? lbl?.label ?? existing?.species ?? '',
-                label: lbl?.label ?? existing?.label ?? lbl?.species ?? 'Label',
+                species: (lbl as any)?.species ?? (lbl as any)?.label ?? existing?.species ?? '',
+                label: (lbl as any)?.label ?? existing?.label ?? (lbl as any)?.species ?? 'Label',
             }));
         }
         this._linkedLabels = next;
@@ -383,7 +412,7 @@ export class BirdNETPlayer {
      * @param {string} name
      * @returns {boolean}
      */
-    renameLabel(id: unknown, name: unknown) {
+    renameLabel(id: string, name: string) {
         const key = String(id || '').trim();
         const value = String(name || '').trim();
         if (!key || !value) return false;
@@ -467,7 +496,7 @@ export class BirdNETPlayer {
     }
     /** @returns {Array<{name: string, color: string, shortcut: string}>} */
     getLabelTaxonomy() {
-        return this._labelTaxonomy.map((item: unknown) => ({ ...item }));
+        return this._labelTaxonomy.map((item) => ({ ...item }));
     }
 
     /**
@@ -483,16 +512,16 @@ export class BirdNETPlayer {
      * Each entry: { key, label, options: string[] }
      * @param {Array<{ key: string, label?: string, options: string[] }>} presets
      */
-    setTagPresets(presets: unknown) {
-        this._tagPresets = (presets || []).map((p: unknown) => ({
+    setTagPresets(presets: Array<{ key: string; label?: string; options: string[] }>) {
+        this._tagPresets = (presets || []).map((p: any) => ({
             key: String(p.key || ''),
             label: String(p.label || p.key || ''),
             options: Array.isArray(p.options) ? p.options.map(String) : [],
-        })).filter((p: unknown) => p.key);
+        })).filter((p: any) => p.key);
     }
     /** @returns {Array<{key: string, label: string, options: string[]}> | null} */
     getTagPresets() {
-        return this._tagPresets ? this._tagPresets.map((p: unknown) => ({ ...p, options: p.options.slice() })) : null;
+        return this._tagPresets ? this._tagPresets.map((p: any) => ({ ...p, options: p.options.slice() })) : null;
     }
 
     /**
@@ -501,14 +530,14 @@ export class BirdNETPlayer {
      * @param {number | string} shortcutOrIndex
      * @returns {boolean}
      */
-    applyTaxonomyToLabel(id: unknown, shortcutOrIndex: unknown) {
+    applyTaxonomyToLabel(id: string, shortcutOrIndex: number | string) {
         const key = String(id || '').trim();
         const current = this._linkedLabels.get(key);
         if (!current) return false;
 
         const index = typeof shortcutOrIndex === 'number'
             ? shortcutOrIndex
-            : this._labelTaxonomy.findIndex((t: unknown) => t.shortcut === String(shortcutOrIndex));
+            : this._labelTaxonomy.findIndex((t) => t.shortcut === String(shortcutOrIndex));
         if (index < 0 || index >= this._labelTaxonomy.length) return false;
         const tax = this._labelTaxonomy[index];
 
@@ -537,7 +566,7 @@ export class BirdNETPlayer {
      * @param {string} [options.mode='mel'] - 'mel'|'linear' (affects freq axis labels)
      * @param {number} [options.sampleRate]   - sample rate for freq labels (default: from audio)
      */
-    async setSpectrogramData(data: unknown, nFrames: unknown, nMels: unknown, options = {}) {
+    async setSpectrogramData(data: Float32Array | ArrayBuffer | string, nFrames: number, nMels: number, options: Record<string, unknown> = {}) {
         await this.ready;
         return this._state?._spectro.setExternalData(data, nFrames, nMels, options);
     }
@@ -552,7 +581,7 @@ export class BirdNETPlayer {
      * @param {number[]} [options.freqRange]   - [fMin, fMax] in Hz the image covers
      * @param {string}   [options.freqScale]   - frequency axis mapping: 'linear' | 'mel' | 'log'
      */
-    async setSpectrogramImage(image: unknown, options = {}) {
+    async setSpectrogramImage(image: string | HTMLImageElement | HTMLCanvasElement, options: Record<string, unknown> = {}) {
         await this.ready;
         return this._state?._spectro.setExternalImage(image, options);
     }
@@ -617,19 +646,19 @@ export class BirdNETPlayer {
     _bindLinkedLabelSync() {
         // Helper: listen on a layer and re-emit to the public bus so external
         // consumers of player.on('annotationcreate', ...) still work unchanged.
-        const fwd = (layer: unknown, event: unknown, handler: unknown) => {
-            const cb = (e: unknown) => {
-                const ce = /** @type {CustomEvent} */ (e);
+        const fwd = (layer: EventTarget, event: string, handler: (ce: CustomEvent) => void) => {
+            const cb = (e: Event) => {
+                const ce = /** @type {CustomEvent} */ (e as CustomEvent);
                 handler(ce);
                 this._emit(event, ce.detail);
             };
-            layer.addEventListener(event, cb);
+            layer.addEventListener(event, cb as EventListener);
             // Store for cleanup in detach() if needed (layers call detach on their own)
         };
 
         // labelfocus comes from both layers — handle active-id logic once
-        const onLabelFocus = (e: unknown) => {
-            const ce = /** @type {CustomEvent} */ (e);
+        const onLabelFocus = (e: Event) => {
+            const ce = /** @type {CustomEvent} */ (e as CustomEvent);
             const id = String(ce.detail?.id || '').trim() || null;
             const interaction = ce.detail?.interaction;
             if (interaction === 'click') {
@@ -643,28 +672,20 @@ export class BirdNETPlayer {
         this.spectrogramLabels.addEventListener('labelfocus', onLabelFocus);
 
         // Annotation layer events
-        fwd(this.annotations, 'annotationpreview',
-            (e: unknown) => this._previewFromLayer('annotation', e.detail.annotation));
-        fwd(this.annotations, 'annotationcreate',
-            (e: unknown) => this._upsertFromLayer('annotation', e.detail.annotation));
-        fwd(this.annotations, 'annotationupdate',
-            (e: unknown) => this._upsertFromLayer('annotation', e.detail.annotation));
-        fwd(this.annotations, 'annotationremove',
-            (e: unknown) => this._removeFromLinkedLabels(e.detail.annotation));
+        fwd(this.annotations, 'annotationpreview', (ce: CustomEvent) => this._previewFromLayer('annotation', (ce.detail as any).annotation));
+        fwd(this.annotations, 'annotationcreate', (ce: CustomEvent) => this._upsertFromLayer('annotation', (ce.detail as any).annotation));
+        fwd(this.annotations, 'annotationupdate', (ce: CustomEvent) => this._upsertFromLayer('annotation', (ce.detail as any).annotation));
+        fwd(this.annotations, 'annotationremove', (ce: CustomEvent) => this._removeFromLinkedLabels((ce.detail as any).annotation));
 
         // Spectrogram label layer events
-        fwd(this.spectrogramLabels, 'spectrogramlabelpreview',
-            (e: unknown) => this._previewFromLayer('spectrogram', e.detail.label));
-        fwd(this.spectrogramLabels, 'spectrogramlabelcreate',
-            (e: unknown) => this._upsertFromLayer('spectrogram', e.detail.label));
-        fwd(this.spectrogramLabels, 'spectrogramlabelupdate',
-            (e: unknown) => this._upsertFromLayer('spectrogram', e.detail.label));
-        fwd(this.spectrogramLabels, 'spectrogramlabelremove',
-            (e: unknown) => this._removeFromLinkedLabels(e.detail.label));
+        fwd(this.spectrogramLabels, 'spectrogramlabelpreview', (ce: CustomEvent) => this._previewFromLayer('spectrogram', (ce.detail as any).label));
+        fwd(this.spectrogramLabels, 'spectrogramlabelcreate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
+        fwd(this.spectrogramLabels, 'spectrogramlabelupdate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
+        fwd(this.spectrogramLabels, 'spectrogramlabelremove', (ce: CustomEvent) => this._removeFromLinkedLabels((ce.detail as any).label));
 
         // stampmodechange comes from SpectrogramLabelLayer
-        this.spectrogramLabels.addEventListener('stampmodechange', (e: unknown) => {
-            const ce = /** @type {CustomEvent} */ (e);
+        this.spectrogramLabels.addEventListener('stampmodechange', (e: Event) => {
+            const ce = /** @type {CustomEvent} */ (e as CustomEvent);
             const on = ce.detail?.active ?? false;
             if (this._stampBtn) this._stampBtn.classList.toggle('active', on);
             this.root?.classList.toggle('stamp-mode-active', on);
@@ -673,9 +694,9 @@ export class BirdNETPlayer {
         });
 
         // Tag events forwarded from LabelEditorModal via the layer
-        const fwdTag = (layer: unknown) => {
+        const fwdTag = (layer: EventTarget) => {
             for (const ev of ['tagcustomadd', 'tagcustomremove', 'tagcustomrename']) {
-                layer.addEventListener(ev, (e: unknown) => this._emit(ev, /** @type {CustomEvent} */ (e).detail));
+                layer.addEventListener(ev, (e: Event) => this._emit(ev, /** @type {CustomEvent} */ ((e as CustomEvent).detail)));
             }
         };
         fwdTag(this.annotations);
@@ -683,12 +704,13 @@ export class BirdNETPlayer {
     }
 
     _bindGlobalHotkeys() {
-        this._globalKeyHandler = (event: unknown) => {
-            const tag = event?.target?.tagName?.toLowerCase?.() || '';
-            const typing = tag === 'input' || tag === 'textarea' || event?.target?.isContentEditable;
+        this._globalKeyHandler = (event: KeyboardEvent) => {
+            const targetEl = event.target as Element | null;
+            const tag = targetEl?.tagName?.toLowerCase?.() || '';
+            const typing = tag === 'input' || tag === 'textarea' || (targetEl as HTMLElement)?.isContentEditable;
             if (typing) return;
-            const key = String(event.key || '');
-            const ctrl = event.ctrlKey || event.metaKey;
+            const key = String((event as KeyboardEvent).key || '');
+            const ctrl = (event as KeyboardEvent).ctrlKey || (event as KeyboardEvent).metaKey;
 
             // Ctrl+C — copy focused label
             if (ctrl && key === 'c' && this._activeLabelId) {
@@ -750,12 +772,12 @@ export class BirdNETPlayer {
                 event.preventDefault();
                 const id = this._activeLabelId;
                 // Try spectrogram labels first, then waveform annotations
-                const sLabel = this.spectrogramLabels?.labels?.find((l: unknown) => l.id === id);
+                const sLabel = this.spectrogramLabels?.labels?.find((l: any) => l.id === id);
                 if (sLabel) {
                     this.spectrogramLabels.remove(id);
                     this._emit?.('spectrogramlabelremove', { label: { ...sLabel } });
                 } else {
-                    const ann = this.annotations?.annotations?.find((a: unknown) => a.id === id);
+                        const ann = this.annotations?.annotations?.find((a: any) => a.id === id);
                     if (ann) {
                         this.annotations.remove(id);
                         this._emit?.('annotationremove', { annotation: { ...ann } });
@@ -767,7 +789,7 @@ export class BirdNETPlayer {
             if (key === 'g') {
                 event.preventDefault();
                 // Try spectrogram labels first, then waveform annotations
-                const sLabel = this.spectrogramLabels?.labels?.find((l: unknown) => l.id === this._activeLabelId);
+                const sLabel = this.spectrogramLabels?.labels?.find((l: any) => l.id === this._activeLabelId);
                 if (sLabel) {
                     this.spectrogramLabels.startGrab(this._activeLabelId);
                 } else {
@@ -851,7 +873,7 @@ export class BirdNETPlayer {
      * @param {string} name
      * @param {{ color?: string, scientificName?: string }} [opts]
      */
-    setSpeciesBar(name: unknown, opts = {}) {
+    setSpeciesBar(name: string, opts: { color?: string; scientificName?: string } = {}) {
         const trimmed = (name || '').trim();
         this._speciesBarSelection = trimmed
             ? { name: trimmed, color: opts.color || colorForName(trimmed), scientificName: opts.scientificName || '' }
@@ -863,14 +885,14 @@ export class BirdNETPlayer {
      * Set background species (XC "also" field) to appear in search suggestions.
      * @param {Array<string | { name: string, scientificName?: string }>} species
      */
-    setBackgroundSpecies(species: unknown) {
-        this._backgroundSpecies = (species || []).map((s: unknown) =>
+    setBackgroundSpecies(species: Array<string | { name: string, scientificName?: string }>) {
+        this._backgroundSpecies = (species || []).map((s: any) =>
             typeof s === 'string' ? { name: s } : { name: s.name || '', scientificName: s.scientificName || '' },
-        ).filter((s: unknown) => s.name);
+        ).filter((s: any) => s.name);
     }
     /** @returns {Array<{name: string, scientificName?: string}>} */
     getBackgroundSpecies() {
-        return this._backgroundSpecies.map((s: unknown) => ({ ...s }));
+        return this._backgroundSpecies.map((s: { name: string; scientificName?: string }) => ({ ...s }));
     }
 
     /**
@@ -879,11 +901,11 @@ export class BirdNETPlayer {
      * @param {'annotation'|'spectrogram'} source
      * @param {object} item
      */
-    _previewFromLayer(source: unknown, item: unknown) {
+    _previewFromLayer(source: 'annotation'|'spectrogram', item: Partial<LinkedLabel>) {
         if (this._isSyncingLabels || !item) return;
-        const id = item.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+        const id = (item as any).id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
-        const next = this._normalizeItemFromSource(source, { ...item, id }, existing);
+        const next = this._normalizeItemFromSource(source, { ...(item as any), id }, existing ?? undefined);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
         if (source === 'annotation') {
@@ -900,11 +922,11 @@ export class BirdNETPlayer {
      * @param {'annotation'|'spectrogram'} source
      * @param {object} item
      */
-    _upsertFromLayer(source: unknown, item: unknown) {
+    _upsertFromLayer(source: 'annotation'|'spectrogram', item: Partial<LinkedLabel>) {
         if (this._isSyncingLabels || !item) return;
-        const id = item.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
+        const id = (item as any).id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
         const existing = this._linkedLabels.get(id);
-        const next = this._normalizeItemFromSource(source, { ...item, id }, existing);
+        const next = this._normalizeItemFromSource(source, { ...(item as any), id }, existing ?? undefined);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
         this.annotations.setLiveLinkedId(null);
@@ -920,20 +942,20 @@ export class BirdNETPlayer {
      * @param {object} item   item with .id already set
      * @param {object} [existing]
      */
-    _normalizeItemFromSource(source: unknown, item: unknown, existing: unknown) {
+    _normalizeItemFromSource(source: 'annotation'|'spectrogram', item: Partial<LinkedLabel> & { id: string }, existing?: LinkedLabel) {
         if (source === 'spectrogram') {
-            const nextName = String(item?.label || item?.species || existing?.label || existing?.species || 'Label').trim();
-            return this._normalizeLinkedLabel({ ...existing, ...item, species: nextName, label: nextName });
+            const nextName = String((item as any)?.label || (item as any)?.species || existing?.label || existing?.species || 'Label').trim();
+            return this._normalizeLinkedLabel({ ...existing, ...(item as any), species: nextName, label: nextName });
         }
         return this._normalizeLinkedLabel({
-            ...existing, ...item,
-            label: item?.species ?? existing?.label ?? 'Label',
+            ...existing, ...(item as any),
+            label: (item as any)?.species ?? existing?.label ?? 'Label',
         });
     }
 
-    _removeFromLinkedLabels(label: unknown) {
+    _removeFromLinkedLabels(label: Partial<LinkedLabel> | null) {
         if (this._isSyncingLabels || !label?.id) return;
-        this._linkedLabels.delete(label.id);
+        this._linkedLabels.delete(label.id as string);
         if (this._activeLabelId === label.id) this._activeLabelId = null;
         this.annotations.setLiveLinkedId(null);
         this.spectrogramLabels.setLiveLinkedId(null);
@@ -959,17 +981,17 @@ export class BirdNETPlayer {
     }
 
     /** Create a deep snapshot of the current _linkedLabels for undo. */
-    _snapshotLabels() {
-        return Array.from(this._linkedLabels.values()).map((l) => ({ ...l, tags: { ...l.tags } }));
+    _snapshotLabels(): LinkedLabel[] {
+        return Array.from(this._linkedLabels.values()).map((l) => ({ ...l, tags: { ...(l.tags || {}) } } as LinkedLabel));
     }
 
     /** Restore a snapshot from the undo stack. */
-    _restoreSnapshot(snapshot: unknown) {
+    _restoreSnapshot(snapshot: LinkedLabel[] | unknown) {
         if (!snapshot) return;
         this._isRestoring = true;
         this._linkedLabels.clear();
-        for (const label of snapshot) {
-            this._linkedLabels.set(label.id, { ...label, tags: { ...label.tags } });
+        for (const label of (snapshot as LinkedLabel[])) {
+            this._linkedLabels.set(label.id, { ...label, tags: { ...(label.tags || {}) } });
         }
         this._syncLinkedLabelsToLayers();
         this._isRestoring = false;
@@ -1015,7 +1037,7 @@ export class BirdNETPlayer {
      * Highlight specific label segments in the overview tracks by id.
      * @param {string[]} ids
      */
-    setMultiSelectedOverview(ids: unknown) {
+    setMultiSelectedOverview(ids: string[]) {
         const container = this._state?.d?.overviewLabelTracks;
         if (!container) return;
         const set = new Set(ids);
@@ -1037,18 +1059,17 @@ export class BirdNETPlayer {
         if (duration <= 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
         // Two-level grouping: origin → label name
-        /** @type {Map<string, Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>>} */
-        const originGroups = new Map();
+        const originGroups: Map<string, Map<string, { color: string; segments: { id: string; start: number; end: number }[] }>> = new Map();
         for (const item of this._linkedLabels.values()) {
             const origin = String(item?.origin || 'manual').trim() || 'manual';
             const name = String(item?.label || item?.species || '').trim();
             if (!name) continue;
 
             if (!originGroups.has(origin)) originGroups.set(origin, new Map());
-            const nameMap = /** @type {Map<string, {color: string, segments: {id: string, start: number, end: number}[]}>} */ (originGroups.get(origin));
+            const nameMap = originGroups.get(origin)! as Map<string, { color: string; segments: { id: string; start: number; end: number }[] }>;
 
             if (!nameMap.has(name)) nameMap.set(name, { color: item.color || '', segments: [] });
-            const g = /** @type {{color: string, segments: {id: string, start: number, end: number}[]}} */ (nameMap.get(name));
+            const g = nameMap.get(name)!;
             if (!g.color && item.color) g.color = item.color;
             g.segments.push({ id: item.id || '', start: item.start, end: item.end });
         }
@@ -1056,7 +1077,7 @@ export class BirdNETPlayer {
         if (originGroups.size === 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
 
         // Sort origins: manual → BirdNET → xeno-canto → alphabetical
-        const ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+        const ORDER: Record<string, number> = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
         const sortedOrigins = [...originGroups.entries()].sort((a, b) =>
             (ORDER[a[0]] ?? 99) - (ORDER[b[0]] ?? 99) || a[0].localeCompare(b[0]));
 
@@ -1139,7 +1160,7 @@ export class BirdNETPlayer {
      * @param {Array<{name: string, color?: string, shortcut?: string}>} taxonomy
      * @returns {Array<{name: string, color: string, shortcut: string}>}
      */
-    _normalizeTaxonomy(taxonomy: unknown) {
+    _normalizeTaxonomy(taxonomy: any[]) {
         const used = new Set();
         const list = [];
         for (const item of taxonomy || []) {
@@ -1191,7 +1212,7 @@ export class BirdNETPlayer {
         }));
     }
 
-    _normalizeLinkedLabel(label: unknown) {
+    _normalizeLinkedLabel(label: Partial<LinkedLabel>) {
         const duration = Math.max(0.001, this.duration || this._state?.audioBuffer?.duration || 0.001);
         const nyquist = (this._state?.sampleRateHz || DEFAULT_SAMPLE_RATE) / 2;
         const selected = parseFloat(this._state?.d?.maxFreqSelect?.value || `${nyquist}`);
@@ -1205,7 +1226,7 @@ export class BirdNETPlayer {
         const freqMax = clamp(freqMaxRaw, freqMin + 1, maxFreq);
         const labelName = String(label?.label || label?.species || '').trim();
         const tax = labelName
-            ? this._labelTaxonomy.find((t: unknown) => t.name.toLowerCase() === labelName.toLowerCase())
+            ? this._labelTaxonomy.find((t) => t.name.toLowerCase() === labelName.toLowerCase())
             : null;
         const explicitColor = String(label?.color || '').trim();
 

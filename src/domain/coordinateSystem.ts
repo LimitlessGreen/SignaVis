@@ -21,7 +21,8 @@ export function computeMaxBin({ isLinear, nyquist, spectrogramMels, boundedMaxFr
         return clamp(Math.floor(boundedMaxFreq / binHz), 1, spectrogramMels - 1);
     }
     let maxBin = spectrogramMels - 1;
-    const freqs = /** @type {Float32Array} */ (melFreqs);
+    if (!melFreqs) return maxBin;
+    const freqs = melFreqs as Float32Array;
     for (let i = 0; i < freqs.length; i++) {
         if (freqs[i] > boundedMaxFreq) { maxBin = Math.max(1, i - 1); break; }
     }
@@ -56,6 +57,31 @@ export interface CoordinateSystemParams {
 }
 
 export class CoordinateSystem {
+    duration: number;
+    sampleRate: number;
+    pixelsPerSecond: number;
+    canvasWidth: number;
+    canvasHeight: number;
+    maxFreq: number;
+    spectrogramMels: number;
+    scale: string;
+    frameRate: number;
+    hopSize: number;
+    freqRange: number[] | null;
+    freqScale: string | null;
+    freqViewMin: number | null;
+    freqViewMax: number | null;
+
+    nyquist: number;
+    boundedMaxFreq: number;
+    isLinear: boolean;
+
+    _melFreqs: Float32Array | null = null;
+    _maxBin: number = 0;
+    _hasFreqView: boolean = false;
+    _viewMinBin: number = 0;
+    _viewMaxBin: number = 0;
+    _viewBinRange: number = 0;
     /**
      * @param {object} [params]
      * @param {number} [params.duration]           Audio duration in seconds
@@ -127,8 +153,8 @@ export class CoordinateSystem {
         this.freqViewMax = hasView ? Math.min(this.boundedMaxFreq, freqViewMax) : null;
         this._hasFreqView = hasView;
         if (hasView) {
-            this._viewMinBin = this._freqToBinFractional(this.freqViewMin);
-            this._viewMaxBin = this._freqToBinFractional(this.freqViewMax);
+            this._viewMinBin = this._freqToBinFractional(this.freqViewMin as number);
+            this._viewMaxBin = this._freqToBinFractional(this.freqViewMax as number);
             this._viewBinRange = this._viewMaxBin - this._viewMinBin;
         } else {
             this._viewMinBin = 0;
@@ -171,25 +197,25 @@ export class CoordinateSystem {
     // ═════════════════════════════════════════════════════════════════
 
     /** Seconds → canvas pixel X. */
-    timeToPixelX(timeSec: unknown) {
+    timeToPixelX(timeSec: number) {
         if (this.duration <= 0 || this.canvasWidth <= 0) return 0;
         return (timeSec / this.duration) * this.canvasWidth;
     }
 
     /** Canvas pixel X → seconds. */
-    pixelXToTime(pixelX: unknown) {
+    pixelXToTime(pixelX: number) {
         if (this.canvasWidth <= 0 || this.duration <= 0) return 0;
         const t = (pixelX / this.canvasWidth) * this.duration;
         return clamp(t, 0, this.duration);
     }
 
     /** Seconds → scroll‐aware pixel X (accounts for pixelsPerSecond). */
-    timeToScrollX(timeSec: unknown) {
+    timeToScrollX(timeSec: number) {
         return timeSec * this.pixelsPerSecond;
     }
 
     /** Scroll pixel → seconds. */
-    scrollXToTime(scrollX: unknown) {
+    scrollXToTime(scrollX: number) {
         return scrollX / this.pixelsPerSecond;
     }
 
@@ -202,7 +228,7 @@ export class CoordinateSystem {
      * Shared helper for both full-range and viewport-aware mappings.
      * @private
      */
-    _freqToBinFractional(freq: unknown) {
+    _freqToBinFractional(freq: number) {
         const cf = clamp(freq, 0, this.boundedMaxFreq);
         if (this.isLinear) {
             const binHz = this.nyquist / this.spectrogramMels;
@@ -225,7 +251,7 @@ export class CoordinateSystem {
      * When freqRange is set (external image), uses direct mapping over that range.
      * When freqViewMin/freqViewMax are set (vertical zoom), maps within that viewport.
      */
-    frequencyToPixelY(freq: unknown) {
+    frequencyToPixelY(freq: number) {
         // External image with explicit frequency range
         if (this.freqRange) {
             return this._freqToPixelY_external(freq);
@@ -252,7 +278,7 @@ export class CoordinateSystem {
     /**
      * Display pixel Y (0 = top) → frequency (Hz).
      */
-    pixelYToFrequency(displayY: unknown) {
+    pixelYToFrequency(displayY: number) {
         // External image with explicit frequency range
         if (this.freqRange) {
             return this._pixelYToFreq_external(displayY);
@@ -283,8 +309,9 @@ export class CoordinateSystem {
     // ── External image frequency mapping helpers ─────────────────────
 
     /** @private Map frequency → pixel Y for an external image with known freqRange + freqScale. */
-    _freqToPixelY_external(freq: unknown) {
-        const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
+    _freqToPixelY_external(freq: number) {
+        if (!this.freqRange) return 0;
+        const [fMin, fMax] = this.freqRange as number[];
         const cf = clamp(freq, fMin, fMax);
         const scale = this.freqScale || 'linear';
         let fraction; // 0 = fMin (bottom) … 1 = fMax (top)
@@ -307,8 +334,9 @@ export class CoordinateSystem {
     }
 
     /** @private Map pixel Y → frequency for an external image with known freqRange + freqScale. */
-    _pixelYToFreq_external(displayY: unknown) {
-        const [fMin, fMax] = /** @type {number[]} */ (this.freqRange);
+    _pixelYToFreq_external(displayY: number) {
+        if (!this.freqRange) return 0;
+        const [fMin, fMax] = this.freqRange as number[];
         // pixel 0 = top = fMax, pixel canvasHeight = bottom = fMin
         const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
         const scale = this.freqScale || 'linear';
@@ -330,7 +358,7 @@ export class CoordinateSystem {
      * Frequency → normalized Y fraction (0 = top, 1 = bottom).
      * Useful for CSS positioning (e.g. frequency axis labels).
      */
-    frequencyToYFraction(freq: unknown) {
+    frequencyToYFraction(freq: number) {
         if (this.canvasHeight <= 0) return 0;
         return this.frequencyToPixelY(freq) / this.canvasHeight;
     }
@@ -340,7 +368,7 @@ export class CoordinateSystem {
      * 0 = top (highest freq), 1 = bottom (0 Hz).
      * Used for computing source crop when rendering with vertical zoom.
      */
-    frequencyToBaseYFraction(freq: unknown) {
+    frequencyToBaseYFraction(freq: number) {
         if (this.freqRange) {
             // For external images, normalize the external mapping
             return this._freqToPixelY_external(freq) / Math.max(1, this.canvasHeight);
@@ -355,7 +383,7 @@ export class CoordinateSystem {
     // ═════════════════════════════════════════════════════════════════
 
     /** Frequency (Hz) → nearest bin index. */
-    frequencyToBin(freq: unknown) {
+    frequencyToBin(freq: number) {
         if (this.isLinear) {
             const binHz = this.nyquist / this.spectrogramMels;
             return clamp(Math.round(freq / binHz), 0, this.spectrogramMels - 1);
@@ -371,7 +399,7 @@ export class CoordinateSystem {
     }
 
     /** Bin index → frequency (Hz). */
-    binToFrequency(bin: unknown) {
+    binToFrequency(bin: number) {
         const clamped = clamp(bin, 0, this.spectrogramMels - 1);
         if (this.isLinear) {
             return clamped * (this.nyquist / this.spectrogramMels);
@@ -384,13 +412,13 @@ export class CoordinateSystem {
     // ═════════════════════════════════════════════════════════════════
 
     /** Time (seconds) → spectrogram frame index. */
-    timeToFrame(timeSec: unknown, nFrames: unknown) {
+    timeToFrame(timeSec: number, nFrames: number) {
         const frameCenterSec = 2 * this.hopSize / this.sampleRate;
         return clamp(Math.round((timeSec - frameCenterSec) * this.frameRate), 0, nFrames - 1);
     }
 
     /** Frame index → time (seconds). */
-    frameToTime(frame: unknown) {
+    frameToTime(frame: number) {
         const frameCenterSec = 2 * this.hopSize / this.sampleRate;
         return frame / this.frameRate + frameCenterSec;
     }
@@ -400,7 +428,7 @@ export class CoordinateSystem {
     // ═════════════════════════════════════════════════════════════════
 
     /** Display pixel Y → bin index (clamped to maxBin). */
-    pixelYToBin(displayY: unknown) {
+    pixelYToBin(displayY: number) {
         if (this._hasFreqView) {
             const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
             const bin = this._viewMinBin + fraction * this._viewBinRange;
@@ -425,7 +453,7 @@ export class CoordinateSystem {
      * @param {number} scrollLeft
      * @returns {{ canvasX: number, canvasY: number, localX: number, localY: number }}
      */
-    clientToCanvas(clientX: unknown, clientY: unknown, wrapperRect: unknown, scrollLeft: unknown) {
+    clientToCanvas(clientX: number, clientY: number, wrapperRect: DOMRect, scrollLeft: number) {
         const localX = clientX - wrapperRect.left;
         const localY = clientY - wrapperRect.top;
         const canvasX = scrollLeft + localX;
@@ -444,7 +472,7 @@ export class CoordinateSystem {
      * @param {number} scrollLeft
      * @returns {{ time: number, freq: number, canvasX: number, canvasY: number, localX: number, localY: number }}
      */
-    clientToTimeFreq(clientX: unknown, clientY: unknown, wrapperRect: unknown, scrollLeft: unknown) {
+    clientToTimeFreq(clientX: number, clientY: number, wrapperRect: DOMRect, scrollLeft: number) {
         const { canvasX, canvasY, localX, localY } = this.clientToCanvas(clientX, clientY, wrapperRect, scrollLeft);
         const time = this.pixelXToTime(canvasX);
         const freq = this.pixelYToFrequency(canvasY);

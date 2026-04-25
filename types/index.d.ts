@@ -4,6 +4,10 @@
 // ── Public API ──────────────────────────────────────────────────
 export * from './generated/app/BirdNETPlayer';
 
+// ── Event infrastructure ─────────────────────────────────────────
+export { EventBus } from './generated/shared/EventBus';
+export type { EventHandler } from './generated/shared/EventBus';
+
 // ── Headless / testing utilities ────────────────────────────────
 export { AudioEngineBase } from './generated/infrastructure/audio/AudioEngineBase';
 export { MockAudioEngine } from './generated/infrastructure/audio/MockAudioEngine';

@@ -52,7 +52,7 @@ import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
  * @returns {Promise<AudioBuffer>}
  */
 async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
-  const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+  const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
   const nativeSr = parseNativeSampleRate(arrayBuffer);
   const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
@@ -68,12 +68,42 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
  * Extends EventTarget for event emission.
  */
 export class AudioEngine extends AudioEngineBase {
+  webkitAudioContext: any;
+  _WaveSurferCtor: any;
+  _container: HTMLElement | null;
+  audioBuffer: AudioBuffer | null;
+  wavesurfer: any;
+  volume: number;
+  muted: boolean;
+  preMuteVolume: number;
+  _segmentMode: boolean;
+  _activeSegmentLabelId: string | null;
+  _activeSegmentFilter: any | null;
+  _activeSegmentStart: number | null;
+  _activeSegmentEnd: number | null;
+  _suppressNextPauseHandler: boolean;
+  _segmentPlayToken: number;
+  _customSegmentPlayback: any | null;
+  _lastTimeupdateEmitAt: number;
+  pixelsPerSecond: number;
+  loopPlayback: boolean;
+  allowCustomPlayback: boolean;
+  labelId: string | null;
+  id: string | number | null;
+  start: number | null;
+  end: number | null;
+  freqMin: number | null;
+  freqMax: number | null;
+  token: number | string | null;
+  ctx: any;
+  bandpass: any;
+  emitEnd: any;
   /**
    * @param {Function} WaveSurferCtor - WaveSurfer constructor (loaded at runtime)
    * @param {Object} [options]
    * @param {HTMLElement} [options.container] - Container element for WaveSurfer
    */
-  constructor(WaveSurferCtor: unknown, options = {}) {
+  constructor(WaveSurferCtor: any, options: any = {}) {
     super();
     this._WaveSurferCtor = WaveSurferCtor;
     this._container = options.container || null;
@@ -127,7 +157,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string} [name] - Display filename
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
-  async loadFromArrayBuffer(arrayBuffer: unknown, name: unknown) {
+  async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
 
@@ -141,7 +171,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string} url
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
-  async loadFromUrl(url: unknown) {
+  async loadFromUrl(url: string) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const arrayBuffer = await response.arrayBuffer();
@@ -160,7 +190,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {File} file
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
-  async loadFromFile(file: unknown) {
+  async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
@@ -201,7 +231,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {boolean} [centerView=false]
    * @param {Object} [options]
    */
-  seekToTime(timeSec: unknown, centerView = false, options = {}) {
+  seekToTime(timeSec: number, centerView = false, options: any = {}) {
     if (!this.audioBuffer) return;
     if (this._customSegmentPlayback && options.allowCustomPlayback !== true) {
       this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
@@ -215,7 +245,7 @@ export class AudioEngine extends AudioEngineBase {
    * Seeks relative to the current time.
    * @param {number} deltaSec
    */
-  seekByDelta(deltaSec: unknown) {
+  seekByDelta(deltaSec: number) {
     if (!this.audioBuffer) return;
     this.seekToTime(this.getCurrentTime() + deltaSec, false);
   }
@@ -236,7 +266,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {Object} [options]
    * @param {string} [options.labelId]
    */
-  playSegment(startSec: unknown, endSec: unknown, options = {}) {
+  playSegment(startSec: number, endSec: number, options: any = {}) {
     if (!this.audioBuffer || !this.wavesurfer) return;
     this._clearPlaybackFilter();
     const dur = this.audioBuffer.duration;
@@ -301,7 +331,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {Object} [options]
    * @param {string} [options.labelId]
    */
-  playBandpassedSegment(startSec: unknown, endSec: unknown, freqMinHz: unknown, freqMaxHz: unknown, options = {}) {
+  playBandpassedSegment(startSec: number, endSec: number, freqMinHz: number, freqMaxHz: number, options: any = {}) {
     if (!this.audioBuffer) return;
     const dur = this.audioBuffer.duration;
     const start = clamp(startSec, 0, dur);
@@ -323,7 +353,7 @@ export class AudioEngine extends AudioEngineBase {
     }
     this.seekToTime(start, false, { allowCustomPlayback: true });
 
-    const Ctor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+    const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!Ctor) {
       this.playSegment(start, end, { labelId: options?.labelId });
       return;
@@ -406,7 +436,7 @@ export class AudioEngine extends AudioEngineBase {
    * Sets the playback volume.
    * @param {number} val - 0 to 1
    */
-  setVolume(val: unknown) {
+  setVolume(val: number) {
     this.volume = clamp(val, 0, 1);
     if (this.wavesurfer) this.wavesurfer.setVolume(this.volume);
     if (this._customSegmentPlayback?.gain) {
@@ -441,7 +471,7 @@ export class AudioEngine extends AudioEngineBase {
    * Updates the active segment based on a label.
    * @param {Object} label - Label with start, end, freqMin, freqMax
    */
-  updateActiveSegmentFromLabel(label: unknown) {
+  updateActiveSegmentFromLabel(label: any) {
     if (!label || this.playbackMode !== 'segment') return;
     const labelId = label.id || null;
     if (this._activeSegmentLabelId && labelId && this._activeSegmentLabelId !== labelId) return;
@@ -470,12 +500,12 @@ export class AudioEngine extends AudioEngineBase {
    * Called by PlayerState when the segment end is reached during normal WaveSurfer playback.
    * @param {number} targetTimeSec
    */
-  endNormalSegment(targetTimeSec: unknown) {
+  endNormalSegment(targetTimeSec?: number) {
     this._clearActiveSegment();
     this._suppressNextPauseHandler = true;
     if (this.wavesurfer) {
       this.wavesurfer.pause();
-      this.seekToTime(targetTimeSec, false);
+      this.seekToTime(Number(targetTimeSec ?? 0), false);
     }
   }
 
@@ -499,7 +529,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string|File|Blob|null} source - URL string, File/Blob, or null
    * @param {string} [name] - display name
    */
-  _setupWaveSurfer(source: unknown, name: unknown) {
+  _setupWaveSurfer(source: any, name: any) {
     if (this.wavesurfer) this.wavesurfer.destroy();
 
     // Support WaveSurfer builds that expose a static `create()` or are constructible.
@@ -538,7 +568,7 @@ export class AudioEngine extends AudioEngineBase {
       });
     });
 
-    ws.on('timeupdate', (t: unknown) => {
+    ws.on('timeupdate', (t: number) => {
       // Drive the UI on every frame during normal WaveSurfer playback
       this._emit('uiupdate', { time: t, fromPlayback: true });
       const now = performance.now();
@@ -600,7 +630,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {AudioBufferSourceNode|null} [source]
    * @param {number|null} [startAtSec]
    */
-  _startCustomSegmentSource(playback: unknown, source = null, startAtSec = null) {
+  _startCustomSegmentSource(playback: any, source: AudioBufferSourceNode | null = null, startAtSec: number | null = null) {
     if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
     playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
     const generation = playback.sourceGeneration;
@@ -625,7 +655,7 @@ export class AudioEngine extends AudioEngineBase {
   /**
    * @param {SegmentPlayback} playback
    */
-  _loopCustomSegmentPlayback(playback: unknown) {
+  _loopCustomSegmentPlayback(playback: any) {
     if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
     playback.currentTimeSec = playback.startSec;
     this._emit('uiupdate', { time: playback.startSec, fromPlayback: false, immediate: true });
@@ -636,7 +666,7 @@ export class AudioEngine extends AudioEngineBase {
   /**
    * @param {{ start: number, end: number, freqMinHz?: number, freqMaxHz?: number }} opts
    */
-  _retargetCustomSegmentPlayback({ start, end, freqMinHz, freqMaxHz }) {
+  _retargetCustomSegmentPlayback({ start, end, freqMinHz, freqMaxHz }: { start: number; end: number; freqMinHz?: number; freqMaxHz?: number }) {
     const playback = this._customSegmentPlayback;
     if (!playback || !this.audioBuffer) return;
 
@@ -666,7 +696,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {SegmentPlayback} playback
    * @param {number} atSec
    */
-  _restartCustomSegmentSource(playback: unknown, atSec: unknown) {
+  _restartCustomSegmentSource(playback: any, atSec: number) {
     if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
     playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
     if (playback.source) {
@@ -685,7 +715,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {number|null} [targetTimeSec]
    * @param {Object} [options]
    */
-  _stopCustomSegmentPlayback(reason = 'stopped', targetTimeSec = null, options = {}) {
+  _stopCustomSegmentPlayback(reason: string = 'stopped', targetTimeSec: number | null = null, options: any = {}) {
     const active = this._customSegmentPlayback;
     if (!active) return;
 
@@ -703,12 +733,12 @@ export class AudioEngine extends AudioEngineBase {
     this._customSegmentPlayback = null;
     this._clearActiveSegment();
 
-    if (Number.isFinite(targetTimeSec)) {
-      this._emit('uiupdate', { time: targetTimeSec, fromPlayback: false, immediate: true });
+    if (Number.isFinite(targetTimeSec as number)) {
+      this._emit('uiupdate', { time: targetTimeSec as number, fromPlayback: false, immediate: true });
     }
     this._emit('pause', {});
     this._emit('transportstatechange', { state: reason === 'paused' ? 'paused_segment' : 'stopped', reason: 'bandpass-segment-stop' });
-    if (options.emitEnd) {
+    if (options && (options as any).emitEnd) {
       this._emit('segmentend', { end: targetTimeSec ?? 0 });
     }
   }
@@ -739,8 +769,8 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string} eventName
    * @param {any} detail
    */
-  _emit(eventName: unknown, detail: unknown) {
-    this.dispatchEvent(new CustomEvent(eventName, { detail }));
+  _emit(eventName: string, detail: any) {
+    this.dispatchEvent(new CustomEvent(String(eventName), { detail }));
   }
 
 }

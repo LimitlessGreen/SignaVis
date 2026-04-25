@@ -27,6 +27,14 @@ importScripts('${TFJS_CDN}');
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
 class MelSpecLayerSimple extends tf.layers.Layer {
+    declare date: unknown;
+    declare declare overlap: unknown;
+    declare declare minConfidence: unknown;
+    declare declare geoThreshold: unknown;
+    declare declare onProgress: unknown;
+    declare declare sampleRate: unknown;
+    declare declare terminate: unknown;
+    declare declare postMessage: unknown;
   constructor(config) {
     super(config);
     this.sampleRate  = config.sampleRate;
@@ -203,13 +211,13 @@ self.onmessage = async (e) => {
 // ---------------------------------------------------------------------------
 // Audio resampling helper (browser only — uses OfflineAudioContext)
 // ---------------------------------------------------------------------------
-async function resampleTo48k(channelData: unknown, sourceSampleRate: unknown) {
-  if (sourceSampleRate === TARGET_SR) return channelData;
-  const duration = channelData.length / sourceSampleRate;
+async function resampleTo48k(channelData: Float32Array | number[], sourceSampleRate: number): Promise<Float32Array> {
+  if (sourceSampleRate === TARGET_SR) return channelData instanceof Float32Array ? channelData : Float32Array.from(channelData as any);
+  const duration = (channelData as any).length / sourceSampleRate;
   const targetLength = Math.ceil(duration * TARGET_SR);
   const offCtx = new OfflineAudioContext(1, targetLength, TARGET_SR);
-  const buf = offCtx.createBuffer(1, channelData.length, sourceSampleRate);
-  buf.getChannelData(0).set(channelData);
+  const buf = offCtx.createBuffer(1, (channelData as any).length, sourceSampleRate);
+  buf.getChannelData(0).set(channelData as any);
   const src = offCtx.createBufferSource();
   src.buffer = buf;
   src.connect(offCtx.destination);
@@ -222,12 +230,20 @@ async function resampleTo48k(channelData: unknown, sourceSampleRate: unknown) {
 // BirdNETInference — public API
 // ---------------------------------------------------------------------------
 export class BirdNETInference {
-  /** @type {Worker | null} */  #worker = null;
-  /** @type {Map<number, function>} */ #pending = new Map();
+  date: any;
+  overlap: any;
+  minConfidence: any;
+  geoThreshold: any;
+  onProgress: any;
+  sampleRate: any;
+  terminate: any;
+  postMessage: any;
+  #worker: Worker | null = null;
+  #pending: Map<number, (v: any) => void> = new Map();
   #nextId = 0;
   #loaded = false;
   #hasAreaModel = false;
-  /** @type {function | null} */ #onLoadProgress = null;
+  #onLoadProgress: ((...args: any[]) => void) | null = null;
 
   /** Whether the model has been loaded successfully. */
   get loaded() { return this.#loaded; }
@@ -244,7 +260,7 @@ export class BirdNETInference {
    * @param {function} [opts.onProgress] Called with (message, percent) during loading.
    * @returns {Promise<{ labelCount: number, hasAreaModel: boolean }>}
    */
-  async load({ modelUrl, onProgress }) {
+  async load({ modelUrl, onProgress }: { modelUrl: string; onProgress?: (msg: string, percent: number) => void; }) {
     if (!modelUrl) throw new Error('modelUrl is required');
 
     // Resolve relative URLs against the page origin so the Blob-based Worker
@@ -260,20 +276,20 @@ export class BirdNETInference {
 
     this.#onLoadProgress = onProgress || null;
 
-    this.#worker.onmessage = (e: unknown) => {
-      const { id, type } = e.data;
+    this.#worker.onmessage = (e: MessageEvent) => {
+      const { id, type } = (e.data as any);
       if (type === 'progress') {
-        if (this.#onLoadProgress) this.#onLoadProgress(e.data.message, e.data.percent);
+        if (this.#onLoadProgress) this.#onLoadProgress((e.data as any).message, (e.data as any).percent);
         return;
       }
       const resolve = this.#pending.get(id);
       if (resolve) {
         this.#pending.delete(id);
-        resolve(e.data);
+        resolve((e.data as any));
       }
     };
 
-    const result = await this.#send('load', { modelUrl: absoluteModelUrl });
+    const result: any = await this.#send('load', { modelUrl: absoluteModelUrl });
     this.#onLoadProgress = null;
     if (result.type === 'error') throw new Error(result.message);
     this.#loaded = true;
@@ -292,7 +308,7 @@ export class BirdNETInference {
    *                                   Falls back to today if not provided or invalid.
    * @returns {Promise<{ok:boolean, week?:number}>}
    */
-  async setLocation(latitude: unknown, longitude: unknown, { date } = {}) {
+  async setLocation(latitude: number, longitude: number, { date }: { date?: string | Date } = {}) {
     if (!this.#loaded) return { ok: false };
     const dateStr = date instanceof Date ? date.toISOString() : (date ?? null);
     const result = await this.#send('set-location', { latitude, longitude, date: dateStr });
@@ -333,7 +349,7 @@ export class BirdNETInference {
    * @param {function}     [opts.onProgress]     Called with a number 0–100 representing %.
    * @returns {Promise<Array<{ start: number, end: number, scientific: string, common: string, confidence: number, geoscore: number }>>}
    */
-  async analyze(channelData: unknown, opts = {}) {
+  async analyze(channelData: Float32Array | number[], opts: any = {}) {
     const { overlap = 0, minConfidence = 0.25, geoThreshold = 0, onProgress } = opts;
     const sampleRate = opts.sampleRate || TARGET_SR;
     if (!this.#loaded) throw new Error('Model not loaded — call load() first.');
@@ -358,7 +374,7 @@ export class BirdNETInference {
 
       if (onProgress) onProgress(Math.round((i / totalChunks) * 100));
 
-      const result = await this.#send('predict', { samples: chunk }, [chunk.buffer]);
+      const result: any = await this.#send('predict', { samples: chunk }, [chunk.buffer]);
       if (result.type === 'error') throw new Error(result.message);
 
       const startSec = offset / TARGET_SR;
@@ -396,11 +412,11 @@ export class BirdNETInference {
 
   // ── internal ──────────────────────────────────────────────────────
 
-  #send(type: unknown, data = {}, transferables = []) {
+  #send(type: any, data: any = {}, transferables: any[] = []): Promise<any> {
     return new Promise((resolve) => {
       const id = this.#nextId++;
-      this.#pending.set(id, resolve);
-      if (this.#worker) this.#worker.postMessage({ type, id, ...data }, transferables);
+      this.#pending.set(id, resolve as any);
+      if (this.#worker) (this.#worker as Worker).postMessage({ type, id, ...data }, transferables);
     });
   }
 }

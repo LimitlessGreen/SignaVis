@@ -7,6 +7,31 @@
 
 import { clamp } from '../shared/utils.ts';
 
+type WindowFn = (i: number, N: number, beta?: number) => number;
+
+interface SparseBand { start: number; weights: Float32Array }
+
+interface SpectrogramParams {
+    channelData: ArrayBuffer | Float32Array | ArrayLike<number>;
+    fftSize: number;
+    sampleRate: number;
+    frameRate: number;
+    nMels: number;
+    pcenGain?: number;
+    pcenBias?: number;
+    pcenRoot?: number;
+    pcenSmoothing?: number;
+    usePcen?: boolean;
+    scale?: string;
+    colourScale?: string;
+    initialSmooth?: Float32Array;
+    windowSize?: number;
+    hopSize?: number;
+    windowFunction?: string;
+}
+
+type SpectrogramResult = { data: Float32Array; nFrames: number; nMels: number; hopSize: number; winLength: number; colourScale: string; smoothState?: Float32Array };
+
 // ─── Mel Scale ──────────────────────────────────────────────────────
 
 export function hzToMel(hz: number): number {
@@ -85,9 +110,9 @@ export function createMelFilterbank(sampleRate: number, fftSize: number, nMels: 
  * Instead of iterating all nFftBins per filter, stores only
  * the non-zero (startBin, weights[]) ranges.
  */
-export function createSparseMelFilterbank(sampleRate: number, fftSize: number, nMels: number, fMin: number, fMax: number): Array<{indices: Int32Array; weights: Float32Array}> {
+export function createSparseMelFilterbank(sampleRate: number, fftSize: number, nMels: number, fMin: number, fMax: number): Array<SparseBand> {
     const dense = createMelFilterbank(sampleRate, fftSize, nMels, fMin, fMax);
-    const sparse = new Array(nMels);
+    const sparse: Array<SparseBand> = new Array(nMels);
     for (let m = 0; m < nMels; m++) {
         const f = dense[m];
         let start = -1, end = 0;
@@ -107,7 +132,7 @@ export function createSparseMelFilterbank(sampleRate: number, fftSize: number, n
 /**
  * Apply sparse mel filterbank — only iterates non-zero ranges.
  */
-export function applySparseMelFilterbank(powerSpectrum: Float32Array, sparseFilterbank: Array<{indices: Int32Array; weights: Float32Array}>): Float32Array {
+export function applySparseMelFilterbank(powerSpectrum: Float32Array, sparseFilterbank: Array<SparseBand>): Float32Array {
     const nMels = sparseFilterbank.length;
     const melSpectrum = new Float32Array(nMels);
     for (let m = 0; m < nMels; m++) {
@@ -139,11 +164,11 @@ export function applyMelFilterbank(powerSpectrum: Float32Array, melFilterbank: F
 // ─── FFT (iterative Cooley-Tukey, in-place) ─────────────────────────
 
 // Precomputed twiddle factor tables, keyed by FFT size.
-const _twiddleCache = new Map();
+const _twiddleCache = new Map<number, Record<number, { cos: Float64Array; sin: Float64Array }>>();
 
-function getTwiddleFactors(n: unknown) {
-    if (_twiddleCache.has(n)) return _twiddleCache.get(n);
-    const table = {};
+function getTwiddleFactors(n: number): Record<number, { cos: Float64Array; sin: Float64Array }> {
+    if (_twiddleCache.has(n)) return _twiddleCache.get(n)!;
+    const table: Record<number, { cos: Float64Array; sin: Float64Array }> = {};
     for (let len = 2; len <= n; len <<= 1) {
         const halfLen = len >> 1;
         const angleStep = -2 * Math.PI / len;
@@ -205,27 +230,27 @@ export function iterativeFFT(real: Float32Array, imag: Float32Array): void {
 // ─── Window Functions ───────────────────────────────────────────────
 
 /** @param {number} i @param {number} N */
-function hannWindow(i: unknown, N: unknown) {
+function hannWindow(i: number, N: number): number {
     return 0.5 * (1 - Math.cos(2 * Math.PI * i / Math.max(1, N - 1)));
 }
 /** @param {number} i @param {number} N */
-function hammingWindow(i: unknown, N: unknown) {
+function hammingWindow(i: number, N: number): number {
     return 0.54 - 0.46 * Math.cos(2 * Math.PI * i / Math.max(1, N - 1));
 }
 /** @param {number} i @param {number} N */
-function blackmanWindow(i: unknown, N: unknown) {
+function blackmanWindow(i: number, N: number): number {
     const a0 = 0.42, a1 = 0.5, a2 = 0.08;
     return a0 - a1 * Math.cos(2 * Math.PI * i / Math.max(1, N - 1))
               + a2 * Math.cos(4 * Math.PI * i / Math.max(1, N - 1));
 }
 /** Blackman-Harris 4-term — excellent sidelobe suppression (−92 dB). */
-function blackmanHarrisWindow(i: unknown, N: unknown) {
+function blackmanHarrisWindow(i: number, N: number): number {
     const a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
     const t = 2 * Math.PI * i / Math.max(1, N - 1);
     return a0 - a1 * Math.cos(t) + a2 * Math.cos(2 * t) - a3 * Math.cos(3 * t);
 }
 /** Flat-top — near-unity amplitude accuracy at the cost of wider main lobe. */
-function flatTopWindow(i: unknown, N: unknown) {
+function flatTopWindow(i: number, N: number): number {
     const a0 = 0.21557895, a1 = 0.41663158, a2 = 0.277263158;
     const a3 = 0.083578947, a4 = 0.006947368;
     const t = 2 * Math.PI * i / Math.max(1, N - 1);
@@ -238,14 +263,14 @@ function flatTopWindow(i: unknown, N: unknown) {
  * β≈5: similar to Hamming, β≈8.6: similar to Blackman-Harris.
  * Uses rational Bessel I₀ approximation (no factorial overflow).
  */
-function kaiserWindow(i: unknown, N: unknown, beta = 6) {
+function kaiserWindow(i: number, N: number, beta = 6): number {
     const M = Math.max(1, N - 1);
     const alpha = M / 2;
     const arg = beta * Math.sqrt(1 - ((i - alpha) / alpha) ** 2);
     return _besselI0(arg) / _besselI0(beta);
 }
 /** Modified Bessel function I₀(x) — polynomial approximation (Abramowitz & Stegun). */
-function _besselI0(x: unknown) {
+function _besselI0(x: number) {
     const ax = Math.abs(x);
     if (ax < 3.75) {
         const t = (ax / 3.75) ** 2;
@@ -258,8 +283,7 @@ function _besselI0(x: unknown) {
         + t * (0.02635537 + t * (-0.01647633 + t * 0.00392377))))))));
 }
 
-/** @type {Record<string, (i: number, N: number) => number>} */
-const WINDOW_FUNCTIONS = {
+const WINDOW_FUNCTIONS: Record<string, WindowFn> = {
     hann: hannWindow,
     hamming: hammingWindow,
     blackman: blackmanWindow,
@@ -282,14 +306,15 @@ export const WINDOW_FUNCTION_KEYS = Object.keys(WINDOW_FUNCTIONS);
  * @param {number} fftSize
  * @param {string} [windowFunction='hann'] - 'hann' | 'hamming' | 'blackman'
  */
-export function fftMagnitudeSpectrum(audio: unknown, offset: unknown, winLength: unknown, fftSize: unknown, windowFunction = 'hann') {
+export function fftMagnitudeSpectrum(audio: ArrayLike<number> | ArrayBuffer, offset: number, winLength: number, fftSize: number, windowFunction = 'hann'): Float32Array {
+    const audioArr = audio instanceof Float32Array ? audio : new Float32Array(audio as ArrayBuffer | ArrayLike<number>);
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
     const wfn = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
     const maxCopy = Math.min(winLength, fftSize);
     for (let i = 0; i < maxCopy; i++) {
-        const sample = audio[offset + i] || 0;
+        const sample = (audioArr[offset + i] as number) || 0;
         real[i] = sample * wfn(i, winLength);
     }
 
@@ -306,14 +331,15 @@ export function fftMagnitudeSpectrum(audio: unknown, offset: unknown, winLength:
  * Compute magnitude + phase spectrum from a windowed frame via FFT.
  * Returns { magnitude: Float32Array, phase: Float32Array } each of length fftSize/2.
  */
-export function fftMagnitudePhaseSpectrum(audio: unknown, offset: unknown, winLength: unknown, fftSize: unknown, windowFunction = 'hann') {
+export function fftMagnitudePhaseSpectrum(audio: ArrayLike<number> | ArrayBuffer, offset: number, winLength: number, fftSize: number, windowFunction = 'hann') {
+    const audioArr = audio instanceof Float32Array ? audio : new Float32Array(audio as ArrayBuffer | ArrayLike<number>);
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
     const wfn = WINDOW_FUNCTIONS[windowFunction] || hannWindow;
     const maxCopy = Math.min(winLength, fftSize);
     for (let i = 0; i < maxCopy; i++) {
-        const sample = audio[offset + i] || 0;
+        const sample = (audioArr[offset + i] as number) || 0;
         real[i] = sample * wfn(i, winLength);
     }
 
@@ -377,10 +403,10 @@ const IEC_MAX_PERCENT = iecDbToFader(0);  // 100
  *
  * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, colourScale: string, smoothState?: Float32Array }}
  */
-export function computeSpectrogram(params: unknown) {
+export function computeSpectrogram(params: SpectrogramParams) {
     const {
         channelData, fftSize, sampleRate, frameRate,
-        nMels, pcenGain, pcenBias, pcenRoot, pcenSmoothing,
+        nMels, pcenGain = 2.0, pcenBias = 1e-6, pcenRoot = 2.0, pcenSmoothing = 0.025,
         usePcen = true,
         scale = 'mel', initialSmooth,
         colourScale = 'dbSquared',
@@ -425,7 +451,7 @@ export function computeSpectrogram(params: unknown) {
     const powerBuf = (!useLinear && !isPhase) ? new Float32Array(nBins) : null;
 
     /** Apply windowed frame into reusable buffers and run FFT in-place. */
-    function runFFT(offset: unknown) {
+    function runFFT(offset: number) {
         real.fill(0);
         imag.fill(0);
         for (let i = 0; i < maxCopy; i++) {
@@ -434,7 +460,7 @@ export function computeSpectrogram(params: unknown) {
         iterativeFFT(real, imag);
     }
 
-    let smooth = null;
+    let smooth: Float32Array | null = null;
 
     if (isPhase) {
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
@@ -444,7 +470,7 @@ export function computeSpectrogram(params: unknown) {
                 for (let k = 0; k < nBins; k++) output[base + k] = Math.atan2(imag[k], real[k]);
             } else {
                 for (let m = 0; m < nMels; m++) {
-                    const f = /** @type {!Float32Array[]} */ (denseFB)[m];
+                    const f = (denseFB as Float32Array[])[m];
                     let sumSin = 0, sumCos = 0;
                     for (let k = 0; k < f.length; k++) {
                         if (f[k] > 0) {
@@ -480,15 +506,15 @@ export function computeSpectrogram(params: unknown) {
             runFFT(frameIdx * hopSize);
             // Compute power spectrum directly (skip sqrt + re-squaring)
             for (let k = 0; k < nBins; k++) {
-                /** @type {!Float32Array} */ (powerBuf)[k] = real[k] * real[k] + imag[k] * imag[k];
+                (powerBuf as Float32Array)[k] = real[k] * real[k] + imag[k] * imag[k];
             }
             const base = frameIdx * nMels;
             // Apply sparse mel filterbank on power
             for (let m = 0; m < nMels; m++) {
-                const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
+                const { start, weights } = (sparseFB as Array<SparseBand>)[m];
                 let sum = 0;
                 for (let k = 0; k < weights.length; k++) {
-                    sum += /** @type {!Float32Array} */ (powerBuf)[start + k] * weights[k];
+                    sum += (powerBuf as Float32Array)[start + k] * weights[k];
                 }
                 if (wantRaw) {
                     output[base + m] = Math.sqrt(Math.max(0, sum));
@@ -507,15 +533,15 @@ export function computeSpectrogram(params: unknown) {
         const pcenBiasOffset = Math.pow(pcenBias, pcenPower);
         for (let frameIdx = 0; frameIdx < numFrames; frameIdx++) {
             runFFT(frameIdx * hopSize);
-            for (let k = 0; k < nBins; k++) {
-                /** @type {!Float32Array} */ (powerBuf)[k] = real[k] * real[k] + imag[k] * imag[k];
-            }
+                for (let k = 0; k < nBins; k++) {
+                    (powerBuf as Float32Array)[k] = real[k] * real[k] + imag[k] * imag[k];
+                }
             const base = frameIdx * nMels;
             for (let m = 0; m < nMels; m++) {
-                const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
+                const { start, weights } = (sparseFB as Array<SparseBand>)[m];
                 let e = 0;
                 for (let k = 0; k < weights.length; k++) {
-                    e += /** @type {!Float32Array} */ (powerBuf)[start + k] * weights[k];
+                    e += (powerBuf as Float32Array)[start + k] * weights[k];
                 }
                 smooth[m]   = (1 - pcenSmoothing) * smooth[m] + pcenSmoothing * e;
                 const denom = Math.pow(1e-10 + smooth[m], pcenGain);
@@ -525,7 +551,7 @@ export function computeSpectrogram(params: unknown) {
         }
     }
 
-    const result = { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength, colourScale };
+    const result: SpectrogramResult = { data: output, nFrames: numFrames, nMels: outBins, hopSize, winLength, colourScale };
     if (smooth) {
         result.smoothState = smooth;
     }
@@ -545,11 +571,11 @@ export function computeSpectrogram(params: unknown) {
  * @param {number} [fMin=32.7]     - lowest frequency (Hz), default C1
  * @param {number} [binsPerOctave=24]
  */
-export function createCQTFilterbank(sampleRate: unknown, fftSize: unknown, nBinsOut: unknown, fMin = 32.7, binsPerOctave = 24) {
+export function createCQTFilterbank(sampleRate: number, fftSize: number, nBinsOut: number, fMin = 32.7, binsPerOctave = 24): Array<SparseBand> {
     const nFftBins = Math.floor(fftSize / 2);
     const nyquist = sampleRate / 2;
     const Q = 1 / (Math.pow(2, 1 / binsPerOctave) - 1);
-    const sparse = new Array(nBinsOut);
+    const sparse: Array<SparseBand> = new Array(nBinsOut);
 
     for (let k = 0; k < nBinsOut; k++) {
         const fCenter = fMin * Math.pow(2, k / binsPerOctave);
@@ -590,7 +616,7 @@ export function createCQTFilterbank(sampleRate: unknown, fftSize: unknown, nBins
  * @param {number} [binsPerOctave=24]
  * @returns {Float32Array}
  */
-export function buildCQTFrequencies(nBins: unknown, fMin = 32.7, binsPerOctave = 24) {
+export function buildCQTFrequencies(nBins: number, fMin = 32.7, binsPerOctave = 24) {
     const freqs = new Float32Array(nBins);
     for (let k = 0; k < nBins; k++) {
         freqs[k] = fMin * Math.pow(2, k / binsPerOctave);
@@ -623,7 +649,7 @@ export function buildCQTFrequencies(nBins: unknown, fMin = 32.7, binsPerOctave =
  * @param {string} [params.windowFunction='hann']
  * @returns {{ data: Float32Array, nFrames: number, nMels: number, hopSize: number, winLength: number, colourScale: string }}
  */
-export function computeReassignedSpectrogram(params: unknown) {
+export function computeReassignedSpectrogram(params: SpectrogramParams) {
     const {
         channelData, fftSize, sampleRate, frameRate,
         nMels, scale = 'mel',
@@ -731,7 +757,7 @@ export function computeReassignedSpectrogram(params: unknown) {
 
                 // Find which mel bin this corrected FFT bin lands in (weighted)
                 for (let m = 0; m < nMels; m++) {
-                    const { start, weights } = /** @type {!Array} */ (sparseFB)[m];
+                    const { start, weights } = (sparseFB as Array<SparseBand>)[m];
                     if (cBinInt < start || cBinInt >= start + weights.length) continue;
                     const w = weights[cBinInt - start];
                     if (w <= 0) continue;

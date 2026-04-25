@@ -10,13 +10,25 @@ function esc(s: unknown) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function createEditableSelect(opts: unknown) {
-  let currentValue = opts.value || '';
-  let items = (opts.items || []).slice();
+type EditableItem = { value: string; custom?: boolean };
+type EditableOpts = {
+  value?: string;
+  items?: EditableItem[];
+  className?: string;
+  placeholder?: string;
+  onChange?: (val: string) => void;
+  onAdd?: (val: string) => void;
+  onRemove?: (val: string) => void;
+  onRename?: (oldVal: string, newVal: string) => void;
+};
+
+export function createEditableSelect(opts: EditableOpts) {
+  let currentValue: string = opts?.value || '';
+  let items: EditableItem[] = (opts?.items || []).slice();
   let activeIndex = -1;
-  let rows = [];
+  let rows: HTMLElement[] = [];
   let open = false;
-  let editingValue = null;
+  let editingValue: string | null = null;
 
   const root = document.createElement('div');
   root.className = 'esel' + (opts.className ? ' ' + opts.className : '');
@@ -93,7 +105,7 @@ export function createEditableSelect(opts: unknown) {
     activeIndex = -1;
 
     const filtered = query
-      ? items.filter((it: unknown) => it.value.toLowerCase().includes(query))
+      ? items.filter((it) => String(it.value).toLowerCase().includes(query))
       : items;
 
     if (currentValue) {
@@ -131,7 +143,7 @@ export function createEditableSelect(opts: unknown) {
       rows.push(row);
     }
 
-    if (query && !items.some((it: unknown) => it.value.toLowerCase() === query)) {
+    if (query && !items.some((it) => it.value.toLowerCase() === query)) {
       const addRow = document.createElement('div');
       addRow.className = 'esel-row esel-add-row';
       addRow.innerHTML = `<span class="esel-add-label">+ ${esc(searchInput.value.trim())}</span>`;
@@ -142,12 +154,12 @@ export function createEditableSelect(opts: unknown) {
     }
   }
 
-  function makeRow(value: unknown, isCustom: unknown, isSelected: unknown) {
+  function makeRow(value: string, isCustom?: boolean, isSelected?: boolean) {
     const row = document.createElement('div');
     row.className = 'esel-row' + (isSelected ? ' esel-selected' : '');
     const label = document.createElement('span');
     label.className = 'esel-label';
-    label.textContent = value;
+    label.textContent = String(value);
     row.appendChild(label);
 
     if (isCustom) {
@@ -176,30 +188,30 @@ export function createEditableSelect(opts: unknown) {
     if (activeIndex >= 0 && rows[activeIndex]) rows[activeIndex].scrollIntoView({ block: 'nearest' });
   }
 
-  function selectValue(val: unknown) { currentValue = val; updateTriggerText(); hide(); opts.onChange(val); }
+  function selectValue(val: string) { currentValue = val; updateTriggerText(); hide(); opts.onChange?.(val); }
 
-  function addCustom(val: unknown) {
-    const trimmed = (val || '').trim();
+  function addCustom(val: string) {
+    const trimmed = String(val || '').trim();
     if (!trimmed) return;
     opts.onAdd?.(trimmed);
     items.push({ value: trimmed, custom: true });
     selectValue(trimmed);
   }
 
-  function removeCustom(val: unknown) {
+  function removeCustom(val: string) {
     opts.onRemove?.(val);
-    items = items.filter((it: unknown) => !(it.custom && it.value === val));
-    if (currentValue === val) { currentValue = ''; updateTriggerText(); opts.onChange(''); }
+    items = items.filter((it) => !(it.custom && it.value === val));
+    if (currentValue === val) { currentValue = ''; updateTriggerText(); opts.onChange?.(''); }
     renderList();
   }
 
-  function finishEdit(oldVal: unknown, newVal: unknown) {
-    const trimmed = (newVal || '').trim();
+  function finishEdit(oldVal: string, newVal: string) {
+    const trimmed = String(newVal || '').trim();
     editingValue = null;
     if (!trimmed || trimmed === oldVal) { renderList(); searchInput.focus(); return; }
     opts.onRename?.(oldVal, trimmed);
     for (const it of items) if (it.custom && it.value === oldVal) it.value = trimmed;
-    if (currentValue === oldVal) { currentValue = trimmed; updateTriggerText(); opts.onChange(trimmed); }
+    if (currentValue === oldVal) { currentValue = trimmed; updateTriggerText(); opts.onChange?.(trimmed); }
     renderList(); searchInput.focus();
   }
 
@@ -209,21 +221,22 @@ export function createEditableSelect(opts: unknown) {
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (rows.length) { activeIndex = (activeIndex + 1) % rows.length; highlightActive(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (rows.length) { activeIndex = activeIndex <= 0 ? rows.length - 1 : activeIndex - 1; highlightActive(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0 && rows[activeIndex]) rows[activeIndex].click(); else if (searchInput.value.trim()) { const lq = searchInput.value.trim().toLowerCase(); const match = items.find((it: unknown) => it.value.toLowerCase() === lq); if (match) selectValue(match.value); else addCustom(searchInput.value.trim()); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0 && rows[activeIndex]) rows[activeIndex].click(); else if (searchInput.value.trim()) { const lq = searchInput.value.trim().toLowerCase(); const match = items.find((it) => it.value.toLowerCase() === lq); if (match) selectValue(match.value); else addCustom(searchInput.value.trim()); } }
     else if (e.key === 'Escape') { e.preventDefault(); hide(); trigger.focus(); }
   });
 
-  function onPointerDown(e: unknown) {
+  function onPointerDown(e: PointerEvent) {
     if (destroyed) return;
-    if (open && !root.contains(e.target) && !dropdown.contains(e.target)) hide();
+    const target = e.target as Node | null;
+    if (open && !root.contains(target) && !dropdown.contains(target)) hide();
   }
   document.addEventListener('pointerdown', onPointerDown);
 
   return {
     el: root,
     getValue() { return currentValue; },
-    setValue(val: unknown) { currentValue = val || ''; updateTriggerText(); },
-    setItems(newItems: unknown) { items = (newItems || []).slice(); if (open) renderList(); },
+    setValue(val: string | undefined) { currentValue = val || ''; updateTriggerText(); },
+    setItems(newItems: EditableItem[] | undefined) { items = (newItems || []).slice(); if (open) renderList(); },
     destroy() { destroyed = true; hide(); document.removeEventListener('pointerdown', onPointerDown); if (dropdown.parentElement) dropdown.remove(); root.remove(); },
   };
 }

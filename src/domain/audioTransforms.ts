@@ -39,7 +39,7 @@ export async function heterodyneDownmix(audioBuffer: AudioBuffer, carrierHz = 20
   return rendered;
 }
 
-export async function resampleDivider(audioBuffer: unknown, divisor = 8) {
+export async function resampleDivider(audioBuffer: AudioBuffer, divisor = 8): Promise<AudioBuffer> {
   if (divisor <= 1) return audioBuffer;
   const newSampleRate = Math.max(8000, Math.floor(audioBuffer.sampleRate / divisor));
   const newLength = Math.ceil(audioBuffer.duration * newSampleRate);
@@ -49,11 +49,11 @@ export async function resampleDivider(audioBuffer: unknown, divisor = 8) {
   src.connect(offline.destination);
   src.start(0);
   const rendered = await offline.startRendering();
-  return rendered;
+  return rendered as AudioBuffer;
 }
 
 // Convert an AudioBuffer to a WAV Blob (16-bit PCM)
-export function audioBufferToWav(audioBuffer: AudioBuffer): ArrayBuffer {
+export function audioBufferToWav(audioBuffer: AudioBuffer): Blob {
   const numChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
   const format = 1; // PCM
@@ -67,7 +67,7 @@ export function audioBufferToWav(audioBuffer: AudioBuffer): ArrayBuffer {
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
 
-  function writeString(view: unknown, offset: unknown, str: unknown) {
+  function writeString(view: DataView, offset: number, str: string) {
     for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
   }
 
