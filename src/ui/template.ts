@@ -264,6 +264,25 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <div class="settings-section">
+            <h3 class="settings-section-title">Overlay</h3>
+            <div class="settings-row">
+                <label class="settings-label" title="Weighted mean frequency of the magnitude spectrum per frame">
+                    <input type="checkbox" data-aw="showCentroidCheck"> Spectral Centroid
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Fundamental frequency (F0) estimated via cepstral analysis">
+                    <input type="checkbox" data-aw="showF0Check"> Cepstral Pitch (F0)
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Spectral ridges: continuous frequency tracks of local spectral maxima (harmonics and tonal components)">
+                    <input type="checkbox" data-aw="showRidgesCheck"> Spectral Ridges
+                </label>
+            </div>
+        </div>
+
+        <div class="settings-section">
             <h3 class="settings-section-title">DSP</h3>
             <div class="settings-row">
                 <label class="settings-label">Frequency</label>

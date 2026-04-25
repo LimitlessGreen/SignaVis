@@ -634,6 +634,9 @@ export class PlayerState {
             reassignedCheck:        q('reassignedCheck'),
             noiseReductionCheck:    q('noiseReductionCheck'),
             claheCheck:             q('claheCheck'),
+            showCentroidCheck:      q('showCentroidCheck'),
+            showF0Check:            q('showF0Check'),
+            showRidgesCheck:        q('showRidgesCheck'),
             qualitySlider:          q('qualitySlider'),
             qualityLevelDisplay:    q('qualityLevelDisplay'),
             zoomSlider:             q('zoomSlider'),
@@ -1760,6 +1763,13 @@ export class PlayerState {
         on(this.d.zoomSlider, 'change', () => {
             if (this._spectro.hasData) this._drawSpectrogram();
         });
+
+        // ── Spectral overlay toggles ──
+        for (const key of ['showCentroidCheck', 'showF0Check', 'showRidgesCheck'] as const) {
+            on(this.d[key], 'change', () => {
+                if (this._spectro.hasData) this._drawSpectrogram();
+            });
+        }
 
         // ── Volume ──
         on(this.d.volumeSlider, 'input', (e: Event) => {

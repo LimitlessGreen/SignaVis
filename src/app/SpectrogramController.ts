@@ -38,6 +38,7 @@ import {
 } from '../domain/spectrogram.ts';
 
 import { computeReassignedSpectrogram } from '../domain/dsp.ts';
+import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 
 /**
@@ -69,6 +70,8 @@ export class SpectrogramController extends EventTarget {
     _externalImageConfig: { freqRange: [number, number] | null; freqScale: string | null } | null;
     _audioBuffer: AudioBuffer | null;
     _tileManager: SpectrogramTileManager | null;
+    _spectralFeatures: SpectralFeatures | null;
+    _ridges: Ridge[] | null;
     _sampleRateHz: number;
     _zoomRedrawRafId: number;
     _freqAxisRafId: number | undefined;
@@ -113,6 +116,8 @@ export class SpectrogramController extends EventTarget {
         this._audioBuffer = null;
         this._sampleRateHz = 44100;
         this._tileManager = null;
+        this._spectralFeatures = null;
+        this._ridges = null;
 
         // Internal redraw debounce rAF id
         this._zoomRedrawRafId = 0;
@@ -149,8 +154,10 @@ export class SpectrogramController extends EventTarget {
      */
     setAudio(audioBuffer: AudioBuffer, sampleRateHz: number) {
         this._tileManager?.dispose();
-        this._tileManager = null;
-        this._audioBuffer = audioBuffer;
+        this._tileManager    = null;
+        this._spectralFeatures = null;
+        this._ridges           = null;
+        this._audioBuffer    = audioBuffer;
         this._sampleRateHz = sampleRateHz;
         this._externalMode = false;
         this._externalImageConfig = null;
@@ -265,6 +272,7 @@ export class SpectrogramController extends EventTarget {
                         this.setMaxFreqToNyquist();
                     }
                 }
+                this._computeSpectralFeaturesAsync(channelData, options);
                 this._emit('needsredraw');
                 if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
                 this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-ready' });
@@ -332,6 +340,8 @@ export class SpectrogramController extends EventTarget {
             this._grayInfo   = null;
             this._baseCanvas = null;
             this._gpuReady   = false;
+
+            this._computeSpectralFeaturesAsync(channelData, options);
 
             if (autoAdjust) {
                 const gainMode = d.gainModeSelect?.value || 'auto';
@@ -448,6 +458,192 @@ export class SpectrogramController extends EventTarget {
             scale:          d.scaleSelect?.value           || 'mel',
             colourScale:    d.colourScaleSelect?.value     || 'dbSquared',
         };
+    }
+
+    // ── Spectral features (centroid + F0) ────────────────────────────
+
+    // Kicks off feature computation in the next idle slice so it doesn't
+    // delay the first render. Results arrive via _emit('needsredraw').
+    private _computeSpectralFeaturesAsync(channelData: Float32Array, dspOptions: Record<string, any>): void {
+        this._spectralFeatures = null;
+        this._ridges = null;
+        const hopSize    = dspOptions.hopSize    || this._hopSize    || 320;
+        const windowSize = dspOptions.windowSize || this._winLength  || 1024;
+        const nFrames    = this._nFrames;
+        if (!nFrames || !channelData?.length) return;
+
+        // Run after current call-stack clears so the spectrogram renders first.
+        // Centroid + F0 are fast; ridges are slower (full FFT pass), so we
+        // emit a first redraw after centroid/F0 and a second after ridges.
+        setTimeout(() => {
+            try {
+                this._spectralFeatures = computeSpectralFeatures(
+                    channelData, this._sampleRateHz, hopSize, windowSize, nFrames,
+                );
+                this._emit('needsredraw');
+            } catch { /* non-fatal */ }
+
+            setTimeout(() => {
+                try {
+                    this._ridges = computeRidges(
+                        channelData, this._sampleRateHz, hopSize, windowSize, nFrames,
+                    );
+                    this._emit('needsredraw');
+                } catch { /* non-fatal */ }
+            }, 0);
+        }, 0);
+    }
+
+    // Draw centroid / F0 curves + gap on top of the already-rendered spectrogram.
+    private _drawSpectralOverlay(
+        ctx: CanvasRenderingContext2D,
+        p: any,
+        totalWidth: number,
+        scrollLeft: number,
+        viewportWidth: number,
+        canvasHeight: number,
+    ): void {
+        const d   = this._d;
+        const sf  = this._spectralFeatures;
+        const showCentroid = d.showCentroidCheck?.checked && sf?.centroid;
+        const showF0       = d.showF0Check?.checked       && sf?.f0;
+        const showRidges   = d.showRidgesCheck?.checked   && this._ridges?.length;
+        if (!showCentroid && !showF0 && !showRidges) return;
+
+        const nFrames = this._nFrames;
+        if (!nFrames) return;
+
+        // Map frame index → viewport x pixel.
+        const frameToX = (i: number) => (i / nFrames) * totalWidth - scrollLeft;
+        // Map frequency in Hz → viewport y pixel (0 = top = high freq).
+        const freqToY  = (hz: number) => {
+            if (hz <= 0) return -1;
+            const frac = p.coords.frequencyToBaseYFraction(hz);
+            // Account for active frequency-viewport crop if any.
+            if (p.freqViewMin != null && p.freqViewMax != null) {
+                const topFrac = p.coords.frequencyToBaseYFraction(p.freqViewMax);
+                const botFrac = p.coords.frequencyToBaseYFraction(p.freqViewMin);
+                const span    = botFrac - topFrac;
+                if (span < 1e-6) return -1;
+                return ((frac - topFrac) / span) * canvasHeight;
+            }
+            return frac * canvasHeight;
+        };
+
+        // Colors
+        const COLOR_CENTROID = '#f59e0b';          // amber
+        const COLOR_F0       = '#22d3ee';          // cyan
+        const COLOR_GAP      = 'rgba(167,139,250,0.25)'; // violet fill
+
+        ctx.save();
+        ctx.lineWidth   = 1.5;
+        ctx.strokeStyle = COLOR_CENTROID;
+
+        // Collect per-frame (x, y) for both curves, skipping out-of-viewport frames.
+        const cx = new Float32Array(nFrames);
+        const cy = new Float32Array(nFrames);
+        const fx = new Float32Array(nFrames);
+        const fy = new Float32Array(nFrames);
+
+        for (let i = 0; i < nFrames; i++) {
+            const x = frameToX(i);
+            cx[i] = x;
+            cy[i] = showCentroid ? freqToY(sf!.centroid[i]) : -1;
+            fx[i] = x;
+            fy[i] = showF0       ? freqToY(sf!.f0[i])       : -1;
+        }
+
+        // ── Gap fill between centroid and F0 ─────────────────────────
+        if (showCentroid && showF0) {
+            ctx.fillStyle = COLOR_GAP;
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < nFrames; i++) {
+                if (cx[i] < 0 || cx[i] > viewportWidth) continue;
+                if (cy[i] < 0 || fy[i] < 0) { started = false; continue; }
+                if (!started) { ctx.moveTo(cx[i], cy[i]); started = true; }
+                else ctx.lineTo(cx[i], cy[i]);
+            }
+            for (let i = nFrames - 1; i >= 0; i--) {
+                if (fx[i] < 0 || fx[i] > viewportWidth) continue;
+                if (fy[i] < 0 || cy[i] < 0) continue;
+                ctx.lineTo(fx[i], fy[i]);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // ── Centroid curve ───────────────────────────────────────────
+        if (showCentroid) {
+            ctx.strokeStyle = COLOR_CENTROID;
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < nFrames; i++) {
+                if (cx[i] < -2 || cx[i] > viewportWidth + 2) { started = false; continue; }
+                if (cy[i] < 0) { started = false; continue; }
+                if (!started) { ctx.moveTo(cx[i], cy[i]); started = true; }
+                else ctx.lineTo(cx[i], cy[i]);
+            }
+            ctx.stroke();
+        }
+
+        // ── F0 curve ─────────────────────────────────────────────────
+        if (showF0) {
+            ctx.strokeStyle = COLOR_F0;
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < nFrames; i++) {
+                if (fx[i] < -2 || fx[i] > viewportWidth + 2) { started = false; continue; }
+                if (fy[i] < 0) { started = false; continue; } // unvoiced gap
+                if (!started) { ctx.moveTo(fx[i], fy[i]); started = true; }
+                else ctx.lineTo(fx[i], fy[i]);
+            }
+            ctx.stroke();
+        }
+
+        // ── Spectral ridges ───────────────────────────────────────────
+        if (showRidges && this._ridges) {
+            // Sort weakest first so strong ridges render on top.
+            const sorted = [...this._ridges].sort((a, b) => {
+                const ma = a.strength.reduce((s, v) => s + v, 0) / a.strength.length;
+                const mb = b.strength.reduce((s, v) => s + v, 0) / b.strength.length;
+                return ma - mb;
+            });
+
+            for (const ridge of sorted) {
+                const len = ridge.frames.length;
+                // Mean strength → line alpha and width
+                let meanStr = 0;
+                for (let i = 0; i < len; i++) meanStr += ridge.strength[i];
+                meanStr /= len;
+
+                const alpha = 0.25 + meanStr * 0.65;   // 0.25 – 0.90
+                const lw    = 0.8 + meanStr * 1.2;      // 0.8 – 2.0 px
+
+                // Hue based on median frequency: low→warm(30°) high→cool(200°)
+                const nyquist   = this._sampleRateHz / 2;
+                let   medianHz  = ridge.freqHz[Math.floor(len / 2)];
+                const hue       = 30 + (medianHz / nyquist) * 170; // 30°–200°
+                ctx.strokeStyle = `hsla(${hue.toFixed(0)},100%,75%,${alpha.toFixed(2)})`;
+                ctx.lineWidth   = lw;
+
+                ctx.beginPath();
+                let started = false;
+                for (let i = 0; i < len; i++) {
+                    const x = frameToX(ridge.frames[i]);
+                    if (x < -2 || x > viewportWidth + 2) { started = false; continue; }
+                    const y = freqToY(ridge.freqHz[i]);
+                    if (y < 0) { started = false; continue; }
+                    if (!started) { ctx.moveTo(x, y); started = true; }
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            // Restore line width for subsequent draws
+            ctx.lineWidth = 1.5;
+        }
+
+        ctx.restore();
     }
 
     // ── External injection ────────────────────────────────────────────
@@ -720,6 +916,18 @@ export class SpectrogramController extends EventTarget {
             viewportWidth:     p.viewportWidth,
             totalWidth,
         });
+
+        // Spectral overlay (centroid + F0 + ridges) drawn on top of the rendered canvas.
+        if (this._spectralFeatures || this._ridges) {
+            const ctx = (this._d.spectrogramCanvas as HTMLCanvasElement).getContext('2d');
+            if (ctx) {
+                const canvasHeight = Math.max(140, Math.floor(p.effectiveHeight));
+                const vw = p.viewportWidth ?? 0;
+                const sl = vw > 0 ? (p.scrollLeft ?? 0) : 0;
+                const width = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
+                this._drawSpectralOverlay(ctx, p, totalWidth, sl, width, canvasHeight);
+            }
+        }
 
         this._syncFreqAxisHeight();
     }

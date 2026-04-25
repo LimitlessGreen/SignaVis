@@ -33,6 +33,7 @@ export class RecordingExplorer {
         this._container        = opts.container;
         this._manager          = opts.manager;
         this._getSetName       = opts.getSetName || (() => 'Annotations');
+        this._onRenameSet      = opts.onRenameSet || null;
         this._onActivate       = opts.onActivate;
         this._onAddXc          = opts.onAddXc || null;
         this._onResetRecording = opts.onResetRecording || null;
@@ -66,6 +67,36 @@ export class RecordingExplorer {
         const nameEl = document.createElement('span');
         nameEl.className = 'rec-set-name';
         nameEl.textContent = this._getSetName();
+        nameEl.title = 'Click to rename set';
+
+        // Inline rename support: if parent app provides onRenameSet, allow
+        // editing the session set name directly from the explorer header.
+        nameEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!this._onRenameSet) return;
+            if (nameEl.querySelector('input')) return; // already editing
+            const oldName = this._getSetName() || '';
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.className = 'inline-name-input';
+            inp.value = oldName;
+            inp.style.cssText = 'max-width:160px;font-size:12px;';
+            nameEl.textContent = '';
+            nameEl.appendChild(inp);
+            inp.focus(); inp.select();
+            const commit = () => {
+                const val = inp.value.trim();
+                if (val && val !== oldName) this._onRenameSet(val);
+                nameEl.textContent = val || oldName;
+            };
+            inp.addEventListener('blur', commit);
+            inp.addEventListener('keydown', (ev) => {
+                ev.stopPropagation();
+                if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+                if (ev.key === 'Escape') { ev.preventDefault(); nameEl.textContent = oldName; }
+            });
+            inp.addEventListener('click', (ev) => ev.stopPropagation());
+        });
 
         header.appendChild(chevron);
         header.appendChild(nameEl);

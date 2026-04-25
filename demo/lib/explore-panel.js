@@ -44,7 +44,7 @@ export class ExplorePanel {
    * @param {(item: {name:string, scientificName:string}) => void} [opts.onSpeciesSelect]
    *   Called when the user clicks a species card — use to pre-fill the label species bar.
    */
-  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect }) {
+  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect, onOpenRefCalls }) {
     this._birdnet          = birdnet;
     this._getLabels        = getLabels;
     this._getLang          = getLang;
@@ -53,6 +53,7 @@ export class ExplorePanel {
     this._getRecordingDate = getRecordingDate;
     this._loadModel        = loadModel ?? null;
     this._onSpeciesSelect  = onSpeciesSelect ?? null;
+    this._onOpenRefCalls   = onOpenRefCalls ?? null;
 
     this._activeTab    = 'stats';
     this._loading      = false;
@@ -388,6 +389,21 @@ export class ExplorePanel {
         </div>
       </div>
     `;
+
+    if (this._onOpenRefCalls) {
+      const refBtn = document.createElement('button');
+      refBtn.className = 'act-btn';
+      refBtn.title = 'Reference Calls';
+      refBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+      refBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._onOpenRefCalls({ scientificName, name: commonName });
+      });
+      // Append to the meta row so it sits inline with the existing meta content.
+      const metaEl = card.querySelector('.sp-card-meta');
+      if (metaEl) metaEl.appendChild(refBtn);
+      else card.querySelector('.sp-card-body')?.appendChild(refBtn);
+    }
 
     const img = card.querySelector('.sp-card-img');
     img.addEventListener('error', () => { img.src = FALLBACK_SVG; }, { once: true });

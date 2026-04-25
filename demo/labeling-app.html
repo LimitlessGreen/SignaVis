@@ -8,6 +8,19 @@
   <!-- Styles are provided via the SCSS entrypoint imported in the module script: ../src/styles/main.scss -->
 </head>
 <body>
+  <!-- XC download progress bar — shown only during active downloads -->
+  <div id="xcDownloadBar" style="
+    position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;
+    background:transparent;pointer-events:none;
+  ">
+    <div id="xcDownloadFill" style="
+      height:100%;width:0%;
+      background:linear-gradient(90deg,#3b82f6,#06b6d4);
+      transition:width 0.15s ease,opacity 0.3s ease;
+      opacity:0;
+    "></div>
+  </div>
+
   <div class="app">
     <header class="topbar">
       <div class="brand"><span class="dot"></span> Labeling App</div>
@@ -53,6 +66,36 @@
         <div class="xc-nokey-actions">
           <button class="tb-btn" id="xcNokeySetKeyBtn" type="button" disabled>Save key</button>
           <button class="tb-btn" id="xcNokeyCloseBtn" type="button">Continue without key</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Long-recording warning modal -->
+    <div class="xc-nokey-backdrop" id="longRecordingModal" hidden>
+      <div class="xc-nokey-dialog">
+        <h3>Recording too long</h3>
+        <p id="longRecordingMsg"></p>
+        <p class="xc-nokey-hint">
+          Support for long recordings is planned. For now, please use recordings
+          under 10 minutes for best results.
+        </p>
+        <div class="xc-nokey-actions">
+          <button class="tb-btn" id="longRecordingCloseBtn" type="button">OK, continue anyway</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- XC not-found modal -->
+    <div class="xc-nokey-backdrop" id="xcNotFoundModal" hidden>
+      <div class="xc-nokey-dialog">
+        <h3>Recording not found</h3>
+        <p id="xcNotFoundMsg">This Xeno-Canto recording could not be downloaded.</p>
+        <p class="xc-nokey-hint">
+          Double-check the XC number. The recording may not exist, may have been removed,
+          or may not have a publicly downloadable audio file.
+        </p>
+        <div class="xc-nokey-actions">
+          <button class="tb-btn" id="xcNotFoundCloseBtn" type="button">OK</button>
         </div>
       </div>
     </div>
@@ -474,6 +517,7 @@
     import { BirdNETInference } from '../src/infrastructure/birdnetInference.ts';
     import ModalManager from '../src/ui/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
+    import { createReferenceCallsModal } from './lib/reference-calls-modal.js';
     import { initDailyTips, showTip } from '../src/ui/daily-tips.ts';
 
     import { Sidebar } from './lib/sidebar.js';
@@ -516,6 +560,128 @@
           initDailyTips({ host: player.root, force: true });
         } catch (e) { /* ignore */ }
       });
+    }
+
+    // ── XC download progress bar ──────────────────────────────────────
+    const _xcBar  = document.getElementById('xcDownloadBar');
+    const _xcFill = document.getElementById('xcDownloadFill');
+    let   _xcHideTimer = null;
+
+    function xcProgressStart() {
+      clearTimeout(_xcHideTimer);
+      if (_xcFill) { _xcFill.style.width = '0%'; _xcFill.style.opacity = '1'; }
+    }
+    function xcProgressUpdate(fraction) {
+      if (!_xcFill) return;
+      if (fraction == null) {
+        // Indeterminate: animate a shimmer by cycling 0→70→0
+        _xcFill.style.transition = 'width 1.2s ease-in-out';
+        _xcFill.style.width = '70%';
+      } else {
+        _xcFill.style.transition = 'width 0.15s ease';
+        _xcFill.style.width = `${Math.min(95, fraction * 100).toFixed(1)}%`; // cap at 95% until done
+      }
+    }
+    function xcProgressDone() {
+      if (!_xcFill) return;
+      _xcFill.style.transition = 'width 0.2s ease';
+      _xcFill.style.width = '100%';
+      _xcHideTimer = setTimeout(() => {
+        _xcFill.style.transition = 'opacity 0.4s ease';
+        _xcFill.style.opacity = '0';
+        setTimeout(() => { _xcFill.style.width = '0%'; }, 450);
+      }, 300);
+    }
+
+    // ── Long-recording warning modal ─────────────────────────────────
+    const MAX_SUPPORTED_DURATION_SEC = 10 * 60; // 10 minutes
+
+    const longRecordingModal     = document.getElementById('longRecordingModal');
+    const longRecordingMsg       = document.getElementById('longRecordingMsg');
+    const longRecordingCloseBtn  = document.getElementById('longRecordingCloseBtn');
+    const longRecordingManager   = new ModalManager({
+      backdrop: longRecordingModal,
+      dialog:   longRecordingModal?.querySelector('.xc-nokey-dialog'),
+    });
+    longRecordingCloseBtn?.addEventListener('click', () => longRecordingManager.close());
+
+    // ── XC not-found modal ────────────────────────────────────────────
+    const xcNotFoundModal      = document.getElementById('xcNotFoundModal');
+    const xcNotFoundMsg        = document.getElementById('xcNotFoundMsg');
+    const xcNotFoundCloseBtn   = document.getElementById('xcNotFoundCloseBtn');
+    const xcNotFoundManager    = new ModalManager({
+      backdrop: xcNotFoundModal,
+      dialog:   xcNotFoundModal?.querySelector('.xc-nokey-dialog'),
+    });
+    xcNotFoundCloseBtn?.addEventListener('click', () => xcNotFoundManager.close());
+
+    // ── Reference Calls modal (lazy init after xcPanel + taxonomy are ready) ─
+    let _referenceCallsModal = null;
+    function getRefCallsModal() {
+      if (!_referenceCallsModal) {
+        _referenceCallsModal = createReferenceCallsModal({
+          xcPanel,
+          // Wrap so the modal always calls the current getSuggestions —
+          // avoids capturing the empty fallback if modal is opened before taxonomy loads.
+          getSuggestions: (q, n) => getSuggestions(q, n),
+          BirdNETPlayer,
+          // Resolve vernacular → scientific name by searching all taxonomy records.
+          resolveSci: (name) => {
+            if (!taxonomy?.records) return '';
+            const q = name.trim().toLowerCase();
+            for (const rec of taxonomy.records) {
+              const names = rec.n ? Object.values(rec.n) : [];
+              if (names.some(n => n.toLowerCase() === q) || rec.s?.toLowerCase() === q) {
+                return rec.s || '';
+              }
+            }
+            return '';
+          },
+        });
+      }
+      return _referenceCallsModal;
+    }
+
+    function showXcError(err) {
+      const isNotFound = err?.code === 'XC_NOT_FOUND';
+      const msg = err?.message || String(err);
+      if (isNotFound) {
+        if (xcNotFoundMsg) xcNotFoundMsg.textContent = msg;
+        xcNotFoundManager.open();
+      } else {
+        fileLabel.innerHTML = `<span style="color:var(--color-error,#ef4444)" title="${msg}">&#9888; XC load failed</span>`;
+      }
+    }
+
+    /**
+     * If an API key is available, fetch the XC recording duration and show the
+     * "too long" modal early (before download). Returns true if the load should
+     * continue, false if the caller should abort.
+     * Falls back silently (returns true) on any error so download still proceeds.
+     */
+    async function checkXcDuration(xcId) {
+      const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
+      if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
+        const mins  = Math.floor(durationSec / 60);
+        const secs  = Math.round(durationSec % 60);
+        const limit = MAX_SUPPORTED_DURATION_SEC / 60;
+        if (longRecordingMsg) longRecordingMsg.textContent =
+          `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
+          `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
+        longRecordingManager.open();
+        return false;
+      }
+      // API check ran (even if within limit) — suppress the fallback ready-event check.
+      if (durationSec !== null) state._longRecordingChecked = true;
+      return true;
+    }
+
+    function makeXcProgress(onStatus) {
+      xcProgressStart();
+      return {
+        onStatus: (msg) => { onStatus?.(msg); },
+        onProgress: (fraction) => xcProgressUpdate(fraction),
+      };
     }
 
     // ── DOM refs ──────────────────────────────────────────────────────
@@ -721,6 +887,9 @@
     })();
 
     // ── App state ─────────────────────────────────────────────────────
+    let getSuggestions = (q, n) => [];  // populated after taxonomy loads
+    let _lastAudioUrl = null;           // track current audio URL for reference player
+
     const state = {
       labels: [],
       /** @type {Map<string, ReturnType<typeof defaultSetInfo>>} */
@@ -779,12 +948,10 @@
     }
 
     function renameLabelSet(id, newName) {
-      const s = state.labelSets.get(id);
-      if (s) {
-        s.name = newName;
-        syncToPlayer();
-        xcPanel._rebuildSetSection?.();
-      }
+      // Route name changes through the central updateSet path so all
+      // dependent UI (label list, XC panel, recording explorer, props)
+      // is notified and persistence happens via the debounced updateSet.
+      updateSet(id, { name: newName });
     }
 
     function deleteLabelSet(id) {
@@ -829,6 +996,8 @@
         syncToPlayer();
         labelList.render(state.labels);                      // set header name/license in label list
         xcPanel._rebuildSetSection?.();                      // set form in XC tab
+        // Ensure the recording explorer header updates live when a set field changes
+        try { recordingExplorer?.render?.(); } catch (e) {}
         const displayed = propsPanel.displayedLabel;
         if (displayed) propsPanel.refreshLabel(displayed);  // set section in Properties tab
         saveSessionSets(state);
@@ -961,21 +1130,25 @@
         try {
           if (entry.xcId) {
             // Re-fetch through xcPanel so CORS proxy fallback is active
-            const audio = await xcPanel.fetchAudio(entry.xcId, (msg) => {
-              fileLabel.textContent = msg;
-              player.showLoadingOverlay(msg);
-            });
+            if (!await checkXcDuration(entry.xcId)) return;
+            const _xcp1 = makeXcProgress((msg) => { fileLabel.textContent = msg; player.showLoadingOverlay(msg); });
+            const audio = await xcPanel.fetchAudio(entry.xcId, _xcp1.onStatus, _xcp1.onProgress);
+            xcProgressDone();
             const blob = new Blob([audio.buffer], { type: 'audio/mpeg' });
+            _lastAudioUrl = URL.createObjectURL(blob);
             player.showLoadingOverlay('Decoding…');
             await player.loadFile(new File([blob], entry.filename, { type: 'audio/mpeg' }));
           } else {
             // Blob URL (local file) — same origin, no CORS issue
+            _lastAudioUrl = entry.audioUrl?.startsWith('blob:') ? entry.audioUrl : null;
             player.showLoadingOverlay('Loading…');
             await player.loadUrl(entry.audioUrl);
           }
         } catch (e) {
+          xcProgressDone();
           player.hideLoadingOverlay();
-          selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
+          if (e?.code === 'XC_NOT_FOUND') showXcError(e);
+          else selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
         }
       }
       fileLabel.textContent = entry.filename;
@@ -1050,6 +1223,7 @@
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
       getSetName: () => state.labelSets.get(state._sessionSetId)?.name || 'My Annotations',
+      onRenameSet: (name) => renameLabelSet(state._sessionSetId, name),
       onActivate: (entry) => activateRecordingEntry(entry),
       onAddXc: async (xcId) => {
         const input = document.getElementById('xcIdInput');
@@ -1282,6 +1456,7 @@
         syncToPlayer();
       },
       // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
+      onOpenRefCalls: (lbl) => openRefCalls(lbl),
       onToggleLockSet: (setId, lock) => {
         const s = state.labelSets.get(setId);
         if (s) {
@@ -1410,6 +1585,7 @@
           scientificName: item.scientificName || '',
         });
       },
+      onOpenRefCalls: (item) => openRefCalls({ scientificName: item.scientificName, label: item.name }),
     });
     sidebar.addPanel('explore', {
       icon:    ICONS.explore,
@@ -1538,13 +1714,15 @@
         state.activeObjectUrl = null;
       }
       const blob = new Blob([arrayBuffer], { type: mimeType });
+      // Always create a blob URL so the reference player can load without CORS issues.
+      const blobUrl = URL.createObjectURL(blob);
+      state.activeObjectUrl = blobUrl;
+      _lastAudioUrl = blobUrl;
       try {
         const file = new File([blob], filename, { type: mimeType });
         await player.loadFile(file);
       } catch {
-        const objectUrl = URL.createObjectURL(blob);
-        state.activeObjectUrl = objectUrl;
-        await player.loadUrl(objectUrl);
+        await player.loadUrl(blobUrl);
       }
       fileLabel.textContent = filename;
     }
@@ -1788,7 +1966,10 @@
       xcLoadBtn.disabled = true;
       xcLoadBtn.textContent = '…';
       try {
-        const audio = await xcPanel.fetchAudio(raw, (msg) => { fileLabel.textContent = msg; });
+        if (!await checkXcDuration(raw)) { xcLoadBtn.disabled = false; xcLoadBtn.textContent = 'Load'; return; }
+        const _xcp2 = makeXcProgress((msg) => { fileLabel.textContent = msg; });
+        const audio = await xcPanel.fetchAudio(raw, _xcp2.onStatus, _xcp2.onProgress);
+        xcProgressDone();
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Save current annotations to the leaving entry, then create a new RecordingEntry
@@ -1817,7 +1998,8 @@
         }
         sidebar.setActive('labels');
       } catch (err) {
-        fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
+        xcProgressDone();
+        showXcError(err);
       } finally {
         xcLoadBtn.disabled = false;
         xcLoadBtn.textContent = 'Load';
@@ -1983,7 +2165,7 @@
         state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
         // Wire species search widget factory into label list + properties panel
-        const getSuggestions = createSuggestionProvider({
+        getSuggestions = createSuggestionProvider({
           taxonomy,
           getLang: () => state.taxonomyLang,
           getLabels: () => state.labels,
@@ -2013,7 +2195,10 @@
         return;
       }
       try {
-        const audio = await xcPanel.fetchAudio(xcid, (msg) => { fileLabel.textContent = msg; });
+        if (!await checkXcDuration(xcid)) return;
+        const _xcp3 = makeXcProgress((msg) => { fileLabel.textContent = msg; });
+        const audio = await xcPanel.fetchAudio(xcid, _xcp3.onStatus, _xcp3.onProgress);
+        xcProgressDone();
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Create a RecordingEntry for this auto-loaded XC recording
@@ -2040,7 +2225,8 @@
           }
         }
       } catch (err) {
-        fileLabel.textContent = `XC load failed: ${err?.message || String(err)}`;
+        xcProgressDone();
+        showXcError(err);
       }
     }
 
@@ -2112,6 +2298,19 @@
         duration: player.duration || 0,
         filename: fileLabel.textContent || '',
       });
+
+      // Show long-recording warning unless it was already shown via the API pre-check.
+      const duration = player.duration || 0;
+      if (duration > MAX_SUPPORTED_DURATION_SEC && !state._longRecordingChecked) {
+        const mins = Math.floor(duration / 60);
+        const secs = Math.round(duration % 60);
+        const limit = MAX_SUPPORTED_DURATION_SEC / 60;
+        if (longRecordingMsg) longRecordingMsg.textContent =
+          `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
+          `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
+        longRecordingManager.open();
+      }
+      state._longRecordingChecked = false; // reset for next load
     });
 
     player.on('selection', (e) => {
@@ -2224,6 +2423,11 @@
     // ── Context menus on label surfaces ─────────────────────────────────────
     const ICON_RENAME = '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>';
     const ICON_DELETE = '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>';
+    const ICON_REFS   = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 8h5M8 5.5v5"/></svg>';
+
+    function openRefCalls(label) {
+      getRefCallsModal().open(label, _lastAudioUrl);
+    }
 
     /** Show rename/delete context menu for a spectrogram label id. */
     function showLabelContextMenu(e, id) {
@@ -2236,6 +2440,8 @@
         items: [
           { label: 'Rename', icon: ICON_RENAME,
             action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
+          { label: 'Reference Calls', icon: ICON_REFS,
+            action: () => openRefCalls(lbl) },
           { separator: true },
           { label: 'Delete', icon: ICON_DELETE, danger: true,
             action: () => {
@@ -2266,6 +2472,8 @@
         items: [
           { label: 'Rename', icon: ICON_RENAME,
             action: () => player.annotations?._renameRegionPrompt?.(id) },
+          { label: 'Reference Calls', icon: ICON_REFS,
+            action: () => openRefCalls({ ...ann, scientificName: ann.scientificName || ann.species || '' }) },
           { separator: true },
           { label: 'Delete', icon: ICON_DELETE, danger: true,
             action: () => {

@@ -4,9 +4,19 @@
  * and XC-format JSON export.
  */
 
-import { importXenoCantoSpectrogramLabels, normalizeXcId } from '../../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording } from '../../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import ModalManager from '../../src/ui/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
+
+// Parse XC API "len" field ("m:ss" or "mm:ss" or "h:mm:ss") → seconds, or null.
+function parseXcLen(len) {
+  if (!len || typeof len !== 'string') return null;
+  const parts = len.trim().split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
 
 // ── Annotator profile field definitions ─────────────────────────────
 
@@ -345,21 +355,64 @@ export class XenoCantoPanel {
 
   // ── Audio fetching ──────────────────────────────────────────────────
 
-  async fetchAudio(xcId, onStatus) {
+  async fetchAudio(xcId, onStatus, onProgress) {
     const clean = normalizeXcId(xcId);
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
     const directUrl = `https://xeno-canto.org/${clean}/download`;
     let lastError = null;
+
+    const streamToBuffer = async (res, label) => {
+      const total = parseInt(res.headers.get('Content-Length') || '0', 10) || 0;
+      const reader = res.body?.getReader();
+      if (!reader) return res.arrayBuffer(); // fallback: no streaming
+
+      onStatus?.(`Loading XC${clean} (${label})…`);
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        onProgress?.(total > 0 ? received / total : null, received, total);
+      }
+      // Assemble chunks into a single ArrayBuffer
+      const buf = new ArrayBuffer(received);
+      const view = new Uint8Array(buf);
+      let offset = 0;
+      for (const chunk of chunks) { view.set(chunk, offset); offset += chunk.length; }
+      return buf;
+    };
+
+    const notFound = (msg) => Object.assign(new Error(msg), { code: 'XC_NOT_FOUND' });
+    const isAudioContent = (res) => {
+      const ct = res.headers.get('Content-Type') || '';
+      return ct.startsWith('audio/') || ct.startsWith('application/octet') || ct.includes('mpeg') || ct.includes('ogg') || ct.includes('flac');
+    };
+
     try {
-      onStatus?.(`Loading XC${clean} (Direct)...`);
+      onStatus?.(`Loading XC${clean} (Direct)…`);
+      onProgress?.(0, 0, 0);
       const res = await fetch(directUrl);
+      if (res.status === 404 || res.status === 410) {
+        throw notFound(`XC${clean} not found — this recording may not exist on Xeno-Canto or has no downloadable audio.`);
+      }
       if (res.ok) {
-        const buf = await res.arrayBuffer();
+        // If the server returned an HTML page instead of audio it's effectively not found.
+        if (res.headers.get('Content-Type')?.startsWith('text/html')) {
+          throw notFound(`XC${clean} not found — Xeno-Canto returned an error page instead of audio.`);
+        }
+        const buf = await streamToBuffer(res, 'Direct');
         if (buf && buf.byteLength >= 10_000) return { xcId: clean, buffer: buf, audioUrl: directUrl };
-        lastError = new Error('Direct response too small to be valid audio.');
+        lastError = new Error('Response too small to be valid audio — the file may not exist.');
       } else { lastError = new Error(`HTTP ${res.status}`); }
-    } catch (err) { lastError = err; }
+    } catch (err) {
+      if (err.code === 'XC_NOT_FOUND') throw err; // propagate immediately, no proxy fallback
+      lastError = err;
+    }
+
     if (!this.useProxies) throw new Error(`Could not download XC${clean} directly: ${lastError?.message || 'unknown error'}`);
+
     const candidates = [
       { name: 'CodeTabs',   url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
       { name: 'CorsProxy',  url: `https://corsproxy.io/?${encodeURIComponent(directUrl)}` },
@@ -367,16 +420,33 @@ export class XenoCantoPanel {
       { name: 'ThingProxy', url: `https://thingproxy.freeboard.io/fetch/${directUrl}` },
     ];
     for (const c of candidates) {
-      onStatus?.(`Loading XC${clean} (${c.name})...`);
       try {
+        onProgress?.(0, 0, 0);
         const res = await fetch(c.url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buf = await res.arrayBuffer();
+        const buf = await streamToBuffer(res, c.name);
         if (!buf || buf.byteLength < 10_000) throw new Error('Response too small.');
         return { xcId: clean, buffer: buf, audioUrl: directUrl };
       } catch (err) { lastError = err; }
     }
     throw new Error(`Could not download XC${clean}: ${lastError?.message || 'unknown error'}`);
+  }
+
+  /**
+   * Fetch only the recording duration from the XC API.
+   * Returns seconds as a number, or null if unavailable (no key, network error, missing field).
+   */
+  async fetchRecordingDurationSec(xcId) {
+    if (!this.apiKey) return null;
+    const clean = normalizeXcId(xcId);
+    if (!clean) return null;
+    try {
+      const { recording } = await fetchXenoCantoRecording(clean, this.getAuthOptions());
+      const len = recording?.len || recording?.length || '';
+      return parseXcLen(len);
+    } catch {
+      return null;
+    }
   }
 
   // ── Label import ────────────────────────────────────────────────────

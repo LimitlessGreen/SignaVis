@@ -112,6 +112,7 @@ export class LabelList {
     this._canDeleteSet = opts.canDeleteSet || null;
     /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
+    this._onOpenRefCalls = opts.onOpenRefCalls || null;
     this._cardMap = new Map();
     this._selectedId = null;
     /** @type {Set<string>} */
@@ -998,6 +999,15 @@ export class LabelList {
       propsBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
       propsBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
       actions.appendChild(propsBtn);
+
+      if (this._onOpenRefCalls) {
+        const refBtn = document.createElement('button');
+        refBtn.className = 'act-btn';
+        refBtn.title = 'Reference Calls';
+        refBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+        refBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onOpenRefCalls(lbl); });
+        actions.appendChild(refBtn);
+      }
 
       const delBtn = document.createElement('button');
       delBtn.className = 'act-btn danger';
