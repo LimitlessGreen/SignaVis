@@ -406,6 +406,10 @@ export class SpectrogramController extends EventTarget {
 
         if (this._tileManager !== tm) return; // superseded by a newer generate() call
 
+        // Immediately queue all remaining tiles for background computation so
+        // the full spectrogram is available without further scrolling.
+        tm.queueAllTiles();
+
         this._absLogMin = tm.globalMin;
         this._absLogMax = tm.globalMax;
 

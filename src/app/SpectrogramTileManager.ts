@@ -178,8 +178,9 @@ export class SpectrogramTileManager extends EventTarget {
 
             tile.lastUsed = Date.now();
 
-            const visLeft  = Math.max(0, tileDstX0);
-            const visRight = Math.min(viewportWidth, tileDstX1);
+            // Snap to integer pixels to prevent sub-pixel gaps between adjacent tiles.
+            const visLeft  = Math.floor(Math.max(0, tileDstX0));
+            const visRight = Math.ceil(Math.min(viewportWidth, tileDstX1));
             if (visRight <= visLeft) continue;
 
             const tileDispW = tileDstX1 - tileDstX0;
@@ -192,27 +193,8 @@ export class SpectrogramTileManager extends EventTarget {
             const srcH = freqViewSrcCrop?.srcH ?? tile.canvas.height;
             const dstW = visRight - visLeft;
 
-            // Mirror the two-pass strategy from renderSpectrogram:
-            // bilinear vertical scale + nearest-neighbor horizontal when magnifying.
-            const wantCrispH     = tileDispW >= tile.canvasWidth;
-            const needsVertScale = canvasHeight !== srcH;
-
-            if (wantCrispH && needsVertScale) {
-                const oc = typeof OffscreenCanvas !== 'undefined'
-                    ? new OffscreenCanvas(Math.ceil(srcW), canvasHeight)
-                    : (() => { const c = document.createElement('canvas'); c.width = Math.ceil(srcW); c.height = canvasHeight; return c; })();
-                const octx = oc.getContext('2d') as CanvasRenderingContext2D;
-                if (octx) {
-                    octx.imageSmoothingEnabled = true;
-                    (octx as any).imageSmoothingQuality = 'high';
-                    octx.drawImage(tile.canvas, srcX, srcY, srcW, srcH, 0, 0, Math.ceil(srcW), canvasHeight);
-                    ctx.imageSmoothingEnabled = false;
-                    ctx.drawImage(oc as any, 0, 0, Math.ceil(srcW), canvasHeight, visLeft, 0, dstW, canvasHeight);
-                }
-            } else {
-                ctx.imageSmoothingEnabled = !wantCrispH;
-                ctx.drawImage(tile.canvas, srcX, srcY, srcW, srcH, visLeft, 0, dstW, canvasHeight);
-            }
+            ctx.imageSmoothingEnabled = tileDispW < tile.canvasWidth; // smooth only when shrinking
+            ctx.drawImage(tile.canvas, srcX, srcY, srcW, srcH, visLeft, 0, dstW, canvasHeight);
         }
 
         drawTimeGrid({
@@ -230,6 +212,21 @@ export class SpectrogramTileManager extends EventTarget {
     async computeFirstTile(): Promise<void> {
         if (this.tilesComputed > 0 || this.disposed) return;
         await this._computeTile(0);
+    }
+
+    // Enqueue all tiles for background computation (lowest priority).
+    // Call after computeFirstTile() so tile 0 is already done.
+    queueAllTiles(): void {
+        if (this.disposed) return;
+        const inQueue = new Set(this.queue);
+        for (let i = 0; i < this.totalTiles; i++) {
+            const tile = this.tiles.get(i);
+            if ((!tile || tile.state === 'idle' || tile.state === 'error') && !inQueue.has(i)) {
+                this.queue.push(i); // append = lower priority than viewport tiles
+                inQueue.add(i);
+            }
+        }
+        if (!this.isComputing) this._computeNext();
     }
 
     // ── Invalidate (DSP settings changed) ──────────────────────────
