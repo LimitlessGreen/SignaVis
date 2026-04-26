@@ -37,12 +37,17 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
+
+      - name: Show Node version
+        run: node --version
 
       - name: Typecheck
         run: npm run typecheck
 
       - name: Test
+        env:
+          FORCE_ESBUILD: ${{ startsWith(matrix.node-version, '20') }}
         run: npm test
 
       - name: Build library + types
