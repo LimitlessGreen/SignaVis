@@ -7,14 +7,14 @@ export interface DocumentEventsHost {
         isDraggingViewport: boolean;
         isDraggingPlayhead: boolean;
         isOverviewDrag: boolean;
-        ctx: { panSuppressClick: boolean; playheadSource: string; overviewMoved: boolean };
+        ctx: { panSuppressClick?: boolean; playheadSource?: string | undefined; overviewMoved?: boolean };
         release(): void;
         blockSeekClicks(ms: number): void;
         blockOverviewClicks(ms: number): void;
     };
     _updateViewResize(y: number): void;
     _updateViewportPan(x: number, y: number): void;
-    _seekFromClientX(x: number, source: string): void;
+    _seekFromClientX(x: number, source?: string): void;
     _updateOverviewDrag(x: number): void;
     _stopViewResize(): void;
     _queueOverviewViewportApply(final: boolean): void;

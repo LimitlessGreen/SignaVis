@@ -7,7 +7,7 @@ export interface OverviewHost {
     _showOverview: boolean;
     interaction: {
         isOverviewClickBlocked(): boolean;
-        ctx: { overviewMoved: boolean };
+        ctx: { overviewMoved?: boolean };
         blockOverviewClicks(ms: number): void;
     };
     _startOverviewDrag(side: 'left' | 'right' | 'move', x: number): void;
