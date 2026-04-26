@@ -4,7 +4,7 @@ This page documents the BirdNET species label source files and the JSON formats 
 
 ## 1) Source: BirdNET-Analyzer label files
 
-- Location used by the build script: [BirdNET-Analyzer/birdnet_analyzer/labels/V2.4](BirdNET-Analyzer/birdnet_analyzer/labels/V2.4)
+- Location used by the build script: [BirdNET-Analyzer labels (V2.4)](https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4)
 - File name pattern: `BirdNET_GLOBAL_6K_<MODEL>_Labels_<lang>.txt` (e.g. `BirdNET_GLOBAL_6K_V2.4_Labels_en_uk.txt`).
 - Line format: each non-empty line is a single mapping using the first underscore (`_`) as separator: `<scientific name>_<common name>`.
 

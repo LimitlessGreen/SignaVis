@@ -113,7 +113,7 @@ w.on_event('annotationcreate', on_ann)
 
 ## Export / Upload integration
 
-The demo includes helpers to build Xeno‑canto payloads and export annotation sets. See the XC panel code at [demo/lib/xc-panel.js](demo/lib/xc-panel.js) for the exact payload builder used by the UI. The Python wrapper is orthogonal — use the widget or iframe to edit labels and export via the client UI, or serialize and post the app-generated payload from Python if needed.
+ The demo includes helpers to build Xeno‑canto payloads and export annotation sets. See the XC panel code at [demo/lib/xc-panel.js](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/demo/lib/xc-panel.js) for the exact payload builder used by the UI. The Python wrapper is orthogonal — use the widget or iframe to edit labels and export via the client UI, or serialize and post the app-generated payload from Python if needed.
 
 ## Demos and examples
 
@@ -136,10 +136,10 @@ pip install numpy librosa matplotlib Pillow anywidget ipywidgets
 
 ## Code references
 
-- Python wrapper root & README: [python-wrapper/README.md](python-wrapper/README.md)
-- Renderer implementations: [python-wrapper/audio_workbench/renderer.py](python-wrapper/audio_workbench/renderer.py)
-- Interactive widget: [python-wrapper/audio_workbench/widget.py](python-wrapper/audio_workbench/widget.py)
-- Streamlit demo: [python-wrapper/demo_streamlit.py](python-wrapper/demo_streamlit.py)
+ - Python wrapper root & README: [python-wrapper/README.md](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/README.md)
+ - Renderer implementations: [python-wrapper/audio_workbench/renderer.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/audio_workbench/renderer.py)
+ - Interactive widget: [python-wrapper/audio_workbench/widget.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/audio_workbench/widget.py)
+ - Streamlit demo: [python-wrapper/demo_streamlit.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_streamlit.py)
 
 ---
 
