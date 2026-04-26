@@ -15,7 +15,9 @@ export interface SettingsPanelHost {
 }
 
 export class SettingsPanelController {
-    constructor(private d: any, private host: SettingsPanelHost) {}
+    private d: any;
+    private host: SettingsPanelHost;
+    constructor(d: any, host: SettingsPanelHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

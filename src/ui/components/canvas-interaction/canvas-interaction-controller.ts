@@ -21,7 +21,9 @@ export interface CanvasInteractionHost {
 }
 
 export class CanvasInteractionController {
-    constructor(private d: any, private host: CanvasInteractionHost) {}
+    private d: any;
+    private host: CanvasInteractionHost;
+    constructor(d: any, host: CanvasInteractionHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

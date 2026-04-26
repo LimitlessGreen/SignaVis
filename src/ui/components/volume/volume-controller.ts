@@ -7,7 +7,9 @@ export interface VolumeHost {
 }
 
 export class VolumeController {
-    constructor(private d: any, private host: VolumeHost) {}
+    private d: any;
+    private host: VolumeHost;
+    constructor(d: any, host: VolumeHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         on(this.d.volumeSlider, 'input', (e: Event) => {

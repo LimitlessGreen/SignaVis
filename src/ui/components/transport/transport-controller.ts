@@ -26,7 +26,9 @@ export interface TransportHost {
 }
 
 export class TransportController {
-    constructor(private d: any, private host: TransportHost) {}
+    private d: any;
+    private host: TransportHost;
+    constructor(d: any, host: TransportHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

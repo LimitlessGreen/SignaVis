@@ -15,7 +15,9 @@ export interface FreqViewportHost {
 }
 
 export class FreqViewportController {
-    constructor(private d: any, private host: FreqViewportHost) {}
+    private d: any;
+    private host: FreqViewportHost;
+    constructor(d: any, host: FreqViewportHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

@@ -24,7 +24,8 @@ export interface DocumentEventsHost {
 }
 
 export class DocumentEventsController {
-    constructor(private host: DocumentEventsHost) {}
+    private host: DocumentEventsHost;
+    constructor(host: DocumentEventsHost) { this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

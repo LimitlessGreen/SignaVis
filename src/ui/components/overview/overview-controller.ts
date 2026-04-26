@@ -17,7 +17,9 @@ export interface OverviewHost {
 }
 
 export class OverviewController {
-    constructor(private d: any, private host: OverviewHost) {}
+    private d: any;
+    private host: OverviewHost;
+    constructor(d: any, host: OverviewHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

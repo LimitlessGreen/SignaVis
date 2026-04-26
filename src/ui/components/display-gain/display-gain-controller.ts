@@ -16,7 +16,9 @@ export interface DisplayGainHost {
 }
 
 export class DisplayGainController {
-    constructor(private d: any, private host: DisplayGainHost) {}
+    private d: any;
+    private host: DisplayGainHost;
+    constructor(d: any, host: DisplayGainHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

@@ -17,7 +17,8 @@ export interface WindowEventsHost {
 }
 
 export class WindowEventsController {
-    constructor(private host: WindowEventsHost) {}
+    private host: WindowEventsHost;
+    constructor(host: WindowEventsHost) { this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

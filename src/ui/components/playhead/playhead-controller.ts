@@ -9,7 +9,9 @@ export interface PlayheadHost {
 }
 
 export class PlayheadController {
-    constructor(private d: any, private host: PlayheadHost) {}
+    private d: any;
+    private host: PlayheadHost;
+    constructor(d: any, host: PlayheadHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;
