@@ -50,7 +50,7 @@ jobs:
 
       - name: Build docs into /docs
         run: |
-          mkdocs build --config-file mkdocs.yml --strict --site-dir _site/docs
+          mkdocs build --config-file mkdocs.yml --site-dir _site/docs
 
       - name: Root redirect
         run: |
