@@ -27,21 +27,15 @@ function collectDtsFiles(dir, out = []) {
 
 try {
     const tscBin = path.join(rootDir, 'node_modules', '.bin', 'tsc');
+    // Use a dedicated tsconfig for declaration generation so we can include
+    // our shims (types/) and relax strictness without changing the project's
+    // main tsconfig.json (which sets noEmit=true for editor checks).
     execSync(
         [
             JSON.stringify(tscBin),
-            'src/app/BirdNETPlayer.js',
-            '--declaration',
-            '--allowJs',
-            '--emitDeclarationOnly',
+            '-p',
+            'tsconfig.types.json',
             `--outDir "${tmpDir}"`,
-            '--module esnext',
-            '--moduleResolution bundler',
-            '--allowImportingTsExtensions',
-            '--target es2020',
-            '--lib dom,es2020',
-            '--skipLibCheck',
-            '--ignoreConfig',
         ].join(' '),
         { cwd: rootDir, stdio: 'inherit' },
     );

@@ -4,7 +4,7 @@ import { resolve } from 'path';
 export default defineConfig({
     build: {
         lib: {
-            entry: resolve(__dirname, 'src/app/BirdNETPlayer.js'),
+            entry: resolve(__dirname, 'src/app/BirdNETPlayer.ts'),
             name: 'BirdNETPlayerModule',
             formats: ['es', 'iife'],
             fileName: (format) => {
