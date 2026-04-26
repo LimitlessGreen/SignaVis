@@ -14,7 +14,7 @@ import {
 import { clamp, formatTime, isTypingContext, escapeHtml, clampNumber } from '../shared/utils.ts';
 import { AudioEngine } from '../infrastructure/audio/AudioEngine.ts';
 import { AudioEngineBase } from '../infrastructure/audio/AudioEngineBase.ts';
-import { GestureRecognizer } from '../ui/gestures.ts';
+import { GestureRecognizer } from '../ui/components/gestures/gestures.ts';
 import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from '../domain/transportState.ts';
 import { InteractionState } from './interactionState.ts';
 import { CoordinateSystem } from '../domain/coordinateSystem.ts';
@@ -30,7 +30,18 @@ import {
     renderMainWaveform,
     renderOverviewWaveform,
     renderFrequencyLabels,
-} from '../ui/waveform.ts';
+} from '../ui/components/waveform/waveform.ts';
+
+import { TransportController } from '../ui/components/transport/transport-controller.ts';
+import { SettingsPanelController } from '../ui/components/settings-panel/settings-panel-controller.ts';
+import { VolumeController } from '../ui/components/volume/volume-controller.ts';
+import { DisplayGainController } from '../ui/components/display-gain/display-gain-controller.ts';
+import { PlayheadController } from '../ui/components/playhead/playhead-controller.ts';
+import { FreqViewportController } from '../ui/components/freq-viewport/freq-viewport-controller.ts';
+import { CanvasInteractionController } from '../ui/components/canvas-interaction/canvas-interaction-controller.ts';
+import { OverviewController } from '../ui/components/overview/overview-controller.ts';
+import { DocumentEventsController } from '../ui/components/document-events/document-events-controller.ts';
+import { WindowEventsController } from '../ui/components/window-events/window-events-controller.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -1706,346 +1717,20 @@ export class PlayerState {
 
     _bindEvents() {
         const on = (target: any, type: string, fn: any, opts: AddEventListenerOptions | boolean | undefined = undefined) => {
-            target.addEventListener(type, fn, opts as any);
-            this._cleanups.push(() => target.removeEventListener(type, fn, opts as any));
+            target?.addEventListener(type, fn, opts as any);
+            this._cleanups.push(() => target?.removeEventListener(type, fn, opts as any));
         };
 
-        // ── File / transport ──
-        on(this.d.openFileBtn, 'click', () => this.d.audioFile.click());
-        on(this.d.compactMoreBtn, 'click', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this._setCompactToolbarOpen(!this._compactToolbarOpen);
-        });
-        on(this.d.settingsToggleBtn, 'click', () => this._toggleSettingsPanel());
-        on(this.d.settingsPanelClose, 'click', () => this._setSettingsPanelOpen(false));
-        on(this.d.audioFile, 'change', (e: Event) => this._handleFileSelect(e));
-        on(this.d.playPauseBtn, 'click', () => this._togglePlayPause());
-        on(this.d.stopBtn, 'click', () => this._stopPlayback());
-        on(this.d.jumpStartBtn, 'click', () => this._seekToTime(0, true));
-        on(this.d.jumpEndBtn, 'click', () => this._seekToTime(this.audioBuffer?.duration ?? 0, true));
-        on(this.d.backwardBtn, 'click', () => this._seekByDelta(-SEEK_COARSE_SEC));
-        on(this.d.forwardBtn, 'click', () => this._seekByDelta(SEEK_COARSE_SEC));
-        on(this.d.followToggleBtn, 'click', () => this._cycleFollowMode());
-        on(this.d.loopToggleBtn, 'click', () => { this.loopPlayback = !this.loopPlayback; this._updateToggleButtons(); });
-        on(this.d.crosshairToggleBtn, 'click', () => this._toggleCrosshair());
-        on(this.d.freqZoomResetBtn, 'click', () => this._freqView.reset());
-        on(this.d.fitViewBtn, 'click', () => this._fitEntireTrackInView());
-        on(this.d.resetViewBtn, 'click', () => {
-            this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, true);
-            this._setLinkedScrollLeft(0);
-            this._freqView.reset();
-            this._syncOverviewWindowToViewport();
-        });
-
-        this._bindFreqViewportEvents(on);
-
-        // ── Settings — preset manager, DSP controls, quality slider ──
-        // All owned by PresetManager; it calls back via onRegenerateSpectrogram / onStage1Rebuild.
-        this._presets.bindEvents(on);
-        on(this.d.maxFreqSelect, 'change', () => {
-            if (this.audioBuffer && this._spectro.hasData) {
-                this._freqView.resetSilent();
-                this._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
-                this._updateCoords();
-                this._createFrequencyLabels();
-                this._spectro.buildGrayscale();
-                this._spectro.buildBaseImage(this._presets.currentColorScheme);
-                this._drawSpectrogram();
-                if (this.d.freqZoomResetBtn) this.d.freqZoomResetBtn.hidden = true;
-            }
-        });
-        on(this.d.zoomSlider, 'input', (e: Event) => {
-            const val = (e.target as HTMLInputElement).value;
-            this._setPixelsPerSecond(parseFloat(val), false);
-            this._requestSpectrogramRedraw();
-        });
-        on(this.d.zoomSlider, 'change', () => {
-            if (this._spectro.hasData) this._drawSpectrogram();
-        });
-
-        // ── Spectral overlay toggles ──
-        for (const key of ['showCentroidCheck', 'showF0Check', 'showRidgesCheck'] as const) {
-            on(this.d[key], 'change', () => {
-                if (this._spectro.hasData) this._drawSpectrogram();
-            });
-        }
-
-        // ── Volume ──
-        on(this.d.volumeSlider, 'input', (e: Event) => {
-            this.muted = false;
-            const val = (e.target as HTMLInputElement).value;
-            this._setVolume(parseFloat(val) / 100);
-        });
-        on(this.d.volumeToggleBtn, 'click', () => this._toggleMute());
-
-        // ── Display Floor / Ceiling (Stage 2 only — fast) ──
-        const rebuildDisplay = () => {
-            if (!this._spectro.hasData) return;
-            this._spectro.buildBaseImage(this._presets.currentColorScheme);
-            this._drawSpectrogram();
-        };
-        on(this.d.gainModeSelect, 'change', () => {
-            this._presets.persistCurrentSettings();
-            if (this.d.gainModeSelect.value === 'auto' && this._spectro.data) {
-                this._spectro.autoContrast(true);
-            }
-        });
-        on(this.d.maxFreqModeSelect, 'change', () => {
-            this._presets.persistCurrentSettings();
-            if (!this.audioBuffer) return;
-            const mode = this.d.maxFreqModeSelect.value;
-            if (mode === 'auto') this._spectro.autoFrequency(true);
-            else if (mode === 'nyquist') { this._spectro.setMaxFreqToNyquist(); this._spectro.generate(); }
-        });
-        on(this.d.floorSlider, 'input', () => { this._presets.persistCurrentSettings(); rebuildDisplay(); });
-        on(this.d.ceilSlider, 'input', () => { this._presets.persistCurrentSettings(); rebuildDisplay(); });
-        on(this.d.autoContrastBtn, 'click', () => this._spectro.autoContrast(true));
-        on(this.d.autoFreqBtn, 'click', () => this._spectro.autoFrequency(true));
-
-        this._bindCanvasInteractionEvents(on);
-
-        // ── Playhead drag ──
-        on(this.d.playhead, 'pointerdown', (e: PointerEvent) => this._startPlayheadDrag(e, 'spectrogram'));
-        on(this.d.waveformPlayhead, 'pointerdown', (e: PointerEvent) => this._startPlayheadDrag(e, 'waveform'));
-
-        // ── View resize ──
-        on(this.d.viewSplitHandle, 'pointerdown', (e: PointerEvent) => {
-            if (!this._showWaveform || !this._showSpectrogram) return;
-            e.preventDefault();
-            this._startViewResize('split', e.clientY);
-        });
-        on(this.d.spectrogramResizeHandle, 'pointerdown', (e: PointerEvent) => {
-            if (!this._showSpectrogram) return;
-            e.preventDefault();
-            this._startViewResize('spectrogram', e.clientY);
-        });
-
-        // ── Document-level pointer ──
-        on(document, 'pointermove', (e: PointerEvent) => {
-            if (this.interaction.isViewResize) { this._updateViewResize(e.clientY); return; }
-            if (this.interaction.isDraggingViewport) this._updateViewportPan(e.clientX, e.clientY);
-            if (this.interaction.isDraggingPlayhead) this._seekFromClientX(e.clientX, this.interaction.ctx.playheadSource);
-            if (this.interaction.isOverviewDrag) this._updateOverviewDrag(e.clientX);
-        });
-
-        const releaseAll = () => {
-            this._stopViewResize();
-            if (this.interaction.isDraggingViewport) {
-                if (this.interaction.ctx.panSuppressClick) this.interaction.blockSeekClicks(50);
-                document.body.style.cursor = '';
-            }
-            if (this.interaction.isOverviewDrag) {
-                this._queueOverviewViewportApply(true);
-                if (this.interaction.ctx.overviewMoved) this.interaction.blockOverviewClicks(260);
-            }
-            this.interaction.release();
-        };
-        on(document, 'pointerup', releaseAll);
-        on(document, 'pointercancel', releaseAll);
-
-        // ── Keyboard ──
-        on(document, 'keydown', (e: KeyboardEvent) => this._handleKeyboardShortcuts(e));
-        on(document, 'pointerdown', (e: PointerEvent) => {
-            if (!this._compactToolbarOpen) return;
-            if (this.d.toolbarRoot?.contains(e.target as Node)) return;
-            this._setCompactToolbarOpen(false);
-        });
-
-        this._bindOverviewEvents(on);
-
-        // ── Window ──
-        on(window, 'resize', () => {
-            this._queueCompactToolbarLayoutRefresh();
-            if (!this._shouldCompactToolbarBeActive()) this._setCompactToolbarOpen(false);
-            if (!this.audioBuffer) return;
-            this._invalidateSpectrogramHeightCache();
-            this._drawSpectrogram();
-            this._drawMainWaveform();
-            this._drawOverviewWaveform();
-            this._syncOverviewWindowToViewport();
-            this._emit('viewresize', {
-                waveformHeight: this.waveformDisplayHeight,
-                spectrogramHeight: this.spectrogramDisplayHeight,
-            });
-        });
-        on(window, 'beforeunload', () => this.dispose());
-    }
-
-    /** Frequency viewport — axis drag pan, wheel zoom, zoom slider, scrollbar drag. */
-    _bindFreqViewportEvents(on: any) {
-        // ── Freq axis: left-drag = vertical pan ──
-        {
-            let dragging = false;
-            let startY = 0;
-            let startMin = 0;
-            let startMax = 0;
-            const onMove = (e: PointerEvent) => {
-                if (!dragging) return;
-                const spacer = this.d.freqAxisSpacer;
-                const spacerH = spacer.getBoundingClientRect().height;
-                const dy = e.clientY - startY;
-                const boundedMax = this.coords.boundedMaxFreq;
-                const range = startMax - startMin;
-                const deltaHz = (dy / spacerH) * range;
-                let newMin = startMin + deltaHz;
-                let newMax = startMax + deltaHz;
-                if (newMin < 0) { newMin = 0; newMax = range; }
-                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
-            };
-            const onUp = () => {
-                if (!dragging) return;
-                dragging = false;
-                document.body.style.cursor = '';
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-            };
-            on(this.d.freqAxisSpacer, 'pointerdown', (e: PointerEvent) => {
-                if (e.button !== 0 || !this._showSpectrogram) return;
-                if (!this._freqView.isZoomed) return;
-                e.preventDefault();
-                dragging = true;
-                startY = e.clientY;
-                startMin = this._freqView.min ?? 0;
-                startMax = this._freqView.max ?? this.coords.boundedMaxFreq;
-                document.body.style.cursor = 'ns-resize';
-                document.addEventListener('pointermove', onMove);
-                document.addEventListener('pointerup', onUp);
-            });
-        }
-
-        // ── Freq axis: wheel = vertical zoom ──
-        on(this.d.freqAxisSpacer, 'wheel', (e: WheelEvent) => {
-            if (!this.audioBuffer || !this._showSpectrogram) return;
-            e.preventDefault();
-            const rect = this.d.freqAxisSpacer.getBoundingClientRect();
-            const localY = e.clientY - rect.top;
-            const canvasH = this.d.spectrogramCanvas?.height || rect.height;
-            const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
-            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
-            const zoomIn = e.deltaY < 0;
-            this._freqView.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor, this.coords.boundedMaxFreq);
-        }, { passive: false });
-
-        // ── Freq zoom slider ──
-        on(this.d.freqZoomSlider, 'input', (e: Event) => {
-            const val = (e.target as HTMLInputElement).value;
-            this._freqView.setFromSlider(parseInt(val, 10), this.coords.boundedMaxFreq);
-        });
-
-        // ── Freq scrollbar drag ──
-        {
-            let dragging = false;
-            let startY = 0;
-            let startMin = 0;
-            let startMax = 0;
-            const onMove = (e: PointerEvent) => {
-                if (!dragging) return;
-                const bar = this.d.freqScrollbar;
-                const barH = bar.getBoundingClientRect().height;
-                const dy = e.clientY - startY;
-                const boundedMax = this.coords.boundedMaxFreq;
-                const range = startMax - startMin;
-                // dy positive = drag down = lower freqs
-                const deltaFrac = dy / barH;
-                const deltaHz = deltaFrac * boundedMax;
-                let newMin = startMin - deltaHz;
-                let newMax = startMax - deltaHz;
-                if (newMin < 0) { newMin = 0; newMax = range; }
-                if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
-            };
-            const onUp = () => {
-                if (!dragging) return;
-                dragging = false;
-                this.d.freqScrollbar?.classList.remove('active');
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-            };
-            on(this.d.freqScrollbarThumb, 'pointerdown', (e: PointerEvent) => {
-                if (!this._freqView.isZoomed) return;
-                e.preventDefault();
-                e.stopPropagation();
-                dragging = true;
-                startY = e.clientY;
-                startMin = this._freqView.min ?? 0;
-                startMax = this._freqView.max ?? this.coords.boundedMaxFreq;
-                this.d.freqScrollbar?.classList.add('active');
-                document.addEventListener('pointermove', onMove);
-                document.addEventListener('pointerup', onUp);
-            });
-        }
-    }
-
-    /** Canvas and waveform scroll/click/key/pointer interactions. */
-    _bindCanvasInteractionEvents(on: any) {
-        on(this.d.canvasWrapper, 'click', (e: MouseEvent) => this._handleCanvasClick(e));
-        on(this.d.canvasWrapper, 'dblclick', (e: MouseEvent) => {
-            if (e.shiftKey) { e.preventDefault(); this._freqView.reset(); }
-        });
-        on(this.d.canvasWrapper, 'mousemove', (e: MouseEvent) => this._updateCrosshair(e));
-        on(this.d.canvasWrapper, 'mouseleave', () => this._hideCrosshair());
-        on(this.d.waveformWrapper, 'click', (e: MouseEvent) => this._handleWaveformClick(e));
-        on(this.d.canvasWrapper, 'scroll', () => {
-            if (this.scrollSyncLock) return;
-            if (this._getPrimaryScrollWrapper() !== this.d.canvasWrapper) return;
-            this._setLinkedScrollLeft(this.d.canvasWrapper.scrollLeft);
-            // Viewport-rendering: synchronous redraw so the canvas doesn't lag
-            // behind the label overlay which the browser scrolls natively.
-            if (this._spectro.hasData) this._drawSpectrogram();
-        });
-        on(this.d.waveformWrapper, 'scroll', () => {
-            if (this.scrollSyncLock) return;
-            if (this._getPrimaryScrollWrapper() !== this.d.waveformWrapper) return;
-            this._setLinkedScrollLeft(this.d.waveformWrapper.scrollLeft);
-            // Sync the spectrogram viewport when the waveform is the primary scroller.
-            if (this._spectro.hasData) this._drawSpectrogram();
-        });
-        on(this.d.canvasWrapper, 'wheel', (e: any) => this._handleWheel(e, 'spectrogram'), { passive: false });
-        on(this.d.waveformWrapper, 'wheel', (e: any) => this._handleWheel(e, 'waveform'), { passive: false });
-        on(this.d.canvasWrapper, 'keydown', (e: any) => {
-            if (!this.audioBuffer) return;
-            if (isTypingContext(e.target)) return;
-            switch (e.key) {
-                case 'ArrowLeft':  e.preventDefault(); this._seekByDelta(-SEEK_FINE_SEC); break;
-                case 'ArrowRight': e.preventDefault(); this._seekByDelta(SEEK_FINE_SEC); break;
-                case 'Home': e.preventDefault(); this._seekToTime(0, true); break;
-                case 'End':  e.preventDefault(); this._seekToTime(this.audioBuffer.duration, true); break;
-                default: break;
-            }
-        });
-        on(this.d.canvasWrapper, 'pointerdown', (e: any) => this._startViewportPan(e, 'spectrogram'));
-        on(this.d.waveformWrapper, 'pointerdown', (e: any) => this._startViewportPan(e, 'waveform'));
-    }
-
-    /** Overview waveform: handle drag, window drag, click-to-seek, label toggle. */
-    _bindOverviewEvents(on: any) {
-        on(this.d.overviewHandleLeft, 'pointerdown', (e: any) => {
-            if (!this._showOverview) return;
-            e.preventDefault();
-            this._startOverviewDrag('left', e.clientX);
-        });
-        on(this.d.overviewHandleRight, 'pointerdown', (e: any) => {
-            if (!this._showOverview) return;
-            e.preventDefault();
-            this._startOverviewDrag('right', e.clientX);
-        });
-        on(this.d.overviewWindow, 'pointerdown', (e: any) => {
-            if (!this._showOverview) return;
-            if (e.target === this.d.overviewHandleLeft || e.target === this.d.overviewHandleRight) return;
-            e.preventDefault();
-            this._startOverviewDrag('move', e.clientX);
-        });
-        on(this.d.overviewCanvas, 'click', (e: any) => {
-            if (this.interaction.isOverviewClickBlocked()) return;
-            if (!this._showOverview) return;
-            if (!this.audioBuffer) return;
-            const rect = this.d.overviewCanvas.getBoundingClientRect();
-            const xNorm = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-            this._seekToTime(xNorm * this.audioBuffer.duration, true);
-        });
-        on(this.d.overviewLabelToggle, 'click', () => this._toggleOverviewLabelSection());
+        new TransportController(this.d, this).bind(on);
+        new FreqViewportController(this.d, this).bind(on);
+        new SettingsPanelController(this.d, this).bind(on);
+        new VolumeController(this.d, this).bind(on);
+        new DisplayGainController(this.d, this).bind(on);
+        new CanvasInteractionController(this.d, this).bind(on);
+        new PlayheadController(this.d, this).bind(on);
+        new DocumentEventsController(this).bind(on);
+        new OverviewController(this.d, this).bind(on);
+        new WindowEventsController(this).bind(on);
     }
 
     _bindTouchGestures() {

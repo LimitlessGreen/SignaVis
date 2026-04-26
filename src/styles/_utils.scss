@@ -42,3 +42,21 @@
 
 // Media query helpers
 @mixin below($px) { @media (max-width: $px) { @content; } }
+
+// ─── Shared control layout mixins ────────────────────────────────────
+// Use these in place of .settings-row / .form-row / .detail-row
+// to avoid duplicating the same flex layout across feature SCSS files.
+
+@mixin control-row($gap: 8px) {
+  display: flex;
+  align-items: center;
+  gap: $gap;
+}
+
+// Use .control-label or compose: color + size handled by callers via modifier
+@mixin control-label($min-width: 0) {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  @if $min-width > 0 { min-width: $min-width; }
+}

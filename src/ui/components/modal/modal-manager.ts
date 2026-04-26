@@ -1,3 +1,5 @@
+import './modal.scss';
+
 /**
  * ModalManager — backdrop + focus trap + keyboard handling for dialogs.
  *
@@ -68,7 +70,7 @@ export default class ModalManager {
         newBtn.type = 'button';
         newBtn.className = 'modal-close modal-close--injected';
         newBtn.setAttribute('aria-label', 'Close');
-        newBtn.textContent = '\u00d7';
+        newBtn.textContent = '×';
         newBtn.dataset.modalManaged = '1';
         this.dialog.appendChild(newBtn);
         this._closeBtn = newBtn;

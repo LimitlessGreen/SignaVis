@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// gestures.ts — Lightweight touch gesture recognizer
+// GestureRecognizer — Lightweight touch gesture recognizer
 // ═══════════════════════════════════════════════════════════════════════
 
 function distance(a: Touch, b: Touch): number {
@@ -38,7 +38,7 @@ export class GestureRecognizer {
         this.lastTapX = 0;
         this.lastTapY = 0;
 
-        this.touchMode = null; // 'swipe' | 'pinch'
+        this.touchMode = null;
         this.swipeStartX = 0;
         this.swipeStartY = 0;
         this.swipeLastX = 0;

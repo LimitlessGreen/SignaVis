@@ -24,7 +24,7 @@
  *     onResults:       (labels) => { ... },
  *   });
  */
-import ModalManager from '../../src/ui/modal-manager.ts';
+import ModalManager from '../../src/ui/components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';

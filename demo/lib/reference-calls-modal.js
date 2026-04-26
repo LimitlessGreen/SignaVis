@@ -25,7 +25,7 @@
  */
 
 import { createSpeciesSearchWidget } from './taxonomy-ui.js';
-import ModalManager from '../../src/ui/modal-manager.ts';
+import ModalManager from '../../src/ui/components/modal/modal-manager.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
 

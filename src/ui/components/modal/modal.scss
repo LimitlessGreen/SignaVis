@@ -1,0 +1,34 @@
+/* Close button — base styles (in-flow, e.g. inside a flex header) */
+.modal-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.modal-close:hover { background: rgba(255,255,255,0.08); color: var(--color-text-primary); }
+.modal-close:focus { outline: 2px solid var(--color-accent); }
+
+/* Injected close button (ModalManager auto-creates when dialog has no .modal-close).
+   Positioned absolute so it floats at the top-right corner of its dialog. */
+.modal-close--injected {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  background: rgba(255,255,255,0.04);
+  color: var(--color-text-primary);
+  border-radius: 8px;
+}

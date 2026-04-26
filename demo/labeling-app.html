@@ -515,10 +515,10 @@
     import { colorForName, getOverlayColorStyle } from '../src/domain/annotations.ts';
     import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
     import { BirdNETInference } from '../src/infrastructure/birdnetInference.ts';
-    import ModalManager from '../src/ui/modal-manager.ts';
+    import ModalManager from '../src/ui/components/modal/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
     import { createReferenceCallsModal } from './lib/reference-calls-modal.js';
-    import { initDailyTips, showTip } from '../src/ui/daily-tips.ts';
+    import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
 
     import { Sidebar } from './lib/sidebar.js';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from './lib/taxonomy-ui.js';

@@ -9,15 +9,15 @@
 @use "components/shell";
 @use "components/views";
 @use "components/axes";
-@use "components/overview";
+// overview     → co-located: src/ui/components/overview/overview.scss
 @use "components/statusbar";
 
 // Player chrome
 @use "components/buttons";
 @use "components/toolbar";
-@use "components/transport";
-@use "components/playhead";
-@use "components/settings-panel";
+// transport    → co-located: src/ui/components/transport/transport.scss
+// playhead     → co-located: src/ui/components/playhead/playhead.scss
+// settings-panel → co-located: src/ui/components/settings-panel/settings-panel.scss
 
 // Spectrogram labels & annotations
 @use "components/annotation";

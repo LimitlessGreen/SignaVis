@@ -3,8 +3,6 @@
 
 // ── Public API ──────────────────────────────────────────────────
 export * from './generated/app/BirdNETPlayer';
-
-// ── Event infrastructure ─────────────────────────────────────────
 export { EventBus } from './generated/shared/EventBus';
 export type { EventHandler } from './generated/shared/EventBus';
 

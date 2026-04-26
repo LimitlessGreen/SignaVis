@@ -1,4 +1,5 @@
-import ModalManager from './modal-manager.ts';
+import './daily-tips.scss';
+import ModalManager from '../modal/modal-manager.ts';
 
 const DEFAULT_TIPS = [
   {
@@ -39,17 +40,6 @@ function _createButton(text: string, cls = '') {
 
 /**
  * Render a tip into a modal and return the ModalManager instance.
- *
- * @param {Object} tip
- * @param {HTMLElement} [host]
- * @param {Object} [opts]
- * @param {number} [opts.index]
- * @param {number} [opts.count]
- * @param {() => void} [opts.onNext]
- * @param {() => void} [opts.onPrev]
- * @param {() => void} [opts.onClose]
- * @param {(disabled: boolean) => void} [opts.onDisable]
- * @returns {import('./modal-manager.ts').default}
  */
 export function showTip(
   tip: Tip,
@@ -68,7 +58,6 @@ export function showTip(
   h.className = 'modal-title';
   h.textContent = tip.title || 'Tip';
   header.appendChild(h);
-  // add a small counter (e.g. "Tip 1 of 3")
   const counter = document.createElement('div');
   counter.className = 'daily-tip-counter';
   try { counter.textContent = `Tip ${Number(index) + 1} of ${Number(count) || 1}`; } catch (e) { counter.textContent = ''; }
@@ -87,7 +76,6 @@ export function showTip(
   // duplicate ×-button at the top-right corner of the dialog.
   const closeBtn = _createButton('Close', 'daily-tip-close modal-close');
 
-  // Disable checkbox (persistent preference)
   const disableId = `daily-tip-disable-${Date.now()}-${Math.floor(Math.random()*1000)}`;
   const disableLabel = document.createElement('label');
   disableLabel.className = 'daily-tip-disable-label';
@@ -99,7 +87,6 @@ export function showTip(
   disableLabel.appendChild(disableCheckbox);
   disableLabel.appendChild(document.createTextNode(" Don't show again"));
 
-  // actions layout: left (checkbox) and right (buttons)
   const actionsLeft = document.createElement('div');
   actionsLeft.className = 'daily-tip-actions-left';
   actionsLeft.appendChild(disableLabel);
@@ -116,13 +103,11 @@ export function showTip(
 
   const modal = new ModalManager({ backdrop, dialog } as any);
 
-  // cleanup helper removes DOM and disposes modal handlers
   const cleanup = () => {
     try { modal.dispose(); } catch (e) { /* ignore */ }
     try { backdrop.parentNode && backdrop.parentNode.removeChild(backdrop); } catch (e) { /* ignore */ }
   };
 
-  // wrap close so we can cleanup and notify
   const origClose = modal.close.bind(modal);
   modal.close = () => {
     try { origClose(); } catch (e) { /* ignore */ }
@@ -167,9 +152,6 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
     const last = localStorage.getItem(`${storagePrefix}.lastDate`);
     if (!force && last === today) return;
 
-    // If a daily-tip modal is already present in the host, focus it and avoid
-    // creating another one. This prevents stacking when the Help button is
-    // clicked multiple times quickly.
     try {
       const existing = host && host.querySelector && host.querySelector('.daily-tip-backdrop');
         if (existing) {
@@ -210,7 +192,6 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
 
     showAt(index);
   } catch (e) {
-    // fail silently in environments without localStorage
     try { showTip(tips[0], host); } catch (e) { /* ignore */ }
   }
 }

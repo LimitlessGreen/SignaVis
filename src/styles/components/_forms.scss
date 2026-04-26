@@ -1,20 +1,16 @@
+@use "../utils";
 /* Form controls and input components
    Migrated from demo/labeling-app.css and player styles.
    Depends on tokens in ../tokens.css for colors/sizing.
 */
 
 .form-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  @include utils.control-row(8px);
   margin: 6px 0;
 }
 
 .form-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  min-width: 92px;
+  @include utils.control-label(92px);
 }
 
 /* Generic input style used across the app */

@@ -1,0 +1,166 @@
+@use "../../../styles/utils";
+/* Settings side-panel */
+
+.settings-panel {
+    position: absolute;
+    top: var(--toolbar-height);
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 85%;
+    background: var(--color-toolbar);
+    border-left: 1px solid var(--color-border);
+    z-index: 40;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.daw-shell.settings-panel-open .settings-panel {
+    transform: translateX(0);
+}
+
+.settings-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.settings-panel-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-primary);
+}
+
+.settings-panel-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+.settings-panel-close:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--color-text-primary);
+}
+
+.settings-section {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section-title {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-accent);
+    margin-bottom: 8px;
+}
+
+.settings-row {
+    @include utils.control-row(8px);
+    margin-bottom: 6px;
+}
+
+.settings-row:last-child {
+    margin-bottom: 0;
+}
+
+.settings-label {
+    @include utils.control-label(65px);
+    font-size: 0.74rem;
+    flex-shrink: 0;
+}
+
+.settings-select {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: 0.78rem;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.settings-range {
+    flex: 1;
+    height: 4px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+}
+
+.settings-number {
+    width: 72px;
+    height: 28px;
+    padding: 0 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: 0.78rem;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ─── Quality Slider ─── */
+
+.quality-slider-section {
+    padding-bottom: 6px;
+}
+
+.quality-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.quality-end-label {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.quality-range {
+    flex: 1;
+    height: 6px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+}
+
+.quality-label-bar {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    color: var(--color-text-secondary);
+    padding: 2px 22px 0;
+    opacity: 0.7;
+    user-select: none;
+}
+
+.quality-level-display {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin-top: 2px;
+    letter-spacing: 0.03em;
+}

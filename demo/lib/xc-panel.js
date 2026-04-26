@@ -5,7 +5,7 @@
  */
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording } from '../../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
-import ModalManager from '../../src/ui/modal-manager.ts';
+import ModalManager from '../../src/ui/components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 // Parse XC API "len" field ("m:ss" or "mm:ss" or "h:mm:ss") → seconds, or null.

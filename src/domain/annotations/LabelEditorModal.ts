@@ -11,8 +11,8 @@
 // wrapper that creates an instance and calls open().
 // ═══════════════════════════════════════════════════════════════════════
 
-import ModalManager from '../../ui/modal-manager.ts';
-import { createEditableSelect } from '../../ui/editable-select.ts';
+import ModalManager from '../../ui/components/modal/modal-manager.ts';
+import { createEditableSelect } from '../../ui/components/editable-select/editable-select.ts';
 import { getOverlayColorStyle } from '../annotations.ts';
 
 const DEFAULT_TAG_PRESETS = [

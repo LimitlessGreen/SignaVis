@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════
-// waveform.js — Waveform, timeline, overview and frequency rendering
+// Waveform — canvas rendering for waveform, timeline, overview and frequency labels
 // ═══════════════════════════════════════════════════════════════════════
 
-import { clamp, getTimeGridSteps, hexToRgb, colorWithAlpha } from '../shared/utils.ts';
+import { clamp, getTimeGridSteps, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
     try {
@@ -90,7 +90,6 @@ export function renderMainWaveform({
     const timelineCtx = waveformTimelineCanvas.getContext('2d');
     if (!ampCtx || !timelineCtx) return;
 
-    // persist last render args so we can redraw on theme changes
     try {
         (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline };
     } catch (e) {}
@@ -183,7 +182,6 @@ export function renderOverviewWaveform({
     const ctx = overviewCanvas.getContext('2d');
     if (!ctx) return;
 
-    // persist last render args so we can redraw on theme changes
     try {
         (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs };
     } catch (e) {}
@@ -231,12 +229,10 @@ export function renderOverviewWaveform({
 export function renderFrequencyLabels({ labelsElement, coords }: { labelsElement: HTMLElement; coords: any }) {
     labelsElement.innerHTML = '';
 
-    // Use frequency viewport if active, otherwise full range
     const boundedMaxFreq = coords.freqViewMax ?? Math.min(coords.maxFreq, coords.sampleRate / 2);
     const minFreq = coords.freqViewMin ?? ((coords.freqRange && coords.freqRange[0]) || 0);
     const range = boundedMaxFreq - minFreq;
 
-    // Choose a "nice" tick step based on the frequency range
     const niceSteps = [100, 200, 500, 1000, 2000, 2500, 5000, 10000, 20000];
     const targetTicks = 6;
     const rawStep = range / targetTicks;
@@ -244,13 +240,11 @@ export function renderFrequencyLabels({ labelsElement, coords }: { labelsElement
         Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best
     );
 
-    // Generate frequencies at nice round intervals
     const frequencies = [];
     const startFreq = Math.ceil(minFreq / step) * step;
     for (let f = startFreq; f <= boundedMaxFreq + 1; f += step) {
         frequencies.push(f);
     }
-    // Ensure 0 Hz is included if visible
     if (minFreq === 0 && (frequencies.length === 0 || frequencies[0] !== 0)) {
         frequencies.unshift(0);
     }
