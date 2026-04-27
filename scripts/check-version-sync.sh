@@ -9,13 +9,40 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import sys
-import tomllib
+
+# Prefer the stdlib `tomllib` (Python 3.11+). If not available, fall back to a
+# small, robust text-parser that extracts `project.version` from `pyproject.toml`.
+try:
+    import tomllib  # type: ignore
+except Exception:
+    tomllib = None
 
 root = Path(sys.argv[1])
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
 pkg_version = json.loads((root / "package.json").read_text(encoding="utf-8"))["version"]
-py_version = tomllib.loads((root / "python-wrapper" / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+
+pyproject_path = root / "python-wrapper" / "pyproject.toml"
+py_text = pyproject_path.read_text(encoding="utf-8")
+if tomllib is not None:
+    py_version = tomllib.loads(py_text)["project"]["version"]
+else:
+    # Fallback: locate the [project] table and read the first `version = "x"` line
+    in_project = False
+    py_version = None
+    for line in py_text.splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            in_project = s == "[project]"
+            continue
+        if in_project and s.startswith("version"):
+            m = re.match(r'version\s*=\s*"([^"]+)"', s)
+            if m:
+                py_version = m.group(1)
+                break
+    if py_version is None:
+        raise SystemExit("Could not parse project.version from python-wrapper/pyproject.toml")
 
 errors = []
 if not version:
