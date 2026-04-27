@@ -124,6 +124,8 @@ export class LabelList {
     this._expandedSets = new Set();
     /** @type {HTMLElement|null} */
     this._bulkToolbar = null;
+    /** @type {Set<string>} ids that must not be edited */
+    this._lockedIds = new Set();
   }
 
   set onRemove(fn) { this._onRemove = fn; }
@@ -131,6 +133,9 @@ export class LabelList {
   set onMultiSelectionChange(fn) { this._onMultiSelectionChange = fn; }
   /** Provide or update the species search factory after construction. */
   setSpeciesSearchFactory(fn) { this._speciesSearchFactory = fn || null; }
+
+  /** Mark label ids as locked so they are excluded from bulk-edit actions. */
+  setLockedIds(ids = []) { this._lockedIds = new Set(ids); }
   get selectedId() { return this._selectedId; }
   get multiSelectedIds() { return this._multiSelectedIds; }
 
@@ -426,11 +431,14 @@ export class LabelList {
     info.className = 'label-multi-info';
     info.textContent = `${count} selected`;
     this._bulkToolbar.appendChild(info);
-    if (this._onBulkEdit) {
+    const editableIds = [...this._multiSelectedIds].filter(id => !this._lockedIds.has(id));
+    if (this._onBulkEdit && editableIds.length > 0) {
       const btn = document.createElement('button');
       btn.className = 'tb-btn';
-      btn.textContent = 'Rename selected';
-      btn.addEventListener('click', () => this._onBulkEdit([...this._multiSelectedIds]));
+      btn.textContent = editableIds.length < count
+        ? `Rename ${editableIds.length} editable`
+        : 'Rename selected';
+      btn.addEventListener('click', () => this._onBulkEdit(editableIds));
       this._bulkToolbar.appendChild(btn);
     }
     const clrBtn = document.createElement('button');
@@ -486,7 +494,7 @@ export class LabelList {
     // Allow clicking the set name to inline-edit the set name (behaves like group-level edit)
     nameEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!this._onRenameSet) return;
+      if (!this._onRenameSet || locked) return;
       if (nameEl.querySelector('input')) return;
       const oldName = setInfo?.name || '';
       const inp = document.createElement('input');
@@ -569,7 +577,7 @@ export class LabelList {
       lockBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleLockSet(setKey, !locked); });
       setActions.appendChild(lockBtn);
     }
-    if (this._onRenameSet) {
+    if (this._onRenameSet && !locked) {
       const renBtn = document.createElement('button');
       renBtn.className = 'act-btn label-set-action-btn';
       renBtn.title = 'Rename set';
@@ -617,8 +625,8 @@ export class LabelList {
     }
     if (setActions.children.length) hdr.appendChild(setActions);
 
-    // Drag-over: accept label cards dropped onto this set header
-    if (this._onAssignSet) {
+    // Drag-over: accept label cards dropped onto this set header (not for locked sets)
+    if (this._onAssignSet && !locked) {
       hdr.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; hdr.classList.add('drag-over'); });
       hdr.addEventListener('dragleave', (e) => { if (!hdr.contains(e.relatedTarget)) hdr.classList.remove('drag-over'); });
       hdr.addEventListener('drop', (e) => {
@@ -808,8 +816,8 @@ export class LabelList {
       row.appendChild(editBtn);
     }
 
-    // Drop a label instance onto a group row → rename to this species
-    if (this._onAssignSpecies) {
+    // Drop a label instance onto a group row → rename to this species (not for locked sets)
+    if (this._onAssignSpecies && !locked) {
       row.addEventListener('dragover', (e) => {
         if (!e.dataTransfer.types.includes('text/label-id')) return;
         e.preventDefault();
@@ -918,13 +926,15 @@ export class LabelList {
       if (e.target.closest('.act-btn') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.esel')) return;
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
-          this._multiSelectedIds.add(this._selectedId);
+        if (!this._lockedIds.has(lbl.id)) {
+          if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
+            this._multiSelectedIds.add(this._selectedId);
+          }
+          if (this._multiSelectedIds.has(lbl.id)) this._multiSelectedIds.delete(lbl.id);
+          else this._multiSelectedIds.add(lbl.id);
+          this._updateMultiVisual();
+          this._updateBulkToolbar();
         }
-        if (this._multiSelectedIds.has(lbl.id)) this._multiSelectedIds.delete(lbl.id);
-        else this._multiSelectedIds.add(lbl.id);
-        this._updateMultiVisual();
-        this._updateBulkToolbar();
         return;
       }
       if (this._multiSelectedIds.size > 0) {

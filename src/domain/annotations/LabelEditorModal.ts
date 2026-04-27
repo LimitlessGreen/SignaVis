@@ -404,9 +404,13 @@ export class LabelEditorModal {
         };
 
             if (this._existingLabels?.length) {
+            const q = this._input.value.trim().toLowerCase();
             for (const item of this._existingLabels) {
+                const name = typeof item === 'string' ? item : (item.name || '');
+                const sci  = typeof item === 'string' ? '' : (item.scientificName || '');
+                if (q && !name.toLowerCase().includes(q) && !sci.toLowerCase().includes(q)) continue;
                 if (typeof item === 'string') addResult({ name: item });
-                else addResult({ name: item.name, color: item.color || '', scientificName: item.scientificName || '', tags: item.tags || {} });
+                else addResult({ name: item.name, color: item.color || '', scientificName: sci, tags: item.tags || {}, detail: item.detail || '' });
             }
         }
         for (const item of custom) addResult({ name: item?.name, scientificName: item?.scientificName || '', color: item?.color || '', detail: item?.detail || '' });

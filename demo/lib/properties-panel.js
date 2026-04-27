@@ -103,6 +103,8 @@ export class PropertiesPanel {
     /** @type {import('./custom-tag-store.js').CustomTagStore|null} */
     this._tagStore = null;
     this._esInstances = [];
+    /** @type {Set<string>} */
+    this._lockedIds = new Set();
 
     this._getSetInfo = opts.getSetInfo || null;
     /** @type {((anchor: HTMLElement, cb: function) => object)|null} */
@@ -124,6 +126,15 @@ export class PropertiesPanel {
 
   /** Provide or update the species search factory after construction. */
   setSpeciesSearchFactory(fn) { this._speciesSearchFactory = fn || null; }
+
+  /**
+   * Mark a set of label ids as locked (shown read-only in the panel).
+   * @param {string[]} ids
+   */
+  setLockedIds(ids = []) {
+    this._lockedIds = new Set(ids);
+    this._renderLabel();
+  }
 
   /** Set the custom tag store for editable dropdowns. */
   setTagStore(store) {
@@ -280,7 +291,8 @@ export class PropertiesPanel {
     this._setSection.hidden = !setInfo;
     this._setBody.innerHTML = '';
     if (!setInfo) return;
-    const editable = !this._hoverLabel;
+    const isLocked = !!lbl && (lbl.readonly === true || this._lockedIds.has(lbl.id));
+    const editable = !this._hoverLabel && !isLocked;
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
     for (const f of SET_FIELDS) {
@@ -318,22 +330,32 @@ export class PropertiesPanel {
     this._lblBody.innerHTML = '';
     const lbl = this._hoverLabel || this._pinnedLabel;
     const isHover = !!this._hoverLabel;
+    const isLocked = !isHover && !!lbl && (lbl.readonly === true || this._lockedIds.has(lbl.id));
 
     this._renderSet();
 
     // Update section header
-    this._lblHeader.textContent = isHover ? 'Hovered Label' : 'Selected Label';
-    this._lblHeader.classList.toggle('props-hover-hint', isHover);
+    let headerText = 'Selected Label';
+    if (isHover) headerText = 'Hovered Label';
+    else if (isLocked) headerText = 'Locked Label';
+    this._lblHeader.textContent = headerText;
+    this._lblHeader.classList.toggle('props-hover-hint', isHover || isLocked);
 
     if (!lbl) {
       this._lblBody.innerHTML = '<div class="props-empty">No label selected.</div>';
       return;
     }
 
-    const editable = !isHover; // only pinned labels are editable
+    const editable = !isHover && !isLocked;
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
 
-    // Tags section
+    // Tags section (also locked-label icon hint)
+    if (isLocked && !isHover) {
+      const hint = document.createElement('div');
+      hint.className = 'props-locked-hint';
+      hint.textContent = '🔒 Label is locked — unlock the set to edit.';
+      this._lblBody.appendChild(hint);
+    }
     this._lblBody.appendChild(this._buildTagsSection(lbl, editable));
   }
 

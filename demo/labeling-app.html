@@ -1156,6 +1156,7 @@
       // 5. Restore annotations — mark state.labels as belonging to this entry
       state.labels = (entry.annotations || []).map(a => ({ ...a }));
       state._labelsEntryId = entry.id;
+      relocalizeAllLabels();
 
       // 6. Update all per-recording displays
       if (entry.xcId) {
@@ -1173,7 +1174,8 @@
         const isSoundscape = gen.toLowerCase() === 'sonus';
         if (!isSoundscape && en) {
           const sciName = (gen && sp) ? `${gen} ${sp}`.trim() : '';
-          player.setSpeciesBar(en, { scientificName: sciName });
+          const localizedName = localizeSpeciesName(sciName, en);
+          player.setSpeciesBar(localizedName, { scientificName: sciName });
         } else {
           player.setSpeciesBar('', {});
         }
@@ -1461,10 +1463,7 @@
         const s = state.labelSets.get(setId);
         if (s) {
           s.locked = lock;
-          const lockedIds = state.labels
-            .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
-            .map(l => l.id);
-          player.spectrogramLabels?.setLockedIds?.(lockedIds);
+          _pushLockedIds(_computeLockedIds());
           labelList.render(state.labels);
         }
       },
@@ -1635,13 +1634,23 @@
       }
       return out;
     }
+    function _computeLockedIds() {
+      return state.labels
+        .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
+        .map(l => l.id);
+    }
+
+    function _pushLockedIds(lockedIds) {
+      player.spectrogramLabels?.setLockedIds?.(lockedIds);
+      player.annotations?.setLockedIds?.(lockedIds);
+      propsPanel.setLockedIds?.(lockedIds);
+      labelList.setLockedIds?.(lockedIds);
+    }
+
     function syncToPlayer() {
       saveCurrentAnnotationsIfNeeded();
       player.setSpectrogramLabels(state.labels);
-      const _lockedIds = state.labels
-        .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
-        .map(l => l.id);
-      player.spectrogramLabels?.setLockedIds?.(_lockedIds);
+      _pushLockedIds(_computeLockedIds());
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
       explorePanel.notifyLabelsChanged();
@@ -1656,10 +1665,7 @@
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
     function syncToPlayerSoft() {
       player.setSpectrogramLabels(state.labels);
-      const _lockedIds = state.labels
-        .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
-        .map(l => l.id);
-      player.spectrogramLabels?.setLockedIds?.(_lockedIds);
+      _pushLockedIds(_computeLockedIds());
       sidebar.setBadge('labels', state.labels.length || '');
       if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
         const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
@@ -1746,9 +1752,10 @@
       const mainGen = result.recording?.gen || '';
       const isSoundscape = mainGen.toLowerCase() === 'sonus';
       if (!isSoundscape) {
-        const mainSpecies = result.recording?.en || '';
         const mainSciName = mainGen && result.recording?.sp
           ? `${mainGen} ${result.recording.sp}`.trim() : '';
+        const mainSpeciesEn = result.recording?.en || '';
+        const mainSpecies = localizeSpeciesName(mainSciName, mainSpeciesEn);
         if (mainSpecies) {
           player.setSpeciesBar(mainSpecies, { scientificName: mainSciName });
         }
@@ -1842,6 +1849,7 @@
 
       state.labels = result.labels;
       if (recordingManager?.activeId) state._labelsEntryId = recordingManager.activeId;
+      relocalizeAllLabels();
       syncToPlayer();
       return { xcId: result.xcId, imported: result.labels.length };
     }
@@ -2150,9 +2158,34 @@
     });
 
     // ── Taxonomy ──────────────────────────────────────────────────────
+    const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
+
     function getLangParam() {
       const p = new URLSearchParams(window.location.search || '');
-      return p.get('lang') || p.get('LANG') || '';
+      return p.get('lang') || p.get('LANG') || localStorage.getItem(LANG_STORAGE_KEY) || '';
+    }
+
+    /** Resolve a scientific name to the current language, falling back to the English name. */
+    function localizeSpeciesName(sciName, fallbackEn = '') {
+      if (!sciName || !taxonomy.data) return fallbackEn;
+      const record = taxonomy.resolve(sciName);
+      if (!record) return fallbackEn;
+      return taxonomy.resolveCommonName(record, state.taxonomyLang) || record.s || fallbackEn;
+    }
+
+    /** Re-resolve all label display names to the current taxonomy language. */
+    function relocalizeAllLabels() {
+      if (!taxonomy.data) return;
+      for (const lbl of state.labels) {
+        if (!lbl.scientificName) continue;
+        if (state.taxonomyLang === 'scientific') {
+          lbl.label = lbl.scientificName;
+        } else {
+          const record = taxonomy.resolve(lbl.scientificName);
+          const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : '';
+          if (localized) lbl.label = localized;
+        }
+      }
     }
 
     async function loadBirdnetTaxonomy() {
@@ -2164,6 +2197,12 @@
         taxonomy.load(data);
         state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
+        // Re-resolve any labels that were loaded before taxonomy was ready,
+        // then push updated names to the player (overview + spectrogram).
+        if (state.labels.length) {
+          relocalizeAllLabels();
+          syncToPlayer();
+        }
         // Wire species search widget factory into label list + properties panel
         getSuggestions = createSuggestionProvider({
           taxonomy,
@@ -2409,8 +2448,8 @@
       }
     };
 
-    player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); saveCurrentAnnotationsIfNeeded(); });
-    player.on('spectrogramlabelupdate', (e) => { upsertLabel(e.detail?.label); saveCurrentAnnotationsIfNeeded(); });
+    player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); });
+    player.on('spectrogramlabelupdate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); });
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;
       if (!id) return;
@@ -2492,17 +2531,18 @@
 
     taxonomyLangSelect.addEventListener('change', () => {
       state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
+      try { localStorage.setItem(LANG_STORAGE_KEY, state.taxonomyLang); } catch {}
       if (taxonomy.data) {
         taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp · ${state.taxonomyLang}`;
       }
-      for (const lbl of state.labels) {
-        if (!lbl.scientificName) continue;
-        if (state.taxonomyLang === 'scientific') {
-          lbl.label = lbl.scientificName;
-        } else {
-          const record = taxonomy.resolve(lbl.scientificName);
-          const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : '';
-          if (localized) lbl.label = localized;
+      relocalizeAllLabels();
+      // Re-localize the species bar if it has a selection with a known sci name
+      const barSel = player.getSpeciesBarSelection?.();
+      if (barSel?.scientificName) {
+        const localized = localizeSpeciesName(barSel.scientificName, barSel.name || '');
+        if (localized && localized !== barSel.name) {
+          player.setSpeciesBar(localized, { scientificName: barSel.scientificName });
+          topbarWidget?.setValue?.(localized);
         }
       }
       syncToPlayer();
@@ -2541,6 +2581,7 @@
     );
 
     // ── Species search bar (topbar) ───────────────────────────────────
+    let topbarWidget = null;
     {
       // Remember the last explicitly-set foreground species so it stays
       // available as a suggestion even after the user clears the bar.
@@ -2554,50 +2595,53 @@
        * - taxonomy results merged in for non-empty queries
        */
       function getTopbarSuggestions(query, limit = 20) {
-        const labelEntries = [];
-        const seenKeys = new Set();
+        // Use a Map keyed by canonical scientific name (when available) or
+        // normalised display name so that the same species from different
+        // sources (linked label + background) is deduplicated correctly even
+        // when first-load labels still carry their scientific name as display.
+        const byKey = new Map();
+        const lang  = state.taxonomyLang;
+
+        function resolveEntry(rawName, rawSci, color, originDetail) {
+          const sci    = rawSci || (taxonomy.data ? taxonomy.resolve(rawName)?.s : '') || '';
+          const record = sci ? taxonomy.resolve(sci) : null;
+          const name   = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : rawName;
+          const finalSci = record?.s || sci;
+          const key    = finalSci ? `sci:${finalSci}` : `name:${name.toLowerCase()}`;
+          if (byKey.has(key)) return;                        // first source wins for color/detail
+          byKey.set(key, {
+            name,
+            scientificName: finalSci,
+            color: color || colorForName(name),
+            detail: originDetail,
+          });
+        }
 
         // Foreground species: persists across clears so the user can re-select it
         if (lastForegroundSpecies?.name) {
-          const name = lastForegroundSpecies.name;
-          const key = name.toLowerCase();
-          seenKeys.add(key);
-          labelEntries.push({
-            name,
-            color: lastForegroundSpecies.color
-              ? (getOverlayColorStyle(lastForegroundSpecies.color)?.hex || lastForegroundSpecies.color)
-              : colorForName(name),
-            scientificName: lastForegroundSpecies.scientificName || '',
-            detail: 'foreground',
-          });
+          const c = lastForegroundSpecies.color
+            ? (getOverlayColorStyle(lastForegroundSpecies.color)?.hex || lastForegroundSpecies.color)
+            : colorForName(lastForegroundSpecies.name);
+          resolveEntry(lastForegroundSpecies.name, lastForegroundSpecies.scientificName || '', c, 'foreground');
         }
 
-        for (const lbl of player._linkedLabels?.values?.() || []) {
-          const name = (lbl.label || lbl.species || '').trim();
-          if (!name) continue;
-          const key = name.toLowerCase();
-          if (seenKeys.has(key)) continue;
-          seenKeys.add(key);
-          labelEntries.push({
-            name,
-            color: lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : colorForName(name),
-            scientificName: lbl.scientificName || '',
-            detail: lbl.origin && lbl.origin !== 'manual' ? lbl.origin : '',
-          });
+        // All current labels (state.labels is the authoritative source in this app)
+        for (const lbl of state.labels) {
+          const rawName = (lbl.label || lbl.species || '').trim();
+          if (!rawName) continue;
+          const c = lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : null;
+          const detail = lbl.origin && lbl.origin !== 'manual' ? lbl.origin : '';
+          resolveEntry(rawName, lbl.scientificName || '', c, detail);
         }
+
+        // Background species (XC "also" field) — deduplicated against above via sci key
         for (const bg of player.getBackgroundSpecies()) {
-          const name = (bg.name || '').trim();
-          if (!name) continue;
-          const key = name.toLowerCase();
-          if (seenKeys.has(key)) continue;
-          seenKeys.add(key);
-          labelEntries.push({
-            name,
-            color: colorForName(name),
-            scientificName: bg.scientificName || '',
-            detail: 'background',
-          });
+          const rawName = (bg.name || '').trim();
+          if (!rawName) continue;
+          resolveEntry(rawName, bg.scientificName || '', null, 'background');
         }
+
+        const labelEntries = [...byKey.values()];
 
         if (!query) return labelEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
 
@@ -2605,20 +2649,21 @@
         const matchingLabels = labelEntries.filter(
           (l) => l.name.toLowerCase().includes(lq) || l.scientificName.toLowerCase().includes(lq),
         );
-        const labelKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
+        const labelSciKeys = new Set(matchingLabels.map((l) => l.scientificName?.toLowerCase()).filter(Boolean));
+        const labelNameKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
         const taxonomyResults = player.getLabelEditorSuggestions(query, limit);
         const taxonomyOnly = taxonomyResults
-          .filter((s) => !labelKeys.has(s.name.toLowerCase()))
+          .filter((s) => !labelNameKeys.has(s.name.toLowerCase()) && (!s.scientificName || !labelSciKeys.has(s.scientificName.toLowerCase())))
           .map((s) => ({
             name: s.name,
             color: s.color ? (getOverlayColorStyle(s.color)?.hex || s.color) : colorForName(s.name),
             scientificName: s.scientificName || '',
-            detail: 'taxonomy',
+            detail: s.detail || 'taxonomy',
           }));
         return [...matchingLabels, ...taxonomyOnly];
       }
 
-      const topbarWidget = createSpeciesSearchWidget({
+      topbarWidget = createSpeciesSearchWidget({
         getSuggestions: getTopbarSuggestions,
         onSelect: (item) => {
           lastForegroundSpecies = item;

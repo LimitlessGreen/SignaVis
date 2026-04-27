@@ -104,6 +104,7 @@
 .props-tag-header { margin-top: 8px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-secondary); }
 .props-color-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .props-section-title.props-hover-hint { color: var(--color-accent); font-style: italic; }
+.props-locked-hint { font-size: 11px; color: var(--color-text-secondary); padding: 4px 0 2px; }
 
 /* Highlight animation — triggered when navigating from label list */
 @keyframes props-section-highlight {

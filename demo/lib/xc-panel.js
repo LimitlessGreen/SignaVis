@@ -862,7 +862,7 @@ export class XenoCantoPanel {
       const s = String(scientificName || '').trim();
       if (!n) return;
       const key = s ? `sci:${s}` : `name:${n.toLowerCase()}`;
-      if (!pool.has(key)) pool.set(key, { name: n, scientificName: s });
+      if (!pool.has(key)) pool.set(key, { name: n, scientificName: s, origin: 'xeno-canto' });
     };
     const recording = result?.recording || {};
     const recSci = String(recording?.gen && recording?.sp ? `${recording.gen} ${recording.sp}` : '').trim();

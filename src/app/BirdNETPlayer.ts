@@ -889,12 +889,12 @@ export class BirdNETPlayer {
      */
     setBackgroundSpecies(species: Array<string | { name: string, scientificName?: string }>) {
         this._backgroundSpecies = (species || []).map((s: any) =>
-            typeof s === 'string' ? { name: s } : { name: s.name || '', scientificName: s.scientificName || '' },
+            typeof s === 'string' ? { name: s, origin: 'background' } : { name: s.name || '', scientificName: s.scientificName || '', origin: 'background' },
         ).filter((s: any) => s.name);
     }
-    /** @returns {Array<{name: string, scientificName?: string}>} */
+    /** @returns {Array<{name: string, scientificName?: string, origin: string}>} */
     getBackgroundSpecies() {
-        return this._backgroundSpecies.map((s: { name: string; scientificName?: string }) => ({ ...s }));
+        return this._backgroundSpecies.map((s: { name: string; scientificName?: string; origin?: string }) => ({ ...s }));
     }
 
     /**

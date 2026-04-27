@@ -136,6 +136,18 @@
     display: none !important;
 }
 
+/* ── Locked annotations (set-level lock) ── */
+.annotation-region--locked {
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+.annotation-region--locked:hover {
+    opacity: 0.9;
+}
+.annotation-region--locked .annotation-handle {
+    display: none !important;
+}
+
 .annotation-lock {
     font-size: 9px;
     line-height: 1;

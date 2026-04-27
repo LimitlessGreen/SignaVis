@@ -247,6 +247,8 @@ class AnnotationLayerBase extends EventTarget {
         this._suppressClickUntil = 0;
         /** @type {Set<string>} */
         this._multiSelectedIds = new Set();
+        /** @type {Set<string>} */
+        this._lockedIds = new Set();
         this._lastPointerX = 0;
         this._lastPointerY = 0;
         this._grabbing = false;
@@ -339,6 +341,11 @@ class AnnotationLayerBase extends EventTarget {
     setMultiSelected(ids: string[]): void {
         this._multiSelectedIds = new Set(ids);
         this._updateMultiSelectedVisual();
+    }
+
+    setLockedIds(ids: string[] = []): void {
+        this._lockedIds = new Set(ids);
+        this.render();
     }
 
     toggleMultiSelected(id: string): void {
@@ -552,8 +559,11 @@ export class AnnotationLayer extends AnnotationLayerBase {
     _createRegionElement(region: any, pixelsPerSecond: number): HTMLElement {
         const coords = this.player?._state?.coords;
         const el = document.createElement('div');
+        const isLocked = this._lockedIds.has(region.id);
+        const isBlocked = isLocked || region.readonly === true;
         el.className = 'annotation-region';
         if (region.readonly) el.classList.add('annotation-region--readonly');
+        if (isLocked) el.classList.add('annotation-region--locked');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -571,17 +581,17 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.dataset.id = region.id;
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
-        const readonlyNote = region.readonly ? ' [read-only]' : '';
+        const readonlyNote = isBlocked ? ' [gesperrt]' : '';
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
         const aiTag = region.aiSuggested ? `<span class="annotation-ai-badge" title="AI: ${escapeHtml(region.aiSuggested.model || '')} ${escapeHtml(region.aiSuggested.version || '')}">AI</span>` : '';
-        const lockIcon = region.readonly ? `<span class="annotation-lock" title="Read-only (imported from XC)">🔒</span>` : '';
+        const lockIcon = isBlocked ? `<span class="annotation-lock" title="${region.readonly ? 'Read-only (imported from XC)' : 'Locked'}">🔒</span>` : '';
         el.innerHTML = `
             <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
             <span class="annotation-confidence">${confidenceStr}</span>
             ${aiTag}${lockIcon}
-            ${region.readonly ? '' : `
+            ${isBlocked ? '' : `
             <span class="annotation-handle handle-l" data-mode="resize-l"></span>
             <span class="annotation-handle handle-r" data-mode="resize-r"></span>
             `}
@@ -602,13 +612,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (region.readonly) return;
+            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
             this._renameRegionPrompt(region.id);
         });
         el.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) return;
-            if (region.readonly) { event.preventDefault(); event.stopPropagation(); return; }
+            if (isBlocked) { event.preventDefault(); event.stopPropagation(); return; }
             const handle = (event.target as Element | null)?.closest?.('.annotation-handle') as HTMLElement | null;
             const mode = handle?.dataset?.mode || 'move';
             this._startEditInteraction(region.id, mode, event.clientX, el);
@@ -656,7 +666,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _startEditInteraction(id: any, mode: any, clientX: number, element: any) {
         const region = this._items.find((a: any) => a.id === id);
-        if (!region || region.readonly) return;
+        if (!region || region.readonly || this._lockedIds.has(id)) return;
         this._editing = {
             id,
             mode,
@@ -774,7 +784,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _renameRegionPrompt(id: any) {
         const region = this._items.find((a: any) => a.id === id);
-        if (!region) return; 
+        if (!region || region.readonly || this._lockedIds.has(id)) return;
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         openLabelNameEditor({
@@ -1604,7 +1614,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const key = name.toLowerCase();
             if (seen.has(key)) continue;
             seen.add(key);
-            existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: l.tags || {} });
+            // Don't propagate tags from imported (xeno-canto) labels — those belong to that recording
+            const isXc = l.origin === 'xeno-canto';
+            existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: isXc ? {} : (l.tags || {}), detail: isXc ? 'xeno-canto' : (l.origin && l.origin !== 'manual' ? l.origin : '') });
         }
         // Pre-fill from focused/last label (skip XC metadata)
         const ref = this._getReferenceLabelForDefaults();

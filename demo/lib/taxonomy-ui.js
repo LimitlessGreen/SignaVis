@@ -94,6 +94,8 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
 
     dedupe.set('name:noise', { name: 'Noise', scientificName: '' });
 
+    // Pool items: xeno-canto label pool + background species.
+    // Items carry an optional `origin` field ('xeno-canto', 'background', …).
     for (const item of getPool()) {
       const name = String(item?.name || '').trim();
       const sci  = String(item?.scientificName || '').trim();
@@ -105,9 +107,12 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       const localName    = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : name;
       const finalSci     = record?.s || sci;
       const key = finalSci ? `sci:${finalSci}` : `name:${localName.toLowerCase()}`;
-      if (!dedupe.has(key)) dedupe.set(key, { name: localName, scientificName: finalSci });
+      if (!dedupe.has(key)) {
+        dedupe.set(key, { name: localName, scientificName: finalSci, detail: item?.origin || '' });
+      }
     }
 
+    // User-drawn labels — show origin for non-manual labels (BirdNET, xeno-canto).
     for (const lbl of getLabels()) {
       const sci = String(lbl?.scientificName || '').trim();
       const record = sci ? taxonomy.resolve(sci) : null;
@@ -115,7 +120,10 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       const name = String(localized || lbl?.commonName || lbl?.label || sci).trim();
       if (!name) continue;
       const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
-      if (!dedupe.has(key)) dedupe.set(key, { name, scientificName: sci });
+      if (!dedupe.has(key)) {
+        const origin = lbl?.origin && lbl.origin !== 'manual' ? lbl.origin : '';
+        dedupe.set(key, { name, scientificName: sci, detail: origin });
+      }
     }
 
     if (q && taxonomy.data) {
@@ -352,12 +360,12 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
   input.addEventListener('blur', () => {
     setTimeout(() => { if (!destroyed) dropdown.classList.add('hidden'); }, 120);
   });
-  clearBtn.addEventListener('click', () => {
+  clearBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault();            // keep input focused — prevents blur → hide-timer race
     input.value = '';
     input.classList.remove('has-selection');
     clearBtn.classList.add('hidden');
     onClear?.();
-    input.focus();
     renderDropdown();
   });
   document.addEventListener('mousedown', onDocClick, true);
