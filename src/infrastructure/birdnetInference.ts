@@ -27,14 +27,6 @@ importScripts('${TFJS_CDN}');
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
 class MelSpecLayerSimple extends tf.layers.Layer {
-    declare date: unknown;
-    declare declare overlap: unknown;
-    declare declare minConfidence: unknown;
-    declare declare geoThreshold: unknown;
-    declare declare onProgress: unknown;
-    declare declare sampleRate: unknown;
-    declare declare terminate: unknown;
-    declare declare postMessage: unknown;
   constructor(config) {
     super(config);
     this.sampleRate  = config.sampleRate;
