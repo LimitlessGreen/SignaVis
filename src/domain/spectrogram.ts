@@ -6,6 +6,12 @@ import { MAX_BASE_SPECTROGRAM_WIDTH } from '../shared/constants.ts';
 import { clamp, getTimeGridSteps } from '../shared/utils.ts';
 import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.ts';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.ts';
+import {
+    computeSpectralFeatures as _computeSpectralFeaturesFn,
+    computeRidges as _computeRidgesFn,
+    type SpectralFeatures,
+    type Ridge,
+} from './spectralFeatures.ts';
 
 type NumArray = Float32Array | ArrayLike<number>;
 
@@ -1116,4 +1122,119 @@ export function createSpectrogramProcessor() {
     };
 
     return { compute, computeProgressive, dispose };
+}
+
+// ─── Worker-based Spectral Features Processor ───────────────────────
+//
+// Offloads computeSpectralFeatures + computeRidges to the same worker
+// as the spectrogram pipeline so neither blocks the main thread.
+
+export function createSpectralFeaturesProcessor() {
+    type Pending<T> = { resolve: (v: T) => void; reject: (e: any) => void };
+
+    let worker: Worker | null = null;
+    let workerFailed = false;
+    let requestCounter = 0;
+    const pendingFeatures = new Map<number, Pending<SpectralFeatures>>();
+    const pendingRidges   = new Map<number, Pending<Ridge[]>>();
+
+    const ensureWorker = async () => {
+        if (worker || workerFailed) return;
+        try {
+            const Ctor = await getWorkerCtor();
+            if (!Ctor) throw new Error('Worker unavailable');
+            worker = new Ctor() as Worker;
+            worker.onmessage = (event: MessageEvent) => {
+                const { type, requestId } = event.data as any;
+                if (type === 'spectralFeaturesResult') {
+                    const p = pendingFeatures.get(requestId);
+                    pendingFeatures.delete(requestId);
+                    p?.resolve({
+                        centroid: new Float32Array(event.data.centroid),
+                        f0:       new Float32Array(event.data.f0),
+                    });
+                } else if (type === 'spectralFeaturesError') {
+                    const p = pendingFeatures.get(requestId);
+                    pendingFeatures.delete(requestId);
+                    p?.reject(new Error(event.data.message || 'spectralFeatures worker error'));
+                } else if (type === 'ridgesResult') {
+                    const p = pendingRidges.get(requestId);
+                    pendingRidges.delete(requestId);
+                    p?.resolve((event.data.ridges as any[]).map((r: any) => ({
+                        frames:   new Uint32Array(r.frames),
+                        freqHz:   new Float32Array(r.freqHz),
+                        strength: new Float32Array(r.strength),
+                    })));
+                } else if (type === 'ridgesError') {
+                    const p = pendingRidges.get(requestId);
+                    pendingRidges.delete(requestId);
+                    p?.reject(new Error(event.data.message || 'ridges worker error'));
+                }
+            };
+            worker.onerror = (err: any) => {
+                workerFailed = true;
+                worker?.terminate();
+                worker = null;
+                pendingFeatures.forEach(({ reject }) => reject(err));
+                pendingFeatures.clear();
+                pendingRidges.forEach(({ reject }) => reject(err));
+                pendingRidges.clear();
+            };
+        } catch {
+            workerFailed = true;
+        }
+    };
+
+    const computeFeatures = async (
+        channelData: Float32Array,
+        sampleRate: number,
+        hopSize: number,
+        windowSize: number,
+        nFrames: number,
+    ): Promise<SpectralFeatures> => {
+        if (workerFailed) return _computeSpectralFeaturesFn(channelData, sampleRate, hopSize, windowSize, nFrames);
+        await ensureWorker();
+        if (workerFailed) return _computeSpectralFeaturesFn(channelData, sampleRate, hopSize, windowSize, nFrames);
+        const requestId = ++requestCounter;
+        const copy = channelData.slice();
+        return new Promise<SpectralFeatures>((resolve, reject) => {
+            pendingFeatures.set(requestId, { resolve, reject });
+            (worker as Worker).postMessage(
+                { type: 'spectralFeatures', requestId, channelData: copy.buffer, sampleRate, hopSize, windowSize, nFrames },
+                { transfer: [copy.buffer] },
+            );
+        });
+    };
+
+    const computeRidgesWorker = async (
+        channelData: Float32Array,
+        sampleRate: number,
+        hopSize: number,
+        windowSize: number,
+        nFrames: number,
+    ): Promise<Ridge[]> => {
+        if (workerFailed) return _computeRidgesFn(channelData, sampleRate, hopSize, windowSize, nFrames);
+        await ensureWorker();
+        if (workerFailed) return _computeRidgesFn(channelData, sampleRate, hopSize, windowSize, nFrames);
+        const requestId = ++requestCounter;
+        const copy = channelData.slice();
+        return new Promise<Ridge[]>((resolve, reject) => {
+            pendingRidges.set(requestId, { resolve, reject });
+            (worker as Worker).postMessage(
+                { type: 'ridges', requestId, channelData: copy.buffer, sampleRate, hopSize, windowSize, nFrames },
+                { transfer: [copy.buffer] },
+            );
+        });
+    };
+
+    const dispose = () => {
+        worker?.terminate();
+        worker = null;
+        pendingFeatures.forEach(({ reject }) => reject(new Error('Disposed')));
+        pendingFeatures.clear();
+        pendingRidges.forEach(({ reject }) => reject(new Error('Disposed')));
+        pendingRidges.clear();
+    };
+
+    return { computeFeatures, computeRidges: computeRidgesWorker, dispose };
 }

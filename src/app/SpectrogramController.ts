@@ -35,6 +35,7 @@ import {
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
+    createSpectralFeaturesProcessor,
 } from '../domain/spectrogram.ts';
 
 import { computeReassignedSpectrogram } from '../domain/dsp.ts';
@@ -72,6 +73,8 @@ export class SpectrogramController extends EventTarget {
     _tileManager: SpectrogramTileManager | null;
     _spectralFeatures: SpectralFeatures | null;
     _ridges: Ridge[] | null;
+    _sfProcessor: ReturnType<typeof createSpectralFeaturesProcessor>;
+    _sfGeneration: number;
     _sampleRateHz: number;
     _zoomRedrawRafId: number;
     _freqAxisRafId: number | undefined;
@@ -84,6 +87,8 @@ export class SpectrogramController extends EventTarget {
 
         this.processor = createSpectrogramProcessor();
         this.colorizer = new GpuColorizer();
+        this._sfProcessor = createSpectralFeaturesProcessor();
+        this._sfGeneration = 0;
 
         // ── Spectrogram data ──────────────────────────────────────────
         /** @type {Float32Array|null} */
@@ -462,8 +467,8 @@ export class SpectrogramController extends EventTarget {
 
     // ── Spectral features (centroid + F0) ────────────────────────────
 
-    // Kicks off feature computation in the next idle slice so it doesn't
-    // delay the first render. Results arrive via _emit('needsredraw').
+    // Kicks off feature computation off the main thread via the worker.
+    // Results arrive asynchronously; each phase emits 'needsredraw' when done.
     private _computeSpectralFeaturesAsync(channelData: Float32Array, dspOptions: Record<string, any>): void {
         this._spectralFeatures = null;
         this._ridges = null;
@@ -472,26 +477,21 @@ export class SpectrogramController extends EventTarget {
         const nFrames    = this._nFrames;
         if (!nFrames || !channelData?.length) return;
 
-        // Run after current call-stack clears so the spectrogram renders first.
-        // Centroid + F0 are fast; ridges are slower (full FFT pass), so we
-        // emit a first redraw after centroid/F0 and a second after ridges.
-        setTimeout(() => {
-            try {
-                this._spectralFeatures = computeSpectralFeatures(
-                    channelData, this._sampleRateHz, hopSize, windowSize, nFrames,
-                );
-                this._emit('needsredraw');
-            } catch { /* non-fatal */ }
+        const gen = ++this._sfGeneration;
 
-            setTimeout(() => {
-                try {
-                    this._ridges = computeRidges(
-                        channelData, this._sampleRateHz, hopSize, windowSize, nFrames,
-                    );
-                    this._emit('needsredraw');
-                } catch { /* non-fatal */ }
-            }, 0);
-        }, 0);
+        this._sfProcessor.computeFeatures(channelData, this._sampleRateHz, hopSize, windowSize, nFrames)
+            .then((features) => {
+                if (this._sfGeneration !== gen) return;
+                this._spectralFeatures = features;
+                this._emit('needsredraw');
+                return this._sfProcessor.computeRidges(channelData, this._sampleRateHz, hopSize, windowSize, nFrames);
+            })
+            .then((ridges) => {
+                if (!ridges || this._sfGeneration !== gen) return;
+                this._ridges = ridges;
+                this._emit('needsredraw');
+            })
+            .catch(() => { /* non-fatal */ });
     }
 
     // Draw centroid / F0 curves + gap on top of the already-rendered spectrogram.
@@ -1077,6 +1077,7 @@ export class SpectrogramController extends EventTarget {
         if (this._zoomRedrawRafId) { cancelAnimationFrame(this._zoomRedrawRafId); this._zoomRedrawRafId = 0; }
         if (typeof this._freqAxisRafId === 'number') { cancelAnimationFrame(this._freqAxisRafId); this._freqAxisRafId = undefined; }
         this.processor.dispose();
+        this._sfProcessor.dispose();
         this.colorizer.dispose();
     }
 

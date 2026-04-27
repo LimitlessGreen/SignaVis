@@ -9,15 +9,17 @@
 @use "components/shell";
 @use "components/views";
 @use "components/axes";
-// overview     → co-located: src/ui/components/overview/overview.scss
+@use "../ui/components/overview/overview";
 @use "components/statusbar";
 
 // Player chrome
 @use "components/buttons";
 @use "components/toolbar";
-// transport    → co-located: src/ui/components/transport/transport.scss
-// playhead     → co-located: src/ui/components/playhead/playhead.scss
-// settings-panel → co-located: src/ui/components/settings-panel/settings-panel.scss
+@use "../ui/components/transport/transport";
+@use "../ui/components/playhead/playhead";
+@use "../ui/components/settings-panel/settings-panel";
+// ↑ Co-located with controllers in src/ui/components/ — loaded here (not via JS import)
+//   so the CSS is in the synchronous render-blocking stylesheet in dev mode.
 
 // Spectrogram labels & annotations
 @use "components/annotation";

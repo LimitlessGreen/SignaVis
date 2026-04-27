@@ -1,4 +1,3 @@
-import './settings-panel.scss';
 import type { OnFn } from '../shared/controller.types.ts';
 
 export interface SettingsPanelHost {

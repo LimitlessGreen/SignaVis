@@ -1,4 +1,3 @@
-import './overview.scss';
 import type { OnFn } from '../shared/controller.types.ts';
 import { clamp } from '../../../shared/utils.ts';
 

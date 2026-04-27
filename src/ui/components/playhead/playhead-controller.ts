@@ -1,4 +1,3 @@
-import './playhead.scss';
 import type { OnFn } from '../shared/controller.types.ts';
 
 export interface PlayheadHost {

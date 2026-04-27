@@ -1,4 +1,3 @@
-import './transport.scss';
 import type { OnFn } from '../shared/controller.types.ts';
 import { SEEK_COARSE_SEC, DEFAULT_ZOOM_PPS } from '../../../shared/constants.ts';
 

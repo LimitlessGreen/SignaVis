@@ -22,10 +22,20 @@ export class DisplayGainController {
 
     bind(on: OnFn): void {
         const h = this.host;
+
         const rebuildDisplay = () => {
             if (!h._spectro.hasData) return;
             h._spectro.buildBaseImage(h._presets.currentColorScheme);
             h._drawSpectrogram();
+        };
+
+        // Debounce: the slider moves freely with no JS blocking the native repaint.
+        // The spectrogram rebuilds 150 ms after the last input so the user's
+        // pointer never competes with canvas rendering.
+        let debounceId = 0;
+        const scheduleRebuild = () => {
+            clearTimeout(debounceId);
+            debounceId = window.setTimeout(() => { debounceId = 0; rebuildDisplay(); }, 150);
         };
 
         on(this.d.gainModeSelect, 'change', () => {
@@ -41,9 +51,9 @@ export class DisplayGainController {
             if (mode === 'auto') h._spectro.autoFrequency(true);
             else if (mode === 'nyquist') { h._spectro.setMaxFreqToNyquist(); h._spectro.generate(); }
         });
-        on(this.d.floorSlider, 'input', () => { h._presets.persistCurrentSettings(); rebuildDisplay(); });
-        on(this.d.ceilSlider, 'input', () => { h._presets.persistCurrentSettings(); rebuildDisplay(); });
+        on(this.d.floorSlider, 'input', () => { h._presets.persistCurrentSettings(); scheduleRebuild(); });
+        on(this.d.ceilSlider,  'input', () => { h._presets.persistCurrentSettings(); scheduleRebuild(); });
         on(this.d.autoContrastBtn, 'click', () => h._spectro.autoContrast(true));
-        on(this.d.autoFreqBtn, 'click', () => h._spectro.autoFrequency(true));
+        on(this.d.autoFreqBtn,     'click', () => h._spectro.autoFrequency(true));
     }
 }
