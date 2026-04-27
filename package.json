@@ -1,6 +1,6 @@
 {
   "name": "audio-workbench",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "readme": "README.md",
   "type": "module",
