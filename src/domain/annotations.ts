@@ -1652,7 +1652,6 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const isXcRef = ref?.origin === 'xeno-canto';
         const initialColor = ref?.color || _autoAssignColor(this._items);
         const refName = (ref?.label || '').trim().toLowerCase();
-        const initialHex = (getOverlayColorStyle(initialColor)?.hex || '').toLowerCase();
         openLabelNameEditor({
             layer: this,
             player: this.player,
@@ -1662,13 +1661,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialScientificName: ref?.scientificName || '',
             existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color, scientificName = '', tags = {} }: any) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
                 // If user typed a different name but didn't manually change color,
                 // auto-assign a deterministic color for the new name.
                 const nameChanged = name.trim().toLowerCase() !== refName;
-                const colorUntouched = (color || '').toLowerCase() === initialHex;
                 region.label = name;
-                region.color = (nameChanged && colorUntouched) ? colorForName(name) : color;
+                region.color = (nameChanged && !__changed.color) ? colorForName(name) : color;
                 region.scientificName = String(scientificName || '').trim();
                 region.tags = tags;
                 this.add(region);
@@ -1912,11 +1910,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialColor: label.color,
             initialTags: label.tags || {},
             initialScientificName: label.scientificName || '',
-            onSubmit: ({ name, color, scientificName = '', tags = {} }: any) => {
-                const currentHex = getOverlayColorStyle(label.color)?.hex || '';
+            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
+                if (!__changed.name && !__changed.color && !__changed.scientificName && !__changed.tags) return;
                 const nextSci = String(scientificName || '').trim();
-                const prevSci = String(label.scientificName || '').trim();
-                if (name === current && color === currentHex && nextSci === prevSci && JSON.stringify(tags) === JSON.stringify(label.tags || {})) return;
                 label.label = name;
                 label.color = color;
                 label.tags = tags;
@@ -1958,9 +1954,6 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
             onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
-                // If the editor reports which fields were changed, only apply
-                // those fields to the whole selected group. This avoids
-                // unintentionally overwriting untouched fields on bulk edits.
                 // If the editor reports which fields were changed, only apply
                 // those fields to the whole selected group. This avoids
                 // unintentionally overwriting untouched fields on bulk edits.

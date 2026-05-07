@@ -87,7 +87,7 @@ export class LabelEditorModal {
         // ── State ────────────────────────────────────────────────────
         const initialStyle = getOverlayColorStyle(initialColor) as any;
         this._initialValueTrim = String(initialValue || '').trim();
-        this._initialStyleHex  = initialStyle?.hex || '';
+        this._initialStyleHex  = initialStyle?.hex || '#0ea5e9';
         this._initialTagsNorm  = (initialTags && typeof initialTags === 'object') ? { ...initialTags } : {};
         this._initialScientific = String(initialScientificName || '').trim();
 
@@ -379,7 +379,11 @@ export class LabelEditorModal {
 
             const select = () => {
                 this._input.value = label;
-                if (color) { this._colorInput.value = getOverlayColorStyle(color)?.hex || this._colorInput.value; this._colorTouched = true; }
+                if (color) {
+                    const newHex = getOverlayColorStyle(color)?.hex || this._colorInput.value;
+                    if (newHex !== this._colorInput.value) this._colorTouched = true;
+                    this._colorInput.value = newHex;
+                }
                 this._selectedSci = String(scientificName || '').trim();
                 this._sciTouched  = true;
                 if (tags && typeof tags === 'object') {
