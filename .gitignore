@@ -52,3 +52,6 @@ docs/diagrams/
 python-wrapper/uv.lock
 
 docs_drafts
+
+# Local platform testenv runtime data
+platform/.local-testenv/
