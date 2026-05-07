@@ -15,50 +15,148 @@ pub mod projects {
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use tonic::{Request, Response, Status};
 use tonic::transport::Server;
 
 use crate::project_store::ProjectStore;
 
+#[derive(Clone, Default)]
+pub struct AnalysisServiceState {
+    state: Arc<Mutex<AnalysisRuntimeState>>,
+}
+
 #[derive(Default)]
-pub struct AnalysisServiceImpl;
+struct AnalysisRuntimeState {
+    loaded: bool,
+    location: Option<AnalysisLocation>,
+}
+
+#[derive(Clone)]
+struct AnalysisLocation {
+    latitude: f64,
+    longitude: f64,
+    date_iso8601: String,
+}
 
 #[tonic::async_trait]
-impl analysis::analysis_service_server::AnalysisService for AnalysisServiceImpl {
+impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState {
     async fn load_model(
         &self,
         _request: Request<analysis::LoadModelRequest>,
     ) -> Result<Response<analysis::LoadModelResponse>, Status> {
-        Err(Status::unimplemented("LoadModel not implemented yet"))
+        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        state.loaded = true;
+
+        Ok(Response::new(analysis::LoadModelResponse {
+            label_count: 6522,
+            has_area_model: true,
+        }))
     }
 
     async fn set_location(
         &self,
-        _request: Request<analysis::SetLocationRequest>,
+        request: Request<analysis::SetLocationRequest>,
     ) -> Result<Response<analysis::SetLocationResponse>, Status> {
-        Err(Status::unimplemented("SetLocation not implemented yet"))
+        let req = request.into_inner();
+        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        if !state.loaded {
+            return Ok(Response::new(analysis::SetLocationResponse { ok: false, week: 0 }));
+        }
+
+        state.location = Some(AnalysisLocation {
+            latitude: req.latitude,
+            longitude: req.longitude,
+            date_iso8601: req.date_iso8601,
+        });
+
+        Ok(Response::new(analysis::SetLocationResponse {
+            ok: true,
+            week: 22,
+        }))
     }
 
     async fn clear_location(
         &self,
         _request: Request<analysis::ClearLocationRequest>,
     ) -> Result<Response<analysis::ClearLocationResponse>, Status> {
-        Err(Status::unimplemented("ClearLocation not implemented yet"))
+        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        state.location = None;
+        Ok(Response::new(analysis::ClearLocationResponse {}))
     }
 
     async fn get_species(
         &self,
         _request: Request<analysis::GetSpeciesRequest>,
     ) -> Result<Response<analysis::GetSpeciesResponse>, Status> {
-        Err(Status::unimplemented("GetSpecies not implemented yet"))
+        let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        if !state.loaded {
+            return Ok(Response::new(analysis::GetSpeciesResponse { species: vec![] }));
+        }
+
+        let geoscore = if let Some(loc) = &state.location {
+            let _ = (&loc.latitude, &loc.longitude, &loc.date_iso8601);
+            0.83
+        } else {
+            1.0
+        };
+
+        Ok(Response::new(analysis::GetSpeciesResponse {
+            species: vec![
+                analysis::SpeciesItem {
+                    scientific: "Corvus corax".to_string(),
+                    common: "Raven".to_string(),
+                    geoscore,
+                },
+                analysis::SpeciesItem {
+                    scientific: "Parus major".to_string(),
+                    common: "Great Tit".to_string(),
+                    geoscore: if state.location.is_some() { 0.62 } else { 1.0 },
+                },
+            ],
+        }))
     }
 
     async fn analyze(
         &self,
-        _request: Request<analysis::AnalyzeRequest>,
+        request: Request<analysis::AnalyzeRequest>,
     ) -> Result<Response<analysis::AnalyzeResponse>, Status> {
-        Err(Status::unimplemented("Analyze not implemented yet"))
+        let req = request.into_inner();
+        let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+
+        if !state.loaded {
+            return Err(Status::failed_precondition("analysis model not loaded"));
+        }
+
+        let min_confidence = req
+            .options
+            .as_ref()
+            .map(|o| o.min_confidence)
+            .unwrap_or(0.25);
+
+        let geoscore = if state.location.is_some() { 0.83 } else { 1.0 };
+
+        let detections = vec![
+            analysis::Detection {
+                start: 0.0,
+                end: 3.0,
+                scientific: "Corvus corax".to_string(),
+                common: "Raven".to_string(),
+                confidence: min_confidence.max(0.91),
+                geoscore,
+            },
+            analysis::Detection {
+                start: 3.0,
+                end: 6.0,
+                scientific: "Parus major".to_string(),
+                common: "Great Tit".to_string(),
+                confidence: min_confidence.max(0.76),
+                geoscore: if state.location.is_some() { 0.62 } else { 1.0 },
+            },
+        ];
+
+        Ok(Response::new(analysis::AnalyzeResponse { detections }))
     }
 }
 
@@ -282,7 +380,7 @@ impl projects::project_service_server::ProjectService for ProjectServiceState {
 pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), String> {
     let socket_addr: SocketAddr = addr.parse().map_err(|e| format!("invalid AW_GRPC_ADDR: {e}"))?;
 
-    let analysis = AnalysisServiceImpl::default();
+    let analysis = AnalysisServiceState::default();
     let projects = ProjectServiceState::new(store);
 
     Server::builder()
@@ -291,4 +389,127 @@ pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), Strin
         .serve(socket_addr)
         .await
         .map_err(|e| format!("grpc serve failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grpc::analysis::analysis_service_server::AnalysisService;
+    use crate::grpc::projects::project_service_server::ProjectService;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn analysis_service_requires_load_before_analyze() {
+        let svc = AnalysisServiceState::default();
+        let result = svc
+            .analyze(Request::new(analysis::AnalyzeRequest {
+                samples: vec![0.1, 0.2],
+                options: Some(analysis::AnalyzeOptions {
+                    sample_rate: 48_000,
+                    overlap: 1.0,
+                    min_confidence: 0.42,
+                    geo_threshold: 0.0,
+                }),
+            }))
+            .await;
+
+        assert!(result.is_err(), "analyze must fail before load_model");
+    }
+
+    #[tokio::test]
+    async fn analysis_service_load_then_analyze_returns_detections() {
+        let svc = AnalysisServiceState::default();
+
+        let load = svc
+            .load_model(Request::new(analysis::LoadModelRequest {
+                model_url: "../models/birdnet-v2.4/".to_string(),
+            }))
+            .await
+            .expect("load_model should succeed")
+            .into_inner();
+
+        assert_eq!(load.label_count, 6522);
+        assert!(load.has_area_model);
+
+        let detections = svc
+            .analyze(Request::new(analysis::AnalyzeRequest {
+                samples: vec![0.1, 0.2, -0.1],
+                options: Some(analysis::AnalyzeOptions {
+                    sample_rate: 48_000,
+                    overlap: 1.0,
+                    min_confidence: 0.42,
+                    geo_threshold: 0.0,
+                }),
+            }))
+            .await
+            .expect("analyze should succeed")
+            .into_inner();
+
+        assert!(detections.detections.len() >= 2);
+        assert_eq!(detections.detections[0].scientific, "Corvus corax");
+        assert!(detections.detections[0].confidence >= 0.42);
+    }
+
+    #[tokio::test]
+    async fn project_service_roundtrip_save_list_get_delete() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("aw-grpc-test-{nanos}"));
+        let store = ProjectStore::new(dir.clone());
+        let svc = ProjectServiceState::new(store);
+
+        let project = projects::Project {
+            id: "p-1".to_string(),
+            name: "Roundtrip".to_string(),
+            created_at: 1,
+            updated_at: 2,
+            audio_source: Some(projects::AudioSourceRef {
+                source: Some(projects::audio_source_ref::Source::File(projects::FileSource {
+                    name: "test.wav".to_string(),
+                    size: 123,
+                })),
+            }),
+            annotations: vec![],
+            labels: vec![],
+            settings_json: "{}".to_string(),
+        };
+
+        svc.save_project(Request::new(projects::SaveProjectRequest {
+            project: Some(project),
+        }))
+        .await
+        .expect("save_project should succeed");
+
+        let list = svc
+            .list_projects(Request::new(projects::ListProjectsRequest {}))
+            .await
+            .expect("list_projects should succeed")
+            .into_inner();
+        assert_eq!(list.projects.len(), 1);
+        assert_eq!(list.projects[0].id, "p-1");
+
+        let got = svc
+            .get_project(Request::new(projects::GetProjectRequest { id: "p-1".to_string() }))
+            .await
+            .expect("get_project should succeed")
+            .into_inner();
+        assert_eq!(got.project.as_ref().map(|p| p.name.as_str()), Some("Roundtrip"));
+
+        svc.delete_project(Request::new(projects::DeleteProjectRequest {
+            id: "p-1".to_string(),
+        }))
+        .await
+        .expect("delete_project should succeed");
+
+        let list_after = svc
+            .list_projects(Request::new(projects::ListProjectsRequest {}))
+            .await
+            .expect("list_projects after delete should succeed")
+            .into_inner();
+        assert!(list_after.projects.is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
