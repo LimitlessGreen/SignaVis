@@ -61,6 +61,8 @@ Desktop app (Tauri)
   ```
   npm run desktop:dev:grpc
   ```
+  In this mode, the labeling app can use the desktop-internal gRPC bridge when
+  BirdNET backend mode is set to `Server` and no HTTP endpoint is configured.
 - Optional: route gRPC AnalysisService calls to an external HTTP backend:
   ```
   AW_ANALYSIS_HTTP_ENDPOINT=http://127.0.0.1:8787 npm run desktop:dev:grpc
