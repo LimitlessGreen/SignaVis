@@ -568,10 +568,13 @@ impl projects::project_service_server::ProjectService for ProjectServiceState {
     }
 }
 
-pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), String> {
+pub async fn spawn_server_with_analysis(
+    addr: String,
+    store: ProjectStore,
+    analysis: AnalysisServiceState,
+) -> Result<(), String> {
     let socket_addr: SocketAddr = addr.parse().map_err(|e| format!("invalid AW_GRPC_ADDR: {e}"))?;
 
-    let analysis = AnalysisServiceState::from_env();
     let projects = ProjectServiceState::new(store);
 
     Server::builder()
@@ -580,6 +583,11 @@ pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), Strin
         .serve(socket_addr)
         .await
         .map_err(|e| format!("grpc serve failed: {e}"))
+}
+
+pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), String> {
+    let analysis = AnalysisServiceState::from_env();
+    spawn_server_with_analysis(addr, store, analysis).await
 }
 
 #[cfg(test)]
@@ -1075,6 +1083,74 @@ mod tests {
             .into_inner();
         assert_eq!(listed.projects.len(), 1);
         assert_eq!(listed.projects[0].id, "net-1");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn grpc_network_e2e_analysis_http_passthrough() {
+        let endpoint = spawn_mock_analysis_backend_sequence(vec![
+            ("/analysis/load", "200 OK", r#"{"labelCount":4242,"hasAreaModel":false}"#),
+            (
+                "/analysis/analyze",
+                "200 OK",
+                r#"[{"start":1.0,"end":2.5,"scientific":"Turdus merula","common":"Common Blackbird","confidence":0.88,"geoscore":0.74}]"#,
+            ),
+        ])
+        .await;
+
+        let analysis_state = new_http_passthrough_service(endpoint);
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("aw-grpc-e2e-http-{nanos}"));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("read local addr");
+        drop(listener);
+
+        let server_store = ProjectStore::new(dir.clone());
+        tokio::spawn(async move {
+            let _ = spawn_server_with_analysis(addr.to_string(), server_store, analysis_state).await;
+        });
+
+        sleep(Duration::from_millis(120)).await;
+
+        let endpoint = format!("http://{addr}");
+        let mut analysis = AnalysisServiceClient::connect(endpoint)
+            .await
+            .expect("connect analysis client");
+
+        let load = analysis
+            .load_model(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            })
+            .await
+            .expect("load_model over network passthrough")
+            .into_inner();
+        assert_eq!(load.label_count, 4242);
+        assert!(!load.has_area_model);
+
+        let detected = analysis
+            .analyze(analysis::AnalyzeRequest {
+                samples: vec![0.05, -0.1, 0.2],
+                options: Some(analysis::AnalyzeOptions {
+                    sample_rate: 48_000,
+                    overlap: 1.0,
+                    min_confidence: 0.25,
+                    geo_threshold: 0.0,
+                }),
+            })
+            .await
+            .expect("analyze over network passthrough")
+            .into_inner();
+
+        assert_eq!(detected.detections.len(), 1);
+        assert_eq!(detected.detections[0].scientific, "Turdus merula");
+        assert_eq!(detected.detections[0].common, "Common Blackbird");
+        assert!(detected.detections[0].confidence >= 0.88);
 
         let _ = std::fs::remove_dir_all(dir);
     }
