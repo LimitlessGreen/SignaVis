@@ -672,9 +672,11 @@ export class BirdNETPlayer {
             const interaction = ce.detail?.interaction;
             if (interaction === 'click') {
                 this._activeLabelId = id;
+                this.setSelectedOverviewSegment(id);
             } else {
                 // Hover only updates focus when nothing is sticky-clicked yet, or when clearing.
                 if (!this._activeLabelId || id === null) this._activeLabelId = id;
+                this.setFocusedOverviewSegment(id);
             }
             this._emit('labelfocus', ce.detail);
         };
@@ -1071,6 +1073,24 @@ export class BirdNETPlayer {
         }
     }
 
+    setFocusedOverviewSegment(id: string | null) {
+        const container = this._state?.d?.overviewLabelTracks;
+        if (!container) return;
+        for (const el of container.querySelectorAll('.overview-label-segment')) {
+            const h = el as HTMLElement;
+            h.classList.toggle('focused', !!id && h.dataset?.id === id);
+        }
+    }
+
+    setSelectedOverviewSegment(id: string | null) {
+        const container = this._state?.d?.overviewLabelTracks;
+        if (!container) return;
+        for (const el of container.querySelectorAll('.overview-label-segment')) {
+            const h = el as HTMLElement;
+            h.classList.toggle('selected', !!id && h.dataset?.id === id);
+        }
+    }
+
     /**
      * Render one row per unique label name below the overview bar,
      * grouped under compact origin headers (manual, BirdNET, xeno-canto).
@@ -1166,6 +1186,9 @@ export class BirdNETPlayer {
             }
         }
         this._afterOverviewRowChange(prevRowCount, container.childElementCount);
+        // Restore focus/selection state lost by DOM rebuild
+        this.setFocusedOverviewSegment(this._activeLabelId);
+        this.setSelectedOverviewSegment(this._activeLabelId);
     }
 
     /**

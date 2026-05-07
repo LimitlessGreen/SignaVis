@@ -427,6 +427,33 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('viewresize', () => this.render()));
         this._unsubs.push(this.player.on('seek', (e: any) => this.highlightActiveRegion(e.detail.currentTime)));
         this._unsubs.push(this.player.on('timeupdate', (e: any) => this.highlightActiveRegion(e.detail.currentTime)));
+        this._unsubs.push(this.player.on('labelfocus', (e: any) => {
+            const id = e?.detail?.id || null;
+            const interaction = e?.detail?.interaction;
+            if (interaction === 'click') {
+                this._selectedLabelId = id;
+                this._updateSelectedVisual();
+            } else {
+                this._focusedLabelId = id;
+                this._updateFocusedVisual();
+            }
+        }));
+    }
+
+    _updateFocusedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
+            const h = el as HTMLElement;
+            h.classList.toggle('annotation-region--focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
+        }
+    }
+
+    _updateSelectedVisual() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
+            const h = el as HTMLElement;
+            h.classList.toggle('annotation-region--selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
+        }
     }
 
     _bindInteractions(root: HTMLElement) { this._bindEditingInteractions(root); }
@@ -554,6 +581,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
             }
         }
         this._updateMultiSelectedVisual();
+        this._updateFocusedVisual();
+        this._updateSelectedVisual();
     }
 
     _createRegionElement(region: any, pixelsPerSecond: number): HTMLElement {
