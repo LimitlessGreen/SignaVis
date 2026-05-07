@@ -271,6 +271,22 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
 }
 
 impl AnalysisServiceState {
+    fn timeout_from_env() -> std::time::Duration {
+        let ms = std::env::var("AW_ANALYSIS_HTTP_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(15_000);
+        std::time::Duration::from_millis(ms)
+    }
+
+    fn new_http_client(timeout: std::time::Duration) -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    }
+
     fn backend_endpoint(&self) -> Option<String> {
         self.state
             .lock()
@@ -322,6 +338,7 @@ impl AnalysisServiceState {
             .ok()
             .map(|s| s.trim().trim_end_matches('/').to_string())
             .filter(|s| !s.is_empty());
+        let timeout = Self::timeout_from_env();
 
         Self {
             state: Arc::new(Mutex::new(AnalysisRuntimeState {
@@ -329,7 +346,7 @@ impl AnalysisServiceState {
                 location: None,
                 backend_endpoint: endpoint,
             })),
-            http: reqwest::Client::new(),
+            http: Self::new_http_client(timeout),
         }
     }
 }
@@ -624,7 +641,21 @@ mod tests {
                 location: None,
                 backend_endpoint: Some(endpoint),
             })),
-            http: reqwest::Client::new(),
+            http: AnalysisServiceState::new_http_client(Duration::from_millis(500)),
+        }
+    }
+
+    fn new_http_passthrough_service_with_timeout(
+        endpoint: String,
+        timeout: Duration,
+    ) -> AnalysisServiceState {
+        AnalysisServiceState {
+            state: Arc::new(Mutex::new(AnalysisRuntimeState {
+                loaded: false,
+                location: None,
+                backend_endpoint: Some(endpoint),
+            })),
+            http: AnalysisServiceState::new_http_client(timeout),
         }
     }
 
@@ -723,6 +754,37 @@ mod tests {
         assert!(
             err.message().contains("HTTP 500"),
             "unexpected error message: {}",
+            err.message()
+        );
+    }
+
+    #[tokio::test]
+    async fn analysis_service_http_passthrough_times_out_when_backend_hangs() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind hanging backend");
+        let addr = listener.local_addr().expect("read hanging backend addr");
+
+        tokio::spawn(async move {
+            if let Ok((_stream, _)) = listener.accept().await {
+                sleep(Duration::from_millis(250)).await;
+            }
+        });
+
+        let endpoint = format!("http://{addr}");
+        let svc = new_http_passthrough_service_with_timeout(endpoint, Duration::from_millis(40));
+
+        let err = svc
+            .load_model(Request::new(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            }))
+            .await
+            .expect_err("load_model should fail on backend timeout");
+
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(
+            err.message().contains("request failed"),
+            "unexpected timeout message: {}",
             err.message()
         );
     }
