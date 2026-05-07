@@ -9,6 +9,12 @@ import type {
     AnalysisSetLocationResult,
     AnalysisSpeciesItem,
 } from '../../domain/analysis/types.ts';
+import {
+    toProtoLoadModelRequest,
+    toProtoSetLocationRequest,
+    toProtoAnalyzeRequest,
+    fromProtoAnalyzeResponse,
+} from '../../domain/analysis/protoGatewayMapping.ts';
 
 interface HttpAnalysisBackendOptions {
     mode: Extract<AnalysisBackendMode, 'server' | 'cloud'>;
@@ -39,9 +45,10 @@ export class HttpAnalysisBackend implements AnalysisBackend {
 
     async load(options: AnalysisLoadOptions): Promise<AnalysisLoadResult> {
         options.onProgress?.('Connecting to analysis backend…', 10);
+        const protoRequest = toProtoLoadModelRequest(options);
         const result = await this.#jsonRequest<AnalysisLoadResult>('/analysis/load', {
             method: 'POST',
-            body: JSON.stringify({ modelUrl: options.modelUrl }),
+            body: JSON.stringify({ modelUrl: protoRequest.model_url }),
         });
         this.#loaded = true;
         this.#hasAreaModel = result.hasAreaModel === true;
@@ -51,10 +58,14 @@ export class HttpAnalysisBackend implements AnalysisBackend {
 
     async setLocation(latitude: number, longitude: number, options: AnalysisSetLocationOptions = {}): Promise<AnalysisSetLocationResult> {
         if (!this.#loaded) return { ok: false };
-        const date = options.date instanceof Date ? options.date.toISOString() : options.date;
+        const protoRequest = toProtoSetLocationRequest(latitude, longitude, options);
         return this.#jsonRequest<AnalysisSetLocationResult>('/analysis/location', {
             method: 'POST',
-            body: JSON.stringify({ latitude, longitude, date: date ?? null }),
+            body: JSON.stringify({
+                latitude: protoRequest.latitude,
+                longitude: protoRequest.longitude,
+                date: protoRequest.date_iso8601 || null,
+            }),
         });
     }
 
@@ -71,19 +82,22 @@ export class HttpAnalysisBackend implements AnalysisBackend {
     async analyze(channelData: Float32Array | number[], options: AnalysisRunOptions = {}): Promise<AnalysisDetection[]> {
         if (!this.#loaded) throw new Error('Analysis backend is not loaded. Call load() first.');
         options.onProgress?.(5);
-        const samples = channelData instanceof Float32Array ? Array.from(channelData) : Array.from(channelData as number[]);
-        const detections = await this.#jsonRequest<AnalysisDetection[]>('/analysis/analyze', {
+        const protoRequest = toProtoAnalyzeRequest(channelData, options);
+        const protoResponse = await this.#jsonRequest<{ detections?: AnalysisDetection[] } | AnalysisDetection[]>('/analysis/analyze', {
             method: 'POST',
             body: JSON.stringify({
-                samples,
+                samples: protoRequest.samples,
                 options: {
-                    sampleRate: options.sampleRate,
-                    overlap: options.overlap,
-                    minConfidence: options.minConfidence,
-                    geoThreshold: options.geoThreshold,
+                    sampleRate: protoRequest.options.sample_rate,
+                    overlap: protoRequest.options.overlap,
+                    minConfidence: protoRequest.options.min_confidence,
+                    geoThreshold: protoRequest.options.geo_threshold,
                 },
             }),
         });
+        const detections = Array.isArray(protoResponse)
+            ? fromProtoAnalyzeResponse({ detections: protoResponse })
+            : fromProtoAnalyzeResponse({ detections: protoResponse.detections ?? [] });
         options.onProgress?.(100);
         return detections;
     }
