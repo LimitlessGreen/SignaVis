@@ -52,6 +52,7 @@ export function canTransitionTransportState(
     toState: string | undefined | null,
 ): boolean {
     if (!toState) return false;
+    if (fromState === toState) return true;
     const from = (TRANSPORT_STATES as ReadonlyArray<string>).includes(fromState)
         ? fromState as TransportStateName
         : '' as TransportStateName;

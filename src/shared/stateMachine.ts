@@ -35,12 +35,11 @@ export function defineStateMachine<S extends string>(
     return def;
 }
 
-/** Returns true when the transition from → to is allowed. */
+/** Returns true when the transition from → to is allowed by the transitions table. */
 export function canTransition<S extends string>(
     def: StateMachineDefinition<S>,
     from: S,
     to: S,
 ): boolean {
-    if (from === to) return true;
     return def.transitions[from]?.has(to) === true;
 }
