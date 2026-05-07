@@ -4,10 +4,17 @@ import assert from 'node:assert/strict';
 import { createAnalysisBackend } from '../src/infrastructure/analysis/createAnalysisBackend.ts';
 import { HttpAnalysisBackend } from '../src/infrastructure/analysis/HttpAnalysisBackend.ts';
 import { AnalysisBackendProxy } from '../src/infrastructure/analysis/AnalysisBackendProxy.ts';
+import { TauriGrpcAnalysisBackend } from '../src/infrastructure/analysis/TauriGrpcAnalysisBackend.ts';
 
 test('createAnalysisBackend requires endpoint for server/cloud mode', () => {
   assert.throws(() => createAnalysisBackend({ mode: 'server' }), /requires an endpoint/i);
   assert.throws(() => createAnalysisBackend({ mode: 'cloud' }), /requires an endpoint/i);
+});
+
+test('createAnalysisBackend can use desktop gRPC for server mode without endpoint', () => {
+  const backend = createAnalysisBackend({ mode: 'server', useTauriGrpc: true });
+  assert.ok(backend instanceof TauriGrpcAnalysisBackend);
+  assert.equal(backend.mode, 'server');
 });
 
 test('HttpAnalysisBackend load + location + species + analyze works via mocked fetch', async () => {
@@ -103,4 +110,63 @@ test('AnalysisBackendProxy switches backend and disposes previous one', async ()
 
   proxy.dispose();
   assert.deepEqual(disposed, ['local', 'server']);
+});
+
+test('TauriGrpcAnalysisBackend forwards full flow via invoke bridge', async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const invokeMock = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+    calls.push({ command, args });
+
+    if (command === 'grpc_analysis_load_model') {
+      return { labelCount: 1234, hasAreaModel: true } as T;
+    }
+    if (command === 'grpc_analysis_set_location') {
+      return { ok: true, week: 14 } as T;
+    }
+    if (command === 'grpc_analysis_get_species') {
+      return [{ scientific: 'Corvus corax', common: 'Raven', geoscore: 0.8 }] as T;
+    }
+    if (command === 'grpc_analysis_analyze') {
+      return [
+        { start: 0, end: 1, scientific: 'Corvus corax', common: 'Raven', confidence: 0.93, geoscore: 0.8 },
+      ] as T;
+    }
+    if (command === 'grpc_analysis_clear_location') {
+      return undefined as T;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  };
+
+  const backend = new TauriGrpcAnalysisBackend({ invokeImpl: invokeMock });
+
+  const load = await backend.load({ modelUrl: '../models/birdnet-v2.4/' });
+  assert.equal(load.labelCount, 1234);
+  assert.equal(load.hasAreaModel, true);
+  assert.equal(backend.loaded, true);
+  assert.equal(backend.hasAreaModel, true);
+
+  const location = await backend.setLocation(10.1, 11.2, { date: '2026-05-07' });
+  assert.equal(location.ok, true);
+  assert.equal(location.week, 14);
+
+  const species = await backend.getAllSpecies();
+  assert.equal(species.length, 1);
+  assert.equal(species[0].scientific, 'Corvus corax');
+
+  const detections = await backend.analyze([0.1, -0.2, 0.3], {
+    sampleRate: 48_000,
+    overlap: 1,
+    minConfidence: 0.25,
+    geoThreshold: 0,
+  });
+  assert.equal(detections.length, 1);
+  assert.equal(detections[0].common, 'Raven');
+
+  await backend.clearLocation();
+
+  assert.ok(calls.some((c) => c.command === 'grpc_analysis_load_model'));
+  assert.ok(calls.some((c) => c.command === 'grpc_analysis_set_location'));
+  assert.ok(calls.some((c) => c.command === 'grpc_analysis_get_species'));
+  assert.ok(calls.some((c) => c.command === 'grpc_analysis_analyze'));
+  assert.ok(calls.some((c) => c.command === 'grpc_analysis_clear_location'));
 });

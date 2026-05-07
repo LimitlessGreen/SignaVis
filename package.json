@@ -75,7 +75,7 @@
     "release": "bash ./scripts/release.sh",
     "sync-version": "node ./scripts/sync-version.js",
     "desktop:dev": "tauri dev",
-    "desktop:dev:grpc": "AW_GRPC_ADDR=127.0.0.1:50051 tauri dev",
+    "desktop:dev:grpc": "AW_GRPC_ADDR=127.0.0.1:50051 tauri dev --features grpc",
     "desktop:build": "tauri build",
     "grpc:check": "cd src-tauri && cargo check --features grpc",
     "grpc:test": "cd src-tauri && cargo test --features grpc"

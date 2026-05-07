@@ -731,17 +731,20 @@
     let _projectAutosaveTimer = null;
 
     const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
+    const desktopRuntimeInfo = await getDesktopRuntimeInfo();
+    const canUseDesktopGrpc = Boolean(desktopRuntimeInfo?.grpcEnabled);
     const birdnet = new AnalysisBackendProxy(createAnalysisBackend({
       mode: initialAnalysisConfig.mode,
       endpoint: initialAnalysisConfig.endpoint,
+      useTauriGrpc: canUseDesktopGrpc,
     }));
-    const desktopRuntimeInfo = await getDesktopRuntimeInfo();
 
     function applyAnalysisBackendConfig(config, { persist = true } = {}) {
       const normalized = normalizeAnalysisBackendConfig(config);
       const nextBackend = createAnalysisBackend({
         mode: normalized.mode,
         endpoint: normalized.endpoint,
+        useTauriGrpc: canUseDesktopGrpc,
       });
       birdnet.setBackend(nextBackend);
       if (analysisModeSelect) analysisModeSelect.value = normalized.mode;
