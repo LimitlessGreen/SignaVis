@@ -74,11 +74,11 @@
     "version:check": "bash ./scripts/check-version-sync.sh",
     "release": "bash ./scripts/release.sh",
     "sync-version": "node ./scripts/sync-version.js",
-    "desktop:dev": "tauri dev",
-    "desktop:dev:grpc": "AW_GRPC_ADDR=127.0.0.1:50051 tauri dev --features grpc",
-    "desktop:build": "tauri build",
-    "grpc:check": "cd src-tauri && cargo check --features grpc",
-    "grpc:test": "cd src-tauri && cargo test --features grpc"
+    "desktop:dev": ". \"$HOME/.cargo/env\" && tauri dev",
+    "desktop:dev:grpc": ". \"$HOME/.cargo/env\" && AW_GRPC_ADDR=127.0.0.1:50051 tauri dev --features grpc",
+    "desktop:build": ". \"$HOME/.cargo/env\" && tauri build",
+    "grpc:check": ". \"$HOME/.cargo/env\" && cd src-tauri && cargo check --features grpc",
+    "grpc:test": ". \"$HOME/.cargo/env\" && cd src-tauri && cargo test --features grpc"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
