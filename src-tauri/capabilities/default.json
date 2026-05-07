@@ -10,10 +10,9 @@
     "dialog:allow-save",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
-    "fs:allow-remove-file",
+    "fs:allow-remove",
     "fs:allow-read-dir",
-    "fs:allow-create-dir",
-    "fs:allow-app-data-read",
-    "fs:allow-app-data-write"
+    "fs:allow-mkdir",
+    "fs:scope-appdata"
   ]
 }
