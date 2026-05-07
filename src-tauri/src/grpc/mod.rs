@@ -17,6 +17,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use reqwest::Method;
 use tonic::{Request, Response, Status};
 use tonic::transport::Server;
 
@@ -25,12 +26,14 @@ use crate::project_store::ProjectStore;
 #[derive(Clone, Default)]
 pub struct AnalysisServiceState {
     state: Arc<Mutex<AnalysisRuntimeState>>,
+    http: reqwest::Client,
 }
 
 #[derive(Default)]
 struct AnalysisRuntimeState {
     loaded: bool,
     location: Option<AnalysisLocation>,
+    backend_endpoint: Option<String>,
 }
 
 #[derive(Clone)]
@@ -44,8 +47,27 @@ struct AnalysisLocation {
 impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState {
     async fn load_model(
         &self,
-        _request: Request<analysis::LoadModelRequest>,
+        request: Request<analysis::LoadModelRequest>,
     ) -> Result<Response<analysis::LoadModelResponse>, Status> {
+        let req = request.into_inner();
+        let endpoint = self.backend_endpoint();
+
+        if let Some(endpoint) = endpoint {
+            let body = serde_json::json!({ "modelUrl": req.model_url });
+            let payload = self
+                .http_json(Method::POST, &endpoint, "/analysis/load", Some(body))
+                .await?;
+
+            let label_count = payload["labelCount"].as_u64().unwrap_or(0) as u32;
+            let has_area_model = payload["hasAreaModel"].as_bool().unwrap_or(false);
+
+            self.set_loaded(true)?;
+            return Ok(Response::new(analysis::LoadModelResponse {
+                label_count,
+                has_area_model,
+            }));
+        }
+
         let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
         state.loaded = true;
 
@@ -60,29 +82,56 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         request: Request<analysis::SetLocationRequest>,
     ) -> Result<Response<analysis::SetLocationResponse>, Status> {
         let req = request.into_inner();
-        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
-        if !state.loaded {
-            return Ok(Response::new(analysis::SetLocationResponse { ok: false, week: 0 }));
+        let endpoint = {
+            let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+            if !state.loaded {
+                return Ok(Response::new(analysis::SetLocationResponse { ok: false, week: 0 }));
+            }
+
+            state.location = Some(AnalysisLocation {
+                latitude: req.latitude,
+                longitude: req.longitude,
+                date_iso8601: req.date_iso8601.clone(),
+            });
+            state.backend_endpoint.clone()
+        };
+
+        if let Some(endpoint) = endpoint {
+            let body = serde_json::json!({
+                "latitude": req.latitude,
+                "longitude": req.longitude,
+                "date": if req.date_iso8601.is_empty() { serde_json::Value::Null } else { serde_json::json!(req.date_iso8601) },
+            });
+            let payload = self
+                .http_json(Method::POST, &endpoint, "/analysis/location", Some(body))
+                .await?;
+
+            return Ok(Response::new(analysis::SetLocationResponse {
+                ok: payload["ok"].as_bool().unwrap_or(false),
+                week: payload["week"].as_u64().unwrap_or(0) as u32,
+            }));
         }
 
-        state.location = Some(AnalysisLocation {
-            latitude: req.latitude,
-            longitude: req.longitude,
-            date_iso8601: req.date_iso8601,
-        });
-
-        Ok(Response::new(analysis::SetLocationResponse {
-            ok: true,
-            week: 22,
-        }))
+        Ok(Response::new(analysis::SetLocationResponse { ok: true, week: 22 }))
     }
 
     async fn clear_location(
         &self,
         _request: Request<analysis::ClearLocationRequest>,
     ) -> Result<Response<analysis::ClearLocationResponse>, Status> {
-        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
-        state.location = None;
+        let endpoint = {
+            let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+            state.location = None;
+            state.backend_endpoint.clone()
+        };
+
+        if let Some(endpoint) = endpoint {
+            let _ = self
+                .http_json(Method::DELETE, &endpoint, "/analysis/location", None)
+                .await?;
+            return Ok(Response::new(analysis::ClearLocationResponse {}));
+        }
+
         Ok(Response::new(analysis::ClearLocationResponse {}))
     }
 
@@ -90,14 +139,40 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         &self,
         _request: Request<analysis::GetSpeciesRequest>,
     ) -> Result<Response<analysis::GetSpeciesResponse>, Status> {
-        let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
-        if !state.loaded {
+        let (loaded, location, endpoint) = {
+            let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+            (state.loaded, state.location.clone(), state.backend_endpoint.clone())
+        };
+
+        if !loaded {
             return Ok(Response::new(analysis::GetSpeciesResponse { species: vec![] }));
         }
 
-        let geoscore = if let Some(loc) = &state.location {
-            let _ = (&loc.latitude, &loc.longitude, &loc.date_iso8601);
-            0.83
+        if let Some(endpoint) = endpoint {
+            let payload = self
+                .http_json(Method::GET, &endpoint, "/analysis/species", None)
+                .await?;
+
+            let items = payload
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|i| analysis::SpeciesItem {
+                    scientific: i["scientific"].as_str().unwrap_or_default().to_string(),
+                    common: i["common"].as_str().unwrap_or_default().to_string(),
+                    geoscore: i["geoscore"].as_f64().unwrap_or(0.0),
+                })
+                .collect();
+            return Ok(Response::new(analysis::GetSpeciesResponse { species: items }));
+        }
+
+        let geoscore = if let Some(loc) = &location {
+            // Lightweight deterministic scoring that actually consumes location fields.
+            let lat_factor = (loc.latitude.abs() / 90.0).clamp(0.0, 1.0);
+            let lon_factor = (loc.longitude.abs() / 180.0).clamp(0.0, 1.0);
+            let date_factor = if loc.date_iso8601.is_empty() { 0.0 } else { 0.02 };
+            (0.78 + (lat_factor * 0.03) + (lon_factor * 0.02) + date_factor).min(0.95)
         } else {
             1.0
         };
@@ -112,7 +187,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
                 analysis::SpeciesItem {
                     scientific: "Parus major".to_string(),
                     common: "Great Tit".to_string(),
-                    geoscore: if state.location.is_some() { 0.62 } else { 1.0 },
+                    geoscore: if location.is_some() { 0.62 } else { 1.0 },
                 },
             ],
         }))
@@ -123,9 +198,12 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         request: Request<analysis::AnalyzeRequest>,
     ) -> Result<Response<analysis::AnalyzeResponse>, Status> {
         let req = request.into_inner();
-        let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        let (loaded, has_location, endpoint) = {
+            let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+            (state.loaded, state.location.is_some(), state.backend_endpoint.clone())
+        };
 
-        if !state.loaded {
+        if !loaded {
             return Err(Status::failed_precondition("analysis model not loaded"));
         }
 
@@ -135,7 +213,39 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
             .map(|o| o.min_confidence)
             .unwrap_or(0.25);
 
-        let geoscore = if state.location.is_some() { 0.83 } else { 1.0 };
+        if let Some(endpoint) = endpoint {
+            let body = serde_json::json!({
+                "samples": req.samples,
+                "options": {
+                    "sampleRate": req.options.as_ref().map(|o| o.sample_rate),
+                    "overlap": req.options.as_ref().map(|o| o.overlap),
+                    "minConfidence": req.options.as_ref().map(|o| o.min_confidence),
+                    "geoThreshold": req.options.as_ref().map(|o| o.geo_threshold),
+                },
+            });
+
+            let payload = self
+                .http_json(Method::POST, &endpoint, "/analysis/analyze", Some(body))
+                .await?;
+
+            let detections = payload
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|d| analysis::Detection {
+                    start: d["start"].as_f64().unwrap_or(0.0),
+                    end: d["end"].as_f64().unwrap_or(0.0),
+                    scientific: d["scientific"].as_str().unwrap_or_default().to_string(),
+                    common: d["common"].as_str().unwrap_or_default().to_string(),
+                    confidence: d["confidence"].as_f64().unwrap_or(0.0),
+                    geoscore: d["geoscore"].as_f64().unwrap_or(0.0),
+                })
+                .collect();
+            return Ok(Response::new(analysis::AnalyzeResponse { detections }));
+        }
+
+        let geoscore = if has_location { 0.83 } else { 1.0 };
 
         let detections = vec![
             analysis::Detection {
@@ -152,11 +262,75 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
                 scientific: "Parus major".to_string(),
                 common: "Great Tit".to_string(),
                 confidence: min_confidence.max(0.76),
-                geoscore: if state.location.is_some() { 0.62 } else { 1.0 },
+                geoscore: if has_location { 0.62 } else { 1.0 },
             },
         ];
 
         Ok(Response::new(analysis::AnalyzeResponse { detections }))
+    }
+}
+
+impl AnalysisServiceState {
+    fn backend_endpoint(&self) -> Option<String> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|s| s.backend_endpoint.clone())
+    }
+
+    fn set_loaded(&self, loaded: bool) -> Result<(), Status> {
+        let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
+        state.loaded = loaded;
+        Ok(())
+    }
+
+    async fn http_json(
+        &self,
+        method: Method,
+        endpoint: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, Status> {
+        let url = format!("{}{}", endpoint.trim_end_matches('/'), path);
+        let request = self.http.request(method, &url);
+        let request = if let Some(b) = body { request.json(&b) } else { request };
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| Status::internal(format!("analysis backend request failed: {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(Status::internal(format!(
+                "analysis backend returned HTTP {}",
+                response.status()
+            )));
+        }
+
+        if response.status().as_u16() == 204 {
+            return Ok(serde_json::json!({}));
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| Status::internal(format!("analysis backend JSON decode failed: {e}")))
+    }
+
+    pub fn from_env() -> Self {
+        let endpoint = std::env::var("AW_ANALYSIS_HTTP_ENDPOINT")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+
+        Self {
+            state: Arc::new(Mutex::new(AnalysisRuntimeState {
+                loaded: false,
+                location: None,
+                backend_endpoint: endpoint,
+            })),
+            http: reqwest::Client::new(),
+        }
     }
 }
 
@@ -380,7 +554,7 @@ impl projects::project_service_server::ProjectService for ProjectServiceState {
 pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), String> {
     let socket_addr: SocketAddr = addr.parse().map_err(|e| format!("invalid AW_GRPC_ADDR: {e}"))?;
 
-    let analysis = AnalysisServiceState::default();
+    let analysis = AnalysisServiceState::from_env();
     let projects = ProjectServiceState::new(store);
 
     Server::builder()
@@ -394,9 +568,12 @@ pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grpc::analysis::analysis_service_client::AnalysisServiceClient;
     use crate::grpc::analysis::analysis_service_server::AnalysisService;
+    use crate::grpc::projects::project_service_client::ProjectServiceClient;
     use crate::grpc::projects::project_service_server::ProjectService;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::time::{sleep, Duration};
 
     #[tokio::test]
     async fn analysis_service_requires_load_before_analyze() {
@@ -509,6 +686,89 @@ mod tests {
             .expect("list_projects after delete should succeed")
             .into_inner();
         assert!(list_after.projects.is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn grpc_network_e2e_smoke() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("aw-grpc-e2e-{nanos}"));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("read local addr");
+        drop(listener);
+
+        let server_store = ProjectStore::new(dir.clone());
+        tokio::spawn(async move {
+            let _ = spawn_server(addr.to_string(), server_store).await;
+        });
+
+        sleep(Duration::from_millis(120)).await;
+
+        let endpoint = format!("http://{addr}");
+        let mut analysis = AnalysisServiceClient::connect(endpoint.clone())
+            .await
+            .expect("connect analysis client");
+        let mut projects = ProjectServiceClient::connect(endpoint)
+            .await
+            .expect("connect project client");
+
+        let load = analysis
+            .load_model(analysis::LoadModelRequest {
+                model_url: "../models/birdnet-v2.4/".to_string(),
+            })
+            .await
+            .expect("load_model over network")
+            .into_inner();
+        assert_eq!(load.label_count, 6522);
+
+        let detected = analysis
+            .analyze(analysis::AnalyzeRequest {
+                samples: vec![0.1, 0.2],
+                options: Some(analysis::AnalyzeOptions {
+                    sample_rate: 48_000,
+                    overlap: 1.0,
+                    min_confidence: 0.3,
+                    geo_threshold: 0.0,
+                }),
+            })
+            .await
+            .expect("analyze over network")
+            .into_inner();
+        assert!(!detected.detections.is_empty());
+
+        projects
+            .save_project(projects::SaveProjectRequest {
+                project: Some(projects::Project {
+                    id: "net-1".to_string(),
+                    name: "Network".to_string(),
+                    created_at: 1,
+                    updated_at: 2,
+                    audio_source: Some(projects::AudioSourceRef {
+                        source: Some(projects::audio_source_ref::Source::File(projects::FileSource {
+                            name: "n.wav".to_string(),
+                            size: 1,
+                        })),
+                    }),
+                    annotations: vec![],
+                    labels: vec![],
+                    settings_json: "{}".to_string(),
+                }),
+            })
+            .await
+            .expect("save project over network");
+
+        let listed = projects
+            .list_projects(projects::ListProjectsRequest {})
+            .await
+            .expect("list projects over network")
+            .into_inner();
+        assert_eq!(listed.projects.len(), 1);
+        assert_eq!(listed.projects[0].id, "net-1");
 
         let _ = std::fs::remove_dir_all(dir);
     }
