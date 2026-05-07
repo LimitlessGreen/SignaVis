@@ -57,6 +57,17 @@ Desktop app (Tauri)
   ```
   npm run desktop:dev
   ```
+- Start desktop dev mode with internal gRPC server enabled:
+  ```
+  npm run desktop:dev:grpc
+  ```
+- Optional: route gRPC AnalysisService calls to an external HTTP backend:
+  ```
+  AW_ANALYSIS_HTTP_ENDPOINT=http://127.0.0.1:8787 npm run desktop:dev:grpc
+  ```
+  - `AW_ANALYSIS_HTTP_ENDPOINT`: base URL for `/analysis/*` passthrough endpoints.
+  - `AW_ANALYSIS_HTTP_TIMEOUT_MS`: request timeout in milliseconds (default: `15000`).
+  - `AW_GRPC_ADDR`: bind address for the internal gRPC server (default in script: `127.0.0.1:50051`).
 - Build distributable:
   ```
   npm run desktop:build
