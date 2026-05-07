@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package audio_workbench.analysis.v1;
+
+service AnalysisService {
+  rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);
+  rpc SetLocation(SetLocationRequest) returns (SetLocationResponse);
+  rpc ClearLocation(ClearLocationRequest) returns (ClearLocationResponse);
+  rpc GetSpecies(GetSpeciesRequest) returns (GetSpeciesResponse);
+  rpc Analyze(AnalyzeRequest) returns (AnalyzeResponse);
+}
+
+message LoadModelRequest {
+  string model_url = 1;
+}
+
+message LoadModelResponse {
+  uint32 label_count = 1;
+  bool has_area_model = 2;
+}
+
+message SetLocationRequest {
+  double latitude = 1;
+  double longitude = 2;
+  string date_iso8601 = 3;
+}
+
+message SetLocationResponse {
+  bool ok = 1;
+  uint32 week = 2;
+}
+
+message ClearLocationRequest {}
+
+message ClearLocationResponse {}
+
+message GetSpeciesRequest {}
+
+message SpeciesItem {
+  string scientific = 1;
+  string common = 2;
+  double geoscore = 3;
+}
+
+message GetSpeciesResponse {
+  repeated SpeciesItem species = 1;
+}
+
+message AnalyzeOptions {
+  uint32 sample_rate = 1;
+  double overlap = 2;
+  double min_confidence = 3;
+  double geo_threshold = 4;
+}
+
+message AnalyzeRequest {
+  repeated float samples = 1;
+  AnalyzeOptions options = 2;
+}
+
+message Detection {
+  double start = 1;
+  double end = 2;
+  string scientific = 3;
+  string common = 4;
+  double confidence = 5;
+  double geoscore = 6;
+}
+
+message AnalyzeResponse {
+  repeated Detection detections = 1;
+}

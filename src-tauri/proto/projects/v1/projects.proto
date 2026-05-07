@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package audio_workbench.projects.v1;
+
+service ProjectService {
+  rpc SaveProject(SaveProjectRequest) returns (SaveProjectResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+}
+
+message AudioSourceRef {
+  oneof source {
+    FileSource file = 1;
+    UrlSource url = 2;
+    XenoCantoSource xeno_canto = 3;
+  }
+}
+
+message FileSource {
+  string name = 1;
+  uint64 size = 2;
+}
+
+message UrlSource {
+  string url = 1;
+  string name = 2;
+}
+
+message XenoCantoSource {
+  string xc_id = 1;
+  string name = 2;
+}
+
+message AnnotationRegion {
+  string id = 1;
+  double start = 2;
+  double end = 3;
+  string species = 4;
+  string label = 5;
+  double confidence = 6;
+  string color = 7;
+  string scientific_name = 8;
+  string common_name = 9;
+  string origin = 10;
+  string author = 11;
+  map<string, string> tags = 12;
+}
+
+message SpectrogramLabel {
+  string id = 1;
+  double start = 2;
+  double end = 3;
+  double freq_min = 4;
+  double freq_max = 5;
+  string label = 6;
+  string species = 7;
+  string color = 8;
+  string scientific_name = 9;
+  string common_name = 10;
+  string origin = 11;
+  string author = 12;
+  map<string, string> tags = 13;
+  bool readonly = 14;
+  double confidence = 15;
+  string recording_id = 16;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  int64 created_at = 3;
+  int64 updated_at = 4;
+  AudioSourceRef audio_source = 5;
+  repeated AnnotationRegion annotations = 6;
+  repeated SpectrogramLabel labels = 7;
+  string settings_json = 8;
+}
+
+message ProjectSummary {
+  string id = 1;
+  string name = 2;
+  int64 created_at = 3;
+  int64 updated_at = 4;
+  AudioSourceRef audio_source = 5;
+  uint32 label_count = 6;
+  uint32 annotation_count = 7;
+}
+
+message SaveProjectRequest {
+  Project project = 1;
+}
+
+message SaveProjectResponse {}
+
+message GetProjectRequest {
+  string id = 1;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated ProjectSummary projects = 1;
+}
+
+message DeleteProjectRequest {
+  string id = 1;
+}
+
+message DeleteProjectResponse {}
