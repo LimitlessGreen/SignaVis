@@ -572,8 +572,61 @@ mod tests {
     use crate::grpc::analysis::analysis_service_server::AnalysisService;
     use crate::grpc::projects::project_service_client::ProjectServiceClient;
     use crate::grpc::projects::project_service_server::ProjectService;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::time::{sleep, Duration};
+
+    async fn spawn_mock_analysis_backend(
+        route: &'static str,
+        status_line: &'static str,
+        body: &'static str,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock analysis backend");
+        let addr = listener
+            .local_addr()
+            .expect("read mock analysis backend local addr");
+
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let mut buffer = vec![0_u8; 4096];
+                let read = stream
+                    .read(&mut buffer)
+                    .await
+                    .expect("read request bytes from mock backend");
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                let request_line = request.lines().next().unwrap_or_default();
+
+                let (response_status, response_body) = if request_line.contains(route) {
+                    (status_line, body)
+                } else {
+                    ("404 Not Found", "{}")
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+                    response_body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+
+        format!("http://{addr}")
+    }
+
+    fn new_http_passthrough_service(endpoint: String) -> AnalysisServiceState {
+        AnalysisServiceState {
+            state: Arc::new(Mutex::new(AnalysisRuntimeState {
+                loaded: false,
+                location: None,
+                backend_endpoint: Some(endpoint),
+            })),
+            http: reqwest::Client::new(),
+        }
+    }
 
     #[tokio::test]
     async fn analysis_service_requires_load_before_analyze() {
@@ -625,6 +678,53 @@ mod tests {
         assert!(detections.detections.len() >= 2);
         assert_eq!(detections.detections[0].scientific, "Corvus corax");
         assert!(detections.detections[0].confidence >= 0.42);
+    }
+
+    #[tokio::test]
+    async fn analysis_service_http_passthrough_load_model_happy_path() {
+        let endpoint = spawn_mock_analysis_backend(
+            "/analysis/load",
+            "200 OK",
+            r#"{"labelCount":999,"hasAreaModel":false}"#,
+        )
+        .await;
+        let svc = new_http_passthrough_service(endpoint);
+
+        let load = svc
+            .load_model(Request::new(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            }))
+            .await
+            .expect("load_model via HTTP passthrough should succeed")
+            .into_inner();
+
+        assert_eq!(load.label_count, 999);
+        assert!(!load.has_area_model);
+    }
+
+    #[tokio::test]
+    async fn analysis_service_http_passthrough_returns_internal_on_http_error() {
+        let endpoint = spawn_mock_analysis_backend(
+            "/analysis/load",
+            "500 Internal Server Error",
+            r#"{"error":"backend exploded"}"#,
+        )
+        .await;
+        let svc = new_http_passthrough_service(endpoint);
+
+        let err = svc
+            .load_model(Request::new(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            }))
+            .await
+            .expect_err("load_model via HTTP passthrough should fail on HTTP 500");
+
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(
+            err.message().contains("HTTP 500"),
+            "unexpected error message: {}",
+            err.message()
+        );
     }
 
     #[tokio::test]
