@@ -11,6 +11,9 @@ use serde_json::Value as JsonValue;
 use serde_json::json;
 use tauri::Manager;
 
+#[cfg(feature = "grpc")]
+pub mod grpc;
+
 // ── Path helpers ─────────────────────────────────────────────────────
 
 /// Returns the platform-specific directory where project files are kept.
