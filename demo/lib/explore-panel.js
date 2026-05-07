@@ -34,7 +34,7 @@ function esc(s) {
 export class ExplorePanel {
   /**
    * @param {object} opts
-   * @param {import('../../src/infrastructure/birdnetInference.ts').BirdNETInference} opts.birdnet
+  * @param {import('../../src/domain/analysis/types.ts').AnalysisBackend} opts.birdnet
    * @param {() => any[]}    opts.getLabels
    * @param {() => string}   opts.getLang
    * @param {import('../../src/infrastructure/taxonomyResolver.ts').TaxonomyResolver} opts.taxonomy

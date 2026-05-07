@@ -142,6 +142,20 @@
       <p class="field-hint">TF.js Layers format — folder containing model.json and labels.json</p>
     </div>
     <div class="panel-section">
+      <label class="field-label" for="analysisModeSelect">Analysis backend</label>
+      <select id="analysisModeSelect" class="field-select">
+        <option value="local">Local (Browser)</option>
+        <option value="server">Server</option>
+        <option value="cloud">Cloud</option>
+      </select>
+      <label class="field-label" for="analysisEndpointInput" style="margin-top:8px">Backend endpoint</label>
+      <input id="analysisEndpointInput" class="input" placeholder="http://localhost:8787" />
+      <div class="panel-actions" style="margin-top:8px">
+        <button class="sidebar-action-btn secondary" id="analysisApplyBtn" type="button">Apply backend</button>
+      </div>
+      <p class="field-hint">For server/cloud mode, enter the base URL of the analysis API.</p>
+    </div>
+    <div class="panel-section">
       <div class="slider-row">
         <label class="field-label" for="birdnetConfidence" style="margin:0">Min. Confidence</label>
         <span class="slider-val" id="birdnetConfidenceVal">0.25</span>
@@ -514,7 +528,7 @@
     import { BirdNETPlayer } from '../src/app/BirdNETPlayer.ts';
     import { colorForName, getOverlayColorStyle } from '../src/domain/annotations.ts';
     import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
-    import { BirdNETInference } from '../src/infrastructure/birdnetInference.ts';
+    import { AnalysisBackendProxy, createAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
     import ModalManager from '../src/ui/components/modal/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
     import { createReferenceCallsModal } from './lib/reference-calls-modal.js';
@@ -537,6 +551,11 @@
     import { createAboutPanel } from './lib/about-panel.js';
     import { ExplorePanel } from './lib/explore-panel.js';
     import { showContextMenu } from './lib/context-menu.js';
+    import {
+      loadAnalysisBackendConfig,
+      normalizeAnalysisBackendConfig,
+      saveAnalysisBackendConfig,
+    } from './lib/analysis-backend-config.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
     import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 
@@ -697,9 +716,44 @@
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
     const taxonomyMeta    = document.getElementById('taxonomyMeta');
     const themeToggleBtn  = document.getElementById('themeToggleBtn');
+    const analysisModeSelect = document.getElementById('analysisModeSelect');
+    const analysisEndpointInput = document.getElementById('analysisEndpointInput');
+    const analysisApplyBtn = document.getElementById('analysisApplyBtn');
 
     const taxonomy = new TaxonomyResolver();
-    const birdnet  = new BirdNETInference();
+    const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
+    const birdnet = new AnalysisBackendProxy(createAnalysisBackend({
+      mode: initialAnalysisConfig.mode,
+      endpoint: initialAnalysisConfig.endpoint,
+    }));
+
+    function applyAnalysisBackendConfig(config, { persist = true } = {}) {
+      const normalized = normalizeAnalysisBackendConfig(config);
+      const nextBackend = createAnalysisBackend({
+        mode: normalized.mode,
+        endpoint: normalized.endpoint,
+      });
+      birdnet.setBackend(nextBackend);
+      if (analysisModeSelect) analysisModeSelect.value = normalized.mode;
+      if (analysisEndpointInput) analysisEndpointInput.value = normalized.endpoint;
+      if (persist) saveAnalysisBackendConfig(normalized);
+      selectionMeta.textContent = `Analysis backend: ${normalized.mode}${normalized.mode === 'local' ? '' : ` @ ${normalized.endpoint}`}`;
+      return normalized;
+    }
+
+    // Apply config from URL/localStorage and sync controls.
+    applyAnalysisBackendConfig(initialAnalysisConfig, { persist: false });
+
+    analysisApplyBtn?.addEventListener('click', () => {
+      try {
+        applyAnalysisBackendConfig({
+          mode: analysisModeSelect?.value || 'local',
+          endpoint: analysisEndpointInput?.value || '',
+        });
+      } catch (err) {
+        selectionMeta.textContent = `Backend config error: ${err?.message || String(err)}`;
+      }
+    });
 
     // ── Sidebar ───────────────────────────────────────────────────────
     const ICONS = {

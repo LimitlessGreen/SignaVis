@@ -82,7 +82,7 @@ export class BirdNETPanel {
    * @param {HTMLButtonElement} opts.analyzeBtn
    * @param {HTMLButtonElement} opts.cancelBtn
    * @param {HTMLButtonElement} [opts.openBtn]
-   * @param {import('../../src/infrastructure/birdnetInference.ts').BirdNETInference} opts.birdnet
+  * @param {import('../../src/domain/analysis/types.ts').AnalysisBackend} opts.birdnet
    * @param {() => AudioBuffer|null} opts.getAudioBuffer
    * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
    * @param {(labels: any[]) => void} opts.onResults
