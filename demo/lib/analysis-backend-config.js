@@ -1,8 +1,11 @@
 const MODE_KEY = 'audio-workbench.analysis.mode.v1';
 const ENDPOINT_KEY = 'audio-workbench.analysis.endpoint.v1';
+const PLATFORM_LOCAL_KEY = 'audio-workbench.platform.local.v1';
 
 const DEFAULT_MODE = 'local';
 const DEFAULT_ENDPOINT = 'http://localhost:8787';
+const PLATFORM_LOCAL_MODE = 'server';
+const PLATFORM_LOCAL_ENDPOINT = 'http://localhost:8788';
 
 function normalizeMode(mode) {
   const value = String(mode || '').trim().toLowerCase();
@@ -24,10 +27,49 @@ function readUrlConfig() {
   }
 }
 
+function parseBooleanFlag(value) {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function readUrlPlatformLocalFlag() {
+  try {
+    const u = new URL(location.href);
+    return parseBooleanFlag(u.searchParams.get('platformLocal'));
+  } catch {
+    return null;
+  }
+}
+
+export function loadPlatformLocalFlag() {
+  let value = false;
+  try {
+    value = parseBooleanFlag(localStorage.getItem(PLATFORM_LOCAL_KEY)) ?? false;
+  } catch {
+    value = false;
+  }
+
+  const fromUrl = readUrlPlatformLocalFlag();
+  if (fromUrl !== null) {
+    value = fromUrl;
+    try {
+      localStorage.setItem(PLATFORM_LOCAL_KEY, String(fromUrl));
+    } catch {
+      // Ignore storage errors in demo.
+    }
+  }
+
+  return value;
+}
+
 export function loadAnalysisBackendConfig() {
+  const platformLocal = loadPlatformLocalFlag();
   const fromUrl = readUrlConfig();
-  let mode = DEFAULT_MODE;
-  let endpoint = DEFAULT_ENDPOINT;
+  let mode = platformLocal ? PLATFORM_LOCAL_MODE : DEFAULT_MODE;
+  let endpoint = platformLocal ? PLATFORM_LOCAL_ENDPOINT : DEFAULT_ENDPOINT;
 
   try {
     const storedMode = localStorage.getItem(MODE_KEY);
@@ -56,8 +98,10 @@ export function saveAnalysisBackendConfig({ mode, endpoint }) {
 }
 
 export function normalizeAnalysisBackendConfig({ mode, endpoint }) {
+  const platformLocal = loadPlatformLocalFlag();
+  const defaultEndpoint = platformLocal ? PLATFORM_LOCAL_ENDPOINT : DEFAULT_ENDPOINT;
   return {
     mode: normalizeMode(mode),
-    endpoint: String(endpoint || DEFAULT_ENDPOINT).trim() || DEFAULT_ENDPOINT,
+    endpoint: String(endpoint || defaultEndpoint).trim() || defaultEndpoint,
   };
 }

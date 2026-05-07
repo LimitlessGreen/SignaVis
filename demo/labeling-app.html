@@ -555,6 +555,7 @@
       loadAnalysisBackendConfig,
       normalizeAnalysisBackendConfig,
       saveAnalysisBackendConfig,
+      loadPlatformLocalFlag,
     } from './lib/analysis-backend-config.js';
     import { createProjectRepositoryRuntime } from './lib/project-repository-runtime.js';
     import { getDesktopRuntimeInfo } from './lib/desktop-runtime-info.js';
@@ -730,6 +731,7 @@
     // Debounced autosave to avoid writing on every single UI event.
     let _projectAutosaveTimer = null;
 
+    const platformLocalFlag = loadPlatformLocalFlag();
     const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
     const desktopRuntimeInfo = await getDesktopRuntimeInfo();
     const canUseDesktopGrpc = Boolean(desktopRuntimeInfo?.grpcEnabled);
@@ -770,6 +772,13 @@
       if (desktopRuntimeInfo.analysisHttpEndpoint) {
         parts.push(`passthrough: ${desktopRuntimeInfo.analysisHttpEndpoint}`);
       }
+      selectionMeta.textContent = parts.join(' | ');
+    }
+
+    if (platformLocalFlag) {
+      const parts = [];
+      if (selectionMeta.textContent) parts.push(selectionMeta.textContent);
+      parts.push('Platform Local API: enabled');
       selectionMeta.textContent = parts.join(' | ');
     }
 

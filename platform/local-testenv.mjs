@@ -73,16 +73,29 @@ function saveDb(db) {
 
 const db = loadDb();
 const queue = [];
+const analysisState = {
+  loaded: false,
+  location: null,
+};
 
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
   });
   res.end(body);
+}
+
+function empty(res, status = 204) {
+  res.writeHead(status, {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type,authorization',
+  });
+  res.end();
 }
 
 function parseBody(req) {
@@ -117,7 +130,7 @@ async function handleRequest(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
   if (req.method === 'OPTIONS') {
-    json(res, 204, {});
+    empty(res, 204);
     return;
   }
 
@@ -140,6 +153,77 @@ async function handleRequest(req, res) {
     }
     const projects = db.projects.filter((p) => p.teamId === teamId).map(withRecordingCount);
     json(res, 200, { projects });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/analysis/load') {
+    analysisState.loaded = true;
+    json(res, 200, { labelCount: 6522, hasAreaModel: true });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/analysis/location') {
+    if (!analysisState.loaded) {
+      json(res, 200, { ok: false, week: 0 });
+      return;
+    }
+    const body = await parseBody(req);
+    analysisState.location = {
+      latitude: Number(body.latitude || 0),
+      longitude: Number(body.longitude || 0),
+      date: body.date || null,
+    };
+    json(res, 200, { ok: true, week: 22 });
+    return;
+  }
+
+  if (req.method === 'DELETE' && url.pathname === '/analysis/location') {
+    analysisState.location = null;
+    empty(res, 204);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/analysis/species') {
+    if (!analysisState.loaded) {
+      json(res, 200, []);
+      return;
+    }
+
+    const geoscore = analysisState.location ? 0.83 : 1.0;
+    json(res, 200, [
+      { scientific: 'Corvus corax', common: 'Raven', geoscore },
+      { scientific: 'Parus major', common: 'Great Tit', geoscore: analysisState.location ? 0.62 : 1.0 },
+    ]);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/analysis/analyze') {
+    if (!analysisState.loaded) {
+      json(res, 412, { message: 'analysis model not loaded' });
+      return;
+    }
+
+    const body = await parseBody(req);
+    const minConfidence = Number(body?.options?.minConfidence ?? 0.25);
+    const geoscore = analysisState.location ? 0.83 : 1.0;
+    json(res, 200, [
+      {
+        start: 0,
+        end: 3,
+        scientific: 'Corvus corax',
+        common: 'Raven',
+        confidence: Math.max(minConfidence, 0.91),
+        geoscore,
+      },
+      {
+        start: 3,
+        end: 6,
+        scientific: 'Parus major',
+        common: 'Great Tit',
+        confidence: Math.max(minConfidence, 0.76),
+        geoscore: analysisState.location ? 0.62 : 1.0,
+      },
+    ]);
     return;
   }
 
