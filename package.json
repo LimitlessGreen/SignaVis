@@ -72,9 +72,13 @@
     "version:sync": "node ./scripts/sync-version.js",
     "version:check": "bash ./scripts/check-version-sync.sh",
     "release": "bash ./scripts/release.sh",
-    "sync-version": "node ./scripts/sync-version.js"
+    "sync-version": "node ./scripts/sync-version.js",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@tauri-apps/api": "^2",
     "@esbuild-kit/esm-loader": "^2.6.5",
     "lucide-static": "^1.8.0",
     "sass": "^1.70.0",

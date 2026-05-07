@@ -40,6 +40,31 @@ Useful scripts
 - `npm test` — run the test suite
 - `npm run sync:assets` — sync static assets (uses existing script)
 - `npm run version:sync` — sync version from `VERSION` into project files
+- `npm run mock-server` — start the mock HTTP analysis server for local E2E testing
+
+Desktop app (Tauri)
+- Requires the Rust toolchain: https://rustup.rs/
+  ```
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  rustup target add aarch64-apple-darwin  # macOS M-chip (if applicable)
+  ```
+- Install Tauri CLI and JS dependencies after Rust is available:
+  ```
+  npm install
+  cargo install tauri-cli --version "^2"
+  ```
+- Start dev server with hot-reload:
+  ```
+  npm run desktop:dev
+  ```
+- Build distributable:
+  ```
+  npm run desktop:build
+  ```
+- Project files are stored in the platform app-data directory:
+  - Linux:   `~/.local/share/io.github.limitlessgreen.audio-workbench/projects/`
+  - macOS:   `~/Library/Application Support/io.github.limitlessgreen.audio-workbench/projects/`
+  - Windows: `%APPDATA%\io.github.limitlessgreen.audio-workbench\projects\`
 
 Notes
 - The new `scripts/sync-version.js` is a Node replacement for the previous shell+Python script and is cross-platform.
