@@ -2929,23 +2929,30 @@
       const brand = document.querySelector('.brand');
       const card  = document.querySelector('.sponsor-card');
       if (!brand || !card) return;
+      let showTimer = null;
       let hideTimer = null;
 
-      function show() {
+      function scheduleShow() {
         clearTimeout(hideTimer);
-        brand.classList.add('is-active');
-        card.classList.add('is-open');
+        showTimer = setTimeout(() => {
+          brand.classList.add('is-active');
+          card.classList.add('is-open');
+        }, 180);
+      }
+      function cancelShow() {
+        clearTimeout(showTimer);
       }
       function scheduleHide() {
+        clearTimeout(showTimer);
         hideTimer = setTimeout(() => {
           brand.classList.remove('is-active');
           card.classList.remove('is-open');
-        }, 180);
+        }, 200);
       }
 
-      brand.addEventListener('mouseenter', show);
+      brand.addEventListener('mouseenter', scheduleShow);
       brand.addEventListener('mouseleave', scheduleHide);
-      card.addEventListener('mouseenter', show);
+      card.addEventListener('mouseenter', () => { clearTimeout(hideTimer); });
       card.addEventListener('mouseleave', scheduleHide);
     })();
   </script>
