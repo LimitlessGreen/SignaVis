@@ -65,6 +65,7 @@
     "taxonomy:build:local": "node ./scripts/build-birdnet-taxonomy.js --source ../BirdNET-Analyzer/birdnet_analyzer/labels/V2.4 --output ./demo/data/birdnet-taxonomy.v2.4.json --model V2.4 --source-url https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4",
     "pack:check": "npm pack",
     "test": "node ./scripts/run-tests.mjs",
+    "test:analysis-smoke": "node --experimental-loader ./scripts/ignore-styles-loader.mjs --experimental-strip-types --test tests/analysis-backend-e2e-smoke.test.ts",
     "prepare": "npm run build:css && node ./scripts/install-githooks.js",
     "prepack": "npm run build:css",
     "sync:assets": "bash ./scripts/sync-assets.sh --no-build",
