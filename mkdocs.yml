@@ -48,6 +48,7 @@ nav:
       - Xeno-canto format: labeling/xeno-canto-format.md
       - Python integration: labeling/python-integration.md
   - Future Plans: future-plans.md
+  - Deployment & Migration: deployment.md
 
 #plugins:
 #  - git-committers
