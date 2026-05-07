@@ -926,6 +926,7 @@ export class BirdNETPlayer {
             this.annotations.setLiveLinkedId(id);
             this.annotations.set(this._toAnnotationList());
         }
+        this._renderOverviewLabelTracks();
     }
 
     /**
