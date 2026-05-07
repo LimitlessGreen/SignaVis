@@ -117,6 +117,7 @@ export class BirdNETPlayer {
     _labelTaxonomy: Array<{ name: string; color?: string; shortcut?: string }>;
     _activeLabelId: string | null;
     _globalKeyHandler: any;
+    _onLabelFocus: ((e: Event) => void) | null;
     _backgroundSpecies: any;
     _speciesBarSelection: any;
     on: any;
@@ -180,6 +181,7 @@ export class BirdNETPlayer {
         this._labelTaxonomy = this._normalizeTaxonomy(options.labelTaxonomy || DEFAULT_LABEL_TAXONOMY);
         this._activeLabelId = null;
         this._globalKeyHandler = null;
+        this._onLabelFocus = null;
         /** @type {Array<{ name: string, scientificName?: string }>} */
         this._backgroundSpecies = [];
         /** @type {{ name: string, color: string, scientificName: string } | null} */
@@ -638,6 +640,11 @@ export class BirdNETPlayer {
             document.removeEventListener('keydown', this._globalKeyHandler, true);
             this._globalKeyHandler = null;
         }
+        if (this._onLabelFocus) {
+            this.annotations.removeEventListener('labelfocus', this._onLabelFocus);
+            this.spectrogramLabels.removeEventListener('labelfocus', this._onLabelFocus);
+            this._onLabelFocus = null;
+        }
         this.annotations.detach();
         this.spectrogramLabels.detach();
         this._state?.dispose();
@@ -666,10 +673,12 @@ export class BirdNETPlayer {
             if (interaction === 'click') {
                 this._activeLabelId = id;
             } else {
+                // Hover only updates focus when nothing is sticky-clicked yet, or when clearing.
                 if (!this._activeLabelId || id === null) this._activeLabelId = id;
             }
             this._emit('labelfocus', ce.detail);
         };
+        this._onLabelFocus = onLabelFocus;
         this.annotations.addEventListener('labelfocus', onLabelFocus);
         this.spectrogramLabels.addEventListener('labelfocus', onLabelFocus);
 
@@ -1004,6 +1013,9 @@ export class BirdNETPlayer {
         this._linkedLabels.clear();
         for (const label of (snapshot as LinkedLabel[])) {
             this._linkedLabels.set(label.id, { ...label, tags: { ...(label.tags || {}) } });
+        }
+        if (this._activeLabelId && !this._linkedLabels.has(this._activeLabelId)) {
+            this._activeLabelId = null;
         }
         this._syncLinkedLabelsToLayers();
         this._isRestoring = false;

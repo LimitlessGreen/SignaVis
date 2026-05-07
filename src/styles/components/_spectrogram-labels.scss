@@ -84,17 +84,6 @@
     z-index: 9;
 }
 
-/* .highlighted — kept for backwards compatibility, same visual as .selected */
-.spectrogram-label-region.highlighted {
-    border-color: #ffffff;
-    outline-color: rgba(0,0,0,1);
-    box-shadow:
-        inset 0 0 0 1px rgba(0,0,0,0.55),
-        0 0 0 1px rgba(255,255,255,0.45),
-        0 4px 12px rgba(0,0,0,0.42);
-    z-index: 8;
-}
-
 /* .multi-selected — part of a Ctrl+Click bulk selection */
 .spectrogram-label-region.multi-selected {
     outline: 2px dashed rgba(56,189,248,0.9);
