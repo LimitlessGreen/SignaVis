@@ -1154,4 +1154,81 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[tokio::test]
+    async fn grpc_network_e2e_analysis_http_passthrough_full_flow() {
+        let endpoint = spawn_mock_analysis_backend_sequence(vec![
+            ("/analysis/load", "200 OK", r#"{"labelCount":3333,"hasAreaModel":true}"#),
+            ("/analysis/location", "200 OK", r#"{"ok":true,"week":9}"#),
+            (
+                "/analysis/species",
+                "200 OK",
+                r#"[{"scientific":"Parus major","common":"Great Tit","geoscore":0.67}]"#,
+            ),
+            ("/analysis/location", "204 No Content", ""),
+        ])
+        .await;
+
+        let analysis_state = new_http_passthrough_service(endpoint);
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("aw-grpc-e2e-http-flow-{nanos}"));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("read local addr");
+        drop(listener);
+
+        let server_store = ProjectStore::new(dir.clone());
+        tokio::spawn(async move {
+            let _ = spawn_server_with_analysis(addr.to_string(), server_store, analysis_state).await;
+        });
+
+        sleep(Duration::from_millis(120)).await;
+
+        let endpoint = format!("http://{addr}");
+        let mut analysis = AnalysisServiceClient::connect(endpoint)
+            .await
+            .expect("connect analysis client");
+
+        let load = analysis
+            .load_model(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            })
+            .await
+            .expect("load_model over network passthrough")
+            .into_inner();
+        assert_eq!(load.label_count, 3333);
+        assert!(load.has_area_model);
+
+        let loc = analysis
+            .set_location(analysis::SetLocationRequest {
+                latitude: 52.5,
+                longitude: 13.4,
+                date_iso8601: "2026-05-07".to_string(),
+            })
+            .await
+            .expect("set_location over network passthrough")
+            .into_inner();
+        assert!(loc.ok);
+        assert_eq!(loc.week, 9);
+
+        let species = analysis
+            .get_species(analysis::GetSpeciesRequest {})
+            .await
+            .expect("get_species over network passthrough")
+            .into_inner();
+        assert_eq!(species.species.len(), 1);
+        assert_eq!(species.species[0].scientific, "Parus major");
+        assert_eq!(species.species[0].common, "Great Tit");
+
+        analysis
+            .clear_location(analysis::ClearLocationRequest {})
+            .await
+            .expect("clear_location over network passthrough");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
