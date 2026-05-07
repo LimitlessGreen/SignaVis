@@ -1,0 +1,136 @@
+openapi: 3.1.0
+info:
+  title: Audio Workbench Platform API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8788
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  db: { type: boolean }
+                  redis: { type: boolean }
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      parameters:
+        - in: query
+          name: teamId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: list of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+    post:
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamId, name, createdBy]
+              properties:
+                teamId: { type: string, format: uuid }
+                name: { type: string }
+                description: { type: string }
+                createdBy: { type: string, format: uuid }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+  /api/v1/import-jobs:
+    get:
+      operationId: listImportJobs
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: list of import jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ImportJob'
+    post:
+      operationId: createImportJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, createdBy]
+              properties:
+                projectId: { type: string, format: uuid }
+                source:
+                  type: string
+                  enum: [local, xeno-canto]
+                totalItems: { type: integer, minimum: 0 }
+                createdBy: { type: string, format: uuid }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJob'
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        teamId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        archived: { type: boolean }
+        recordingCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ImportJob:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        source:
+          type: string
+          enum: [local, xeno-canto]
+        status:
+          type: string
+          enum: [queued, running, partial, failed, done]
+        totalItems: { type: integer }
+        processedItems: { type: integer }
+        failedItems: { type: integer }
+        errorLog: { type: string }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

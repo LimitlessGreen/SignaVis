@@ -78,7 +78,11 @@
     "desktop:dev:grpc": ". \"$HOME/.cargo/env\" && AW_GRPC_ADDR=127.0.0.1:50051 tauri dev --features grpc",
     "desktop:build": ". \"$HOME/.cargo/env\" && tauri build",
     "grpc:check": ". \"$HOME/.cargo/env\" && cd src-tauri && cargo check --features grpc",
-    "grpc:test": ". \"$HOME/.cargo/env\" && cd src-tauri && cargo test --features grpc"
+    "grpc:test": ". \"$HOME/.cargo/env\" && cd src-tauri && cargo test --features grpc",
+    "platform:testenv:up": "docker compose -f platform/docker/docker-compose.test.yml up -d --build",
+    "platform:testenv:down": "docker compose -f platform/docker/docker-compose.test.yml down",
+    "platform:testenv:logs": "docker compose -f platform/docker/docker-compose.test.yml logs -f --tail=200",
+    "platform:testenv:ps": "docker compose -f platform/docker/docker-compose.test.yml ps"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

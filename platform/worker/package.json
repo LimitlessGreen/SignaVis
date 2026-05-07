@@ -1,0 +1,13 @@
+{
+  "name": "aw-platform-worker",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "pg": "^8.12.0",
+    "redis": "^4.7.0"
+  }
+}

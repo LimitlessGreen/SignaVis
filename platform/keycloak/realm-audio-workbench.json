@@ -1,0 +1,59 @@
+{
+  "realm": "audio-workbench",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "clients": [
+    {
+      "clientId": "audio-workbench-api",
+      "name": "Audio Workbench API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "aw-api-dev-secret",
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost:*/*"],
+      "webOrigins": ["*"]
+    },
+    {
+      "clientId": "audio-workbench-desktop",
+      "name": "Audio Workbench Desktop",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:*/*", "tauri://localhost/*"],
+      "webOrigins": ["*"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "platform_admin" },
+      { "name": "project_manager" },
+      { "name": "annotator" },
+      { "name": "reviewer" }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@local.test",
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["platform_admin"]
+    }
+  ]
+}
