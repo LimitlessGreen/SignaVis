@@ -1131,8 +1131,8 @@
     const MODE_KEY = 'audio-workbench.mode.v1';
     function saveMode() { try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {} }
     function loadMode() { try { return localStorage.getItem(MODE_KEY) || null; } catch (e) { return null; } }
-    // Initialize mode (default: multifile)
-    state.mode = loadMode() || 'multifile';
+    // Initialize mode (default: standalone)
+    state.mode = loadMode() || 'standalone';
     if (modeSelect) {
       modeSelect.value = state.mode;
       modeSelect.addEventListener('change', () => {
