@@ -25,23 +25,13 @@ import { SpectrogramController } from './SpectrogramController.ts';
 import { FrequencyViewport } from './FrequencyViewport.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
 import { ViewportManager } from './ViewportManager.ts';
+import { bindUiControllers } from './bindUiControllers.ts';
 
 import {
     renderMainWaveform,
     renderOverviewWaveform,
     renderFrequencyLabels,
 } from '../ui/components/waveform/waveform.ts';
-
-import { TransportController } from '../ui/components/transport/transport-controller.ts';
-import { SettingsPanelController } from '../ui/components/settings-panel/settings-panel-controller.ts';
-import { VolumeController } from '../ui/components/volume/volume-controller.ts';
-import { DisplayGainController } from '../ui/components/display-gain/display-gain-controller.ts';
-import { PlayheadController } from '../ui/components/playhead/playhead-controller.ts';
-import { FreqViewportController } from '../ui/components/freq-viewport/freq-viewport-controller.ts';
-import { CanvasInteractionController } from '../ui/components/canvas-interaction/canvas-interaction-controller.ts';
-import { OverviewController } from '../ui/components/overview/overview-controller.ts';
-import { DocumentEventsController } from '../ui/components/document-events/document-events-controller.ts';
-import { WindowEventsController } from '../ui/components/window-events/window-events-controller.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -1721,16 +1711,7 @@ export class PlayerState {
             this._cleanups.push(() => target?.removeEventListener(type, fn, opts as any));
         };
 
-        new TransportController(this.d, this).bind(on);
-        new FreqViewportController(this.d, this).bind(on);
-        new SettingsPanelController(this.d, this).bind(on);
-        new VolumeController(this.d, this).bind(on);
-        new DisplayGainController(this.d, this).bind(on);
-        new CanvasInteractionController(this.d, this).bind(on);
-        new PlayheadController(this.d, this).bind(on);
-        new DocumentEventsController(this).bind(on);
-        new OverviewController(this.d, this).bind(on);
-        new WindowEventsController(this).bind(on);
+        bindUiControllers(this.d, this, on);
     }
 
     _bindTouchGestures() {

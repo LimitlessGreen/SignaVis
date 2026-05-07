@@ -4,8 +4,6 @@
 
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
-import ModalManager from '../ui/components/modal/modal-manager.ts';
-import { createEditableSelect } from '../ui/components/editable-select/editable-select.ts';
 import { LabelEditorModal } from './annotations/LabelEditorModal.ts';
 
 
