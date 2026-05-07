@@ -776,11 +776,13 @@ export class BirdNETPlayer {
                 // Try spectrogram labels first, then waveform annotations
                 const sLabel = this.spectrogramLabels?.labels?.find((l: any) => l.id === id);
                 if (sLabel) {
+                    if (sLabel.readonly || this.spectrogramLabels?._lockedIds?.has(id)) return;
                     this.spectrogramLabels.remove(id);
                     this._emit?.('spectrogramlabelremove', { label: { ...sLabel } });
                 } else {
-                        const ann = this.annotations?.annotations?.find((a: any) => a.id === id);
+                    const ann = this.annotations?.annotations?.find((a: any) => a.id === id);
                     if (ann) {
+                        if (ann.readonly || this.annotations?._lockedIds?.has(id)) return;
                         this.annotations.remove(id);
                         this._emit?.('annotationremove', { annotation: { ...ann } });
                     }
@@ -803,7 +805,14 @@ export class BirdNETPlayer {
             const idx = Number(key) - 1;
             if (idx >= this._labelTaxonomy.length) return;
             event.preventDefault();
-            this.applyTaxonomyToLabel(this._activeLabelId, idx);
+            const activeId = this._activeLabelId;
+            const activeSLabel = this.spectrogramLabels?.labels?.find((l: any) => l.id === activeId);
+            const activeAnn = !activeSLabel && this.annotations?.annotations?.find((a: any) => a.id === activeId);
+            const isLockedActive = activeSLabel
+                ? (activeSLabel.readonly || this.spectrogramLabels?._lockedIds?.has(activeId))
+                : (activeAnn?.readonly || this.annotations?._lockedIds?.has(activeId));
+            if (isLockedActive) return;
+            this.applyTaxonomyToLabel(activeId, idx);
         };
         document.addEventListener('keydown', this._globalKeyHandler, true);
     }

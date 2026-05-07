@@ -1872,7 +1872,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _renameSpectrogramLabelPrompt(id: any) {
         const label = this._items.find((l: any) => l.id === id);
-        if (!label) return;
+        if (!label || label.readonly || this._lockedIds.has(id)) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
         openLabelNameEditor({
@@ -1912,7 +1912,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _renameBulkPrompt(ids: any[]) {
         if (!ids || ids.length === 0) return;
-        const labels = ids.map((id: any) => this._items.find((l: any) => l.id === id)).filter(Boolean) as any[];
+        const labels = ids
+            .map((id: any) => this._items.find((l: any) => l.id === id))
+            .filter(Boolean)
+            .filter((l: any) => !l.readonly && !this._lockedIds.has(l.id)) as any[];
         if (labels.length === 0) return;
         const first = labels[0];
         const anchorEl = this.overlay || null;
