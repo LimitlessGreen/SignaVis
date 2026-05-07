@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use reqwest::Method;
 use tonic::{Request, Response, Status};
 use tonic::transport::Server;
+use tracing::{debug, info, warn};
 
 use crate::project_store::ProjectStore;
 
@@ -50,9 +51,11 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         request: Request<analysis::LoadModelRequest>,
     ) -> Result<Response<analysis::LoadModelResponse>, Status> {
         let req = request.into_inner();
+        debug!(model_url = %req.model_url, "AnalysisService::load_model");
         let endpoint = self.backend_endpoint();
 
         if let Some(endpoint) = endpoint {
+            debug!(endpoint = %endpoint, "forwarding load_model to HTTP backend");
             let body = serde_json::json!({ "modelUrl": req.model_url });
             let payload = self
                 .http_json(Method::POST, &endpoint, "/analysis/load", Some(body))
@@ -62,6 +65,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
             let has_area_model = payload["hasAreaModel"].as_bool().unwrap_or(false);
 
             self.set_loaded(true)?;
+            info!(label_count, has_area_model, "load_model via passthrough ok");
             return Ok(Response::new(analysis::LoadModelResponse {
                 label_count,
                 has_area_model,
@@ -71,6 +75,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
         state.loaded = true;
 
+        info!(label_count = 6522, "load_model (stub) ok");
         Ok(Response::new(analysis::LoadModelResponse {
             label_count: 6522,
             has_area_model: true,
@@ -82,6 +87,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         request: Request<analysis::SetLocationRequest>,
     ) -> Result<Response<analysis::SetLocationResponse>, Status> {
         let req = request.into_inner();
+        debug!(lat = req.latitude, lon = req.longitude, "AnalysisService::set_location");
         let endpoint = {
             let mut state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
             if !state.loaded {
@@ -198,12 +204,14 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
         request: Request<analysis::AnalyzeRequest>,
     ) -> Result<Response<analysis::AnalyzeResponse>, Status> {
         let req = request.into_inner();
+        debug!(samples = req.samples.len(), "AnalysisService::analyze");
         let (loaded, has_location, endpoint) = {
             let state = self.state.lock().map_err(|_| Status::internal("analysis state poisoned"))?;
             (state.loaded, state.location.is_some(), state.backend_endpoint.clone())
         };
 
         if !loaded {
+            warn!("analyze called before model loaded");
             return Err(Status::failed_precondition("analysis model not loaded"));
         }
 
@@ -214,6 +222,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
             .unwrap_or(0.25);
 
         if let Some(endpoint) = endpoint {
+            debug!(endpoint = %endpoint, "forwarding analyze to HTTP backend");
             let body = serde_json::json!({
                 "samples": req.samples,
                 "options": {
@@ -234,6 +243,7 @@ impl analysis::analysis_service_server::AnalysisService for AnalysisServiceState
                 .unwrap_or_default()
                 .into_iter()
                 .map(|d| analysis::Detection {
+
                     start: d["start"].as_f64().unwrap_or(0.0),
                     end: d["end"].as_f64().unwrap_or(0.0),
                     scientific: d["scientific"].as_str().unwrap_or_default().to_string(),
@@ -314,9 +324,13 @@ impl AnalysisServiceState {
         let response = request
             .send()
             .await
-            .map_err(|e| Status::internal(format!("analysis backend request failed: {e}")))?;
+            .map_err(|e| {
+                warn!(url = %url, error = %e, "HTTP passthrough request failed");
+                Status::internal(format!("analysis backend request failed: {e}"))
+            })?;
 
         if !response.status().is_success() {
+            warn!(url = %url, status = %response.status(), "HTTP passthrough returned non-2xx");
             return Err(Status::internal(format!(
                 "analysis backend returned HTTP {}",
                 response.status()
@@ -330,7 +344,10 @@ impl AnalysisServiceState {
         response
             .json::<serde_json::Value>()
             .await
-            .map_err(|e| Status::internal(format!("analysis backend JSON decode failed: {e}")))
+            .map_err(|e| {
+                warn!(url = %url, error = %e, "HTTP passthrough JSON decode failed");
+                Status::internal(format!("analysis backend JSON decode failed: {e}"))
+            })
     }
 
     pub fn from_env() -> Self {
@@ -339,6 +356,12 @@ impl AnalysisServiceState {
             .map(|s| s.trim().trim_end_matches('/').to_string())
             .filter(|s| !s.is_empty());
         let timeout = Self::timeout_from_env();
+
+        if let Some(ref ep) = endpoint {
+            info!(endpoint = %ep, timeout_ms = timeout.as_millis(), "AnalysisService passthrough enabled");
+        } else {
+            info!("AnalysisService passthrough disabled; using stub responses");
+        }
 
         Self {
             state: Arc::new(Mutex::new(AnalysisRuntimeState {
@@ -575,6 +598,8 @@ pub async fn spawn_server_with_analysis(
 ) -> Result<(), String> {
     let socket_addr: SocketAddr = addr.parse().map_err(|e| format!("invalid AW_GRPC_ADDR: {e}"))?;
 
+    info!(addr = %socket_addr, "gRPC server starting");
+
     let projects = ProjectServiceState::new(store);
 
     Server::builder()
@@ -582,7 +607,10 @@ pub async fn spawn_server_with_analysis(
         .add_service(projects::project_service_server::ProjectServiceServer::new(projects))
         .serve(socket_addr)
         .await
-        .map_err(|e| format!("grpc serve failed: {e}"))
+        .map_err(|e| {
+            warn!(error = %e, "gRPC server exited with error");
+            format!("grpc serve failed: {e}")
+        })
 }
 
 pub async fn spawn_server(addr: String, store: ProjectStore) -> Result<(), String> {

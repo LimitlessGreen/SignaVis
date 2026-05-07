@@ -293,6 +293,15 @@ pub fn run() {
         .setup(|_app| {
             #[cfg(feature = "grpc")]
             {
+                // Initialise structured logging; RUST_LOG controls filter level.
+                // try_init() is a no-op when a subscriber is already registered (e.g. in tests).
+                let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::try_from_default_env()
+                            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                    )
+                    .try_init();
+
                 let app_handle = _app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let addr = grpc_bind_addr();

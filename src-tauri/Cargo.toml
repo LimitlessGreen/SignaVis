@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 
 [features]
 default = []
-grpc = ["dep:tonic", "dep:tokio", "dep:prost", "dep:reqwest"]
+grpc = ["dep:tonic", "dep:tokio", "dep:prost", "dep:reqwest", "dep:tracing", "dep:tracing-subscriber"]
 
 # Lib crate so commands can be integration-tested without a running Tauri app.
 [lib]
@@ -30,3 +30,5 @@ tonic = { version = "0.12", features = ["transport"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 prost = { version = "0.13", optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
