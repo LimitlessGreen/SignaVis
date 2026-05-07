@@ -634,6 +634,48 @@ mod tests {
         format!("http://{addr}")
     }
 
+    async fn spawn_mock_analysis_backend_sequence(
+        responses: Vec<(&'static str, &'static str, &'static str)>,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock analysis backend sequence");
+        let addr = listener
+            .local_addr()
+            .expect("read mock analysis backend sequence local addr");
+
+        tokio::spawn(async move {
+            for (route, status_line, body) in responses {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+
+                let mut buffer = vec![0_u8; 4096];
+                let read = stream
+                    .read(&mut buffer)
+                    .await
+                    .expect("read request bytes from mock backend sequence");
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                let request_line = request.lines().next().unwrap_or_default();
+
+                let (response_status, response_body) = if request_line.contains(route) {
+                    (status_line, body)
+                } else {
+                    ("404 Not Found", "{}")
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+                    response_body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+
+        format!("http://{addr}")
+    }
+
     fn new_http_passthrough_service(endpoint: String) -> AnalysisServiceState {
         AnalysisServiceState {
             state: Arc::new(Mutex::new(AnalysisRuntimeState {
@@ -785,6 +827,108 @@ mod tests {
         assert!(
             err.message().contains("request failed"),
             "unexpected timeout message: {}",
+            err.message()
+        );
+    }
+
+    #[tokio::test]
+    async fn analysis_service_http_passthrough_full_flow_maps_payloads() {
+        let endpoint = spawn_mock_analysis_backend_sequence(vec![
+            ("/analysis/load", "200 OK", r#"{"labelCount":777,"hasAreaModel":true}"#),
+            ("/analysis/location", "200 OK", r#"{"ok":true,"week":17}"#),
+            (
+                "/analysis/species",
+                "200 OK",
+                r#"[{"scientific":"Corvus corax","common":"Raven","geoscore":0.9}]"#,
+            ),
+            (
+                "/analysis/analyze",
+                "200 OK",
+                r#"[{"start":0.0,"end":1.0,"scientific":"Corvus corax","common":"Raven","confidence":0.95,"geoscore":0.9}]"#,
+            ),
+            ("/analysis/location", "204 No Content", ""),
+        ])
+        .await;
+
+        let svc = new_http_passthrough_service(endpoint);
+
+        let load = svc
+            .load_model(Request::new(analysis::LoadModelRequest {
+                model_url: "https://example.invalid/model".to_string(),
+            }))
+            .await
+            .expect("load_model should succeed")
+            .into_inner();
+        assert_eq!(load.label_count, 777);
+        assert!(load.has_area_model);
+
+        let set_location = svc
+            .set_location(Request::new(analysis::SetLocationRequest {
+                latitude: 50.0,
+                longitude: 8.0,
+                date_iso8601: "2026-05-07".to_string(),
+            }))
+            .await
+            .expect("set_location should succeed")
+            .into_inner();
+        assert!(set_location.ok);
+        assert_eq!(set_location.week, 17);
+
+        let species = svc
+            .get_species(Request::new(analysis::GetSpeciesRequest {}))
+            .await
+            .expect("get_species should succeed")
+            .into_inner();
+        assert_eq!(species.species.len(), 1);
+        assert_eq!(species.species[0].scientific, "Corvus corax");
+        assert_eq!(species.species[0].common, "Raven");
+
+        let detections = svc
+            .analyze(Request::new(analysis::AnalyzeRequest {
+                samples: vec![0.1, -0.2, 0.3],
+                options: Some(analysis::AnalyzeOptions {
+                    sample_rate: 48_000,
+                    overlap: 1.0,
+                    min_confidence: 0.25,
+                    geo_threshold: 0.0,
+                }),
+            }))
+            .await
+            .expect("analyze should succeed")
+            .into_inner();
+        assert_eq!(detections.detections.len(), 1);
+        assert_eq!(detections.detections[0].scientific, "Corvus corax");
+        assert!(detections.detections[0].confidence >= 0.95);
+
+        svc.clear_location(Request::new(analysis::ClearLocationRequest {}))
+            .await
+            .expect("clear_location should succeed");
+    }
+
+    #[tokio::test]
+    async fn analysis_service_http_passthrough_returns_internal_on_invalid_json() {
+        let endpoint = spawn_mock_analysis_backend_sequence(vec![
+            ("/analysis/load", "200 OK", r#"{"labelCount":777,"hasAreaModel":true}"#),
+            ("/analysis/species", "200 OK", "not-json"),
+        ])
+        .await;
+        let svc = new_http_passthrough_service(endpoint);
+
+        svc.load_model(Request::new(analysis::LoadModelRequest {
+            model_url: "https://example.invalid/model".to_string(),
+        }))
+        .await
+        .expect("load_model should succeed before invalid-json species call");
+
+        let err = svc
+            .get_species(Request::new(analysis::GetSpeciesRequest {}))
+            .await
+            .expect_err("get_species should fail on invalid backend json");
+
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(
+            err.message().contains("JSON decode failed"),
+            "unexpected invalid-json message: {}",
             err.message()
         );
     }
