@@ -665,24 +665,30 @@ export class BirdNETPlayer {
             // Store for cleanup in detach() if needed (layers call detach on their own)
         };
 
-        // labelfocus comes from both layers — handle active-id logic once
+        // Forward raw layer DOM events onto the shared EventBus so all sources
+        // (layers, overview segments, labels tab, external callers) go through
+        // a single unified handler below.
         const onLabelFocus = (e: Event) => {
             const ce = /** @type {CustomEvent} */ (e as CustomEvent);
-            const id = String(ce.detail?.id || '').trim() || null;
-            const interaction = ce.detail?.interaction;
-            if (interaction === 'click') {
-                this._activeLabelId = id;
-                this.setSelectedOverviewSegment(id);
-            } else {
-                // Hover only updates focus when nothing is sticky-clicked yet, or when clearing.
-                if (!this._activeLabelId || id === null) this._activeLabelId = id;
-                this.setFocusedOverviewSegment(id);
-            }
             this._emit('labelfocus', ce.detail);
         };
         this._onLabelFocus = onLabelFocus;
         this.annotations.addEventListener('labelfocus', onLabelFocus);
         this.spectrogramLabels.addEventListener('labelfocus', onLabelFocus);
+
+        // Unified handler — fires for every source (layers, overview, list, external).
+        this.on('labelfocus', (e: any) => {
+            const id = String(e?.detail?.id || '').trim() || null;
+            const interaction = e?.detail?.interaction;
+            if (interaction === 'click' || interaction === 'ctrl-click') {
+                this._activeLabelId = id;
+                this.setSelectedOverviewSegment(id);
+            } else {
+                // Hover: only update when nothing is sticky-clicked yet, or when clearing.
+                if (!this._activeLabelId || id === null) this._activeLabelId = id;
+                this.setFocusedOverviewSegment(id);
+            }
+        });
 
         // Annotation layer events
         fwd(this.annotations, 'annotationpreview', (ce: CustomEvent) => this._previewFromLayer('annotation', (ce.detail as any).annotation));
