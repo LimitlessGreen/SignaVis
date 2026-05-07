@@ -35,12 +35,18 @@ export class TauriProjectRepository implements IProjectRepository {
     }
 
     async list(): Promise<ProjectSummary[]> {
-        const ids = await invoke<string[]>('list_project_ids');
-        const projects = await Promise.all(ids.map((id) => this.load(id)));
-        return projects
-            .filter((p): p is Project => p !== null)
-            .map(summarize)
-            .sort((a, b) => b.updatedAt - a.updatedAt);
+        try {
+            const summaries = await invoke<ProjectSummary[]>('list_projects');
+            return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+        } catch {
+            // Compatibility fallback for older desktop binaries.
+            const ids = await invoke<string[]>('list_project_ids');
+            const projects = await Promise.all(ids.map((id) => this.load(id)));
+            return projects
+                .filter((p): p is Project => p !== null)
+                .map(summarize)
+                .sort((a, b) => b.updatedAt - a.updatedAt);
+        }
     }
 
     async delete(id: string): Promise<void> {

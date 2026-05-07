@@ -8,6 +8,7 @@
 
 use std::path::PathBuf;
 use serde_json::Value as JsonValue;
+use serde_json::json;
 use tauri::Manager;
 
 // ── Path helpers ─────────────────────────────────────────────────────
@@ -88,6 +89,61 @@ async fn list_project_ids(app: tauri::AppHandle) -> Result<Vec<String>, String> 
     Ok(ids)
 }
 
+/// Return lightweight project summaries sorted by updatedAt descending.
+#[tauri::command]
+async fn list_projects(app: tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
+    let dir = projects_dir(&app)?;
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|e| format!("list_projects: {e}"))?;
+
+    let mut summaries: Vec<JsonValue> = vec![];
+    for entry in entries {
+        let path = match entry {
+            Ok(e) => e.path(),
+            Err(_) => continue,
+        };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(id) = name.strip_suffix(".awproject.json") else {
+            continue;
+        };
+
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let project: JsonValue = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let label_count = project["labels"].as_array().map(|a| a.len()).unwrap_or(0) as u64;
+        let annotation_count = project["annotations"].as_array().map(|a| a.len()).unwrap_or(0) as u64;
+        summaries.push(json!({
+            "id": id,
+            "name": project["name"].as_str().unwrap_or("Unnamed Project"),
+            "createdAt": project["createdAt"].as_i64().unwrap_or(0),
+            "updatedAt": project["updatedAt"].as_i64().unwrap_or(0),
+            "audioSource": project["audioSource"].clone(),
+            "labelCount": label_count,
+            "annotationCount": annotation_count,
+        }));
+    }
+
+    summaries.sort_by(|a, b| {
+        let au = a["updatedAt"].as_i64().unwrap_or(0);
+        let bu = b["updatedAt"].as_i64().unwrap_or(0);
+        bu.cmp(&au)
+    });
+
+    Ok(summaries)
+}
+
 /// Remove a project file.  Succeeds silently when the project does not exist.
 #[tauri::command]
 async fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
@@ -110,6 +166,7 @@ pub fn run() {
             read_project,
             write_project,
             list_project_ids,
+            list_projects,
             delete_project,
         ])
         .run(tauri::generate_context!())
