@@ -23,7 +23,20 @@
 
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="dot"></span> Labeling App</div>
+      <div class="brand">
+        <span class="heart-wrap">
+          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="heart-link">
+            <span class="heart">♥</span>
+          </a>
+        </span>
+        <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="brand-title">Labeling App</a>
+      </div>
+      <div class="sponsor-card" role="tooltip">
+        <div class="sponsor-card__glow"></div>
+        <p class="sponsor-card__title">♥ Support this project</p>
+        <p class="sponsor-card__body">Audio Workbench is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
+        <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta">Become a Sponsor →</a>
+      </div>
       <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
       <span class="tb-sep"></span>
       <span class="file-label" id="fileLabel">No file loaded</span>
@@ -2910,6 +2923,31 @@
     labelList.render(state.labels);
     await loadBirdnetTaxonomy();
     autoLoadFromParams();
+  </script>
+  <script>
+    (() => {
+      const brand = document.querySelector('.brand');
+      const card  = document.querySelector('.sponsor-card');
+      if (!brand || !card) return;
+      let hideTimer = null;
+
+      function show() {
+        clearTimeout(hideTimer);
+        brand.classList.add('is-active');
+        card.classList.add('is-open');
+      }
+      function scheduleHide() {
+        hideTimer = setTimeout(() => {
+          brand.classList.remove('is-active');
+          card.classList.remove('is-open');
+        }, 180);
+      }
+
+      brand.addEventListener('mouseenter', show);
+      brand.addEventListener('mouseleave', scheduleHide);
+      card.addEventListener('mouseenter', show);
+      card.addEventListener('mouseleave', scheduleHide);
+    })();
   </script>
 </body>
 </html>
