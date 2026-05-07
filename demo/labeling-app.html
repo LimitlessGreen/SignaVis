@@ -557,6 +557,7 @@
       saveAnalysisBackendConfig,
     } from './lib/analysis-backend-config.js';
     import { createProjectRepositoryRuntime } from './lib/project-repository-runtime.js';
+    import { getDesktopRuntimeInfo } from './lib/desktop-runtime-info.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
     import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 
@@ -734,6 +735,7 @@
       mode: initialAnalysisConfig.mode,
       endpoint: initialAnalysisConfig.endpoint,
     }));
+    const desktopRuntimeInfo = await getDesktopRuntimeInfo();
 
     function applyAnalysisBackendConfig(config, { persist = true } = {}) {
       const normalized = normalizeAnalysisBackendConfig(config);
@@ -751,6 +753,22 @@
 
     // Apply config from URL/localStorage and sync controls.
     applyAnalysisBackendConfig(initialAnalysisConfig, { persist: false });
+
+    // If running in desktop mode with configured passthrough endpoint,
+    // prefill the endpoint input for easier backend switching.
+    if (desktopRuntimeInfo?.analysisHttpEndpoint && analysisEndpointInput && !analysisEndpointInput.value) {
+      analysisEndpointInput.value = desktopRuntimeInfo.analysisHttpEndpoint;
+    }
+
+    if (desktopRuntimeInfo?.grpcEnabled) {
+      const parts = [];
+      if (selectionMeta.textContent) parts.push(selectionMeta.textContent);
+      parts.push(`Desktop gRPC: ${desktopRuntimeInfo.grpcAddr || 'enabled'}`);
+      if (desktopRuntimeInfo.analysisHttpEndpoint) {
+        parts.push(`passthrough: ${desktopRuntimeInfo.analysisHttpEndpoint}`);
+      }
+      selectionMeta.textContent = parts.join(' | ');
+    }
 
     analysisApplyBtn?.addEventListener('click', () => {
       try {

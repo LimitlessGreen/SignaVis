@@ -8,6 +8,7 @@
 
 use std::path::PathBuf;
 use serde_json::Value as JsonValue;
+use serde::Serialize;
 use tauri::Manager;
 
 #[cfg(feature = "grpc")]
@@ -65,6 +66,34 @@ async fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String>
     project_store(&app)?.delete_project(&id)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopRuntimeInfo {
+    grpc_enabled: bool,
+    grpc_addr: Option<String>,
+    analysis_http_endpoint: Option<String>,
+}
+
+/// Return lightweight runtime info so the desktop frontend can react to
+/// optional gRPC/analysis passthrough configuration.
+#[tauri::command]
+async fn get_desktop_runtime_info() -> Result<DesktopRuntimeInfo, String> {
+    let grpc_addr = std::env::var("AW_GRPC_ADDR")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    let analysis_http_endpoint = std::env::var("AW_ANALYSIS_HTTP_ENDPOINT")
+        .ok()
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty());
+
+    Ok(DesktopRuntimeInfo {
+        grpc_enabled: grpc_addr.is_some(),
+        grpc_addr,
+        analysis_http_endpoint,
+    })
+}
+
 // ── App entry point ───────────────────────────────────────────────────
 
 pub fn run() {
@@ -95,6 +124,7 @@ pub fn run() {
             list_project_ids,
             list_projects,
             delete_project,
+            get_desktop_runtime_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Audio Workbench");
