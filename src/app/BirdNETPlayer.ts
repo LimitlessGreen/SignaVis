@@ -778,13 +778,13 @@ export class BirdNETPlayer {
                 if (sLabel) {
                     if (sLabel.readonly || this.spectrogramLabels?._lockedIds?.has(id)) return;
                     this.spectrogramLabels.remove(id);
-                    this._emit?.('spectrogramlabelremove', { label: { ...sLabel } });
+                    this.spectrogramLabels.dispatchEvent(new CustomEvent('spectrogramlabelremove', { detail: { label: { ...sLabel } } }));
                 } else {
                     const ann = this.annotations?.annotations?.find((a: any) => a.id === id);
                     if (ann) {
                         if (ann.readonly || this.annotations?._lockedIds?.has(id)) return;
                         this.annotations.remove(id);
-                        this._emit?.('annotationremove', { annotation: { ...ann } });
+                        this.annotations.dispatchEvent(new CustomEvent('annotationremove', { detail: { annotation: { ...ann } } }));
                     }
                 }
                 this._activeLabelId = null;
