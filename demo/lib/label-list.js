@@ -961,9 +961,6 @@ export class LabelList {
     cb.addEventListener('change', (e) => {
       e.stopPropagation();
       if (cb.checked) {
-        if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
-          this._multiSelectedIds.add(this._selectedId);
-        }
         this._multiSelectedIds.add(lbl.id);
       } else {
         this._multiSelectedIds.delete(lbl.id);
