@@ -556,6 +556,7 @@
       normalizeAnalysisBackendConfig,
       saveAnalysisBackendConfig,
     } from './lib/analysis-backend-config.js';
+    import { createProjectRepositoryRuntime } from './lib/project-repository-runtime.js';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
     import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 
@@ -721,6 +722,13 @@
     const analysisApplyBtn = document.getElementById('analysisApplyBtn');
 
     const taxonomy = new TaxonomyResolver();
+    const projectRuntime = await createProjectRepositoryRuntime();
+    const PROJECT_AUTOSAVE_ID = 'labeling-app-autosave';
+    let projectCreatedAt = Date.now();
+
+    // Debounced autosave to avoid writing on every single UI event.
+    let _projectAutosaveTimer = null;
+
     const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
     const birdnet = new AnalysisBackendProxy(createAnalysisBackend({
       mode: initialAnalysisConfig.mode,
@@ -967,6 +975,115 @@
       _labelsEntryId: null,
     };
 
+    function serializeOverlayAnnotations() {
+      const anns = player.annotations?.annotations;
+      if (!Array.isArray(anns)) return [];
+      return anns.map((a) => ({
+        id: a.id,
+        start: a.start,
+        end: a.end,
+        species: a.species,
+        label: a.label,
+        confidence: a.confidence,
+        color: a.color,
+        scientificName: a.scientificName,
+        commonName: a.commonName,
+        origin: a.origin,
+        author: a.author,
+        tags: a.tags || {},
+      }));
+    }
+
+    function serializeAudioSource() {
+      const active = recordingManager?.getActive?.();
+      if (active?.xcId) {
+        return { type: 'xeno-canto', xcId: String(active.xcId), name: active.filename || '' };
+      }
+      if (active?.filename) {
+        return { type: 'file', name: active.filename };
+      }
+      return { type: 'file', name: fileLabel?.textContent || 'Untitled' };
+    }
+
+    function buildProjectSnapshot() {
+      return {
+        id: PROJECT_AUTOSAVE_ID,
+        name: 'Labeling App Autosave',
+        createdAt: projectCreatedAt,
+        updatedAt: Date.now(),
+        audioSource: serializeAudioSource(),
+        annotations: serializeOverlayAnnotations(),
+        labels: state.labels.map((l) => ({ ...l })),
+        settings: {
+          mode: state.mode,
+          taxonomyLang: state.taxonomyLang,
+          activeSetId: state.activeSetId,
+          labelSets: [...state.labelSets.values()].map((s) => ({ ...s })),
+        },
+      };
+    }
+
+    async function saveProjectSnapshotNow() {
+      try {
+        await projectRuntime.repo.save(buildProjectSnapshot());
+      } catch (e) {
+        // Non-fatal: autosave should never break the labeling flow.
+      }
+    }
+
+    function scheduleProjectAutosave() {
+      clearTimeout(_projectAutosaveTimer);
+      _projectAutosaveTimer = setTimeout(() => {
+        saveProjectSnapshotNow();
+      }, 250);
+    }
+
+    async function restoreProjectSnapshotIfPossible() {
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        const hasExternalLoad =
+          params.has('xc') || params.has('XC') || params.has('xcid') || params.has('XCID');
+        if (hasExternalLoad) return;
+
+        const project = await projectRuntime.repo.load(PROJECT_AUTOSAVE_ID);
+        if (!project) return;
+
+        projectCreatedAt = Number(project.createdAt) || Date.now();
+
+        if (project.settings?.mode && modeSelect) {
+          state.mode = project.settings.mode;
+          modeSelect.value = state.mode;
+        }
+
+        if (project.settings?.taxonomyLang && taxonomyLangSelect) {
+          state.taxonomyLang = project.settings.taxonomyLang;
+          taxonomyLangSelect.value = state.taxonomyLang;
+        }
+
+        if (Array.isArray(project.settings?.labelSets) && project.settings.labelSets.length) {
+          state.labelSets.clear();
+          for (const s of project.settings.labelSets) {
+            if (s?.id) state.labelSets.set(s.id, { ...s });
+          }
+          if (state._sessionSetId && !state.labelSets.has(state._sessionSetId)) {
+            state._sessionSetId = [...state.labelSets.keys()][0] || state._sessionSetId;
+          }
+        }
+
+        if (Array.isArray(project.labels) && project.labels.length) {
+          state.labels = dedupeLabels(project.labels.map((l) => ({ ...l })));
+          state._labelsEntryId = recordingManager?.activeId || null;
+          selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
+        }
+
+        if (project.settings?.activeSetId) {
+          state.activeSetId = project.settings.activeSetId;
+        }
+      } catch (e) {
+        // Ignore malformed autosave content.
+      }
+    }
+
     // Mode persistence (multifile vs standalone)
     const MODE_KEY = 'audio-workbench.mode.v1';
     function saveMode() { try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {} }
@@ -978,6 +1095,7 @@
       modeSelect.addEventListener('change', () => {
         state.mode = modeSelect.value;
         saveMode();
+        scheduleProjectAutosave();
       });
     }
 
@@ -1714,6 +1832,7 @@
         if (fresh) propsPanel.refreshLabel(fresh);
         else propsPanel.pinLabel(null);
       }
+      scheduleProjectAutosave();
     }
 
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
@@ -2603,6 +2722,7 @@
     });
 
     window.addEventListener('beforeunload', () => {
+      saveProjectSnapshotNow();
       if (state.activeObjectUrl) {
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
         state.activeObjectUrl = null;
@@ -2748,6 +2868,8 @@
     }
 
     // ── Startup ───────────────────────────────────────────────────────
+    await restoreProjectSnapshotIfPossible();
+
     // Restore sets from last session (only if no URL params will load a recording)
     if (!new URLSearchParams(window.location.search).has('xc') &&
         !new URLSearchParams(window.location.search).has('XC')) {
