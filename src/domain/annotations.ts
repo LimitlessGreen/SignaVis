@@ -5,6 +5,8 @@
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from './annotations/LabelEditorModal.ts';
+import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
+import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 
 
 const _colorCtx = (() => {
@@ -157,7 +159,7 @@ function _hslToHex(h: number, s: number, l: number) {
  * @param {(string|{name:string, color?:string, scientificName?:string, tags?:Record<string,string>})[]|null} [opts.existingLabels]
  * @param {string|null} [opts.initialScientificName]
  * @param {string|null} [opts.title]
- * @param {function({name:string, color:string, scientificName?:string, tags?:Record<string,string>, __changed?:{name?:boolean, color?:boolean, scientificName?:boolean, tags?:boolean}}):void} opts.onSubmit
+ * @param {function(import('./annotations/LabelEditorModal.ts').LabelEditResult):void} opts.onSubmit
  * @param {(function():void)|null} [opts.onDelete]
  */
 /**
@@ -184,20 +186,7 @@ function openLabelNameEditor(opts: any) {
 // Export helper for tests that need to exercise the label editor behavior
 export { openLabelNameEditor };
 
-export interface AnnotationRegion {
-    id: string;
-    start: number;
-    end: number;
-    species?: string;
-    label?: string;
-    confidence?: number;
-    color?: string;
-    scientificName?: string;
-    commonName?: string;
-    origin?: string;
-    author?: string;
-    tags?: Record<string, string>;
-}
+export type { AnnotationRegion } from '../shared/label.types.ts';
 
 // ═══════════════════════════════════════════════════════════════════════
 // AnnotationLayerBase — shared lifecycle, CRUD, and selection for all
@@ -854,25 +843,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
     }
 }
 
-export interface SpectrogramLabel {
-    id: string;
-    start: number;
-    end: number;
-    freqMin?: number;
-    freqMax?: number;
-    label?: string;
-    species?: string;
-    color?: string;
-    scientificName?: string;
-    commonName?: string;
-    origin?: string;
-    author?: string;
-    tags?: Record<string, string>;
-    readonly?: boolean;
-    aiSuggested?: { model?: string; version?: string } | null;
-    confidence?: number;
-    recordingId?: string | null;
-}
+export type { SpectrogramLabel } from '../shared/label.types.ts';
 
 export class SpectrogramLabelLayer extends AnnotationLayerBase {
     overlay: HTMLElement | null = null;
@@ -1659,12 +1630,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialScientificName: ref?.scientificName || '',
             existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {}, changed = {} }: any) => {
                 // If user typed a different name but didn't manually change color,
                 // auto-assign a deterministic color for the new name.
                 const nameChanged = name.trim().toLowerCase() !== refName;
                 region.label = name;
-                region.color = (nameChanged && !__changed.color) ? colorForName(name) : color;
+                region.color = (nameChanged && !changed.color) ? colorForName(name) : color;
                 region.scientificName = String(scientificName || '').trim();
                 region.tags = tags;
                 this.add(region);
@@ -1908,8 +1879,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialColor: label.color,
             initialTags: label.tags || {},
             initialScientificName: label.scientificName || '',
-            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
-                if (!__changed.name && !__changed.color && !__changed.scientificName && !__changed.tags) return;
+            onSubmit: ({ name, color, scientificName = '', tags = {}, changed = {} }: any) => {
+                if (!changed.name && !changed.color && !changed.scientificName && !changed.tags) return;
                 const nextSci = String(scientificName || '').trim();
                 label.label = name;
                 label.color = color;
@@ -1951,16 +1922,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             initialTags: first.tags || {},
             initialScientificName: first.scientificName || '',
             title: `Rename ${labels.length} label${labels.length > 1 ? 's' : ''}`,
-            onSubmit: ({ name, color, scientificName = '', tags = {}, __changed = {} }: any) => {
+            onSubmit: ({ name, color, scientificName = '', tags = {}, changed: reportedChanged = {} }: any) => {
                 // If the editor reports which fields were changed, only apply
                 // those fields to the whole selected group. This avoids
                 // unintentionally overwriting untouched fields on bulk edits.
                 // For the bulk-rename flow, preserve the previous behavior where
                 // saving without touching fields applies the first label's
                 // `name` and `tags` to the whole selection — interpret a
-                // completely-empty `__changed` as intent to apply name+tags.
-                const reported = /** @type {{name?:boolean,color?:boolean,scientificName?:boolean,tags?:boolean}} */ (__changed || {});
-                const changed = { ...reported };
+                // completely-empty `changed` as intent to apply name+tags.
+                const changed = { ...reportedChanged };
                 // If no meaningful fields were changed by the user (ignore
                 // incidental color normalization differences in fake DOMs),
                 // default to applying the `name` and `tags` from the first
@@ -2036,21 +2006,20 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const e = clamp(Math.max(start, end), 0, duration);
         const f0 = clamp(Math.min(freqMin, freqMax), 0, maxFreq);
         const f1 = clamp(Math.max(freqMin, freqMax), 0, maxFreq);
-        const labelName = label?.label || '';
-        const explicitColor = String(label?.color || '').trim();
+        const meta = normalizeLabelStrings(label ?? {});
         return {
             id: label?.id || `slabel_${Math.random().toString(36).slice(2, 10)}`,
             start: s,
             end: Math.max(s + 0.01, e),
             freqMin: f0,
             freqMax: Math.max(f0 + 1, f1),
-            label: labelName,
-            color: explicitColor || colorForName(labelName),
-            scientificName: String(label?.scientificName || '').trim(),
-            commonName: String(label?.commonName || '').trim(),
-            origin: String(label?.origin || '').trim(),
-            author: String(label?.author || '').trim(),
-            tags: (label?.tags && typeof label.tags === 'object') ? { ...label.tags } : {},
+            label: meta.label,
+            color: meta.color || colorForName(meta.label),
+            scientificName: meta.scientificName,
+            commonName: meta.commonName,
+            origin: meta.origin,
+            author: meta.author,
+            tags: meta.tags,
             readonly: label?.readonly === true,
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,

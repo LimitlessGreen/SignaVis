@@ -2,6 +2,7 @@
 // interactionState.ts - Interaction State Machine
 
 import { SEEK_CLICK_BLOCK_MS, OVERVIEW_CLICK_BLOCK_MS } from '../shared/constants.ts';
+import { defineStateMachine, canTransition } from '../shared/stateMachine.ts';
 //
 // Consolidates the ~15 loose boolean/string flags that previously
 // tracked playhead-drag, viewport-pan, overview-drag, and view-resize
@@ -45,42 +46,39 @@ export type InteractionMode =
  * @property {number}         resizeStartSpectrogramH  - spectrogramDisplayHeight at resize start
  */
 
-/** @type {ReadonlySet<InteractionMode>} */
-const OVERVIEW_MODES = new Set(['overview-move', 'overview-resize-left', 'overview-resize-right']);
+const OVERVIEW_MODES = new Set<InteractionMode>(['overview-move', 'overview-resize-left', 'overview-resize-right']);
+const VIEW_RESIZE_MODES = new Set<InteractionMode>(['view-resize-split', 'view-resize-spectrogram']);
 
-/** @type {ReadonlySet<InteractionMode>} */
-const VIEW_RESIZE_MODES = new Set(['view-resize-split', 'view-resize-spectrogram']);
-
-/**
- * Allowed transitions.  Every mode can return to 'idle'.
- * Only 'idle' can transition to a specific mode.
- *
- * @type {Record<InteractionMode, ReadonlySet<InteractionMode>>}
- */
-const ALLOWED_TRANSITIONS = {
-    'idle':                     new Set([
-        'playhead-drag', 'viewport-pan',
+const INTERACTION_MACHINE = defineStateMachine<InteractionMode>({
+    states: [
+        'idle', 'playhead-drag', 'viewport-pan',
         'overview-move', 'overview-resize-left', 'overview-resize-right',
         'view-resize-split', 'view-resize-spectrogram',
-    ]),
-    'playhead-drag':            new Set(['idle']),
-    'viewport-pan':             new Set(['idle']),
-    'overview-move':            new Set(['idle']),
-    'overview-resize-left':     new Set(['idle']),
-    'overview-resize-right':    new Set(['idle']),
-    'view-resize-split':        new Set(['idle']),
-    'view-resize-spectrogram':  new Set(['idle']),
-};
+    ],
+    labels: {
+        'idle':                    'Idle',
+        'playhead-drag':           'Playhead drag',
+        'viewport-pan':            'Viewport pan',
+        'overview-move':           'Overview move',
+        'overview-resize-left':    'Overview resize left',
+        'overview-resize-right':   'Overview resize right',
+        'view-resize-split':       'View resize split',
+        'view-resize-spectrogram': 'View resize spectrogram',
+    },
+    transitions: {
+        'idle':                    new Set(['playhead-drag', 'viewport-pan', 'overview-move', 'overview-resize-left', 'overview-resize-right', 'view-resize-split', 'view-resize-spectrogram']),
+        'playhead-drag':           new Set(['idle']),
+        'viewport-pan':            new Set(['idle']),
+        'overview-move':           new Set(['idle']),
+        'overview-resize-left':    new Set(['idle']),
+        'overview-resize-right':   new Set(['idle']),
+        'view-resize-split':       new Set(['idle']),
+        'view-resize-spectrogram': new Set(['idle']),
+    },
+});
 
-/**
- * Check whether a transition from `from` to `to` is allowed.
- *
- * @param {InteractionMode} from
- * @param {InteractionMode} to
- * @returns {boolean}
- */
-export function canTransitionInteraction(from: InteractionMode, to: InteractionMode) {
-    return ALLOWED_TRANSITIONS[from]?.has(to) === true;
+export function canTransitionInteraction(from: InteractionMode, to: InteractionMode): boolean {
+    return canTransition(INTERACTION_MACHINE, from, to);
 }
 
 /**

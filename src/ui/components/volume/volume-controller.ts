@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface VolumeHost {
     muted: boolean;
@@ -6,10 +7,10 @@ export interface VolumeHost {
     _toggleMute(): void;
 }
 
-export class VolumeController {
-    private d: any;
+export class VolumeController implements UiController {
+    private d: DomRefs;
     private host: VolumeHost;
-    constructor(d: any, host: VolumeHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: VolumeHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         on(this.d.volumeSlider, 'input', (e: Event) => {

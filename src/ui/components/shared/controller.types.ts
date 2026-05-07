@@ -11,3 +11,8 @@ export type OnFn = (
     fn: any,
     opts?: AddEventListenerOptions | boolean
 ) => void;
+
+/** Contract that every UI controller must satisfy. */
+export interface UiController {
+    bind(on: OnFn): void;
+}

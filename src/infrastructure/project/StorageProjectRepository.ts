@@ -17,6 +17,7 @@ import type { IProjectRepository } from '../../domain/project/IProjectRepository
 import type { Project, ProjectSummary } from '../../domain/project/types.ts';
 import { summarize } from '../../domain/project/types.ts';
 import type { IStorage } from '../storage/IStorage.ts';
+import { jsonGetItem, jsonSetItem } from '../../shared/storageJson.ts';
 
 const INDEX_KEY = 'aw-project-index';
 
@@ -25,18 +26,12 @@ function projectKey(id: string): string {
 }
 
 function readIndex(storage: IStorage): string[] {
-    try {
-        const raw = storage.getItem(INDEX_KEY);
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
+    const parsed = jsonGetItem<unknown>(storage, INDEX_KEY, []);
+    return Array.isArray(parsed) ? parsed as string[] : [];
 }
 
 function writeIndex(storage: IStorage, ids: string[]): void {
-    storage.setItem(INDEX_KEY, JSON.stringify(ids));
+    jsonSetItem(storage, INDEX_KEY, ids);
 }
 
 export class StorageProjectRepository implements IProjectRepository {
@@ -48,7 +43,7 @@ export class StorageProjectRepository implements IProjectRepository {
 
     async save(project: Project): Promise<void> {
         const updated: Project = { ...project, updatedAt: Date.now() };
-        this.#storage.setItem(projectKey(project.id), JSON.stringify(updated));
+        jsonSetItem(this.#storage, projectKey(project.id), updated);
 
         const ids = readIndex(this.#storage);
         if (!ids.includes(project.id)) {
@@ -59,11 +54,7 @@ export class StorageProjectRepository implements IProjectRepository {
     async load(id: string): Promise<Project | null> {
         const raw = this.#storage.getItem(projectKey(id));
         if (raw === null) return null;
-        try {
-            return JSON.parse(raw) as Project;
-        } catch {
-            return null;
-        }
+        return jsonGetItem<Project | null>(this.#storage, projectKey(id), null);
     }
 
     async list(): Promise<ProjectSummary[]> {

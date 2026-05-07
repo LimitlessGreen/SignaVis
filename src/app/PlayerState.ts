@@ -26,6 +26,7 @@ import { FrequencyViewport } from './FrequencyViewport.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
 import { ViewportManager } from './ViewportManager.ts';
 import { bindUiControllers } from './bindUiControllers.ts';
+import type { DomRefs } from './domRefs.ts';
 
 import {
     renderMainWaveform,
@@ -107,7 +108,7 @@ export function sanitizePlaybackViewportConfig(partial: Partial<PlaybackViewport
 // ═════════════════════════════════════════════════════════════════════
 
 export class PlayerState {
-    d: any;
+    d: DomRefs;
     interaction: InteractionState;
     coords: CoordinateSystem;
     container: any;
@@ -719,8 +720,8 @@ export class PlayerState {
     async loadFile(file: File) {
         if (!file) return;
 
-        this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
-        this.d.fileInfo.classList.add('loading');
+        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
+        this.d.fileInfo!.classList.add('loading');
         this._setTransportState('loading', 'file-load');
 
         try {
@@ -736,8 +737,8 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     async loadUrl(url: string) {
-        this.d.fileInfo.innerHTML = `<span class="statusbar-label">Loading…</span>`;
-        this.d.fileInfo.classList.add('loading');
+        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">Loading…</span>`;
+        this.d.fileInfo!.classList.add('loading');
         this._setTransportState('loading', 'url-load');
 
         try {
@@ -761,16 +762,16 @@ export class PlayerState {
         }
         this._spectro.updateMaxFreqOptions(sampleRate);
 
-        this.d.fileInfo.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
-        this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
-        this.d.totalTimeDisplay.textContent = formatTime(duration);
-        this.d.currentTimeDisplay.textContent = formatTime(0);
+        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
+        if (this.d.sampleRateInfo) this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
+        if (this.d.totalTimeDisplay) this.d.totalTimeDisplay.textContent = formatTime(duration);
+        if (this.d.currentTimeDisplay) this.d.currentTimeDisplay.textContent = formatTime(0);
 
         this._setPixelsPerSecond(DEFAULT_ZOOM_PPS, false);
         this._setTransportEnabled(true);
         this._updateToggleButtons();
         this._setTransportState('ready', readyReason);
-        this.d.fileInfo.classList.remove('loading');
+        this.d.fileInfo?.classList.remove('loading');
 
         await this._spectro.generate({ autoAdjust: true });
         this._drawMainWaveform();
@@ -782,7 +783,7 @@ export class PlayerState {
     _onAudioLoadError(error: any, source: string) {
         console.error(`Error loading audio (${source}):`, error);
         this._setTransportState('error', `${source}-load-failed`);
-        this.d.fileInfo.classList.remove('loading');
+        this.d.fileInfo?.classList.remove('loading');
         this._emit('error', { message: error?.message || String(error), source });
     }
 
@@ -839,7 +840,7 @@ export class PlayerState {
         const nextText = formatTime(t);
         if (nextText !== this._lastTimeReadoutText) {
             this._lastTimeReadoutText = nextText;
-            this.d.currentTimeDisplay.textContent = nextText;
+            if (this.d.currentTimeDisplay) this.d.currentTimeDisplay.textContent = nextText;
         }
         this._updateAriaPlaybackPosition(t);
     }
@@ -864,8 +865,8 @@ export class PlayerState {
 
         const position = this.coords.timeToScrollX(currentTime);
 
-        this.d.playhead.style.transform = `translateX(${position}px)`;
-        this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
+        if (this.d.playhead) this.d.playhead.style.transform = `translateX(${position}px)`;
+        if (this.d.waveformPlayhead) this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
 
         // Follow-mode scroll — delegated to ViewportManager
         if (fromPlayback && this.followPlayback && this.wavesurfer?.isPlaying()) {
@@ -933,7 +934,7 @@ export class PlayerState {
     _toggleMute() {
         this._engine.toggleMute();
         if (!this.muted) {
-            this.d.volumeSlider.value = Math.round(this.volume * 100);
+            if (this.d.volumeSlider) this.d.volumeSlider.value = String(Math.round(this.volume * 100));
         }
         this._updateVolumeIcon();
     }
@@ -961,6 +962,7 @@ export class PlayerState {
     _drawMainWaveform() {
         if (!this._showWaveform) return;
         const effectiveWaveformHeight = this._getEffectiveWaveformHeight();
+        if (!this.d.amplitudeCanvas || !this.d.waveformTimelineCanvas || !this.d.waveformContent) return;
         renderMainWaveform({
             audioBuffer: this.audioBuffer,
             amplitudeCanvas: this.d.amplitudeCanvas,
@@ -976,6 +978,7 @@ export class PlayerState {
 
     _drawOverviewWaveform() {
         if (!this._showOverview) return;
+        if (!this.d.overviewCanvas || !this.d.overviewContainer) return;
         renderOverviewWaveform({
             audioBuffer: this.audioBuffer,
             overviewCanvas: this.d.overviewCanvas,
@@ -986,10 +989,7 @@ export class PlayerState {
     }
 
     _createFrequencyLabels() {
-        renderFrequencyLabels({
-            labelsElement: this.d.freqLabels,
-            coords: this.coords,
-        });
+        if (this.d.freqLabels) renderFrequencyLabels({ labelsElement: this.d.freqLabels, coords: this.coords });
     }
 
     _updateAmplitudeLabels() {
@@ -1123,8 +1123,8 @@ export class PlayerState {
         this.interaction.ctx.panStartX = event.clientX;
         this.interaction.ctx.panStartY = event.clientY;
         this.interaction.ctx.panStartScroll = source === 'waveform'
-            ? this.d.waveformWrapper.scrollLeft
-            : this.d.canvasWrapper.scrollLeft;
+            ? (this.d.waveformWrapper?.scrollLeft ?? 0)
+            : (this.d.canvasWrapper?.scrollLeft ?? 0);
         this.interaction.ctx.panStartFreqViewMin = this._freqView.min;
         this.interaction.ctx.panStartFreqViewMax = this._freqView.max;
         this.interaction.ctx.panIsMiddle = event.button === 1;
@@ -1166,6 +1166,7 @@ export class PlayerState {
         this._cancelFollowCatchupAnimation();
 
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
+        if (!wrapper) return;
         const rect = wrapper.getBoundingClientRect();
         const localX = event.clientX - rect.left;
         const timeAtCursor = this.coords.scrollXToTime(wrapper.scrollLeft + localX);
@@ -1284,7 +1285,7 @@ export class PlayerState {
 
     _getEffectiveWaveformHeight() {
         if (this._showWaveform && !this._showSpectrogram) {
-            const h = this.d.waveformContainer?.clientHeight;
+            const h = this.d.waveformContainer?.clientHeight ?? 0;
             if (h > 0) return Math.max(MIN_WAVEFORM_HEIGHT, h);
         }
         return Math.max(MIN_WAVEFORM_HEIGHT, Math.floor(this.waveformDisplayHeight));
@@ -1297,7 +1298,7 @@ export class PlayerState {
         if (typeof this._cachedSpectrogramHeight === 'number' && this._cachedSpectrogramHeight > 0) return this._cachedSpectrogramHeight;
         // Use canvasWrapper.clientHeight: excludes horizontal scrollbar height so
         // the canvas doesn't overlap low frequencies when the scrollbar is visible.
-        const h = this.d.canvasWrapper?.clientHeight ?? this.d.spectrogramContainer?.clientHeight;
+        const h = this.d.canvasWrapper?.clientHeight ?? this.d.spectrogramContainer?.clientHeight ?? 0;
         const result = h > 0
             ? Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, h)
             : Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
@@ -1424,7 +1425,7 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     _setPlayState(text: unknown) {
-        this.d.playStateDisplay.textContent = text;
+        if (this.d.playStateDisplay) this.d.playStateDisplay.textContent = String(text ?? '');
     }
 
     _shouldCompactToolbarBeActive() {
@@ -1494,7 +1495,7 @@ export class PlayerState {
             this.d.crosshairToggleBtn,
             this.d.fitViewBtn, this.d.resetViewBtn,
             this.d.autoContrastBtn, this.d.autoFreqBtn,
-        ].forEach((btn) => { btn.disabled = !enabled; });
+        ].forEach((btn) => { if (btn) btn.disabled = !enabled; });
         this._queueCompactToolbarLayoutRefresh();
     }
 

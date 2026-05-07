@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface PlayheadHost {
     _showWaveform: boolean;
@@ -7,10 +8,10 @@ export interface PlayheadHost {
     _startViewResize(type: 'split' | 'spectrogram', y: number): void;
 }
 
-export class PlayheadController {
-    private d: any;
+export class PlayheadController implements UiController {
+    private d: DomRefs;
     private host: PlayheadHost;
-    constructor(d: any, host: PlayheadHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: PlayheadHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

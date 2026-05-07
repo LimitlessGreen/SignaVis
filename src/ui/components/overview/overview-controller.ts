@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 import { clamp } from '../../../shared/utils.ts';
 
 export interface OverviewHost {
@@ -15,10 +16,10 @@ export interface OverviewHost {
     _toggleOverviewLabelSection(): void;
 }
 
-export class OverviewController {
-    private d: any;
+export class OverviewController implements UiController {
+    private d: DomRefs;
     private host: OverviewHost;
-    constructor(d: any, host: OverviewHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: OverviewHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;
@@ -42,7 +43,7 @@ export class OverviewController {
         on(this.d.overviewCanvas, 'click', (e: MouseEvent) => {
             if (h.interaction.isOverviewClickBlocked()) return;
             if (!h._showOverview || !h.audioBuffer) return;
-            const rect = this.d.overviewCanvas.getBoundingClientRect();
+            const rect = this.d.overviewCanvas!.getBoundingClientRect();
             const xNorm = clamp((e.clientX - rect.left) / rect.width, 0, 1);
             h._seekToTime(xNorm * h.audioBuffer.duration, true);
         });

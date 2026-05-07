@@ -16,6 +16,8 @@
 
 import { DSP_PROFILES, QUALITY_LEVELS } from '../shared/constants.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
+import { jsonGetItem, jsonSetItem } from '../shared/storageJson.ts';
+import { readDspSettings, applyDspSettings } from './dsp/DspSettings.ts';
 
 import type { IStorage } from '../infrastructure/storage/IStorage.ts';
 import type { UndoCommand } from './undoStack.ts';
@@ -357,66 +359,27 @@ export class PresetManager {
 
     /** Snapshot current DSP controls into a preset-shape object. */
     getCurrentPresetSettings() {
-        const d = this.#d;
-        const gainMode = d.gainModeSelect?.value || 'auto';
-        const preset: any = {
-            scale:             d.scaleSelect?.value              || 'mel',
-            colourScale:       d.colourScaleSelect?.value        || 'dbSquared',
-            windowSize:        parseInt(d.windowSizeSelect?.value    || '1024', 10),
-            overlapLevel:      parseInt(d.overlapSelect?.value       || '2',    10),
-            oversamplingLevel: parseInt(d.oversamplingSelect?.value  || '0',    10),
-            windowFunction:    d.windowFunctionSelect?.value     || 'hann',
-            nMels:             parseInt(d.nMelsInput?.value          || '160',  10),
-            usePcen:           d.pcenEnabledCheck?.checked           ?? true,
-            pcenGain:          parseFloat(d.pcenGainInput?.value     || '0.8'),
-            pcenBias:          parseFloat(d.pcenBiasInput?.value     || '0.01'),
-            pcenRoot:          parseFloat(d.pcenRootInput?.value     || '4.0'),
-            pcenSmoothing:     parseFloat(d.pcenSmoothingInput?.value|| '0.025'),
-            colorScheme:       d.colorSchemeSelect?.value        || 'grayscale',
-            reassigned:        d.reassignedCheck?.checked            ?? false,
-            noiseReduction:    d.noiseReductionCheck?.checked        ?? false,
-            clahe:             d.claheCheck?.checked                 ?? false,
-            gainMode,
-            maxFreqMode:       d.maxFreqModeSelect?.value        || 'auto',
-        };
-        if (gainMode === 'fixed') {
-            preset.gainFloor = parseInt(d.floorSlider?.value || '0',   10);
-            preset.gainCeil  = parseInt(d.ceilSlider?.value  || '100', 10);
-        }
-        if (preset.maxFreqMode === 'fixed') {
-            preset.maxFreqHz = parseFloat(d.maxFreqSelect?.value || '10000');
-        }
-        return preset;
+        return readDspSettings(this.#d);
     }
 
     persistCurrentSettings() {
-        this.#storage.setItem(LS_LAST_SETTINGS, JSON.stringify(this.getCurrentPresetSettings()));
+        jsonSetItem(this.#storage, LS_LAST_SETTINGS, this.getCurrentPresetSettings());
     }
 
-    loadLastSettings() {
-        try {
-            const raw = this.#storage.getItem(LS_LAST_SETTINGS);
-            if (raw) {
-                const p = JSON.parse(raw);
-                if (p && typeof p === 'object' && !Array.isArray(p)) return p;
-            }
-        } catch { /* corrupt */ }
+    loadLastSettings(): Record<string, any> | null {
+        const p = jsonGetItem<unknown>(this.#storage, LS_LAST_SETTINGS, null);
+        if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, any>;
         return null;
     }
 
-    loadUserPresets() {
-        try {
-            const raw = this.#storage.getItem(LS_USER_PRESETS);
-            if (raw) {
-                const p = JSON.parse(raw);
-                if (p && typeof p === 'object' && !Array.isArray(p)) return p;
-            }
-        } catch { /* corrupt */ }
+    loadUserPresets(): Record<string, any> {
+        const p = jsonGetItem<unknown>(this.#storage, LS_USER_PRESETS, null);
+        if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, any>;
         return {};
     }
 
     saveUserPresetsToStorage(presets: unknown) {
-        this.#storage.setItem(LS_USER_PRESETS, JSON.stringify(presets));
+        jsonSetItem(this.#storage, LS_USER_PRESETS, presets);
     }
 
     getFavouritePreset() {
@@ -486,36 +449,9 @@ export class PresetManager {
      * Shared by applyPreset() and applyFavouritePresetControls().
      */
     #applyControls(p: any) {
-        const d = this.#d;
-        if (d.scaleSelect)          d.scaleSelect.value          = p.scale          || 'mel';
-        if (d.windowSizeSelect    && p.windowSize        != null) d.windowSizeSelect.value    = String(p.windowSize);
-        if (d.overlapSelect       && p.overlapLevel      != null) d.overlapSelect.value       = String(p.overlapLevel);
-        if (d.oversamplingSelect  && p.oversamplingLevel != null) d.oversamplingSelect.value  = String(p.oversamplingLevel);
-        if (d.windowFunctionSelect) d.windowFunctionSelect.value = p.windowFunction  || 'hann';
-        if (d.nMelsInput)           d.nMelsInput.value           = String(p.nMels    ?? 160);
-        if (d.pcenEnabledCheck)     d.pcenEnabledCheck.checked   = !!p.usePcen;
-        if (d.pcenGainInput)        d.pcenGainInput.value        = String(p.pcenGain      ?? 0.8);
-        if (d.pcenBiasInput)        d.pcenBiasInput.value        = String(p.pcenBias      ?? 0.01);
-        if (d.pcenRootInput)        d.pcenRootInput.value        = String(p.pcenRoot      ?? 4.0);
-        if (d.pcenSmoothingInput)   d.pcenSmoothingInput.value   = String(p.pcenSmoothing ?? 0.025);
-        if (p.colorScheme && d.colorSchemeSelect) {
-            d.colorSchemeSelect.value  = p.colorScheme;
-            this.#currentColorScheme   = p.colorScheme;
-        }
-        if (d.reassignedCheck)      d.reassignedCheck.checked    = !!p.reassigned;
-        if (p.colourScale    != null && d.colourScaleSelect)   d.colourScaleSelect.value   = p.colourScale;
-        if (p.noiseReduction != null && d.noiseReductionCheck) d.noiseReductionCheck.checked = !!p.noiseReduction;
-        if (p.clahe          != null && d.claheCheck)          d.claheCheck.checked          = !!p.clahe;
-        const gainMode = p.gainMode || 'auto';
-        if (d.gainModeSelect) d.gainModeSelect.value = gainMode;
-        if (gainMode === 'fixed' && p.gainFloor != null && p.gainCeil != null) {
-            if (d.floorSlider) d.floorSlider.value = String(p.gainFloor);
-            if (d.ceilSlider)  d.ceilSlider.value  = String(p.gainCeil);
-        }
-        const maxFreqMode = p.maxFreqMode || 'auto';
-        if (d.maxFreqModeSelect) d.maxFreqModeSelect.value = maxFreqMode;
-        if (maxFreqMode === 'fixed' && p.maxFreqHz != null && d.maxFreqSelect) {
-            d.maxFreqSelect.value = String(p.maxFreqHz);
+        applyDspSettings(this.#d, p);
+        if (p.colorScheme && this.#d.colorSchemeSelect) {
+            this.#currentColorScheme = p.colorScheme;
         }
     }
 

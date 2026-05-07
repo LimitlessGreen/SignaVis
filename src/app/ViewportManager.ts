@@ -28,9 +28,10 @@ import { DEFAULT_ZOOM_PPS, MIN_WINDOW_NORM } from '../shared/constants.ts';
 import type { CoordinateSystem } from '../domain/coordinateSystem.ts';
 import type { InteractionState } from './interactionState.ts';
 import type { PlaybackViewportConfig } from './PlayerState.ts';
+import type { DomRefs } from './domRefs.ts';
 
 export interface ViewportManagerOptions {
-    d: Record<string, HTMLElement>;
+    d: DomRefs;
     coords: CoordinateSystem;
     interaction: InteractionState;
     layout: { spectrogramHeight: number; waveformHeight: number; showSpectrogram?: boolean; showWaveform?: boolean; showOverview?: boolean };

@@ -19,23 +19,10 @@ import '../styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-p
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
 import { EventBus } from '../shared/EventBus.ts';
+import type { LinkedLabel } from '../shared/label.types.ts';
+import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 
-export interface LinkedLabel {
-    id: string;
-    start: number;
-    end: number;
-    freqMin?: number;
-    freqMax?: number;
-    label?: string;
-    species?: string;
-    confidence?: number;
-    color?: string;
-    scientificName?: string;
-    commonName?: string;
-    origin?: string;
-    author?: string;
-    tags?: Record<string, unknown>;
-}
+export type { LinkedLabel };
 
 export interface PlaySegmentOptions {
     loop?: boolean;
@@ -1273,15 +1260,13 @@ export class BirdNETPlayer {
 
         const start = clamp(Number(label?.start ?? 0), 0, duration);
         const end = clamp(Number(label?.end ?? start + 0.01), start + 0.01, duration);
-        const freqMinRaw = Number(label?.freqMin ?? 0);
-        const freqMaxRaw = Number(label?.freqMax ?? maxFreq);
-        const freqMin = clamp(freqMinRaw, 0, maxFreq);
-        const freqMax = clamp(freqMaxRaw, freqMin + 1, maxFreq);
-        const labelName = String(label?.label || label?.species || '').trim();
-        const tax = labelName
-            ? this._labelTaxonomy.find((t) => t.name.toLowerCase() === labelName.toLowerCase())
+        const freqMin = clamp(Number(label?.freqMin ?? 0), 0, maxFreq);
+        const freqMax = clamp(Number(label?.freqMax ?? maxFreq), freqMin + 1, maxFreq);
+
+        const meta = normalizeLabelStrings(label as any);
+        const tax = meta.label
+            ? this._labelTaxonomy.find((t) => t.name.toLowerCase() === meta.label.toLowerCase())
             : null;
-        const explicitColor = String(label?.color || '').trim();
 
         return {
             id: label?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`,
@@ -1289,15 +1274,15 @@ export class BirdNETPlayer {
             end,
             freqMin,
             freqMax,
-            species: label?.species || '',
-            label: label?.label || label?.species || '',
+            species: meta.species,
+            label: meta.label,
             confidence: label?.confidence,
-            color: explicitColor || tax?.color || colorForName(labelName),
-            scientificName: label?.scientificName || '',
-            commonName: label?.commonName || '',
-            origin: label?.origin || '',
-            author: label?.author || '',
-            tags: (label?.tags && typeof label.tags === 'object') ? { ...label.tags } : {},
+            color: meta.color || tax?.color || colorForName(meta.label),
+            scientificName: meta.scientificName,
+            commonName: meta.commonName,
+            origin: meta.origin,
+            author: meta.author,
+            tags: meta.tags,
         };
     }
 }

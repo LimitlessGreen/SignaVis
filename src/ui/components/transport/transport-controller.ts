@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 import { SEEK_COARSE_SEC, DEFAULT_ZOOM_PPS } from '../../../shared/constants.ts';
 
 export interface TransportHost {
@@ -24,10 +25,10 @@ export interface TransportHost {
     _setCompactToolbarOpen(open: boolean): void;
 }
 
-export class TransportController {
-    private d: any;
+export class TransportController implements UiController {
+    private d: DomRefs;
     private host: TransportHost;
-    constructor(d: any, host: TransportHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: TransportHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

@@ -15,6 +15,21 @@ import ModalManager from '../../ui/components/modal/modal-manager.ts';
 import { createEditableSelect } from '../../ui/components/editable-select/editable-select.ts';
 import { getOverlayColorStyle } from '../annotations.ts';
 
+export interface LabelEditChangeset {
+    name:           boolean;
+    color:          boolean;
+    scientificName: boolean;
+    tags:           boolean;
+}
+
+export interface LabelEditResult {
+    name:           string;
+    color:          string;
+    scientificName: string;
+    tags:           Record<string, string>;
+    changed:        LabelEditChangeset;
+}
+
 const DEFAULT_TAG_PRESETS = [
     { key: 'sex',       label: 'Sex',        options: ['male', 'female', 'unknown'] },
     { key: 'lifeStage', label: 'Life stage',  options: ['adult', 'juvenile', 'immature', 'subadult'] },
@@ -476,13 +491,17 @@ export class LabelEditorModal {
         const tagsChanged  = this._tagsTouched  || JSON.stringify(tags) !== JSON.stringify(this._initialTagsNorm);
         const sciChanged   = this._sciTouched   || String(scientificName || '') !== String(this._initialScientific || '');
 
-        this._onSubmit({
+        const changed: LabelEditChangeset = {
+            name: nameChanged, color: colorChanged, scientificName: sciChanged, tags: tagsChanged,
+        };
+        const result: LabelEditResult = {
             name: trimmed,
             color: this._colorInput.value,
             scientificName,
             tags,
-            __changed: { name: nameChanged, color: colorChanged, scientificName: sciChanged, tags: tagsChanged },
-        });
+            changed,
+        };
+        this._onSubmit(result);
         this.close();
     }
 }

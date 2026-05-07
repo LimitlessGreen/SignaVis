@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface DisplayGainHost {
     readonly audioBuffer: AudioBuffer | null;
@@ -15,10 +16,10 @@ export interface DisplayGainHost {
     _drawSpectrogram(): void;
 }
 
-export class DisplayGainController {
-    private d: any;
+export class DisplayGainController implements UiController {
+    private d: DomRefs;
     private host: DisplayGainHost;
-    constructor(d: any, host: DisplayGainHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: DisplayGainHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;
@@ -40,14 +41,14 @@ export class DisplayGainController {
 
         on(this.d.gainModeSelect, 'change', () => {
             h._presets.persistCurrentSettings();
-            if (this.d.gainModeSelect.value === 'auto' && h._spectro.data) {
+            if (this.d.gainModeSelect!.value === 'auto' && h._spectro.data) {
                 h._spectro.autoContrast(true);
             }
         });
         on(this.d.maxFreqModeSelect, 'change', () => {
             h._presets.persistCurrentSettings();
             if (!h.audioBuffer) return;
-            const mode = this.d.maxFreqModeSelect.value;
+            const mode = this.d.maxFreqModeSelect!.value;
             if (mode === 'auto') h._spectro.autoFrequency(true);
             else if (mode === 'nyquist') { h._spectro.setMaxFreqToNyquist(); h._spectro.generate(); }
         });

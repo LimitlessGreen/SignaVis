@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface FreqViewportHost {
     readonly audioBuffer: AudioBuffer | null;
@@ -14,10 +15,10 @@ export interface FreqViewportHost {
     coords: { boundedMaxFreq: number; pixelYToFrequency(y: number): number };
 }
 
-export class FreqViewportController {
-    private d: any;
+export class FreqViewportController implements UiController {
+    private d: DomRefs;
     private host: FreqViewportHost;
-    constructor(d: any, host: FreqViewportHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: FreqViewportHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;
@@ -30,7 +31,7 @@ export class FreqViewportController {
             let startMax = 0;
             const onMove = (e: PointerEvent) => {
                 if (!dragging) return;
-                const spacerH = this.d.freqAxisSpacer.getBoundingClientRect().height;
+                const spacerH = this.d.freqAxisSpacer!.getBoundingClientRect().height;
                 const dy = e.clientY - startY;
                 const boundedMax = h.coords.boundedMaxFreq;
                 const range = startMax - startMin;
@@ -66,7 +67,7 @@ export class FreqViewportController {
         on(this.d.freqAxisSpacer, 'wheel', (e: WheelEvent) => {
             if (!h.audioBuffer || !h._showSpectrogram) return;
             e.preventDefault();
-            const rect = this.d.freqAxisSpacer.getBoundingClientRect();
+            const rect = this.d.freqAxisSpacer!.getBoundingClientRect();
             const localY = e.clientY - rect.top;
             const canvasH = this.d.spectrogramCanvas?.height || rect.height;
             const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
@@ -91,7 +92,7 @@ export class FreqViewportController {
             let startMax = 0;
             const onMove = (e: PointerEvent) => {
                 if (!dragging) return;
-                const barH = this.d.freqScrollbar.getBoundingClientRect().height;
+                const barH = this.d.freqScrollbar!.getBoundingClientRect().height;
                 const dy = e.clientY - startY;
                 const boundedMax = h.coords.boundedMaxFreq;
                 const range = startMax - startMin;

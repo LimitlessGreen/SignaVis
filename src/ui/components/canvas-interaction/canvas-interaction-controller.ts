@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 import { SEEK_FINE_SEC } from '../../../shared/constants.ts';
 import { isTypingContext } from '../../../shared/utils.ts';
 
@@ -20,10 +21,10 @@ export interface CanvasInteractionHost {
     _startViewportPan(e: PointerEvent, source: 'spectrogram' | 'waveform'): void;
 }
 
-export class CanvasInteractionController {
-    private d: any;
+export class CanvasInteractionController implements UiController {
+    private d: DomRefs;
     private host: CanvasInteractionHost;
-    constructor(d: any, host: CanvasInteractionHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: CanvasInteractionHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;

@@ -1,4 +1,5 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
+import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface SettingsPanelHost {
     readonly audioBuffer: AudioBuffer | null;
@@ -13,10 +14,10 @@ export interface SettingsPanelHost {
     _requestSpectrogramRedraw(): void;
 }
 
-export class SettingsPanelController {
-    private d: any;
+export class SettingsPanelController implements UiController {
+    private d: DomRefs;
     private host: SettingsPanelHost;
-    constructor(d: any, host: SettingsPanelHost) { this.d = d; this.host = host; }
+    constructor(d: DomRefs, host: SettingsPanelHost) { this.d = d; this.host = host; }
 
     bind(on: OnFn): void {
         const h = this.host;
@@ -27,7 +28,7 @@ export class SettingsPanelController {
         on(this.d.maxFreqSelect, 'change', () => {
             if (h.audioBuffer && h._spectro.hasData) {
                 h._freqView.resetSilent();
-                h._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect.value) });
+                h._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect!.value) });
                 h._updateCoords();
                 h._createFrequencyLabels();
                 h._spectro.buildGrayscale();

@@ -1,4 +1,4 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
 
 export interface WindowEventsHost {
     readonly audioBuffer: AudioBuffer | null;
@@ -16,7 +16,7 @@ export interface WindowEventsHost {
     dispose(): void;
 }
 
-export class WindowEventsController {
+export class WindowEventsController implements UiController {
     private host: WindowEventsHost;
     constructor(host: WindowEventsHost) { this.host = host; }
 

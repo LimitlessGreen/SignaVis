@@ -171,36 +171,8 @@ export interface StampModeChangeDetail {
 
 // ── Annotation / label domain events ────────────────────────────────
 
-export interface AnnotationEntry {
-    id: string;
-    start: number;
-    end: number;
-    species?: string;
-    label?: string;
-    confidence?: number;
-    color?: string;
-    scientificName?: string;
-    commonName?: string;
-    origin?: string;
-    author?: string;
-    tags?: Record<string, string>;
-}
-
-export interface SpectrogramLabelEntry {
-    id: string;
-    start: number;
-    end: number;
-    freqMin?: number;
-    freqMax?: number;
-    label?: string;
-    species?: string;
-    color?: string;
-    scientificName?: string;
-    commonName?: string;
-    origin?: string;
-    author?: string;
-    tags?: Record<string, string>;
-}
+import type { AnnotationEntry, SpectrogramLabelEntry } from './label.types.ts';
+export type { AnnotationEntry, SpectrogramLabelEntry };
 
 export interface AnnotationEventDetail {
     annotation: AnnotationEntry;

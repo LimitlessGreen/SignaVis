@@ -1,4 +1,4 @@
-import type { OnFn } from '../shared/controller.types.ts';
+import type { OnFn, UiController } from '../shared/controller.types.ts';
 
 export interface DocumentEventsHost {
     _compactToolbarOpen: boolean;
@@ -23,7 +23,7 @@ export interface DocumentEventsHost {
     d: { toolbarRoot: HTMLElement | null };
 }
 
-export class DocumentEventsController {
+export class DocumentEventsController implements UiController {
     private host: DocumentEventsHost;
     constructor(host: DocumentEventsHost) { this.host = host; }
 
