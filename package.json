@@ -91,7 +91,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@tauri-apps/api": "^2",
-    "@esbuild-kit/esm-loader": "^2.6.5",
+    "tsx": "^4.19.4",
     "lucide-static": "^1.8.0",
     "sass": "^1.70.0",
     "typescript": "^6.0.2",
