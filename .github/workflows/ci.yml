@@ -178,9 +178,7 @@ jobs:
           body: ${{ steps.notes.outputs.NOTES }}
           fail_on_unmatched_files: true
           files: |
-            release-assets/js/**/*.tgz
-            release-assets/js/dist/**/*
-            release-assets/js/types/**/*
+            release-assets/js/*.tgz
             release-assets/python/**/*
 
   publish-npm:
