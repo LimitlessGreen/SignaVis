@@ -198,9 +198,11 @@ test('properties panel merges multiple preset tag changes', async () => {
         dd.classList.add('props-editable');
         const items = preset.options.map((v) => ({ value: v, custom: false }));
         const es = createStubEditableSelect({ value: tags[preset.key] || '', items, onChange: (val) => {
-          const newTags = { ...lbl.tags };
+          const cur = this.displayedLabel;
+          if (!cur) return;
+          const newTags = { ...cur.tags };
           if (val) newTags[preset.key] = val; else delete newTags[preset.key];
-          this._emitChange(lbl.id, { tags: newTags });
+          this._emitChange(cur.id, { tags: newTags });
         }});
         dd.appendChild(es.el);
         this._esInstances.push(es);
