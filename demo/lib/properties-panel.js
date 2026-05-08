@@ -95,6 +95,11 @@ export class PropertiesPanel {
     /** @type {object|null} */
     this._audioInfo = null;
 
+    /** @type {Map<string, {status: 'pending'|'done'|'error', value?: number}>} */
+    this._snrCache = new Map();
+    /** @type {HTMLElement|null} Reference to the SNR value cell for fast in-place updates. */
+    this._snrDd = null;
+
     /** @type {object|null} Actively selected (pinned) label */
     this._pinnedLabel = null;
     /** @type {object|null} Temporarily hovered label */
@@ -215,6 +220,32 @@ export class PropertiesPanel {
     if (this._pinnedLabel?.id === label?.id) this._pinnedLabel = label;
     if (this._hoverLabel?.id === label?.id) this._hoverLabel = label;
     this._renderLabel();
+  }
+
+  /**
+   * Update the cached SNR for a label and refresh the display if it is visible.
+   * @param {string} id  Label id
+   * @param {'pending'|'done'|'error'} status
+   * @param {number} [value]  SNR in dB (only when status === 'done')
+   */
+  setSnr(id, status, value) {
+    if (status === 'done' && value != null) {
+      this._snrCache.set(id, { status, value });
+    } else {
+      this._snrCache.set(id, { status });
+    }
+    // Fast path: update the cell directly without rebuilding the whole panel.
+    if (this.displayedLabel?.id === id && this._snrDd) {
+      this._snrDd.textContent = this._formatSnr(this._snrCache.get(id));
+    }
+  }
+
+  /** @private */
+  _formatSnr(entry) {
+    if (!entry) return '—';
+    if (entry.status === 'pending') return 'Computing…';
+    if (entry.status === 'done' && entry.value != null) return `${entry.value.toFixed(1)} dB`;
+    return '—';
   }
 
   /** Clear all content. */
@@ -364,10 +395,12 @@ export class PropertiesPanel {
     this._lblHeader.classList.toggle('props-hover-hint', isHover || isLocked);
 
     if (!lbl) {
+      this._snrDd = null;
       this._lblBody.innerHTML = '<div class="props-empty">No label selected.</div>';
       return;
     }
 
+    this._snrDd = null;
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
     if (isLocked && !isHover) {
       const hint = document.createElement('div');
@@ -501,6 +534,16 @@ export class PropertiesPanel {
       dl.appendChild(dt);
       dl.appendChild(dd);
     }
+    // SNR row — always read-only, value comes from SnrComputer
+    const snrDt = document.createElement('dt');
+    snrDt.textContent = 'SNR';
+    const snrDd = document.createElement('dd');
+    snrDd.classList.add('props-readonly');
+    snrDd.textContent = this._formatSnr(this._snrCache.get(lbl.id));
+    this._snrDd = snrDd;
+    dl.appendChild(snrDt);
+    dl.appendChild(snrDd);
+
     return dl;
   }
 

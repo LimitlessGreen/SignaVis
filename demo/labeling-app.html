@@ -559,6 +559,7 @@
     import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
     import { spectrogramCache } from '../src/infrastructure/SpectrogramCache.js';
     import { PropertiesPanel } from './lib/properties-panel.js';
+    import { SnrComputer } from './lib/snr-computer.js';
     import { CustomTagStore } from './lib/custom-tag-store.js';
     import { TAG_PRESETS } from './lib/label-table.js';
     import { createAboutPanel } from './lib/about-panel.js';
@@ -877,6 +878,9 @@
       getSetInfo: (setId) => state.labelSets?.get(setId) || null,
     });
     propsPanel.setTagStore(tagStore);
+
+    const snrComputer = new SnrComputer();
+    snrComputer.setOnResult((id, status, value) => propsPanel.setSnr(id, status, value));
 
     const rightBar = new Sidebar(document.getElementById('workspace'), {
       side: 'right',
@@ -1628,6 +1632,12 @@
 
       // Pin properties
       try { propsPanel.pinLabel(lbl); } catch (e) {}
+
+      // Trigger non-blocking SNR computation for the selected label
+      const _audioBuffer = player._state?.audioBuffer;
+      if (lbl && _audioBuffer) {
+        snrComputer.request(lbl, _audioBuffer, _audioBuffer.sampleRate);
+      }
     }
 
     // ── Label list ────────────────────────────────────────────────────
@@ -2662,13 +2672,29 @@
       if (propsPanel.displayedLabel?.id === id) {
         propsPanel.refreshLabel(state.labels[idx]);
       }
+      // Re-compute SNR when time or frequency bounds change
+      const snrAffected = updates.start !== undefined || updates.end !== undefined ||
+        updates.freqMin !== undefined || updates.freqMax !== undefined;
+      if (snrAffected) {
+        const _ab = player._state?.audioBuffer;
+        if (_ab) snrComputer.request(state.labels[idx], _ab, _ab.sampleRate);
+      }
     };
 
     player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); });
-    player.on('spectrogramlabelupdate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); });
+    player.on('spectrogramlabelupdate', (e) => {
+      upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+      // Re-compute SNR when a label is resized/moved on the spectrogram
+      const lbl = e.detail?.label;
+      if (lbl) {
+        const _ab = player._state?.audioBuffer;
+        if (_ab) snrComputer.request(lbl, _ab, _ab.sampleRate);
+      }
+    });
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;
       if (!id) return;
+      snrComputer.invalidate(id);
       state.labels = state.labels.filter((l) => l.id !== id);
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
