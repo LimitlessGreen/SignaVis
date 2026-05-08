@@ -3,7 +3,7 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 
 
 PRESETS = {
@@ -66,8 +66,8 @@ def merged_options(preset_name: str, overrides: dict) -> dict:
     return base
 
 
-st.set_page_config(page_title="Audio Workbench Player Demo", layout="wide")
-st.title("Audio Workbench Player (Streamlit Demo)")
+st.set_page_config(page_title="SignaVis Player Demo", layout="wide")
+st.title("SignaVis Player (Streamlit Demo)")
 st.caption("Preset wählen, Optionen live anpassen und den Embed direkt testen.")
 
 with st.sidebar:

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Audio Workbench",
+  "productName": "SignaVis",
   "version": "0.6.2",
-  "identifier": "io.github.limitlessgreen.audio-workbench",
+  "identifier": "io.github.limitlessgreen.signavis",
   "build": {
     "frontendDist": "../demo",
     "devUrl": "http://localhost:5173/demo/labeling-app.html",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Audio Workbench",
+        "title": "SignaVis",
         "url": "labeling-app.html",
         "width": 1400,
         "height": 900,

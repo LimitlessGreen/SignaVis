@@ -1,4 +1,4 @@
-"""Tests for audio_workbench.widget (AudioWorkbenchWidget)."""
+"""Tests for signavis.widget (AudioWorkbenchWidget)."""
 
 from __future__ import annotations
 
@@ -27,17 +27,17 @@ def _make_wav_bytes(n_samples: int = 160, sr: int = 16000) -> bytes:
 
 class TestWidgetImport(unittest.TestCase):
     def test_importable(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
         self.assertTrue(callable(AudioWorkbenchWidget))
 
     def test_exported_from_package(self):
-        from audio_workbench import AudioWorkbenchWidget
+        from signavis import AudioWorkbenchWidget
         self.assertTrue(callable(AudioWorkbenchWidget))
 
 
 class TestWidgetConstruction(unittest.TestCase):
     def test_basic_construction(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         self.assertIsNotNone(w._audio_b64)
@@ -49,7 +49,7 @@ class TestWidgetConstruction(unittest.TestCase):
         self.assertFalse(w.playing)
 
     def test_options_forwarded(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(
             _make_wav_bytes(), viewMode="spectrogram", showZoom=False
@@ -60,7 +60,7 @@ class TestWidgetConstruction(unittest.TestCase):
 
     def test_spectrogram_data(self):
         import numpy as np
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         arr = np.random.rand(50, 32).astype(np.float32)
         w = AudioWorkbenchWidget(_make_wav_bytes(), spectrogram_data=arr)
@@ -71,7 +71,7 @@ class TestWidgetConstruction(unittest.TestCase):
         self.assertEqual(meta["n_mels"], 32)
 
     def test_spectrogram_image_url(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(
             _make_wav_bytes(),
@@ -82,7 +82,7 @@ class TestWidgetConstruction(unittest.TestCase):
         self.assertTrue(meta["is_url"])
 
     def test_spectrogram_image_bytes(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
         w = AudioWorkbenchWidget(_make_wav_bytes(), spectrogram_image=png)
@@ -92,7 +92,7 @@ class TestWidgetConstruction(unittest.TestCase):
 
     def test_mutual_exclusion(self):
         import numpy as np
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         with self.assertRaises(ValueError):
             AudioWorkbenchWidget(
@@ -104,7 +104,7 @@ class TestWidgetConstruction(unittest.TestCase):
 
 class TestWidgetMethods(unittest.TestCase):
     def setUp(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         self.w = AudioWorkbenchWidget(_make_wav_bytes())
         self.w.send = MagicMock()
@@ -159,7 +159,7 @@ class TestWidgetMethods(unittest.TestCase):
 
 class TestWidgetEvents(unittest.TestCase):
     def test_on_event_callback(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         received = []
@@ -173,7 +173,7 @@ class TestWidgetEvents(unittest.TestCase):
         self.assertEqual(received[0]["id"], "a1")
 
     def test_unknown_event_ignored(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         received = []
@@ -185,7 +185,7 @@ class TestWidgetEvents(unittest.TestCase):
         self.assertEqual(len(received), 0)
 
     def test_non_dict_msg_ignored(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         # Should not raise
@@ -195,7 +195,7 @@ class TestWidgetEvents(unittest.TestCase):
 
 class TestWidgetTraits(unittest.TestCase):
     def test_iife_inlined_in_esm(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         # IIFE bundle is prepended to the ESM — both must be present
@@ -203,7 +203,7 @@ class TestWidgetTraits(unittest.TestCase):
         self.assertIn("export async function render", w._esm)
 
     def test_player_css_loaded(self):
-        from audio_workbench.widget import AudioWorkbenchWidget
+        from signavis.widget import AudioWorkbenchWidget
 
         w = AudioWorkbenchWidget(_make_wav_bytes())
         self.assertGreater(len(w._player_css), 0)
@@ -219,7 +219,7 @@ class TestWidgetTraits(unittest.TestCase):
             tmp_path = pathlib.Path(f.name)
 
         try:
-            from audio_workbench.widget import AudioWorkbenchWidget
+            from signavis.widget import AudioWorkbenchWidget
 
             w = AudioWorkbenchWidget(tmp_path)
             self.assertGreater(len(w._audio_b64), 0)
@@ -236,7 +236,7 @@ class TestWidgetTraits(unittest.TestCase):
             tmp_name = f.name
 
         try:
-            from audio_workbench.widget import AudioWorkbenchWidget
+            from signavis.widget import AudioWorkbenchWidget
 
             w = AudioWorkbenchWidget(tmp_name)
             self.assertGreater(len(w._audio_b64), 0)
@@ -249,11 +249,11 @@ class TestPlayer(unittest.TestCase):
     """Tests for the convenience Player class."""
 
     def test_importable(self):
-        from audio_workbench import Player
+        from signavis import Player
         self.assertTrue(callable(Player))
 
     def test_repr_html(self):
-        from audio_workbench import Player
+        from signavis import Player
 
         p = Player(_make_wav_bytes())
         html = p._repr_html_()
@@ -270,7 +270,7 @@ class TestPlayer(unittest.TestCase):
             tmp_path = pathlib.Path(f.name)
 
         try:
-            from audio_workbench import Player
+            from signavis import Player
 
             p = Player(tmp_path, viewMode="spectrogram")
             self.assertIn("<iframe", p._repr_html_())
@@ -278,7 +278,7 @@ class TestPlayer(unittest.TestCase):
             tmp_path.unlink()
 
     def test_options_forwarded(self):
-        from audio_workbench import Player
+        from signavis import Player
 
         p = Player(_make_wav_bytes(), viewMode="waveform")
         self.assertIn("waveform", p._repr_html_())
@@ -288,15 +288,15 @@ class TestShowFunction(unittest.TestCase):
     """Tests for the show() convenience function."""
 
     def test_importable(self):
-        from audio_workbench import show
+        from signavis import show
         self.assertTrue(callable(show))
 
-    @patch("audio_workbench.render_daw_player")
+    @patch("signavis.render_daw_player")
     def test_calls_display(self, mock_render):
         mock_render.return_value = "<iframe></iframe>"
 
         with patch("IPython.display.display") as mock_display:
-            from audio_workbench import show
+            from signavis import show
 
             show(_make_wav_bytes(), viewMode="both")
             mock_display.assert_called_once()

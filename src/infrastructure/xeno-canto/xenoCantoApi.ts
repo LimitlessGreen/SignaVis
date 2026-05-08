@@ -378,7 +378,7 @@ export function buildXenoCantoAnnotationSet(params: any = {}) {
         set_source: '',
         set_uri: '',
         set_name: meta.setName,
-        annotation_software_name_and_version: params.apiVersion || 'Audio Workbench',
+        annotation_software_name_and_version: params.apiVersion || 'SignaVis',
         set_creator: meta.setCreator,
         set_creator_id: '',
         set_owner: '',

@@ -9,8 +9,8 @@ export function createAboutPanel() {
   el.hidden = true;
   el.innerHTML = `
     <div class="panel-actions" style="padding: 12px 14px;">
-      <a class="sidebar-action-btn" href="https://github.com/LimitlessGreen/Audio-Workbench" target="_blank" rel="noopener noreferrer">Open on GitHub</a>
-      <a class="sidebar-action-btn danger" href="https://github.com/LimitlessGreen/Audio-Workbench/issues" target="_blank" rel="noopener noreferrer" aria-label="Report an issue">
+      <a class="sidebar-action-btn" href="https://github.com/LimitlessGreen/SignaVis" target="_blank" rel="noopener noreferrer">Open on GitHub</a>
+      <a class="sidebar-action-btn danger" href="https://github.com/LimitlessGreen/SignaVis/issues" target="_blank" rel="noopener noreferrer" aria-label="Report an issue">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM8 11.2a.9.9 0 110 1.8.9.9 0 010-1.8zM8 3.8a.7.7 0 01.7.7v4.2a.7.7 0 11-1.4 0V4.5c0-.39.31-.7.7-.7z" fill="#fff"/></svg>
         Report an issue
       </a>
@@ -18,8 +18,8 @@ export function createAboutPanel() {
     <div class="help-content">
       <div class="help-section">
         <h3>About</h3>
-        <p>Repository: <a href="https://github.com/LimitlessGreen/Audio-Workbench" target="_blank" rel="noopener noreferrer">github.com/LimitlessGreen/Audio-Workbench</a></p>
-        <p>Project: audio-workbench</p>
+        <p>Repository: <a href="https://github.com/LimitlessGreen/SignaVis" target="_blank" rel="noopener noreferrer">github.com/LimitlessGreen/SignaVis</a></p>
+        <p>Project: signavis</p>
         <p>Author: LimitlessGreen</p>
         <p>License: AGPL-3.0-only</p>
 

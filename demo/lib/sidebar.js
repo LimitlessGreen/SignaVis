@@ -37,7 +37,7 @@ export class Sidebar {
   constructor(workspace, options = {}) {
     this._workspace = workspace;
     this._side = options.side === 'right' ? 'right' : 'left';
-    this._storageKey = options.storageKey || `audio-workbench.sidebar-${this._side}.v1`;
+    this._storageKey = options.storageKey || `signavis.sidebar-${this._side}.v1`;
     this._cssProp = this._side === 'right' ? CSS_PROP_RIGHT : CSS_PROP_LEFT;
     this._defaultWidth = options.defaultWidth || DEFAULT_WIDTH;
     this._minWidth = options.minWidth || MIN_WIDTH;

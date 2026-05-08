@@ -3,7 +3,7 @@ title: Future Plans
 ---
 
 ## Important
-- [ ] **Find a proper name for the app** (Audio Workbench is a working title)
+- [ ] **Find a proper name for the app** (SignaVis is a working title)
 
 ## UI
 

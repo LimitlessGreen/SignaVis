@@ -20,9 +20,9 @@ use project_store::ProjectStore;
 // ── Path helpers ─────────────────────────────────────────────────────
 
 /// Returns the platform-specific directory where project files are kept.
-///   macOS : ~/Library/Application Support/io.github.limitlessgreen.audio-workbench/projects/
-///   Linux : ~/.local/share/io.github.limitlessgreen.audio-workbench/projects/
-///   Windows: %APPDATA%\io.github.limitlessgreen.audio-workbench\projects\
+///   macOS : ~/Library/Application Support/io.github.limitlessgreen.signavis/projects/
+///   Linux : ~/.local/share/io.github.limitlessgreen.signavis/projects/
+///   Windows: %APPDATA%\io.github.limitlessgreen.signavis\projects\
 fn projects_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -332,5 +332,5 @@ pub fn run() {
             grpc_analysis_analyze,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Audio Workbench");
+        .expect("error while running SignaVis");
 }

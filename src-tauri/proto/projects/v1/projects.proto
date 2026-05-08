@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package audio_workbench.projects.v1;
+package signavis.projects.v1;
 
 service ProjectService {
   rpc SaveProject(SaveProjectRequest) returns (SaveProjectResponse);

@@ -1,6 +1,6 @@
 # Python / Gradio / Streamlit Integration Guide
 
-Audio-Workbench kann in Python-Anwendungen über seinen IIFE-Bundle eingebettet werden.
+SignaVis kann in Python-Anwendungen über seinen IIFE-Bundle eingebettet werden.
 Alle relevanten Typen sind in `types/index.d.ts` exportiert.
 
 ---

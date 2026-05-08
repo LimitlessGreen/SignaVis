@@ -8,7 +8,7 @@ import os from 'node:os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-workbench-types-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'signavis-types-'));
 const generatedDir = path.join(rootDir, 'types', 'generated');
 const indexFile = path.join(rootDir, 'types', 'index.d.ts');
 

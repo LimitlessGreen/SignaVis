@@ -1,4 +1,4 @@
-"""Tests for audio_workbench.renderer."""
+"""Tests for signavis.renderer."""
 
 from __future__ import annotations
 
@@ -39,32 +39,32 @@ def _make_wav_bytes(n_samples: int = 160, sr: int = 16000) -> bytes:
 
 class TestRenderBasic(unittest.TestCase):
     def test_returns_iframe_html(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(_make_wav_bytes())
         self.assertIn("<iframe", html)
         self.assertIn("srcdoc=", html)
 
     def test_iframe_height_default(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(_make_wav_bytes())
         self.assertIn("height:620px", html)
 
     def test_iframe_height_custom(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(_make_wav_bytes(), iframe_height=400)
         self.assertIn("height:400px", html)
 
     def test_iframe_height_clamped(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(_make_wav_bytes(), iframe_height=5)
         self.assertIn("height:180px", html)
 
     def test_audio_base64_in_output(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         wav = _make_wav_bytes()
         b64 = base64.b64encode(wav).decode("ascii")
@@ -80,7 +80,7 @@ class TestRenderBasic(unittest.TestCase):
 class TestEncodeSpectrogramData(unittest.TestCase):
     def test_basic_encoding(self):
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         arr = np.random.rand(100, 64).astype(np.float32)
         b64, n_frames, n_mels = _encode_spectrogram_data(arr)
@@ -93,7 +93,7 @@ class TestEncodeSpectrogramData(unittest.TestCase):
     def test_auto_transpose(self):
         """Arrays shaped (n_mels, n_frames) should be auto-transposed."""
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         # 64 mels × 200 frames — should be transposed to (200, 64)
         arr = np.random.rand(64, 200).astype(np.float32)
@@ -103,21 +103,21 @@ class TestEncodeSpectrogramData(unittest.TestCase):
 
     def test_rejects_1d(self):
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         with self.assertRaises(ValueError):
             _encode_spectrogram_data(np.zeros(100))
 
     def test_rejects_3d(self):
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         with self.assertRaises(ValueError):
             _encode_spectrogram_data(np.zeros((10, 10, 3)))
 
     def test_float64_coerced_to_float32(self):
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         arr = np.random.rand(50, 32)  # float64
         b64, n_frames, n_mels = _encode_spectrogram_data(arr)
@@ -126,7 +126,7 @@ class TestEncodeSpectrogramData(unittest.TestCase):
 
     def test_roundtrip_values(self):
         import numpy as np
-        from audio_workbench.renderer import _encode_spectrogram_data
+        from signavis.renderer import _encode_spectrogram_data
 
         arr = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32)
         b64, n_frames, n_mels = _encode_spectrogram_data(arr)
@@ -136,7 +136,7 @@ class TestEncodeSpectrogramData(unittest.TestCase):
 
     def test_render_with_spectrogram_data(self):
         import numpy as np
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         arr = np.random.rand(50, 32).astype(np.float32)
         html = render_daw_player(_make_wav_bytes(), spectrogram_data=arr)
@@ -151,14 +151,14 @@ class TestEncodeSpectrogramData(unittest.TestCase):
 
 class TestCoerceImageToPngBytes(unittest.TestCase):
     def test_bytes_passthrough(self):
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         raw = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         result = _coerce_image_to_png_bytes(raw)
         self.assertIs(result, raw)
 
     def test_bytesio(self):
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
         buf = io.BytesIO(data)
@@ -175,7 +175,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("matplotlib not installed")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         fig, ax = plt.subplots(figsize=(3, 2))
         ax.bar([1, 2, 3], [4, 5, 6])
@@ -190,7 +190,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("Pillow not installed")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         img = PILImage.new("L", (80, 40), color=127)
         result = _coerce_image_to_png_bytes(img)
@@ -206,7 +206,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("numpy + Pillow required")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         arr = np.random.randint(0, 256, (40, 80), dtype=np.uint8)
         result = _coerce_image_to_png_bytes(arr)
@@ -219,7 +219,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("numpy + Pillow required")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         arr = np.random.randint(0, 256, (40, 80, 3), dtype=np.uint8)
         result = _coerce_image_to_png_bytes(arr)
@@ -232,21 +232,21 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("numpy + Pillow required")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         arr = np.random.randint(0, 256, (40, 80, 4), dtype=np.uint8)
         result = _coerce_image_to_png_bytes(arr)
         self.assertTrue(result.startswith(b"\x89PNG"))
 
     def test_unsupported_type(self):
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         with self.assertRaises(TypeError):
             _coerce_image_to_png_bytes(42)
 
     def test_numpy_bad_shape(self):
         import numpy as np
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         with self.assertRaises(ValueError):
             _coerce_image_to_png_bytes(np.zeros((10, 20, 5), dtype=np.uint8))
@@ -259,7 +259,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         except ImportError:
             self.skipTest("matplotlib not installed")
 
-        from audio_workbench.renderer import _coerce_image_to_png_bytes
+        from signavis.renderer import _coerce_image_to_png_bytes
 
         fig, ax = plt.subplots(figsize=(2, 2))
         ax.plot([0, 1], [0, 1])
@@ -268,7 +268,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         plt.close(fig)
 
     def test_render_with_image_string(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(
             _make_wav_bytes(),
@@ -278,7 +278,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
         self.assertIn("data:image/png;base64,AAAA", html)
 
     def test_render_with_image_bytes(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
         html = render_daw_player(_make_wav_bytes(), spectrogram_image=png)
@@ -294,7 +294,7 @@ class TestCoerceImageToPngBytes(unittest.TestCase):
 class TestMutualExclusion(unittest.TestCase):
     def test_data_and_image_both_raises(self):
         import numpy as np
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         with self.assertRaises(ValueError):
             render_daw_player(
@@ -312,7 +312,7 @@ class TestMutualExclusion(unittest.TestCase):
 class TestRenderOptions(unittest.TestCase):
     def test_sample_rate_in_data_mode(self):
         import numpy as np
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         arr = np.random.rand(50, 32).astype(np.float32)
         html = render_daw_player(
@@ -322,7 +322,7 @@ class TestRenderOptions(unittest.TestCase):
 
     def test_spectrogram_mode_classic(self):
         import numpy as np
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         arr = np.random.rand(50, 32).astype(np.float32)
         html = render_daw_player(
@@ -332,7 +332,7 @@ class TestRenderOptions(unittest.TestCase):
         self.assertIn("classic", html)
 
     def test_options_forwarded_to_constructor(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(
             _make_wav_bytes(), showFileOpen=False, showZoom=True
@@ -341,7 +341,7 @@ class TestRenderOptions(unittest.TestCase):
         self.assertIn("showZoom", html)
 
     def test_iframe_height_clamped_max(self):
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         html = render_daw_player(_make_wav_bytes(), iframe_height=9999)
         self.assertIn("height:1600px", html)
@@ -352,7 +352,7 @@ class TestRenderOptions(unittest.TestCase):
         except ImportError:
             self.skipTest("Pillow not installed")
 
-        from audio_workbench.renderer import render_daw_player
+        from signavis.renderer import render_daw_player
 
         img = PILImage.new("RGB", (10, 10))
         html = render_daw_player(_make_wav_bytes(), spectrogram_image=img)

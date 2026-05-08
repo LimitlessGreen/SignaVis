@@ -66,7 +66,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ../keycloak/realm-audio-workbench.json:/opt/keycloak/data/import/realm-audio-workbench.json:ro
+      - ../keycloak/realm-signavis.json:/opt/keycloak/data/import/realm-signavis.json:ro
     command: ["start-dev", "--import-realm"]
     depends_on:
       postgres:

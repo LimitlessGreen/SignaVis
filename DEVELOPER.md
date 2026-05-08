@@ -75,35 +75,9 @@ Desktop app (Tauri)
   npm run desktop:build
   ```
 - Project files are stored in the platform app-data directory:
-  - Linux:   `~/.local/share/io.github.limitlessgreen.audio-workbench/projects/`
-  - macOS:   `~/Library/Application Support/io.github.limitlessgreen.audio-workbench/projects/`
-  - Windows: `%APPDATA%\io.github.limitlessgreen.audio-workbench\projects\`
-
-Observability (gRPC builds)
-- The `grpc` feature activates structured logging via the `tracing` crate.
-- Log output goes to stderr in a human-readable `fmt` format.
-- Control verbosity with the `RUST_LOG` environment variable:
-  ```
-  RUST_LOG=debug npm run desktop:dev:grpc        # verbose
-  RUST_LOG=audio_workbench_lib=debug npm run desktop:dev:grpc  # scoped
-  RUST_LOG=warn npm run desktop:dev:grpc          # quiet
-  ```
-  Default level when `RUST_LOG` is unset: `info`.
-- Key logged events:
-  | Event | Level |
-  |---|---|
-  | gRPC server bind address on startup | `info` |
-  | HTTP passthrough enabled/disabled (endpoint + timeout) | `info` |
-  | `load_model` called (model URL) | `debug` |
-  | `load_model` result (label count) | `info` |
-  | `set_location` called (lat/lon) | `debug` |
-  | `analyze` called (sample count) | `debug` |
-  | HTTP passthrough request error | `warn` |
-  | HTTP passthrough non-2xx response | `warn` |
-  | gRPC server exited with error | `warn` |
-
-Deployment modes
-See [docs/deployment.md](docs/deployment.md) for the full migration path between deployment modes.
+  - Linux:   `~/.local/share/io.github.limitlessgreen.signavis/projects/`
+  - macOS:   `~/Library/Application Support/io.github.limitlessgreen.signavis/projects/`
+  - Windows: `%APPDATA%\io.github.limitlessgreen.signavis\projects\`
 
 Notes
 - The new `scripts/sync-version.js` is a Node replacement for the previous shell+Python script and is cross-platform.

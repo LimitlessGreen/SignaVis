@@ -57,7 +57,7 @@ jobs:
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <meta charset="utf-8">
-          <h1>Audio Workbench</h1>
+          <h1>SignaVis</h1>
           <ul>
             <li><a href="demo/storybook.html">Demo / Storybook</a></li>
             <li><a href="docs/">Dokumentation</a></li>

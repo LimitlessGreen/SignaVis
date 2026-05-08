@@ -1,22 +1,22 @@
 
-# audio-workbench (Python wrapper)
+# signavis (Python wrapper)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LimitlessGreen/Audio-Workbench/main/docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
+  <img src="https://raw.githubusercontent.com/LimitlessGreen/SignaVis/main/docs/img/screenshot.png" alt="SignaVis Screenshot" width="900" />
 </p>
 
 <p align="center">
-    <a href="https://pypi.org/project/audio-workbench/">
-        <img src="https://img.shields.io/pypi/v/audio-workbench.svg" alt="PyPI">
+    <a href="https://pypi.org/project/signavis/">
+        <img src="https://img.shields.io/pypi/v/signavis.svg" alt="PyPI">
     </a>
-    <a href="https://github.com/LimitlessGreen/Audio-Workbench">
-        <img src="https://img.shields.io/github/stars/LimitlessGreen/Audio-Workbench?style=social" alt="GitHub stars">
+    <a href="https://github.com/LimitlessGreen/SignaVis">
+        <img src="https://img.shields.io/github/stars/LimitlessGreen/SignaVis?style=social" alt="GitHub stars">
     </a>
 </p>
 
-Python package to embed the Audio Workbench DAW player in Streamlit, Jupyter, Gradio, and any HTML-capable UI. Supports waveform & spectrogram visualization, annotation, and custom player layouts.
+Python package to embed the SignaVis DAW player in Streamlit, Jupyter, Gradio, and any HTML-capable UI. Supports waveform & spectrogram visualization, annotation, and custom player layouts.
 
-**Live demo:** https://limitlessgreen.github.io/Audio-Workbench/
+**Live demo:** https://limitlessgreen.github.io/SignaVis/
 
 ---
 
@@ -26,14 +26,14 @@ Python package to embed the Audio Workbench DAW player in Streamlit, Jupyter, Gr
 
 
 ```bash
-pip install audio-workbench
+pip install signavis
 ```
 
 Optional for demos:
 
 ```bash
-pip install "audio-workbench[streamlit]"
-pip install "audio-workbench[gradio]"
+pip install "signavis[streamlit]"
+pip install "signavis[gradio]"
 ```
 
 
@@ -46,7 +46,7 @@ You can load your own audio file (WAV, MP3, etc.) and display it as a spectrogra
 **Jupyter Notebook:**
 
 ```python
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 
 with open("your_audio.wav", "rb") as f:
     audio_bytes = f.read()
@@ -62,7 +62,7 @@ HTML(html)
 
 ```python
 import streamlit as st
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 import streamlit.components.v1 as components
 
 uploaded = st.file_uploader("Choose an audio file", type=["wav", "mp3", "ogg", "flac"])
@@ -78,7 +78,7 @@ You can use all other options as described above to customize the player.
 Embed a DAW player for your own audio in Streamlit, Jupyter, or any HTML UI:
 
 ```python
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 html = render_daw_player(
         audio_bytes,  # bytes (WAV/MP3)
         viewMode="spectrogram",   # 'both' | 'waveform' | 'spectrogram'
@@ -119,7 +119,7 @@ HTML(html)
 | `labelTaxonomy` | `[{'name': 'Species', 'color': '#0ea5e9'}]` | Custom label presets |
 | `iframe_height` | `320` | Set iframe height (default: 620) |
 
-For all options, see the [Web API docs](https://github.com/LimitlessGreen/Audio-Workbench#player-options).
+For all options, see the [Web API docs](https://github.com/LimitlessGreen/SignaVis#player-options).
 
 ---
 
@@ -144,7 +144,7 @@ You can inject your own pre-computed spectrogram data or images:
 - `spectrogram_data`: 2D numpy array (nFrames × nMels, float32)
 - `spectrogram_image`: PNG/JPEG bytes, data-URL, matplotlib Figure, PIL Image, or numpy uint8 array
 
-See the [Web API](https://github.com/LimitlessGreen/Audio-Workbench#external-spectrogram-injection) for details.
+See the [Web API](https://github.com/LimitlessGreen/SignaVis#external-spectrogram-injection) for details.
 
 ---
 
@@ -166,7 +166,7 @@ python demo_gradio.py
 
 **Google Colab:**
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb)
 
 Try the interactive notebook demo directly in your browser—no setup required!
 

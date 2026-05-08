@@ -696,7 +696,7 @@ export class PresetManager {
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href     = url;
-        a.download = 'audio-workbench-presets.json';
+        a.download = 'signavis-presets.json';
         a.click();
         URL.revokeObjectURL(url);
         this.#showPresetStatus('Exported');

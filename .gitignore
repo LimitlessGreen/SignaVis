@@ -23,7 +23,7 @@ venv/
 python-wrapper/build/
 python-wrapper/dist/
 python-wrapper/*.egg-info/
-python-wrapper/audio_workbench/assets/birdnet-player.*
+python-wrapper/signavis/assets/birdnet-player.*
 
 # Misc build/temp
 build/

@@ -1,6 +1,6 @@
 // session-sets.js — persist and restore session label sets
 
-const SESSION_SETS_KEY = 'audio-workbench.session-sets.v1';
+const SESSION_SETS_KEY = 'signavis.session-sets.v1';
 
 /** Persist session sets from `state` into localStorage. */
 export function saveSessionSets(state) {

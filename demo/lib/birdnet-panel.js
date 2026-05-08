@@ -28,8 +28,8 @@ import ModalManager from '../../src/ui/components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from './geo-map-modal.js';
 
 const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
-const STORAGE_KEY     = 'audio-workbench.birdnet-model-url.v2';
-const STORAGE_GEO_KEY = 'audio-workbench.birdnet-geo-coords';
+const STORAGE_KEY     = 'signavis.birdnet-model-url.v2';
+const STORAGE_GEO_KEY = 'signavis.birdnet-geo-coords';
 let DETECTION_COLOR = 'var(--color-detection)';
 if (typeof window !== 'undefined' && window.getComputedStyle) {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--color-detection') || '';

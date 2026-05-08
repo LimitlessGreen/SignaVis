@@ -1,5 +1,5 @@
 /**
- * anywidget ESM module for Audio Workbench.
+ * anywidget ESM module for SignaVis.
  *
  * Communicates with the Python AudioWorkbenchWidget via the anywidget
  * model.get / model.set / model.on / model.send protocol.

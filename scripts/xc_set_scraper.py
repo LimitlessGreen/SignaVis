@@ -25,7 +25,7 @@ try:
 except Exception:
     raise SystemExit('This script requires Python 3 and network access.')
 
-USER_AGENT = 'AudioWorkbench-XCSetScraper/0.1 (+https://github.com/LimitlessGreen/Audio-Workbench)'
+USER_AGENT = 'AudioWorkbench-XCSetScraper/0.1 (+https://github.com/LimitlessGreen/SignaVis)'
 
 
 def fetch_set_page(set_id: int, timeout: float = 10.0) -> dict:

@@ -13,13 +13,13 @@ except ImportError:
 
 
 _PLAYER_JS = (
-    files("audio_workbench.assets")
+    files("signavis.assets")
     .joinpath("birdnet-player.iife.js")
     .read_text(encoding="utf-8")
     .replace("</script>", "<\\/script>")
 )
 _PLAYER_CSS = (
-    files("audio_workbench.assets")
+    files("signavis.assets")
     .joinpath("birdnet-player.css")
     .read_text(encoding="utf-8")
 )

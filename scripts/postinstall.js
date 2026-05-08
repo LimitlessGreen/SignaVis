@@ -7,7 +7,7 @@ const scriptPath = './scripts/setup-git-hooks.sh';
 
 const bashCheck = spawnSync('bash', ['--version'], { stdio: 'ignore' });
 if (bashCheck.status !== 0) {
-    const msg = '[audio-workbench] Skipping git hook setup: bash not found.';
+    const msg = '[signavis] Skipping git hook setup: bash not found.';
     if (required) {
         console.error(msg);
         process.exit(1);

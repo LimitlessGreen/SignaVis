@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "audio-workbench"
+name = "signavis"
 version = "0.6.2"
-description = "Python wrapper for Audio Workbench Player (HTML/Streamlit embedding)"
+description = "Python wrapper for SignaVis Player (HTML/Streamlit embedding)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 authors = [{ name = "LimitlessGreen" }]
@@ -19,7 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.9",
   "Operating System :: OS Independent"
 ]
-urls = { "Homepage" = "https://github.com/LimitlessGreen/Audio-Workbench", "Repository" = "https://github.com/LimitlessGreen/Audio-Workbench", "Issues" = "https://github.com/LimitlessGreen/Audio-Workbench/issues" }
+urls = { "Homepage" = "https://github.com/LimitlessGreen/SignaVis", "Repository" = "https://github.com/LimitlessGreen/SignaVis", "Issues" = "https://github.com/LimitlessGreen/SignaVis/issues" }
 
 [project.optional-dependencies]
 widget = ["anywidget>=0.9", "traitlets>=5.0"]
@@ -31,10 +31,10 @@ package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["audio_workbench*"]
+include = ["signavis*"]
 
 [tool.setuptools.package-data]
-"audio_workbench.assets" = ["*.js", "*.css"]
+"signavis.assets" = ["*.js", "*.css"]
 
 
 

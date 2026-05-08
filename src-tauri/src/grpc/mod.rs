@@ -6,11 +6,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 pub mod analysis {
-    tonic::include_proto!("audio_workbench.analysis.v1");
+    tonic::include_proto!("signavis.analysis.v1");
 }
 
 pub mod projects {
-    tonic::include_proto!("audio_workbench.projects.v1");
+    tonic::include_proto!("signavis.projects.v1");
 }
 
 use std::net::SocketAddr;

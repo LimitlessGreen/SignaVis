@@ -3,7 +3,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 
 
 PRESETS = {
@@ -154,8 +154,8 @@ def render_from_upload(
     return html, json.dumps(options, indent=2)
 
 
-with gr.Blocks(title="Audio Workbench Player (Gradio Demo)") as demo:
-    gr.Markdown("# Audio Workbench Player (Gradio Demo)")
+with gr.Blocks(title="SignaVis Player (Gradio Demo)") as demo:
+    gr.Markdown("# SignaVis Player (Gradio Demo)")
     gr.Markdown("Preset wählen, Optionen setzen und den Embed direkt testen.")
 
     with gr.Row():

@@ -83,7 +83,7 @@ export function showTip(
   disableCheckbox.type = 'checkbox';
   disableCheckbox.className = 'daily-tip-disable-checkbox';
   disableCheckbox.id = disableId;
-  try { disableCheckbox.checked = localStorage.getItem('audio-workbench.daily-tips.disabled') === '1'; } catch (e) { /* ignore */ }
+  try { disableCheckbox.checked = localStorage.getItem('signavis.daily-tips.disabled') === '1'; } catch (e) { /* ignore */ }
   disableLabel.appendChild(disableCheckbox);
   disableLabel.appendChild(document.createTextNode(" Don't show again"));
 
@@ -132,7 +132,7 @@ export function showTip(
   closeBtn.addEventListener('click', () => modal.close());
 
   disableCheckbox.addEventListener('change', () => {
-    try { localStorage.setItem('audio-workbench.daily-tips.disabled', disableCheckbox.checked ? '1' : '0'); } catch (e) { /* ignore */ }
+    try { localStorage.setItem('signavis.daily-tips.disabled', disableCheckbox.checked ? '1' : '0'); } catch (e) { /* ignore */ }
     try { onDisable && onDisable(disableCheckbox.checked); } catch (e) { /* ignore */ }
   });
 
@@ -144,7 +144,7 @@ export function showTip(
  * Initialize daily tips: shows one tip per day unless disabled.
  * Call with `{ force: true }` to show immediately regardless of last shown date.
  */
-export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, storagePrefix = 'audio-workbench.daily-tips', force = false } = {}) {
+export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, storagePrefix = 'signavis.daily-tips', force = false } = {}) {
   try {
     const disabled = localStorage.getItem(`${storagePrefix}.disabled`) === '1';
     if (disabled && !force) return;

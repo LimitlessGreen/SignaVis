@@ -1,12 +1,12 @@
-site_name: Audio-Workbench Docs
-site_url: https://limitlessgreen.github.io/Audio-Workbench/docs
+site_name: SignaVis Docs
+site_url: https://limitlessgreen.github.io/SignaVis/docs
 copyright: Copyright &copy; 2026 LimitlessGreen
 
 site_author: LimitlessGreen
 
 # Repository
-repo_name: LimitlessGreen/Audio-Workbench
-repo_url: https://github.com/LimitlessGreen/Audio-Workbench
+repo_name: LimitlessGreen/SignaVis
+repo_url: https://github.com/LimitlessGreen/SignaVis
 edit_uri: blob/main/docs/
 
 

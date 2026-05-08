@@ -35,7 +35,7 @@ test('buildXenoCantoAnnotationSet maps metadata + annotations', () => {
                 soundType: 'call',
             },
         ],
-        apiVersion: 'Audio Workbench Test',
+        apiVersion: 'SignaVis Test',
     });
 
     assert.equal(res.ok, true);
@@ -43,7 +43,7 @@ test('buildXenoCantoAnnotationSet maps metadata + annotations', () => {
     assert.equal(res.payload.annotations.length, 1);
     assert.equal(res.payload.annotations[0].xc_nr, '12345');
     assert.equal(res.payload.annotations[0].scientific_name, 'Corvus corax');
-    assert.equal(res.payload.annotation_software_name_and_version, 'Audio Workbench Test');
+    assert.equal(res.payload.annotation_software_name_and_version, 'SignaVis Test');
 });
 
 test('XenoCantoApiClient retries once on retryable status and succeeds', async () => {

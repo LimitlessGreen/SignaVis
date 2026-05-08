@@ -1,5 +1,5 @@
 /**
- * Audio Workbench — Storybook Stories
+ * SignaVis — Storybook Stories
  *
  * Each story: { id, title, description, category, defaultSample, run(root, audioUrl) → player | {destroy()} }
  */

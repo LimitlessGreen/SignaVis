@@ -17,7 +17,7 @@ const CHUNK_SAMPLES = TARGET_SR * CHUNK_SECONDS; // 144 000
  * on the GitHub Pages demo site.  npm users can use this as a convenient
  * fallback or host the model themselves.
  */
-export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/Audio-Workbench/models/birdnet-v2.4/';
+export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/models/birdnet-v2.4/';
 
 // ---------------------------------------------------------------------------
 // Worker source — runs in a dedicated thread with WebGL-accelerated TF.js

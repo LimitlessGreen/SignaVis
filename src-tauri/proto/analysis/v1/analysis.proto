@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package audio_workbench.analysis.v1;
+package signavis.analysis.v1;
 
 service AnalysisService {
   rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);

@@ -105,6 +105,11 @@ async function main() {
     env: {
       ...process.env,
       PLATFORM_LOCAL_PORT: String(LOCAL_PORT),
+      // Suppress WebKitGTK GPU/Vulkan warnings in WSL / headless environments.
+      WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+      WEBKIT_DISABLE_COMPOSITING_MODE: '1',
+      // Suppress Locale warning from GTK.
+      LC_ALL: process.env.LC_ALL || 'C.UTF-8',
     },
   });
 

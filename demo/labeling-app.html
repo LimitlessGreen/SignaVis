@@ -3,7 +3,7 @@
   <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Audio Workbench — Labeling App</title>
+  <title>SignaVis — Labeling App</title>
   <link rel="stylesheet" href="/src/styles/tokens.css" />
   <!-- Styles are provided via the SCSS entrypoint imported in the module script: ../src/styles/main.scss -->
 </head>
@@ -34,7 +34,7 @@
       <div class="sponsor-card" role="tooltip">
         <div class="sponsor-card__glow"></div>
         <p class="sponsor-card__title">♥ Support this project</p>
-        <p class="sponsor-card__body">Audio Workbench is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
+        <p class="sponsor-card__body">SignaVis is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
         <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta">Become a Sponsor →</a>
       </div>
       <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
@@ -424,7 +424,7 @@
       <div class="statusbar-center" aria-hidden="true" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;color:var(--color-text-secondary);font-size:0.85rem">
         <span>Alpha — please don’t use in production yet.</span>
         <span style="margin-left:10px;pointer-events:auto">
-          <a href="https://github.com/LimitlessGreen/Audio-Workbench/issues" target="_blank" rel="noopener noreferrer" style="color:var(--color-text-secondary);text-decoration:underline">Report issues</a>
+          <a href="https://github.com/LimitlessGreen/SignaVis/issues" target="_blank" rel="noopener noreferrer" style="color:var(--color-text-secondary);text-decoration:underline">Report issues</a>
         </span>
       </div>
   </footer>
@@ -461,7 +461,7 @@
       async function loadVersion() {
         // Try several candidate locations for version.json so the demo
         // works both on user/org pages and on project pages where the
-        // repo name is part of the path (e.g. /Audio-Workbench/version.json).
+        // repo name is part of the path (e.g. /SignaVis/version.json).
         const candidates = [];
         try {
           const m = location.pathname.match(/^\/([^\/]+)/);
@@ -487,7 +487,7 @@
                 if (fullSha) {
                   // Link to GitHub commit
                   try {
-                    commitEl.href = `https://github.com/LimitlessGreen/Audio-Workbench/commit/${fullSha}`;
+                    commitEl.href = `https://github.com/LimitlessGreen/SignaVis/commit/${fullSha}`;
                     commitEl.target = '_blank';
                     commitEl.rel = 'noopener noreferrer';
                     commitEl.title = json.commitFull || '';
@@ -1128,7 +1128,7 @@
     }
 
     // Mode persistence (multifile vs standalone)
-    const MODE_KEY = 'audio-workbench.mode.v1';
+    const MODE_KEY = 'signavis.mode.v1';
     function saveMode() { try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {} }
     function loadMode() { try { return localStorage.getItem(MODE_KEY) || null; } catch (e) { return null; } }
     // Initialize mode (default: standalone)
@@ -1221,7 +1221,7 @@
 
     // Persist labeler-profile fields (creator, license, …) from manual sets
     const PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
-    const PROFILE_KEY = 'audio-workbench.labeler-profile.v1';
+    const PROFILE_KEY = 'signavis.labeler-profile.v1';
     function saveSetProfile(s) {
       if (s.origin !== 'manual') return;
       try {
@@ -2101,7 +2101,7 @@
     });
 
     // ── XC no-key modal ───────────────────────────────────────────────
-    const XC_NOKEY_DISMISSED_KEY = 'audio-workbench.xc-nokey-dismissed.v1';
+    const XC_NOKEY_DISMISSED_KEY = 'signavis.xc-nokey-dismissed.v1';
     const xcNokeyModal = document.getElementById('xcNokeyModal');
     const xcNokeyDismiss = document.getElementById('xcNokeyDismiss');
     const xcNokeyCloseBtn = document.getElementById('xcNokeyCloseBtn');

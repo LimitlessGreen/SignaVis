@@ -1,4 +1,4 @@
-"""anywidget-based Audio Workbench player with bidirectional communication.
+"""anywidget-based SignaVis player with bidirectional communication.
 
 Provides ``AudioWorkbenchWidget`` — a Jupyter widget that renders the
 BirdNET DAW player and synchronizes annotations, labels, playback state,
@@ -32,7 +32,7 @@ _WIDGET_ESM = _PLAYER_JS + "\n\n" + _WIDGET_JS
 
 
 class AudioWorkbenchWidget(anywidget.AnyWidget):
-    """Interactive Audio Workbench player widget for Jupyter notebooks.
+    """Interactive SignaVis player widget for Jupyter notebooks.
 
     Provides bidirectional communication between Python and the JS player:
 
@@ -61,7 +61,7 @@ class AudioWorkbenchWidget(anywidget.AnyWidget):
 
     Examples
     --------
-    >>> from audio_workbench import AudioWorkbenchWidget
+    >>> from signavis import AudioWorkbenchWidget
     >>> w = AudioWorkbenchWidget(audio_bytes, viewMode="both")
     >>> w  # display in notebook cell
     >>> # After user draws annotations:

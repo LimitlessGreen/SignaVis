@@ -1,20 +1,20 @@
 # Python integration (Jupyter, Streamlit, Gradio, Widgets)
 
-This page documents the Python integration provided by the `audio-workbench` package: how to embed the BirdNET DAW player in Jupyter/Colab, Streamlit, Gradio and how to use the interactive widget API.
+This page documents the Python integration provided by the `signavis` package: how to embed the BirdNET DAW player in Jupyter/Colab, Streamlit, Gradio and how to use the interactive widget API.
 
 ## Installation
 
 Install the package from PyPI:
 
 ```bash
-pip install audio-workbench
+pip install signavis
 ```
 
 Optional extras:
 
 ```bash
-pip install "audio-workbench[streamlit]"
-pip install "audio-workbench[gradio]"
+pip install "signavis[streamlit]"
+pip install "signavis[gradio]"
 ```
 
 For widget support (Jupyter interactive widget) install `anywidget` and its backends:
@@ -30,7 +30,7 @@ The primary convenience function is `render_daw_player(audio_bytes, **options)`.
 Jupyter example:
 
 ```python
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 from IPython.display import HTML
 
 with open('myfile.wav', 'rb') as f:
@@ -44,7 +44,7 @@ Streamlit example (use `components.html`):
 ```python
 import streamlit as st
 import streamlit.components.v1 as components
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 
 uploaded = st.file_uploader('Audio', type=['wav','mp3'])
 if uploaded:
@@ -66,7 +66,7 @@ if uploaded:
 Use `generate_spectrogram_image()` to create a PNG and meta dict from audio bytes:
 
 ```python
-from audio_workbench import generate_spectrogram_image, render_daw_player
+from signavis import generate_spectrogram_image, render_daw_player
 
 img_bytes, meta = generate_spectrogram_image(audio_bytes, sr=32000, n_mels=128)
 html = render_daw_player(audio_bytes, spectrogram_image=img_bytes, sample_rate=meta['sample_rate'], freq_range=meta['freq_range'], freq_scale=meta['freq_scale'])
@@ -79,7 +79,7 @@ If `anywidget` is installed you can use `AudioWorkbenchWidget` for a full-featur
 Basic usage:
 
 ```python
-from audio_workbench import AudioWorkbenchWidget
+from signavis import AudioWorkbenchWidget
 
 w = AudioWorkbenchWidget(audio_bytes, viewMode='both')
 w  # display in notebook cell
@@ -113,7 +113,7 @@ w.on_event('annotationcreate', on_ann)
 
 ## Export / Upload integration
 
- The demo includes helpers to build Xeno‑canto payloads and export annotation sets. See the XC panel code at [demo/lib/xc-panel.js](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/demo/lib/xc-panel.js) for the exact payload builder used by the UI. The Python wrapper is orthogonal — use the widget or iframe to edit labels and export via the client UI, or serialize and post the app-generated payload from Python if needed.
+ The demo includes helpers to build Xeno‑canto payloads and export annotation sets. See the XC panel code at [demo/lib/xc-panel.js](https://github.com/LimitlessGreen/SignaVis/blob/main/demo/lib/xc-panel.js) for the exact payload builder used by the UI. The Python wrapper is orthogonal — use the widget or iframe to edit labels and export via the client UI, or serialize and post the app-generated payload from Python if needed.
 
 ## Demos and examples
 
@@ -136,10 +136,10 @@ pip install numpy librosa matplotlib Pillow anywidget ipywidgets
 
 ## Code references
 
- - Python wrapper root & README: [python-wrapper/README.md](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/README.md)
- - Renderer implementations: [python-wrapper/audio_workbench/renderer.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/audio_workbench/renderer.py)
- - Interactive widget: [python-wrapper/audio_workbench/widget.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/audio_workbench/widget.py)
- - Streamlit demo: [python-wrapper/demo_streamlit.py](https://github.com/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_streamlit.py)
+ - Python wrapper root & README: [python-wrapper/README.md](https://github.com/LimitlessGreen/SignaVis/blob/main/python-wrapper/README.md)
+ - Renderer implementations: [python-wrapper/signavis/renderer.py](https://github.com/LimitlessGreen/SignaVis/blob/main/python-wrapper/signavis/renderer.py)
+ - Interactive widget: [python-wrapper/signavis/widget.py](https://github.com/LimitlessGreen/SignaVis/blob/main/python-wrapper/signavis/widget.py)
+ - Streamlit demo: [python-wrapper/demo_streamlit.py](https://github.com/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_streamlit.py)
 
 ---
 

@@ -1,6 +1,6 @@
 # Deployment Modes & Migration Path
 
-Audio Workbench supports three distinct deployment modes. They share the same
+SignaVis supports three distinct deployment modes. They share the same
 codebase and the same labeling UI; only the runtime backing changes. The
 browser/static mode is **always** kept functional so the demo on GitHub Pages
 remains reachable without any server or native install.
@@ -70,7 +70,7 @@ npm run desktop:build -- --features grpc   # distributable with gRPC
 | `AW_GRPC_ADDR` | `127.0.0.1:50051` | Bind address for the internal gRPC server |
 | `AW_ANALYSIS_HTTP_ENDPOINT` | _(unset)_ | Base URL of an external HTTP analysis backend; when unset, stub responses are returned |
 | `AW_ANALYSIS_HTTP_TIMEOUT_MS` | `15000` | Request timeout for HTTP passthrough in milliseconds |
-| `RUST_LOG` | `info` | Log filter for structured tracing output (e.g. `debug`, `warn`, `audio_workbench_lib=debug`) |
+| `RUST_LOG` | `info` | Log filter for structured tracing output (e.g. `debug`, `warn`, `signavis_lib=debug`) |
 
 ### With a BirdNET backend
 

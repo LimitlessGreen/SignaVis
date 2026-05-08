@@ -31,7 +31,7 @@ test('restoreSessionSets falls back to first set when no activeSetId', () => {
   const setIdA = 'set_a';
   const sets = [[setIdA, { id: setIdA, name: 'A' }], ['set_b', { id: 'set_b', name: 'B' }]];
   // write raw directly to emulate older data without activeSetId
-  localStorage.setItem('audio-workbench.session-sets.v1', JSON.stringify({ sets, activeSetId: null }));
+  localStorage.setItem('signavis.session-sets.v1', JSON.stringify({ sets, activeSetId: null }));
 
   const s3 = { labelSets: new Map(), activeSetId: null, _sessionSetId: null };
   const ok2 = restoreSessionSets(s3);

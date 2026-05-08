@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-ASSETS_DIR="${ROOT_DIR}/python-wrapper/audio_workbench/assets"
+ASSETS_DIR="${ROOT_DIR}/python-wrapper/signavis/assets"
 
 if [[ "${1:-}" != "--no-build" ]]; then
   echo "▸ Building JS/CSS …"

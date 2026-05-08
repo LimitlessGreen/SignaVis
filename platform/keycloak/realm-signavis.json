@@ -1,5 +1,5 @@
 {
-  "realm": "audio-workbench",
+  "realm": "signavis",
   "enabled": true,
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
@@ -7,8 +7,8 @@
   "resetPasswordAllowed": true,
   "clients": [
     {
-      "clientId": "audio-workbench-api",
-      "name": "Audio Workbench API",
+      "clientId": "signavis-api",
+      "name": "SignaVis API",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -20,8 +20,8 @@
       "webOrigins": ["*"]
     },
     {
-      "clientId": "audio-workbench-desktop",
-      "name": "Audio Workbench Desktop",
+      "clientId": "signavis-desktop",
+      "name": "SignaVis Desktop",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,

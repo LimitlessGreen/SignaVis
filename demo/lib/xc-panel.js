@@ -27,8 +27,8 @@ const AUTHOR_FIELDS = [
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];
 
-const API_KEY_STORAGE     = 'audio-workbench.xc-api-key.v1';
-const SET_META_STORAGE    = 'audio-workbench.xc-set-meta.v2';
+const API_KEY_STORAGE     = 'signavis.xc-api-key.v1';
+const SET_META_STORAGE    = 'signavis.xc-set-meta.v2';
 // Profile fields that are auto-saved per manual set (persisted by labeling-app.html)
 const LABELER_PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
 const XC_UPLOAD_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotation-set';
@@ -776,12 +776,12 @@ export class XenoCantoPanel {
 
     // Attach app version when available (injected by the demo page at runtime)
     const softwareVersion = (typeof window !== 'undefined' && window.AUDIO_WORKBENCH_VERSION) ? ` ${window.AUDIO_WORKBENCH_VERSION}` : '';
-    const softwareNameAndVersion = `Audio Workbench${softwareVersion}`;
+    const softwareNameAndVersion = `SignaVis${softwareVersion}`;
 
     return {
       set_source: sm.source || '',
       set_uri: sm.uri || '',
-      set_name: sm.name || `Audio Workbench annotations ${new Date().toISOString().slice(0, 16)}`,
+      set_name: sm.name || `SignaVis annotations ${new Date().toISOString().slice(0, 16)}`,
       annotation_software_name_and_version: softwareNameAndVersion,
       set_creator: effectiveCreator,
       set_creator_id: effectiveCreatorId,

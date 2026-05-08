@@ -3,10 +3,10 @@
 >
 > This project is in active early development. APIs, features, and build artifacts may change or break without notice. You're encouraged to try it and provide feedback, but do not expect a stable release or backward compatibility yet. If you require stability, pin to a specific commit or wait for an official release. Contributions and bug reports are welcome.
 
-# audio-workbench
+# SignaVis
 
 <p align="center">
-  <img src="docs/img/screenshot.png" alt="Audio Workbench Screenshot" width="900" />
+  <img src="docs/img/screenshot.png" alt="SignaVis Screenshot" width="900" />
 </p>
 
 <div align="center">
@@ -16,14 +16,14 @@
       <h3>💡 Try it — Demo</h3>
       <p>Interactive demo and a full labeling app (BirdNET detection &amp; annotation). Try them in your browser:</p>
       <p>
-        <a href="https://limitlessgreen.github.io/Audio-Workbench/"><img src="https://img.shields.io/badge/Live%20Demo-%E2%96%B6%20Open-brightgreen?style=for-the-badge" alt="Live Demo"/></a>
-        <a href="https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1"><img src="https://img.shields.io/badge/Labeling%20App-%E2%96%B6%20Open-blue?style=for-the-badge" alt="Labeling App"/></a>
+        <a href="https://limitlessgreen.github.io/SignaVis/"><img src="https://img.shields.io/badge/Live%20Demo-%E2%96%B6%20Open-brightgreen?style=for-the-badge" alt="Live Demo"/></a>
+        <a href="https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html?xcid=1"><img src="https://img.shields.io/badge/Labeling%20App-%E2%96%B6%20Open-blue?style=for-the-badge" alt="Labeling App"/></a>
       </p>
       <p>
-        <a href="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml"><img src="https://github.com/LimitlessGreen/Audio-Workbench/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-        <a href="https://www.npmjs.com/package/audio-workbench"><img src="https://img.shields.io/npm/v/audio-workbench.svg" alt="NPM"/></a>
-        <a href="https://pypi.org/project/audio-workbench/"><img src="https://img.shields.io/pypi/v/audio-workbench.svg" alt="PyPI"/></a>
-        <a href="https://github.com/LimitlessGreen/Audio-Workbench/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License"/></a>
+        <a href="https://github.com/LimitlessGreen/SignaVis/actions/workflows/ci.yml"><img src="https://github.com/LimitlessGreen/SignaVis/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+        <a href="https://www.npmjs.com/package/signavis"><img src="https://img.shields.io/npm/v/signavis.svg" alt="NPM"/></a>
+        <a href="https://pypi.org/project/signavis/"><img src="https://img.shields.io/pypi/v/signavis.svg" alt="PyPI"/></a>
+        <a href="https://github.com/LimitlessGreen/SignaVis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License"/></a>
       </p>
     </td>
   </tr>
@@ -34,7 +34,7 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 
 ## Table of contents
 
-- [audio-workbench](#audio-workbench)
+- [signavis](#signavis)
   - [Table of contents](#table-of-contents)
   - [Features](#features)
   - [Install](#install)
@@ -68,10 +68,10 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 ## Install
 
 ```bash
-npm i audio-workbench
+npm i signavis
 ```
 
-Note: audio-workbench expects `wavesurfer.js` as a peer dependency (v7). Install it with:
+Note: signavis expects `wavesurfer.js` as a peer dependency (v7). Install it with:
 
 ```bash
 npm i wavesurfer.js@^7
@@ -86,15 +86,15 @@ Or include `wavesurfer.js` from a CDN in the browser:
 Or for Python:
 
 ```bash
-pip install audio-workbench
+pip install signavis
 ```
 
-See [PyPI](https://pypi.org/project/audio-workbench) and the [python-wrapper/README.md](python-wrapper/README.md) for full Python usage.
+See [PyPI](https://pypi.org/project/signavis) and the [python-wrapper/README.md](python-wrapper/README.md) for full Python usage.
 
 ## Quickstart
 ```js
-import { BirdNETPlayer } from 'audio-workbench'
-import 'audio-workbench/style'
+import { BirdNETPlayer } from 'signavis'
+import 'signavis/style'
 
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
@@ -165,8 +165,8 @@ See the [API section](#api) for usage examples and more details.
 
 ### ESM (Vite / Vanilla)
 ```js
-import { BirdNETPlayer } from 'audio-workbench'
-import 'audio-workbench/style'
+import { BirdNETPlayer } from 'signavis'
+import 'signavis/style'
 
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
@@ -191,8 +191,8 @@ input.addEventListener('change', async () => {
 ### React
 ```jsx
 import { useEffect, useRef } from 'react'
-import { BirdNETPlayer } from 'audio-workbench'
-import 'audio-workbench/style'
+import { BirdNETPlayer } from 'signavis'
+import 'signavis/style'
 
 export default function Player() {
   const ref = useRef(null)
@@ -208,8 +208,8 @@ export default function Player() {
 ### Vue
 ```js
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { BirdNETPlayer } from 'audio-workbench'
-import 'audio-workbench/style'
+import { BirdNETPlayer } from 'signavis'
+import 'signavis/style'
 
 const root = ref(null)
 let player
@@ -222,8 +222,8 @@ onBeforeUnmount(() => player?.destroy())
 ```svelte
 <script>
   import { onMount } from 'svelte'
-  import { BirdNETPlayer } from 'audio-workbench'
-  import 'audio-workbench/style'
+  import { BirdNETPlayer } from 'signavis'
+  import 'signavis/style'
 
   let el
   let player
@@ -239,8 +239,8 @@ onBeforeUnmount(() => player?.destroy())
 ### CDN / IIFE
 ```html
 <script src="https://unpkg.com/wavesurfer.js@7"></script>
-<script src="https://unpkg.com/audio-workbench/dist/birdnet-player.iife.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/audio-workbench/dist/birdnet-player.css" />
+<script src="https://unpkg.com/signavis/dist/birdnet-player.iife.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/signavis/dist/birdnet-player.css" />
 <div id="player"></div>
 <script>
   const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
@@ -249,7 +249,7 @@ onBeforeUnmount(() => player?.destroy())
 
 ### Streamlit (Python)
 ```python
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 import streamlit.components.v1 as components
 
 components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
@@ -258,16 +258,16 @@ components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
 ### Jupyter Notebook
 ```python
 from IPython.display import HTML
-from audio_workbench import render_daw_player
+from signavis import render_daw_player
 
 HTML(render_daw_player(audio_bytes))
 ```
 
 ## Demos
 
-- **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/Audio-Workbench/)** — component storybook with configurable stories
-- **[Labeling App](https://limitlessgreen.github.io/Audio-Workbench/demo/labeling-app.html?xcid=1)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
-- **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/Audio-Workbench/blob/main/python-wrapper/demo_colab.ipynb)**
+- **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/SignaVis/)** — component storybook with configurable stories
+- **[Labeling App](https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html?xcid=1)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
+- **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb)**
 - **Streamlit:**
   ```bash
   streamlit run python-wrapper/demo_streamlit.py
@@ -284,14 +284,14 @@ The Python wrapper allows embedding the player in Streamlit, Jupyter, and Gradio
 
 Install:
 ```bash
-pip install audio-workbench
+pip install signavis
 ```
 
-Docs & PyPI: https://pypi.org/project/audio-workbench
+Docs & PyPI: https://pypi.org/project/signavis
 
 ## Contributing
 
-See the repository on GitHub and open issues/PRs: https://github.com/LimitlessGreen/Audio-Workbench
+See the repository on GitHub and open issues/PRs: https://github.com/LimitlessGreen/SignaVis
 
 ## License
 

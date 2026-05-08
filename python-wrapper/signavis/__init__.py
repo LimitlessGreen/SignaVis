@@ -4,7 +4,7 @@ from .renderer import render_daw_player, generate_spectrogram_image
 
 
 class Player:
-    """Non-interactive Audio Workbench player with notebook auto-display.
+    """Non-interactive SignaVis player with notebook auto-display.
 
     Works like matplotlib — just return in a cell to show:
 
@@ -29,7 +29,7 @@ class Player:
 
 
 def show(audio, **kwargs):
-    """Display an Audio Workbench player in the current notebook cell.
+    """Display an SignaVis player in the current notebook cell.
 
     Convenience wrapper — like ``plt.show()``.
 
