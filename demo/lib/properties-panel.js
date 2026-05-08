@@ -110,6 +110,9 @@ export class PropertiesPanel {
     /** @type {((anchor: HTMLElement, cb: function) => object)|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
 
+    /** Structural signature of the last full render — used to short-circuit to in-place value patching. */
+    this._renderSig = null;
+
     /**
      * Called when the user edits a label field. Signature: (labelId, updates) => void
      * @type {((id: string, updates: object) => void)|null}
@@ -169,7 +172,7 @@ export class PropertiesPanel {
    */
   hoverLabel(label) {
     this._hoverLabel = label || null;
-    this._renderLabel();
+    if (!this._isPanelInputFocused()) this._renderLabel();
   }
 
   /**
@@ -177,7 +180,7 @@ export class PropertiesPanel {
    */
   clearHover() {
     this._hoverLabel = null;
-    this._renderLabel();
+    if (!this._isPanelInputFocused()) this._renderLabel();
   }
 
   /** @returns {object|null} The currently displayed label */
@@ -307,11 +310,13 @@ export class PropertiesPanel {
         const inp = document.createElement('input');
         inp.type = 'text';
         inp.className = 'props-input';
+        inp.dataset.focusKey = `set:${f.key}`;
         inp.value = raw ?? '';
         inp.placeholder = f.label;
         inp.addEventListener('change', () => {
           this.onSetChange?.(setId, { [f.key]: inp.value.trim() });
         });
+        this._bindEnterBlur(inp);
         dd.appendChild(inp);
       } else {
         dd.textContent = String(raw ?? '');
@@ -324,22 +329,34 @@ export class PropertiesPanel {
   }
 
   _renderLabel() {
-    // Save focus key before DOM teardown so we can restore it after re-render.
-    const focusedKey = this._lblBody.contains(document.activeElement)
-      ? document.activeElement.dataset.focusKey ?? null
-      : null;
-
-    // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
-    for (const es of this._esInstances) es.destroy();
-    this._esInstances = [];
-    this._lblBody.innerHTML = '';
     const lbl = this._hoverLabel || this._pinnedLabel;
     const isHover = !!this._hoverLabel;
     const isLocked = !isHover && !!lbl && (lbl.readonly === true || this._lockedIds.has(lbl.id));
+    const editable = !isHover && !isLocked;
+
+    // Structural signature: determines whether a full DOM rebuild is needed.
+    // Only the things that change the shape of the form (which rows/inputs exist)
+    // are included. Value changes are handled by _patchValues() without DOM teardown.
+    const customTagKeys = editable && lbl
+      ? Object.keys(lbl.tags || {}).filter(k => !PRESET_MAP.has(k)).sort().join('\0')
+      : '';
+    const sig = `${lbl?.id ?? ''}\0${isHover}\0${isLocked}\0${lbl?.setId ?? ''}\0${customTagKeys}`;
+
+    if (sig === this._renderSig && lbl !== null) {
+      // Same structure — just update values in place without touching the DOM.
+      // This keeps focus exactly where it is.
+      this._patchValues(lbl, editable);
+      return;
+    }
+    this._renderSig = sig;
+
+    // ── Full rebuild ────────────────────────────────────────────────
+    for (const es of this._esInstances) es.destroy();
+    this._esInstances = [];
+    this._lblBody.innerHTML = '';
 
     this._renderSet();
 
-    // Update section header
     let headerText = 'Selected Label';
     if (isHover) headerText = 'Hovered Label';
     else if (isLocked) headerText = 'Locked Label';
@@ -351,10 +368,7 @@ export class PropertiesPanel {
       return;
     }
 
-    const editable = !isHover && !isLocked;
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
-
-    // Tags section (also locked-label icon hint)
     if (isLocked && !isHover) {
       const hint = document.createElement('div');
       hint.className = 'props-locked-hint';
@@ -362,11 +376,49 @@ export class PropertiesPanel {
       this._lblBody.appendChild(hint);
     }
     this._lblBody.appendChild(this._buildTagsSection(lbl, editable));
+  }
 
-    // Restore focus to the same logical input after DOM rebuild.
-    if (focusedKey) {
-      const el = this._lblBody.querySelector(`[data-focus-key="${focusedKey}"]`);
-      el?.focus();
+  /**
+   * Update input values in-place without rebuilding the DOM.
+   * Called when the label data changes but the form structure stays the same.
+   */
+  _patchValues(lbl, editable) {
+    const active = document.activeElement;
+
+    if (editable) {
+      for (const f of LABEL_FIELDS) {
+        if (!f.edit) continue;
+        const input = this._lblBody.querySelector(`[data-focus-key="field:${f.key}"]`);
+        if (!input || input === active) continue;
+        const val = lbl[f.key];
+        if (f.edit === 'number') {
+          input.value = val != null ? String(Number(val)) : '';
+        } else if (f.edit === 'color') {
+          input.value = val ?? '';
+          const swatch = input.closest('.props-color-wrap')?.querySelector('input[type="color"]');
+          if (swatch && /^#[0-9a-f]{6}$/i.test(val)) swatch.value = val;
+        } else {
+          input.value = val ?? '';
+        }
+      }
+      // Custom tag values
+      const tags = lbl.tags || {};
+      for (const [k, v] of Object.entries(tags)) {
+        if (PRESET_MAP.has(k)) continue;
+        const input = this._lblBody.querySelector(`[data-focus-key="tag:${k}"]`);
+        if (input && input !== active) input.value = v ?? '';
+      }
+    }
+
+    // Set section
+    const setId = lbl?.setId ?? null;
+    const setInfo = setId && this._getSetInfo ? this._getSetInfo(setId) : null;
+    if (setInfo) {
+      for (const f of SET_FIELDS) {
+        if (!f.edit) continue;
+        const input = this._setBody.querySelector(`[data-focus-key="set:${f.key}"]`);
+        if (input && input !== active) input.value = setInfo[f.key] ?? '';
+      }
     }
   }
 
@@ -472,6 +524,7 @@ export class PropertiesPanel {
           commonName: '',
         });
       });
+      widget.input.dataset.focusKey = `field:${field.key}`;
       widget.input.value = value ?? '';
       if (value) widget.input.classList.add('has-selection');
       return widget.el;
@@ -487,6 +540,7 @@ export class PropertiesPanel {
     input.addEventListener('change', () => {
       this._emitChange(lbl.id, { [field.key]: input.value });
     });
+    this._bindEnterBlur(input);
     return input;
   }
 
@@ -503,6 +557,7 @@ export class PropertiesPanel {
       const v = input.value === '' ? null : Number(input.value);
       this._emitChange(lbl.id, { [field.key]: v });
     });
+    this._bindEnterBlur(input);
     wrap.appendChild(input);
     if (field.suffix) {
       const suf = document.createElement('span');
@@ -550,6 +605,7 @@ export class PropertiesPanel {
         this._emitChange(lbl.id, { color: text.value });
       }
     });
+    this._bindEnterBlur(text);
 
     wrap.appendChild(swatch);
     wrap.appendChild(text);
@@ -609,10 +665,12 @@ export class PropertiesPanel {
         value: tags[preset.key] || '',
         items,
         onChange: (val) => {
-          const newTags = { ...lbl.tags };
+          const cur = this.displayedLabel;
+          if (!cur) return;
+          const newTags = { ...cur.tags };
           if (val) newTags[preset.key] = val;
           else delete newTags[preset.key];
-          this._emitChange(lbl.id, { tags: newTags });
+          this._emitChange(cur.id, { tags: newTags });
         },
         onAdd: store ? (val) => store.add(preset.key, val) : undefined,
         onRemove: store ? (val) => store.remove(preset.key, val) : undefined,
@@ -645,18 +703,23 @@ export class PropertiesPanel {
       valInput.dataset.focusKey = `tag:${k}`;
       valInput.value = tags[k] ?? '';
       valInput.addEventListener('change', () => {
-        const newTags = { ...lbl.tags };
+        const cur = this.displayedLabel;
+        if (!cur) return;
+        const newTags = { ...cur.tags };
         newTags[k] = valInput.value;
-        this._emitChange(lbl.id, { tags: newTags });
+        this._emitChange(cur.id, { tags: newTags });
       });
+      this._bindEnterBlur(valInput);
       const delBtn = document.createElement('button');
       delBtn.className = 'props-tag-del';
       delBtn.textContent = '×';
       delBtn.title = 'Remove tag';
       delBtn.addEventListener('click', () => {
-        const newTags = { ...lbl.tags };
+        const cur = this.displayedLabel;
+        if (!cur) return;
+        const newTags = { ...cur.tags };
         delete newTags[k];
-        this._emitChange(lbl.id, { tags: newTags });
+        this._emitChange(cur.id, { tags: newTags });
       });
       wrap.appendChild(valInput);
       wrap.appendChild(delBtn);
@@ -687,5 +750,18 @@ export class PropertiesPanel {
 
   _emitChange(id, updates) {
     this.onChange?.(id, updates);
+  }
+
+  /** Commit and blur when Enter is pressed. */
+  _bindEnterBlur(input) {
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  }
+
+  _isPanelInputFocused() {
+    const active = document.activeElement;
+    if (!active || active === document.body) return false;
+    const tag = active.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return false;
+    return this.el.contains(active);
   }
 }
