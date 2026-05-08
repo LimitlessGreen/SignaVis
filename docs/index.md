@@ -1,4 +1,4 @@
-# Welcome to the Audio‑Workbench Documentation!
+# Welcome to the SignaVis Documentation!
 
 <p align="center">
 	<img src="img/screenshot.png" alt="SignaVis Screenshot" width="900" />

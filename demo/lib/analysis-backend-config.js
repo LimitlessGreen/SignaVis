@@ -1,6 +1,6 @@
-const MODE_KEY = 'signavis.analysis.mode.v1';
-const ENDPOINT_KEY = 'signavis.analysis.endpoint.v1';
-const PLATFORM_LOCAL_KEY = 'signavis.platform.local.v1';
+const MODE_KEY = 'audio-workbench.analysis.mode.v1';
+const ENDPOINT_KEY = 'audio-workbench.analysis.endpoint.v1';
+const PLATFORM_LOCAL_KEY = 'audio-workbench.platform.local.v1';
 
 const DEFAULT_MODE = 'local';
 const DEFAULT_ENDPOINT = 'http://localhost:8787';
