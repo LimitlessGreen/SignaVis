@@ -37,7 +37,7 @@ if (!forceEsbuild && nodeMajor >= 25) {
   args = ['--experimental-loader', './scripts/ignore-styles-loader.mjs', '--experimental-strip-types', '--test', ...testTargets];
 } else {
   console.log(`node ${process.versions.node}: using tsx loader fallback`);
-  args = ['--experimental-loader', 'tsx/esm', '--experimental-loader', './scripts/ignore-styles-loader.mjs', '--test', ...testTargets];
+  args = ['--import', 'tsx', '--experimental-loader', './scripts/ignore-styles-loader.mjs', '--test', ...testTargets];
 }
 
 const child = spawn(process.execPath, args, { stdio: 'inherit' });
