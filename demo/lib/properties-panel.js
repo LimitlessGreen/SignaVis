@@ -324,6 +324,11 @@ export class PropertiesPanel {
   }
 
   _renderLabel() {
+    // Save focus key before DOM teardown so we can restore it after re-render.
+    const focusedKey = this._lblBody.contains(document.activeElement)
+      ? document.activeElement.dataset.focusKey ?? null
+      : null;
+
     // Destroy old EditableSelect instances (removes portal dropdowns + listeners)
     for (const es of this._esInstances) es.destroy();
     this._esInstances = [];
@@ -357,6 +362,12 @@ export class PropertiesPanel {
       this._lblBody.appendChild(hint);
     }
     this._lblBody.appendChild(this._buildTagsSection(lbl, editable));
+
+    // Restore focus to the same logical input after DOM rebuild.
+    if (focusedKey) {
+      const el = this._lblBody.querySelector(`[data-focus-key="${focusedKey}"]`);
+      el?.focus();
+    }
   }
 
   // ── Grid builders ─────────────────────────────────────────────────
@@ -470,6 +481,7 @@ export class PropertiesPanel {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'props-input';
+    input.dataset.focusKey = `field:${field.key}`;
     input.value = value ?? '';
     input.placeholder = field.label;
     input.addEventListener('change', () => {
@@ -484,6 +496,7 @@ export class PropertiesPanel {
     const input = document.createElement('input');
     input.type = 'number';
     input.className = 'props-input props-input-number';
+    input.dataset.focusKey = `field:${field.key}`;
     input.value = value != null ? Number(value) : '';
     input.step = String(field.step || 0.001);
     input.addEventListener('change', () => {
@@ -529,6 +542,7 @@ export class PropertiesPanel {
     const text = document.createElement('input');
     text.type = 'text';
     text.className = 'props-input props-input-color-text';
+    text.dataset.focusKey = `field:${field.key}`;
     text.value = value ?? '';
     text.addEventListener('change', () => {
       if (/^#[0-9a-f]{6}$/i.test(text.value)) {
@@ -628,6 +642,7 @@ export class PropertiesPanel {
       const valInput = document.createElement('input');
       valInput.type = 'text';
       valInput.className = 'props-input';
+      valInput.dataset.focusKey = `tag:${k}`;
       valInput.value = tags[k] ?? '';
       valInput.addEventListener('change', () => {
         const newTags = { ...lbl.tags };
