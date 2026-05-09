@@ -19,11 +19,17 @@ Reproduzierbar erfolgreich ausgefuehrt:
 - `npm run platform:test:rbac`
 - `npm run platform:test:authz`
 - `npm run platform:test:vertical-slice:local` (mehrfach hintereinander)
+- `DATABASE_URL=postgresql://aw_platform:aw_platform@127.0.0.1:5432/aw_platform npm run migrate`
+- `DATABASE_URL=postgresql://aw_platform:aw_platform@127.0.0.1:5432/aw_platform npm run migrate:status`
+
+DB-Runtime-Nachweis (WSL/Arch, lokal):
+- PostgreSQL 18.3 installiert und lokal gestartet
+- Migrationen `0001_schema_v1.sql` und `0002_seed_v1.sql` erfolgreich angewendet
+- `schema_migrations` enthaelt beide IDs inkl. Timestamp
 
 ## Offene Next-Wave-Themen
 
 Diese Punkte bleiben explizit fuer die naechste Welle:
-- P0-03 runtime proof (DB-Schema/Migrationen in Zielumgebung)
 - M2-Restpunkte (Admin UI, 2-User-E2E, erweiterte Multiuser-Produktreife)
 - M3+ Ausbau (Queue/Scheduler-Robustheit, Compute Nodes/GPU, Similarity/Clustering)
 
