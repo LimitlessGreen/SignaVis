@@ -20,6 +20,33 @@ await redis.connect();
 const authMiddleware = createOidcAuthMiddleware();
 const rbac = createRbacMiddleware(pool);
 
+function hasPlatformAdminRole(auth) {
+  const roles = Array.isArray(auth?.roles) ? auth.roles : [];
+  return roles.includes('platform_admin');
+}
+
+function enforceActorIdentity(req, res, userId, fieldName) {
+  if (!userId) {
+    return {
+      ok: false,
+      response: res.status(400).json({ error: `${fieldName} is required` }),
+    };
+  }
+
+  if (hasPlatformAdminRole(req.auth)) {
+    return { ok: true };
+  }
+
+  if (!req.actor?.id || userId !== req.actor.id) {
+    return {
+      ok: false,
+      response: res.status(403).json({ error: 'forbidden', message: `${fieldName} must match authenticated actor` }),
+    };
+  }
+
+  return { ok: true };
+}
+
 async function writeAuditEvent({
   projectId = null,
   actorUserId = null,
@@ -142,6 +169,11 @@ app.post('/api/v1/projects', authMiddleware, rbac.requireActor, rbac.requireTeam
     return res.status(400).json({ error: 'teamId, name and createdBy are required' });
   }
 
+  const identityCheck = enforceActorIdentity(req, res, createdBy, 'createdBy');
+  if (!identityCheck.ok) {
+    return identityCheck.response;
+  }
+
   const insert = `
     INSERT INTO projects (team_id, name, description, created_by)
     VALUES ($1, $2, $3, $4)
@@ -195,6 +227,11 @@ app.post('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor
 
   if (!sourceRef || !importedBy) {
     return res.status(400).json({ error: 'sourceRef and importedBy are required' });
+  }
+
+  const identityCheck = enforceActorIdentity(req, res, importedBy, 'importedBy');
+  if (!identityCheck.ok) {
+    return identityCheck.response;
   }
 
   const insert = `
@@ -329,6 +366,11 @@ app.post('/api/v1/jobs', authMiddleware, rbac.requireActor, rbac.requireProjectS
 
   if (!projectId || !createdBy) {
     return res.status(400).json({ error: 'projectId and createdBy are required' });
+  }
+
+  const identityCheck = enforceActorIdentity(req, res, createdBy, 'createdBy');
+  if (!identityCheck.ok) {
+    return identityCheck.response;
   }
 
   const priorityRank = priority === 'high' ? 8 : priority === 'low' ? 2 : 5;
@@ -513,6 +555,11 @@ app.post('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requireP
   const { projectId, source = 'xeno-canto', totalItems = 0, createdBy } = req.body ?? {};
   if (!projectId || !createdBy) {
     return res.status(400).json({ error: 'projectId and createdBy are required' });
+  }
+
+  const identityCheck = enforceActorIdentity(req, res, createdBy, 'createdBy');
+  if (!identityCheck.ok) {
+    return identityCheck.response;
   }
 
   const insert = `
