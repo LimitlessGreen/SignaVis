@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { once } from 'node:events';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +51,8 @@ function startLocalEnv() {
 
 async function waitForHealth(env, timeoutMs = 10_000) {
   const started = Date.now();
+  let lastStatus = null;
+  let lastError = null;
   while (Date.now() - started < timeoutMs) {
     if (env.child.exitCode !== null) {
       throw new Error(`local testenv exited early with code ${env.child.exitCode}; logs=${env.getLogs().join(' | ')}`);
@@ -60,10 +63,44 @@ async function waitForHealth(env, timeoutMs = 10_000) {
       if (res.ok) {
         return;
       }
-    } catch {}
+      lastStatus = res.status;
+      lastError = null;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
     await delay(200);
   }
-  throw new Error(`local testenv did not become healthy in time on port ${env.getPort()}; logs=${env.getLogs().join(' | ')}`);
+  const details = [
+    `port ${env.getPort()}`,
+    lastStatus !== null ? `lastStatus=${lastStatus}` : null,
+    lastError ? `lastError=${lastError}` : null,
+    `logs=${env.getLogs().join(' | ')}`,
+  ].filter(Boolean).join('; ');
+  throw new Error(`local testenv did not become healthy in time (${details})`);
+}
+
+async function stopLocalEnv(child) {
+  if (child.exitCode !== null) {
+    return;
+  }
+
+  child.kill('SIGTERM');
+  try {
+    await Promise.race([
+      once(child, 'exit'),
+      delay(1500),
+    ]);
+  } catch {}
+
+  if (child.exitCode === null) {
+    child.kill('SIGKILL');
+    try {
+      await Promise.race([
+        once(child, 'exit'),
+        delay(1500),
+      ]);
+    } catch {}
+  }
 }
 
 async function jsonFetch(path, options = {}) {
@@ -106,7 +143,7 @@ test('vertical slice local env: project -> asset -> analysis -> job status', asy
   const child = env.child;
   const base = baseUrl(env.getPort());
   t.after(async () => {
-    child.kill('SIGTERM');
+    await stopLocalEnv(child);
   });
 
   await waitForHealth(env);
@@ -209,6 +246,6 @@ test('vertical slice local env: analyze without model returns 412', async () => 
     assert.equal(res.status, 412);
     assert.equal(payload.message, 'analysis model not loaded');
   } finally {
-    child.kill('SIGTERM');
+    await stopLocalEnv(child);
   }
 });
