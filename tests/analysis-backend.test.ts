@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createAnalysisBackend } from '../src/infrastructure/analysis/createAnalysisBackend.ts';
+import { createAnalysisBackend, resolveAnalysisBackend } from '../src/infrastructure/analysis/createAnalysisBackend.ts';
 import { HttpAnalysisBackend } from '../src/infrastructure/analysis/HttpAnalysisBackend.ts';
 import { AnalysisBackendProxy } from '../src/infrastructure/analysis/AnalysisBackendProxy.ts';
 import { TauriGrpcAnalysisBackend } from '../src/infrastructure/analysis/TauriGrpcAnalysisBackend.ts';
@@ -15,6 +15,34 @@ test('createAnalysisBackend can use desktop gRPC for server mode without endpoin
   const backend = createAnalysisBackend({ mode: 'server', useTauriGrpc: true });
   assert.ok(backend instanceof TauriGrpcAnalysisBackend);
   assert.equal(backend.mode, 'server');
+});
+
+test('resolveAnalysisBackend validates endpoint URL for remote modes', () => {
+  assert.throws(
+    () => resolveAnalysisBackend({ mode: 'server', endpoint: 'localhost:8787' }),
+    /invalid analysis endpoint url|must use http:\/\/ or https:\/\//i,
+  );
+  assert.throws(
+    () => resolveAnalysisBackend({ mode: 'cloud', endpoint: 'ftp://localhost:8787' }),
+    /must use http:\/\/ or https:\/\//i,
+  );
+});
+
+test('resolveAnalysisBackend supports hybrid mode with deterministic fallback', () => {
+  const localFallback = resolveAnalysisBackend({ mode: 'hybrid' });
+  assert.equal(localFallback.requestedMode, 'hybrid');
+  assert.equal(localFallback.effectiveMode, 'local');
+  assert.equal(localFallback.reason, 'hybrid-local-fallback');
+
+  const grpcFallback = resolveAnalysisBackend({ mode: 'hybrid', useTauriGrpc: true });
+  assert.equal(grpcFallback.effectiveMode, 'server');
+  assert.equal(grpcFallback.reason, 'hybrid-tauri-grpc');
+  assert.ok(grpcFallback.backend instanceof TauriGrpcAnalysisBackend);
+
+  const endpointPreferred = resolveAnalysisBackend({ mode: 'hybrid', endpoint: 'http://localhost:8788/' });
+  assert.equal(endpointPreferred.effectiveMode, 'server');
+  assert.equal(endpointPreferred.reason, 'hybrid-http-endpoint');
+  assert.ok(endpointPreferred.backend instanceof HttpAnalysisBackend);
 });
 
 test('HttpAnalysisBackend load + location + species + analyze works via mocked fetch', async () => {

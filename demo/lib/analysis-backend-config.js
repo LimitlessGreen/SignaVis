@@ -4,13 +4,17 @@ const PLATFORM_LOCAL_KEY = 'audio-workbench.platform.local.v1';
 
 const DEFAULT_MODE = 'local';
 const DEFAULT_ENDPOINT = 'http://localhost:8787';
-const PLATFORM_LOCAL_MODE = 'server';
+const PLATFORM_LOCAL_MODE = 'hybrid';
 const PLATFORM_LOCAL_ENDPOINT = 'http://localhost:8788';
 
 function normalizeMode(mode) {
   const value = String(mode || '').trim().toLowerCase();
-  if (value === 'server' || value === 'cloud') return value;
+  if (value === 'server' || value === 'cloud' || value === 'hybrid') return value;
   return 'local';
+}
+
+function normalizeEndpoint(endpoint) {
+  return String(endpoint ?? '').trim();
 }
 
 function readUrlConfig() {
@@ -69,28 +73,35 @@ export function loadAnalysisBackendConfig() {
   const platformLocal = loadPlatformLocalFlag();
   const fromUrl = readUrlConfig();
   let mode = platformLocal ? PLATFORM_LOCAL_MODE : DEFAULT_MODE;
-  let endpoint = platformLocal ? PLATFORM_LOCAL_ENDPOINT : DEFAULT_ENDPOINT;
+  let endpoint = '';
 
   try {
     const storedMode = localStorage.getItem(MODE_KEY);
     const storedEndpoint = localStorage.getItem(ENDPOINT_KEY);
     if (storedMode) mode = normalizeMode(storedMode);
-    if (storedEndpoint) endpoint = String(storedEndpoint).trim() || DEFAULT_ENDPOINT;
+    if (storedEndpoint !== null) endpoint = normalizeEndpoint(storedEndpoint);
   } catch {
     // Ignore storage errors and keep defaults.
   }
 
   if (fromUrl.mode) mode = fromUrl.mode;
-  if (fromUrl.endpoint) endpoint = fromUrl.endpoint;
+  if (fromUrl.endpoint !== null) endpoint = normalizeEndpoint(fromUrl.endpoint);
 
-  return { mode, endpoint };
+  return normalizeAnalysisBackendConfig({
+    mode,
+    endpoint: endpoint || (platformLocal ? PLATFORM_LOCAL_ENDPOINT : DEFAULT_ENDPOINT),
+  });
 }
 
 export function saveAnalysisBackendConfig({ mode, endpoint }) {
   try {
-    localStorage.setItem(MODE_KEY, normalizeMode(mode));
-    if (endpoint && String(endpoint).trim()) {
-      localStorage.setItem(ENDPOINT_KEY, String(endpoint).trim());
+    const normalizedMode = normalizeMode(mode);
+    const normalizedEndpoint = normalizeEndpoint(endpoint);
+    localStorage.setItem(MODE_KEY, normalizedMode);
+    if (normalizedEndpoint) {
+      localStorage.setItem(ENDPOINT_KEY, normalizedEndpoint);
+    } else {
+      localStorage.removeItem(ENDPOINT_KEY);
     }
   } catch {
     // Ignore storage errors in demo.
@@ -100,8 +111,18 @@ export function saveAnalysisBackendConfig({ mode, endpoint }) {
 export function normalizeAnalysisBackendConfig({ mode, endpoint }) {
   const platformLocal = loadPlatformLocalFlag();
   const defaultEndpoint = platformLocal ? PLATFORM_LOCAL_ENDPOINT : DEFAULT_ENDPOINT;
+  const normalizedMode = normalizeMode(mode);
+  const normalizedEndpoint = normalizeEndpoint(endpoint);
+
+  if (normalizedMode === 'hybrid') {
+    return {
+      mode: normalizedMode,
+      endpoint: normalizedEndpoint,
+    };
+  }
+
   return {
-    mode: normalizeMode(mode),
-    endpoint: String(endpoint || defaultEndpoint).trim() || defaultEndpoint,
+    mode: normalizedMode,
+    endpoint: normalizedEndpoint || defaultEndpoint,
   };
 }

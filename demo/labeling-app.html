@@ -159,6 +159,7 @@
       <select id="analysisModeSelect" class="field-select">
         <option value="local">Local (Browser)</option>
         <option value="server">Server</option>
+        <option value="hybrid">Hybrid (Auto)</option>
         <option value="cloud">Cloud</option>
       </select>
       <label class="field-label" for="analysisEndpointInput" style="margin-top:8px">Backend endpoint</label>
@@ -541,7 +542,7 @@
     import { BirdNETPlayer } from '../src/app/BirdNETPlayer.ts';
     import { colorForName, getOverlayColorStyle } from '../src/domain/annotations.ts';
     import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
-    import { AnalysisBackendProxy, createAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
+    import { AnalysisBackendProxy, resolveAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
     import ModalManager from '../src/ui/components/modal/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
     import { createReferenceCallsModal } from './lib/reference-calls-modal.js';
@@ -749,24 +750,34 @@
     const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
     const desktopRuntimeInfo = await getDesktopRuntimeInfo();
     const canUseDesktopGrpc = Boolean(desktopRuntimeInfo?.grpcEnabled);
-    const birdnet = new AnalysisBackendProxy(createAnalysisBackend({
+    const initialResolvedBackend = resolveAnalysisBackend({
       mode: initialAnalysisConfig.mode,
       endpoint: initialAnalysisConfig.endpoint,
       useTauriGrpc: canUseDesktopGrpc,
-    }));
+    });
+    const birdnet = new AnalysisBackendProxy(initialResolvedBackend.backend);
+
+    function describeResolvedMode(resolved) {
+      if (resolved.requestedMode === resolved.effectiveMode) {
+        return resolved.effectiveMode;
+      }
+      return `${resolved.requestedMode} -> ${resolved.effectiveMode}`;
+    }
 
     function applyAnalysisBackendConfig(config, { persist = true } = {}) {
       const normalized = normalizeAnalysisBackendConfig(config);
-      const nextBackend = createAnalysisBackend({
+      const resolved = resolveAnalysisBackend({
         mode: normalized.mode,
         endpoint: normalized.endpoint,
         useTauriGrpc: canUseDesktopGrpc,
       });
-      birdnet.setBackend(nextBackend);
+      birdnet.setBackend(resolved.backend);
       if (analysisModeSelect) analysisModeSelect.value = normalized.mode;
       if (analysisEndpointInput) analysisEndpointInput.value = normalized.endpoint;
       if (persist) saveAnalysisBackendConfig(normalized);
-      selectionMeta.textContent = `Analysis backend: ${normalized.mode}${normalized.mode === 'local' ? '' : ` @ ${normalized.endpoint}`}`;
+      const modeLabel = describeResolvedMode(resolved);
+      const endpointSuffix = resolved.effectiveMode === 'local' ? '' : ` @ ${normalized.endpoint || 'desktop'}`;
+      selectionMeta.textContent = `Analysis backend: ${modeLabel}${endpointSuffix}`;
       return normalized;
     }
 

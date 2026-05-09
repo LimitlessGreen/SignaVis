@@ -1,4 +1,5 @@
 export { createAnalysisBackend } from './createAnalysisBackend.ts';
+export { resolveAnalysisBackend } from './createAnalysisBackend.ts';
 export { LocalAnalysisBackend } from './LocalAnalysisBackend.ts';
 export { HttpAnalysisBackend } from './HttpAnalysisBackend.ts';
 export { TauriGrpcAnalysisBackend } from './TauriGrpcAnalysisBackend.ts';
