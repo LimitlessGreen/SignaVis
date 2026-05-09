@@ -5,6 +5,7 @@ import { createClient } from 'redis';
 import { createOidcAuthMiddleware } from './auth.js';
 import { checkProjectRole, createRbacMiddleware } from './rbac.js';
 import { metricsSnapshot, observabilityMiddleware } from './observability.js';
+import { enforceActorIdentity } from './identity.js';
 
 const app = express();
 app.use(cors());
@@ -19,33 +20,6 @@ await redis.connect();
 
 const authMiddleware = createOidcAuthMiddleware();
 const rbac = createRbacMiddleware(pool);
-
-function hasPlatformAdminRole(auth) {
-  const roles = Array.isArray(auth?.roles) ? auth.roles : [];
-  return roles.includes('platform_admin');
-}
-
-function enforceActorIdentity(req, res, userId, fieldName) {
-  if (!userId) {
-    return {
-      ok: false,
-      response: res.status(400).json({ error: `${fieldName} is required` }),
-    };
-  }
-
-  if (hasPlatformAdminRole(req.auth)) {
-    return { ok: true };
-  }
-
-  if (!req.actor?.id || userId !== req.actor.id) {
-    return {
-      ok: false,
-      response: res.status(403).json({ error: 'forbidden', message: `${fieldName} must match authenticated actor` }),
-    };
-  }
-
-  return { ok: true };
-}
 
 async function writeAuditEvent({
   projectId = null,

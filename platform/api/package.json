@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "scripts": {
     "start": "node src/index.js",
-    "test:rbac": "node --test src/rbac*.test.mjs"
+    "test:rbac": "node --test src/rbac*.test.mjs src/identity.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
