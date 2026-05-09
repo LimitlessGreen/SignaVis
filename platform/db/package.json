@@ -1,0 +1,13 @@
+{
+  "name": "aw-platform-db",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "migrate": "node ./scripts/migrate.mjs",
+    "migrate:status": "node ./scripts/migrate.mjs --status"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}

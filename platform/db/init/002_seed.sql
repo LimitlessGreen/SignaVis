@@ -14,6 +14,12 @@ VALUES
   ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', false)
 ON CONFLICT (team_id, user_id) DO NOTHING;
 
+INSERT INTO memberships (team_id, user_id, is_admin)
+VALUES
+  ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', true),
+  ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', false)
+ON CONFLICT (team_id, user_id) DO NOTHING;
+
 INSERT INTO projects (id, team_id, name, description, created_by)
 VALUES (
   '20000000-0000-0000-0000-000000000001',
@@ -29,3 +35,29 @@ VALUES
   ('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'owner'),
   ('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'annotator')
 ON CONFLICT (project_id, user_id) DO NOTHING;
+
+INSERT INTO assets (id, project_id, type, source_type, source_ref, storage_uri, created_by)
+VALUES (
+  '30000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  'audio',
+  'local',
+  '/tmp/demo.wav',
+  's3://recordings/demo/demo.wav',
+  '00000000-0000-0000-0000-000000000001'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO jobs (id, project_id, asset_id, type, backend, status, progress, payload_json, created_by)
+VALUES (
+  '40000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  '30000000-0000-0000-0000-000000000001',
+  'analysis',
+  'local',
+  'queued',
+  0,
+  '{"model":"birdnet-v2.4"}'::jsonb,
+  '00000000-0000-0000-0000-000000000001'
+)
+ON CONFLICT (id) DO NOTHING;

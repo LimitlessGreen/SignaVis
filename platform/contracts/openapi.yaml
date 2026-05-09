@@ -1,13 +1,16 @@
 openapi: 3.1.0
 info:
   title: SignaVis Platform API
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://localhost:8788
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       responses:
         '200':
           description: ok
@@ -19,6 +22,64 @@ paths:
                   ok: { type: boolean }
                   db: { type: boolean }
                   redis: { type: boolean }
+  /metrics:
+    get:
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: in-process metrics snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  metrics:
+                    type: object
+                    additionalProperties: true
+                  timestamp: { type: string, format: date-time }
+  /api/v1/auth/me:
+    get:
+      operationId: getAuthContext
+      responses:
+        '200':
+          description: current auth context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  auth:
+                    type: object
+                    nullable: true
+                    properties:
+                      subject: { type: string }
+                      email: { type: string }
+                      roles:
+                        type: array
+                        items: { type: string }
+  /api/v1/audit-events:
+    get:
+      operationId: listAuditEvents
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: recent audit events for project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
   /api/v1/projects:
     get:
       operationId: listProjects
@@ -46,13 +107,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [teamId, name, createdBy]
-              properties:
-                teamId: { type: string, format: uuid }
-                name: { type: string }
-                description: { type: string }
-                createdBy: { type: string, format: uuid }
+              $ref: '#/components/schemas/CreateProjectRequest'
       responses:
         '201':
           description: created
@@ -60,7 +115,143 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+  /api/v1/projects/{projectId}/assets:
+    get:
+      operationId: listProjectAssets
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: list of project assets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Asset'
+    post:
+      operationId: importProjectAsset
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportAssetRequest'
+      responses:
+        '201':
+          description: imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: list of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+    post:
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /api/v1/jobs/{jobId}:
+    get:
+      operationId: getJob
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+    delete:
+      operationId: cancelJob
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: cancellation requested
+  /api/v1/jobs/{jobId}/requeue:
+    post:
+      operationId: requeueJob
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: job requeued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /api/v1/jobs-dlq:
+    get:
+      operationId: listDlqJobs
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: jobs currently in dead-letter queue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
   /api/v1/import-jobs:
+    deprecated: true
     get:
       operationId: listImportJobs
       parameters:
@@ -104,7 +295,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/ImportJob'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
+    CreateProjectRequest:
+      type: object
+      required: [teamId, name, createdBy]
+      properties:
+        teamId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        createdBy: { type: string, format: uuid }
     Project:
       type: object
       properties:
@@ -116,6 +320,93 @@ components:
         recordingCount: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ImportAssetRequest:
+      type: object
+      required: [sourceType, sourceRef, importedBy]
+      properties:
+        sourceType:
+          type: string
+          enum: [local, xeno-canto, upload]
+        sourceRef: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+        importedBy: { type: string, format: uuid }
+    Asset:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [audio, image, video]
+        sourceType:
+          type: string
+          enum: [local, xeno-canto, upload]
+        sourceRef: { type: string }
+        storageUri: { type: string }
+        checksum: { type: string }
+        sizeBytes: { type: integer }
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateJobRequest:
+      type: object
+      required: [projectId, type, createdBy]
+      properties:
+        projectId: { type: string, format: uuid }
+        assetId: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [import, analysis, embedding, clustering]
+        backend:
+          type: string
+          enum: [local, server, cloud]
+        priority:
+          type: string
+          enum: [low, normal, high]
+        payload:
+          type: object
+          additionalProperties: true
+        createdBy: { type: string, format: uuid }
+    Job:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        assetId: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [import, analysis, embedding, clustering]
+        backend:
+          type: string
+          enum: [local, server, cloud]
+        status:
+          type: string
+          enum: [queued, running, partial, failed, done, cancelled]
+        progress: { type: number, minimum: 0, maximum: 1 }
+        errorCode: { type: string }
+        errorMessage: { type: string }
+        createdBy: { type: string, format: uuid }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        actorUserId: { type: string, format: uuid }
+        eventType: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
     ImportJob:
       type: object
       properties:
