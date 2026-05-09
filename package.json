@@ -85,6 +85,7 @@
     "platform:testenv:ps": "docker compose -f platform/docker/docker-compose.test.yml ps",
     "platform:testenv:local": "node platform/local-testenv.mjs",
     "platform:testenv:local:reset": "node platform/local-testenv.mjs --reset",
+    "platform:test:vertical-slice:local": "node --test platform/tests/vertical-slice.local.test.mjs",
     "desktop:dev:platform-local": "node scripts/dev-desktop-platform-local.mjs",
     "desktop:dev:platform-local:reset": "node scripts/dev-desktop-platform-local.mjs --reset-local"
   },

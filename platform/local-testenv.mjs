@@ -49,6 +49,8 @@ function seedDb() {
         updatedAt: createdAt,
       },
     ],
+    assets: [],
+    jobs: [],
     importJobs: [],
   };
 }
@@ -72,7 +74,8 @@ function saveDb(db) {
 }
 
 const db = loadDb();
-const queue = [];
+const importQueue = [];
+const jobQueue = [];
 const analysisState = {
   loaded: false,
   location: null,
@@ -139,9 +142,94 @@ async function handleRequest(req, res) {
       ok: true,
       mode: 'local-json',
       dbFile: DB_FILE,
-      queueDepth: queue.length,
+      queueDepth: importQueue.length,
+      jobQueueDepth: jobQueue.length,
       timestamp: nowIso(),
     });
+    return;
+  }
+
+  const assetsMatch = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/assets$/);
+  if (req.method === 'GET' && assetsMatch) {
+    const projectId = assetsMatch[1];
+    const assets = db.assets.filter((a) => a.projectId === projectId);
+    json(res, 200, { assets });
+    return;
+  }
+
+  if (req.method === 'POST' && assetsMatch) {
+    const projectId = assetsMatch[1];
+    const body = await parseBody(req);
+    const { sourceType = 'local', sourceRef, importedBy, metadata = {} } = body;
+    if (!sourceRef || !importedBy) {
+      json(res, 400, { error: 'sourceRef and importedBy are required' });
+      return;
+    }
+
+    const createdAt = nowIso();
+    const asset = {
+      id: randomUUID(),
+      projectId,
+      type: 'audio',
+      sourceType,
+      sourceRef,
+      metadata,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    db.assets.push(asset);
+    saveDb(db);
+    json(res, 201, asset);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/jobs') {
+    const projectId = url.searchParams.get('projectId');
+    if (!projectId) {
+      json(res, 400, { error: 'projectId is required' });
+      return;
+    }
+    const jobs = db.jobs.filter((j) => j.projectId === projectId);
+    json(res, 200, { jobs });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/v1/jobs') {
+    const body = await parseBody(req);
+    const {
+      projectId,
+      assetId = null,
+      type = 'analysis',
+      backend = 'local',
+      createdBy,
+      payload = {},
+    } = body;
+    if (!projectId || !createdBy) {
+      json(res, 400, { error: 'projectId and createdBy are required' });
+      return;
+    }
+
+    const createdAt = nowIso();
+    const job = {
+      id: randomUUID(),
+      projectId,
+      assetId,
+      type,
+      backend,
+      status: 'queued',
+      progress: 0,
+      payload,
+      createdBy,
+      startedAt: null,
+      finishedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+
+    db.jobs.push(job);
+    jobQueue.push(job.id);
+    saveDb(db);
+    json(res, 201, job);
     return;
   }
 
@@ -287,7 +375,7 @@ async function handleRequest(req, res) {
     };
 
     db.importJobs.push(job);
-    queue.push(job.id);
+    importQueue.push(job.id);
     saveDb(db);
     json(res, 201, job);
     return;
@@ -298,8 +386,8 @@ async function handleRequest(req, res) {
 
 // Minimal background worker loop for import progress simulation.
 setInterval(() => {
-  if (!queue.length) return;
-  const jobId = queue.shift();
+  if (!importQueue.length) return;
+  const jobId = importQueue.shift();
   const job = db.importJobs.find((j) => j.id === jobId);
   if (!job) return;
 
@@ -314,6 +402,28 @@ setInterval(() => {
     saveDb(db);
   }, 1000);
 }, 400);
+
+// Minimal background worker loop for jobs queue simulation.
+setInterval(() => {
+  if (!jobQueue.length) return;
+  const jobId = jobQueue.shift();
+  const job = db.jobs.find((j) => j.id === jobId);
+  if (!job) return;
+
+  job.status = 'running';
+  job.progress = 0.5;
+  job.startedAt = job.startedAt || nowIso();
+  job.updatedAt = nowIso();
+  saveDb(db);
+
+  setTimeout(() => {
+    job.status = 'done';
+    job.progress = 1;
+    job.finishedAt = nowIso();
+    job.updatedAt = nowIso();
+    saveDb(db);
+  }, 600);
+}, 300);
 
 const server = createServer((req, res) => {
   handleRequest(req, res).catch((err) => {
