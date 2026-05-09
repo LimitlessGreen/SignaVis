@@ -4,10 +4,10 @@
   "version": "0.6.2",
   "identifier": "io.github.limitlessgreen.signavis",
   "build": {
-    "frontendDist": "../demo",
+    "frontendDist": "../_site/demo",
     "devUrl": "http://localhost:5173/demo/labeling-app.html",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build:desktop"
   },
   "app": {
     "windows": [

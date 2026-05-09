@@ -57,6 +57,7 @@
     "dev": "vite",
     "dev:analysis-mock": "node ./scripts/mock-analysis-server.mjs",
     "build": "npm run build:css && vite build && node ./scripts/generate-types.js",
+    "build:desktop": "npm run build:css && vite build --config demo/vite.demo.config.js",
     "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
     "typecheck": "tsc --noEmit",

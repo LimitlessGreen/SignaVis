@@ -125,7 +125,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            bundle: appimage
+          - os: macos-latest
+            bundle: app
+          - os: windows-latest
+            bundle: msi
 
     steps:
       - name: Checkout
@@ -173,7 +179,7 @@ jobs:
           test -f src-tauri/icons/32x32.png
 
       - name: Build desktop executables
-        run: npx tauri build
+        run: npx tauri build --bundles ${{ matrix.bundle }}
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v6
