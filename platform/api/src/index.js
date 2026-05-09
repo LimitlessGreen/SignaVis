@@ -3,7 +3,7 @@ import cors from 'cors';
 import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { createOidcAuthMiddleware } from './auth.js';
-import { checkProjectScope, createRbacMiddleware } from './rbac.js';
+import { checkProjectRole, createRbacMiddleware } from './rbac.js';
 import { metricsSnapshot, observabilityMiddleware } from './observability.js';
 
 const app = express();
@@ -94,7 +94,7 @@ app.get('/api/v1/auth/me', authMiddleware, async (req, res) => {
   });
 });
 
-app.get('/api/v1/audit-events', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.get('/api/v1/audit-events', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('reviewer'), async (req, res) => {
   const projectId = req.query.projectId;
   const query = `
     SELECT id,
@@ -161,7 +161,7 @@ app.post('/api/v1/projects', authMiddleware, rbac.requireActor, rbac.requireTeam
   return res.status(201).json(result.rows[0]);
 });
 
-app.get('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.get('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('viewer'), async (req, res) => {
   const { projectId } = req.params;
   const query = `
     SELECT id,
@@ -184,7 +184,7 @@ app.get('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor,
   return res.json({ assets: result.rows });
 });
 
-app.post('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.post('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('annotator'), async (req, res) => {
   const { projectId } = req.params;
   const {
     sourceType = 'local',
@@ -243,7 +243,7 @@ app.post('/api/v1/projects/:projectId/assets', authMiddleware, rbac.requireActor
   return res.status(201).json(result.rows[0]);
 });
 
-app.get('/api/v1/jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.get('/api/v1/jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('viewer'), async (req, res) => {
   const projectId = req.query.projectId;
   if (!projectId) {
     return res.status(400).json({ error: 'projectId is required' });
@@ -308,15 +308,15 @@ app.get('/api/v1/jobs/:jobId', authMiddleware, rbac.requireActor, async (req, re
   }
 
   const row = result.rows[0];
-  const allowed = await checkProjectScope(pool, req.auth, req.actor, row.projectId);
-  if (!allowed) {
-    return res.status(403).json({ error: 'forbidden', message: 'project scope denied' });
+  const roleCheck = await checkProjectRole(pool, req.auth, req.actor, row.projectId, 'viewer');
+  if (!roleCheck.ok) {
+    return res.status(403).json({ error: 'forbidden', message: 'project role "viewer" required' });
   }
 
   return res.json(row);
 });
 
-app.post('/api/v1/jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.post('/api/v1/jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('annotator'), async (req, res) => {
   const {
     projectId,
     assetId = null,
@@ -393,9 +393,9 @@ app.delete('/api/v1/jobs/:jobId', authMiddleware, rbac.requireActor, async (req,
   if (lookup.rowCount === 0) {
     return res.status(404).json({ error: 'job not found' });
   }
-  const allowed = await checkProjectScope(pool, req.auth, req.actor, lookup.rows[0].projectId);
-  if (!allowed) {
-    return res.status(403).json({ error: 'forbidden', message: 'project scope denied' });
+  const roleCheck = await checkProjectRole(pool, req.auth, req.actor, lookup.rows[0].projectId, 'manager');
+  if (!roleCheck.ok) {
+    return res.status(403).json({ error: 'forbidden', message: 'project role "manager" required' });
   }
 
   const update = `
@@ -428,9 +428,9 @@ app.post('/api/v1/jobs/:jobId/requeue', authMiddleware, rbac.requireActor, async
     return res.status(404).json({ error: 'job not found' });
   }
 
-  const allowed = await checkProjectScope(pool, req.auth, req.actor, lookup.rows[0].projectId);
-  if (!allowed) {
-    return res.status(403).json({ error: 'forbidden', message: 'project scope denied' });
+  const roleCheck = await checkProjectRole(pool, req.auth, req.actor, lookup.rows[0].projectId, 'manager');
+  if (!roleCheck.ok) {
+    return res.status(403).json({ error: 'forbidden', message: 'project role "manager" required' });
   }
 
   const update = `
@@ -457,7 +457,7 @@ app.post('/api/v1/jobs/:jobId/requeue', authMiddleware, rbac.requireActor, async
   return res.status(202).json(result.rows[0]);
 });
 
-app.get('/api/v1/jobs-dlq', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.get('/api/v1/jobs-dlq', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('reviewer'), async (req, res) => {
   const ids = await redis.lRange('aw:jobs:dlq', 0, 199);
   if (ids.length === 0) {
     return res.json({ jobs: [] });
@@ -488,7 +488,7 @@ app.get('/api/v1/jobs-dlq', authMiddleware, rbac.requireActor, rbac.requireProje
   return res.json({ jobs: result.rows });
 });
 
-app.get('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.get('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('viewer'), async (req, res) => {
   const projectId = req.query.projectId;
   if (!projectId) {
     return res.status(400).json({ error: 'projectId is required' });
@@ -509,7 +509,7 @@ app.get('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requirePr
   return res.json({ jobs: result.rows });
 });
 
-app.post('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, async (req, res) => {
+app.post('/api/v1/import-jobs', authMiddleware, rbac.requireActor, rbac.requireProjectScope, rbac.requireProjectRole('annotator'), async (req, res) => {
   const { projectId, source = 'xeno-canto', totalItems = 0, createdBy } = req.body ?? {};
   if (!projectId || !createdBy) {
     return res.status(400).json({ error: 'projectId and createdBy are required' });
