@@ -60,6 +60,12 @@ paths:
                       roles:
                         type: array
                         items: { type: string }
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/audit-events:
     get:
       operationId: listAuditEvents
@@ -80,6 +86,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AuditEvent'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role reviewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/projects:
     get:
       operationId: listProjects
@@ -100,6 +118,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Project'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (team scope denied)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: createProject
       requestBody:
@@ -115,6 +145,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (team scope denied or createdBy mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/projects/{projectId}/assets:
     get:
       operationId: listProjectAssets
@@ -135,6 +177,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Asset'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role viewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: importProjectAsset
       parameters:
@@ -155,6 +209,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Asset'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role annotator or higher required, importedBy must match actor)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/jobs:
     get:
       operationId: listJobs
@@ -175,6 +241,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Job'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role viewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: createJob
       requestBody:
@@ -190,6 +268,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role annotator or higher required, createdBy must match actor)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/jobs/{jobId}:
     get:
       operationId: getJob
@@ -205,6 +295,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role viewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       operationId: cancelJob
       parameters:
@@ -215,6 +317,18 @@ paths:
       responses:
         '202':
           description: cancellation requested
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role manager or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/jobs/{jobId}/requeue:
     post:
       operationId: requeueJob
@@ -230,6 +344,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role manager or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/jobs-dlq:
     get:
       operationId: listDlqJobs
@@ -250,6 +376,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Job'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role reviewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/import-jobs:
     deprecated: true
     get:
@@ -271,6 +409,18 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ImportJob'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role viewer or higher required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: createImportJob
       requestBody:
@@ -294,6 +444,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImportJob'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: forbidden (project role annotator or higher required, createdBy must match actor)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -301,6 +463,12 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+        reason: { type: string }
     CreateProjectRequest:
       type: object
       required: [teamId, name, createdBy]
