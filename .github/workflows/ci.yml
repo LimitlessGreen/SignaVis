@@ -140,6 +140,13 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+          key: desktop-${{ matrix.os }}
+
       - name: Install Linux dependencies (Tauri)
         if: runner.os == 'Linux'
         run: |
@@ -153,6 +160,17 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --include=dev
+
+      - name: Generate desktop icons
+        run: npx tauri icon src-tauri/icons/icon.png
+
+      - name: Verify required bundle icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src-tauri/icons/icon.ico
+          test -f src-tauri/icons/128x128.png
+          test -f src-tauri/icons/32x32.png
 
       - name: Build desktop executables
         run: npx tauri build
