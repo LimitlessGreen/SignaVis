@@ -86,7 +86,7 @@
     "platform:testenv:local": "node platform/local-testenv.mjs",
     "platform:testenv:local:reset": "node platform/local-testenv.mjs --reset",
     "platform:test:rbac": "npm --prefix platform/api run test:rbac",
-    "platform:test:authz": "npm --prefix platform/api run test:rbac",
+    "platform:test:authz": "npm --prefix platform/api run test:authz",
     "platform:test:vertical-slice:local": "node --test platform/tests/vertical-slice.local.test.mjs",
     "desktop:dev:platform-local": "node scripts/dev-desktop-platform-local.mjs",
     "desktop:dev:platform-local:reset": "node scripts/dev-desktop-platform-local.mjs --reset-local"
