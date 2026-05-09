@@ -4,7 +4,8 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:rbac": "node --test src/rbac.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
