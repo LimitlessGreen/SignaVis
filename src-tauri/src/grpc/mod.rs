@@ -13,6 +13,10 @@ pub mod projects {
     tonic::include_proto!("signavis.projects.v1");
 }
 
+pub mod jobs {
+    tonic::include_proto!("signavis.jobs.v1");
+}
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::Mutex;

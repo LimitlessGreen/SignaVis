@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package signavis.jobs.v1;
+
+service JobService {
+  rpc EnqueueJob(EnqueueJobRequest) returns (EnqueueJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+}
+
+enum JobType {
+  JOB_TYPE_UNSPECIFIED = 0;
+  JOB_TYPE_IMPORT = 1;
+  JOB_TYPE_ANALYSIS = 2;
+  JOB_TYPE_EMBEDDING = 3;
+  JOB_TYPE_CLUSTERING = 4;
+}
+
+enum JobBackend {
+  JOB_BACKEND_UNSPECIFIED = 0;
+  JOB_BACKEND_LOCAL = 1;
+  JOB_BACKEND_SERVER = 2;
+  JOB_BACKEND_CLOUD = 3;
+}
+
+enum JobPriority {
+  JOB_PRIORITY_UNSPECIFIED = 0;
+  JOB_PRIORITY_LOW = 1;
+  JOB_PRIORITY_NORMAL = 2;
+  JOB_PRIORITY_HIGH = 3;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_QUEUED = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_PARTIAL = 3;
+  JOB_STATUS_FAILED = 4;
+  JOB_STATUS_DONE = 5;
+  JOB_STATUS_CANCELLED = 6;
+}
+
+message AnalysisJobPayload {
+  string model = 1;
+  uint32 sample_rate = 2;
+  double min_confidence = 3;
+  double overlap = 4;
+}
+
+message ImportJobPayload {
+  string source = 1;
+  uint32 total_items = 2;
+}
+
+message JobPayload {
+  oneof kind {
+    AnalysisJobPayload analysis = 1;
+    ImportJobPayload import_job = 2;
+  }
+}
+
+message Job {
+  string id = 1;
+  string project_id = 2;
+  string asset_id = 3;
+  JobType type = 4;
+  JobBackend backend = 5;
+  JobPriority priority = 6;
+  JobStatus status = 7;
+  double progress = 8;
+  string error_code = 9;
+  string error_message = 10;
+  string created_by = 11;
+  int64 created_at = 12;
+  int64 started_at = 13;
+  int64 finished_at = 14;
+  JobPayload payload = 15;
+}
+
+message EnqueueJobRequest {
+  string project_id = 1;
+  string asset_id = 2;
+  JobType type = 3;
+  JobBackend backend = 4;
+  JobPriority priority = 5;
+  string created_by = 6;
+  JobPayload payload = 7;
+}
+
+message EnqueueJobResponse {
+  Job job = 1;
+}
+
+message GetJobRequest {
+  string id = 1;
+}
+
+message GetJobResponse {
+  Job job = 1;
+}
+
+message ListJobsRequest {
+  string project_id = 1;
+  JobStatus status = 2;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+}
+
+message CancelJobRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message CancelJobResponse {
+  Job job = 1;
+}

@@ -10,6 +10,7 @@ fn main() {
 
         println!("cargo:rerun-if-changed=proto/analysis/v1/analysis.proto");
         println!("cargo:rerun-if-changed=proto/projects/v1/projects.proto");
+        println!("cargo:rerun-if-changed=proto/jobs/v1/jobs.proto");
 
         tonic_build::configure()
             .build_server(true)
@@ -18,6 +19,7 @@ fn main() {
                 &[
                     "proto/analysis/v1/analysis.proto",
                     "proto/projects/v1/projects.proto",
+                    "proto/jobs/v1/jobs.proto",
                 ],
                 &["proto"],
             )
