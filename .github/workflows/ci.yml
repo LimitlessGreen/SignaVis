@@ -256,8 +256,12 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-assets/js/*.tgz
-            release-assets/python/**/*
-            release-assets/desktop/**/*
+            release-assets/python/**/*.whl
+            release-assets/python/**/*.tar.gz
+            release-assets/desktop/**/*.AppImage
+            release-assets/desktop/**/*.msi
+            release-assets/desktop/**/*.dmg
+            release-assets/desktop/**/*.app.tar.gz
 
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
