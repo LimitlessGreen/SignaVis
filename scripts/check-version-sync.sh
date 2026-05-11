@@ -52,6 +52,31 @@ if pkg_version != version:
 if py_version != version:
     errors.append(f"python-wrapper/pyproject.toml version ({py_version}) does not match VERSION ({version})")
 
+# Check src-tauri/tauri.conf.json
+tauri_conf = root / "src-tauri" / "tauri.conf.json"
+if tauri_conf.exists():
+    tauri_version = json.loads(tauri_conf.read_text(encoding="utf-8")).get("version", "")
+    if tauri_version != version:
+        errors.append(f"src-tauri/tauri.conf.json version ({tauri_version}) does not match VERSION ({version})")
+
+# Check src-tauri/Cargo.toml [package] version
+cargo_toml = root / "src-tauri" / "Cargo.toml"
+if cargo_toml.exists():
+    in_pkg = False
+    cargo_version = None
+    for line in cargo_toml.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            in_pkg = s == "[package]"
+            continue
+        if in_pkg and s.startswith("version"):
+            m = re.match(r'version\s*=\s*"([^"]+)"', s)
+            if m:
+                cargo_version = m.group(1)
+                break
+    if cargo_version is not None and cargo_version != version:
+        errors.append(f"src-tauri/Cargo.toml version ({cargo_version}) does not match VERSION ({version})")
+
 # Check storybook badge
 import re
 storybook = root / "demo" / "storybook.html"

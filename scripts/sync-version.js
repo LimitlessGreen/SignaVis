@@ -73,6 +73,43 @@ async function main() {
       }
     }
 
+    // src-tauri/tauri.conf.json
+    const tauriConfPath = path.join(ROOT_DIR, "src-tauri", "tauri.conf.json");
+    try {
+      const tauriText = await fs.readFile(tauriConfPath, "utf8");
+      const tauriConf = JSON.parse(tauriText);
+      tauriConf.version = version;
+      await fs.writeFile(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n", "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
+    // src-tauri/Cargo.toml — update only the [package] version line
+    const cargoTomlPath = path.join(ROOT_DIR, "src-tauri", "Cargo.toml");
+    try {
+      const cargoText = await fs.readFile(cargoTomlPath, "utf8");
+      const lines = cargoText.split(/\r?\n/);
+      let inPackage = false;
+      let updated = false;
+      for (let i = 0; i < lines.length; i++) {
+        const stripped = lines[i].trim();
+        if (/^\[.*\]$/.test(stripped)) {
+          inPackage = stripped === "[package]";
+          continue;
+        }
+        if (inPackage && lines[i].startsWith("version = ")) {
+          lines[i] = `version = "${version}"`;
+          updated = true;
+          break;
+        }
+      }
+      if (updated) {
+        await fs.writeFile(cargoTomlPath, lines.join("\n") + "\n", "utf8");
+      }
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
     console.log(`Synced package versions to ${version}`);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
