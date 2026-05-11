@@ -28,6 +28,7 @@ import { ViewportManager } from './ViewportManager.ts';
 import { bindUiControllers } from './bindUiControllers.ts';
 import { CrosshairController } from './player/CrosshairController.ts';
 import { PerfOverlay } from './player/PerfOverlay.ts';
+import { ViewResizeController } from './player/ViewResizeController.ts';
 import type { DomRefs } from './domRefs.ts';
 
 import {
@@ -122,6 +123,7 @@ export class PlayerState {
     _viewport: any;
     _perf: PerfOverlay;
     _crosshair: CrosshairController;
+    _viewResize: ViewResizeController;
     _emitHostEvent: any;
     options: any;
     _viewMode: any;
@@ -142,17 +144,11 @@ export class PlayerState {
     _lastTimeReadoutText: any;
     _uiFrameId: any;
     _uiPending: any;
-    waveformDisplayHeight: any;
-    spectrogramDisplayHeight: any;
-    _viewResizeFrameId: any;
-    _viewResizeNeedsWaveformRedraw: any;
-    _viewResizeNeedsSpectrogramRedraw: any;
     _cleanups: any;
     target: any;
     name: any;
     message: any;
     userInitiated: any;
-    _cachedSpectrogramHeight: any;
     /**
      * @param {HTMLElement} container
      * @param {any} WaveSurfer
@@ -313,11 +309,23 @@ export class PlayerState {
         });
 
         // ── View layout (persistent, not interaction-mode) ──
-        this.waveformDisplayHeight = DEFAULT_WAVEFORM_HEIGHT;
-        this.spectrogramDisplayHeight = DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT;
-        this._viewResizeFrameId = 0;
-        this._viewResizeNeedsWaveformRedraw = false;
-        this._viewResizeNeedsSpectrogramRedraw = false;
+        this._viewResize = new ViewResizeController({
+            d: this.d,
+            interaction: this.interaction,
+            initialWaveformHeight:    DEFAULT_WAVEFORM_HEIGHT,
+            initialSpectrogramHeight: DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
+            getShowWaveform:     () => this._showWaveform,
+            getShowSpectrogram:  () => this._showSpectrogram,
+            getTransportOverlay: () => this._transportOverlay,
+            getAudioBuffer:      () => this.audioBuffer,
+            getSpectroHasData:   () => this._spectro.hasData,
+            onDrawWaveform:      () => this._drawMainWaveform(),
+            onDrawSpectrogram:   () => this._drawSpectrogram(),
+            onAmplitudeLabels:   () => this._updateAmplitudeLabels(),
+            getPrimaryScrollLeft: () => this._getPrimaryScrollLeft(),
+            setLinkedScrollLeft:  (x) => this._setLinkedScrollLeft(x),
+            emit:                 (e, d) => this._emit(e, d),
+        });
 
         // ── Initial DOM setup ──
         this._applyLocalViewHeights();
@@ -607,10 +615,7 @@ export class PlayerState {
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
         this._crosshair.dispose();
-        if (this._viewResizeFrameId) {
-            cancelAnimationFrame(this._viewResizeFrameId);
-            this._viewResizeFrameId = 0;
-        }
+        this._viewResize.dispose();
         if (this._uiFrameId) {
             cancelAnimationFrame(this._uiFrameId);
             this._uiFrameId = 0;
@@ -1170,65 +1175,18 @@ export class PlayerState {
     //  View Resize
     // ═════════════════════════════════════════════════════════════════
 
-    _applyLocalViewHeights() {
-        const overlaySingleWaveform = this._transportOverlay && this._showWaveform && !this._showSpectrogram;
-        const overlaySingleSpectrogram = this._transportOverlay && this._showSpectrogram && !this._showWaveform;
-        const waveformFlexes = this._showWaveform && !this._showSpectrogram;
+    get waveformDisplayHeight()    { return this._viewResize.waveformDisplayHeight; }
+    get spectrogramDisplayHeight()  { return this._viewResize.spectrogramDisplayHeight; }
 
-        if (this._showWaveform) {
-            if (overlaySingleWaveform || waveformFlexes) {
-                if (this.d.waveformContainer) {
-                    this.d.waveformContainer.style.height = '';
-                    this.d.waveformContainer.style.minHeight = waveformFlexes
-                        ? `${Math.round(this.waveformDisplayHeight)}px` : '0';
-                }
-            } else {
-                if (this.d.waveformContainer) {
-                    this.d.waveformContainer.style.minHeight = '';
-                    this.d.waveformContainer.style.height = `${Math.round(this.waveformDisplayHeight)}px`;
-                }
-            }
-        }
-        if (this._showSpectrogram) {
-            if (overlaySingleSpectrogram) {
-                if (this.d.spectrogramContainer) {
-                    this.d.spectrogramContainer.style.height = '';
-                    this.d.spectrogramContainer.style.minHeight = '0';
-                }
-            } else {
-                if (this.d.spectrogramContainer) {
-                    this.d.spectrogramContainer.style.height = '';
-                    this.d.spectrogramContainer.style.minHeight = `${Math.round(this.spectrogramDisplayHeight)}px`;
-                }
-            }
-        }
-    }
-
-    _getEffectiveWaveformHeight() {
-        if (this._showWaveform && !this._showSpectrogram) {
-            const h = this.d.waveformContainer?.clientHeight ?? 0;
-            if (h > 0) return Math.max(MIN_WAVEFORM_HEIGHT, h);
-        }
-        return Math.max(MIN_WAVEFORM_HEIGHT, Math.floor(this.waveformDisplayHeight));
-    }
-
-    _getEffectiveSpectrogramHeight() {
-        // Return cached height when available — avoids a forced layout read on
-        // every scroll event. Cache is invalidated by _invalidateSpectrogramHeightCache()
-        // which is called on resize and spectrogram-height changes.
-        if (typeof this._cachedSpectrogramHeight === 'number' && this._cachedSpectrogramHeight > 0) return this._cachedSpectrogramHeight;
-        // Use canvasWrapper.clientHeight: excludes horizontal scrollbar height so
-        // the canvas doesn't overlap low frequencies when the scrollbar is visible.
-        const h = this.d.canvasWrapper?.clientHeight ?? this.d.spectrogramContainer?.clientHeight ?? 0;
-        const result = h > 0
-            ? Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, h)
-            : Math.max(MIN_SPECTROGRAM_DISPLAY_HEIGHT, Math.floor(this.spectrogramDisplayHeight));
-        this._cachedSpectrogramHeight = result;
-        return result;
-    }
-
-    _invalidateSpectrogramHeightCache() {
-        this._cachedSpectrogramHeight = 0;
+    _applyLocalViewHeights()        { this._viewResize.applyLocalViewHeights(); }
+    _getEffectiveWaveformHeight()   { return this._viewResize.getEffectiveWaveformHeight(); }
+    _getEffectiveSpectrogramHeight(){ return this._viewResize.getEffectiveSpectrogramHeight(); }
+    _invalidateSpectrogramHeightCache() { this._viewResize.invalidateSpectrogramHeightCache(); }
+    _startViewResize(mode: string, clientY: number)  { this._viewResize.start(mode, clientY); }
+    _updateViewResize(clientY: number)               { this._viewResize.update(clientY); }
+    _stopViewResize()                                { this._viewResize.stop(); }
+    _queueResizeRedraw(opts?: { redrawWaveform?: boolean; redrawSpectrogram?: boolean }) {
+        this._viewResize.queueRedraw(opts);
     }
 
     /** Rebuild the shared CoordinateSystem whenever any mapping parameter changes. */
@@ -1259,86 +1217,6 @@ export class PlayerState {
         });
         // Keep ViewportManager in sync with the freshly rebuilt coords instance
         this._viewport?.updateCoords(this.coords);
-    }
-
-    _startViewResize(mode: string, clientY: number) {
-        /** @type {Record<string, import('./interactionState.ts').InteractionMode>} */
-        const modeMap: Record<string, import('./interactionState.ts').InteractionMode> = { split: 'view-resize-split', spectrogram: 'view-resize-spectrogram' };
-        if (!this.interaction.enter(modeMap[mode])) return;
-        this.interaction.ctx.resizeStartY = clientY;
-        this.interaction.ctx.resizeStartWaveformH = this.waveformDisplayHeight;
-        this.interaction.ctx.resizeStartSpectrogramH = this.spectrogramDisplayHeight;
-        document.body.style.cursor = 'row-resize';
-    }
-
-    _updateViewResize(clientY: number) {
-        const sub = this.interaction.viewResizeSubMode;
-        if (!sub) return;
-        if ((sub === 'split' && (!this._showWaveform || !this._showSpectrogram))
-            || (sub === 'spectrogram' && !this._showSpectrogram)) return;
-        const ctx = this.interaction.ctx;
-        const dy = clientY - (ctx.resizeStartY ?? 0);
-        let redrawWav = false;
-
-        if (sub === 'split') {
-            const total = (ctx.resizeStartWaveformH ?? 0) + (ctx.resizeStartSpectrogramH ?? 0);
-            let nextWav = (ctx.resizeStartWaveformH ?? 0) + dy;
-            nextWav = clamp(nextWav, MIN_WAVEFORM_HEIGHT, total - MIN_SPECTROGRAM_DISPLAY_HEIGHT);
-            this.waveformDisplayHeight = nextWav;
-            this.spectrogramDisplayHeight = total - nextWav;
-            redrawWav = true;
-        } else {
-            this.spectrogramDisplayHeight = Math.max(
-                MIN_SPECTROGRAM_DISPLAY_HEIGHT,
-                (ctx.resizeStartSpectrogramH ?? 0) + dy,
-            );
-        }
-
-        this._applyLocalViewHeights();
-        if (redrawWav) this._updateAmplitudeLabels();
-        if (!this.audioBuffer) return;
-        this._queueResizeRedraw({
-            redrawWaveform: redrawWav,
-            redrawSpectrogram: this._spectro.hasData,
-        });
-    }
-
-    _stopViewResize() {
-        if (!this.interaction.isViewResize) return;
-        this._flushResizeRedraw(true);
-        this.interaction.release();
-        document.body.style.cursor = '';
-    }
-
-    _queueResizeRedraw({ redrawWaveform = false, redrawSpectrogram = false } = {}) {
-        this._viewResizeNeedsWaveformRedraw = this._viewResizeNeedsWaveformRedraw || redrawWaveform;
-        this._viewResizeNeedsSpectrogramRedraw = this._viewResizeNeedsSpectrogramRedraw || redrawSpectrogram;
-        if (this._viewResizeFrameId) return;
-        this._viewResizeFrameId = requestAnimationFrame(() => this._flushResizeRedraw(false));
-    }
-
-    _flushResizeRedraw(force: unknown) {
-        if (!this.audioBuffer) return;
-        if (this._viewResizeFrameId) {
-            cancelAnimationFrame(this._viewResizeFrameId);
-            this._viewResizeFrameId = 0;
-        }
-        // Container was resized — cached height is stale.
-        this._invalidateSpectrogramHeightCache();
-
-        const redrawWaveform = force || this._viewResizeNeedsWaveformRedraw;
-        const redrawSpectrogram = force || this._viewResizeNeedsSpectrogramRedraw;
-        this._viewResizeNeedsWaveformRedraw = false;
-        this._viewResizeNeedsSpectrogramRedraw = false;
-
-        const savedScroll = this._getPrimaryScrollLeft();
-        if (redrawWaveform) this._drawMainWaveform();
-        if (redrawSpectrogram) this._drawSpectrogram();
-        this._setLinkedScrollLeft(savedScroll);
-        this._emit('viewresize', {
-            waveformHeight: this.waveformDisplayHeight,
-            spectrogramHeight: this.spectrogramDisplayHeight,
-        });
     }
 
     // ═════════════════════════════════════════════════════════════════
