@@ -1,6 +1,6 @@
 [package]
 name = "signavis"
-version = "0.7.5"
+version = "0.7.6"
 edition = "2021"
 description = "SignaVis – desktop shell"
 license = "AGPL-3.0-only"
@@ -32,6 +32,7 @@ tonic   = { version = "0.12", features = ["transport"], optional = true }
 prost   = { version = "0.13", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
+
 
 
 
