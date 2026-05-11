@@ -26,6 +26,8 @@ import { FrequencyViewport } from './FrequencyViewport.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
 import { ViewportManager } from './ViewportManager.ts';
 import { bindUiControllers } from './bindUiControllers.ts';
+import { CrosshairController } from './player/CrosshairController.ts';
+import { PerfOverlay } from './player/PerfOverlay.ts';
 import type { DomRefs } from './domRefs.ts';
 
 import {
@@ -118,7 +120,8 @@ export class PlayerState {
     WaveSurfer: any;
     _engine: any;
     _viewport: any;
-    _perf: any;
+    _perf: PerfOverlay;
+    _crosshair: CrosshairController;
     _emitHostEvent: any;
     options: any;
     _viewMode: any;
@@ -139,8 +142,6 @@ export class PlayerState {
     _lastTimeReadoutText: any;
     _uiFrameId: any;
     _uiPending: any;
-    _crosshairEnabled: any;
-    _crosshairRafId: any;
     waveformDisplayHeight: any;
     spectrogramDisplayHeight: any;
     _viewResizeFrameId: any;
@@ -276,24 +277,7 @@ export class PlayerState {
         this._lastTimeReadoutText = '';
         this._uiFrameId = 0;
         this._uiPending = null;
-        this._perf = {
-            enabled: false,
-            /** @type {HTMLDivElement | null} */
-            panel: null,
-            intervalId: 0,
-            frames: 0,
-            fps: 0,
-            lastFrameTs: 0,
-            longFrames: 0,
-            maxFrameMs: 0,
-            uiFlushes: 0,
-            timeupdateEvents: 0,
-            selectionEvents: 0,
-            seekEvents: 0,
-            transitionEvents: 0,
-            blockedTransitions: 0,
-            lastTransition: '',
-        };
+
 
         // ── ViewportManager ──
         const vLayout = {
@@ -321,8 +305,12 @@ export class PlayerState {
         });
 
         // ── Crosshair ──
-        this._crosshairEnabled = false;
-        this._crosshairRafId = 0;
+        this._crosshair = new CrosshairController({
+            d: this.d,
+            getAudioBuffer: () => this.audioBuffer,
+            getSpectro: () => this._spectro,
+            getCoords: () => this.coords,
+        });
 
         // ── View layout (persistent, not interaction-mode) ──
         this.waveformDisplayHeight = DEFAULT_WAVEFORM_HEIGHT;
@@ -338,8 +326,12 @@ export class PlayerState {
         this._updateToggleButtons();
         this._updateAriaPlaybackPosition(0);
         this._setCompactToolbarOpen(false);
+        this._perf = new PerfOverlay({
+            container: this.container,
+            options: this.options,
+            getTransportState: () => this.transportState,
+        });
         this._setTransportState('idle', 'init');
-        this._initPerfOverlay();
 
         // ── Event listeners ──
         this._cleanups = [];
@@ -411,75 +403,11 @@ export class PlayerState {
         return { ...this._playbackViewportConfig };
     }
 
-    _initPerfOverlay() {
-        const byOption = this.options?.enablePerfOverlay === true;
-        let byQuery = false;
-        try {
-            const params = new URLSearchParams(window.location.search || '');
-            byQuery = params.get('perf') === '1';
-        } catch {
-            byQuery = false;
-        }
-        if (!byOption && !byQuery) return;
-        this._perf.enabled = true;
 
-        const panel = document.createElement('div');
-        panel.className = 'abp-perf-overlay';
-        // Hard-pin overlay position so special layout modes cannot shift it.
-        panel.style.position = 'absolute';
-        panel.style.top = '8px';
-        panel.style.right = '8px';
-        panel.style.left = 'auto';
-        panel.style.bottom = 'auto';
-        panel.style.transform = 'none';
-        panel.style.zIndex = '60';
-        panel.innerHTML = `
-            <div class="abp-perf-title">PERF</div>
-            <div class="abp-perf-body">Initializing...</div>
-        `;
-        this.container.appendChild(panel);
-        this._perf.panel = panel;
 
-        this._perf.intervalId = window.setInterval(() => {
-            this._renderPerfOverlay();
-        }, 500);
-    }
+    _perfOnFrame(ts: number) { this._perf.onFrame(ts); }
 
-    _perfOnFrame(ts: number) {
-        if (!this._perf.enabled) return;
-        this._perf.frames += 1;
-        if (this._perf.lastFrameTs > 0) {
-            const frameMs = ts - this._perf.lastFrameTs;
-            if (frameMs > 0) {
-                const fps = 1000 / frameMs;
-                this._perf.fps = this._perf.fps <= 0 ? fps : (this._perf.fps * 0.85 + fps * 0.15);
-            }
-            this._perf.maxFrameMs = Math.max(this._perf.maxFrameMs, frameMs);
-            if (frameMs > 32) this._perf.longFrames += 1;
-        }
-        this._perf.lastFrameTs = ts;
-    }
-
-    _renderPerfOverlay() {
-        if (!this._perf.enabled || !this._perf.panel) return;
-        const body = this._perf.panel.querySelector('.abp-perf-body');
-        if (!body) return;
-        body.innerHTML = [
-            `state: ${this.transportState || 'n/a'}`,
-            `fps: ${this._perf.fps.toFixed(1)} | long>${32}ms: ${this._perf.longFrames}`,
-            `max frame: ${this._perf.maxFrameMs.toFixed(1)}ms | ui flushes: ${this._perf.uiFlushes}`,
-            `timeupdate: ${this._perf.timeupdateEvents} | selection: ${this._perf.selectionEvents} | seek: ${this._perf.seekEvents}`,
-            `transitions: ${this._perf.transitionEvents} | blocked: ${this._perf.blockedTransitions}`,
-            `last: ${this._perf.lastTransition || '-'}`,
-        ].join('<br>');
-
-        // Show rates over each reporting window.
-        this._perf.uiFlushes = 0;
-        this._perf.timeupdateEvents = 0;
-        this._perf.selectionEvents = 0;
-        this._perf.seekEvents = 0;
-        this._perf.maxFrameMs = 0;
-    }
+    _renderPerfOverlay() { this._perf.render(); }
 
     _setTransportState(nextState: string, reason = '') {
         if (!nextState || this.transportState === nextState) return;
@@ -678,7 +606,7 @@ export class PlayerState {
     dispose() {
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
-        this._hideCrosshair();
+        this._crosshair.dispose();
         if (this._viewResizeFrameId) {
             cancelAnimationFrame(this._viewResizeFrameId);
             this._viewResizeFrameId = 0;
@@ -691,14 +619,7 @@ export class PlayerState {
             cancelAnimationFrame(this._compactToolbarLayoutRaf);
             this._compactToolbarLayoutRaf = 0;
         }
-        if (this._perf.intervalId) {
-            clearInterval(this._perf.intervalId);
-            this._perf.intervalId = 0;
-        }
-        if (this._perf.panel?.parentNode) {
-            this._perf.panel.parentNode.removeChild(this._perf.panel);
-            this._perf.panel = null;
-        }
+        this._perf.dispose();
         for (let i = this._cleanups.length - 1; i >= 0; i--) this._cleanups[i]();
         this._cleanups.length = 0;
         this._presets.dispose();
@@ -1530,118 +1451,14 @@ export class PlayerState {
 
     // ─── Crosshair ─────────────────────────────────────────────────
 
-    _toggleCrosshair() {
-        this._crosshairEnabled = !this._crosshairEnabled;
-        if (this.d.crosshairToggleBtn) {
-            this.d.crosshairToggleBtn.classList.toggle('active', this._crosshairEnabled);
-        }
-        if (!this._crosshairEnabled) this._hideCrosshair();
-    }
+    _toggleCrosshair() { this._crosshair.toggle(); }
 
     /** @param {MouseEvent|PointerEvent} e */
-    _updateCrosshair(e: MouseEvent | PointerEvent) {
-        if (!this._crosshairEnabled || !this.audioBuffer || !this._spectro.data) return;
-        const wrapper = this.d.canvasWrapper;
-        const overlay = this.d.crosshairCanvas;
-        const readout = this.d.crosshairReadout;
-        if (!wrapper || !overlay || !readout) return;
+    _updateCrosshair(e: MouseEvent | PointerEvent) { this._crosshair.update(e); }
 
-        const rect = wrapper.getBoundingClientRect();
-        const c = this.coords;
-        const { time, freq, canvasX, canvasY, localX, localY } =
-            c.clientToTimeFreq(e.clientX, e.clientY, rect, wrapper.scrollLeft);
 
-        // Out of bounds?
-        if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
-            this._hideCrosshair();
-            return;
-        }
 
-        // Amplitude at this position
-        const frame = c.timeToFrame(time, this._spectro.nFrames);
-        const bin = c.pixelYToBin(canvasY);
-        const amplitude = this._spectro.data[frame * this._spectro.nMels + bin] || 0;
-
-        // Draw crosshair lines on overlay canvas.
-        // Canvas is viewport-sized (sticky rendering), so use localX not canvasX.
-        if (this._crosshairRafId) cancelAnimationFrame(this._crosshairRafId);
-        this._crosshairRafId = requestAnimationFrame(() => {
-            this._crosshairRafId = 0;
-            const vw = wrapper.clientWidth || c.canvasWidth;
-            this._drawCrosshairLines(overlay, localX, canvasY, vw, c.canvasHeight);
-        });
-
-        // Format readout
-        const timeStr = time.toFixed(3) + ' s';
-        const freqStr = freq >= 1000 ? (freq / 1000).toFixed(2) + ' kHz' : Math.round(freq) + ' Hz';
-        const isLinear = (this.d.scaleSelect?.value || 'mel') === 'linear';
-        const ampStr = isLinear
-            ? amplitude.toFixed(1) + ' dB'
-            : amplitude.toFixed(4);
-        readout.textContent = `${timeStr}  |  ${freqStr}  |  ${ampStr}`;
-        readout.classList.add('visible');
-
-        // Position readout near cursor but keep inside viewport
-        const rw = readout.offsetWidth || 160;
-        const rh = readout.offsetHeight || 20;
-        let rx = localX + 14;
-        let ry = localY - rh - 8;
-        if (rx + rw > rect.width) rx = localX - rw - 10;
-        if (ry < 0) ry = localY + 18;
-        readout.style.left = (wrapper.scrollLeft + rx) + 'px';
-        readout.style.top = ry + 'px';
-    }
-
-    /**
-     * @param {HTMLCanvasElement} overlay
-     * @param {number} cx - x in canvas coords
-     * @param {number} cy - y in canvas coords
-     * @param {number} w
-     * @param {number} h
-     */
-    _drawCrosshairLines(overlay: HTMLCanvasElement, cx: number, cy: number, w: number, h: number) {
-        if (overlay.width !== w || overlay.height !== h) {
-            overlay.width = w;
-            overlay.height = h;
-        }
-        const ctx = overlay.getContext('2d');
-        if (!ctx) return;
-        ctx.clearRect(0, 0, w, h);
-
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-
-        // Vertical line
-        const x = Math.round(cx) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-
-        // Horizontal line
-        const y = Math.round(cy) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-    }
-
-    _hideCrosshair() {
-        const overlay = this.d.crosshairCanvas;
-        const readout = this.d.crosshairReadout;
-        if (overlay) {
-            const ctx = overlay.getContext('2d');
-            if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
-        }
-        if (readout) readout.classList.remove('visible');
-        if (this._crosshairRafId) {
-            cancelAnimationFrame(this._crosshairRafId);
-            this._crosshairRafId = 0;
-        }
-    }
+    _hideCrosshair() { this._crosshair.hide(); }
 
     _cancelFollowCatchupAnimation() { this._viewport._cancelFollowCatchupAnimation(); }
     _animateFollowCatchupTo(targetScrollLeft: number) { this._viewport._animateFollowCatchupTo(targetScrollLeft); }
