@@ -6,13 +6,30 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:menu:allow-new",
+    "core:menu:allow-append",
+    "core:menu:allow-prepend",
+    "core:menu:allow-insert",
+    "core:menu:allow-items",
+    "core:menu:allow-get",
+    "core:menu:allow-set-as-app-menu",
+    "core:menu:allow-set-as-window-menu",
+    "core:menu:allow-popup",
+    "core:menu:allow-set-text",
+    "core:menu:allow-set-enabled",
+    "core:menu:allow-set-accelerator",
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-read-text-file",
+    "fs:allow-read-file",
     "fs:allow-write-text-file",
     "fs:allow-remove",
     "fs:allow-read-dir",
     "fs:allow-mkdir",
-    "fs:scope-appdata"
+    "fs:scope-appdata",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$AUDIO/**" }]
+    }
   ]
 }

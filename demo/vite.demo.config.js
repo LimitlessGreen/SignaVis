@@ -71,6 +71,7 @@ export default defineConfig({
         storybook: resolve(__dirname, '..', 'demo', 'storybook.html'),
         index:     resolve(__dirname, '..', 'demo', 'index.html'),
         labeling:  resolve(__dirname, '..', 'demo', 'labeling-app.html'),
+        desktop:   resolve(__dirname, '..', 'demo', 'desktop-app.html'),
       },
     },
   },

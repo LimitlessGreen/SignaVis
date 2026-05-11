@@ -545,35 +545,35 @@
     import { AnalysisBackendProxy, resolveAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
     import ModalManager from '../src/ui/components/modal/modal-manager.ts';
     import { createXcExportModal } from './xc-export-modal.js';
-    import { createReferenceCallsModal } from './lib/reference-calls-modal.js';
+    import { createReferenceCallsModal } from '../src/ui/components/reference-calls-modal/reference-calls-modal.ts';
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
 
-    import { Sidebar } from './lib/sidebar.js';
-    import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from './lib/taxonomy-ui.js';
-    import { LabelList } from './lib/label-list.js';
-    import { BirdNETPanel } from './lib/birdnet-panel.js';
-    import { saveSessionSets, restoreSessionSets } from './lib/session-sets.js';
-    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from './lib/xc-panel.js';
-    import { AnnotatorProfile } from './lib/annotator-profile.js';
-    import { RecordingManager, defaultRecordingEntry } from './lib/recording-manager.js';
-    import { RecordingExplorer } from './lib/recording-explorer.js';
-    import { SpectrogramSettingsPanel } from './lib/spectrogram-panel.js';
+    import { Sidebar } from '../src/ui/panels/sidebar.ts';
+    import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
+    import { LabelList } from '../src/ui/panels/label-list.ts';
+    import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
+    import { saveSessionSets, restoreSessionSets } from '../src/app/session-sets.ts';
+    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from '../src/ui/panels/xc-panel.ts';
+    import { AnnotatorProfile } from '../src/app/annotator-profile.ts';
+    import { RecordingManager, defaultRecordingEntry } from '../src/app/recording-manager.ts';
+    import { RecordingExplorer } from '../src/ui/panels/recording-explorer.ts';
+    import { SpectrogramSettingsPanel } from '../src/ui/panels/spectrogram-panel.ts';
     import { spectrogramCache } from '../src/infrastructure/SpectrogramCache.js';
-    import { PropertiesPanel } from './lib/properties-panel.js';
-    import { SnrComputer } from './lib/snr-computer.js';
-    import { CustomTagStore } from './lib/custom-tag-store.js';
-    import { TAG_PRESETS } from './lib/label-table.js';
-    import { createAboutPanel } from './lib/about-panel.js';
-    import { ExplorePanel } from './lib/explore-panel.js';
-    import { showContextMenu } from './lib/context-menu.js';
+    import { PropertiesPanel } from '../src/ui/panels/properties-panel.ts';
+    import { SnrComputer } from '../src/ui/components/snr-computer/snr-computer.ts';
+    import { CustomTagStore } from '../src/app/custom-tag-store.ts';
+    import { TAG_PRESETS } from '../src/ui/panels/label-table.ts';
+    import { createAboutPanel } from '../src/ui/panels/about-panel.ts';
+    import { ExplorePanel } from '../src/ui/panels/explore-panel.ts';
+    import { showContextMenu } from '../src/ui/components/context-menu/context-menu.ts';
     import {
       loadAnalysisBackendConfig,
       normalizeAnalysisBackendConfig,
       saveAnalysisBackendConfig,
       loadPlatformLocalFlag,
-    } from './lib/analysis-backend-config.js';
-    import { createProjectRepositoryRuntime } from './lib/project-repository-runtime.js';
-    import { getDesktopRuntimeInfo } from './lib/desktop-runtime-info.js';
+    } from '../src/app/analysis-backend-config.ts';
+    import { createProjectRepositoryRuntime } from '../src/infrastructure/tauri/project-repository-runtime.ts';
+    import { getDesktopRuntimeInfo } from '../src/infrastructure/tauri/desktop-runtime-info.ts';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
     import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 

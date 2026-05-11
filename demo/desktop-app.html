@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SignaVis Desktop</title>
+  <link rel="stylesheet" href="/src/styles/tokens.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Topbar ───────────────────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: var(--toolbar-height);
+      padding: 0 12px;
+      background: var(--color-toolbar);
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--color-accent);
+      letter-spacing: 0.02em;
+      margin-right: 4px;
+    }
+    .tb-sep { width: 1px; height: 20px; background: var(--color-border); flex-shrink: 0; margin: 0 2px; }
+    .tb-spacer { flex: 1; }
+
+    .tb-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--color-text-primary);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .tb-btn:hover { background: var(--color-accent-faint); border-color: var(--color-accent); }
+    .tb-btn--primary { background: var(--color-accent); color: #000; border-color: var(--color-accent); }
+    .tb-btn--primary:hover { background: var(--color-accent-hover); }
+    .tb-btn--danger { border-color: var(--color-danger); color: var(--color-danger); }
+    .tb-btn--danger:hover { background: var(--color-danger-soft); }
+
+    /* ── Main layout: left | centre (browser + player) | right ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr 260px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Generic panel ───────────────────────────────────────── */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--color-border);
+      overflow: hidden;
+    }
+    .panel:last-child { border-right: none; }
+
+    .panel__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-secondary);
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-secondary);
+      flex-shrink: 0;
+    }
+
+    .panel__body {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    /* ── Centre pane ─────────────────────────────────────────── */
+    .centre-pane {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--color-border);
+    }
+
+    /* File browser sub-panel (shown once a folder is opened) */
+    #fileBrowserPanel {
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      max-height: 220px;
+    }
+
+    #fileList {
+      list-style: none;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .file-item:hover { background: var(--color-accent-faint); }
+    .file-item--active { background: var(--color-accent-faint); border-left: 2px solid var(--color-accent); }
+    .file-item__icon { flex-shrink: 0; color: var(--color-text-secondary); }
+    .file-item__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item__load-btn { margin-left: auto; flex-shrink: 0; font-size: 11px; padding: 2px 8px; }
+
+    /* Player area */
+    #playerContainer {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    /* BirdNETPlayer renders into this, needs to fill the space */
+    #playerContainer > * { flex: 1; min-height: 0; }
+
+    .centre-placeholder {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: var(--color-text-secondary);
+      padding: 24px;
+      text-align: center;
+    }
+    .centre-placeholder svg { opacity: 0.2; }
+    .centre-placeholder p { font-size: 13px; max-width: 280px; line-height: 1.5; }
+
+    /* ── Project list ─────────────────────────────────────────── */
+    #projectList { list-style: none; }
+
+    .project-item {
+      display: flex;
+      flex-direction: column;
+      padding: 7px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--color-border);
+      gap: 2px;
+    }
+    .project-item:hover { background: var(--color-accent-faint); }
+    .project-item--active { background: var(--color-accent-faint); border-left: 2px solid var(--color-accent); }
+    .project-item__name { font-weight: 500; font-size: 12px; }
+    .project-item__meta { font-size: 11px; color: var(--color-text-secondary); }
+
+    /* ── Job list ─────────────────────────────────────────────── */
+    #jobList { list-style: none; }
+
+    .job-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--color-border);
+      font-size: 11px;
+      flex-wrap: wrap;
+    }
+    .job-item__id { font-family: monospace; color: var(--color-text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .job-item__meta { color: var(--color-text-secondary); white-space: nowrap; }
+
+    /* ── Badges ───────────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .badge--neutral { background: rgba(255,255,255,0.08); color: var(--color-text-secondary); }
+    .badge--accent  { background: var(--color-accent-faint); color: var(--color-accent); }
+    .badge--success { background: var(--color-success-faint); color: var(--color-success); }
+    .badge--danger  { background: var(--color-danger-soft); color: var(--color-danger); }
+
+    /* ── Empty / misc ─────────────────────────────────────────── */
+    .empty-hint {
+      padding: 14px 10px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      font-style: italic;
+    }
+
+    /* ── Status bar ───────────────────────────────────────────── */
+    .statusbar {
+      height: var(--statusbar-height);
+      font-size: 11px;
+      display: flex;
+      align-items: stretch;
+      background: var(--color-statusbar);
+      border-top: 1px solid var(--color-border);
+      color: var(--color-text-secondary);
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    /* Left connection segment — VS Code style */
+    .statusbar__conn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 10px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: filter 0.15s;
+    }
+    .statusbar__conn:hover { filter: brightness(1.15); }
+
+    .statusbar__conn[data-state="local"]      { background: #3a3a4a; color: #aaa; }
+    .statusbar__conn[data-state="connecting"] { background: #7c5c00; color: #fcd34d; }
+    .statusbar__conn[data-state="connected"]  { background: #166534; color: #86efac; }
+    .statusbar__conn[data-state="error"]      { background: #7f1d1d; color: #fca5a5; }
+
+    .statusbar__conn-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    [data-state="local"]      .statusbar__conn-dot { background: #888; }
+    [data-state="connecting"] .statusbar__conn-dot { background: #fcd34d; animation: pulse 1s infinite; }
+    [data-state="connected"]  .statusbar__conn-dot { background: #4ade80; }
+    [data-state="error"]      .statusbar__conn-dot { background: #f87171; }
+
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.3 } }
+
+    .statusbar__msg {
+      flex: 1;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Backend config popover ───────────────────────────────── */
+    .conn-popover-backdrop {
+      position: fixed; inset: 0;
+      z-index: 200;
+    }
+    .conn-popover {
+      position: fixed;
+      bottom: calc(var(--statusbar-height) + 4px);
+      left: 0;
+      z-index: 201;
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 14px;
+      width: 340px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .conn-popover h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      margin-bottom: 2px;
+    }
+    .conn-popover label {
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .conn-popover select,
+    .conn-popover input[type="text"] {
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      color: var(--color-text-primary);
+      font-size: 12px;
+      padding: 5px 8px;
+      width: 100%;
+    }
+    .conn-popover select:focus,
+    .conn-popover input[type="text"]:focus {
+      outline: 1px solid var(--color-accent);
+      border-color: var(--color-accent);
+    }
+    .conn-popover__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Topbar: brand + theme toggle only; actions live in the native menu ── -->
+  <header class="topbar">
+    <span class="brand-title">SignaVis</span>
+    <span class="tb-spacer"></span>
+    <button class="tb-btn" id="themeToggleBtn" type="button" style="font-size:14px;padding:2px 8px;line-height:1">☀</button>
+  </header>
+
+  <!-- Hidden trigger elements so JS event listeners still bind correctly -->
+  <div hidden>
+    <button id="newProjectBtn"  type="button"></button>
+    <button id="openFolderBtn"  type="button"></button>
+    <button id="importFileBtn"  type="button"></button>
+    <button id="runAnalysisBtn" type="button"></button>
+    <button id="refreshJobsBtn" type="button"></button>
+  </div>
+
+  <!-- ── Main layout ───────────────────────────────────────────── -->
+  <div class="layout">
+
+    <!-- Left: Projects -->
+    <div class="panel">
+      <div class="panel__header">
+        <span>Projects</span>
+      </div>
+      <div class="panel__body">
+        <ul id="projectList">
+          <li class="empty-hint">Loading…</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Centre: File browser + Player -->
+    <div class="centre-pane">
+
+      <!-- File browser (hidden until a folder is opened) -->
+      <div id="fileBrowserPanel" hidden>
+        <div class="panel__header">
+          <span>Files — <span id="folderLabel" style="font-weight:400;text-transform:none;letter-spacing:0"></span></span>
+        </div>
+        <ul id="fileList"></ul>
+      </div>
+
+      <!-- Player (hidden until a file is loaded) -->
+      <div id="playerContainer" hidden></div>
+
+      <!-- Placeholder shown when nothing is loaded -->
+      <div class="centre-placeholder" id="centrePlaceholder">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+        <p>Click <strong>Open Folder…</strong> to browse local audio files, or <strong>Import File…</strong> to add a file to the active project.</p>
+      </div>
+
+    </div>
+
+    <!-- Right: Job queue -->
+    <div class="panel">
+      <div class="panel__header">
+        <span>Analysis Jobs</span>
+      </div>
+      <div class="panel__body">
+        <ul id="jobList">
+          <li class="empty-hint">No jobs yet.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Status bar ─────────────────────────────────────────────── -->
+  <div class="statusbar">
+    <button class="statusbar__conn" id="connSegment" data-state="local" type="button"
+            title="Click to configure analysis backend">
+      <span class="statusbar__conn-dot"></span>
+      <span id="connLabel">Local</span>
+    </button>
+    <span class="statusbar__msg" id="statusBar">Initialising…</span>
+  </div>
+
+  <!-- ── Backend config popover (hidden by default) ─────────────── -->
+  <div class="conn-popover-backdrop" id="connPopoverBackdrop" hidden></div>
+  <div class="conn-popover" id="connPopover" hidden>
+    <h3>Analysis Backend</h3>
+    <label>
+      Mode
+      <select id="connModeSelect">
+        <option value="local">Local (in-app)</option>
+        <option value="server">Server (HTTP)</option>
+        <option value="cloud">Cloud (HTTP)</option>
+      </select>
+    </label>
+    <label id="connEndpointRow">
+      Server endpoint
+      <input type="text" id="connEndpointInput" placeholder="http://localhost:8787" />
+    </label>
+    <div class="conn-popover__actions">
+      <button class="tb-btn" id="connCancelBtn" type="button">Cancel</button>
+      <button class="tb-btn tb-btn--primary" id="connApplyBtn" type="button">Apply</button>
+    </div>
+  </div>
+
+  <script type="module" src="../src/app/desktop-app.ts"></script>
+</body>
+</html>

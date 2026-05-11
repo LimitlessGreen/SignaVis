@@ -4,7 +4,7 @@
 
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
-import { LabelEditorModal } from './annotations/LabelEditorModal.ts';
+import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 

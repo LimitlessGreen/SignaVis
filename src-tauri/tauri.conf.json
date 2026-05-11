@@ -5,7 +5,7 @@
   "identifier": "io.github.limitlessgreen.signavis",
   "build": {
     "frontendDist": "../_site/demo",
-    "devUrl": "http://localhost:5173/demo/labeling-app.html",
+    "devUrl": "http://localhost:5173/demo/desktop-app.html",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:desktop"
   },
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "SignaVis",
-        "url": "labeling-app.html",
+        "url": "desktop-app.html",
         "width": 1400,
         "height": 900,
         "minWidth": 900,
@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://xeno-canto.org https://cdn.jsdelivr.net"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset:; media-src 'self' blob: asset: http://asset.localhost; connect-src 'self' asset: http://asset.localhost https://xeno-canto.org https://cdn.jsdelivr.net"
     }
   },
   "bundle": {

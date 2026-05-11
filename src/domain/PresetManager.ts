@@ -15,7 +15,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { DSP_PROFILES, QUALITY_LEVELS } from '../shared/constants.ts';
-import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
 import { jsonGetItem, jsonSetItem } from '../shared/storageJson.ts';
 import { readDspSettings, applyDspSettings } from './dsp/DspSettings.ts';
 
@@ -25,7 +24,7 @@ import type { UndoCommand } from './undoStack.ts';
 export interface PresetManagerCallbacks {
     onRegenerateSpectrogram: (opts?: any) => void;
     onStage1Rebuild: () => void;
-    storage?: IStorage;
+    storage: IStorage;
     onDspCommand?: ((cmd: UndoCommand) => void) | null;
 }
 
@@ -63,9 +62,9 @@ export class PresetManager {
      * @param {object} callbacks
      * @param {(opts?: object) => void} callbacks.onRegenerateSpectrogram
      * @param {() => void}              callbacks.onStage1Rebuild
-     * @param {import('../infrastructure/storage/IStorage.ts').IStorage} [callbacks.storage]
-     *   Storage adapter — defaults to LocalStorageAdapter. Pass an InMemoryStorageAdapter
-     *   for tests or headless environments.
+     * @param {import('../infrastructure/storage/IStorage.ts').IStorage} callbacks.storage
+     *   Storage adapter. Pass new LocalStorageAdapter() for production or
+     *   InMemoryStorageAdapter for tests/headless environments.
      * @param {((cmd: import('./undoStack.ts').UndoCommand) => void) | null} [callbacks.onDspCommand]
      *   Called after each DSP parameter change with an undo/redo command object.
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
@@ -74,7 +73,7 @@ export class PresetManager {
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
         this.#onStage1   = onStage1Rebuild;
-        this.#storage    = storage ?? new LocalStorageAdapter();
+        this.#storage    = storage;
         this.#onDspCommand = onDspCommand ?? null;
     }
 
