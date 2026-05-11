@@ -88,7 +88,7 @@ jobs:
         run: npm pack
 
       - name: Upload JS artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: js-dist-${{ github.run_id }}
           if-no-files-found: error
@@ -112,7 +112,7 @@ jobs:
           python -m twine check dist/*
 
       - name: Upload Python artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: python-dist-${{ github.run_id }}
           if-no-files-found: error
@@ -182,7 +182,7 @@ jobs:
         run: npx tauri build --bundles ${{ matrix.bundle }}
 
       - name: Upload desktop artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-bundles-${{ matrix.os }}-${{ github.run_id }}
           if-no-files-found: error
