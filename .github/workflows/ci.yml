@@ -129,7 +129,7 @@ jobs:
           - os: ubuntu-latest
             bundle: appimage
           - os: macos-latest
-            bundle: app
+            bundle: dmg
           - os: windows-latest
             bundle: msi
 
@@ -261,7 +261,6 @@ jobs:
             release-assets/desktop/**/*.AppImage
             release-assets/desktop/**/*.msi
             release-assets/desktop/**/*.dmg
-            release-assets/desktop/**/*.app.tar.gz
 
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
