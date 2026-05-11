@@ -1,6 +1,6 @@
 {
   "name": "signavis",
-  "version": "0.7.4.1",
+  "version": "0.7.5",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "readme": "README.md",
   "type": "module",
