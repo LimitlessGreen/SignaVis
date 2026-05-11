@@ -203,19 +203,19 @@ jobs:
           fetch-tags: true
 
       - name: Download JS artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: js-dist-${{ github.run_id }}
           path: release-assets/js
 
       - name: Download Python artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: python-dist-${{ github.run_id }}
           path: release-assets/python
 
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: desktop-bundles-*-${{ github.run_id }}
           path: release-assets/desktop
@@ -321,7 +321,7 @@ jobs:
           fetch-tags: true
 
       - name: Download Python artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: python-dist-${{ github.run_id }}
           path: python-wrapper/dist
