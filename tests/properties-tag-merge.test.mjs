@@ -157,9 +157,10 @@ test('properties panel merges multiple preset tag changes', async () => {
   const oldWindow = globalThis.window;
   globalThis.document = fakeDoc;
   globalThis.window = { innerHeight: 800, innerWidth: 1400 };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
   try {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
-    const { TAG_PRESETS } = await import('../demo/lib/label-table.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
+    const { TAG_PRESETS } = await import('../src/ui/panels/label-table.ts');
 
     // Monkeypatch PropertiesPanel._buildTagsSection to use lightweight stub
     // editable-select widgets that expose a `select(value)` helper. This

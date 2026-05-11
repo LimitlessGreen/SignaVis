@@ -191,11 +191,17 @@ function createFakeDocument() {
 async function withFakeDOM(fn) {
   const oldDoc = globalThis.document;
   const oldWin = globalThis.window;
+  const oldGcs = globalThis.getComputedStyle;
   globalThis.document = createFakeDocument();
   globalThis.window = { innerHeight: 800, innerWidth: 1400,
     addEventListener() {}, removeEventListener() {} };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
   try { return await fn(); }
-  finally { globalThis.document = oldDoc; globalThis.window = oldWin; }
+  finally {
+    globalThis.document = oldDoc;
+    globalThis.window = oldWin;
+    globalThis.getComputedStyle = oldGcs;
+  }
 }
 
 function makeLabel(overrides = {}) {
@@ -209,7 +215,7 @@ function makeLabel(overrides = {}) {
 
 test('_renderSig: in-place patch when only values change', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const lbl = makeLabel();
     panel.pinLabel(lbl);
@@ -232,7 +238,7 @@ test('_renderSig: in-place patch when only values change', async () => {
 
 test('_renderSig: full rebuild when label ID changes', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     panel.pinLabel(makeLabel({ id: 'L1' }));
     const sig1 = panel._renderSig;
@@ -244,7 +250,7 @@ test('_renderSig: full rebuild when label ID changes', async () => {
 
 test('_renderSig: full rebuild when locked state changes', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     panel.pinLabel(makeLabel({ id: 'L1' }));
     const sig1 = panel._renderSig;
@@ -256,7 +262,7 @@ test('_renderSig: full rebuild when locked state changes', async () => {
 
 test('_renderSig: full rebuild when custom tag keys change', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const lbl = makeLabel({ tags: {} });
     panel.pinLabel(lbl);
@@ -269,7 +275,7 @@ test('_renderSig: full rebuild when custom tag keys change', async () => {
 
 test('_patchValues: focused input is not overwritten', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const lbl = makeLabel({ author: 'Alice' });
     panel.pinLabel(lbl);
@@ -291,7 +297,7 @@ test('_patchValues: focused input is not overwritten', async () => {
 
 test('_patchValues: non-focused inputs are updated', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const lbl = makeLabel({ author: 'Alice', start: 1.0, end: 2.0 });
     panel.pinLabel(lbl);
@@ -311,7 +317,7 @@ test('_patchValues: non-focused inputs are updated', async () => {
 
 test('hoverLabel is skipped when a panel input is focused', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const pinned = makeLabel({ id: 'L1', label: 'Robin' });
     panel.pinLabel(pinned);
@@ -336,7 +342,7 @@ test('hoverLabel is skipped when a panel input is focused', async () => {
 
 test('clearHover is skipped when a panel input is focused', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     const pinned = makeLabel({ id: 'L1' });
     panel.pinLabel(pinned);
@@ -367,7 +373,7 @@ test('clearHover is skipped when a panel input is focused', async () => {
 
 test('Enter key on text input triggers blur and change', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const state = { labels: [makeLabel({ author: '' })] };
     const panel = new PropertiesPanel();
 
@@ -399,7 +405,7 @@ test('Enter key on text input triggers blur and change', async () => {
 
 test('set-field data-focus-key: in-place patch updates set fields', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const setInfo = { name: 'My Set', creator: 'Alice', license: '', origin: 'manual' };
     const panel = new PropertiesPanel({
       getSetInfo: (id) => id === 'S1' ? setInfo : null,
@@ -421,7 +427,7 @@ test('set-field data-focus-key: in-place patch updates set fields', async () => 
 
 test('number field in-place update preserves numeric formatting', async () => {
   await withFakeDOM(async () => {
-    const { PropertiesPanel } = await import('../demo/lib/properties-panel.js');
+    const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const panel = new PropertiesPanel();
     panel.pinLabel(makeLabel({ start: 1.234 }));
 
