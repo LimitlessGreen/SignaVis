@@ -9,7 +9,7 @@ if [[ "${1:-}" != "" ]]; then
   echo "Set VERSION to $1"
 fi
 
-bash ./scripts/sync-version.sh
+node ./scripts/sync-version.js
 bash ./scripts/check-version-sync.sh
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -20,7 +20,8 @@ if git rev-parse "${TAG}" >/dev/null 2>&1; then
   exit 1
 fi
 
-git add VERSION package.json python-wrapper/pyproject.toml demo/storybook.html
+git add VERSION package.json python-wrapper/pyproject.toml demo/storybook.html \
+          src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "release: ${TAG}"
 git tag "${TAG}"
 git push origin main --tags
