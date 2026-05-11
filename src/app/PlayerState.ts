@@ -22,20 +22,16 @@ import { CoordinateSystem } from '../domain/coordinateSystem.ts';
 import { computeAmplitudePeak } from '../domain/spectrogram.ts';
 import { PresetManager } from '../domain/PresetManager.ts';
 import { SpectrogramController } from './SpectrogramController.ts';
-import { FrequencyViewport } from './FrequencyViewport.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
 import { ViewportManager } from './ViewportManager.ts';
 import { bindUiControllers } from './bindUiControllers.ts';
 import { CrosshairController } from './player/CrosshairController.ts';
 import { PerfOverlay } from './player/PerfOverlay.ts';
 import { ViewResizeController } from './player/ViewResizeController.ts';
+import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
+import { WaveformRenderer } from './player/WaveformRenderer.ts';
+import { ToolbarController } from './player/ToolbarController.ts';
 import type { DomRefs } from './domRefs.ts';
-
-import {
-    renderMainWaveform,
-    renderOverviewWaveform,
-    renderFrequencyLabels,
-} from '../ui/components/waveform/waveform.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -124,6 +120,9 @@ export class PlayerState {
     _perf: PerfOverlay;
     _crosshair: CrosshairController;
     _viewResize: ViewResizeController;
+    _freqZoom: FrequencyZoomController;
+    _waveformRenderer: WaveformRenderer;
+    _toolbar: ToolbarController;
     _emitHostEvent: any;
     options: any;
     _viewMode: any;
@@ -134,12 +133,10 @@ export class PlayerState {
     _compactToolbarMode: any;
     _compactToolbarOpen: any;
     _settingsPanelOpen: any;
-    _compactToolbarLayoutRaf: any;
     _showWaveformTimeline: any;
     _playbackViewportConfig: any;
     sampleRateHz: any;
     amplitudePeakAbs: number;
-    _freqView: any;
     transportState: any;
     _lastTimeReadoutText: any;
     _uiFrameId: any;
@@ -221,7 +218,6 @@ export class PlayerState {
             : 'auto';
         this._compactToolbarOpen = false;
         this._settingsPanelOpen = false;
-        this._compactToolbarLayoutRaf = 0;
         this._showWaveformTimeline = this.options.showWaveformTimeline !== false
             && !(this.options.transportOverlay && this._viewMode === 'waveform');
         this._playbackViewportConfig = this._sanitizePlaybackViewportConfig(this.options || {});
@@ -257,8 +253,23 @@ export class PlayerState {
         // volume, muted, preMuteVolume — owned by this._engine (accessed via getters)
 
         // ── Vertical frequency zoom viewport ──
-        this._freqView = new FrequencyViewport();
-        this._freqView.addEventListener('change', () => this._applyFreqViewChange());
+        this._freqZoom = new FrequencyZoomController({
+            d: {
+                freqZoomResetBtn:   this.d.freqZoomResetBtn,
+                freqScrollbar:      this.d.freqScrollbar,
+                freqScrollbarThumb: this.d.freqScrollbarThumb,
+                freqZoomSlider:     this.d.freqZoomSlider,
+            },
+            getBoundedMaxFreq:  () => this.coords.boundedMaxFreq,
+            onFreqViewChange:   () => {
+                this._updateCoords();
+                this._drawSpectrogram();
+                this._createFrequencyLabels();
+                this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
+            },
+            emitZoomChange:     (pps) => this._emit('zoomchange', { pixelsPerSecond: pps }),
+            getPixelsPerSecond: () => this.pixelsPerSecond,
+        });
 
         // ── Interaction FSM (created before ViewportManager so it can be injected) ──
         this.interaction = new InteractionState();
@@ -325,6 +336,58 @@ export class PlayerState {
             getPrimaryScrollLeft: () => this._getPrimaryScrollLeft(),
             setLinkedScrollLeft:  (x) => this._setLinkedScrollLeft(x),
             emit:                 (e, d) => this._emit(e, d),
+        });
+
+        // ── WaveformRenderer ──
+        this._waveformRenderer = new WaveformRenderer({
+            d: {
+                amplitudeCanvas:        this.d.amplitudeCanvas,
+                waveformTimelineCanvas: this.d.waveformTimelineCanvas,
+                waveformContent:        this.d.waveformContent,
+                overviewCanvas:         this.d.overviewCanvas,
+                overviewContainer:      this.d.overviewContainer,
+                freqLabels:             this.d.freqLabels,
+                amplitudeLabels:        this.d.amplitudeLabels,
+            },
+            getAudioBuffer:          () => this.audioBuffer,
+            getAmplitudePeakAbs:     () => this.amplitudePeakAbs,
+            getPixelsPerSecond:      () => this.pixelsPerSecond,
+            getShowWaveform:         () => this._showWaveform,
+            getShowOverview:         () => this._showOverview,
+            getShowWaveformTimeline: () => this._showWaveformTimeline,
+            getEffectiveWaveformHeight:    () => this._getEffectiveWaveformHeight(),
+            getEffectiveSpectrogramHeight: () => this._getEffectiveSpectrogramHeight(),
+            getCoords:               () => this.coords,
+            scheduleUiUpdate:        () => this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true }),
+        });
+
+        // ── ToolbarController ──
+        this._toolbar = new ToolbarController({
+            container: this.container,
+            d: {
+                toolbarRoot:        this.d.toolbarRoot,
+                compactMoreBtn:     this.d.compactMoreBtn,
+                settingsToggleBtn:  this.d.settingsToggleBtn,
+                settingsPanel:      null,
+                playPauseBtn:       this.d.playPauseBtn,
+                stopBtn:            this.d.stopBtn,
+                jumpStartBtn:       this.d.jumpStartBtn,
+                jumpEndBtn:         this.d.jumpEndBtn,
+                backwardBtn:        this.d.backwardBtn,
+                forwardBtn:         this.d.forwardBtn,
+                followToggleBtn:    this.d.followToggleBtn,
+                loopToggleBtn:      this.d.loopToggleBtn,
+                crosshairToggleBtn: this.d.crosshairToggleBtn,
+                fitViewBtn:         this.d.fitViewBtn,
+                resetViewBtn:       this.d.resetViewBtn,
+                autoContrastBtn:    this.d.autoContrastBtn,
+                autoFreqBtn:        this.d.autoFreqBtn,
+            },
+            compactToolbarMode:  this._compactToolbarMode,
+            transportOverlay:    this._transportOverlay,
+            getFollowMode:       () => this.followMode,
+            getLoopPlayback:     () => this.loopPlayback,
+            setFollowPlayback:   (v) => { this.followPlayback = v; },
         });
 
         // ── Initial DOM setup ──
@@ -616,13 +679,11 @@ export class PlayerState {
         this._viewport.dispose();
         this._crosshair.dispose();
         this._viewResize.dispose();
+        this._freqZoom.dispose();
+        this._toolbar.dispose();
         if (this._uiFrameId) {
             cancelAnimationFrame(this._uiFrameId);
             this._uiFrameId = 0;
-        }
-        if (this._compactToolbarLayoutRaf) {
-            cancelAnimationFrame(this._compactToolbarLayoutRaf);
-            this._compactToolbarLayoutRaf = 0;
         }
         this._perf.dispose();
         for (let i = this._cleanups.length - 1; i >= 0; i--) this._cleanups[i]();
@@ -824,9 +885,8 @@ export class PlayerState {
         return {
             show:           this._showSpectrogram,
             pixelsPerSecond: this.pixelsPerSecond,
-            freqViewMin:    this._freqView.min,
-            freqViewMax:    this._freqView.max,
-            coords:         this.coords,
+            freqViewMin:    this._freqZoom.min,
+            freqViewMax:    this._freqZoom.max,
             effectiveHeight: this._getEffectiveSpectrogramHeight(),
             colorScheme:    this._presets.currentColorScheme,
             currentTime:    this._getCurrentTime(),
@@ -885,67 +945,14 @@ export class PlayerState {
     //  Waveform Rendering
     // ═════════════════════════════════════════════════════════════════
 
-    _drawMainWaveform() {
-        if (!this._showWaveform) return;
-        const effectiveWaveformHeight = this._getEffectiveWaveformHeight();
-        if (!this.d.amplitudeCanvas || !this.d.waveformTimelineCanvas || !this.d.waveformContent) return;
-        renderMainWaveform({
-            audioBuffer: this.audioBuffer,
-            amplitudeCanvas: this.d.amplitudeCanvas,
-            waveformTimelineCanvas: this.d.waveformTimelineCanvas,
-            waveformContent: this.d.waveformContent,
-            pixelsPerSecond: this.pixelsPerSecond,
-            waveformHeight: effectiveWaveformHeight,
-            amplitudePeakAbs: this.amplitudePeakAbs,
-            showTimeline: this._showWaveformTimeline,
-        });
-        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
-    }
+    // ═════════════════════════════════════════════════════════════════
+    //  Waveform Rendering — thin delegates to WaveformRenderer
+    // ═════════════════════════════════════════════════════════════════
 
-    _drawOverviewWaveform() {
-        if (!this._showOverview) return;
-        if (!this.d.overviewCanvas || !this.d.overviewContainer) return;
-        renderOverviewWaveform({
-            audioBuffer: this.audioBuffer,
-            overviewCanvas: this.d.overviewCanvas,
-            overviewContainer: this.d.overviewContainer,
-            amplitudePeakAbs: this.amplitudePeakAbs,
-        });
-        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
-    }
-
-    _createFrequencyLabels() {
-        if (this.d.freqLabels) renderFrequencyLabels({ labelsElement: this.d.freqLabels, coords: this.coords });
-    }
-
-    _updateAmplitudeLabels() {
-        const el = this.d.amplitudeLabels;
-        if (!el) return;
-        el.innerHTML = '';
-
-        const peak = Math.max(1e-6, this.amplitudePeakAbs || 1);
-        const clampedH = this._getEffectiveWaveformHeight();
-        const timelineH = this._showWaveformTimeline ? clamp(Math.round(clampedH * 0.22), 18, 32) : 0;
-        const ampH = Math.max(32, clampedH - timelineH);
-
-        const fmt = (v: number) => {
-            const a = Math.abs(v);
-            return a >= 1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toFixed(3);
-        };
-
-        // Generate 5 evenly-spaced labels: +peak, +half, 0, -half, -peak
-        const values = [peak, peak / 2, 0, -peak / 2, -peak];
-
-        values.forEach((value, i) => {
-            const frac = i / (values.length - 1);
-            const span = document.createElement('span');
-            span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
-            span.style.top = `${frac * ampH}px`;
-            span.style.transform = `translateY(${-frac * 100}%)`;
-            span.style.setProperty('--tick-pos', `${frac * 100}%`);
-            el.appendChild(span);
-        });
-    }
+    _drawMainWaveform()       { this._waveformRenderer.drawMainWaveform(); }
+    _drawOverviewWaveform()   { this._waveformRenderer.drawOverviewWaveform(); }
+    _createFrequencyLabels()  { this._waveformRenderer.createFrequencyLabels(); }
+    _updateAmplitudeLabels()  { this._waveformRenderer.updateAmplitudeLabels(); }
 
     // ═════════════════════════════════════════════════════════════════
     //  Viewport & Scroll
@@ -1051,8 +1058,8 @@ export class PlayerState {
         this.interaction.ctx.panStartScroll = source === 'waveform'
             ? (this.d.waveformWrapper?.scrollLeft ?? 0)
             : (this.d.canvasWrapper?.scrollLeft ?? 0);
-        this.interaction.ctx.panStartFreqViewMin = this._freqView.min;
-        this.interaction.ctx.panStartFreqViewMax = this._freqView.max;
+        this.interaction.ctx.panStartFreqViewMin = this._freqZoom.min;
+        this.interaction.ctx.panStartFreqViewMax = this._freqZoom.max;
         this.interaction.ctx.panIsMiddle = event.button === 1;
         this.interaction.ctx.panSource = source;
         document.body.style.cursor = 'grabbing';
@@ -1066,7 +1073,7 @@ export class PlayerState {
 
         // Middle mouse: also pan vertically
         if (this.interaction.ctx.panIsMiddle && this.interaction.ctx.panSource !== 'waveform'
-            && this._showSpectrogram && this._freqView.isZoomed) {
+            && this._showSpectrogram && this._freqZoom.isZoomed) {
             const wrapper = this.d.canvasWrapper;
             const height = wrapper?.getBoundingClientRect().height || 1;
             const boundedMax = this.coords.boundedMaxFreq;
@@ -1079,7 +1086,7 @@ export class PlayerState {
             let newMax = startMax + deltaHz;
             if (newMin < 0) { newMin = 0; newMax = range; }
             if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-            this._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
+            this._freqZoom.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
         }
     }
 
@@ -1112,7 +1119,7 @@ export class PlayerState {
                 * (this.d.spectrogramCanvas?.height || rect.height);
             const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
             const zoomIn = event.deltaY < 0;
-            this._freqView.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor, this.coords.boundedMaxFreq);
+            this._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
             return;
         }
 
@@ -1120,55 +1127,6 @@ export class PlayerState {
             event.preventDefault();
             this._setLinkedScrollLeft(Math.max(0, wrapper.scrollLeft + event.deltaY));
         }
-    }
-
-    _applyFreqViewChange() {
-        this._updateCoords();
-        this._drawSpectrogram();
-        this._createFrequencyLabels();
-        this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
-        // Toggle Y-zoom reset button visibility
-        const btn = this.d.freqZoomResetBtn;
-        if (btn) btn.hidden = !this._freqView.isZoomed;
-        // Update scrollbar
-        this._updateFreqScrollbar();
-        // Sync slider
-        this._syncFreqZoomSlider();
-        // Notify annotation layers so they re-render with updated coords
-        this._emit('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
-    }
-
-    _updateFreqScrollbar() {
-        const bar = this.d.freqScrollbar;
-        const thumb = this.d.freqScrollbarThumb;
-        if (!bar || !thumb) return;
-
-        if (!this._freqView.isZoomed) {
-            bar.hidden = true;
-            return;
-        }
-        bar.hidden = false;
-        const boundedMax = this.coords.boundedMaxFreq;
-        const viewRange = (this._freqView.max ?? boundedMax) - (this._freqView.min ?? 0);
-        const thumbFrac = Math.min(1, viewRange / boundedMax);
-        // top=0 is highest freq, bottom=100% is 0 Hz
-        const topFrac = 1 - (this._freqView.max ?? boundedMax) / boundedMax;
-        thumb.style.height = `${Math.max(8, thumbFrac * 100)}%`;
-        thumb.style.top = `${topFrac * 100}%`;
-    }
-
-    _syncFreqZoomSlider() {
-        const slider = this.d.freqZoomSlider;
-        if (!slider) return;
-        if (!this._freqView.isZoomed) {
-            slider.value = '0';
-            return;
-        }
-        const boundedMax = this.coords.boundedMaxFreq;
-        const fraction = ((this._freqView.max ?? boundedMax) - (this._freqView.min ?? 0)) / boundedMax;
-        // Inverse of exponential mapping: fraction = 1 - val/100*0.95
-        const val = (1 - fraction) / 0.95 * 100;
-        slider.value = String(clamp(Math.round(val), 0, 100));
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -1212,109 +1170,36 @@ export class PlayerState {
             hopSize: this._spectro.hopSize || 0,
             freqRange: extCfg?.freqRange || null,
             freqScale: extCfg?.freqScale || null,
-            freqViewMin: this._freqView.min,
-            freqViewMax: this._freqView.max,
+            freqViewMin: this._freqZoom.min,
+            freqViewMax: this._freqZoom.max,
         });
         // Keep ViewportManager in sync with the freshly rebuilt coords instance
         this._viewport?.updateCoords(this.coords);
     }
 
     // ═════════════════════════════════════════════════════════════════
-    //  UI State Helpers
+    //  UI State Helpers — thin delegates to ToolbarController
     // ═════════════════════════════════════════════════════════════════
 
     _setPlayState(text: unknown) {
         if (this.d.playStateDisplay) this.d.playStateDisplay.textContent = String(text ?? '');
     }
 
-    _shouldCompactToolbarBeActive() {
-        if (this._transportOverlay) return false;
-        if (this._compactToolbarMode === 'off') return false;
-        if (this._compactToolbarMode === 'on') return true;
-        const root = this.d.toolbarRoot;
-        if (!root) return false;
-        const hadActive = this.container.classList.contains('compact-toolbar-active');
-        const hadOpen = this.container.classList.contains('compact-toolbar-open');
-        if (hadActive) this.container.classList.remove('compact-toolbar-active');
-        if (hadOpen) this.container.classList.remove('compact-toolbar-open');
-        const needsCompact = root.scrollWidth > root.clientWidth + 4;
-        if (hadActive) this.container.classList.add('compact-toolbar-active');
-        if (hadOpen) this.container.classList.add('compact-toolbar-open');
-        return needsCompact;
+    _shouldCompactToolbarBeActive() { return this._toolbar.isActive(); }
+    _isCompactToolbarActive()       { return this._toolbar.isActive(); }
+    _queueCompactToolbarLayoutRefresh() { this._toolbar.queueLayoutRefresh(); }
+    _refreshCompactToolbarLayout()  { this._toolbar.refreshLayout(); }
+    _setCompactToolbarOpen(v: unknown) {
+        this._toolbar.setCompactToolbarOpen(v);
+        this._compactToolbarOpen = this._toolbar.compactToolbarOpen;
     }
-
-    _isCompactToolbarActive() {
-        return this.container.classList.contains('compact-toolbar-active');
+    _toggleSettingsPanel()           { this._toolbar.toggleSettingsPanel(); }
+    _setSettingsPanelOpen(v: unknown) {
+        this._toolbar.setSettingsPanelOpen(v);
+        this._settingsPanelOpen = this._toolbar.settingsPanelOpen;
     }
-
-    _queueCompactToolbarLayoutRefresh() {
-        if (this._compactToolbarLayoutRaf) return;
-        this._compactToolbarLayoutRaf = requestAnimationFrame(() => {
-            this._compactToolbarLayoutRaf = 0;
-            this._refreshCompactToolbarLayout();
-        });
-    }
-
-    _refreshCompactToolbarLayout() {
-        const active = this._shouldCompactToolbarBeActive();
-        this.container.classList.toggle('compact-toolbar-active', active);
-        if (!active && this._compactToolbarOpen) this._setCompactToolbarOpen(false);
-        if (this.d.compactMoreBtn) {
-            this.d.compactMoreBtn.disabled = !active;
-            this.d.compactMoreBtn.setAttribute('aria-hidden', active ? 'false' : 'true');
-        }
-    }
-
-    _setCompactToolbarOpen(nextOpen: unknown) {
-        const open = this._isCompactToolbarActive() && !!nextOpen;
-        this._compactToolbarOpen = open;
-        this.container.classList.toggle('compact-toolbar-open', open);
-        if (this.d.compactMoreBtn) this.d.compactMoreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    }
-
-    _toggleSettingsPanel() {
-        this._setSettingsPanelOpen(!this._settingsPanelOpen);
-    }
-
-    _setSettingsPanelOpen(open: unknown) {
-        this._settingsPanelOpen = !!open;
-        this.container.classList.toggle('settings-panel-open', this._settingsPanelOpen);
-        if (this.d.settingsToggleBtn) {
-            this.d.settingsToggleBtn.classList.toggle('active', this._settingsPanelOpen);
-            this.d.settingsToggleBtn.setAttribute('aria-expanded', this._settingsPanelOpen ? 'true' : 'false');
-        }
-    }
-
-    _setTransportEnabled(enabled: unknown) {
-        [
-            this.d.playPauseBtn, this.d.stopBtn,
-            this.d.jumpStartBtn, this.d.jumpEndBtn,
-            this.d.backwardBtn, this.d.forwardBtn,
-            this.d.followToggleBtn, this.d.loopToggleBtn,
-            this.d.crosshairToggleBtn,
-            this.d.fitViewBtn, this.d.resetViewBtn,
-            this.d.autoContrastBtn, this.d.autoFreqBtn,
-        ].forEach((btn) => { if (btn) btn.disabled = !enabled; });
-        this._queueCompactToolbarLayoutRefresh();
-    }
-
-    _updateToggleButtons() {
-        this.followPlayback = this.followMode !== 'free';
-        if (this.d.followToggleBtn) {
-            this.d.followToggleBtn.classList.toggle('active', this.followPlayback);
-            this.d.followToggleBtn.textContent = this.followMode === 'smooth'
-                ? 'Smooth'
-                : (this.followPlayback ? 'Follow' : 'Free');
-            this.d.followToggleBtn.title = this.followMode === 'smooth'
-                ? 'Smooth follow (continuous)'
-                : (this.followPlayback ? 'Follow playhead' : 'Free navigation');
-        }
-        if (this.d.loopToggleBtn) {
-            this.d.loopToggleBtn.classList.toggle('active', this.loopPlayback);
-            this.d.loopToggleBtn.textContent = this.loopPlayback ? 'Loop On' : 'Loop';
-        }
-        this._queueCompactToolbarLayoutRefresh();
-    }
+    _setTransportEnabled(enabled: unknown) { this._toolbar.setTransportEnabled(enabled); }
+    _updateToggleButtons()           { this._toolbar.updateToggleButtons(); }
 
     _cycleFollowMode() {
         this.followMode = this.followMode === 'free'

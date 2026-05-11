@@ -110,10 +110,10 @@ export class CoordinateSystem {
         scale = 'mel',
         frameRate = PERCH_FRAME_RATE,
         hopSize = 0,
-        freqRange = null,
-        freqScale = null,
-        freqViewMin = null,
-        freqViewMax = null,
+        freqRange = null as number[] | null,
+        freqScale = null as string | null,
+        freqViewMin = null as number | null,
+        freqViewMax = null as number | null,
     } = {}) {
         this.duration = Math.max(0, duration);
         this.sampleRate = Math.max(1, sampleRate);
