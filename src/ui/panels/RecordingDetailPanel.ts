@@ -7,7 +7,12 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Recording, SoundEvent } from '../../domain/corpus/types.ts';
-import { recordingSetTags, datasetRunBirdnet, type BirdnetRunArgs } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import {
+    recordingSetTags,
+    recordingSetField,
+    datasetRunBirdnet,
+    type BirdnetRunArgs,
+} from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { listen } from '@tauri-apps/api/event';
 
 export interface RecordingDetailPanelOptions {
@@ -190,8 +195,6 @@ export class RecordingDetailPanel {
     }
 
     private renderAnalysisResults(r: Recording): string {
-        // Collect all SoundEvents fields from r.fields
-        // Every field with shape { soundEvents: [...] } is rendered as an analysis result.
         const sections: string[] = [];
 
         for (const [fieldName, fieldValue] of Object.entries(r.fields ?? {})) {
@@ -209,33 +212,67 @@ export class RecordingDetailPanel {
                 continue;
             }
 
+            const confirmed = events.filter((e) => e.tags?.includes('confirmed')).length;
+            const rejected = events.filter((e) => e.tags?.includes('rejected')).length;
+
             const rows = events
-                .slice(0, 20)
-                .map((e) => {
+                .slice(0, 50)
+                .map((e, idx) => {
+                    const isConfirmed = e.tags?.includes('confirmed');
+                    const isRejected = e.tags?.includes('rejected');
                     const confidence = (e.confidence * 100).toFixed(1);
                     const confClass =
                         e.confidence >= 0.8 ? 'conf--high'
                         : e.confidence >= 0.5 ? 'conf--mid'
                         : 'conf--low';
+                    const rowClass = isConfirmed
+                        ? 'detection--confirmed'
+                        : isRejected
+                        ? 'detection--rejected'
+                        : '';
                     return `
-                        <tr>
+                        <tr class="detection-row ${rowClass}"
+                            data-field="${escapeHtml(fieldName)}"
+                            data-idx="${idx}">
                             <td class="analysis-table__label">${escapeHtml(e.label)}</td>
                             <td class="analysis-table__conf ${confClass}">${confidence}%</td>
                             <td class="analysis-table__time">${e.support[0].toFixed(1)}–${e.support[1].toFixed(1)}s</td>
+                            <td class="analysis-table__actions">
+                                <button
+                                    class="confirm-btn ${isConfirmed ? 'confirm-btn--active' : ''}"
+                                    data-action="confirm"
+                                    data-field="${escapeHtml(fieldName)}"
+                                    data-idx="${idx}"
+                                    title="Confirm detection"
+                                >✓</button>
+                                <button
+                                    class="confirm-btn confirm-btn--reject ${isRejected ? 'confirm-btn--active' : ''}"
+                                    data-action="reject"
+                                    data-field="${escapeHtml(fieldName)}"
+                                    data-idx="${idx}"
+                                    title="Reject detection"
+                                >✕</button>
+                            </td>
                         </tr>
                     `;
                 })
                 .join('');
 
-            const moreNote = events.length > 20
-                ? `<div class="analysis-table__more">+ ${events.length - 20} more</div>`
+            const moreNote = events.length > 50
+                ? `<div class="analysis-table__more">+ ${events.length - 50} more</div>`
                 : '';
+
+            const stats = [
+                confirmed > 0 ? `<span class="badge badge--ok">${confirmed} confirmed</span>` : '',
+                rejected > 0  ? `<span class="badge badge--error">${rejected} rejected</span>` : '',
+            ].filter(Boolean).join(' ');
 
             sections.push(`
                 <section class="detail-section">
                     <div class="detail-section__label analysis-field-label">
                         ${escapeHtml(fieldName)}
                         <span class="badge badge--accent">${events.length} detections</span>
+                        ${stats}
                     </div>
                     <table class="analysis-table">
                         <thead>
@@ -243,6 +280,7 @@ export class RecordingDetailPanel {
                                 <th>Species</th>
                                 <th>Confidence</th>
                                 <th>Time range</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -315,6 +353,72 @@ export class RecordingDetailPanel {
         this.container.querySelector('#detailRunBirdnet')?.addEventListener('click', () => {
             this.runBirdnetForCurrent();
         });
+
+        // Confirm / reject individual detections
+        this.container.querySelectorAll<HTMLButtonElement>('[data-action="confirm"],[data-action="reject"]')
+            .forEach((btn) => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.action as 'confirm' | 'reject';
+                    const fieldName = btn.dataset.field!;
+                    const idx = parseInt(btn.dataset.idx!, 10);
+                    await this.toggleDetectionTag(fieldName, idx, action);
+                });
+            });
+    }
+
+    private async toggleDetectionTag(
+        fieldName: string,
+        idx: number,
+        action: 'confirm' | 'reject',
+    ): Promise<void> {
+        if (!this.current) return;
+        const r = this.current;
+        const fieldValue = (r.fields as Record<string, unknown>)[fieldName];
+        if (!isValidSoundEventsField(fieldValue)) return;
+
+        const events = (fieldValue as { soundEvents: SoundEvent[] }).soundEvents;
+        const event = events[idx];
+        if (!event) return;
+
+        const opposite = action === 'confirm' ? 'rejected' : 'confirmed';
+        const tags = event.tags ?? [];
+
+        let newTags: string[];
+        if (tags.includes(action + 'd')) {
+            // Toggle off
+            newTags = tags.filter((t) => t !== action + 'd');
+        } else {
+            // Set this, remove opposite
+            newTags = tags.filter((t) => t !== opposite).concat(action + 'd');
+        }
+        event.tags = newTags;
+
+        try {
+            await recordingSetField(r.id, fieldName, fieldValue);
+            // Re-render analysis section only
+            const analysisSection = this.container.querySelector('.detail-section:last-of-type');
+            if (analysisSection) {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = this.renderAnalysisResults(r);
+                analysisSection.replaceWith(tmp.firstElementChild!);
+                // Rebind confirmation buttons
+                this.container
+                    .querySelectorAll<HTMLButtonElement>('[data-action="confirm"],[data-action="reject"]')
+                    .forEach((btn) => {
+                        btn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            await this.toggleDetectionTag(
+                                btn.dataset.field!,
+                                parseInt(btn.dataset.idx!, 10),
+                                btn.dataset.action as 'confirm' | 'reject',
+                            );
+                        });
+                    });
+            }
+        } catch (e) {
+            this.onStatusMessage(`Confirm/reject error: ${e}`);
+        }
     }
 
     private async runBirdnetForCurrent(): Promise<void> {

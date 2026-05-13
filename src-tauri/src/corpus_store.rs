@@ -75,6 +75,9 @@ pub struct DatasetRecord {
     pub known_tags: Vec<String>,
     #[serde(default)]
     pub saved_views: Vec<SavedView>,
+    /// Analysis runs keyed by job_id.
+    #[serde(default)]
+    pub analysis_runs: std::collections::HashMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
@@ -355,6 +358,24 @@ pub struct CorpusStore {
                 .as_millis() as i64;
             self.dataset_update(&dataset).await?;
             Ok(dataset)
+        }
+
+        // ── Analysis Runs ─────────────────────────────────────────────
+
+        /// Inserts or replaces an analysis run record (keyed by run.key).
+        pub async fn upsert_analysis_run(
+            &self,
+            dataset_id: &str,
+            run: &AnalysisRunRecord,
+        ) -> Result<(), String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("upsert_analysis_run: dataset '{dataset_id}' not found"))?;
+            let value = serde_json::to_value(run)
+                .map_err(|e| format!("upsert_analysis_run: serialize: {e}"))?;
+            dataset.analysis_runs.insert(run.key.clone(), value);
+            self.dataset_update(&dataset).await
         }
 
         pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
@@ -689,6 +710,24 @@ mod json_fallback {
             Ok(dataset)
         }
 
+        // ── Analysis Runs ─────────────────────────────────────────────
+
+        /// Inserts or replaces an analysis run record (keyed by run.key).
+        pub async fn upsert_analysis_run(
+            &self,
+            dataset_id: &str,
+            run: &AnalysisRunRecord,
+        ) -> Result<(), String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("upsert_analysis_run: dataset '{dataset_id}' not found"))?;
+            let value = serde_json::to_value(run)
+                .map_err(|e| format!("upsert_analysis_run: serialize: {e}"))?;
+            dataset.analysis_runs.insert(run.key.clone(), value);
+            self.dataset_update(&dataset).await
+        }
+
         pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
             let dir = self.recordings_dir(dataset_id);
             if !dir.exists() {
@@ -811,6 +850,30 @@ pub use surreal_impl::CorpusStore;
 
 #[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
 pub use json_fallback::CorpusStore;
+
+// ── AnalysisRun ───────────────────────────────────────────────────────
+// Stored as a sub-document inside DatasetRecord.analysis_runs (a JSON
+// object keyed by run_key / job_id).
+
+/// Mirrors domain/corpus/types.ts#AnalysisRunInfo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisRunRecord {
+    pub key: String,
+    pub run_type: String,
+    pub config: serde_json::Value,
+    pub status: String, // "queued" | "running" | "completed" | "failed" | "cancelled"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processed: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
 
 // Type alias for consistency — CorpusStore is the internal store name, DatasetRecord is the domain type.
 

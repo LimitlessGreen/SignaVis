@@ -480,3 +480,34 @@ pub async fn recording_distinct_values(
 ) -> Result<Vec<String>, String> {
     store.recording_distinct_field_values(&dataset_id, &field_name).await
 }
+
+// ── recording_set_field ───────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSetFieldArgs {
+    pub id: String,
+    /// Field name — validated to `[a-zA-Z][a-zA-Z0-9_]*`.
+    pub field_name: String,
+    pub value: serde_json::Value,
+}
+
+/// Writes an arbitrary JSON value to a dynamic field on a recording.
+/// Used by the confirmation workflow to update SoundEvents with confirmed/rejected tags.
+#[tauri::command]
+pub async fn recording_set_field(
+    store: State<'_, CorpusStoreState>,
+    args: RecordingSetFieldArgs,
+) -> Result<(), String> {
+    // Validate field name to prevent injection.
+    let name = args.field_name.trim();
+    if name.is_empty()
+        || !name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false)
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    {
+        return Err(format!("recording_set_field: invalid field name '{name}'"));
+    }
+    store
+        .recording_set_dynamic_field(&args.id, name, args.value)
+        .await
+}

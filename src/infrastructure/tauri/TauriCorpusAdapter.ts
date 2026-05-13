@@ -97,6 +97,15 @@ export async function recordingDelete(id: string): Promise<void> {
     return invoke<void>('recording_delete', { id });
 }
 
+/** Writes an arbitrary JSON value to a dynamic field on a recording. */
+export async function recordingSetField(
+    id: string,
+    fieldName: string,
+    value: unknown,
+): Promise<void> {
+    return invoke<void>('recording_set_field', { args: { id, fieldName, value } });
+}
+
 export async function recordingCount(datasetId: string): Promise<number> {
     return invoke<number>('recording_count', { datasetId });
 }
@@ -178,4 +187,43 @@ export async function datasetSaveView(args: DatasetSaveViewArgs): Promise<Datase
 /** Removes a saved view by name. Returns updated dataset. */
 export async function datasetDeleteView(datasetId: string, name: string): Promise<Dataset> {
     return invoke<Dataset>('dataset_delete_view', { args: { datasetId, name } });
+}
+
+// ── Analysis run queries ───────────────────────────────────────────────
+
+export interface AnalysisRunRecord {
+    key: string;
+    runType: string;
+    config: Record<string, unknown>;
+    status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+    startedAt?: number;
+    completedAt?: number;
+    processed?: number;
+    errors?: number;
+    errorMessage?: string;
+}
+
+/** Returns all analysis runs for a dataset. */
+export async function datasetListRuns(datasetId: string): Promise<AnalysisRunRecord[]> {
+    return invoke<AnalysisRunRecord[]>('dataset_list_runs', { datasetId });
+}
+
+/** Returns a single analysis run by jobId, or null if not found. */
+export async function datasetGetRun(
+    datasetId: string,
+    jobId: string,
+): Promise<AnalysisRunRecord | null> {
+    return invoke<AnalysisRunRecord | null>('dataset_get_run', { datasetId, jobId });
+}
+
+// ── BirdNET done event ─────────────────────────────────────────────────
+
+export interface BirdnetDonePayload {
+    jobId: string;
+    datasetId: string;
+    processed: number;
+    errors: number;
+    skipped: number;
+    status: 'completed' | 'failed';
+    errorMessage?: string;
 }

@@ -118,8 +118,11 @@ pub fn run() {
             recording_delete,
             recording_count,
             recording_distinct_values,
-            // ── Dataset-Analyse (BirdNET-Inferenz) ───────────────────
+            recording_set_field,
+            // ── Dataset analysis (BirdNET inference + run tracking) ──
             dataset_run_birdnet,
+            dataset_list_runs,
+            dataset_get_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SignaVis");

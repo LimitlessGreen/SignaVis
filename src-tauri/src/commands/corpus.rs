@@ -80,6 +80,7 @@ pub async fn dataset_create(
         field_schema,
         known_tags: vec![],
         saved_views: vec![],
+        analysis_runs: std::collections::HashMap::new(),
         description: args.description,
     };
 

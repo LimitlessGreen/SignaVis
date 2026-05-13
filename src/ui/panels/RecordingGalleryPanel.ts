@@ -12,7 +12,7 @@ import {
     datasetSaveView,
     datasetDeleteView,
     type BirdnetRunArgs,
-    type BirdnetRunSummary,
+    type BirdnetDonePayload,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { FieldSchemaPanel } from './FieldSchemaPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
@@ -627,35 +627,55 @@ export class RecordingGalleryPanel {
         if (birdnetBtn) { birdnetBtn.disabled = true; birdnetBtn.textContent = '⏳ BirdNET running…'; }
         if (progressEl) progressEl.style.display = '';
 
-        // Tauri event listener for progress
         this.unlistenBirdnet?.();
-        const unlistenHandle = await listen<{ current: number; total: number; filepath: string | null }>(
-            'dataset:birdnet-progress',
-            (event) => {
-                const { current, total, filepath } = event.payload;
-                const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-                if (progressFill) progressFill.style.width = `${pct}%`;
-                const name = filepath ? filepath.split('/').pop() ?? filepath : '…';
-                if (progressLabel) progressLabel.textContent = `${current} / ${total} — ${name}`;
+
+        // Subscribe to progress events
+        const unlistenProgress = await listen<{
+            jobId: string; current: number; total: number; filepath: string | null;
+        }>('dataset:birdnet-progress', (event) => {
+            const { current, total, filepath } = event.payload;
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            if (progressFill) progressFill.style.width = `${pct}%`;
+            const name = filepath ? filepath.split('/').pop() ?? filepath : '…';
+            if (progressLabel) progressLabel.textContent = `${current} / ${total} — ${name}`;
+        });
+
+        // Subscribe to done event — dataset_run_birdnet now returns immediately
+        let jobId = '';
+        const unlistenDone = await listen<BirdnetDonePayload>(
+            'dataset:birdnet-done',
+            async (event) => {
+                if (jobId && event.payload.jobId !== jobId) return; // ignore other runs
+                const p = event.payload;
+                if (p.status === 'completed') {
+                    this.onStatusMessage(
+                        `BirdNET: ${p.processed} analysed, ${p.errors} errors, ${p.skipped} skipped.`,
+                    );
+                    await this.loadMore(true);
+                } else {
+                    this.onStatusMessage(`BirdNET failed: ${p.errorMessage ?? 'unknown error'}`);
+                }
+                cleanup();
             },
         );
-        this.unlistenBirdnet = () => unlistenHandle();
 
-        try {
-            const summary: BirdnetRunSummary = await datasetRunBirdnet(args);
-            this.onStatusMessage(
-                `BirdNET: ${summary.processed} analysed, ${summary.errors} errors, ${summary.skipped} skipped.`,
-            );
-            // Reload grid so analysis badges appear
-            await this.loadMore(true);
-        } catch (e) {
-            this.onStatusMessage(`BirdNET error: ${e}`);
-        } finally {
+        const cleanup = () => {
             this.birdnetRunning = false;
-            this.unlistenBirdnet?.();
+            unlistenProgress();
+            unlistenDone();
             this.unlistenBirdnet = null;
             if (birdnetBtn) { birdnetBtn.disabled = false; birdnetBtn.textContent = '🔍 BirdNET'; }
             if (progressEl) progressEl.style.display = 'none';
+        };
+
+        this.unlistenBirdnet = cleanup;
+
+        try {
+            const summary = await datasetRunBirdnet(args);
+            jobId = summary.jobId;
+        } catch (e) {
+            this.onStatusMessage(`BirdNET error: ${e}`);
+            cleanup();
         }
     }
 
