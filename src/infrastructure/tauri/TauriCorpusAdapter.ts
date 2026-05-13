@@ -409,3 +409,15 @@ export async function datasetComputeHardness(
 ): Promise<HardnessRunSummary> {
     return invoke<HardnessRunSummary>('dataset_compute_hardness', { args });
 }
+
+// ── Visibility ────────────────────────────────────────────────────────
+
+export type DatasetVisibility = 'private' | 'shared' | 'public';
+
+export async function datasetSetVisibility(
+    datasetId: string,
+    visibility: DatasetVisibility,
+): Promise<void> {
+    return invoke<void>('dataset_set_visibility', { datasetId, visibility });
+}
+

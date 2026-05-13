@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::corpus_store::{DatasetRecord, CorpusStore, FieldDefinition, SavedView};
+use crate::corpus_store::{DatasetRecord, DatasetVisibility, CorpusStore, FieldDefinition, SavedView};
 use crate::helpers::time::now_millis;
 
 pub type CorpusStoreState = Arc<CorpusStore>;
@@ -82,6 +82,7 @@ pub async fn dataset_create(
         saved_views: vec![],
         analysis_runs: std::collections::HashMap::new(),
         description: args.description,
+        visibility: DatasetVisibility::Private,
     };
 
     store.dataset_create(&dataset).await?;
@@ -253,3 +254,15 @@ pub async fn dataset_delete_view(
     let dataset = store.dataset_delete_view(&args.dataset_id, &args.name).await?;
     serde_json::to_value(&dataset).map_err(|e| format!("dataset_delete_view: {e}"))
 }
+
+// ── dataset_set_visibility ────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn dataset_set_visibility(
+    store: State<'_, CorpusStoreState>,
+    dataset_id: String,
+    visibility: DatasetVisibility,
+) -> Result<(), String> {
+    store.dataset_set_visibility(&dataset_id, visibility).await
+}
+

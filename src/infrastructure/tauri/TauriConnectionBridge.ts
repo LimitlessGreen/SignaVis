@@ -12,6 +12,10 @@ export type ConnectionState = 'local' | 'connecting' | 'connected' | 'error';
 export interface ConnectionConfig {
     mode: BackendMode;
     endpoint: string;
+    dbEndpoint?: string;
+    namespace?: string;
+    database?: string;
+    username?: string;
 }
 
 export interface ConnectionStatus {
@@ -19,6 +23,12 @@ export interface ConnectionStatus {
     mode: BackendMode;
     endpoint: string;
     errorMessage?: string;
+    loggedInAs?: string;
+}
+
+export interface ServerCredentials {
+    username: string;
+    password: string;
 }
 
 type StatusListener = (status: ConnectionStatus) => void;
@@ -72,5 +82,27 @@ export class TauriConnectionBridge {
      */
     setConfig(config: Partial<ConnectionConfig>): Promise<ConnectionStatus> {
         return invoke<ConnectionStatus>('connection_set_config', { config });
+    }
+
+    /**
+     * Log in to a remote SurrealDB server.
+     * On success the token is stored in Rust, the corpus store is connected
+     * to the server, and the JWT token is returned for diagnostics.
+     */
+    login(credentials: ServerCredentials): Promise<string> {
+        return invoke<string>('connection_login', {
+            username: credentials.username,
+            password: credentials.password,
+        });
+    }
+
+    /** Log out and disconnect the corpus store from the server. */
+    async logout(): Promise<void> {
+        await invoke<void>('connection_logout');
+    }
+
+    /** Returns the currently logged-in username, or null if not authenticated. */
+    getWhoAmI(): Promise<string | null> {
+        return invoke<string | null>('connection_get_whoami');
     }
 }

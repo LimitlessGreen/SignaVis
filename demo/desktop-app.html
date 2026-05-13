@@ -325,6 +325,42 @@
       gap: 6px;
       margin-top: 4px;
     }
+    .conn-popover select,
+    .conn-popover input[type="password"] {
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      color: var(--color-text-primary);
+      font-size: 12px;
+      padding: 5px 8px;
+      width: 100%;
+    }
+    .conn-popover input[type="password"]:focus {
+      outline: 1px solid var(--color-accent);
+      border-color: var(--color-accent);
+    }
+    .conn-popover__auth-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 4px;
+      border-top: 1px solid var(--color-border);
+    }
+    .conn-popover__auth-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      border-top: 1px solid var(--color-border);
+      font-size: 11px;
+    }
+    .conn-popover__logged-in-label { color: var(--color-text-secondary); }
+    .conn-popover__username { color: var(--color-accent); font-weight: 600; flex: 1; }
+
+    /* ── Visibility badges ────────────────────────────────────── */
+    .visibility-badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .visibility-badge--shared  { background: hsl(210 80% 40% / 0.25); color: hsl(210 80% 70%); border-color: hsl(210 80% 40% / 0.4); }
+    .visibility-badge--public  { background: hsl(140 60% 35% / 0.25); color: hsl(140 60% 65%); border-color: hsl(140 60% 35% / 0.4); }
 
     /* ── View tabs ────────────────────────────────────────────── */
     .view-tabs {
@@ -746,6 +782,34 @@
       Server endpoint
       <input type="text" id="connEndpointInput" placeholder="http://localhost:8787" />
     </label>
+    <label id="connDbEndpointRow" style="display:none">
+      SurrealDB endpoint
+      <input type="text" id="connDbEndpointInput" placeholder="ws://localhost:8000" />
+    </label>
+    <label id="connNamespaceRow" style="display:none">
+      Namespace
+      <input type="text" id="connNamespaceInput" placeholder="signavis" />
+    </label>
+    <label id="connDatabaseRow" style="display:none">
+      Database
+      <input type="text" id="connDatabaseInput" placeholder="main" />
+    </label>
+    <div id="connLoggedInRow" style="display:none" class="conn-popover__auth-status">
+      <span class="conn-popover__logged-in-label">Logged in as:</span>
+      <span id="connLoggedInAs" class="conn-popover__username"></span>
+      <button class="tb-btn tb-btn--danger" id="connLogoutBtn" type="button">Logout</button>
+    </div>
+    <div id="connLoginRow" style="display:none" class="conn-popover__auth-fields">
+      <label>
+        Username
+        <input type="text" id="connUsernameInput" autocomplete="username" />
+      </label>
+      <label>
+        Password
+        <input type="password" id="connPasswordInput" autocomplete="current-password" />
+      </label>
+      <button class="tb-btn tb-btn--primary" id="connLoginBtn" type="button">Login</button>
+    </div>
     <div class="conn-popover__actions">
       <button class="tb-btn" id="connCancelBtn" type="button">Cancel</button>
       <button class="tb-btn tb-btn--primary" id="connApplyBtn" type="button">Apply</button>

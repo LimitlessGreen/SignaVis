@@ -10,6 +10,19 @@
 // Clone + Send + Sync.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// corpus_store.rs — SurrealDB-based Dataset/Recording store
+//
+// Operating modes:
+//   - With feature "embedded-db": SurrealKV (persistent, pure Rust)
+//   - With feature "mem-db":      Mem backend (in-memory, tests/PoC)
+//   - With feature "server-db":   Remote SurrealDB via WebSocket
+//   - Fallback:                   JSON files (no surrealdb feature active)
+//
+// The store is registered as Tauri managed state and is
+// Clone + Send + Sync.
+// ═══════════════════════════════════════════════════════════════════════
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -62,6 +75,19 @@ pub struct FieldDefinition {
     pub system: bool,
 }
 
+/// Controls who can see a dataset in server mode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DatasetVisibility {
+    Private,
+    Shared,
+    Public,
+}
+
+impl Default for DatasetVisibility {
+    fn default() -> Self { Self::Private }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetRecord {
@@ -80,6 +106,9 @@ pub struct DatasetRecord {
     pub analysis_runs: std::collections::HashMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Visibility for shared server deployments.
+    #[serde(default)]
+    pub visibility: DatasetVisibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,16 +130,12 @@ pub struct RecordingRecord {
 
 // ── Store ──────────────────────────────────────────────────────────────
 
-#[cfg(any(feature = "embedded-db", feature = "mem-db"))]
+#[cfg(any(feature = "embedded-db", feature = "mem-db", feature = "server-db"))]
 mod surreal_impl {
     use super::*;
+    use std::sync::{Arc, Mutex};
     use surrealdb::Surreal;
-
-    #[cfg(feature = "embedded-db")]
-    use surrealdb::engine::local::SurrealKv;
-
-    #[cfg(feature = "mem-db")]
-    use surrealdb::engine::local::Mem;
+    use surrealdb::engine::any::Any;
 
     /// Helper struct for COUNT() queries (serde_json::Value is not compatible with SurrealDB)
     #[derive(serde::Deserialize)]
@@ -118,46 +143,77 @@ mod surreal_impl {
         c: i64,
     }
 
-pub struct CorpusStore {
-        db: Surreal<surrealdb::engine::local::Db>,
+    pub struct CorpusStore {
+        /// Local embedded DB handle (available when embedded-db or mem-db is active).
+        #[cfg(any(feature = "embedded-db", feature = "mem-db"))]
+        embedded_db: Surreal<Any>,
+        /// Server DB handle — set when connected to a remote SurrealDB.
+        /// When Some, all queries are routed here instead of the embedded db.
+        server_db: Arc<Mutex<Option<Surreal<Any>>>>,
     }
 
     impl CorpusStore {
+        /// Returns the currently active DB handle: server if connected, else local.
+        fn active_db(&self) -> Result<Surreal<Any>, String> {
+            {
+                let guard = self.server_db.lock().unwrap();
+                if let Some(ref db) = *guard {
+                    return Ok(db.clone());
+                }
+            }
+            #[cfg(any(feature = "embedded-db", feature = "mem-db"))]
+            return Ok(self.embedded_db.clone());
+            #[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
+            Err("No database connection established. Connect to a SurrealDB server first.".to_string())
+        }
+
         #[cfg(feature = "embedded-db")]
         pub async fn open(data_dir: PathBuf) -> Result<Self, String> {
             std::fs::create_dir_all(&data_dir)
                 .map_err(|e| format!("corpus_store: cannot create data dir: {e}"))?;
             let db_path = data_dir.join("corpus.db");
-            let db = Surreal::new::<SurrealKv>(db_path.to_string_lossy().as_ref())
-                .await
-                .map_err(|e| format!("corpus_store: surrealdb open: {e}"))?;
+            let db = surrealdb::engine::any::connect(
+                format!("surrealkv://{}", db_path.to_string_lossy()),
+            )
+            .await
+            .map_err(|e| format!("corpus_store: surrealdb open: {e}"))?;
             db.use_ns("signavis")
                 .use_db("local")
                 .await
                 .map_err(|e| format!("corpus_store: use_ns/db: {e}"))?;
-            let store = Self { db };
+            let store = Self { embedded_db: db, server_db: Arc::new(Mutex::new(None)) };
             store.init_schema().await?;
             Ok(store)
         }
 
         #[cfg(all(feature = "mem-db", not(feature = "embedded-db")))]
         pub async fn open(_data_dir: PathBuf) -> Result<Self, String> {
-            let db = Surreal::new::<Mem>(())
+            let db = surrealdb::engine::any::connect("mem://")
                 .await
                 .map_err(|e| format!("corpus_store: surrealdb mem open: {e}"))?;
             db.use_ns("signavis")
                 .use_db("local")
                 .await
                 .map_err(|e| format!("corpus_store: use_ns/db: {e}"))?;
-            let store = Self { db };
+            let store = Self { embedded_db: db, server_db: Arc::new(Mutex::new(None)) };
             store.init_schema().await?;
             Ok(store)
         }
 
+        #[cfg(all(
+            feature = "server-db",
+            not(feature = "embedded-db"),
+            not(feature = "mem-db")
+        ))]
+        pub async fn open(_data_dir: PathBuf) -> Result<Self, String> {
+            // Server-only mode: starts disconnected; call reconnect_server() after login.
+            Ok(Self { server_db: Arc::new(Mutex::new(None)) })
+        }
+
         async fn init_schema(&self) -> Result<(), String> {
+            let db = self.active_db()?;
             // Dataset table (schemaless — avoids conflicts with id:Thing vs. string)
-            self.db
-                .query(
+            db.query(
                     "DEFINE TABLE IF NOT EXISTS dataset SCHEMALESS;
                      DEFINE INDEX IF NOT EXISTS idx_dataset_name ON dataset FIELDS name;",
                 )
@@ -165,8 +221,7 @@ pub struct CorpusStore {
                 .map_err(|e| format!("corpus_store: init dataset schema: {e}"))?;
 
             // Recording table (schemaless for dynamic fields)
-            self.db
-                .query(
+            db.query(
                     "DEFINE TABLE IF NOT EXISTS recording SCHEMALESS;
                      DEFINE INDEX IF NOT EXISTS idx_recording_dataset ON recording FIELDS dataset_id;
                      DEFINE INDEX IF NOT EXISTS idx_recording_filepath ON recording FIELDS filepath;
@@ -178,11 +233,47 @@ pub struct CorpusStore {
             Ok(())
         }
 
+        /// Connect to a remote SurrealDB server using a JWT token obtained from login.
+        /// After this all queries are routed to the remote server.
+        #[cfg(feature = "server-db")]
+        pub async fn reconnect_server(
+            &self,
+            ws_endpoint: &str,
+            namespace: &str,
+            database: &str,
+            token: &str,
+        ) -> Result<(), String> {
+            let db = surrealdb::engine::any::connect(ws_endpoint)
+                .await
+                .map_err(|e| format!("corpus_store: connect to server: {e}"))?;
+            db.authenticate(surrealdb::opt::auth::Jwt::from(token))
+                .await
+                .map_err(|e| format!("corpus_store: authenticate: {e}"))?;
+            db.use_ns(namespace)
+                .use_db(database)
+                .await
+                .map_err(|e| format!("corpus_store: use_ns/db: {e}"))?;
+            // Ensure schema exists on the server too
+            db.query(
+                    "DEFINE TABLE IF NOT EXISTS dataset SCHEMALESS;
+                     DEFINE TABLE IF NOT EXISTS recording SCHEMALESS;",
+                )
+                .await
+                .map_err(|e| format!("corpus_store: server schema init: {e}"))?;
+            *self.server_db.lock().unwrap() = Some(db);
+            Ok(())
+        }
+
+        /// Disconnect from the remote server and fall back to the local embedded DB.
+        pub fn disconnect_server(&self) {
+            *self.server_db.lock().unwrap() = None;
+        }
+
         // ── Dataset CRUD ─────────────────────────────────────────────
 
         pub async fn dataset_create(&self, dataset: &DatasetRecord) -> Result<(), String> {
-            self.db
-                .query("CREATE type::thing('dataset', $id) CONTENT $record")
+            let db = self.active_db()?;
+            db.query("CREATE type::thing('dataset', $id) CONTENT $record")
                 .bind(("id", dataset.id.clone()))
                 .bind(("record", dataset.clone()))
                 .await
@@ -191,9 +282,9 @@ pub struct CorpusStore {
         }
 
         pub async fn dataset_get(&self, id: &str) -> Result<Option<DatasetRecord>, String> {
+            let db = self.active_db()?;
             let rid = id.to_owned();
-            let mut resp = self
-                .db
+            let mut resp = db
                 .query("SELECT *, record::id(id) AS id FROM type::thing('dataset', $id)")
                 .bind(("id", rid))
                 .await
@@ -204,8 +295,8 @@ pub struct CorpusStore {
         }
 
         pub async fn dataset_list(&self) -> Result<Vec<DatasetRecord>, String> {
-            let mut resp = self
-                .db
+            let db = self.active_db()?;
+            let mut resp = db
                 .query("SELECT *, record::id(id) AS id FROM dataset")
                 .await
                 .map_err(|e| format!("dataset_list: {e}"))?;
@@ -215,8 +306,8 @@ pub struct CorpusStore {
         }
 
         pub async fn dataset_update(&self, dataset: &DatasetRecord) -> Result<(), String> {
-            self.db
-                .query("UPDATE type::thing('dataset', $id) CONTENT $record")
+            let db = self.active_db()?;
+            db.query("UPDATE type::thing('dataset', $id) CONTENT $record")
                 .bind(("id", dataset.id.clone()))
                 .bind(("record", dataset.clone()))
                 .await
@@ -225,26 +316,43 @@ pub struct CorpusStore {
         }
 
         pub async fn dataset_delete(&self, id: &str) -> Result<(), String> {
+            let db = self.active_db()?;
             // Delete all recordings belonging to the dataset
             let cid = id.to_owned();
-            self.db
-                .query("DELETE recording WHERE datasetId = $cid")
+            db.query("DELETE recording WHERE datasetId = $cid")
                 .bind(("cid", cid))
                 .await
                 .map_err(|e| format!("dataset_delete recordings: {e}"))?;
-            self.db
-                .query("DELETE type::thing('dataset', $id)")
+            db.query("DELETE type::thing('dataset', $id)")
                 .bind(("id", id.to_owned()))
                 .await
                 .map_err(|e| format!("dataset_delete: {e}"))?;
             Ok(())
         }
 
+        /// Updates only the `visibility` field of a dataset.
+        pub async fn dataset_set_visibility(
+            &self,
+            dataset_id: &str,
+            visibility: DatasetVisibility,
+        ) -> Result<(), String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("dataset_set_visibility: dataset '{dataset_id}' not found"))?;
+            dataset.visibility = visibility;
+            dataset.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            self.dataset_update(&dataset).await
+        }
+
         // ── Recording CRUD ────────────────────────────────────────────
 
         pub async fn recording_insert(&self, rec: &RecordingRecord) -> Result<(), String> {
-            self.db
-                .query("CREATE type::thing('recording', $id) CONTENT $record")
+            let db = self.active_db()?;
+            db.query("CREATE type::thing('recording', $id) CONTENT $record")
                 .bind(("id", rec.id.clone()))
                 .bind(("record", rec.clone()))
                 .await
@@ -268,9 +376,9 @@ pub struct CorpusStore {
             &self,
             id: &str,
         ) -> Result<Option<RecordingRecord>, String> {
+            let db = self.active_db()?;
             let rid = id.to_owned();
-            let mut resp = self
-                .db
+            let mut resp = db
                 .query("SELECT *, record::id(id) AS id FROM type::thing('recording', $id)")
                 .bind(("id", rid))
                 .await
@@ -287,30 +395,28 @@ pub struct CorpusStore {
             offset: u64,
             tag_filter: Option<&str>,
         ) -> Result<Vec<RecordingRecord>, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
-            let (query, builder) = if let Some(tag) = tag_filter {
+            let builder = if let Some(tag) = tag_filter {
                 let q = "SELECT *, record::id(id) AS id FROM recording
                          WHERE datasetId = $cid AND $tag IN tags
                          ORDER BY importedAt DESC, id ASC
                          LIMIT $lim START $off";
-                let b = self.db.query(q)
+                db.query(q)
                     .bind(("cid", cid))
                     .bind(("tag", tag.to_owned()))
                     .bind(("lim", limit))
-                    .bind(("off", offset));
-                (q, b)
+                    .bind(("off", offset))
             } else {
                 let q = "SELECT *, record::id(id) AS id FROM recording
                          WHERE datasetId = $cid
                          ORDER BY importedAt DESC, id ASC
                          LIMIT $lim START $off";
-                let b = self.db.query(q)
+                db.query(q)
                     .bind(("cid", cid))
                     .bind(("lim", limit))
-                    .bind(("off", offset));
-                (q, b)
+                    .bind(("off", offset))
             };
-            let _ = query; // suppress unused warning
             let mut response = builder
                 .await
                 .map_err(|e| format!("recording_list_by_dataset: {e}"))?;
@@ -379,9 +485,9 @@ pub struct CorpusStore {
         }
 
         pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
-            let mut response = self
-                .db
+            let mut response = db
                 .query("SELECT count() AS c FROM recording WHERE datasetId = $cid GROUP ALL")
                 .bind(("cid", cid))
                 .await
@@ -397,12 +503,10 @@ pub struct CorpusStore {
             id: &str,
             tags: &[String],
         ) -> Result<(), String> {
-            // SurrealDB: id is a Thing type (recording:uuid), not a plain string.
-            // type::thing('recording', $rid) converts the string into a record ID.
+            let db = self.active_db()?;
             let rid = id.to_owned();
             let owned_tags: Vec<String> = tags.to_vec();
-            self.db
-                .query("UPDATE type::thing('recording', $rid) SET tags = $tags")
+            db.query("UPDATE type::thing('recording', $rid) SET tags = $tags")
                 .bind(("rid", rid))
                 .bind(("tags", owned_tags))
                 .await
@@ -411,9 +515,9 @@ pub struct CorpusStore {
         }
 
         pub async fn recording_hash_exists(&self, hash: &str) -> Result<bool, String> {
+            let db = self.active_db()?;
             let owned_hash = hash.to_owned();
-            let mut response = self
-                .db
+            let mut response = db
                 .query("SELECT count() AS c FROM recording WHERE fileHash = $hash GROUP ALL")
                 .bind(("hash", owned_hash))
                 .await
@@ -424,8 +528,8 @@ pub struct CorpusStore {
         }
 
         pub async fn recording_delete(&self, id: &str) -> Result<(), String> {
-            self.db
-                .query("DELETE type::thing('recording', $id)")
+            let db = self.active_db()?;
+            db.query("DELETE type::thing('recording', $id)")
                 .bind(("id", id.to_owned()))
                 .await
                 .map_err(|e| format!("recording_delete: {e}"))?;
@@ -439,11 +543,11 @@ pub struct CorpusStore {
             dataset_id: &str,
             field_name: &str,
         ) -> Result<Vec<String>, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
             let field = field_name.to_owned();
             // SurrealQL: fields in the fields map are addressed as fields.{name}
-            let mut resp = self
-                .db
+            let mut resp = db
                 .query(format!(
                     "SELECT DISTINCT fields.{field} AS val FROM recording WHERE datasetId = $cid AND fields.{field} != NONE"
                 ))
@@ -470,9 +574,9 @@ pub struct CorpusStore {
             &self,
             dataset_id: &str,
         ) -> Result<Vec<RecordingRecord>, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
-            let mut response = self
-                .db
+            let mut response = db
                 .query(
                     "SELECT *, record::id(id) AS id FROM recording
                      WHERE datasetId = $cid
@@ -496,12 +600,12 @@ pub struct CorpusStore {
             field_name: &str,
             value: serde_json::Value,
         ) -> Result<(), String> {
+            let db = self.active_db()?;
             let query = format!(
                 "UPDATE type::thing('recording', $id) SET {} = $value",
                 field_name
             );
-            self.db
-                .query(query)
+            db.query(query)
                 .bind(("id", id.to_owned()))
                 .bind(("value", value))
                 .await
@@ -516,9 +620,9 @@ pub struct CorpusStore {
             &self,
             id: &str,
         ) -> Result<Option<serde_json::Value>, String> {
+            let db = self.active_db()?;
             let rid = id.to_owned();
-            let mut resp = self
-                .db
+            let mut resp = db
                 .query("SELECT *, record::id(id) AS id FROM type::thing('recording', $id)")
                 .bind(("id", rid))
                 .await
@@ -537,13 +641,14 @@ pub struct CorpusStore {
             offset: u64,
             tag_filter: Option<&str>,
         ) -> Result<Vec<serde_json::Value>, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
             let builder = if let Some(tag) = tag_filter {
                 let q = "SELECT *, record::id(id) AS id FROM recording
                          WHERE datasetId = $cid AND $tag IN tags
                          ORDER BY importedAt DESC, id ASC
                          LIMIT $lim START $off";
-                self.db.query(q)
+                db.query(q)
                     .bind(("cid", cid))
                     .bind(("tag", tag.to_owned()))
                     .bind(("lim", limit))
@@ -553,7 +658,7 @@ pub struct CorpusStore {
                          WHERE datasetId = $cid
                          ORDER BY importedAt DESC, id ASC
                          LIMIT $lim START $off";
-                self.db.query(q)
+                db.query(q)
                     .bind(("cid", cid))
                     .bind(("lim", limit))
                     .bind(("off", offset))
@@ -572,9 +677,9 @@ pub struct CorpusStore {
             &self,
             dataset_id: &str,
         ) -> Result<Vec<serde_json::Value>, String> {
+            let db = self.active_db()?;
             let cid = dataset_id.to_owned();
-            let mut response = self
-                .db
+            let mut response = db
                 .query(
                     "SELECT *, record::id(id) AS id FROM recording
                      WHERE datasetId = $cid
@@ -627,8 +732,8 @@ pub(crate) fn recording_doc_merge_fields(mut doc: serde_json::Value) -> serde_js
     doc
 }
 
-/// Fallback: when neither embedded-db nor mem-db is active.
-#[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
+/// Fallback: when neither embedded-db, mem-db, nor server-db is active.
+#[cfg(not(any(feature = "embedded-db", feature = "mem-db", feature = "server-db")))]
 mod json_fallback {
     use super::*;
 
@@ -999,6 +1104,14 @@ mod json_fallback {
                 .collect()
         }
 
+        pub async fn dataset_set_visibility(
+            &self,
+            _dataset_id: &str,
+            _visibility: DatasetVisibility,
+        ) -> Result<(), String> {
+            Err("dataset_set_visibility: not supported in JSON fallback mode".to_string())
+        }
+
         /// Returns all recordings as full JSON with dynamic fields merged.
         pub async fn recording_list_all_json(
             &self,
@@ -1029,10 +1142,10 @@ mod json_fallback {
 }
 
 // Re-export of the active implementation
-#[cfg(any(feature = "embedded-db", feature = "mem-db"))]
+#[cfg(any(feature = "embedded-db", feature = "mem-db", feature = "server-db"))]
 pub use surreal_impl::CorpusStore;
 
-#[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
+#[cfg(not(any(feature = "embedded-db", feature = "mem-db", feature = "server-db")))]
 pub use json_fallback::CorpusStore;
 
 // ── AnalysisRun ───────────────────────────────────────────────────────

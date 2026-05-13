@@ -148,6 +148,9 @@ export interface RecordingSummary {
 
 // ── Dataset ───────────────────────────────────────────────────────────
 
+/** Controls who can see a dataset in server/multi-user mode. */
+export type DatasetVisibility = 'private' | 'shared' | 'public';
+
 export interface Dataset {
     /** Unique ID. */
     id: string;
@@ -168,6 +171,8 @@ export interface Dataset {
     knownTags: string[];
     /** Optional description. */
     description?: string;
+    /** Visibility for shared server deployments. */
+    visibility?: DatasetVisibility;
 }
 
 export interface DatasetSummary {
@@ -178,6 +183,7 @@ export interface DatasetSummary {
     updatedAt: number;
     recordingCount: number;
     description?: string;
+    visibility?: DatasetVisibility;
 }
 
 // ── View (query pipeline) ────────────────────────────────────────────

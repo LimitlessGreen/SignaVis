@@ -48,6 +48,19 @@ pub struct ConnectionConfig {
     pub mode: BackendMode,
     #[serde(default = "default_endpoint")]
     pub endpoint: String,
+    /// Optional explicit SurrealDB WebSocket endpoint (e.g. "ws://host:8000").
+    /// When None in server mode the endpoint field is used after http→ws conversion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db_endpoint: Option<String>,
+    /// SurrealDB namespace (defaults to "signavis").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    /// SurrealDB database (defaults to "main").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    /// Last-used username (saved for convenience; password is never stored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
 }
 
 fn default_endpoint() -> String {
@@ -56,7 +69,14 @@ fn default_endpoint() -> String {
 
 impl Default for ConnectionConfig {
     fn default() -> Self {
-        Self { mode: BackendMode::Local, endpoint: default_endpoint() }
+        Self {
+            mode: BackendMode::Local,
+            endpoint: default_endpoint(),
+            db_endpoint: None,
+            namespace: None,
+            database: None,
+            username: None,
+        }
     }
 }
 
@@ -68,6 +88,8 @@ pub struct ConnectionStatus {
     pub mode: BackendMode,
     pub endpoint: String,
     pub error_message: Option<String>,
+    /// Present when successfully logged in to a SurrealDB server.
+    pub logged_in_as: Option<String>,
 }
 
 // ── Internal state ────────────────────────────────────────────────────
@@ -76,6 +98,8 @@ struct Inner {
     config: ConnectionConfig,
     state: ConnectionState,
     error_message: Option<String>,
+    session_token: Option<String>,
+    logged_in_as: Option<String>,
 }
 
 // ── Manager ───────────────────────────────────────────────────────────
@@ -102,6 +126,8 @@ impl ConnectionManager {
                 config,
                 state,
                 error_message: None,
+                session_token: None,
+                logged_in_as: None,
             })),
         }
     }
@@ -115,6 +141,7 @@ impl ConnectionManager {
             mode:          g.config.mode.clone(),
             endpoint:      g.config.endpoint.clone(),
             error_message: g.error_message.clone(),
+            logged_in_as:  g.logged_in_as.clone(),
         }
     }
 
@@ -130,6 +157,11 @@ impl ConnectionManager {
             g.config = config;
             g.state  = if is_local { ConnectionState::Local } else { ConnectionState::Connecting };
             g.error_message = None;
+            // Clear session when switching modes
+            if is_local {
+                g.session_token = None;
+                g.logged_in_as  = None;
+            }
         }
         persist_config(app, &self.config());
         emit_status(app, &self.status());
@@ -146,6 +178,106 @@ impl ConnectionManager {
         if !is_local {
             Self::spawn_ping(Arc::clone(&self.inner), app.clone());
         }
+    }
+
+    /// Authenticate against the configured SurrealDB server.
+    /// Returns the username on success; stores the JWT token internally.
+    pub async fn login(
+        &self,
+        username: String,
+        password: String,
+        app: AppHandle,
+    ) -> Result<String, String> {
+        let (http_endpoint, namespace, database) = {
+            let g = self.inner.lock().unwrap();
+            let ws_ep = g.config.db_endpoint.clone()
+                .unwrap_or_else(|| Self::http_to_ws(&g.config.endpoint));
+            let http_ep = Self::ws_to_http(&ws_ep);
+            let ns = g.config.namespace.clone().unwrap_or_else(|| "signavis".to_string());
+            let db = g.config.database.clone().unwrap_or_else(|| "main".to_string());
+            (http_ep, ns, db)
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let resp = client
+            .post(format!("{}/signin", http_endpoint.trim_end_matches('/')))
+            .json(&serde_json::json!({
+                "ns": namespace,
+                "db": database,
+                "user": username,
+                "pass": password
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("Login request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Login failed (HTTP {status}): {body}"));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Login response parse error: {e}"))?;
+        let token = body["token"]
+            .as_str()
+            .ok_or_else(|| "Login response missing 'token' field".to_string())?
+            .to_string();
+
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.session_token = Some(token);
+            g.logged_in_as  = Some(username.clone());
+            g.config.username = Some(username.clone());
+        }
+        persist_config(&app, &self.config());
+        emit_status(&app, &self.status());
+        Ok(username)
+    }
+
+    /// Clear the current server session.
+    pub fn logout(&self, app: &AppHandle) {
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.session_token = None;
+            g.logged_in_as  = None;
+        }
+        emit_status(app, &self.status());
+    }
+
+    /// Returns the currently logged-in username, if any.
+    pub fn whoami(&self) -> Option<String> {
+        self.inner.lock().unwrap().logged_in_as.clone()
+    }
+
+    /// Returns the current JWT session token, if logged in.
+    pub fn session_token(&self) -> Option<String> {
+        self.inner.lock().unwrap().session_token.clone()
+    }
+
+    /// Returns the SurrealDB WS endpoint derived from the config.
+    pub fn db_ws_endpoint(&self) -> String {
+        let g = self.inner.lock().unwrap();
+        g.config.db_endpoint.clone()
+            .unwrap_or_else(|| Self::http_to_ws(&g.config.endpoint))
+    }
+
+    /// Returns the configured namespace (defaults to "signavis").
+    pub fn namespace(&self) -> String {
+        self.inner.lock().unwrap().config.namespace.clone()
+            .unwrap_or_else(|| "signavis".to_string())
+    }
+
+    /// Returns the configured database (defaults to "main").
+    pub fn database(&self) -> String {
+        self.inner.lock().unwrap().config.database.clone()
+            .unwrap_or_else(|| "main".to_string())
     }
 
     // ── Background ping ───────────────────────────────────────────
@@ -196,6 +328,18 @@ impl ConnectionManager {
             }
         });
     }
+
+    // ── URL helpers ───────────────────────────────────────────────
+
+    fn ws_to_http(url: &str) -> String {
+        url.replacen("wss://", "https://", 1)
+           .replacen("ws://", "http://", 1)
+    }
+
+    fn http_to_ws(url: &str) -> String {
+        url.replacen("https://", "wss://", 1)
+           .replacen("http://", "ws://", 1)
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -216,6 +360,7 @@ fn set_state(inner: &Arc<Mutex<Inner>>, app: &AppHandle, state: ConnectionState,
             mode:          g.config.mode.clone(),
             endpoint:      g.config.endpoint.clone(),
             error_message: g.error_message.clone(),
+            logged_in_as:  g.logged_in_as.clone(),
         }
     };
     emit_status(app, &status);

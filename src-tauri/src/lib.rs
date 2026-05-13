@@ -96,6 +96,9 @@ pub fn run() {
             connection_get_config,
             connection_get_status,
             connection_set_config,
+            connection_login,
+            connection_logout,
+            connection_get_whoami,
             grpc_analysis_load_model,
             grpc_analysis_set_location,
             grpc_analysis_get_species,
@@ -110,6 +113,7 @@ pub fn run() {
             dataset_add_field_to_schema,
             dataset_save_view,
             dataset_delete_view,
+            dataset_set_visibility,
             // ── Recording commands (v2 Architektur) ──────────────────
             recording_import_folder,
             recording_list,

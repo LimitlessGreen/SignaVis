@@ -10,6 +10,7 @@ default = ["embedded-db"]
 grpc = ["dep:tonic", "dep:prost", "dep:tracing", "dep:tracing-subscriber"]
 embedded-db = ["surrealdb/kv-surrealkv"]
 mem-db      = ["surrealdb/kv-mem"]
+server-db   = ["surrealdb/protocol-ws"]
 
 # Lib crate so commands can be integration-tested without a running Tauri app.
 [lib]

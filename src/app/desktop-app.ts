@@ -51,6 +51,19 @@ const connPopoverBackdrop = document.getElementById('connPopoverBackdrop')!;
 const connModeSelect      = document.getElementById('connModeSelect') as HTMLSelectElement;
 const connEndpointInput   = document.getElementById('connEndpointInput') as HTMLInputElement;
 const connEndpointRow     = document.getElementById('connEndpointRow')!;
+const connDbEndpointRow   = document.getElementById('connDbEndpointRow')!;
+const connDbEndpointInput = document.getElementById('connDbEndpointInput') as HTMLInputElement;
+const connNamespaceRow    = document.getElementById('connNamespaceRow')!;
+const connNamespaceInput  = document.getElementById('connNamespaceInput') as HTMLInputElement;
+const connDatabaseRow     = document.getElementById('connDatabaseRow')!;
+const connDatabaseInput   = document.getElementById('connDatabaseInput') as HTMLInputElement;
+const connLoggedInRow     = document.getElementById('connLoggedInRow')!;
+const connLoggedInAs      = document.getElementById('connLoggedInAs')!;
+const connLogoutBtn       = document.getElementById('connLogoutBtn')!;
+const connLoginRow        = document.getElementById('connLoginRow')!;
+const connUsernameInput   = document.getElementById('connUsernameInput') as HTMLInputElement;
+const connPasswordInput   = document.getElementById('connPasswordInput') as HTMLInputElement;
+const connLoginBtn        = document.getElementById('connLoginBtn')!;
 const connApplyBtn        = document.getElementById('connApplyBtn')!;
 const connCancelBtn       = document.getElementById('connCancelBtn')!;
 
@@ -646,7 +659,8 @@ function renderConnSegment(status: ConnectionStatus): void {
     } else if (status.state === 'connecting') {
         connLabel.textContent = `Connecting… ${status.endpoint}`;
     } else if (status.state === 'connected') {
-        connLabel.textContent = `${modeLabel[status.mode] ?? status.mode} — ${status.endpoint}`;
+        const user = status.loggedInAs ? ` (${status.loggedInAs})` : '';
+        connLabel.textContent = `${modeLabel[status.mode] ?? status.mode} — ${status.endpoint}${user}`;
     } else {
         connLabel.textContent = `${modeLabel[status.mode] ?? status.mode} — ${status.errorMessage ?? 'error'}`;
     }
@@ -656,7 +670,23 @@ async function openConnPopover(): Promise<void> {
     const config = await connection.getConfig();
     connModeSelect.value = config.mode;
     connEndpointInput.value = config.endpoint;
-    connEndpointRow.style.display = config.mode === 'local' ? 'none' : 'flex';
+    connDbEndpointInput.value = config.dbEndpoint ?? '';
+    connNamespaceInput.value = config.namespace ?? '';
+    connDatabaseInput.value = config.database ?? '';
+    connUsernameInput.value = config.username ?? '';
+    connPasswordInput.value = '';
+
+    const isServer = config.mode !== 'local';
+    connEndpointRow.style.display     = isServer ? 'flex' : 'none';
+    connDbEndpointRow.style.display   = isServer ? 'flex' : 'none';
+    connNamespaceRow.style.display    = isServer ? 'flex' : 'none';
+    connDatabaseRow.style.display     = isServer ? 'flex' : 'none';
+
+    const whoami = isServer ? await connection.getWhoAmI() : null;
+    connLoggedInRow.style.display = whoami ? 'flex' : 'none';
+    connLoginRow.style.display    = isServer && !whoami ? 'flex' : 'none';
+    connLoggedInAs.textContent    = whoami ?? '';
+
     connPopover.hidden = false;
     connPopoverBackdrop.hidden = false;
     connEndpointInput.focus();
@@ -679,15 +709,58 @@ async function initConnectionUI(): Promise<void> {
     connCancelBtn.addEventListener('click', closeConnPopover);
 
     connModeSelect.addEventListener('change', () => {
-        connEndpointRow.style.display = connModeSelect.value === 'local' ? 'none' : 'flex';
+        const isServer = connModeSelect.value !== 'local';
+        connEndpointRow.style.display   = isServer ? 'flex' : 'none';
+        connDbEndpointRow.style.display = isServer ? 'flex' : 'none';
+        connNamespaceRow.style.display  = isServer ? 'flex' : 'none';
+        connDatabaseRow.style.display   = isServer ? 'flex' : 'none';
+        // When switching back to local, hide auth rows
+        if (!isServer) {
+            connLoggedInRow.style.display = 'none';
+            connLoginRow.style.display    = 'none';
+        }
     });
 
     connApplyBtn.addEventListener('click', async () => {
         closeConnPopover();
         const mode = connModeSelect.value as 'local' | 'server' | 'cloud';
         const endpoint = connEndpointInput.value.trim();
-        const status = await connection.setConfig({ mode, endpoint });
+        const dbEndpoint = connDbEndpointInput.value.trim() || undefined;
+        const namespace = connNamespaceInput.value.trim() || undefined;
+        const database = connDatabaseInput.value.trim() || undefined;
+        const status = await connection.setConfig({ mode, endpoint, dbEndpoint, namespace, database });
         renderConnSegment(status);
+    });
+
+    connLoginBtn.addEventListener('click', async () => {
+        const username = connUsernameInput.value.trim();
+        const password = connPasswordInput.value;
+        if (!username || !password) { setStatus('Enter username and password.'); return; }
+        try {
+            await connection.login({ username, password });
+            connPasswordInput.value = '';
+            connLoggedInAs.textContent = username;
+            connLoggedInRow.style.display = 'flex';
+            connLoginRow.style.display = 'none';
+            const status = await connection.getStatus();
+            renderConnSegment(status);
+            setStatus(`Logged in as ${username}`);
+        } catch (err) {
+            setStatus(`Login failed: ${err}`);
+        }
+    });
+
+    connLogoutBtn.addEventListener('click', async () => {
+        try {
+            await connection.logout();
+            connLoggedInRow.style.display = 'none';
+            connLoginRow.style.display = connModeSelect.value !== 'local' ? 'flex' : 'none';
+            const status = await connection.getStatus();
+            renderConnSegment(status);
+            setStatus('Logged out');
+        } catch (err) {
+            setStatus(`Logout failed: ${err}`);
+        }
     });
 }
 
