@@ -26,6 +26,8 @@ export interface RecordingGalleryOptions {
     onBack: () => void;
     onOpenRecording?: (recording: Recording) => void;
     onImport?: () => void;
+    /** Called when the user wants to import recordings from Xeno-canto. */
+    onImportFromXc?: () => void;
     onStatusMessage?: (msg: string) => void;
     /** Called when a field is added so the dataset reference stays fresh. */
     onDatasetUpdated?: (updated: Dataset) => void;
@@ -43,6 +45,7 @@ export class RecordingGalleryPanel {
     private readonly onBack: () => void;
     private readonly onOpenRecording: ((r: Recording) => void) | undefined;
     private readonly onImport: (() => void) | undefined;
+    private readonly onImportFromXc: (() => void) | undefined;
     private readonly onStatusMessage: (msg: string) => void;
     private readonly onDatasetUpdated: ((d: Dataset) => void) | undefined;
     private readonly onShowClusters: (() => void) | undefined;
@@ -71,6 +74,7 @@ export class RecordingGalleryPanel {
         this.onBack = opts.onBack;
         this.onOpenRecording = opts.onOpenRecording;
         this.onImport = opts.onImport;
+        this.onImportFromXc = opts.onImportFromXc;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
         this.onDatasetUpdated = opts.onDatasetUpdated;
         this.onShowClusters = opts.onShowClusters;
@@ -125,6 +129,7 @@ export class RecordingGalleryPanel {
                         <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">🔍 BirdNET</button>
                         <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Open cluster browser">⬡ Clusters</button>
                         <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="Open UMAP scatter plot">⬖ Scatter</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryXcImportBtn" title="Search and import from Xeno-canto">XC Import</button>
                         <button class="btn btn--primary" id="galleryImportBtn">+ Import</button>
                     </div>
                 </div>
@@ -198,6 +203,7 @@ export class RecordingGalleryPanel {
 
         backBtn.addEventListener('click', () => this.onBack());
         importBtn.addEventListener('click', () => this.onImport?.());
+        this.container.querySelector('#galleryXcImportBtn')?.addEventListener('click', () => this.onImportFromXc?.());
         loadMoreBtn.addEventListener('click', () => this.loadMore(false));
 
         this.container.querySelector('#galleryClusterBtn')?.addEventListener('click', () => this.onShowClusters?.());

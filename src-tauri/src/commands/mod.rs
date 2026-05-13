@@ -7,6 +7,7 @@ pub mod grpc;
 pub mod projects;
 pub mod recordings;
 pub mod runtime_info;
+pub mod xc_import;
 
 pub use analysis_jobs::*;
 pub use assets::*;
@@ -17,3 +18,4 @@ pub use grpc::*;
 pub use projects::*;
 pub use recordings::*;
 pub use runtime_info::*;
+pub use xc_import::*;

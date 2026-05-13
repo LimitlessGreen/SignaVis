@@ -190,6 +190,9 @@ export class DatasetBrowserPanel {
                         ${desc}
                         <div class="dataset-card__meta">
                             <span class="badge badge--neutral">${count} recordings</span>
+                            ${dataset.visibility && dataset.visibility !== 'private'
+                                ? `<span class="badge visibility-badge visibility-badge--${escapeHtml(dataset.visibility)}">${escapeHtml(dataset.visibility)}</span>`
+                                : ''}
                             <span class="dataset-card__date">Last: ${date}</span>
                         </div>
                     </div>

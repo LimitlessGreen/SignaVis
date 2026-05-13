@@ -330,6 +330,7 @@ pub async fn recording_import_folder(
             imported_at: now,
             file_hash,
             recorded_at,
+            location: None,
             fields: path_fields,
         };
 

@@ -137,6 +137,8 @@ pub fn run() {
             // ── Phase 4: Clustering & Active Learning ───────────────
             dataset_run_clustering,
             dataset_compute_hardness,
+            // ── Phase 7: Xeno-canto import ───────────────────────────
+            xc_download_recording,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SignaVis");

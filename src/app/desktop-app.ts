@@ -28,6 +28,7 @@ import { RecordingDetailPanel } from '../ui/panels/RecordingDetailPanel.ts';
 import { SimilarityBrowserPanel } from '../ui/panels/SimilarityBrowserPanel.ts';
 import { EmbeddingScatterPanel } from '../ui/panels/EmbeddingScatterPanel.ts';
 import { ClusterBrowserPanel } from '../ui/panels/ClusterBrowserPanel.ts';
+import { XcImportPanel } from '../ui/panels/XcImportPanel.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ let recordingDetailPanel: RecordingDetailPanel | null = null;
 let similarityBrowserPanel: SimilarityBrowserPanel | null = null;
 let embeddingScatterPanel: EmbeddingScatterPanel | null = null;
 let clusterBrowserPanel: ClusterBrowserPanel | null = null;
+let xcImportPanel: XcImportPanel | null = null;
 
 /** Switches between "labeling" and "dataset" view. */
 function switchView(view: AppView): void {
@@ -162,6 +164,7 @@ function showRecordingGallery(dataset: Dataset): void {
             detailMount.innerHTML = '';
         },
         onImport: () => showImportWizard(dataset),
+        onImportFromXc: () => showXcImportPanel(dataset),
         onOpenRecording: (rec) => {
             showRecordingDetail(rec, detailMount);
         },
@@ -256,6 +259,23 @@ function showImportWizard(dataset: Dataset): void {
         openFolderDialog: () => openFolderDialogPath(),
     });
     wizard.mount();
+}
+
+function showXcImportPanel(dataset: Dataset): void {
+    const mount = document.getElementById('corpusBrowserMount')!;
+    xcImportPanel = new XcImportPanel({
+        container: mount,
+        dataset,
+        onBack: () => {
+            xcImportPanel = null;
+            showRecordingGallery(dataset);
+        },
+        onStatusMessage: setStatus,
+        onImported: (count) => {
+            if (count > 0) setStatus(`XC import: ${count} recordings added.`);
+        },
+    });
+    xcImportPanel.mount();
 }
 
 async function openFolderDialogPath(): Promise<string | null> {

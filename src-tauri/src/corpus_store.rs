@@ -111,6 +111,15 @@ pub struct DatasetRecord {
     pub visibility: DatasetVisibility,
 }
 
+/// Geographic position of a recording.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeoLocation {
+    pub latitude: f64,
+    pub longitude: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub altitude: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingRecord {
@@ -124,6 +133,8 @@ pub struct RecordingRecord {
     pub file_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recorded_at: Option<i64>, // Unix milliseconds; refined later via BEXT/ID3
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<GeoLocation>,
     #[serde(default)]
     pub fields: std::collections::HashMap<String, String>,
 }

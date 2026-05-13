@@ -1,0 +1,267 @@
+// ── XcImportPanel styles (Phase 7) ──────────────────────────────────
+
+.xc-import-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding: 0 16px 16px;
+
+    &__header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 0 10px;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    &__title {
+        font-size: 16px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__dataset-badge {
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--color-text-secondary);
+        background: var(--color-surface-2, #f0f0f0);
+        border-radius: 4px;
+        padding: 2px 6px;
+    }
+
+    &__search-bar {
+        display: flex;
+        gap: 8px;
+        padding: 10px 0 8px;
+    }
+
+    &__query-input {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        font-size: 13px;
+        background: var(--color-surface);
+        color: var(--color-text-primary);
+
+        &:focus {
+            outline: none;
+            border-color: var(--color-accent);
+        }
+    }
+
+    &__filters {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0 8px;
+        flex-wrap: wrap;
+    }
+
+    &__filter-label {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+
+    &__filter-select {
+        font-size: 12px;
+        padding: 2px 6px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        background: var(--color-surface);
+        color: var(--color-text-primary);
+    }
+
+    &__result-count {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        flex: 1;
+    }
+
+    &__filter-actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    &__results {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+    }
+
+    &__empty,
+    &__loading,
+    &__error {
+        padding: 32px 16px;
+        text-align: center;
+        color: var(--color-text-secondary);
+        font-size: 13px;
+    }
+
+    &__error {
+        color: var(--color-error, #c0392b);
+    }
+
+    &__table {
+        display: flex;
+        flex-direction: column;
+    }
+
+    &__footer {
+        padding: 8px 0 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    &__pager {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__page-info {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+
+    &__import-bar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    &__selected-count {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+    }
+
+    &__progress {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        .progress-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--color-surface-2, #e0e0e0);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar__fill {
+            height: 100%;
+            background: var(--color-accent);
+            transition: width 0.2s ease;
+        }
+    }
+
+    &__progress-label {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        min-width: 180px;
+    }
+}
+
+// ── Recording row ────────────────────────────────────────────────────
+
+.xc-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border-faint, #e8e8e8);
+    font-size: 13px;
+
+    &:last-child { border-bottom: none; }
+    &:hover { background: var(--color-surface-hover, rgba(0,0,0,0.03)); }
+
+    &__checkbox-wrap {
+        padding-top: 2px;
+        cursor: pointer;
+    }
+
+    &__main {
+        flex: 1;
+        min-width: 0;
+    }
+
+    &__names {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    &__en {
+        font-weight: 500;
+        color: var(--color-text-primary);
+    }
+
+    &__sci {
+        font-size: 11px;
+        font-style: italic;
+        color: var(--color-text-secondary);
+    }
+
+    &__meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 2px;
+        flex-wrap: wrap;
+    }
+
+    &__len,
+    &__type,
+    &__country,
+    &__rec {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+    }
+
+    &__geo {
+        font-size: 12px;
+        cursor: default;
+    }
+
+    &__loc {
+        font-size: 11px;
+        color: var(--color-text-secondary);
+        margin-top: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    &__link {
+        font-size: 11px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        text-decoration: none;
+    }
+}
+
+// ── Quality badges ────────────────────────────────────────────────────
+
+.xc-quality {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    width: 16px;
+    text-align: center;
+    border-radius: 3px;
+    padding: 0 2px;
+
+    &--A { background: #27ae60; color: #fff; }
+    &--B { background: #2ecc71; color: #fff; }
+    &--C { background: #f39c12; color: #fff; }
+    &--D { background: #e67e22; color: #fff; }
+    &--E { background: #c0392b; color: #fff; }
+    &--x { background: var(--color-surface-2, #ddd); color: var(--color-text-secondary); }
+}
