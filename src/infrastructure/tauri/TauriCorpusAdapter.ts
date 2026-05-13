@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 // infrastructure/tauri/TauriCorpusAdapter.ts
-// IPC-Bridge für Dataset/Recording-Befehle (Signavis v2 Architektur)
+// IPC bridge for Dataset/Recording commands (Signavis v2 architecture)
 // ═══════════════════════════════════════════════════════════════════════
 
 import type {
@@ -18,7 +18,7 @@ async function invoke<T>(command: string, args?: InvokeArgs): Promise<T> {
     return tauriInvoke<T>(command, args);
 }
 
-// ── Typen (spiegeln Rust-Structs) ─────────────────────────────────────
+// ── Types (mirror Rust structs) ───────────────────────────────────────
 
 export interface ImportResult {
     imported: number;
@@ -28,7 +28,7 @@ export interface ImportResult {
     durationMs: number;
 }
 
-// ── Dataset-Operationen ───────────────────────────────────────────────
+// ── Dataset operations ────────────────────────────────────────────────
 
 export async function datasetCreate(
     name: string,
@@ -57,7 +57,7 @@ export async function datasetUpdateMeta(
     return invoke<Dataset>('dataset_update_meta', { args: { id, name, description } });
 }
 
-// ── Recording-Operationen ─────────────────────────────────────────────
+// ── Recording operations ──────────────────────────────────────────────
 
 export interface RecordingListArgs {
     datasetId: string;
@@ -100,8 +100,8 @@ export async function recordingCount(datasetId: string): Promise<number> {
 }
 
 /**
- * Gibt alle distinkten Werte eines Pfad-Felds in einem Dataset zurück.
- * Für Dropdown-Filter in der Galerie-Toolbar.
+ * Returns all distinct values of a path field within a dataset.
+ * Used for dropdown filters in the gallery toolbar.
  */
 export async function recordingDistinctValues(
     datasetId: string,
@@ -110,26 +110,26 @@ export async function recordingDistinctValues(
     return invoke<string[]>('recording_distinct_values', { datasetId, fieldName });
 }
 
-// ── BirdNET-Inferenz ──────────────────────────────────────────────────
+// ── BirdNET inference ─────────────────────────────────────────────────
 
 export interface BirdnetRunArgs {
     datasetId: string;
-    /** Dynamisches Feld-Name für SoundEvents, z.B. "birdnetV24". */
+    /** Dynamic field name for SoundEvents, e.g. "birdnetV24". */
     fieldName: string;
     minConf?: number;
     lat?: number;
     lon?: number;
-    /** Kalenderwoche 1-48. */
+    /** Calendar week 1-48. */
     week?: number;
-    /** BirdNET-Modellversion, z.B. "2.4". */
+    /** BirdNET model version, e.g. "2.4". */
     version?: string;
     mergeConsecutive?: number;
     sensitivity?: number;
-    /** Nur diese Recording-IDs analysieren. Leer = alle. */
+    /** Analyse only these recording IDs. Empty = all. */
     recordingIds?: string[];
-    /** Pfad zum Python-Interpreter. Fallback: SIGNAVIS_PYTHON env → python3. */
+    /** Path to the Python interpreter. Fallback: SIGNAVIS_PYTHON env → python3. */
     pythonExecutable?: string;
-    /** Expliziter Pfad zu birdnet_sidecar.py. */
+    /** Explicit path to birdnet_sidecar.py. */
     sidecarScript?: string;
 }
 
@@ -146,7 +146,7 @@ export async function datasetRunBirdnet(args: BirdnetRunArgs): Promise<BirdnetRu
     return invoke<BirdnetRunSummary>('dataset_run_birdnet', { args });
 }
 
-// ── Dataset-Schema ─────────────────────────────────────────────────────
+// ── Dataset schema ─────────────────────────────────────────────────────
 
 export interface DatasetAddFieldArgs {
     datasetId: string;

@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // commands/corpus_analysis.rs — BirdNET-Inferenz auf einem Dataset
 //
-// Der Command `dataset_run_birdnet` startet das Python-Sidecar-Skript
-// `birdnet_sidecar.py`, übergibt die Dateiliste per stdin (JSON),
-// liest JSON-Lines von stdout und schreibt SoundEvents-Ergebnisse
-// als dynamisches Feld in SurrealDB.
+// The command `dataset_run_birdnet` launches the Python sidecar script
+// `birdnet_sidecar.py`, passes the file list via stdin (JSON),
+// reads JSON lines from stdout and writes SoundEvents results
+// as a dynamic field into SurrealDB.
 //
 // Tauri-Events (global):
 //   "dataset:birdnet-progress" — { jobId, datasetId, current, total, filepath }
@@ -21,41 +21,41 @@ use crate::commands::corpus::CorpusStoreState;
 use crate::corpus_store::FieldDefinition;
 use crate::helpers::time::now_millis;
 
-// ── Argument-Typen ────────────────────────────────────────────────────
+// ── Argument types ────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetBirdnetRunArgs {
-    /// ID des Datasets, dessen Recordings analysiert werden sollen.
+    /// ID of the dataset whose recordings should be analysed.
     pub dataset_id: String,
-    /// Name des dynamischen Feldes, unter dem SoundEvents gespeichert werden.
-    /// Beispiel: "birdnetV24". Muss `[a-zA-Z][a-zA-Z0-9_]*` entsprechen.
+    /// Name of the dynamic field under which SoundEvents are stored.
+    /// Example: "birdnetV24". Must match `[a-zA-Z][a-zA-Z0-9_]*`.
     pub field_name: String,
-    /// Mindestkonfidenz für Detektionen (Standard: 0.25).
+    /// Minimum confidence for detections (default: 0.25).
     pub min_conf: Option<f64>,
-    /// Latitude für geografische Artenfilterung.
+    /// Latitude for geographic species filtering.
     pub lat: Option<f64>,
-    /// Longitude für geografische Artenfilterung.
+    /// Longitude for geographic species filtering.
     pub lon: Option<f64>,
-    /// Kalenderwoche 1-48 für saisonale Filterung.
+    /// Calendar week 1-48 for seasonal filtering.
     pub week: Option<i32>,
-    /// BirdNET-Modellversion (Standard: "2.4").
+    /// BirdNET model version (default: "2.4").
     pub version: Option<String>,
-    /// Aufeinanderfolgende Segmente zusammenfassen (Standard: 1 = aus).
+    /// Merge consecutive segments (default: 1 = off).
     pub merge_consecutive: Option<i32>,
-    /// Empfindlichkeit der Sigmoid-Funktion (Standard: 1.0).
+    /// Sigmoid function sensitivity (default: 1.0).
     pub sensitivity: Option<f64>,
-    /// Optional: Nur diese Recording-IDs analysieren. None = alle.
+    /// Optional: analyse only these recording IDs. None = all.
     pub recording_ids: Option<Vec<String>>,
-    /// Pfad zum Python-Interpreter.
-    /// Fallback-Reihenfolge: Argument → SIGNAVIS_PYTHON-Env → "python3".
+    /// Path to the Python interpreter.
+    /// Fallback order: argument → SIGNAVIS_PYTHON env → "python3".
     pub python_executable: Option<String>,
-    /// Expliziter Pfad zum birdnet_sidecar.py-Skript.
-    /// Fallback: Resources-Verzeichnis → Workspace-Suche (Dev-Modus).
+    /// Explicit path to the birdnet_sidecar.py script.
+    /// Fallback: resources directory → workspace search (dev mode).
     pub sidecar_script: Option<String>,
 }
 
-// ── Rückgabetypen ─────────────────────────────────────────────────────
+// ── Return types ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +68,7 @@ pub struct BirdnetRunSummary {
     pub skipped: u64,
 }
 
-// ── Tauri-Event-Payloads ──────────────────────────────────────────────
+// ── Tauri event payloads ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,28 +90,28 @@ struct BirdnetResultPayload {
     detection_count: usize,
 }
 
-// ── Hilfsfunktionen ───────────────────────────────────────────────────
+// ── Helper functions ──────────────────────────────────────────────────
 
-/// Prüft, dass `name` nur `[a-zA-Z][a-zA-Z0-9_]*` enthält.
-/// Verhindert SurrealQL-Injection bei dynamischer Query-Konstruktion.
+/// Verifies that `name` contains only `[a-zA-Z][a-zA-Z0-9_]*`.
+/// Prevents SurrealQL injection in dynamic query construction.
 fn sanitize_field_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err("field_name darf nicht leer sein".into());
+        return Err("field_name must not be empty".into());
     }
     if !trimmed.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
-        return Err("field_name muss mit einem Buchstaben beginnen".into());
+        return Err("field_name must start with a letter".into());
     }
     if !trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return Err(
-            "field_name darf nur Buchstaben, Ziffern und Unterstriche enthalten".into(),
+            "field_name may only contain letters, digits, and underscores".into(),
         );
     }
     Ok(trimmed.to_string())
 }
 
-/// Löst den Python-Interpreter auf.
-/// Reihenfolge: explizites Argument → SIGNAVIS_PYTHON-Env → "python3".
+/// Resolves the Python interpreter.
+/// Order: explicit argument → SIGNAVIS_PYTHON env → "python3".
 fn resolve_python(explicit: Option<&str>) -> String {
     if let Some(p) = explicit {
         let t = p.trim();
@@ -128,12 +128,12 @@ fn resolve_python(explicit: Option<&str>) -> String {
     "python3".to_string()
 }
 
-/// Löst den Pfad zum `birdnet_sidecar.py`-Skript auf.
+/// Resolves the path to the `birdnet_sidecar.py` script.
 ///
-/// Suchreihenfolge:
-/// 1. Explizites Argument
-/// 2. Tauri Resource-Verzeichnis (gebundelt für Produktion)
-/// 3. Workspace-Suche ab dem aktuellen Binär-Pfad aufwärts (Entwicklungsmodus)
+/// Search order:
+/// 1. Explicit argument
+/// 2. Tauri resource directory (bundled for production)
+/// 3. Workspace search upward from the current binary path (development mode)
 fn resolve_sidecar_script(
     app: &tauri::AppHandle,
     explicit: Option<&str>,
@@ -145,11 +145,11 @@ fn resolve_sidecar_script(
             if path.exists() {
                 return Ok(path);
             }
-            return Err(format!("sidecar_script nicht gefunden: {t}"));
+            return Err(format!("sidecar_script not found: {t}"));
         }
     }
 
-    // Produktion: als Tauri-Resource gebündelt
+    // Production: bundled as a Tauri resource
     if let Ok(res_dir) = app.path().resource_dir() {
         let candidate = res_dir.join("birdnet_sidecar.py");
         if candidate.exists() {
@@ -157,7 +157,7 @@ fn resolve_sidecar_script(
         }
     }
 
-    // Entwicklungsmodus: Workspace-Verzeichnisbaum nach scripts/ durchsuchen
+    // Development mode: search workspace directory tree for scripts/
     let mut dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()));
@@ -170,45 +170,45 @@ fn resolve_sidecar_script(
     }
 
     Err(
-        "birdnet_sidecar.py nicht gefunden. \
-         Entweder 'sidecar_script' setzen, SIGNAVIS_PYTHON konfigurieren \
-         oder das Skript als Tauri-Resource bündeln."
+        "birdnet_sidecar.py not found. \
+         Either set 'sidecar_script', configure SIGNAVIS_PYTHON, \
+         or bundle the script as a Tauri resource."
             .into(),
     )
 }
 
 // ── Command ───────────────────────────────────────────────────────────
 
-/// Startet eine BirdNET-Inferenz auf einem Dataset (oder einer Teilmenge).
+/// Starts a BirdNET inference run on a dataset (or a subset).
 ///
-/// Der Python-Sidecar-Prozess wird synchron in einem Tokio-Task ausgeführt.
-/// Fortschrittsereignisse werden als Tauri-Events emittiert:
-/// - `"dataset:birdnet-progress"` — nach jeder Datei
-/// - `"dataset:birdnet-result"`   — nach erfolgreicher SurrealDB-Schreiboperation
+/// The Python sidecar process is executed synchronously in a Tokio task.
+/// Progress events are emitted as Tauri events:
+/// - `"dataset:birdnet-progress"` — after each file
+/// - `"dataset:birdnet-result"`   — after a successful SurrealDB write
 ///
-/// Der Command blockiert bis zum Abschluss aller Dateien.
+/// The command blocks until all files are processed.
 #[tauri::command]
 pub async fn dataset_run_birdnet(
     app: tauri::AppHandle,
     store: State<'_, CorpusStoreState>,
     args: DatasetBirdnetRunArgs,
 ) -> Result<BirdnetRunSummary, String> {
-    // ── Validierung ───────────────────────────────────────────────────
+    // ── Validation ───────────────────────────────────────────────────
     let field_name = sanitize_field_name(&args.field_name)?;
     let dataset_id = args.dataset_id.trim().to_string();
     if dataset_id.is_empty() {
-        return Err("dataset_id darf nicht leer sein".into());
+        return Err("dataset_id must not be empty".into());
     }
 
-    // Dataset muss existieren
+    // Dataset must exist
     store
         .dataset_get(&dataset_id)
         .await?
-        .ok_or_else(|| format!("Dataset '{dataset_id}' nicht gefunden"))?;
+        .ok_or_else(|| format!("Dataset '{dataset_id}' not found"))?;
 
     let job_id = uuid::Uuid::new_v4().to_string();
 
-    // ── Recordings laden ──────────────────────────────────────────────
+    // ── Load recordings ───────────────────────────────────────────────
     let all_recordings = store.recording_list_by_dataset_all(&dataset_id).await?;
 
     let recordings: Vec<_> = if let Some(ref ids) = args.recording_ids {
@@ -232,7 +232,7 @@ pub async fn dataset_run_birdnet(
         });
     }
 
-    // filepath → recording_id lookup
+    // filepath → recording_id look-up
     let filepath_to_id: HashMap<String, String> = recordings
         .iter()
         .map(|r| (r.filepath.clone(), r.id.clone()))
@@ -241,7 +241,7 @@ pub async fn dataset_run_birdnet(
     let filepaths: Vec<String> = recordings.iter().map(|r| r.filepath.clone()).collect();
     let total = filepaths.len() as u64;
 
-    // ── Python-Prozess aufsetzen ──────────────────────────────────────
+    // ── Set up Python process ─────────────────────────────────────────
     let python_exe = resolve_python(args.python_executable.as_deref());
     let script_path = resolve_sidecar_script(&app, args.sidecar_script.as_deref())?;
 
@@ -257,31 +257,31 @@ pub async fn dataset_run_birdnet(
     });
 
     let config_line = serde_json::to_string(&sidecar_config)
-        .map_err(|e| format!("Konfiguration serialisieren: {e}"))?;
+        .map_err(|e| format!("Serialising configuration: {e}"))?;
 
-    // Prozess starten (stderr wird an Tauri-Konsole weitergeleitet)
+    // Spawn process (stderr is forwarded to Tauri console)
     let mut child = tokio::process::Command::new(&python_exe)
         .arg(&script_path)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
         .spawn()
-        .map_err(|e| format!("Python ({python_exe}) konnte nicht gestartet werden: {e}"))?;
+        .map_err(|e| format!("Python ({python_exe}) could not be started: {e}"))?;
 
-    // Config per stdin schicken, dann EOF senden
+    // Send config via stdin, then send EOF
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(format!("{config_line}\n").as_bytes())
             .await
-            .map_err(|e| format!("stdin schreiben: {e}"))?;
-        // stdin wird hier gedroppt → EOF für den Child-Prozess
+            .map_err(|e| format!("Writing to stdin: {e}"))?;
+        // stdin is dropped here → EOF for the child process
     }
 
-    // ── stdout zeilenweise verarbeiten ────────────────────────────────
+    // ── Process stdout line by line ───────────────────────────────────
     let stdout = child
         .stdout
         .take()
-        .ok_or("stdout des Child-Prozesses nicht verfügbar")?;
+        .ok_or("stdout of child process not available")?;
     let mut lines = BufReader::new(stdout).lines();
 
     let mut processed: u64 = 0;
@@ -291,7 +291,7 @@ pub async fn dataset_run_birdnet(
     while let Some(line) = lines
         .next_line()
         .await
-        .map_err(|e| format!("stdout lesen: {e}"))?
+        .map_err(|e| format!("Reading stdout: {e}"))?
     {
         let line = line.trim().to_string();
         if line.is_empty() {
@@ -300,7 +300,7 @@ pub async fn dataset_run_birdnet(
 
         let event: JsonValue = match serde_json::from_str(&line) {
             Ok(v) => v,
-            Err(_) => continue, // Malformed line — ignorieren
+            Err(_) => continue, // Malformed line — ignore
         };
 
         match event.get("type").and_then(|v| v.as_str()) {
@@ -370,10 +370,10 @@ pub async fn dataset_run_birdnet(
         }
     }
 
-    // Child-Prozess einsammeln (verhindert Zombie-Prozesse)
+    // Reap child process (prevents zombie processes)
     let _ = child.wait().await;
 
-    // ── Feld ins Dataset-Schema eintragen (idempotent) ─────────────────
+    // ── Register field in dataset schema (idempotent) ──────────────────
     if processed > 0 {
         if let Ok(Some(mut dataset)) = store.dataset_get(&dataset_id).await {
             if !dataset.field_schema.iter().any(|f| f.name == field_name) {
@@ -381,7 +381,7 @@ pub async fn dataset_run_birdnet(
                     name: field_name.clone(),
                     kind: "sound_events".into(),
                     description: Some(format!(
-                        "BirdNET-Ergebnisse ({})",
+                        "BirdNET results ({})",
                         args.version.as_deref().unwrap_or("2.4")
                     )),
                     group: Some("BirdNET".into()),

@@ -1,33 +1,33 @@
 // ═══════════════════════════════════════════════════════════════════════
-// domain/corpus/types.ts — Signavis v2 Datenmodell
+// domain/corpus/types.ts — Signavis v2 data model
 //
-// Kernkonzepte (FiftyOne-inspiriert, bioacoustic-angepasst):
-//   Dataset    → Dataset (oberster Behälter)
-//   Recording  → Sample (Dokument pro Audiodatei)
-//   Field      → Field (typisierte Eigenschaft)
-//   Tag        → string-Label für Workflow-Zustände
-//   View       → lazy Abfragepipeline (ViewStage-Liste)
-//   AnalysisRun→ Compute-Nachverfolgung (Inferenz, Embedding, Clustering)
+// Core concepts (FiftyOne-inspired, bioacoustic-adapted):
+//   Dataset    → Dataset (top-level container)
+//   Recording  → Sample (one document per audio file)
+//   Field      → Field (typed property)
+//   Tag        → string label for workflow states
+//   View       → lazy query pipeline (list of ViewStages)
+//   AnalysisRun→ compute tracking (inference, embedding, clustering)
 // ═══════════════════════════════════════════════════════════════════════
 
-// ── Audio-Metadaten ──────────────────────────────────────────────────
+// ── Audio metadata ───────────────────────────────────────────────────
 
 export interface AudioMetadata {
-    /** Dauer in Sekunden. */
+    /** Duration in seconds. */
     duration: number;
-    /** Abtastrate in Hz. */
+    /** Sample rate in Hz. */
     sampleRate: number;
-    /** Anzahl Kanäle. */
+    /** Number of channels. */
     numChannels: number;
-    /** Dateigröße in Bytes. */
+    /** File size in bytes. */
     sizeBytes: number;
-    /** MIME-Typ, z. B. "audio/wav". */
+    /** MIME type, e.g. "audio/wav". */
     mimeType: string;
 }
 
-// ── Annotation-Felder (eingebettete Objekte auf Recording) ───────────
+// ── Annotation fields (embedded objects on Recording) ───────────────
 
-/** Einzelne Artenbestimmung. */
+/** Single species identification. */
 export interface Classification {
     label: string;
     confidence: number;
@@ -35,37 +35,37 @@ export interface Classification {
     tags?: string[];
 }
 
-/** Mehrere Artenbestimmungen (Multi-Label). */
+/** Multiple species identifications (multi-label). */
 export interface Classifications {
     classifications: Classification[];
     tags?: string[];
 }
 
-/** Zeitbereich + Artenlabel (BirdNET-Ergebnis / manuelles Segment). */
+/** Time range + species label (BirdNET result / manual segment). */
 export interface SoundEvent {
     label: string;
     confidence: number;
     /** [start_s, end_s] */
     support: [number, number];
-    /** Frequenzbereich in Hz [low, high] (optional). */
+    /** Frequency range in Hz [low, high] (optional). */
     freqRange?: [number, number];
     tags?: string[];
 }
 
-/** Liste von SoundEvents (typisch: BirdNET-Ergebnisse einer Aufnahme). */
+/** List of SoundEvents (typically: BirdNET results for a recording). */
 export interface SoundEvents {
     soundEvents: SoundEvent[];
     tags?: string[];
 }
 
-/** Skalarer Regressions-Wert (z. B. Artenreichtums-Score). */
+/** Scalar regression value (e.g. species richness score). */
 export interface Regression {
     value: number;
     confidence?: number;
     tags?: string[];
 }
 
-// ── Feldtypen ────────────────────────────────────────────────────────
+// ── Field types ──────────────────────────────────────────────────────
 
 export type FieldKind =
     | 'string'
@@ -87,9 +87,9 @@ export interface FieldDefinition {
     name: string;
     kind: FieldKind;
     description?: string;
-    /** Optionale Gruppe für UI-Gliederung (z. B. "BirdNET", "Xeno-Canto", "Benutzerdefiniert"). */
+    /** Optional group for UI organisation (e.g. "BirdNET", "Xeno-Canto", "Custom"). */
     group?: string;
-    /** Wenn true: wird nicht im Schema-Editor angezeigt (intern). */
+    /** If true: not shown in the schema editor (internal). */
     system?: boolean;
 }
 
@@ -104,37 +104,37 @@ export interface GeoLocation {
 // ── Recording ────────────────────────────────────────────────────────
 
 /**
- * Recording ist ein Dokument pro Audiodatei.
- * Bekannte Pflichtfelder sind getypt; alle weiteren dynamischen
- * Felder liegen im `fields`-Dictionary.
+ * Recording is one document per audio file.
+ * Known required fields are typed; all additional dynamic
+ * fields live in the `fields` dictionary.
  */
 export interface Recording {
-    /** Eindeutige ID (UUID). */
+    /** Unique ID (UUID). */
     id: string;
-    /** Zugehöriges Dataset. */
+    /** Owning dataset. */
     datasetId: string;
-    /** Absoluter Pfad zur Audiodatei. */
+    /** Absolute path to the audio file. */
     filepath: string;
-    /** Workflow-Tags (z. B. "train", "validated", "flagged"). */
+    /** Workflow tags (e.g. "train", "validated", "flagged"). */
     tags: string[];
-    /** Automatisch extrahierte Audio-Metadaten. */
+    /** Automatically extracted audio metadata. */
     metadata: AudioMetadata;
-    /** Geografische Position (optional). */
+    /** Geographic position (optional). */
     location?: GeoLocation;
-    /** Aufnahmezeitpunkt (ISO-8601 oder ms-Timestamp). */
+    /** Recording timestamp (ISO-8601 or ms timestamp). */
     recordedAt?: string | number;
-    /** SHA-256-Hash der Datei (für Duplikaterkennung). */
+    /** SHA-256 hash of the file (for duplicate detection). */
     fileHash?: string;
-    /** Zeitpunkt des Imports (ms). */
+    /** Import timestamp (ms). */
     importedAt: number;
     /**
-     * Dynamische Felder (alle nicht in der Basisstruktur).
-     * Enthält z. B. BirdNET-Ergebnisse, Embeddings, Custom-Metadaten.
+     * Dynamic fields (all fields not in the base structure).
+     * Contains e.g. BirdNET results, embeddings, custom metadata.
      */
     fields: Record<string, unknown>;
 }
 
-/** Leichtgewichtige Zusammenfassung für Listenansichten. */
+/** Lightweight summary for list views. */
 export interface RecordingSummary {
     id: string;
     datasetId: string;
@@ -149,24 +149,24 @@ export interface RecordingSummary {
 // ── Dataset ───────────────────────────────────────────────────────────
 
 export interface Dataset {
-    /** Eindeutige ID. */
+    /** Unique ID. */
     id: string;
-    /** Anzeigename. */
+    /** Display name. */
     name: string;
     mediaType: 'audio';
     createdAt: number;
     updatedAt: number;
-    /** Anzahl der Recordings (denormalisiert für Listenansicht). */
+    /** Number of recordings (denormalised for list view). */
     recordingCount: number;
-    /** Bekanntes Feldschema (wird durch sync_dynamic_fields aktualisiert). */
+    /** Known field schema (updated by sync_dynamic_fields). */
     fieldSchema: FieldDefinition[];
-    /** Gespeicherte Views. */
+    /** Saved views. */
     savedViews: SavedView[];
-    /** Abgeschlossene und laufende Analyse-Runs. */
+    /** Completed and running analysis runs. */
     analysisRuns: Record<string, AnalysisRunInfo>;
-    /** Bekannte Tags (für Auto-Complete). */
+    /** Known tags (for auto-complete). */
     knownTags: string[];
-    /** Optionale Beschreibung. */
+    /** Optional description. */
     description?: string;
 }
 
@@ -180,7 +180,7 @@ export interface DatasetSummary {
     description?: string;
 }
 
-// ── View (Abfragepipeline) ───────────────────────────────────────────
+// ── View (query pipeline) ────────────────────────────────────────────
 
 export type ViewStageKind =
     | 'match'
@@ -201,9 +201,9 @@ export interface ViewStage {
 }
 
 export interface View {
-    /** Dataset, auf dem der View basiert. */
+    /** Dataset this view is based on. */
     datasetId: string;
-    /** Geordnete Liste von View-Stages. */
+    /** Ordered list of view stages. */
     stages: ViewStage[];
 }
 
@@ -245,25 +245,25 @@ export interface AnalysisRunInfo {
     completedAt?: number;
     processed?: number;
     errors?: number;
-    /** Wenn nur auf einem View ausgeführt: gespeicherte View-Stages. */
+    /** If run on a view only: stored view stages. */
     viewStages?: ViewStage[];
 }
 
-// ── Import-Konfiguration ─────────────────────────────────────────────
+// ── Import configuration ──────────────────────────────────────────────
 
 export interface FolderImportConfig {
     datasetId: string;
-    /** Absoluter Pfad zum Quellordner. */
+    /** Absolute path to the source folder. */
     folderPath: string;
     /**
-     * Ordnerstruktur-Muster für Metadaten-Extraktion.
-     * Beispiel: "{recorder_id}/{site}/{week}/"
-     * Platzhalter {name} werden zu Feldern auf der Recording.
+     * Folder-structure pattern for metadata extraction.
+     * Example: "{recorder_id}/{site}/{week}/"
+     * Placeholders {name} become fields on the recording.
      */
     pathPattern?: string;
-    /** Wenn true: Dateien ins Projektverzeichnis kopieren (Standard: false = Non-destructive). */
+    /** If true: copy files into the project directory (default: false = non-destructive). */
     copyFiles?: boolean;
-    /** Dateierweiterungen filtern (Standard: alle bekannten Audio-Exts). */
+    /** Filter by file extensions (default: all known audio extensions). */
     extensions?: string[];
 }
 
@@ -292,8 +292,8 @@ export interface OperatorDefinition {
     name: string;
     description: string;
     category: OperatorCategory;
-    /** Dynamisches Eingabeformular-Schema (JSON Schema). */
+    /** Dynamic input form schema (JSON Schema). */
     inputSchema?: Record<string, unknown>;
-    /** Wenn true: Ausführung ist async und erzeugt einen AnalysisRun. */
+    /** If true: execution is async and creates an AnalysisRun. */
     isAsync: boolean;
 }

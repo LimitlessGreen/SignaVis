@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/RecordingDetailPanel.ts — Slide-In Detailansicht für Aufnahmen
+// ui/panels/RecordingDetailPanel.ts — Slide-in detail view for recordings
 //
-// Öffnet sich von rechts als Side-Panel wenn eine Recording-Karte geklickt wird.
-// Zeigt: Dateiname, Pfad, AudioMetadata, extrahierte Felder, Tags (Quick-Edit),
-//         BirdNET-Ergebnisse (falls vorhanden), "Im Labeler öffnen"-Button.
+// Opens from the right as a side panel when a recording card is clicked.
+// Shows: filename, path, AudioMetadata, extracted fields, tags (quick-edit),
+//        BirdNET results (if present), "Open in labeler" button.
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Recording, SoundEvent } from '../../domain/corpus/types.ts';
@@ -11,12 +11,12 @@ import { recordingSetTags, datasetRunBirdnet, type BirdnetRunArgs } from '../../
 import { listen } from '@tauri-apps/api/event';
 
 export interface RecordingDetailPanelOptions {
-    /** Container-Element — typischerweise die rechte Spalte der Desktop-App */
+    /** Container element — typically the right column of the desktop app */
     container: HTMLElement;
     onOpenInLabeler?: (recording: Recording) => void;
     onTagsChanged?: (recording: Recording) => void;
     onStatusMessage?: (msg: string) => void;
-    /** Wird aufgerufen wenn BirdNET-Run abgeschlossen — damit die Galerie neu laden kann. */
+    /** Called when a BirdNET run finishes — so the gallery can reload. */
     onAnalysisDone?: (recording: Recording, fieldName: string) => void;
 }
 
@@ -41,14 +41,14 @@ export class RecordingDetailPanel {
         this.renderEmpty();
     }
 
-    /** Zeigt die Detailansicht für eine Aufnahme. */
+    /** Shows the detail view for a recording. */
     show(recording: Recording): void {
         this.current = recording;
         this.birdnetRunning = false;
         this.render();
     }
 
-    /** Blendet das Panel aus (zeigt Platzhalter). */
+    /** Hides the panel (shows placeholder). */
     hide(): void {
         this.unlistenProgress?.();
         this.unlistenProgress = null;
@@ -63,7 +63,7 @@ export class RecordingDetailPanel {
             <div class="detail-panel detail-panel--empty">
                 <div class="detail-panel__placeholder">
                     <div class="detail-panel__placeholder-icon">🎵</div>
-                    <div class="detail-panel__placeholder-text">Aufnahme auswählen</div>
+                    <div class="detail-panel__placeholder-text">Select a recording</div>
                 </div>
             </div>
         `;
@@ -79,36 +79,36 @@ export class RecordingDetailPanel {
             <div class="detail-panel">
                 <div class="detail-panel__header">
                     <div class="detail-panel__title" title="${escapeHtml(r.filepath)}">${escapeHtml(filename)}</div>
-                    <button class="btn btn--ghost btn--icon detail-panel__close" id="detailClose" title="Schließen">✕</button>
+                    <button class="btn btn--ghost btn--icon detail-panel__close" id="detailClose" title="Close">✕</button>
                 </div>
 
                 <div class="detail-panel__body">
 
-                    <!-- Pfad -->
+                    <!-- Path -->
                     <section class="detail-section">
-                        <div class="detail-section__label">Pfad</div>
+                        <div class="detail-section__label">Path</div>
                         <div class="detail-section__value detail-section__value--mono" title="${escapeHtml(r.filepath)}">${escapeHtml(dir)}</div>
                     </section>
 
-                    <!-- Audio-Metadaten -->
+                    <!-- Audio metadata -->
                     <section class="detail-section">
                         <div class="detail-section__label">Audio</div>
                         <div class="detail-meta-grid">
-                            ${this.renderMetaRow('Dauer', formatDuration(r.metadata.duration))}
-                            ${this.renderMetaRow('Sample-Rate', r.metadata.sampleRate > 0 ? `${r.metadata.sampleRate.toLocaleString()} Hz` : '—')}
-                            ${this.renderMetaRow('Kanäle', r.metadata.numChannels > 0 ? String(r.metadata.numChannels) : '—')}
-                            ${this.renderMetaRow('Größe', formatBytes(r.metadata.sizeBytes))}
+                            ${this.renderMetaRow('Duration', formatDuration(r.metadata.duration))}
+                            ${this.renderMetaRow('Sample rate', r.metadata.sampleRate > 0 ? `${r.metadata.sampleRate.toLocaleString()} Hz` : '—')}
+                            ${this.renderMetaRow('Channels', r.metadata.numChannels > 0 ? String(r.metadata.numChannels) : '—')}
+                            ${this.renderMetaRow('Size', formatBytes(r.metadata.sizeBytes))}
                             ${r.metadata.mimeType ? this.renderMetaRow('Format', r.metadata.mimeType) : ''}
                         </div>
                     </section>
 
-                    <!-- Extrahierte Felder -->
+                    <!-- Extracted fields -->
                     ${this.renderFields(r)}
 
-                    <!-- Aufnahmezeitpunkt -->
+                    <!-- Recorded at -->
                     ${r.recordedAt ? `
                     <section class="detail-section">
-                        <div class="detail-section__label">Aufgenommen</div>
+                        <div class="detail-section__label">Recorded at</div>
                         <div class="detail-section__value">${new Date(r.recordedAt).toLocaleString()}</div>
                     </section>` : ''}
 
@@ -123,21 +123,21 @@ export class RecordingDetailPanel {
                                 type="text"
                                 class="input input--sm detail-tag-input"
                                 id="detailTagInput"
-                                placeholder="Tag hinzufügen…"
+                                placeholder="Add tag…"
                                 value=""
                             />
                             <button class="btn btn--ghost btn--sm" id="detailTagAddBtn">+</button>
                         </div>
                     </section>
 
-                    <!-- Analyseergebnisse -->
+                    <!-- Analysis results -->
                     ${this.renderAnalysisResults(r)}
 
                 </div>
 
                 <div class="detail-panel__footer">
                     <button class="btn btn--primary detail-panel__open-btn" id="detailOpenLabeler">
-                        Im Labeler öffnen →
+                        Open in labeler →
                     </button>
                 </div>
             </div>
@@ -163,7 +163,7 @@ export class RecordingDetailPanel {
             .join('');
         return `
             <section class="detail-section">
-                <div class="detail-section__label">Pfad-Felder</div>
+                <div class="detail-section__label">Path fields</div>
                 <div class="detail-meta-grid">${rows}</div>
             </section>
         `;
@@ -171,7 +171,7 @@ export class RecordingDetailPanel {
 
     private renderTagList(tags: string[]): string {
         if (tags.length === 0) {
-            return `<span class="detail-tags__empty">Keine Tags</span>`;
+            return `<span class="detail-tags__empty">No tags</span>`;
         }
         return tags
             .map(
@@ -181,7 +181,7 @@ export class RecordingDetailPanel {
                     <button
                         class="detail-tag__remove"
                         data-remove-tag="${escapeHtml(t)}"
-                        title="Tag entfernen"
+                        title="Remove tag"
                     >✕</button>
                 </span>
             `,
@@ -190,8 +190,8 @@ export class RecordingDetailPanel {
     }
 
     private renderAnalysisResults(r: Recording): string {
-        // Alle SoundEvents-Felder aus r.fields sammeln
-        // Jedes Feld mit shape { soundEvents: [...] } wird als Analyse-Ergebnis dargestellt.
+        // Collect all SoundEvents fields from r.fields
+        // Every field with shape { soundEvents: [...] } is rendered as an analysis result.
         const sections: string[] = [];
 
         for (const [fieldName, fieldValue] of Object.entries(r.fields ?? {})) {
@@ -202,7 +202,7 @@ export class RecordingDetailPanel {
                     <section class="detail-section">
                         <div class="detail-section__label analysis-field-label">
                             ${escapeHtml(fieldName)}
-                            <span class="badge badge--neutral">keine Detektionen</span>
+                            <span class="badge badge--neutral">no detections</span>
                         </div>
                     </section>
                 `);
@@ -228,21 +228,21 @@ export class RecordingDetailPanel {
                 .join('');
 
             const moreNote = events.length > 20
-                ? `<div class="analysis-table__more">+ ${events.length - 20} weitere</div>`
+                ? `<div class="analysis-table__more">+ ${events.length - 20} more</div>`
                 : '';
 
             sections.push(`
                 <section class="detail-section">
                     <div class="detail-section__label analysis-field-label">
                         ${escapeHtml(fieldName)}
-                        <span class="badge badge--accent">${events.length} Detektionen</span>
+                        <span class="badge badge--accent">${events.length} detections</span>
                     </div>
                     <table class="analysis-table">
                         <thead>
                             <tr>
-                                <th>Art</th>
-                                <th>Konfidenz</th>
-                                <th>Zeitbereich</th>
+                                <th>Species</th>
+                                <th>Confidence</th>
+                                <th>Time range</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -257,19 +257,19 @@ export class RecordingDetailPanel {
             : '';
 
         const birdnetBtn = this.birdnetRunning
-            ? `<button class="btn btn--ghost btn--sm" disabled>⏳ Analyse läuft…</button>`
-            : `<button class="btn btn--ghost btn--sm" id="detailRunBirdnet">🔍 BirdNET analysieren</button>`;
+            ? `<button class="btn btn--ghost btn--sm" disabled>⏳ Analysis running…</button>`
+            : `<button class="btn btn--ghost btn--sm" id="detailRunBirdnet">🔍 Run BirdNET</button>`;
 
         return `
             <section class="detail-section">
                 <div class="detail-section__label detail-section__label--with-action">
-                    Analyseergebnisse
+                    Analysis results
                     ${birdnetBtn}
                 </div>
-                ${analysisHtml || '<div class="detail-section__empty">Noch keine Analyse durchgeführt.</div>'}
+                ${analysisHtml || '<div class="detail-section__empty">No analysis run yet.</div>'}
                 <div class="detail-birdnet-progress" id="detailBirdnetProgress" style="display:none">
                     <div class="progress-bar"><div class="progress-bar__fill" id="detailProgressFill" style="width:0%"></div></div>
-                    <span class="progress-label" id="detailProgressLabel">Starte…</span>
+                    <span class="progress-label" id="detailProgressLabel">Starting…</span>
                 </div>
             </section>
         `;
@@ -278,15 +278,15 @@ export class RecordingDetailPanel {
     private bindEvents(): void {
         const r = this.current!;
 
-        // Schließen
+        // Close
         this.container.querySelector('#detailClose')?.addEventListener('click', () => this.hide());
 
-        // Im Labeler öffnen
+        // Open in labeler
         this.container.querySelector('#detailOpenLabeler')?.addEventListener('click', () => {
             this.onOpenInLabeler?.(r);
         });
 
-        // Tags entfernen
+        // Remove tags
         this.container.querySelectorAll('[data-remove-tag]').forEach((btn) => {
             btn.addEventListener('click', async () => {
                 const tag = (btn as HTMLElement).dataset.removeTag!;
@@ -295,7 +295,7 @@ export class RecordingDetailPanel {
             });
         });
 
-        // Tag hinzufügen
+        // Add tag
         const tagInput = this.container.querySelector('#detailTagInput') as HTMLInputElement;
         const tagAddBtn = this.container.querySelector('#detailTagAddBtn');
 
@@ -311,7 +311,7 @@ export class RecordingDetailPanel {
             if ((e as KeyboardEvent).key === 'Enter') addTag();
         });
 
-        // BirdNET analysieren
+        // Run BirdNET analysis
         this.container.querySelector('#detailRunBirdnet')?.addEventListener('click', () => {
             this.runBirdnetForCurrent();
         });
@@ -321,19 +321,19 @@ export class RecordingDetailPanel {
         if (!this.current || this.birdnetRunning) return;
         const r = this.current;
 
-        // Standardfeld: birdnetV24
+        // Default field: birdnetV24
         const fieldName = 'birdnetV24';
         this.birdnetRunning = true;
 
-        // Fortschritts-UI einblenden
+        // Show progress UI
         const progressBar = this.container.querySelector('#detailBirdnetProgress') as HTMLElement | null;
         const progressFill = this.container.querySelector('#detailProgressFill') as HTMLElement | null;
         const progressLabel = this.container.querySelector('#detailProgressLabel') as HTMLElement | null;
         const runBtn = this.container.querySelector('#detailRunBirdnet') as HTMLButtonElement | null;
         if (progressBar) progressBar.style.display = '';
-        if (runBtn) { runBtn.disabled = true; runBtn.textContent = '⏳ Analyse läuft…'; }
+        if (runBtn) { runBtn.disabled = true; runBtn.textContent = '⏳ Analysis running…'; }
 
-        // Tauri-Event-Listener für Fortschritt dieser Recording
+        // Tauri event listener for progress on this recording
         this.unlistenProgress?.();
         let unlistenFn: (() => void) | null = null;
         const unlistenHandle = await listen<{ filepath: string; current: number; total: number }>(
@@ -356,19 +356,19 @@ export class RecordingDetailPanel {
             };
             await datasetRunBirdnet(args);
 
-            // Recording neu laden um Ergebnisse zu zeigen
+            // Reload recording to show results
             const { recordingGet } = await import('../../infrastructure/tauri/TauriCorpusAdapter.ts');
             const updated = await recordingGet(r.id);
             this.current = updated;
             this.birdnetRunning = false;
             this.render();
-            this.onStatusMessage(`BirdNET: Analyse abgeschlossen.`);
+            this.onStatusMessage(`BirdNET: Analysis complete.`);
             this.onAnalysisDone?.(updated, fieldName);
         } catch (e) {
             this.birdnetRunning = false;
-            this.onStatusMessage(`BirdNET-Fehler: ${e}`);
+            this.onStatusMessage(`BirdNET error: ${e}`);
             if (progressBar) progressBar.style.display = 'none';
-            if (runBtn) { runBtn.disabled = false; runBtn.textContent = '🔍 BirdNET analysieren'; }
+            if (runBtn) { runBtn.disabled = false; runBtn.textContent = '🔍 Run BirdNET'; }
         } finally {
             this.unlistenProgress?.();
             this.unlistenProgress = null;
@@ -380,11 +380,11 @@ export class RecordingDetailPanel {
         try {
             await recordingSetTags(this.current.id, newTags);
             this.current = { ...this.current, tags: newTags };
-            // Tags-Bereich neu rendern (ohne komplettes Panel-Re-render)
+            // Re-render the tags section (without a full panel re-render)
             const tagsEl = this.container.querySelector('#detailTags');
             if (tagsEl) {
                 tagsEl.innerHTML = this.renderTagList(newTags);
-                // Events neu binden
+                // Rebind events
                 tagsEl.querySelectorAll('[data-remove-tag]').forEach((btn) => {
                     btn.addEventListener('click', async () => {
                         const tag = (btn as HTMLElement).dataset.removeTag!;
@@ -394,7 +394,7 @@ export class RecordingDetailPanel {
             }
             this.onTagsChanged?.(this.current);
         } catch (e) {
-            this.onStatusMessage(`Tag-Fehler: ${e}`);
+            this.onStatusMessage(`Tag error: ${e}`);
         }
     }
 }
@@ -409,7 +409,7 @@ function escapeHtml(s: string): string {
         .replace(/"/g, '&quot;');
 }
 
-/** Prüft, ob ein Feld-Wert das Shape { soundEvents: SoundEvent[] } hat. */
+/** Checks whether a field value has the shape { soundEvents: SoundEvent[] }. */
 function isValidSoundEventsField(value: unknown): boolean {
     if (!value || typeof value !== 'object') return false;
     const v = value as Record<string, unknown>;

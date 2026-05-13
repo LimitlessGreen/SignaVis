@@ -2,8 +2,8 @@
 // src/app/desktop-app.ts — Desktop application entry point (Tauri only)
 //
 // Views:
-//   Labeling  — Bestehendes Labeling-Werkzeug (Projekt-Liste + Player + Jobs)
-//   Dataset   — Neuer Dataset Browser (v2 Architektur: Dataset/Recording/Import)
+//   Labeling  — Existing labeling tool (project list + player + jobs)
+//   Dataset   — New dataset browser (v2 architecture: Dataset/Recording/Import)
 // ═══════════════════════════════════════════════════════════════════════
 
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
@@ -65,7 +65,7 @@ let datasetBrowserPanel: DatasetBrowserPanel | null = null;
 let currentDataset: Dataset | null = null;
 let recordingDetailPanel: RecordingDetailPanel | null = null;
 
-/** Wechselt zwischen "labeling" und "dataset" View. */
+/** Switches between "labeling" and "dataset" view. */
 function switchView(view: AppView): void {
     activeView = view;
     const labelingEl = document.getElementById('labelingView')!;
@@ -94,7 +94,7 @@ function initDatasetView(): void {
             onDatasetSelect: (dataset) => showRecordingGallery(dataset),
             onStatusMessage: setStatus,
         });
-        datasetBrowserPanel.mount().catch((e) => setStatus(`Dataset-Fehler: ${e}`));
+        datasetBrowserPanel.mount().catch((e) => setStatus(`Dataset error: ${e}`));
     }
 }
 
@@ -103,7 +103,7 @@ function showRecordingGallery(dataset: Dataset): void {
     const mount = document.getElementById('datasetBrowserMount')!;
     const detailMount = document.getElementById('datasetDetailMount')!;
 
-    // Detail-Panel initialisieren (rechte Spalte)
+    // Initialise detail panel (right column)
     if (!recordingDetailPanel) {
         recordingDetailPanel = new RecordingDetailPanel({
             container: detailMount,
@@ -124,18 +124,18 @@ function showRecordingGallery(dataset: Dataset): void {
                 onStatusMessage: setStatus,
             });
             datasetBrowserPanel = newPanel;
-            newPanel.mount().catch((e) => setStatus(`Fehler: ${e}`));
-            // Detail-Panel leeren
+            newPanel.mount().catch((e) => setStatus(`Error: ${e}`));
+            // Clear detail panel
             detailMount.innerHTML = '';
         },
         onImport: () => showImportWizard(dataset),
         onOpenRecording: (rec) => {
-            // Zeige Detail-Panel statt direkt in Labeler zu springen
+            // Show detail panel instead of jumping directly to labeler
             recordingDetailPanel?.show(rec);
         },
         onStatusMessage: setStatus,
     });
-    gallery.mount().catch((e) => setStatus(`Galerie-Fehler: ${e}`));
+    gallery.mount().catch((e) => setStatus(`Gallery error: ${e}`));
 }
 
 function showImportWizard(dataset: Dataset): void {
@@ -145,7 +145,7 @@ function showImportWizard(dataset: Dataset): void {
         container: mount,
         dataset,
         onDone: (result) => {
-            setStatus(`Import: ${result.imported} importiert, ${result.skipped} übersprungen.`);
+            setStatus(`Import: ${result.imported} imported, ${result.skipped} skipped.`);
             showRecordingGallery(dataset);
         },
         onCancel: () => showRecordingGallery(dataset),
@@ -168,10 +168,10 @@ async function openFolderDialogPath(): Promise<string | null> {
 }
 
 function openRecordingInLabeler(recording: Recording): void {
-    // Zur Labeling-Ansicht wechseln und die Datei laden
+    // Switch to labeling view and load the file
     switchView('labeling');
     loadAudioFile(recording.filepath);
-    setStatus(`Öffne: ${recording.filepath.split('/').pop()}`);
+    setStatus(`Opening: ${recording.filepath.split('/').pop()}`);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────
@@ -490,26 +490,26 @@ async function runAnalysis(): Promise<void> {
 
 // ── Connection status UI ──────────────────────────────────────────────
 //
-// Der Button unten links zeigt den aktuellen Betriebsmodus (Local / Server / Cloud)
-// und öffnet per Klick ein Popover zum Wechseln.
+// The button at the bottom-left shows the current operating mode (Local / Server / Cloud)
+// and opens a popover on click to switch modes.
 //
-// DEV-NOTIZ — Server zum Testen starten:
-//   Browser-Dev-Server (kein Tauri, kein Backend):
+// DEV NOTE — starting a server for testing:
+//   Browser dev server (no Tauri, no backend):
 //     npm run dev                          → http://localhost:5173
 //
-//   Tauri Desktop-App (empfohlen für Dataset/Recording-Features):
-//     npm run desktop:dev                  → startet Vite + Tauri, öffnet Fenster
-//     npm run desktop:dev:grpc             → dito, mit gRPC-Analysis-Backend
+//   Tauri desktop app (recommended for Dataset/Recording features):
+//     npm run desktop:dev                  → starts Vite + Tauri, opens window
+//     npm run desktop:dev:grpc             → same, with gRPC analysis backend
 //
-//   Platform-Backend (SurrealDB-Server, Postgres etc. via Docker):
-//     npm run platform:testenv:up          → Docker-Compose hochfahren
-//     npm run desktop:dev:platform-local   → Desktop gegen lokales Platform-Backend
-//     npm run desktop:dev:platform-local:reset  → dito, DB zurücksetzen
+//   Platform backend (SurrealDB server, Postgres etc. via Docker):
+//     npm run platform:testenv:up          → bring up Docker Compose
+//     npm run desktop:dev:platform-local   → desktop against local platform backend
+//     npm run desktop:dev:platform-local:reset  → same, reset DB
 //
-//   Mock-Analysis-Server (ohne Python/BirdNET):
-//     npm run dev:analysis-mock            → startet Mock-Server auf :7999
+//   Mock analysis server (no Python/BirdNET):
+//     npm run dev:analysis-mock            → starts mock server on :7999
 //
-// Im Lokal-Modus läuft SurrealDB embedded im Tauri-Prozess — kein separater Daemon.
+// In local mode SurrealDB runs embedded in the Tauri process — no separate daemon.
 
 function renderConnSegment(status: ConnectionStatus): void {
     connSegment.dataset.state = status.state;

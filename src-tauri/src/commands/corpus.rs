@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// commands/corpus.rs — Tauri IPC Commands für Dataset-Verwaltung
+// commands/corpus.rs — Tauri IPC commands for dataset management
 // ═══════════════════════════════════════════════════════════════════════
 
 use serde::Deserialize;
@@ -38,33 +38,33 @@ pub async fn dataset_create(
         return Err("dataset_create: name must not be empty".into());
     }
 
-    // System-Pflichtfelder im Schema
+    // System required fields in the schema
     let field_schema = vec![
         FieldDefinition {
             name: "filepath".into(),
             kind: "string".into(),
-            description: Some("Absoluter Pfad zur Audiodatei".into()),
+            description: Some("Absolute path to the audio file".into()),
             group: None,
             system: true,
         },
         FieldDefinition {
             name: "metadata".into(),
             kind: "dict".into(),
-            description: Some("Audio-Metadaten (Dauer, Samplerate, …)".into()),
+            description: Some("Audio metadata (duration, sample rate, …)".into()),
             group: None,
             system: true,
         },
         FieldDefinition {
             name: "recordedAt".into(),
             kind: "date".into(),
-            description: Some("Aufnahmezeitpunkt".into()),
+            description: Some("Recording timestamp".into()),
             group: None,
             system: true,
         },
         FieldDefinition {
             name: "location".into(),
             kind: "geo_location".into(),
-            description: Some("Geografische Position".into()),
+            description: Some("Geographic position".into()),
             group: None,
             system: true,
         },
@@ -161,8 +161,8 @@ pub async fn dataset_update_meta(
 
 // ── dataset_add_field_to_schema ───────────────────────────────────────
 //
-// Fügt ein Feld ins Dataset-Schema ein (Idempotent — existiert das Feld
-// bereits mit gleichem Namen, wird es übersprungen).
+// Adds a field to the dataset schema (idempotent — if a field with the
+// same name already exists it is skipped).
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,7 +189,7 @@ pub async fn dataset_add_field_to_schema(
         return Err("dataset_add_field_to_schema: field_name must not be empty".into());
     }
 
-    // Idempotent: nur hinzufügen wenn Name noch nicht vorhanden
+    // Idempotent: only add if name not already present
     if !dataset.field_schema.iter().any(|f| f.name == name) {
         dataset.field_schema.push(FieldDefinition {
             name: name.clone(),

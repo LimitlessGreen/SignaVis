@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/RecordingGalleryPanel.ts — Aufnahmen-Galerie innerhalb eines Datasets
+// ui/panels/RecordingGalleryPanel.ts — Recording gallery within a dataset
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Recording, Dataset } from '../../domain/corpus/types.ts';
@@ -40,11 +40,11 @@ export class RecordingGalleryPanel {
     private isLoading = false;
     private activeTagFilter: string | null = null;
     private searchQuery = '';
-    /** Aktive Feld-Filter: fieldName → selectedValue ('' = alle) */
+    /** Active field filters: fieldName → selectedValue ('' = all) */
     private fieldFilters: Map<string, string> = new Map();
-    /** Distinct-Werte pro Feld (gecacht nach erstem Load) */
+    /** Distinct values per field (cached after first load) */
     private fieldValues: Map<string, string[]> = new Map();
-    /** Laufender BirdNET-Job (verhindert Doppel-Ausführung) */
+    /** Running BirdNET job (prevents double-execution) */
     private birdnetRunning = false;
     private unlistenBirdnet: (() => void) | null = null;
 
@@ -72,7 +72,7 @@ export class RecordingGalleryPanel {
             )
             .join('');
 
-        // Feld-Filter aus fieldSchema (nur primitive Felder mit Werten)
+        // Field filters from fieldSchema (primitive fields only)
         const fieldSchema = this.dataset.fieldSchema ?? [];
         const filterableFields = fieldSchema.filter((f) =>
             ['string', 'int', 'float'].includes(f.kind) && !f.system,
@@ -85,7 +85,7 @@ export class RecordingGalleryPanel {
                     .join('');
                 return `
                     <select class="input input--sm field-filter-select" data-field="${escapeHtml(f.name)}" title="${escapeHtml(f.name)}">
-                        <option value="">${escapeHtml(f.name)}: Alle</option>
+                        <option value="">${escapeHtml(f.name)}: All</option>
                         ${opts}
                     </select>
                 `;
@@ -95,13 +95,13 @@ export class RecordingGalleryPanel {
         return `
             <div class="recording-gallery">
                 <div class="recording-gallery__header">
-                    <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Zurück">←</button>
+                    <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Back">←</button>
                     <h2 class="recording-gallery__title">${escapeHtml(this.dataset.name)}</h2>
                     <div class="recording-gallery__header-actions">
-                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="BirdNET auf dem ganzen Dataset ausführen">
+                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">
                             🔍 BirdNET
                         </button>
-                        <button class="btn btn--primary" id="galleryImportBtn">+ Importieren</button>
+                        <button class="btn btn--primary" id="galleryImportBtn">+ Import</button>
                     </div>
                 </div>
 
@@ -109,8 +109,8 @@ export class RecordingGalleryPanel {
                     <div class="progress-bar">
                         <div class="progress-bar__fill" id="galleryProgressFill" style="width:0%"></div>
                     </div>
-                    <span class="progress-label" id="galleryProgressLabel">Starte BirdNET…</span>
-                    <button class="btn btn--ghost btn--sm" id="galleryBirdnetCancel">Abbrechen</button>
+                    <span class="progress-label" id="galleryProgressLabel">Starting BirdNET…</span>
+                    <button class="btn btn--ghost btn--sm" id="galleryBirdnetCancel">Cancel</button>
                 </div>
 
                 <div class="recording-gallery__toolbar">
@@ -118,10 +118,10 @@ export class RecordingGalleryPanel {
                         type="search"
                         class="input input--sm recording-gallery__search"
                         id="gallerySearch"
-                        placeholder="Pfad oder Tag suchen…"
+                        placeholder="Search path or tag…"
                     />
                     <div class="recording-gallery__tag-filter">
-                        <button class="tag-pill tag-pill--active" data-tag="">Alle</button>
+                        <button class="tag-pill tag-pill--active" data-tag="">All</button>
                         ${tagPills}
                     </div>
                     ${filterableFields.length > 0 ? `
@@ -131,7 +131,7 @@ export class RecordingGalleryPanel {
                 </div>
 
                 <div class="recording-gallery__stats" id="galleryStats">
-                    ${this.dataset.recordingCount.toLocaleString()} Aufnahmen
+                    ${this.dataset.recordingCount.toLocaleString()} recordings
                 </div>
 
                 <div class="recording-gallery__grid" id="galleryGrid">
@@ -140,7 +140,7 @@ export class RecordingGalleryPanel {
 
                 <div class="recording-gallery__pagination">
                     <button class="btn btn--ghost" id="galleryLoadMore" style="display:none">
-                        Mehr laden
+                        Load more
                     </button>
                 </div>
             </div>
@@ -168,7 +168,7 @@ export class RecordingGalleryPanel {
             const progressEl = this.container.querySelector('#galleryBirdnetProgress') as HTMLElement | null;
             if (progressEl) progressEl.style.display = 'none';
             if (birdnetBtn) { birdnetBtn.disabled = false; birdnetBtn.textContent = '🔍 BirdNET'; }
-            this.onStatusMessage('BirdNET abgebrochen.');
+            this.onStatusMessage('BirdNET cancelled.');
         });
 
         searchInput.addEventListener('input', () => {
@@ -188,16 +188,16 @@ export class RecordingGalleryPanel {
             });
         });
 
-        // Feld-Filter Dropdowns
+        // Field filter dropdowns
         this.container.querySelectorAll<HTMLSelectElement>('.field-filter-select').forEach((sel) => {
-            // Beim ersten Fokus: Distinct-Values nachladen
+            // On first focus: lazy-load distinct values
             sel.addEventListener('focus', async () => {
                 const field = sel.dataset.field!;
                 if (!this.fieldValues.has(field)) {
                     try {
                         const vals = await recordingDistinctValues(this.dataset.id, field);
                         this.fieldValues.set(field, vals);
-                        // Optionen nachfüllen
+                        // Populate options
                         vals.forEach((v) => {
                             const opt = document.createElement('option');
                             opt.value = v;
@@ -205,7 +205,7 @@ export class RecordingGalleryPanel {
                             sel.appendChild(opt);
                         });
                     } catch {
-                        // Ignore — leere Liste bleibt
+                        // Ignore — empty list remains
                     }
                 }
             });
@@ -238,7 +238,7 @@ export class RecordingGalleryPanel {
             this.offset += batch.length;
             this.hasMore = batch.length === PAGE_SIZE;
         } catch (e) {
-            this.onStatusMessage(`Fehler beim Laden: ${e}`);
+            this.onStatusMessage(`Error loading recordings: ${e}`);
         } finally {
             this.isLoading = false;
         }
@@ -260,9 +260,9 @@ export class RecordingGalleryPanel {
                 const tagMatch = r.tags.some((t) => t.toLowerCase().includes(this.searchQuery));
                 if (!fp.includes(this.searchQuery) && !tagMatch) return false;
             }
-            // Feld-Filter
+            // Field filters
             for (const [field, value] of this.fieldFilters) {
-                if (!value) continue; // '' = Alle
+                if (!value) continue; // '' = All
                 const fields = r.fields as Record<string, string> | undefined;
                 if (!fields || fields[field] !== value) return false;
             }
@@ -277,8 +277,8 @@ export class RecordingGalleryPanel {
         if (filtered.length === 0 && !this.isLoading) {
             grid.innerHTML = `
                 <div class="recording-gallery__empty">
-                    Keine Aufnahmen gefunden.<br>
-                    <button class="btn btn--primary" id="galleryEmptyImport">Ordner importieren</button>
+                    No recordings found.<br>
+                    <button class="btn btn--primary" id="galleryEmptyImport">Import folder</button>
                 </div>
             `;
             const emptyImportBtn = grid.querySelector('#galleryEmptyImport');
@@ -296,7 +296,7 @@ export class RecordingGalleryPanel {
             });
         });
 
-        // Waveform-Thumbnails asynchron nachladen
+        // Lazy-load waveform thumbnails asynchronously
         grid.querySelectorAll<HTMLElement>('[data-waveform-path]').forEach((img) => {
             const path = img.dataset.waveformPath!;
             getWaveformThumbnail(path).then((url) => {
@@ -322,7 +322,7 @@ export class RecordingGalleryPanel {
                     rec.tags = newTags;
                     this.renderGrid();
                 } catch (e) {
-                    this.onStatusMessage(`Tag-Fehler: ${e}`);
+                    this.onStatusMessage(`Tag error: ${e}`);
                 }
             });
         });
@@ -338,23 +338,23 @@ export class RecordingGalleryPanel {
         overlay.id = 'birdnetDialogOverlay';
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
-            <div class="modal" role="dialog" aria-modal="true" aria-label="BirdNET analysieren">
+            <div class="modal" role="dialog" aria-modal="true" aria-label="Run BirdNET analysis">
                 <div class="modal__header">
-                    <h3 class="modal__title">BirdNET analysieren</h3>
+                    <h3 class="modal__title">Run BirdNET analysis</h3>
                     <button class="btn btn--ghost btn--icon" id="birdnetDialogClose">✕</button>
                 </div>
                 <div class="modal__body">
                     <div class="form-row">
-                        <label class="form-label" for="birdnetFieldName">Ergebnis-Feldname</label>
+                        <label class="form-label" for="birdnetFieldName">Result field name</label>
                         <input
                             class="input" id="birdnetFieldName"
                             type="text" value="birdnetV24"
-                            placeholder="z.B. birdnetV24"
+                            placeholder="e.g. birdnetV24"
                         />
-                        <span class="form-hint">Unter diesem Feld werden SoundEvents gespeichert.</span>
+                        <span class="form-hint">SoundEvents will be stored under this field name.</span>
                     </div>
                     <div class="form-row">
-                        <label class="form-label" for="birdnetMinConf">Mindestkonfidenz</label>
+                        <label class="form-label" for="birdnetMinConf">Minimum confidence</label>
                         <input
                             class="input" id="birdnetMinConf"
                             type="number" value="0.25" min="0" max="1" step="0.05"
@@ -362,29 +362,29 @@ export class RecordingGalleryPanel {
                     </div>
                     <div class="form-row form-row--inline">
                         <div>
-                            <label class="form-label" for="birdnetLat">Breitengrad (lat)</label>
-                            <input class="input" id="birdnetLat" type="number" placeholder="z.B. 49.5" step="0.001"/>
+                            <label class="form-label" for="birdnetLat">Latitude (lat)</label>
+                            <input class="input" id="birdnetLat" type="number" placeholder="e.g. 49.5" step="0.001"/>
                         </div>
                         <div>
-                            <label class="form-label" for="birdnetLon">Längengrad (lon)</label>
-                            <input class="input" id="birdnetLon" type="number" placeholder="z.B. 11.0" step="0.001"/>
+                            <label class="form-label" for="birdnetLon">Longitude (lon)</label>
+                            <input class="input" id="birdnetLon" type="number" placeholder="e.g. 11.0" step="0.001"/>
                         </div>
                         <div>
-                            <label class="form-label" for="birdnetWeek">Woche (1-48)</label>
-                            <input class="input" id="birdnetWeek" type="number" placeholder="z.B. 22" min="1" max="48"/>
+                            <label class="form-label" for="birdnetWeek">Week (1-48)</label>
+                            <input class="input" id="birdnetWeek" type="number" placeholder="e.g. 22" min="1" max="48"/>
                         </div>
                     </div>
                     <div class="form-row">
-                        <label class="form-label" for="birdnetScope">Umfang</label>
+                        <label class="form-label" for="birdnetScope">Scope</label>
                         <select class="input" id="birdnetScope">
-                            <option value="all">Alle Aufnahmen (${this.dataset.recordingCount.toLocaleString()})</option>
-                            <option value="filtered">Gefilterte Aufnahmen (${this.filteredRecordings().length.toLocaleString()})</option>
+                            <option value="all">All recordings (${this.dataset.recordingCount.toLocaleString()})</option>
+                            <option value="filtered">Filtered recordings (${this.filteredRecordings().length.toLocaleString()})</option>
                         </select>
                     </div>
                 </div>
                 <div class="modal__footer">
-                    <button class="btn btn--ghost" id="birdnetDialogCancel">Abbrechen</button>
-                    <button class="btn btn--primary" id="birdnetDialogRun">Analyse starten</button>
+                    <button class="btn btn--ghost" id="birdnetDialogCancel">Cancel</button>
+                    <button class="btn btn--primary" id="birdnetDialogRun">Start analysis</button>
                 </div>
             </div>
         `;
@@ -408,7 +408,7 @@ export class RecordingGalleryPanel {
             const lon       = lonInput.value ? parseFloat(lonInput.value) : undefined;
             const week      = weekInput.value ? parseInt(weekInput.value, 10) : undefined;
 
-            // Gefilterte IDs oder alle
+            // Filtered IDs or all
             const recordingIds = scopeSelect.value === 'filtered'
                 ? this.filteredRecordings().map((r) => r.id)
                 : undefined;
@@ -427,10 +427,10 @@ export class RecordingGalleryPanel {
         const progressFill  = this.container.querySelector('#galleryProgressFill') as HTMLElement | null;
         const progressLabel = this.container.querySelector('#galleryProgressLabel') as HTMLElement | null;
 
-        if (birdnetBtn) { birdnetBtn.disabled = true; birdnetBtn.textContent = '⏳ BirdNET läuft…'; }
+        if (birdnetBtn) { birdnetBtn.disabled = true; birdnetBtn.textContent = '⏳ BirdNET running…'; }
         if (progressEl) progressEl.style.display = '';
 
-        // Tauri-Event-Listener für Fortschritt
+        // Tauri event listener for progress
         this.unlistenBirdnet?.();
         const unlistenHandle = await listen<{ current: number; total: number; filepath: string | null }>(
             'dataset:birdnet-progress',
@@ -447,12 +447,12 @@ export class RecordingGalleryPanel {
         try {
             const summary: BirdnetRunSummary = await datasetRunBirdnet(args);
             this.onStatusMessage(
-                `BirdNET: ${summary.processed} analysiert, ${summary.errors} Fehler, ${summary.skipped} übersprungen.`,
+                `BirdNET: ${summary.processed} analysed, ${summary.errors} errors, ${summary.skipped} skipped.`,
             );
-            // Grid neu laden damit Analyse-Badges erscheinen
+            // Reload grid so analysis badges appear
             await this.loadMore(true);
         } catch (e) {
-            this.onStatusMessage(`BirdNET-Fehler: ${e}`);
+            this.onStatusMessage(`BirdNET error: ${e}`);
         } finally {
             this.birdnetRunning = false;
             this.unlistenBirdnet?.();
@@ -477,7 +477,7 @@ export class RecordingGalleryPanel {
                         class="tag-pill tag-pill--sm tag-pill--active"
                         data-toggle-tag="${escapeHtml(t)}"
                         data-recording-id="${escapeHtml(r.id)}"
-                        title="Tag entfernen: ${escapeHtml(t)}"
+                        title="Remove tag: ${escapeHtml(t)}"
                     >${escapeHtml(t)}</button>`,
             )
             .join('');

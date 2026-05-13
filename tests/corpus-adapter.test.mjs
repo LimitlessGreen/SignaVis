@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════
-// corpus-adapter.test.mjs — Tests für TauriCorpusAdapter
+// corpus-adapter.test.mjs — Tests for TauriCorpusAdapter
 //
-// Mockt @tauri-apps/api/core und prüft:
-//   - Korrekte IPC-Befehlsnamen
-//   - Korrekte Argument-Serialisierung
-//   - Fehlerweiterleitung
+// Mocks @tauri-apps/api/core and verifies:
+//   - Correct IPC command names
+//   - Correct argument serialisation
+//   - Error forwarding
 //
-// Kein echtes Tauri nötig — läuft in Node.js direkt.
+// No real Tauri required — runs directly in Node.js.
 // ═══════════════════════════════════════════════════════════════════════
 
 import test from 'node:test';
@@ -14,11 +14,11 @@ import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import { register } from 'node:module';
 
-// ── Tauri-IPC-Mock ───────────────────────────────────────────────────
+// ── Tauri IPC mock ────────────────────────────────────────────────────
 
 /**
- * Erzeugt einen Mock für @tauri-apps/api/core.
- * invoke() speichert den letzten Aufruf und gibt das vorbereitete Ergebnis zurück.
+ * Creates a mock for @tauri-apps/api/core.
+ * invoke() records the last call and returns the prepared result.
  */
 function makeTauriMock(result = {}) {
     const calls = [];
@@ -30,11 +30,11 @@ function makeTauriMock(result = {}) {
     return { calls, invokeFn };
 }
 
-// ── Test-Hilfsfunktionen ─────────────────────────────────────────────
+// ── Test helper functions ─────────────────────────────────────────────
 
 /**
- * Wrapper der die TauriCorpusAdapter-Funktionen mit einem Mock-invoke aufruft.
- * Da der Adapter dynamisch importiert, simulieren wir hier die Logik direkt.
+ * Wrapper that calls TauriCorpusAdapter functions with a mock invoke.
+ * Since the adapter imports dynamically, we simulate the logic directly here.
  */
 function datasetAdapterWith(invokeFn) {
     async function invoke(command, args) {
@@ -86,29 +86,29 @@ function datasetAdapterWith(invokeFn) {
     };
 }
 
-// ── Dataset-Commands ──────────────────────────────────────────────────
+// ── Dataset commands ──────────────────────────────────────────────────
 
-test('datasetCreate: sendet korrekten IPC-Befehl', async () => {
+test('datasetCreate: sends correct IPC command', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'c1', name: 'Test Dataset' });
     const adapter = datasetAdapterWith(invokeFn);
 
-    const result = await adapter.datasetCreate('Test Dataset', 'Beschreibung');
+    const result = await adapter.datasetCreate('Test Dataset', 'Description');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].command, 'dataset_create');
     assert.equal(calls[0].args.args.name, 'Test Dataset');
-    assert.equal(calls[0].args.args.description, 'Beschreibung');
+    assert.equal(calls[0].args.args.description, 'Description');
     assert.equal(result.id, 'c1');
 });
 
-test('datasetCreate: description kann fehlen (undefined)', async () => {
-    const { calls, invokeFn } = makeTauriMock({ id: 'c2', name: 'Kein Desc' });
+test('datasetCreate: description may be absent (undefined)', async () => {
+    const { calls, invokeFn } = makeTauriMock({ id: 'c2', name: 'No Desc' });
     const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.datasetCreate('Kein Desc');
+    await adapter.datasetCreate('No Desc');
     assert.equal(calls[0].args.args.description, undefined);
 });
 
-test('datasetList: sendet dataset_list ohne Argumente', async () => {
+test('datasetList: sends dataset_list without arguments', async () => {
     const { calls, invokeFn } = makeTauriMock([]);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -117,7 +117,7 @@ test('datasetList: sendet dataset_list ohne Argumente', async () => {
     assert.deepEqual(result, []);
 });
 
-test('datasetGet: sendet id korrekt', async () => {
+test('datasetGet: sends id correctly', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'abc', name: 'X' });
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -126,7 +126,7 @@ test('datasetGet: sendet id korrekt', async () => {
     assert.equal(calls[0].args.id, 'abc');
 });
 
-test('datasetDelete: sendet id korrekt', async () => {
+test('datasetDelete: sends id correctly', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -135,20 +135,20 @@ test('datasetDelete: sendet id korrekt', async () => {
     assert.equal(calls[0].args.id, 'del-id');
 });
 
-test('datasetUpdateMeta: sendet alle Felder', async () => {
-    const { calls, invokeFn } = makeTauriMock({ id: 'x', name: 'Neu' });
+test('datasetUpdateMeta: sends all fields', async () => {
+    const { calls, invokeFn } = makeTauriMock({ id: 'x', name: 'New' });
     const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.datasetUpdateMeta('x', 'Neu', 'Neue Beschreibung');
+    await adapter.datasetUpdateMeta('x', 'New', 'New description');
     assert.equal(calls[0].command, 'dataset_update_meta');
     assert.equal(calls[0].args.args.id, 'x');
-    assert.equal(calls[0].args.args.name, 'Neu');
-    assert.equal(calls[0].args.args.description, 'Neue Beschreibung');
+    assert.equal(calls[0].args.args.name, 'New');
+    assert.equal(calls[0].args.args.description, 'New description');
 });
 
-// ── Recording-Commands ───────────────────────────────────────────────
+// ── Recording commands ───────────────────────────────────────────────
 
-test('recordingList: sendet datasetId, limit, offset', async () => {
+test('recordingList: sends datasetId, limit, offset', async () => {
     const { calls, invokeFn } = makeTauriMock([]);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -159,7 +159,7 @@ test('recordingList: sendet datasetId, limit, offset', async () => {
     assert.equal(calls[0].args.args.offset, 0);
 });
 
-test('recordingGet: sendet id', async () => {
+test('recordingGet: sends id', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'r1' });
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -168,7 +168,7 @@ test('recordingGet: sendet id', async () => {
     assert.equal(calls[0].args.id, 'r1');
 });
 
-test('recordingSetTags: sendet id und tags-Array', async () => {
+test('recordingSetTags: sends id and tags array', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -178,7 +178,7 @@ test('recordingSetTags: sendet id und tags-Array', async () => {
     assert.deepEqual(calls[0].args.args.tags, ['reviewed', 'Turdus merula']);
 });
 
-test('recordingSetTags: leeres Tags-Array ist gültig', async () => {
+test('recordingSetTags: empty tags array is valid', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -186,7 +186,7 @@ test('recordingSetTags: leeres Tags-Array ist gültig', async () => {
     assert.deepEqual(calls[0].args.args.tags, []);
 });
 
-test('recordingDelete: sendet id', async () => {
+test('recordingDelete: sends id', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -195,7 +195,7 @@ test('recordingDelete: sendet id', async () => {
     assert.equal(calls[0].args.id, 'r99');
 });
 
-test('recordingCount: sendet datasetId', async () => {
+test('recordingCount: sends datasetId', async () => {
     const { calls, invokeFn } = makeTauriMock(42);
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -205,9 +205,9 @@ test('recordingCount: sendet datasetId', async () => {
     assert.equal(count, 42);
 });
 
-// ── Import-Wizard ────────────────────────────────────────────────────
+// ── Import wizard ─────────────────────────────────────────────────────
 
-test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
+test('recordingImportFolder: sends complete configuration', async () => {
     const importResult = {
         imported: 10, skipped: 2, errors: 0, errorMessages: [], durationMs: 850,
     };
@@ -216,7 +216,7 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
 
     const result = await adapter.recordingImportFolder({
         datasetId: 'c1',
-        folderPath: '/data/aufnahmen',
+        folderPath: '/data/recordings',
         pathPattern: '{recorder_id}/{site}/{week}',
         copyFiles: true,
         extensions: ['wav', 'flac'],
@@ -224,7 +224,7 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
 
     assert.equal(calls[0].command, 'recording_import_folder');
     assert.equal(calls[0].args.args.datasetId, 'c1');
-    assert.equal(calls[0].args.args.folderPath, '/data/aufnahmen');
+    assert.equal(calls[0].args.args.folderPath, '/data/recordings');
     assert.equal(calls[0].args.args.pathPattern, '{recorder_id}/{site}/{week}');
     assert.equal(calls[0].args.args.skipDuplicates, true);
     assert.deepEqual(calls[0].args.args.extensions, ['wav', 'flac']);
@@ -232,7 +232,7 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
     assert.equal(result.skipped, 2);
 });
 
-test('recordingImportFolder: extensions ist optional (undefined)', async () => {
+test('recordingImportFolder: extensions is optional (undefined)', async () => {
     const { calls, invokeFn } = makeTauriMock({ imported: 0, skipped: 0, errors: 0, errorMessages: [], durationMs: 0 });
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -246,19 +246,19 @@ test('recordingImportFolder: extensions ist optional (undefined)', async () => {
     assert.equal(calls[0].args.args.extensions, undefined);
 });
 
-// ── Fehlerweiterleitung ───────────────────────────────────────────────
+// ── Error forwarding ──────────────────────────────────────────────────
 
-test('Fehler wird korrekt weitergeleitet', async () => {
-    const { invokeFn } = makeTauriMock(new Error('IPC-Fehler: dataset nicht gefunden'));
+test('error is forwarded correctly', async () => {
+    const { invokeFn } = makeTauriMock(new Error('IPC error: dataset not found'));
     const adapter = datasetAdapterWith(invokeFn);
 
     await assert.rejects(
         () => adapter.datasetGet('nonexistent'),
-        { message: 'IPC-Fehler: dataset nicht gefunden' },
+        { message: 'IPC error: dataset not found' },
     );
 });
 
-test('recordingSetTags: Fehler bei ungültiger ID weitergeleitet', async () => {
+test('recordingSetTags: error forwarded for invalid ID', async () => {
     const { invokeFn } = makeTauriMock(new Error('recording not found'));
     const adapter = datasetAdapterWith(invokeFn);
 
@@ -268,9 +268,9 @@ test('recordingSetTags: Fehler bei ungültiger ID weitergeleitet', async () => {
     );
 });
 
-// ── Batch-Operationen ────────────────────────────────────────────────
+// ── Batch operations ──────────────────────────────────────────────────
 
-test('Mehrere Datasets erstellen und auflisten (Mock-Sequenz)', async () => {
+test('Create and list multiple datasets (mock sequence)', async () => {
     const datasets = [
         { id: 'c1', name: 'Alpha', recordingCount: 5 },
         { id: 'c2', name: 'Beta', recordingCount: 12 },

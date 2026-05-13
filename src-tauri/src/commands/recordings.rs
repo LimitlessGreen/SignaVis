@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
-// commands/recordings.rs — Tauri IPC Commands für Recording-Verwaltung (Dataset-Kontext)
-// inkl. Ordner-Import-Pipeline
+// commands/recordings.rs — Tauri IPC commands for recording management (dataset context)
+// including folder import pipeline
 // ═══════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use crate::helpers::time::now_millis;
 
 use crate::commands::corpus::CorpusStoreState;
 
-// Bekannte Audio-Erweiterungen
+// Known audio extensions
 const AUDIO_EXTENSIONS: &[&str] = &[
     "wav", "wave", "mp3", "flac", "ogg", "opus", "aac", "m4a", "wv", "aif", "aiff",
 ];
@@ -28,7 +28,7 @@ fn is_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Berechnet SHA-256-Hash der ersten 64KB einer Datei (schnell + ausreichend für Duplikaterkennung).
+/// Computes the SHA-256 hash of the first 64 KB of a file (fast + sufficient for duplicate detection).
 fn file_hash_fast(path: &Path) -> Option<String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).ok()?;
@@ -36,15 +36,15 @@ fn file_hash_fast(path: &Path) -> Option<String> {
     let n = file.read(&mut buf).ok()?;
     let mut hasher = Sha256::new();
     hasher.update(&buf[..n]);
-    // Größe hinzufügen um Kollisionen zu reduzieren
+    // Include size to reduce collisions
     if let Ok(meta) = std::fs::metadata(path) {
         hasher.update(meta.len().to_le_bytes());
     }
     Some(hex::encode(hasher.finalize()))
 }
 
-/// Extrahiert einfache Audio-Metadaten ohne externe Abhängigkeit.
-/// Für WAV: Header parsen. Für andere Formate: Schätzwerte aus Dateigröße.
+/// Extracts basic audio metadata without external dependencies.
+/// For WAV: parse header. For other formats: estimate from file size.
 fn extract_audio_metadata(path: &Path) -> AudioMetadata {
     let size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let ext = path
@@ -64,7 +64,7 @@ fn extract_audio_metadata(path: &Path) -> AudioMetadata {
         _ => "audio/octet-stream",
     };
 
-    // WAV-Header parsen für genaue Metadaten
+    // Parse WAV header for accurate metadata
     let wav_meta = if ext == "wav" || ext == "wave" {
         parse_wav_header(path)
     } else {
@@ -80,7 +80,7 @@ fn extract_audio_metadata(path: &Path) -> AudioMetadata {
             mime_type: mime_type.into(),
         }
     } else {
-        // Schätzung: bei 48kHz Mono ca. 96kB/s
+        // Estimate: ~96 kB/s at 48 kHz mono
         let estimated_duration = if size_bytes > 0 {
             size_bytes as f64 / 96_000.0
         } else {
@@ -96,18 +96,18 @@ fn extract_audio_metadata(path: &Path) -> AudioMetadata {
     }
 }
 
-/// Parst WAV-Datei-Header um Samplerate, Kanäle und Dauer zu extrahieren.
+/// Parses a WAV file header to extract sample rate, channels, and duration.
 fn parse_wav_header(path: &Path) -> Option<(u32, u8, f64)> {
     use std::io::Read;
     let mut f = std::fs::File::open(path).ok()?;
     let mut header = [0u8; 44];
     f.read_exact(&mut header).ok()?;
 
-    // RIFF/WAVE prüfen
+    // Verify RIFF/WAVE marker
     if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {
         return None;
     }
-    // PCM fmt chunk (kann nicht bei allen WAVs an Position 12 sein, aber für Standard-WAV)
+    // PCM fmt chunk (may not be at position 12 for all WAVs, but works for standard WAV)
     if &header[12..16] != b"fmt " {
         return None;
     }
@@ -128,9 +128,9 @@ fn parse_wav_header(path: &Path) -> Option<(u32, u8, f64)> {
     Some((sample_rate, num_channels, duration))
 }
 
-/// Extrahiert Metadaten aus dem Dateipfad anhand eines Musters.
-/// Muster: "{recorder_id}/{site}/{week}/"
-/// Ergebnis: HashMap mit extrahierten Werten.
+/// Extracts metadata from the file path according to a pattern.
+/// Pattern: "{recorder_id}/{site}/{week}/"
+/// Returns a HashMap of extracted values.
 fn extract_path_fields(
     filepath: &Path,
     base_dir: &Path,
@@ -138,13 +138,13 @@ fn extract_path_fields(
 ) -> std::collections::HashMap<String, String> {
     let mut fields = std::collections::HashMap::new();
 
-    // Relativen Pfad ermitteln
+    // Determine relative path
     let rel_path = match filepath.strip_prefix(base_dir) {
         Ok(p) => p,
         Err(_) => return fields,
     };
 
-    // Verzeichniskomponenten als Strings
+    // Directory components as strings
     let components: Vec<&str> = rel_path
         .components()
         .filter_map(|c| {
@@ -156,13 +156,13 @@ fn extract_path_fields(
         })
         .collect();
 
-    // Muster-Tokens (ohne Dateiname)
+    // Pattern tokens (excluding filename)
     let pattern_parts: Vec<&str> = pattern
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
 
-    // Komponentenanzahl stimmt überein (letzte Komponente ist Dateiname, überspringen)
+    // Component count matches (last component is filename, skip it)
     let dir_components = if components.len() > 1 {
         &components[..components.len() - 1]
     } else {
@@ -173,7 +173,7 @@ fn extract_path_fields(
         if i >= dir_components.len() {
             break;
         }
-        // Prüfen ob Platzhalter {field_name}
+        // Check for placeholder {field_name}
         if let (Some(start), Some(end)) = (part.find('{'), part.rfind('}')) {
             let field_name = &part[start + 1..end];
             if !field_name.is_empty() {
@@ -188,7 +188,7 @@ fn extract_path_fields(
     fields
 }
 
-// ── recording_import_folder ──────────────────────────────────────────
+// ── recording_import_folder ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -217,7 +217,7 @@ pub async fn recording_import_folder(
 ) -> Result<ImportResult, String> {
     let start = std::time::Instant::now();
 
-    // Dataset-Existenz prüfen
+    // Verify dataset exists
     let _ = store
         .dataset_get(&args.dataset_id)
         .await?
@@ -244,7 +244,7 @@ pub async fn recording_import_folder(
     let mut error_messages = Vec::new();
     let mut batch: Vec<RecordingRecord> = Vec::new();
 
-    // Ordner-Traversierung
+    // Folder traversal
     for entry in WalkDir::new(&folder)
         .follow_links(false)
         .into_iter()
@@ -255,7 +255,7 @@ pub async fn recording_import_folder(
             continue;
         }
 
-        // Erweiterungsfilter
+        // Extension filter
         let ext = path
             .extension()
             .and_then(|s| s.to_str())
@@ -272,7 +272,7 @@ pub async fn recording_import_folder(
             continue;
         }
 
-        // Dateipfad als absoluten Pfad sichern
+        // Canonicalise file path
         let abs_path = match path.canonicalize() {
             Ok(p) => p,
             Err(e) => {
@@ -282,7 +282,7 @@ pub async fn recording_import_folder(
             }
         };
 
-        // Duplikat-Check via Hash
+        // Duplicate check via hash
         let file_hash = if skip_dupes {
             file_hash_fast(&abs_path)
         } else {
@@ -304,18 +304,17 @@ pub async fn recording_import_folder(
             }
         }
 
-        // Metadaten extrahieren
+        // Extract metadata
         let metadata = extract_audio_metadata(&abs_path);
 
-        // Pfad-basierte Metadaten extrahieren
+        // Extract path-based metadata
         let path_fields = if !pattern.is_empty() {
             extract_path_fields(&abs_path, &folder, pattern)
         } else {
             std::collections::HashMap::new()
         };
 
-        // Aufnahmezeitpunkt aus Datei-Modifikationszeit ermitteln (Fallback)
-        // Aufnahmezeitpunkt aus Datei-Modifikationszeit (Fallback; später via BEXT/ID3)
+        // Derive recording timestamp from file modification time (fallback; refined later via BEXT/ID3)
         let recorded_at = std::fs::metadata(&abs_path)
             .ok()
             .and_then(|m| m.modified().ok())
@@ -336,7 +335,7 @@ pub async fn recording_import_folder(
 
         batch.push(rec);
 
-        // Batch-Insert alle 100 Einträge
+        // Batch insert every 100 entries
         if batch.len() >= 100 {
             match store.recording_bulk_insert(&batch).await {
                 Ok(n) => imported += n,
@@ -349,7 +348,7 @@ pub async fn recording_import_folder(
         }
     }
 
-    // Verbleibende Records einfügen
+    // Insert remaining records
     if !batch.is_empty() {
         match store.recording_bulk_insert(&batch).await {
             Ok(n) => imported += n,
@@ -360,7 +359,7 @@ pub async fn recording_import_folder(
         }
     }
 
-    // Recording-Count im Dataset aktualisieren
+    // Update recording count in dataset
     if imported > 0 {
         if let Ok(Some(mut dataset)) = store.dataset_get(&args.dataset_id).await {
             let total = store
@@ -462,10 +461,10 @@ pub async fn recording_count(
 
 // ── recording_distinct_values ─────────────────────────────────────────
 
-/// Gibt alle distinkten Werte für ein gegebenes Pfad-Feld innerhalb eines
-/// Datasets zurück. Wird für die Dropdown-Filter in der Toolbar verwendet.
+/// Returns all distinct values for a given path field within a dataset.
+/// Used for the dropdown filters in the toolbar.
 ///
-/// Beispiel: field_name = "site" → ["Waldrand-Nord", "Seeufer", …]
+/// Example: field_name = "site" → ["Forest-Edge-North", "Lake-Shore", …]
 #[tauri::command]
 pub async fn recording_distinct_values(
     store: State<'_, CorpusStoreState>,

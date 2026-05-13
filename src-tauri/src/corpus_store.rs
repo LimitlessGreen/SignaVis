@@ -1,19 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════════
-// corpus_store.rs — SurrealDB-basierter Dataset/Recording-Store
+// corpus_store.rs — SurrealDB-based Dataset/Recording store
 //
-// Betriebsmodi:
-//   - Mit Feature "embedded-db": SurrealKV (persistent, reines Rust)
-//   - Mit Feature "mem-db":      Mem-Backend (in-memory, Tests/PoC)
-//   - Fallback:                  JSON-Dateien (kein surrealdb-Feature aktiv)
+// Operating modes:
+//   - With feature "embedded-db": SurrealKV (persistent, pure Rust)
+//   - With feature "mem-db":      Mem backend (in-memory, tests/PoC)
+//   - Fallback:                   JSON files (no surrealdb feature active)
 //
-// Der Store wird als Tauri-Managed-State registriert und ist
+// The store is registered as Tauri managed state and is
 // Clone + Send + Sync.
 // ═══════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// ── Datentypen ────────────────────────────────────────────────────────
+// ── Data types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,12 +77,12 @@ pub struct RecordingRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub recorded_at: Option<i64>, // Unix-Millisekunden; später via BEXT/ID3 präzisiert
+    pub recorded_at: Option<i64>, // Unix milliseconds; refined later via BEXT/ID3
     #[serde(default)]
     pub fields: std::collections::HashMap<String, String>,
 }
 
-// ── Store ─────────────────────────────────────────────────────────────
+// ── Store ──────────────────────────────────────────────────────────────
 
 #[cfg(any(feature = "embedded-db", feature = "mem-db"))]
 mod surreal_impl {
@@ -95,7 +95,7 @@ mod surreal_impl {
     #[cfg(feature = "mem-db")]
     use surrealdb::engine::local::Mem;
 
-    /// Hilfsstruct für COUNT()-Abfragen (serde_json::Value nicht mit SurrealDB kompatibel)
+    /// Helper struct for COUNT() queries (serde_json::Value is not compatible with SurrealDB)
     #[derive(serde::Deserialize)]
     struct CountRow {
         c: i64,
@@ -138,7 +138,7 @@ pub struct CorpusStore {
         }
 
         async fn init_schema(&self) -> Result<(), String> {
-            // Dataset-Tabelle (schemaless — vermeidet Konflikte mit id:Thing vs. string)
+            // Dataset table (schemaless — avoids conflicts with id:Thing vs. string)
             self.db
                 .query(
                     "DEFINE TABLE IF NOT EXISTS dataset SCHEMALESS;
@@ -147,7 +147,7 @@ pub struct CorpusStore {
                 .await
                 .map_err(|e| format!("corpus_store: init dataset schema: {e}"))?;
 
-            // Recording-Tabelle (schemaless für dynamische Felder)
+            // Recording table (schemaless for dynamic fields)
             self.db
                 .query(
                     "DEFINE TABLE IF NOT EXISTS recording SCHEMALESS;
@@ -161,7 +161,7 @@ pub struct CorpusStore {
             Ok(())
         }
 
-        // ── Dataset CRUD ──────────────────────────────────────────────
+        // ── Dataset CRUD ─────────────────────────────────────────────
 
         pub async fn dataset_create(&self, dataset: &DatasetRecord) -> Result<(), String> {
             self.db
@@ -208,7 +208,7 @@ pub struct CorpusStore {
         }
 
         pub async fn dataset_delete(&self, id: &str) -> Result<(), String> {
-            // Alle Recordings des Datasets löschen
+            // Delete all recordings belonging to the dataset
             let cid = id.to_owned();
             self.db
                 .query("DELETE recording WHERE datasetId = $cid")
@@ -307,8 +307,8 @@ pub struct CorpusStore {
             id: &str,
             tags: &[String],
         ) -> Result<(), String> {
-            // SurrealDB: id ist ein Thing-Typ (recording:uuid), kein einfacher String.
-            // type::thing('recording', $rid) wandelt den String in eine Record-ID um.
+            // SurrealDB: id is a Thing type (recording:uuid), not a plain string.
+            // type::thing('recording', $rid) converts the string into a record ID.
             let rid = id.to_owned();
             let owned_tags: Vec<String> = tags.to_vec();
             self.db
@@ -342,8 +342,8 @@ pub struct CorpusStore {
             Ok(())
         }
 
-        /// Gibt alle distinkten Werte eines Pfad-Felds in einem Dataset zurück.
-        /// Pfad-Felder sind als camelCase-Key in der `fields`-Map gespeichert.
+        /// Returns all distinct values of a path field within a dataset.
+        /// Path fields are stored as camelCase keys in the `fields` map.
         pub async fn recording_distinct_field_values(
             &self,
             dataset_id: &str,
@@ -351,7 +351,7 @@ pub struct CorpusStore {
         ) -> Result<Vec<String>, String> {
             let cid = dataset_id.to_owned();
             let field = field_name.to_owned();
-            // SurrealQL: Felder in der fields-Map werden als fields.{name} adressiert
+            // SurrealQL: fields in the fields map are addressed as fields.{name}
             let mut resp = self
                 .db
                 .query(format!(
@@ -375,7 +375,7 @@ pub struct CorpusStore {
             Ok(values)
         }
 
-        /// Gibt alle Recordings eines Datasets ohne Pagination zurück (für Batch-Operationen).
+        /// Returns all recordings of a dataset without pagination (for batch operations).
         pub async fn recording_list_by_dataset_all(
             &self,
             dataset_id: &str,
@@ -396,10 +396,10 @@ pub struct CorpusStore {
             Ok(result)
         }
 
-        /// Setzt ein beliebiges dynamisches Feld auf einem Recording (SurrealDB SCHEMALESS).
+        /// Sets an arbitrary dynamic field on a recording (SurrealDB SCHEMALESS).
         ///
-        /// `field_name` muss bereits durch `sanitize_field_name` validiert sein
-        /// (nur `[a-zA-Z][a-zA-Z0-9_]*`) — wird direkt in die Query interpoliert.
+        /// `field_name` must already be validated by `sanitize_field_name`
+        /// (only `[a-zA-Z][a-zA-Z0-9_]*`) — it is interpolated directly into the query.
         pub async fn recording_set_dynamic_field(
             &self,
             id: &str,
@@ -421,7 +421,7 @@ pub struct CorpusStore {
     }
 }
 
-/// Fallback: Wenn weder embedded-db noch mem-db aktiv sind.
+/// Fallback: when neither embedded-db nor mem-db is active.
 #[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
 mod json_fallback {
     use super::*;
@@ -638,7 +638,7 @@ mod json_fallback {
             Ok(())
         }
 
-        /// Gibt alle Recordings eines Datasets ohne Pagination zurück (für Batch-Operationen).
+        /// Returns all recordings of a dataset without pagination (for batch operations).
         pub async fn recording_list_by_dataset_all(
             &self,
             dataset_id: &str,
@@ -658,9 +658,9 @@ mod json_fallback {
             Ok(recs)
         }
 
-        /// Setzt ein beliebiges dynamisches Feld auf einem Recording.
-        /// Im JSON-Fallback wird das Recording als `serde_json::Value` geladen,
-        /// das Feld gesetzt und zurückgeschrieben.
+        /// Sets an arbitrary dynamic field on a recording.
+        /// In the JSON fallback the recording is loaded as a `serde_json::Value`,
+        /// the field is set, and the document is written back.
         pub async fn recording_set_dynamic_field(
             &self,
             id: &str,
@@ -693,7 +693,7 @@ mod json_fallback {
     }
 }
 
-// Re-export der aktiven Implementierung
+// Re-export of the active implementation
 #[cfg(any(feature = "embedded-db", feature = "mem-db"))]
 pub use surreal_impl::CorpusStore;
 
@@ -703,7 +703,7 @@ pub use json_fallback::CorpusStore;
 // Type alias for consistency — CorpusStore is the internal store name, DatasetRecord is the domain type.
 
 // ═══════════════════════════════════════════════════════════════════════
-// Tests — laufen mit Feature "mem-db" (in-memory, kein Dateisystem nötig)
+// Tests — run with feature "mem-db" (in-memory, no filesystem required)
 //
 //   cargo test --features mem-db -p signavis
 // ═══════════════════════════════════════════════════════════════════════
@@ -712,11 +712,11 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Öffnet einen frischen In-Memory-Store für jeden Test.
+    /// Opens a fresh in-memory store for each test.
     async fn open_store() -> CorpusStore {
         CorpusStore::open(PathBuf::from("/tmp/signavis_test"))
             .await
-            .expect("Store öffnen fehlgeschlagen")
+            .expect("Opening store failed")
     }
 
     fn make_dataset(name: &str) -> DatasetRecord {
@@ -756,7 +756,7 @@ mod tests {
         store.dataset_create(&dataset).await.unwrap();
 
         let got = store.dataset_get(&dataset.id).await.unwrap();
-        assert!(got.is_some(), "dataset_get sollte Some zurückgeben");
+        assert!(got.is_some(), "dataset_get should return Some");
         assert_eq!(got.unwrap().name, "Test Dataset");
     }
 
@@ -775,12 +775,12 @@ mod tests {
     #[tokio::test]
     async fn test_dataset_delete() {
         let store = open_store().await;
-        let dataset = make_dataset("Löschen");
+        let dataset = make_dataset("Delete");
         store.dataset_create(&dataset).await.unwrap();
         store.dataset_delete(&dataset.id).await.unwrap();
 
         let got = store.dataset_get(&dataset.id).await.unwrap();
-        assert!(got.is_none(), "dataset sollte nach Delete None sein");
+        assert!(got.is_none(), "dataset should be None after delete");
     }
 
     // ── Recording CRUD ────────────────────────────────────────────────
@@ -802,7 +802,7 @@ mod tests {
     #[tokio::test]
     async fn test_recording_list_by_dataset() {
         let store = open_store().await;
-        let dataset = make_dataset("Liste");
+        let dataset = make_dataset("List");
         store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..5 {
@@ -817,7 +817,7 @@ mod tests {
     #[tokio::test]
     async fn test_recording_count() {
         let store = open_store().await;
-        let dataset = make_dataset("Zählen");
+        let dataset = make_dataset("Count");
         store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..3 {
@@ -829,7 +829,7 @@ mod tests {
         assert_eq!(count, 3);
     }
 
-    /// Kerntest: Tags schreiben und zurücklesen — prüft type::thing() Fix.
+    /// Core test: write and read back tags — verifies type::thing() fix.
     #[tokio::test]
     async fn test_recording_update_tags_roundtrip() {
         let store = open_store().await;
@@ -843,7 +843,7 @@ mod tests {
         store.recording_update_tags(&rec.id, &new_tags).await.unwrap();
 
         let got = store.recording_get(&rec.id).await.unwrap().unwrap();
-        assert_eq!(got.tags, new_tags, "Tags-Roundtrip fehlgeschlagen — type::thing() Fix prüfen");
+        assert_eq!(got.tags, new_tags, "Tags round-trip failed — check type::thing() fix");
     }
 
     #[tokio::test]
@@ -856,7 +856,7 @@ mod tests {
         store.recording_insert(&rec).await.unwrap();
 
         let exists = store.recording_hash_exists("abc123").await.unwrap();
-        assert!(exists, "Hash-Dedup sollte true zurückgeben");
+        assert!(exists, "Hash dedup should return true");
 
         let not_exists = store.recording_hash_exists("unknown_hash").await.unwrap();
         assert!(!not_exists);
@@ -865,7 +865,7 @@ mod tests {
     #[tokio::test]
     async fn test_dataset_delete_cascades_recordings() {
         let store = open_store().await;
-        let dataset = make_dataset("Kaskade");
+        let dataset = make_dataset("Cascade");
         store.dataset_create(&dataset).await.unwrap();
 
         let rec = make_recording(&dataset.id, "/audio/cascade.wav");
@@ -873,15 +873,15 @@ mod tests {
 
         store.dataset_delete(&dataset.id).await.unwrap();
 
-        // Recording sollte nach Cascade-Delete weg sein
+        // Recording should be gone after cascade delete
         let got = store.recording_get(&rec.id).await.unwrap();
-        assert!(got.is_none(), "Recording sollte nach Dataset-Delete gelöscht sein");
+        assert!(got.is_none(), "Recording should be deleted after dataset delete");
     }
 
     #[tokio::test]
     async fn test_recording_pagination() {
         let store = open_store().await;
-        let dataset = make_dataset("Paginierung");
+        let dataset = make_dataset("Pagination");
         store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..10u32 {
@@ -892,12 +892,12 @@ mod tests {
         let page1 = store.recording_list_by_dataset(&dataset.id, 5, 0).await.unwrap();
         let page2 = store.recording_list_by_dataset(&dataset.id, 5, 5).await.unwrap();
 
-        assert_eq!(page1.len(), 5, "Seite 1 sollte 5 Einträge haben");
-        assert_eq!(page2.len(), 5, "Seite 2 sollte 5 Einträge haben");
+        assert_eq!(page1.len(), 5, "Page 1 should have 5 entries");
+        assert_eq!(page2.len(), 5, "Page 2 should have 5 entries");
 
-        // Keine Duplikate zwischen Seiten
+        // No duplicates between pages
         let ids1: std::collections::HashSet<_> = page1.iter().map(|r| &r.id).collect();
         let ids2: std::collections::HashSet<_> = page2.iter().map(|r| &r.id).collect();
-        assert!(ids1.is_disjoint(&ids2), "Seiten sollten keine Duplikate enthalten");
+        assert!(ids1.is_disjoint(&ids2), "Pages should not contain duplicates");
     }
 }

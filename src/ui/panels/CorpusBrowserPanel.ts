@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/CorpusBrowserPanel.ts — Dataset-Verwaltungsansicht
+// ui/panels/CorpusBrowserPanel.ts — Dataset management view
 //
-// Zeigt alle Datasets, erlaubt Erstellen, Löschen und Auswählen.
+// Shows all datasets, allows creating, deleting, and selecting them.
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Dataset } from '../../domain/corpus/types.ts';
@@ -40,30 +40,30 @@ export class DatasetBrowserPanel {
             <div class="dataset-browser">
                 <div class="dataset-browser__header">
                     <h2 class="dataset-browser__title">Datasets</h2>
-                    <button class="btn btn--primary" id="datasetNewBtn">+ Neues Dataset</button>
+                    <button class="btn btn--primary" id="datasetNewBtn">+ New Dataset</button>
                 </div>
                 <div class="dataset-browser__create-form" id="datasetCreateForm" style="display:none">
                     <input
                         type="text"
                         class="input"
                         id="datasetNameInput"
-                        placeholder="Name des Datasets…"
+                        placeholder="Dataset name…"
                         maxlength="120"
                     />
                     <input
                         type="text"
                         class="input"
                         id="datasetDescInput"
-                        placeholder="Beschreibung (optional)"
+                        placeholder="Description (optional)"
                         maxlength="300"
                     />
                     <div class="dataset-browser__form-actions">
-                        <button class="btn btn--primary" id="datasetCreateConfirm">Erstellen</button>
-                        <button class="btn btn--ghost" id="datasetCreateCancel">Abbrechen</button>
+                        <button class="btn btn--primary" id="datasetCreateConfirm">Create</button>
+                        <button class="btn btn--ghost" id="datasetCreateCancel">Cancel</button>
                     </div>
                 </div>
                 <div class="dataset-browser__list" id="datasetList">
-                    <div class="dataset-browser__empty">Lade…</div>
+                    <div class="dataset-browser__empty">Loading…</div>
                 </div>
             </div>
         `;
@@ -109,13 +109,13 @@ export class DatasetBrowserPanel {
         const desc = descInput.value.trim() || undefined;
         try {
             const dataset = await datasetCreate(name, desc);
-            this.onStatusMessage(`Dataset "${dataset.name}" erstellt.`);
+            this.onStatusMessage(`Dataset "${dataset.name}" created.`);
             nameInput.value = '';
             descInput.value = '';
             form.style.display = 'none';
             await this.refresh();
         } catch (e) {
-            this.onStatusMessage(`Fehler beim Erstellen: ${e}`);
+            this.onStatusMessage(`Error creating dataset: ${e}`);
         }
     }
 
@@ -123,7 +123,7 @@ export class DatasetBrowserPanel {
         try {
             this.datasets = await datasetList();
         } catch (e) {
-            this.onStatusMessage(`Fehler beim Laden der Datasets: ${e}`);
+            this.onStatusMessage(`Error loading datasets: ${e}`);
             this.datasets = [];
         }
         this.renderList();
@@ -134,8 +134,8 @@ export class DatasetBrowserPanel {
         if (this.datasets.length === 0) {
             listEl.innerHTML = `
                 <div class="dataset-browser__empty">
-                    Noch keine Datasets vorhanden.<br>
-                    Erstelle ein neues Dataset und importiere Aufnahmen.
+                    No datasets yet.<br>
+                    Create a new dataset and import recordings.
                 </div>
             `;
             return;
@@ -146,7 +146,7 @@ export class DatasetBrowserPanel {
             .map((c) => this.renderDatasetCard(c))
             .join('');
 
-        // Events für Cards binden
+        // Bind events for cards
         listEl.querySelectorAll('[data-open-dataset]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const id = (btn as HTMLElement).dataset.openDataset!;
@@ -161,13 +161,13 @@ export class DatasetBrowserPanel {
                 const id = (btn as HTMLElement).dataset.deleteDataset!;
                 const dataset = this.datasets.find((c) => c.id === id);
                 if (!dataset) return;
-                if (!confirm(`Dataset "${dataset.name}" und alle Aufnahmen löschen?`)) return;
+                if (!confirm(`Delete dataset "${dataset.name}" and all its recordings?`)) return;
                 try {
                     await datasetDelete(id);
-                    this.onStatusMessage(`Dataset "${dataset.name}" gelöscht.`);
+                    this.onStatusMessage(`Dataset "${dataset.name}" deleted.`);
                     await this.refresh();
                 } catch (e) {
-                    this.onStatusMessage(`Fehler: ${e}`);
+                    this.onStatusMessage(`Error: ${e}`);
                 }
             });
         });
@@ -189,15 +189,15 @@ export class DatasetBrowserPanel {
                         <div class="dataset-card__name">${escapeHtml(dataset.name)}</div>
                         ${desc}
                         <div class="dataset-card__meta">
-                            <span class="badge badge--neutral">${count} Aufnahmen</span>
-                            <span class="dataset-card__date">Zuletzt: ${date}</span>
+                            <span class="badge badge--neutral">${count} recordings</span>
+                            <span class="dataset-card__date">Last: ${date}</span>
                         </div>
                     </div>
                 </div>
                 <button
                     class="btn btn--ghost btn--icon dataset-card__delete"
                     data-delete-dataset="${escapeHtml(dataset.id)}"
-                    title="Dataset löschen"
+                    title="Delete dataset"
                 >✕</button>
             </div>
         `;
