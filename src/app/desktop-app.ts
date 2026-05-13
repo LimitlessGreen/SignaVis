@@ -19,11 +19,15 @@ import {
     type LocalAnalysisJob,
 } from '../infrastructure/tauri/TauriPlatformScaffold.ts';
 import type { ProjectSummary } from '../domain/project/types.ts';
-import type { Dataset, Recording } from '../domain/corpus/types.ts';
+import type { Dataset, Recording, SoundEvent, SoundEvents } from '../domain/corpus/types.ts';
+import type { LinkedLabel } from '../shared/label.types.ts';
 import { DatasetBrowserPanel } from '../ui/panels/CorpusBrowserPanel.ts';
 import { RecordingGalleryPanel } from '../ui/panels/RecordingGalleryPanel.ts';
 import { ImportWizardPanel } from '../ui/panels/ImportWizardPanel.ts';
 import { RecordingDetailPanel } from '../ui/panels/RecordingDetailPanel.ts';
+import { SimilarityBrowserPanel } from '../ui/panels/SimilarityBrowserPanel.ts';
+import { EmbeddingScatterPanel } from '../ui/panels/EmbeddingScatterPanel.ts';
+import { ClusterBrowserPanel } from '../ui/panels/ClusterBrowserPanel.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
@@ -59,19 +63,22 @@ let player: BirdNETPlayer | null = null;
 
 // ── Dataset Browser State ─────────────────────────────────────────────
 
-type AppView = 'labeling' | 'dataset';
+type AppView = 'labeling' | 'corpus';
 let activeView: AppView = 'labeling';
 let datasetBrowserPanel: DatasetBrowserPanel | null = null;
 let currentDataset: Dataset | null = null;
 let recordingDetailPanel: RecordingDetailPanel | null = null;
+let similarityBrowserPanel: SimilarityBrowserPanel | null = null;
+let embeddingScatterPanel: EmbeddingScatterPanel | null = null;
+let clusterBrowserPanel: ClusterBrowserPanel | null = null;
 
 /** Switches between "labeling" and "dataset" view. */
 function switchView(view: AppView): void {
     activeView = view;
     const labelingEl = document.getElementById('labelingView')!;
-    const datasetEl  = document.getElementById('datasetBrowserView')!;
+    const datasetEl  = document.getElementById('corpusBrowserView')!;
 
-    if (view === 'dataset') {
+    if (view === 'corpus') {
         labelingEl.style.display = 'none';
         datasetEl.style.display  = 'flex';
         initDatasetView();
@@ -86,7 +93,7 @@ function switchView(view: AppView): void {
 }
 
 function initDatasetView(): void {
-    const mount = document.getElementById('datasetBrowserMount')!;
+    const mount = document.getElementById('corpusBrowserMount')!;
 
     if (!datasetBrowserPanel) {
         datasetBrowserPanel = new DatasetBrowserPanel({
@@ -100,14 +107,24 @@ function initDatasetView(): void {
 
 function showRecordingGallery(dataset: Dataset): void {
     currentDataset = dataset;
-    const mount = document.getElementById('datasetBrowserMount')!;
-    const detailMount = document.getElementById('datasetDetailMount')!;
+    const mount = document.getElementById('corpusBrowserMount')!;
+    const detailMount = document.getElementById('corpusDetailMount')!;
 
     // Initialise detail panel (right column)
     if (!recordingDetailPanel) {
         recordingDetailPanel = new RecordingDetailPanel({
             container: detailMount,
             onOpenInLabeler: (rec) => openRecordingInLabeler(rec),
+            onStatusMessage: setStatus,
+            onFindSimilar: (rec) => showSimilarRecordings(rec, detailMount, dataset),
+        });
+    }
+    // Initialise similarity browser (reused across calls)
+    if (!similarityBrowserPanel) {
+        const simMount = document.getElementById('similarityMount') ?? createSimilarityMount(detailMount);
+        similarityBrowserPanel = new SimilarityBrowserPanel({
+            container: simMount,
+            onOpenRecording: (rec) => recordingDetailPanel?.show(rec),
             onStatusMessage: setStatus,
         });
     }
@@ -118,6 +135,9 @@ function showRecordingGallery(dataset: Dataset): void {
         onBack: () => {
             datasetBrowserPanel = null;
             recordingDetailPanel = null;
+            similarityBrowserPanel = null;
+            embeddingScatterPanel = null;
+            clusterBrowserPanel = null;
             const newPanel = new DatasetBrowserPanel({
                 container: mount,
                 onDatasetSelect: showRecordingGallery,
@@ -130,16 +150,86 @@ function showRecordingGallery(dataset: Dataset): void {
         },
         onImport: () => showImportWizard(dataset),
         onOpenRecording: (rec) => {
-            // Show detail panel instead of jumping directly to labeler
-            recordingDetailPanel?.show(rec);
+            showRecordingDetail(rec, detailMount);
+        },
+        onShowClusters: () => showClusterBrowser(dataset),
+        onShowScatter: () => {
+            // Lazy-init the scatter panel in the main mount area
+            const scatterMount = document.getElementById('corpusBrowserMount')!;
+            if (!embeddingScatterPanel) {
+                embeddingScatterPanel = new EmbeddingScatterPanel({
+                    container: scatterMount,
+                    dataset,
+                    onOpenRecording: (rec) => showRecordingDetail(rec, detailMount),
+                    onStatusMessage: setStatus,
+                    onShowClusters: () => showClusterBrowser(dataset),
+                });
+            }
+            embeddingScatterPanel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
         },
         onStatusMessage: setStatus,
     });
     gallery.mount().catch((e) => setStatus(`Gallery error: ${e}`));
 }
 
+/** Shows the recording detail panel in the detail sidebar. */
+function showRecordingDetail(rec: Recording, detailMount: HTMLElement): void {
+    // Ensure the detail panel is visible (similarity may have swapped it)
+    if (!recordingDetailPanel) return;
+    const simMount = document.getElementById('similarityMount');
+    if (simMount) simMount.style.display = 'none';
+    const detailWrapper = detailMount.querySelector<HTMLElement>('.detail-panel-wrapper');
+    if (detailWrapper) detailWrapper.style.display = '';
+    recordingDetailPanel.show(rec);
+}
+
+/** Shows the similarity browser in the detail sidebar for the given recording. */
+function showSimilarRecordings(rec: Recording, detailMount: HTMLElement, _dataset: Dataset): void {
+    if (!similarityBrowserPanel) return;
+    // Hide the recording detail panel, show the similarity panel
+    const simMount = document.getElementById('similarityMount');
+    if (!simMount) return;
+    const detailWrapper = detailMount.querySelector<HTMLElement>('.detail-panel-wrapper');
+    if (detailWrapper) detailWrapper.style.display = 'none';
+    simMount.style.display = '';
+    similarityBrowserPanel.showSimilarTo(rec).catch((e) => setStatus(`Similarity error: ${e}`));
+}
+
+/** Shows (or creates) the Cluster Browser in the corpus main area. */
+function showClusterBrowser(dataset: Dataset): void {
+    const mount = document.getElementById('corpusBrowserMount')!;
+
+    if (clusterBrowserPanel) {
+        clusterBrowserPanel.updateDataset(dataset);
+        clusterBrowserPanel.load().catch((e) => setStatus(`Cluster-Fehler: ${e}`));
+        return;
+    }
+
+    clusterBrowserPanel = new ClusterBrowserPanel({
+        container: mount,
+        dataset,
+        onOpenRecording: (rec) => {
+            const detailMount = document.getElementById('corpusDetailMount')!;
+            showRecordingDetail(rec, detailMount);
+        },
+        onStatusMessage: setStatus,
+    });
+    clusterBrowserPanel.load().catch((e) => setStatus(`Cluster-Fehler: ${e}`));
+}
+
+/** Creates a hidden similarity panel mount inside the detail sidebar. */
+function createSimilarityMount(detailMount: HTMLElement): HTMLElement {
+    // Wrap existing content
+    const existing = detailMount.innerHTML;
+    detailMount.innerHTML = `
+        <div class="detail-panel-wrapper" style="height:100%;overflow:auto;">${existing}</div>
+        <div id="similarityMount" style="display:none;height:100%;overflow:auto;"></div>
+    `;
+    return detailMount.querySelector('#similarityMount') as HTMLElement;
+}
+
 function showImportWizard(dataset: Dataset): void {
-    const mount = document.getElementById('datasetBrowserMount')!;
+    const mount = document.getElementById('corpusBrowserMount')!;
 
     const wizard = new ImportWizardPanel({
         container: mount,
@@ -170,8 +260,45 @@ async function openFolderDialogPath(): Promise<string | null> {
 function openRecordingInLabeler(recording: Recording): void {
     // Switch to labeling view and load the file
     switchView('labeling');
-    loadAudioFile(recording.filepath);
+    const labels = extractSpectrogramLabels(recording);
+    loadAudioFile(recording.filepath).then(() => {
+        if (labels.length > 0) {
+            ensurePlayer().then((p) => p.setSpectrogramLabels(labels)).catch(() => { /* ignore */ });
+        }
+    }).catch(() => { /* error already shown in status bar */ });
     setStatus(`Opening: ${recording.filepath.split('/').pop()}`);
+}
+
+/** Converts all SoundEvents fields on a recording to spectrogram labels. */
+function extractSpectrogramLabels(recording: Recording): Partial<LinkedLabel>[] {
+    const labels: Partial<LinkedLabel>[] = [];
+    for (const [fieldName, fieldValue] of Object.entries(recording.fields ?? {})) {
+        if (!isSoundEventsField(fieldValue)) continue;
+        const events = (fieldValue as SoundEvents).soundEvents;
+        for (const evt of events) {
+            const confirmed = evt.tags?.includes('confirmed');
+            const rejected  = evt.tags?.includes('rejected');
+            labels.push({
+                id:          `${fieldName}_${evt.support[0]}_${evt.support[1]}_${evt.label}`,
+                start:       evt.support[0],
+                end:         evt.support[1],
+                label:       evt.label,
+                species:     evt.label,
+                confidence:  evt.confidence,
+                freqMin:     evt.freqRange?.[0],
+                freqMax:     evt.freqRange?.[1],
+                readonly:    true,
+                aiSuggested: { model: 'BirdNET', version: fieldName },
+                color:       confirmed ? '#22c55e' : rejected ? '#ef4444' : '#0ea5e9',
+            });
+        }
+    }
+    return labels;
+}
+
+function isSoundEventsField(value: unknown): value is SoundEvents {
+    if (!value || typeof value !== 'object') return false;
+    return Array.isArray((value as Record<string, unknown>).soundEvents);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────

@@ -27,6 +27,10 @@ export interface RecordingGalleryOptions {
     onStatusMessage?: (msg: string) => void;
     /** Called when a field is added so the dataset reference stays fresh. */
     onDatasetUpdated?: (updated: Dataset) => void;
+    /** Called when the user wants to open the Cluster Browser. */
+    onShowClusters?: () => void;
+    /** Called when the user wants to open the Embedding Scatter plot. */
+    onShowScatter?: () => void;
 }
 
 const PAGE_SIZE = 50;
@@ -39,6 +43,8 @@ export class RecordingGalleryPanel {
     private readonly onImport: (() => void) | undefined;
     private readonly onStatusMessage: (msg: string) => void;
     private readonly onDatasetUpdated: ((d: Dataset) => void) | undefined;
+    private readonly onShowClusters: (() => void) | undefined;
+    private readonly onShowScatter: (() => void) | undefined;
 
     private recordings: Recording[] = [];
     private offset = 0;
@@ -63,6 +69,8 @@ export class RecordingGalleryPanel {
         this.onImport = opts.onImport;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
         this.onDatasetUpdated = opts.onDatasetUpdated;
+        this.onShowClusters = opts.onShowClusters;
+        this.onShowScatter = opts.onShowScatter;
     }
 
     async mount(): Promise<void> {
@@ -115,6 +123,8 @@ export class RecordingGalleryPanel {
                         <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">
                             🔍 BirdNET
                         </button>
+                        <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Cluster-Browser öffnen">⬡ Cluster</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="UMAP Scatter öffnen">⬖ Scatter</button>
                         <button class="btn btn--primary" id="galleryImportBtn">+ Import</button>
                     </div>
                 </div>
@@ -189,6 +199,9 @@ export class RecordingGalleryPanel {
         backBtn.addEventListener('click', () => this.onBack());
         importBtn.addEventListener('click', () => this.onImport?.());
         loadMoreBtn.addEventListener('click', () => this.loadMore(false));
+
+        this.container.querySelector('#galleryClusterBtn')?.addEventListener('click', () => this.onShowClusters?.());
+        this.container.querySelector('#galleryScatterBtn')?.addEventListener('click', () => this.onShowScatter?.());
 
         // Fields button
         const fieldsBtn = this.container.querySelector('#galleryFieldsBtn') as HTMLButtonElement | null;

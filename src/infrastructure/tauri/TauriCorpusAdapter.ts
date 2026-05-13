@@ -227,3 +227,185 @@ export interface BirdnetDonePayload {
     status: 'completed' | 'failed';
     errorMessage?: string;
 }
+
+// ── Embedding / UMAP / Similarity ──────────────────────────────────────
+
+export interface EmbeddingRunArgs {
+    datasetId: string;
+    /** Dynamic field name to store embeddings under, e.g. "embedding". */
+    fieldName: string;
+    /** BirdNET model version, e.g. "2.4". */
+    version?: string;
+    /** Analyse only these recording IDs. Empty = all. */
+    recordingIds?: string[];
+    /** Path to the Python interpreter. */
+    pythonExecutable?: string;
+    /** Explicit path to embedding_sidecar.py. */
+    sidecarScript?: string;
+}
+
+export interface EmbeddingRunSummary {
+    jobId: string;
+    datasetId: string;
+    fieldName: string;
+    processed: number;
+    errors: number;
+}
+
+export async function datasetRunEmbedding(args: EmbeddingRunArgs): Promise<EmbeddingRunSummary> {
+    return invoke<EmbeddingRunSummary>('dataset_run_embedding', { args });
+}
+
+export interface DatasetComputeUmapArgs {
+    datasetId: string;
+    /** Field containing 1-D float-array embeddings. */
+    embeddingField: string;
+    /** Field to write [x, y] coordinates to. Default "umap2d". */
+    outputField?: string;
+    nNeighbors?: number;
+    minDist?: number;
+    randomState?: number;
+    /** Path to the Python interpreter. */
+    pythonExecutable?: string;
+    sidecarScript?: string;
+}
+
+export interface UmapSummary {
+    jobId: string;
+    datasetId: string;
+    outputField: string;
+    processed: number;
+}
+
+export async function datasetComputeUmap(args: DatasetComputeUmapArgs): Promise<UmapSummary> {
+    return invoke<UmapSummary>('dataset_compute_umap', { args });
+}
+
+export interface DatasetComputeUniquenessArgs {
+    datasetId: string;
+    embeddingField: string;
+    /** Field to write uniqueness score to. Default "uniqueness". */
+    outputField?: string;
+    /** k nearest neighbours to use. Default 5. */
+    k?: number;
+}
+
+export interface UniquenessRunSummary {
+    datasetId: string;
+    processed: number;
+    outputField: string;
+}
+
+export async function datasetComputeUniqueness(
+    args: DatasetComputeUniquenessArgs,
+): Promise<UniquenessRunSummary> {
+    return invoke<UniquenessRunSummary>('dataset_compute_uniqueness', { args });
+}
+
+export interface RecordingGetSimilarArgs {
+    recordingId: string;
+    datasetId: string;
+    embeddingField: string;
+    topK?: number;
+}
+
+export interface SimilarityResult {
+    recordingId: string;
+    filepath: string;
+    similarity: number;
+}
+
+export async function recordingGetSimilar(
+    args: RecordingGetSimilarArgs,
+): Promise<SimilarityResult[]> {
+    return invoke<SimilarityResult[]>('recording_get_similar', { args });
+}
+
+// ── Embedding event payloads ───────────────────────────────────────────
+
+export interface EmbeddingProgressPayload {
+    jobId: string;
+    datasetId: string;
+    current: number;
+    total: number;
+}
+
+export interface EmbeddingDonePayload {
+    jobId: string;
+    datasetId: string;
+    processed: number;
+    errors: number;
+    status: 'completed' | 'failed';
+    errorMessage?: string;
+}
+
+export interface UmapDonePayload {
+    jobId: string;
+    datasetId: string;
+    processed: number;
+    outputField: string;
+    status: 'completed' | 'failed';
+    errorMessage?: string;
+}
+
+// ── Phase 4: Clustering ────────────────────────────────────────────────
+
+export interface DatasetRunClusteringArgs {
+    datasetId: string;
+    embeddingField: string;
+    outputField?: string;
+    probabilityField?: string;
+    minClusterSize?: number;
+    minSamples?: number;
+    pythonExecutable?: string;
+    sidecarScript?: string;
+}
+
+export interface ClusteringRunSummary {
+    jobId: string;
+    datasetId: string;
+    outputField: string;
+    processed: number;
+    nClusters: number;
+    nNoise: number;
+}
+
+export async function datasetRunClustering(
+    args: DatasetRunClusteringArgs,
+): Promise<ClusteringRunSummary> {
+    return invoke<ClusteringRunSummary>('dataset_run_clustering', { args });
+}
+
+export interface ClusteringProgressPayload {
+    jobId: string;
+    datasetId: string;
+    message: string;
+}
+
+export interface ClusteringDonePayload {
+    jobId: string;
+    datasetId: string;
+    processed: number;
+    nClusters: number;
+    nNoise: number;
+}
+
+// ── Phase 4: Hardness ─────────────────────────────────────────────────
+
+export interface DatasetComputeHardnessArgs {
+    datasetId: string;
+    fieldName: string;
+    outputField?: string;
+}
+
+export interface HardnessRunSummary {
+    datasetId: string;
+    outputField: string;
+    processed: number;
+}
+
+export async function datasetComputeHardness(
+    args: DatasetComputeHardnessArgs,
+): Promise<HardnessRunSummary> {
+    return invoke<HardnessRunSummary>('dataset_compute_hardness', { args });
+}

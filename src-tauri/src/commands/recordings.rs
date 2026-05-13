@@ -400,17 +400,14 @@ pub async fn recording_list(
 ) -> Result<Vec<JsonValue>, String> {
     let limit = args.limit.unwrap_or(100).min(1000);
     let offset = args.offset.unwrap_or(0);
-    let recs = store
-        .recording_list_by_dataset(
+    store
+        .recording_list_json(
             &args.dataset_id,
             limit,
             offset,
             args.tag_filter.as_deref(),
         )
-        .await?;
-    recs.iter()
-        .map(|r| serde_json::to_value(r).map_err(|e| format!("recording_list: serialize: {e}")))
-        .collect()
+        .await
 }
 
 // ── recording_get ─────────────────────────────────────────────────────
@@ -420,11 +417,10 @@ pub async fn recording_get(
     store: State<'_, CorpusStoreState>,
     id: String,
 ) -> Result<JsonValue, String> {
-    let rec = store
-        .recording_get(&id)
+    store
+        .recording_get_json(&id)
         .await?
-        .ok_or_else(|| format!("recording_get: not found: {id}"))?;
-    serde_json::to_value(&rec).map_err(|e| format!("recording_get: serialize: {e}"))
+        .ok_or_else(|| format!("recording_get: not found: {id}"))
 }
 
 // ── recording_set_tags ────────────────────────────────────────────────

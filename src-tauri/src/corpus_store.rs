@@ -288,7 +288,7 @@ pub struct CorpusStore {
             tag_filter: Option<&str>,
         ) -> Result<Vec<RecordingRecord>, String> {
             let cid = dataset_id.to_owned();
-            let (query, mut builder) = if let Some(tag) = tag_filter {
+            let (query, builder) = if let Some(tag) = tag_filter {
                 let q = "SELECT *, record::id(id) AS id FROM recording
                          WHERE datasetId = $cid AND $tag IN tags
                          ORDER BY importedAt DESC, id ASC
@@ -508,7 +508,123 @@ pub struct CorpusStore {
                 .map_err(|e| format!("recording_set_dynamic_field: {e}"))?;
             Ok(())
         }
+
+        /// Returns a single recording as a raw JSON value, merging all dynamic
+        /// top-level SurrealDB properties into the `fields` sub-object so the
+        /// TypeScript `Recording.fields` interface is fully populated.
+        pub async fn recording_get_json(
+            &self,
+            id: &str,
+        ) -> Result<Option<serde_json::Value>, String> {
+            let rid = id.to_owned();
+            let mut resp = self
+                .db
+                .query("SELECT *, record::id(id) AS id FROM type::thing('recording', $id)")
+                .bind(("id", rid))
+                .await
+                .map_err(|e| format!("recording_get_json: {e}"))?;
+            let rows: Vec<serde_json::Value> =
+                resp.take(0).map_err(|e| format!("recording_get_json take: {e}"))?;
+            Ok(rows.into_iter().next().map(recording_doc_merge_fields))
+        }
+
+        /// Returns all recordings in a dataset as raw JSON, with dynamic fields
+        /// merged into the `fields` sub-object.
+        pub async fn recording_list_json(
+            &self,
+            dataset_id: &str,
+            limit: u64,
+            offset: u64,
+            tag_filter: Option<&str>,
+        ) -> Result<Vec<serde_json::Value>, String> {
+            let cid = dataset_id.to_owned();
+            let builder = if let Some(tag) = tag_filter {
+                let q = "SELECT *, record::id(id) AS id FROM recording
+                         WHERE datasetId = $cid AND $tag IN tags
+                         ORDER BY importedAt DESC, id ASC
+                         LIMIT $lim START $off";
+                self.db.query(q)
+                    .bind(("cid", cid))
+                    .bind(("tag", tag.to_owned()))
+                    .bind(("lim", limit))
+                    .bind(("off", offset))
+            } else {
+                let q = "SELECT *, record::id(id) AS id FROM recording
+                         WHERE datasetId = $cid
+                         ORDER BY importedAt DESC, id ASC
+                         LIMIT $lim START $off";
+                self.db.query(q)
+                    .bind(("cid", cid))
+                    .bind(("lim", limit))
+                    .bind(("off", offset))
+            };
+            let mut response = builder
+                .await
+                .map_err(|e| format!("recording_list_json: {e}"))?;
+            let rows: Vec<serde_json::Value> =
+                response.take(0).map_err(|e| format!("recording_list_json take: {e}"))?;
+            Ok(rows.into_iter().map(recording_doc_merge_fields).collect())
+        }
+
+        /// Returns all recordings in a dataset as raw JSON (no pagination),
+        /// with dynamic fields merged. Used for embedding/similarity operations.
+        pub async fn recording_list_all_json(
+            &self,
+            dataset_id: &str,
+        ) -> Result<Vec<serde_json::Value>, String> {
+            let cid = dataset_id.to_owned();
+            let mut response = self
+                .db
+                .query(
+                    "SELECT *, record::id(id) AS id FROM recording
+                     WHERE datasetId = $cid
+                     ORDER BY importedAt ASC, id ASC",
+                )
+                .bind(("cid", cid))
+                .await
+                .map_err(|e| format!("recording_list_all_json: {e}"))?;
+            let rows: Vec<serde_json::Value> =
+                response.take(0).map_err(|e| format!("recording_list_all_json take: {e}"))?;
+            Ok(rows.into_iter().map(recording_doc_merge_fields).collect())
+        }
     }
+}
+
+/// Merges all dynamic top-level SurrealDB properties into the `fields` sub-object
+/// so the TypeScript `Recording.fields: Record<string, unknown>` is fully populated.
+///
+/// Base fields that stay at the top level: id, datasetId, filepath, tags,
+/// metadata, importedAt, fileHash, recordedAt.
+/// Everything else (birdnetV24, embedding, umap2d, …) is moved into `fields`.
+pub(crate) fn recording_doc_merge_fields(mut doc: serde_json::Value) -> serde_json::Value {
+    const BASE: &[&str] = &[
+        "id", "datasetId", "dataset_id", "filepath",
+        "tags", "metadata", "importedAt", "imported_at",
+        "fileHash", "file_hash", "recordedAt", "recorded_at",
+    ];
+
+    let Some(obj) = doc.as_object_mut() else { return doc };
+
+    // Extract existing `fields` map (string path-fields from import)
+    let mut fields_map = match obj.remove("fields") {
+        Some(serde_json::Value::Object(m)) => m,
+        _ => serde_json::Map::new(),
+    };
+
+    // Move dynamic top-level properties (non-base) into fields_map
+    let dynamic_keys: Vec<String> = obj
+        .keys()
+        .filter(|k| !BASE.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    for key in dynamic_keys {
+        if let Some(val) = obj.remove(&key) {
+            fields_map.insert(key, val);
+        }
+    }
+
+    obj.insert("fields".to_string(), serde_json::Value::Object(fields_map));
+    doc
 }
 
 /// Fallback: when neither embedded-db nor mem-db is active.
@@ -840,6 +956,74 @@ mod json_fallback {
                 }
             }
             Err(format!("recording_set_dynamic_field(json): recording '{id}' not found"))
+        }
+
+        /// Returns a single recording as full JSON with dynamic fields merged.
+        pub async fn recording_get_json(
+            &self,
+            id: &str,
+        ) -> Result<Option<serde_json::Value>, String> {
+            for entry in std::fs::read_dir(&self.base_dir).map_err(|e| format!("{e}"))?.flatten() {
+                let dir_path = entry.path();
+                if dir_path.is_dir() {
+                    let rec_path = dir_path.join(format!("{id}.json"));
+                    if rec_path.exists() {
+                        let raw = std::fs::read_to_string(&rec_path)
+                            .map_err(|e| format!("recording_get_json(fallback): {e}"))?;
+                        let doc: serde_json::Value = serde_json::from_str(&raw)
+                            .map_err(|e| format!("recording_get_json(fallback) parse: {e}"))?;
+                        return Ok(Some(recording_doc_merge_fields(doc)));
+                    }
+                }
+            }
+            Ok(None)
+        }
+
+        /// Returns a page of recordings as full JSON with dynamic fields merged.
+        pub async fn recording_list_json(
+            &self,
+            dataset_id: &str,
+            limit: u64,
+            offset: u64,
+            tag_filter: Option<&str>,
+        ) -> Result<Vec<serde_json::Value>, String> {
+            let recs = self
+                .recording_list_by_dataset(dataset_id, limit, offset, tag_filter)
+                .await?;
+            recs.into_iter()
+                .map(|r| {
+                    serde_json::to_value(&r)
+                        .map(recording_doc_merge_fields)
+                        .map_err(|e| format!("recording_list_json serialize: {e}"))
+                })
+                .collect()
+        }
+
+        /// Returns all recordings as full JSON with dynamic fields merged.
+        pub async fn recording_list_all_json(
+            &self,
+            dataset_id: &str,
+        ) -> Result<Vec<serde_json::Value>, String> {
+            let dir = self.recordings_dir(dataset_id);
+            if !dir.exists() {
+                return Ok(vec![]);
+            }
+            let mut results: Vec<serde_json::Value> = std::fs::read_dir(&dir)
+                .map_err(|e| format!("recording_list_all_json: {e}"))?
+                .flatten()
+                .filter(|e| {
+                    e.path().extension().and_then(|s| s.to_str()) == Some("json")
+                })
+                .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+                .filter_map(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .map(recording_doc_merge_fields)
+                .collect();
+            results.sort_by(|a, b| {
+                let ta = a["importedAt"].as_i64().unwrap_or(0);
+                let tb = b["importedAt"].as_i64().unwrap_or(0);
+                ta.cmp(&tb)
+            });
+            Ok(results)
         }
     }
 }

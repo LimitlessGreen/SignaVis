@@ -23,6 +23,8 @@ export interface RecordingDetailPanelOptions {
     onStatusMessage?: (msg: string) => void;
     /** Called when a BirdNET run finishes — so the gallery can reload. */
     onAnalysisDone?: (recording: Recording, fieldName: string) => void;
+    /** Called when the user clicks "Find Similar" — opens the similarity browser. */
+    onFindSimilar?: (recording: Recording) => void;
 }
 
 export class RecordingDetailPanel {
@@ -31,6 +33,7 @@ export class RecordingDetailPanel {
     private readonly onTagsChanged: ((r: Recording) => void) | undefined;
     private readonly onStatusMessage: (msg: string) => void;
     private readonly onAnalysisDone: ((r: Recording, fieldName: string) => void) | undefined;
+    private readonly onFindSimilar: ((r: Recording) => void) | undefined;
 
     private current: Recording | null = null;
     private newTagInput = '';
@@ -43,6 +46,7 @@ export class RecordingDetailPanel {
         this.onTagsChanged = opts.onTagsChanged;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
         this.onAnalysisDone = opts.onAnalysisDone;
+        this.onFindSimilar = opts.onFindSimilar;
         this.renderEmpty();
     }
 
@@ -141,8 +145,12 @@ export class RecordingDetailPanel {
                 </div>
 
                 <div class="detail-panel__footer">
+                    ${this.renderUniquenessScore(r)}
                     <button class="btn btn--primary detail-panel__open-btn" id="detailOpenLabeler">
                         Open in labeler →
+                    </button>
+                    <button class="btn btn--ghost detail-panel__similar-btn" id="detailFindSimilar">
+                        Find Similar →
                     </button>
                 </div>
             </div>
@@ -172,6 +180,15 @@ export class RecordingDetailPanel {
                 <div class="detail-meta-grid">${rows}</div>
             </section>
         `;
+    }
+
+    private renderUniquenessScore(r: Recording): string {
+        const fields = r.fields as Record<string, unknown> | undefined;
+        const score = fields?.['uniqueness'];
+        if (typeof score !== 'number') return '';
+        const pct = Math.round(score * 100);
+        const cls = pct >= 70 ? 'badge--accent' : pct >= 40 ? 'badge--neutral' : 'badge--muted';
+        return `<span class="badge ${cls}" title="Uniqueness score (1 = most unique)">⬡ ${pct}% unique</span>`;
     }
 
     private renderTagList(tags: string[]): string {
@@ -322,6 +339,11 @@ export class RecordingDetailPanel {
         // Open in labeler
         this.container.querySelector('#detailOpenLabeler')?.addEventListener('click', () => {
             this.onOpenInLabeler?.(r);
+        });
+
+        // Find similar
+        this.container.querySelector('#detailFindSimilar')?.addEventListener('click', () => {
+            this.onFindSimilar?.(r);
         });
 
         // Remove tags

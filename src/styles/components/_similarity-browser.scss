@@ -1,0 +1,177 @@
+// ── Similarity Browser Panel ─────────────────────────────────────────
+
+.similarity-browser {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+
+    &--empty {
+        justify-content: center;
+        align-items: center;
+    }
+
+    &__placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 32px;
+        color: var(--color-text-secondary);
+        text-align: center;
+    }
+
+    &__icon {
+        font-size: 2rem;
+        opacity: 0.5;
+    }
+
+    &__hint {
+        font-size: 0.85rem;
+        max-width: 240px;
+        line-height: 1.5;
+    }
+
+    &__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--color-border);
+        flex-shrink: 0;
+    }
+
+    &__title {
+        flex: 1;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        strong {
+            color: var(--color-text-primary);
+        }
+    }
+
+    &__loading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 24px;
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+    }
+
+    &__empty {
+        padding: 20px 14px;
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+
+    &__grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 8px;
+        padding: 10px;
+        overflow-y: auto;
+        flex: 1;
+    }
+}
+
+// ── Similarity card ──────────────────────────────────────────────────
+
+.similarity-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+
+    &:hover {
+        border-color: var(--color-accent);
+        box-shadow: 0 0 0 2px var(--color-accent-faint);
+    }
+
+    &__thumb-wrap {
+        position: relative;
+        height: 48px;
+        background: var(--color-surface-2);
+        overflow: hidden;
+    }
+
+    &__thumb {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    &__thumb-placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        opacity: 0.35;
+    }
+
+    &__info {
+        padding: 6px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    &__name {
+        font-size: 0.75rem;
+        color: var(--color-text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+// ── Similarity badge ─────────────────────────────────────────────────
+
+.similarity-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+
+    &--high {
+        background: rgba(34, 197, 94, 0.18);
+        color: #22c55e;
+    }
+
+    &--mid {
+        background: rgba(234, 179, 8, 0.18);
+        color: #ca8a04;
+    }
+
+    &--low {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+}
+
+// ── Spinner (shared) ─────────────────────────────────────────────────
+
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-border);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

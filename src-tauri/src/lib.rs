@@ -123,6 +123,14 @@ pub fn run() {
             dataset_run_birdnet,
             dataset_list_runs,
             dataset_get_run,
+            // ── Phase 3: Embeddings, UMAP, Similarity ───────────────
+            dataset_run_embedding,
+            dataset_compute_umap,
+            dataset_compute_uniqueness,
+            recording_get_similar,
+            // ── Phase 4: Clustering & Active Learning ───────────────
+            dataset_run_clustering,
+            dataset_compute_hardness,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SignaVis");
