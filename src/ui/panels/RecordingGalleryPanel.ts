@@ -1,0 +1,524 @@
+// ═══════════════════════════════════════════════════════════════════════
+// ui/panels/RecordingGalleryPanel.ts — Aufnahmen-Galerie innerhalb eines Corpus
+// ═══════════════════════════════════════════════════════════════════════
+
+import type { Recording, Corpus } from '../../domain/corpus/types.ts';
+import {
+    recordingList,
+    recordingSetTags,
+    recordingDelete,
+    recordingDistinctValues,
+    corpusRunBirdnet,
+    type BirdnetRunArgs,
+    type BirdnetRunSummary,
+} from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
+import { listen } from '@tauri-apps/api/event';
+
+export interface RecordingGalleryOptions {
+    container: HTMLElement;
+    corpus: Corpus;
+    onBack: () => void;
+    onOpenRecording?: (recording: Recording) => void;
+    onImport?: () => void;
+    onStatusMessage?: (msg: string) => void;
+}
+
+const PAGE_SIZE = 50;
+
+export class RecordingGalleryPanel {
+    private readonly container: HTMLElement;
+    private readonly corpus: Corpus;
+    private readonly onBack: () => void;
+    private readonly onOpenRecording: ((r: Recording) => void) | undefined;
+    private readonly onImport: (() => void) | undefined;
+    private readonly onStatusMessage: (msg: string) => void;
+
+    private recordings: Recording[] = [];
+    private offset = 0;
+    private hasMore = true;
+    private isLoading = false;
+    private activeTagFilter: string | null = null;
+    private searchQuery = '';
+    /** Aktive Feld-Filter: fieldName → selectedValue ('' = alle) */
+    private fieldFilters: Map<string, string> = new Map();
+    /** Distinct-Werte pro Feld (gecacht nach erstem Load) */
+    private fieldValues: Map<string, string[]> = new Map();
+    /** Laufender BirdNET-Job (verhindert Doppel-Ausführung) */
+    private birdnetRunning = false;
+    private unlistenBirdnet: (() => void) | null = null;
+
+    constructor(opts: RecordingGalleryOptions) {
+        this.container = opts.container;
+        this.corpus = opts.corpus;
+        this.onBack = opts.onBack;
+        this.onOpenRecording = opts.onOpenRecording;
+        this.onImport = opts.onImport;
+        this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
+    }
+
+    async mount(): Promise<void> {
+        this.container.innerHTML = this.renderShell();
+        this.bindEvents();
+        await this.loadMore(true);
+    }
+
+    private renderShell(): string {
+        const knownTags = this.corpus.knownTags ?? [];
+        const tagPills = knownTags
+            .map(
+                (t) =>
+                    `<button class="tag-pill" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`,
+            )
+            .join('');
+
+        // Feld-Filter aus fieldSchema (nur primitive Felder mit Werten)
+        const fieldSchema = this.corpus.fieldSchema ?? [];
+        const filterableFields = fieldSchema.filter((f) =>
+            ['string', 'int', 'float'].includes(f.kind) && !f.system,
+        );
+        const fieldDropdowns = filterableFields
+            .map((f) => {
+                const values = this.fieldValues.get(f.name) ?? [];
+                const opts = values
+                    .map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`)
+                    .join('');
+                return `
+                    <select class="input input--sm field-filter-select" data-field="${escapeHtml(f.name)}" title="${escapeHtml(f.name)}">
+                        <option value="">${escapeHtml(f.name)}: Alle</option>
+                        ${opts}
+                    </select>
+                `;
+            })
+            .join('');
+
+        return `
+            <div class="recording-gallery">
+                <div class="recording-gallery__header">
+                    <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Zurück">←</button>
+                    <h2 class="recording-gallery__title">${escapeHtml(this.corpus.name)}</h2>
+                    <div class="recording-gallery__header-actions">
+                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="BirdNET auf dem ganzen Corpus ausführen">
+                            🔍 BirdNET
+                        </button>
+                        <button class="btn btn--primary" id="galleryImportBtn">+ Importieren</button>
+                    </div>
+                </div>
+
+                <div class="recording-gallery__birdnet-progress" id="galleryBirdnetProgress" style="display:none">
+                    <div class="progress-bar">
+                        <div class="progress-bar__fill" id="galleryProgressFill" style="width:0%"></div>
+                    </div>
+                    <span class="progress-label" id="galleryProgressLabel">Starte BirdNET…</span>
+                    <button class="btn btn--ghost btn--sm" id="galleryBirdnetCancel">Abbrechen</button>
+                </div>
+
+                <div class="recording-gallery__toolbar">
+                    <input
+                        type="search"
+                        class="input input--sm recording-gallery__search"
+                        id="gallerySearch"
+                        placeholder="Pfad oder Tag suchen…"
+                    />
+                    <div class="recording-gallery__tag-filter">
+                        <button class="tag-pill tag-pill--active" data-tag="">Alle</button>
+                        ${tagPills}
+                    </div>
+                    ${filterableFields.length > 0 ? `
+                    <div class="recording-gallery__field-filters" id="galleryFieldFilters">
+                        ${fieldDropdowns}
+                    </div>` : ''}
+                </div>
+
+                <div class="recording-gallery__stats" id="galleryStats">
+                    ${this.corpus.recordingCount.toLocaleString()} Aufnahmen
+                </div>
+
+                <div class="recording-gallery__grid" id="galleryGrid">
+                    <div class="recording-gallery__loading">Lade…</div>
+                </div>
+
+                <div class="recording-gallery__pagination">
+                    <button class="btn btn--ghost" id="galleryLoadMore" style="display:none">
+                        Mehr laden
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    private bindEvents(): void {
+        const backBtn = this.container.querySelector('#galleryBackBtn') as HTMLButtonElement;
+        const importBtn = this.container.querySelector('#galleryImportBtn') as HTMLButtonElement;
+        const loadMoreBtn = this.container.querySelector('#galleryLoadMore') as HTMLButtonElement;
+        const searchInput = this.container.querySelector('#gallerySearch') as HTMLInputElement;
+
+        backBtn.addEventListener('click', () => this.onBack());
+        importBtn.addEventListener('click', () => this.onImport?.());
+        loadMoreBtn.addEventListener('click', () => this.loadMore(false));
+
+        const birdnetBtn = this.container.querySelector('#galleryBirdnetBtn') as HTMLButtonElement | null;
+        birdnetBtn?.addEventListener('click', () => this.showBirdnetDialog());
+
+        const cancelBtn = this.container.querySelector('#galleryBirdnetCancel') as HTMLButtonElement | null;
+        cancelBtn?.addEventListener('click', () => {
+            this.unlistenBirdnet?.();
+            this.unlistenBirdnet = null;
+            this.birdnetRunning = false;
+            const progressEl = this.container.querySelector('#galleryBirdnetProgress') as HTMLElement | null;
+            if (progressEl) progressEl.style.display = 'none';
+            if (birdnetBtn) { birdnetBtn.disabled = false; birdnetBtn.textContent = '🔍 BirdNET'; }
+            this.onStatusMessage('BirdNET abgebrochen.');
+        });
+
+        searchInput.addEventListener('input', () => {
+            this.searchQuery = searchInput.value.trim().toLowerCase();
+            this.renderGrid();
+        });
+
+        this.container.querySelectorAll('[data-tag]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const tag = (btn as HTMLElement).dataset.tag ?? '';
+                this.activeTagFilter = tag === '' ? null : tag;
+                this.container
+                    .querySelectorAll('[data-tag]')
+                    .forEach((b) => b.classList.remove('tag-pill--active'));
+                btn.classList.add('tag-pill--active');
+                this.renderGrid();
+            });
+        });
+
+        // Feld-Filter Dropdowns
+        this.container.querySelectorAll<HTMLSelectElement>('.field-filter-select').forEach((sel) => {
+            // Beim ersten Fokus: Distinct-Values nachladen
+            sel.addEventListener('focus', async () => {
+                const field = sel.dataset.field!;
+                if (!this.fieldValues.has(field)) {
+                    try {
+                        const vals = await recordingDistinctValues(this.corpus.id, field);
+                        this.fieldValues.set(field, vals);
+                        // Optionen nachfüllen
+                        vals.forEach((v) => {
+                            const opt = document.createElement('option');
+                            opt.value = v;
+                            opt.textContent = v;
+                            sel.appendChild(opt);
+                        });
+                    } catch {
+                        // Ignore — leere Liste bleibt
+                    }
+                }
+            });
+
+            sel.addEventListener('change', () => {
+                const field = sel.dataset.field!;
+                this.fieldFilters.set(field, sel.value);
+                this.renderGrid();
+            });
+        });
+    }
+
+    private async loadMore(reset: boolean): Promise<void> {
+        if (this.isLoading) return;
+        if (reset) {
+            this.offset = 0;
+            this.recordings = [];
+            this.hasMore = true;
+        }
+        if (!this.hasMore) return;
+
+        this.isLoading = true;
+        try {
+            const batch = await recordingList({
+                corpusId: this.corpus.id,
+                limit: PAGE_SIZE,
+                offset: this.offset,
+            });
+            this.recordings.push(...batch);
+            this.offset += batch.length;
+            this.hasMore = batch.length === PAGE_SIZE;
+        } catch (e) {
+            this.onStatusMessage(`Fehler beim Laden: ${e}`);
+        } finally {
+            this.isLoading = false;
+        }
+
+        this.renderGrid();
+        const loadMoreBtn = this.container.querySelector('#galleryLoadMore') as HTMLButtonElement;
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = this.hasMore ? 'inline-flex' : 'none';
+        }
+    }
+
+    private filteredRecordings(): Recording[] {
+        return this.recordings.filter((r) => {
+            if (this.activeTagFilter && !r.tags.includes(this.activeTagFilter)) {
+                return false;
+            }
+            if (this.searchQuery) {
+                const fp = r.filepath.toLowerCase();
+                const tagMatch = r.tags.some((t) => t.toLowerCase().includes(this.searchQuery));
+                if (!fp.includes(this.searchQuery) && !tagMatch) return false;
+            }
+            // Feld-Filter
+            for (const [field, value] of this.fieldFilters) {
+                if (!value) continue; // '' = Alle
+                const fields = r.fields as Record<string, string> | undefined;
+                if (!fields || fields[field] !== value) return false;
+            }
+            return true;
+        });
+    }
+
+    private renderGrid(): void {
+        const grid = this.container.querySelector('#galleryGrid')!;
+        const filtered = this.filteredRecordings();
+
+        if (filtered.length === 0 && !this.isLoading) {
+            grid.innerHTML = `
+                <div class="recording-gallery__empty">
+                    Keine Aufnahmen gefunden.<br>
+                    <button class="btn btn--primary" id="galleryEmptyImport">Ordner importieren</button>
+                </div>
+            `;
+            const emptyImportBtn = grid.querySelector('#galleryEmptyImport');
+            emptyImportBtn?.addEventListener('click', () => this.onImport?.());
+            return;
+        }
+
+        grid.innerHTML = filtered.map((r) => this.renderRecordingCard(r)).join('');
+
+        grid.querySelectorAll('[data-open-recording]').forEach((el) => {
+            el.addEventListener('click', () => {
+                const id = (el as HTMLElement).dataset.openRecording!;
+                const rec = this.recordings.find((r) => r.id === id);
+                if (rec) this.onOpenRecording?.(rec);
+            });
+        });
+
+        // Waveform-Thumbnails asynchron nachladen
+        grid.querySelectorAll<HTMLElement>('[data-waveform-path]').forEach((img) => {
+            const path = img.dataset.waveformPath!;
+            getWaveformThumbnail(path).then((url) => {
+                if (url) {
+                    img.style.backgroundImage = `url(${url})`;
+                    img.classList.add('recording-card__waveform--loaded');
+                }
+            });
+        });
+
+        grid.querySelectorAll('[data-toggle-tag]').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = (btn as HTMLElement).dataset.recordingId!;
+                const tag = (btn as HTMLElement).dataset.toggleTag!;
+                const rec = this.recordings.find((r) => r.id === id);
+                if (!rec) return;
+                const newTags = rec.tags.includes(tag)
+                    ? rec.tags.filter((t) => t !== tag)
+                    : [...rec.tags, tag];
+                try {
+                    await recordingSetTags(id, newTags);
+                    rec.tags = newTags;
+                    this.renderGrid();
+                } catch (e) {
+                    this.onStatusMessage(`Tag-Fehler: ${e}`);
+                }
+            });
+        });
+    }
+
+    // ── BirdNET-Dialog & Run ──────────────────────────────────────────
+
+    private showBirdnetDialog(): void {
+        const existing = document.getElementById('birdnetDialogOverlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'birdnetDialogOverlay';
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal" role="dialog" aria-modal="true" aria-label="BirdNET analysieren">
+                <div class="modal__header">
+                    <h3 class="modal__title">BirdNET analysieren</h3>
+                    <button class="btn btn--ghost btn--icon" id="birdnetDialogClose">✕</button>
+                </div>
+                <div class="modal__body">
+                    <div class="form-row">
+                        <label class="form-label" for="birdnetFieldName">Ergebnis-Feldname</label>
+                        <input
+                            class="input" id="birdnetFieldName"
+                            type="text" value="birdnetV24"
+                            placeholder="z.B. birdnetV24"
+                        />
+                        <span class="form-hint">Unter diesem Feld werden SoundEvents gespeichert.</span>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label" for="birdnetMinConf">Mindestkonfidenz</label>
+                        <input
+                            class="input" id="birdnetMinConf"
+                            type="number" value="0.25" min="0" max="1" step="0.05"
+                        />
+                    </div>
+                    <div class="form-row form-row--inline">
+                        <div>
+                            <label class="form-label" for="birdnetLat">Breitengrad (lat)</label>
+                            <input class="input" id="birdnetLat" type="number" placeholder="z.B. 49.5" step="0.001"/>
+                        </div>
+                        <div>
+                            <label class="form-label" for="birdnetLon">Längengrad (lon)</label>
+                            <input class="input" id="birdnetLon" type="number" placeholder="z.B. 11.0" step="0.001"/>
+                        </div>
+                        <div>
+                            <label class="form-label" for="birdnetWeek">Woche (1-48)</label>
+                            <input class="input" id="birdnetWeek" type="number" placeholder="z.B. 22" min="1" max="48"/>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label" for="birdnetScope">Umfang</label>
+                        <select class="input" id="birdnetScope">
+                            <option value="all">Alle Aufnahmen (${this.corpus.recordingCount.toLocaleString()})</option>
+                            <option value="filtered">Gefilterte Aufnahmen (${this.filteredRecordings().length.toLocaleString()})</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal__footer">
+                    <button class="btn btn--ghost" id="birdnetDialogCancel">Abbrechen</button>
+                    <button class="btn btn--primary" id="birdnetDialogRun">Analyse starten</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#birdnetDialogClose')?.addEventListener('click', () => overlay.remove());
+        overlay.querySelector('#birdnetDialogCancel')?.addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        overlay.querySelector('#birdnetDialogRun')?.addEventListener('click', () => {
+            const fieldNameInput = overlay.querySelector('#birdnetFieldName') as HTMLInputElement;
+            const minConfInput   = overlay.querySelector('#birdnetMinConf') as HTMLInputElement;
+            const latInput       = overlay.querySelector('#birdnetLat') as HTMLInputElement;
+            const lonInput       = overlay.querySelector('#birdnetLon') as HTMLInputElement;
+            const weekInput      = overlay.querySelector('#birdnetWeek') as HTMLInputElement;
+            const scopeSelect    = overlay.querySelector('#birdnetScope') as HTMLSelectElement;
+
+            const fieldName = fieldNameInput.value.trim() || 'birdnetV24';
+            const minConf   = parseFloat(minConfInput.value) || 0.25;
+            const lat       = latInput.value ? parseFloat(latInput.value) : undefined;
+            const lon       = lonInput.value ? parseFloat(lonInput.value) : undefined;
+            const week      = weekInput.value ? parseInt(weekInput.value, 10) : undefined;
+
+            // Gefilterte IDs oder alle
+            const recordingIds = scopeSelect.value === 'filtered'
+                ? this.filteredRecordings().map((r) => r.id)
+                : undefined;
+
+            overlay.remove();
+            this.runBirdnet({ corpusId: this.corpus.id, fieldName, minConf, lat, lon, week, recordingIds });
+        });
+    }
+
+    private async runBirdnet(args: BirdnetRunArgs): Promise<void> {
+        if (this.birdnetRunning) return;
+        this.birdnetRunning = true;
+
+        const birdnetBtn    = this.container.querySelector('#galleryBirdnetBtn') as HTMLButtonElement | null;
+        const progressEl    = this.container.querySelector('#galleryBirdnetProgress') as HTMLElement | null;
+        const progressFill  = this.container.querySelector('#galleryProgressFill') as HTMLElement | null;
+        const progressLabel = this.container.querySelector('#galleryProgressLabel') as HTMLElement | null;
+
+        if (birdnetBtn) { birdnetBtn.disabled = true; birdnetBtn.textContent = '⏳ BirdNET läuft…'; }
+        if (progressEl) progressEl.style.display = '';
+
+        // Tauri-Event-Listener für Fortschritt
+        this.unlistenBirdnet?.();
+        const unlistenHandle = await listen<{ current: number; total: number; filepath: string | null }>(
+            'corpus:birdnet-progress',
+            (event) => {
+                const { current, total, filepath } = event.payload;
+                const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                if (progressFill) progressFill.style.width = `${pct}%`;
+                const name = filepath ? filepath.split('/').pop() ?? filepath : '…';
+                if (progressLabel) progressLabel.textContent = `${current} / ${total} — ${name}`;
+            },
+        );
+        this.unlistenBirdnet = () => unlistenHandle();
+
+        try {
+            const summary: BirdnetRunSummary = await corpusRunBirdnet(args);
+            this.onStatusMessage(
+                `BirdNET: ${summary.processed} analysiert, ${summary.errors} Fehler, ${summary.skipped} übersprungen.`,
+            );
+            // Grid neu laden damit Analyse-Badges erscheinen
+            await this.loadMore(true);
+        } catch (e) {
+            this.onStatusMessage(`BirdNET-Fehler: ${e}`);
+        } finally {
+            this.birdnetRunning = false;
+            this.unlistenBirdnet?.();
+            this.unlistenBirdnet = null;
+            if (birdnetBtn) { birdnetBtn.disabled = false; birdnetBtn.textContent = '🔍 BirdNET'; }
+            if (progressEl) progressEl.style.display = 'none';
+        }
+    }
+
+    private renderRecordingCard(r: Recording): string {
+        const filename = r.filepath.split('/').pop() ?? r.filepath;
+        const dur = r.metadata.duration > 0
+            ? formatDuration(r.metadata.duration)
+            : '?';
+        const sr = r.metadata.sampleRate > 0
+            ? `${Math.round(r.metadata.sampleRate / 1000)}kHz`
+            : '';
+        const tags = r.tags
+            .map(
+                (t) =>
+                    `<button
+                        class="tag-pill tag-pill--sm tag-pill--active"
+                        data-toggle-tag="${escapeHtml(t)}"
+                        data-recording-id="${escapeHtml(r.id)}"
+                        title="Tag entfernen: ${escapeHtml(t)}"
+                    >${escapeHtml(t)}</button>`,
+            )
+            .join('');
+
+        return `
+            <div
+                class="recording-card"
+                data-open-recording="${escapeHtml(r.id)}"
+                role="button"
+                tabindex="0"
+                title="${escapeHtml(r.filepath)}"
+            >
+                <div
+                    class="recording-card__waveform"
+                    data-waveform-path="${escapeHtml(r.filepath)}"
+                    aria-hidden="true"
+                ></div>
+                <div class="recording-card__info">
+                    <div class="recording-card__name" title="${escapeHtml(r.filepath)}">${escapeHtml(filename)}</div>
+                    <div class="recording-card__meta">
+                        <span class="recording-card__dur">${dur}</span>
+                        ${sr ? `<span class="recording-card__sr">${sr}</span>` : ''}
+                    </div>
+                    ${tags ? `<div class="recording-card__tags">${tags}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+}
+
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function formatDuration(s: number): string {
+    if (s < 60) return `${Math.round(s)}s`;
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}

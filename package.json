@@ -34,6 +34,7 @@
     }
   },
   "dependencies": {
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "jsoneditor": "^10.4.3"
   },
   "keywords": [
@@ -93,11 +94,11 @@
     "desktop:dev:platform-local:reset": "node scripts/dev-desktop-platform-local.mjs --reset-local"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@tauri-apps/api": "^2",
-    "tsx": "^4.19.4",
+    "@tauri-apps/cli": "^2",
     "lucide-static": "^1.8.0",
     "sass": "^1.70.0",
+    "tsx": "^4.19.4",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
     "wavesurfer.js": "^7.12.6"

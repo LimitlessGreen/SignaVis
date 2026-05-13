@@ -1,13 +1,19 @@
 pub mod analysis_jobs;
 pub mod assets;
 pub mod connection;
+pub mod corpus;
+pub mod corpus_analysis;
 pub mod grpc;
 pub mod projects;
+pub mod recordings;
 pub mod runtime_info;
 
 pub use analysis_jobs::*;
 pub use assets::*;
 pub use connection::*;
+pub use corpus::*;
+pub use corpus_analysis::*;
 pub use grpc::*;
 pub use projects::*;
+pub use recordings::*;
 pub use runtime_info::*;

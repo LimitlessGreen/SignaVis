@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════
 // src/app/desktop-app.ts — Desktop application entry point (Tauri only)
 //
-// Panels:
-//   Left   — Project list (create, select)
-//   Centre — File browser (open folder, pick audio) + embedded BirdNETPlayer
-//   Right  — Analysis job queue
+// Views:
+//   Labeling  — Bestehendes Labeling-Werkzeug (Projekt-Liste + Player + Jobs)
+//   Corpus    — Neuer Corpus Browser (v2 Architektur: Corpus/Recording/Import)
 // ═══════════════════════════════════════════════════════════════════════
 
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
@@ -20,6 +19,11 @@ import {
     type LocalAnalysisJob,
 } from '../infrastructure/tauri/TauriPlatformScaffold.ts';
 import type { ProjectSummary } from '../domain/project/types.ts';
+import type { Corpus, Recording } from '../domain/corpus/types.ts';
+import { CorpusBrowserPanel } from '../ui/panels/CorpusBrowserPanel.ts';
+import { RecordingGalleryPanel } from '../ui/panels/RecordingGalleryPanel.ts';
+import { ImportWizardPanel } from '../ui/panels/ImportWizardPanel.ts';
+import { RecordingDetailPanel } from '../ui/panels/RecordingDetailPanel.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
@@ -52,6 +56,123 @@ const repo       = new TauriProjectRepository();
 const connection = new TauriConnectionBridge();
 let activeProjectId: string | null = null;
 let player: BirdNETPlayer | null = null;
+
+// ── Corpus Browser State ──────────────────────────────────────────────
+
+type AppView = 'labeling' | 'corpus';
+let activeView: AppView = 'labeling';
+let corpusBrowserPanel: CorpusBrowserPanel | null = null;
+let currentCorpus: Corpus | null = null;
+let recordingDetailPanel: RecordingDetailPanel | null = null;
+
+/** Wechselt zwischen "labeling" und "corpus" View. */
+function switchView(view: AppView): void {
+    activeView = view;
+    const labelingEl = document.getElementById('labelingView')!;
+    const corpusEl   = document.getElementById('corpusBrowserView')!;
+
+    if (view === 'corpus') {
+        labelingEl.style.display = 'none';
+        corpusEl.style.display   = 'flex';
+        initCorpusView();
+    } else {
+        labelingEl.style.display = '';
+        corpusEl.style.display   = 'none';
+    }
+
+    document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
+        btn.classList.toggle('view-tab--active', btn.dataset.view === view);
+    });
+}
+
+function initCorpusView(): void {
+    const mount = document.getElementById('corpusBrowserMount')!;
+
+    if (!corpusBrowserPanel) {
+        corpusBrowserPanel = new CorpusBrowserPanel({
+            container: mount,
+            onCorpusSelect: (corpus) => showRecordingGallery(corpus),
+            onStatusMessage: setStatus,
+        });
+        corpusBrowserPanel.mount().catch((e) => setStatus(`Corpus-Fehler: ${e}`));
+    }
+}
+
+function showRecordingGallery(corpus: Corpus): void {
+    currentCorpus = corpus;
+    const mount = document.getElementById('corpusBrowserMount')!;
+    const detailMount = document.getElementById('corpusDetailMount')!;
+
+    // Detail-Panel initialisieren (rechte Spalte)
+    if (!recordingDetailPanel) {
+        recordingDetailPanel = new RecordingDetailPanel({
+            container: detailMount,
+            onOpenInLabeler: (rec) => openRecordingInLabeler(rec),
+            onStatusMessage: setStatus,
+        });
+    }
+
+    const gallery = new RecordingGalleryPanel({
+        container: mount,
+        corpus,
+        onBack: () => {
+            corpusBrowserPanel = null;
+            recordingDetailPanel = null;
+            const newPanel = new CorpusBrowserPanel({
+                container: mount,
+                onCorpusSelect: showRecordingGallery,
+                onStatusMessage: setStatus,
+            });
+            corpusBrowserPanel = newPanel;
+            newPanel.mount().catch((e) => setStatus(`Fehler: ${e}`));
+            // Detail-Panel leeren
+            detailMount.innerHTML = '';
+        },
+        onImport: () => showImportWizard(corpus),
+        onOpenRecording: (rec) => {
+            // Zeige Detail-Panel statt direkt in Labeler zu springen
+            recordingDetailPanel?.show(rec);
+        },
+        onStatusMessage: setStatus,
+    });
+    gallery.mount().catch((e) => setStatus(`Galerie-Fehler: ${e}`));
+}
+
+function showImportWizard(corpus: Corpus): void {
+    const mount = document.getElementById('corpusBrowserMount')!;
+
+    const wizard = new ImportWizardPanel({
+        container: mount,
+        corpus,
+        onDone: (result) => {
+            setStatus(`Import: ${result.imported} importiert, ${result.skipped} übersprungen.`);
+            showRecordingGallery(corpus);
+        },
+        onCancel: () => showRecordingGallery(corpus),
+        onStatusMessage: setStatus,
+        openFolderDialog: () => openFolderDialogPath(),
+    });
+    wizard.mount();
+}
+
+async function openFolderDialogPath(): Promise<string | null> {
+    try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const result = await open({ directory: true, multiple: false });
+        if (typeof result === 'string') return result;
+        return null;
+    } catch {
+        // Fallback: Tauri v1 API
+        return openFolderDialog();
+    }
+}
+
+function openRecordingInLabeler(recording: Recording): void {
+    // Zur Labeling-Ansicht wechseln und die Datei laden
+    switchView('labeling');
+    loadAudioFile(recording.filepath);
+    setStatus(`Öffne: ${recording.filepath.split('/').pop()}`);
+}
 
 // ── Utilities ─────────────────────────────────────────────────────────
 
@@ -368,6 +489,27 @@ async function runAnalysis(): Promise<void> {
 }
 
 // ── Connection status UI ──────────────────────────────────────────────
+//
+// Der Button unten links zeigt den aktuellen Betriebsmodus (Local / Server / Cloud)
+// und öffnet per Klick ein Popover zum Wechseln.
+//
+// DEV-NOTIZ — Server zum Testen starten:
+//   Browser-Dev-Server (kein Tauri, kein Backend):
+//     npm run dev                          → http://localhost:5173
+//
+//   Tauri Desktop-App (empfohlen für Corpus/Recording-Features):
+//     npm run desktop:dev                  → startet Vite + Tauri, öffnet Fenster
+//     npm run desktop:dev:grpc             → dito, mit gRPC-Analysis-Backend
+//
+//   Platform-Backend (SurrealDB-Server, Postgres etc. via Docker):
+//     npm run platform:testenv:up          → Docker-Compose hochfahren
+//     npm run desktop:dev:platform-local   → Desktop gegen lokales Platform-Backend
+//     npm run desktop:dev:platform-local:reset  → dito, DB zurücksetzen
+//
+//   Mock-Analysis-Server (ohne Python/BirdNET):
+//     npm run dev:analysis-mock            → startet Mock-Server auf :7999
+//
+// Im Lokal-Modus läuft SurrealDB embedded im Tauri-Prozess — kein separater Daemon.
 
 function renderConnSegment(status: ConnectionStatus): void {
     connSegment.dataset.state = status.state;
@@ -500,6 +642,14 @@ async function boot(): Promise<void> {
             '<p style="padding:2rem;color:#f87171">This page requires the SignaVis desktop app.</p>';
         return;
     }
+
+    // ── View switcher tabs ───────────────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const view = btn.dataset.view as AppView | undefined;
+            if (view) switchView(view);
+        });
+    });
 
     newProjectBtn.addEventListener('click', createProject);
     openFolderBtn.addEventListener('click', openFolder);
