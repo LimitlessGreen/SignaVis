@@ -79,6 +79,7 @@ pub async fn dataset_create(
         recording_count: 0,
         field_schema,
         known_tags: vec![],
+        saved_views: vec![],
         description: args.description,
     };
 
