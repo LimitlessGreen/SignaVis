@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// commands/corpus.rs — Tauri IPC Commands für Corpus-Verwaltung
+// commands/corpus.rs — Tauri IPC Commands für Dataset-Verwaltung
 // ═══════════════════════════════════════════════════════════════════════
 
 use serde::Deserialize;
@@ -8,34 +8,34 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::corpus_store::{CorpusRecord, CorpusStore, FieldDefinition};
+use crate::corpus_store::{DatasetRecord, CorpusStore, FieldDefinition};
 use crate::helpers::time::now_millis;
 
 pub type CorpusStoreState = Arc<CorpusStore>;
 
-fn new_corpus_id() -> Result<String, String> {
+fn new_dataset_id() -> Result<String, String> {
     Ok(Uuid::new_v4().to_string())
 }
 
-// ── corpus_create ─────────────────────────────────────────────────────
+// ── dataset_create ────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CorpusCreateArgs {
+pub struct DatasetCreateArgs {
     pub name: String,
     pub description: Option<String>,
 }
 
 #[tauri::command]
-pub async fn corpus_create(
+pub async fn dataset_create(
     store: State<'_, CorpusStoreState>,
-    args: CorpusCreateArgs,
+    args: DatasetCreateArgs,
 ) -> Result<JsonValue, String> {
-    let id = new_corpus_id()?;
+    let id = new_dataset_id()?;
     let now = now_millis()? as i64;
     let name = args.name.trim().to_string();
     if name.is_empty() {
-        return Err("corpus_create: name must not be empty".into());
+        return Err("dataset_create: name must not be empty".into());
     }
 
     // System-Pflichtfelder im Schema
@@ -70,7 +70,7 @@ pub async fn corpus_create(
         },
     ];
 
-    let corpus = CorpusRecord {
+    let dataset = DatasetRecord {
         id: id.clone(),
         name,
         media_type: "audio".into(),
@@ -82,92 +82,92 @@ pub async fn corpus_create(
         description: args.description,
     };
 
-    store.corpus_create(&corpus).await?;
-    serde_json::to_value(&corpus).map_err(|e| format!("corpus_create: serialize: {e}"))
+    store.dataset_create(&dataset).await?;
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_create: serialize: {e}"))
 }
 
-// ── corpus_list ───────────────────────────────────────────────────────
+// ── dataset_list ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn corpus_list(
+pub async fn dataset_list(
     store: State<'_, CorpusStoreState>,
 ) -> Result<Vec<JsonValue>, String> {
-    let corpora = store.corpus_list().await?;
-    corpora
+    let datasets = store.dataset_list().await?;
+    datasets
         .iter()
-        .map(|c| serde_json::to_value(c).map_err(|e| format!("corpus_list: serialize: {e}")))
+        .map(|c| serde_json::to_value(c).map_err(|e| format!("dataset_list: serialize: {e}")))
         .collect()
 }
 
-// ── corpus_get ────────────────────────────────────────────────────────
+// ── dataset_get ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn corpus_get(
+pub async fn dataset_get(
     store: State<'_, CorpusStoreState>,
     id: String,
 ) -> Result<JsonValue, String> {
-    let corpus = store
-        .corpus_get(&id)
+    let dataset = store
+        .dataset_get(&id)
         .await?
-        .ok_or_else(|| format!("corpus_get: not found: {id}"))?;
-    serde_json::to_value(&corpus).map_err(|e| format!("corpus_get: serialize: {e}"))
+        .ok_or_else(|| format!("dataset_get: not found: {id}"))?;
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_get: serialize: {e}"))
 }
 
-// ── corpus_delete ─────────────────────────────────────────────────────
+// ── dataset_delete ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn corpus_delete(
+pub async fn dataset_delete(
     store: State<'_, CorpusStoreState>,
     id: String,
 ) -> Result<(), String> {
-    store.corpus_delete(&id).await
+    store.dataset_delete(&id).await
 }
 
-// ── corpus_update_meta ────────────────────────────────────────────────
+// ── dataset_update_meta ───────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CorpusUpdateMetaArgs {
+pub struct DatasetUpdateMetaArgs {
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
 }
 
 #[tauri::command]
-pub async fn corpus_update_meta(
+pub async fn dataset_update_meta(
     store: State<'_, CorpusStoreState>,
-    args: CorpusUpdateMetaArgs,
+    args: DatasetUpdateMetaArgs,
 ) -> Result<JsonValue, String> {
-    let mut corpus = store
-        .corpus_get(&args.id)
+    let mut dataset = store
+        .dataset_get(&args.id)
         .await?
-        .ok_or_else(|| format!("corpus_update_meta: not found: {}", args.id))?;
+        .ok_or_else(|| format!("dataset_update_meta: not found: {}", args.id))?;
 
     if let Some(name) = args.name {
         let name = name.trim().to_string();
         if name.is_empty() {
-            return Err("corpus_update_meta: name must not be empty".into());
+            return Err("dataset_update_meta: name must not be empty".into());
         }
-        corpus.name = name;
+        dataset.name = name;
     }
     if let Some(desc) = args.description {
-        corpus.description = if desc.trim().is_empty() { None } else { Some(desc) };
+        dataset.description = if desc.trim().is_empty() { None } else { Some(desc) };
     }
-    corpus.updated_at = now_millis()? as i64;
+    dataset.updated_at = now_millis()? as i64;
 
-    store.corpus_update(&corpus).await?;
-    serde_json::to_value(&corpus).map_err(|e| format!("corpus_update_meta: {e}"))
+    store.dataset_update(&dataset).await?;
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_update_meta: {e}"))
 }
 
-// ── corpus_add_field_to_schema ────────────────────────────────────────
+// ── dataset_add_field_to_schema ───────────────────────────────────────
 //
-// Fügt ein Feld ins Corpus-Schema ein (Idempotent — existiert das Feld
+// Fügt ein Feld ins Dataset-Schema ein (Idempotent — existiert das Feld
 // bereits mit gleichem Namen, wird es übersprungen).
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CorpusAddFieldArgs {
-    pub corpus_id: String,
+pub struct DatasetAddFieldArgs {
+    pub dataset_id: String,
     pub field_name: String,
     pub field_kind: String,
     pub description: Option<String>,
@@ -175,32 +175,32 @@ pub struct CorpusAddFieldArgs {
 }
 
 #[tauri::command]
-pub async fn corpus_add_field_to_schema(
+pub async fn dataset_add_field_to_schema(
     store: State<'_, CorpusStoreState>,
-    args: CorpusAddFieldArgs,
+    args: DatasetAddFieldArgs,
 ) -> Result<JsonValue, String> {
-    let mut corpus = store
-        .corpus_get(&args.corpus_id)
+    let mut dataset = store
+        .dataset_get(&args.dataset_id)
         .await?
-        .ok_or_else(|| format!("corpus_add_field_to_schema: not found: {}", args.corpus_id))?;
+        .ok_or_else(|| format!("dataset_add_field_to_schema: not found: {}", args.dataset_id))?;
 
     let name = args.field_name.trim().to_string();
     if name.is_empty() {
-        return Err("corpus_add_field_to_schema: field_name must not be empty".into());
+        return Err("dataset_add_field_to_schema: field_name must not be empty".into());
     }
 
     // Idempotent: nur hinzufügen wenn Name noch nicht vorhanden
-    if !corpus.field_schema.iter().any(|f| f.name == name) {
-        corpus.field_schema.push(FieldDefinition {
+    if !dataset.field_schema.iter().any(|f| f.name == name) {
+        dataset.field_schema.push(FieldDefinition {
             name: name.clone(),
             kind: args.field_kind.trim().to_string(),
             description: args.description.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             group: args.group.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             system: false,
         });
-        corpus.updated_at = now_millis()? as i64;
-        store.corpus_update(&corpus).await?;
+        dataset.updated_at = now_millis()? as i64;
+        store.dataset_update(&dataset).await?;
     }
 
-    serde_json::to_value(&corpus).map_err(|e| format!("corpus_add_field_to_schema: {e}"))
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_add_field_to_schema: {e}"))
 }

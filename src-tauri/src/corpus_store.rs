@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// corpus_store.rs — SurrealDB-basierter Corpus/Recording-Store
+// corpus_store.rs — SurrealDB-basierter Dataset/Recording-Store
 //
 // Betriebsmodi:
 //   - Mit Feature "embedded-db": SurrealKV (persistent, reines Rust)
@@ -52,7 +52,7 @@ pub struct FieldDefinition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CorpusRecord {
+pub struct DatasetRecord {
     pub id: String,
     pub name: String,
     pub media_type: String,
@@ -69,7 +69,7 @@ pub struct CorpusRecord {
 #[serde(rename_all = "camelCase")]
 pub struct RecordingRecord {
     pub id: String,
-    pub corpus_id: String,
+    pub dataset_id: String,
     pub filepath: String,
     pub tags: Vec<String>,
     pub metadata: AudioMetadata,
@@ -138,20 +138,20 @@ pub struct CorpusStore {
         }
 
         async fn init_schema(&self) -> Result<(), String> {
-            // Corpus-Tabelle (schemaless — vermeidet Konflikte mit id:Thing vs. string)
+            // Dataset-Tabelle (schemaless — vermeidet Konflikte mit id:Thing vs. string)
             self.db
                 .query(
-                    "DEFINE TABLE IF NOT EXISTS corpus SCHEMALESS;
-                     DEFINE INDEX IF NOT EXISTS idx_corpus_name ON corpus FIELDS name;",
+                    "DEFINE TABLE IF NOT EXISTS dataset SCHEMALESS;
+                     DEFINE INDEX IF NOT EXISTS idx_dataset_name ON dataset FIELDS name;",
                 )
                 .await
-                .map_err(|e| format!("corpus_store: init corpus schema: {e}"))?;
+                .map_err(|e| format!("corpus_store: init dataset schema: {e}"))?;
 
             // Recording-Tabelle (schemaless für dynamische Felder)
             self.db
                 .query(
                     "DEFINE TABLE IF NOT EXISTS recording SCHEMALESS;
-                     DEFINE INDEX IF NOT EXISTS idx_recording_corpus ON recording FIELDS corpus_id;
+                     DEFINE INDEX IF NOT EXISTS idx_recording_dataset ON recording FIELDS dataset_id;
                      DEFINE INDEX IF NOT EXISTS idx_recording_filepath ON recording FIELDS filepath;
                      DEFINE INDEX IF NOT EXISTS idx_recording_hash ON recording FIELDS file_hash;",
                 )
@@ -161,65 +161,65 @@ pub struct CorpusStore {
             Ok(())
         }
 
-        // ── Corpus CRUD ───────────────────────────────────────────────
+        // ── Dataset CRUD ──────────────────────────────────────────────
 
-        pub async fn corpus_create(&self, corpus: &CorpusRecord) -> Result<(), String> {
+        pub async fn dataset_create(&self, dataset: &DatasetRecord) -> Result<(), String> {
             self.db
-                .query("CREATE type::thing('corpus', $id) CONTENT $record")
-                .bind(("id", corpus.id.clone()))
-                .bind(("record", corpus.clone()))
+                .query("CREATE type::thing('dataset', $id) CONTENT $record")
+                .bind(("id", dataset.id.clone()))
+                .bind(("record", dataset.clone()))
                 .await
-                .map_err(|e| format!("corpus_create: {e}"))?;
+                .map_err(|e| format!("dataset_create: {e}"))?;
             Ok(())
         }
 
-        pub async fn corpus_get(&self, id: &str) -> Result<Option<CorpusRecord>, String> {
+        pub async fn dataset_get(&self, id: &str) -> Result<Option<DatasetRecord>, String> {
             let rid = id.to_owned();
             let mut resp = self
                 .db
-                .query("SELECT *, record::id(id) AS id FROM type::thing('corpus', $id)")
+                .query("SELECT *, record::id(id) AS id FROM type::thing('dataset', $id)")
                 .bind(("id", rid))
                 .await
-                .map_err(|e| format!("corpus_get: {e}"))?;
-            let rows: Vec<CorpusRecord> =
-                resp.take(0).map_err(|e| format!("corpus_get take: {e}"))?;
+                .map_err(|e| format!("dataset_get: {e}"))?;
+            let rows: Vec<DatasetRecord> =
+                resp.take(0).map_err(|e| format!("dataset_get take: {e}"))?;
             Ok(rows.into_iter().next())
         }
 
-        pub async fn corpus_list(&self) -> Result<Vec<CorpusRecord>, String> {
+        pub async fn dataset_list(&self) -> Result<Vec<DatasetRecord>, String> {
             let mut resp = self
                 .db
-                .query("SELECT *, record::id(id) AS id FROM corpus")
+                .query("SELECT *, record::id(id) AS id FROM dataset")
                 .await
-                .map_err(|e| format!("corpus_list: {e}"))?;
-            let result: Vec<CorpusRecord> =
-                resp.take(0).map_err(|e| format!("corpus_list take: {e}"))?;
+                .map_err(|e| format!("dataset_list: {e}"))?;
+            let result: Vec<DatasetRecord> =
+                resp.take(0).map_err(|e| format!("dataset_list take: {e}"))?;
             Ok(result)
         }
 
-        pub async fn corpus_update(&self, corpus: &CorpusRecord) -> Result<(), String> {
+        pub async fn dataset_update(&self, dataset: &DatasetRecord) -> Result<(), String> {
             self.db
-                .query("UPDATE type::thing('corpus', $id) CONTENT $record")
-                .bind(("id", corpus.id.clone()))
-                .bind(("record", corpus.clone()))
+                .query("UPDATE type::thing('dataset', $id) CONTENT $record")
+                .bind(("id", dataset.id.clone()))
+                .bind(("record", dataset.clone()))
                 .await
-                .map_err(|e| format!("corpus_update: {e}"))?;
+                .map_err(|e| format!("dataset_update: {e}"))?;
             Ok(())
         }
 
-        pub async fn corpus_delete(&self, id: &str) -> Result<(), String> {
-            // Alle Recordings des Corpus löschen
+        pub async fn dataset_delete(&self, id: &str) -> Result<(), String> {
+            // Alle Recordings des Datasets löschen
             let cid = id.to_owned();
             self.db
-                .query("DELETE recording WHERE corpusId = $cid")
+                .query("DELETE recording WHERE datasetId = $cid")
                 .bind(("cid", cid))
                 .await
-                .map_err(|e| format!("corpus_delete recordings: {e}"))?;
+                .map_err(|e| format!("dataset_delete recordings: {e}"))?;
             self.db
-                .query("DELETE type::thing('corpus', $id)")
+                .query("DELETE type::thing('dataset', $id)")
                 .bind(("id", id.to_owned()))
                 .await
-                .map_err(|e| format!("corpus_delete: {e}"))?;
+                .map_err(|e| format!("dataset_delete: {e}"))?;
             Ok(())
         }
 
@@ -263,18 +263,18 @@ pub struct CorpusStore {
             Ok(rows.into_iter().next())
         }
 
-        pub async fn recording_list_by_corpus(
+        pub async fn recording_list_by_dataset(
             &self,
-            corpus_id: &str,
+            dataset_id: &str,
             limit: u64,
             offset: u64,
         ) -> Result<Vec<RecordingRecord>, String> {
-            let cid = corpus_id.to_owned();
+            let cid = dataset_id.to_owned();
             let mut response = self
                 .db
                 .query(
                     "SELECT *, record::id(id) AS id FROM recording
-                     WHERE corpusId = $cid
+                     WHERE datasetId = $cid
                      ORDER BY importedAt DESC, id ASC
                      LIMIT $lim START $off",
                 )
@@ -282,17 +282,17 @@ pub struct CorpusStore {
                 .bind(("lim", limit))
                 .bind(("off", offset))
                 .await
-                .map_err(|e| format!("recording_list_by_corpus: {e}"))?;
+                .map_err(|e| format!("recording_list_by_dataset: {e}"))?;
             let result: Vec<RecordingRecord> =
-                response.take(0).map_err(|e| format!("recording_list_by_corpus take: {e}"))?;
+                response.take(0).map_err(|e| format!("recording_list_by_dataset take: {e}"))?;
             Ok(result)
         }
 
-        pub async fn recording_count_by_corpus(&self, corpus_id: &str) -> Result<u64, String> {
-            let cid = corpus_id.to_owned();
+        pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
+            let cid = dataset_id.to_owned();
             let mut response = self
                 .db
-                .query("SELECT count() AS c FROM recording WHERE corpusId = $cid GROUP ALL")
+                .query("SELECT count() AS c FROM recording WHERE datasetId = $cid GROUP ALL")
                 .bind(("cid", cid))
                 .await
                 .map_err(|e| format!("recording_count: {e}"))?;
@@ -342,20 +342,20 @@ pub struct CorpusStore {
             Ok(())
         }
 
-        /// Gibt alle distinkten Werte eines Pfad-Felds in einem Corpus zurück.
+        /// Gibt alle distinkten Werte eines Pfad-Felds in einem Dataset zurück.
         /// Pfad-Felder sind als camelCase-Key in der `fields`-Map gespeichert.
         pub async fn recording_distinct_field_values(
             &self,
-            corpus_id: &str,
+            dataset_id: &str,
             field_name: &str,
         ) -> Result<Vec<String>, String> {
-            let cid = corpus_id.to_owned();
+            let cid = dataset_id.to_owned();
             let field = field_name.to_owned();
             // SurrealQL: Felder in der fields-Map werden als fields.{name} adressiert
             let mut resp = self
                 .db
                 .query(format!(
-                    "SELECT DISTINCT fields.{field} AS val FROM recording WHERE corpusId = $cid AND fields.{field} != NONE"
+                    "SELECT DISTINCT fields.{field} AS val FROM recording WHERE datasetId = $cid AND fields.{field} != NONE"
                 ))
                 .bind(("cid", cid))
                 .await
@@ -375,24 +375,24 @@ pub struct CorpusStore {
             Ok(values)
         }
 
-        /// Gibt alle Recordings eines Corpus ohne Pagination zurück (für Batch-Operationen).
-        pub async fn recording_list_by_corpus_all(
+        /// Gibt alle Recordings eines Datasets ohne Pagination zurück (für Batch-Operationen).
+        pub async fn recording_list_by_dataset_all(
             &self,
-            corpus_id: &str,
+            dataset_id: &str,
         ) -> Result<Vec<RecordingRecord>, String> {
-            let cid = corpus_id.to_owned();
+            let cid = dataset_id.to_owned();
             let mut response = self
                 .db
                 .query(
                     "SELECT *, record::id(id) AS id FROM recording
-                     WHERE corpusId = $cid
+                     WHERE datasetId = $cid
                      ORDER BY importedAt ASC, id ASC",
                 )
                 .bind(("cid", cid))
                 .await
-                .map_err(|e| format!("recording_list_by_corpus_all: {e}"))?;
+                .map_err(|e| format!("recording_list_by_dataset_all: {e}"))?;
             let result: Vec<RecordingRecord> =
-                response.take(0).map_err(|e| format!("recording_list_by_corpus_all take: {e}"))?;
+                response.take(0).map_err(|e| format!("recording_list_by_dataset_all take: {e}"))?;
             Ok(result)
         }
 
@@ -437,40 +437,40 @@ mod json_fallback {
             Ok(Self { base_dir: data_dir })
         }
 
-        fn corpus_path(&self, id: &str) -> PathBuf {
-            self.base_dir.join(format!("{id}.corpus.json"))
+        fn dataset_path(&self, id: &str) -> PathBuf {
+            self.base_dir.join(format!("{id}.dataset.json"))
         }
 
-        fn recordings_dir(&self, corpus_id: &str) -> PathBuf {
-            self.base_dir.join(format!("{corpus_id}_recordings"))
+        fn recordings_dir(&self, dataset_id: &str) -> PathBuf {
+            self.base_dir.join(format!("{dataset_id}_recordings"))
         }
 
-        pub async fn corpus_create(&self, corpus: &CorpusRecord) -> Result<(), String> {
-            let json = serde_json::to_string_pretty(corpus)
-                .map_err(|e| format!("corpus_create(json): {e}"))?;
-            std::fs::write(self.corpus_path(&corpus.id), json)
-                .map_err(|e| format!("corpus_create(json): {e}"))
+        pub async fn dataset_create(&self, dataset: &DatasetRecord) -> Result<(), String> {
+            let json = serde_json::to_string_pretty(dataset)
+                .map_err(|e| format!("dataset_create(json): {e}"))?;
+            std::fs::write(self.dataset_path(&dataset.id), json)
+                .map_err(|e| format!("dataset_create(json): {e}"))
         }
 
-        pub async fn corpus_get(&self, id: &str) -> Result<Option<CorpusRecord>, String> {
-            let path = self.corpus_path(id);
+        pub async fn dataset_get(&self, id: &str) -> Result<Option<DatasetRecord>, String> {
+            let path = self.dataset_path(id);
             if !path.exists() {
                 return Ok(None);
             }
             let raw = std::fs::read_to_string(&path)
-                .map_err(|e| format!("corpus_get(json): {e}"))?;
-            let corpus: CorpusRecord = serde_json::from_str(&raw)
-                .map_err(|e| format!("corpus_get(json): malformed: {e}"))?;
-            Ok(Some(corpus))
+                .map_err(|e| format!("dataset_get(json): {e}"))?;
+            let dataset: DatasetRecord = serde_json::from_str(&raw)
+                .map_err(|e| format!("dataset_get(json): malformed: {e}"))?;
+            Ok(Some(dataset))
         }
 
-        pub async fn corpus_list(&self) -> Result<Vec<CorpusRecord>, String> {
+        pub async fn dataset_list(&self) -> Result<Vec<DatasetRecord>, String> {
             if !self.base_dir.exists() {
                 return Ok(vec![]);
             }
             let mut result = vec![];
             for entry in std::fs::read_dir(&self.base_dir)
-                .map_err(|e| format!("corpus_list(json): {e}"))?
+                .map_err(|e| format!("dataset_list(json): {e}"))?
             {
                 let path = match entry {
                     Ok(e) => e.path(),
@@ -480,40 +480,40 @@ mod json_fallback {
                     Some(n) => n.to_string(),
                     None => continue,
                 };
-                if !name.ends_with(".corpus.json") {
+                if !name.ends_with(".dataset.json") {
                     continue;
                 }
                 let raw = match std::fs::read_to_string(&path) {
                     Ok(s) => s,
                     Err(_) => continue,
                 };
-                if let Ok(corpus) = serde_json::from_str::<CorpusRecord>(&raw) {
-                    result.push(corpus);
+                if let Ok(dataset) = serde_json::from_str::<DatasetRecord>(&raw) {
+                    result.push(dataset);
                 }
             }
             Ok(result)
         }
 
-        pub async fn corpus_update(&self, corpus: &CorpusRecord) -> Result<(), String> {
-            self.corpus_create(corpus).await
+        pub async fn dataset_update(&self, dataset: &DatasetRecord) -> Result<(), String> {
+            self.dataset_create(dataset).await
         }
 
-        pub async fn corpus_delete(&self, id: &str) -> Result<(), String> {
-            let path = self.corpus_path(id);
+        pub async fn dataset_delete(&self, id: &str) -> Result<(), String> {
+            let path = self.dataset_path(id);
             if path.exists() {
                 std::fs::remove_file(&path)
-                    .map_err(|e| format!("corpus_delete(json): {e}"))?;
+                    .map_err(|e| format!("dataset_delete(json): {e}"))?;
             }
             let rec_dir = self.recordings_dir(id);
             if rec_dir.exists() {
                 std::fs::remove_dir_all(&rec_dir)
-                    .map_err(|e| format!("corpus_delete(json) recordings: {e}"))?;
+                    .map_err(|e| format!("dataset_delete(json) recordings: {e}"))?;
             }
             Ok(())
         }
 
         pub async fn recording_insert(&self, rec: &RecordingRecord) -> Result<(), String> {
-            let dir = self.recordings_dir(&rec.corpus_id);
+            let dir = self.recordings_dir(&rec.dataset_id);
             std::fs::create_dir_all(&dir)
                 .map_err(|e| format!("recording_insert(json): dir: {e}"))?;
             let json = serde_json::to_string_pretty(rec)
@@ -552,13 +552,13 @@ mod json_fallback {
             Ok(None)
         }
 
-        pub async fn recording_list_by_corpus(
+        pub async fn recording_list_by_dataset(
             &self,
-            corpus_id: &str,
+            dataset_id: &str,
             limit: u64,
             offset: u64,
         ) -> Result<Vec<RecordingRecord>, String> {
-            let dir = self.recordings_dir(corpus_id);
+            let dir = self.recordings_dir(dataset_id);
             if !dir.exists() {
                 return Ok(vec![]);
             }
@@ -577,8 +577,8 @@ mod json_fallback {
                 .collect())
         }
 
-        pub async fn recording_count_by_corpus(&self, corpus_id: &str) -> Result<u64, String> {
-            let dir = self.recordings_dir(corpus_id);
+        pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
+            let dir = self.recordings_dir(dataset_id);
             if !dir.exists() {
                 return Ok(0);
             }
@@ -638,12 +638,12 @@ mod json_fallback {
             Ok(())
         }
 
-        /// Gibt alle Recordings eines Corpus ohne Pagination zurück (für Batch-Operationen).
-        pub async fn recording_list_by_corpus_all(
+        /// Gibt alle Recordings eines Datasets ohne Pagination zurück (für Batch-Operationen).
+        pub async fn recording_list_by_dataset_all(
             &self,
-            corpus_id: &str,
+            dataset_id: &str,
         ) -> Result<Vec<RecordingRecord>, String> {
-            let dir = self.recordings_dir(corpus_id);
+            let dir = self.recordings_dir(dataset_id);
             if !dir.exists() {
                 return Ok(vec![]);
             }
@@ -700,6 +700,8 @@ pub use surreal_impl::CorpusStore;
 #[cfg(not(any(feature = "embedded-db", feature = "mem-db")))]
 pub use json_fallback::CorpusStore;
 
+// Type alias for consistency — CorpusStore is the internal store name, DatasetRecord is the domain type.
+
 // ═══════════════════════════════════════════════════════════════════════
 // Tests — laufen mit Feature "mem-db" (in-memory, kein Dateisystem nötig)
 //
@@ -717,8 +719,8 @@ mod tests {
             .expect("Store öffnen fehlgeschlagen")
     }
 
-    fn make_corpus(name: &str) -> CorpusRecord {
-        CorpusRecord {
+    fn make_dataset(name: &str) -> DatasetRecord {
+        DatasetRecord {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
             media_type: "audio".into(),
@@ -731,10 +733,10 @@ mod tests {
         }
     }
 
-    fn make_recording(corpus_id: &str, filepath: &str) -> RecordingRecord {
+    fn make_recording(dataset_id: &str, filepath: &str) -> RecordingRecord {
         RecordingRecord {
             id: uuid::Uuid::new_v4().to_string(),
-            corpus_id: corpus_id.to_string(),
+            dataset_id: dataset_id.to_string(),
             filepath: filepath.to_string(),
             tags: vec![],
             metadata: AudioMetadata::default(),
@@ -745,40 +747,40 @@ mod tests {
         }
     }
 
-    // ── Corpus CRUD ───────────────────────────────────────────────────
+    // ── Dataset CRUD ──────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_corpus_create_and_get() {
+    async fn test_dataset_create_and_get() {
         let store = open_store().await;
-        let corpus = make_corpus("Test Corpus");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Test Dataset");
+        store.dataset_create(&dataset).await.unwrap();
 
-        let got = store.corpus_get(&corpus.id).await.unwrap();
-        assert!(got.is_some(), "corpus_get sollte Some zurückgeben");
-        assert_eq!(got.unwrap().name, "Test Corpus");
+        let got = store.dataset_get(&dataset.id).await.unwrap();
+        assert!(got.is_some(), "dataset_get sollte Some zurückgeben");
+        assert_eq!(got.unwrap().name, "Test Dataset");
     }
 
     #[tokio::test]
-    async fn test_corpus_list() {
+    async fn test_dataset_list() {
         let store = open_store().await;
-        let c1 = make_corpus("Alpha");
-        let c2 = make_corpus("Beta");
-        store.corpus_create(&c1).await.unwrap();
-        store.corpus_create(&c2).await.unwrap();
+        let c1 = make_dataset("Alpha");
+        let c2 = make_dataset("Beta");
+        store.dataset_create(&c1).await.unwrap();
+        store.dataset_create(&c2).await.unwrap();
 
-        let list = store.corpus_list().await.unwrap();
+        let list = store.dataset_list().await.unwrap();
         assert_eq!(list.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_corpus_delete() {
+    async fn test_dataset_delete() {
         let store = open_store().await;
-        let corpus = make_corpus("Löschen");
-        store.corpus_create(&corpus).await.unwrap();
-        store.corpus_delete(&corpus.id).await.unwrap();
+        let dataset = make_dataset("Löschen");
+        store.dataset_create(&dataset).await.unwrap();
+        store.dataset_delete(&dataset.id).await.unwrap();
 
-        let got = store.corpus_get(&corpus.id).await.unwrap();
-        assert!(got.is_none(), "corpus sollte nach Delete None sein");
+        let got = store.dataset_get(&dataset.id).await.unwrap();
+        assert!(got.is_none(), "dataset sollte nach Delete None sein");
     }
 
     // ── Recording CRUD ────────────────────────────────────────────────
@@ -786,10 +788,10 @@ mod tests {
     #[tokio::test]
     async fn test_recording_insert_and_get() {
         let store = open_store().await;
-        let corpus = make_corpus("Recordings");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Recordings");
+        store.dataset_create(&dataset).await.unwrap();
 
-        let rec = make_recording(&corpus.id, "/audio/test.wav");
+        let rec = make_recording(&dataset.id, "/audio/test.wav");
         store.recording_insert(&rec).await.unwrap();
 
         let got = store.recording_get(&rec.id).await.unwrap();
@@ -798,32 +800,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_recording_list_by_corpus() {
+    async fn test_recording_list_by_dataset() {
         let store = open_store().await;
-        let corpus = make_corpus("Liste");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Liste");
+        store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..5 {
-            let rec = make_recording(&corpus.id, &format!("/audio/{i}.wav"));
+            let rec = make_recording(&dataset.id, &format!("/audio/{i}.wav"));
             store.recording_insert(&rec).await.unwrap();
         }
 
-        let list = store.recording_list_by_corpus(&corpus.id, 10, 0).await.unwrap();
+        let list = store.recording_list_by_dataset(&dataset.id, 10, 0).await.unwrap();
         assert_eq!(list.len(), 5);
     }
 
     #[tokio::test]
     async fn test_recording_count() {
         let store = open_store().await;
-        let corpus = make_corpus("Zählen");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Zählen");
+        store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..3 {
-            let rec = make_recording(&corpus.id, &format!("/audio/{i}.wav"));
+            let rec = make_recording(&dataset.id, &format!("/audio/{i}.wav"));
             store.recording_insert(&rec).await.unwrap();
         }
 
-        let count = store.recording_count_by_corpus(&corpus.id).await.unwrap();
+        let count = store.recording_count_by_dataset(&dataset.id).await.unwrap();
         assert_eq!(count, 3);
     }
 
@@ -831,10 +833,10 @@ mod tests {
     #[tokio::test]
     async fn test_recording_update_tags_roundtrip() {
         let store = open_store().await;
-        let corpus = make_corpus("Tags");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Tags");
+        store.dataset_create(&dataset).await.unwrap();
 
-        let rec = make_recording(&corpus.id, "/audio/tag_test.wav");
+        let rec = make_recording(&dataset.id, "/audio/tag_test.wav");
         store.recording_insert(&rec).await.unwrap();
 
         let new_tags = vec!["reviewed".to_string(), "Turdus merula".to_string()];
@@ -847,10 +849,10 @@ mod tests {
     #[tokio::test]
     async fn test_recording_hash_dedup() {
         let store = open_store().await;
-        let corpus = make_corpus("Dedup");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Dedup");
+        store.dataset_create(&dataset).await.unwrap();
 
-        let rec = make_recording(&corpus.id, "/audio/dedup.wav");
+        let rec = make_recording(&dataset.id, "/audio/dedup.wav");
         store.recording_insert(&rec).await.unwrap();
 
         let exists = store.recording_hash_exists("abc123").await.unwrap();
@@ -861,34 +863,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_corpus_delete_cascades_recordings() {
+    async fn test_dataset_delete_cascades_recordings() {
         let store = open_store().await;
-        let corpus = make_corpus("Kaskade");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Kaskade");
+        store.dataset_create(&dataset).await.unwrap();
 
-        let rec = make_recording(&corpus.id, "/audio/cascade.wav");
+        let rec = make_recording(&dataset.id, "/audio/cascade.wav");
         store.recording_insert(&rec).await.unwrap();
 
-        store.corpus_delete(&corpus.id).await.unwrap();
+        store.dataset_delete(&dataset.id).await.unwrap();
 
         // Recording sollte nach Cascade-Delete weg sein
         let got = store.recording_get(&rec.id).await.unwrap();
-        assert!(got.is_none(), "Recording sollte nach Corpus-Delete gelöscht sein");
+        assert!(got.is_none(), "Recording sollte nach Dataset-Delete gelöscht sein");
     }
 
     #[tokio::test]
     async fn test_recording_pagination() {
         let store = open_store().await;
-        let corpus = make_corpus("Paginierung");
-        store.corpus_create(&corpus).await.unwrap();
+        let dataset = make_dataset("Paginierung");
+        store.dataset_create(&dataset).await.unwrap();
 
         for i in 0..10u32 {
-            let rec = make_recording(&corpus.id, &format!("/audio/page_{i}.wav"));
+            let rec = make_recording(&dataset.id, &format!("/audio/page_{i}.wav"));
             store.recording_insert(&rec).await.unwrap();
         }
 
-        let page1 = store.recording_list_by_corpus(&corpus.id, 5, 0).await.unwrap();
-        let page2 = store.recording_list_by_corpus(&corpus.id, 5, 5).await.unwrap();
+        let page1 = store.recording_list_by_dataset(&dataset.id, 5, 0).await.unwrap();
+        let page2 = store.recording_list_by_dataset(&dataset.id, 5, 5).await.unwrap();
 
         assert_eq!(page1.len(), 5, "Seite 1 sollte 5 Einträge haben");
         assert_eq!(page2.len(), 5, "Seite 2 sollte 5 Einträge haben");

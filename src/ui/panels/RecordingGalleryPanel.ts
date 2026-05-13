@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/RecordingGalleryPanel.ts — Aufnahmen-Galerie innerhalb eines Corpus
+// ui/panels/RecordingGalleryPanel.ts — Aufnahmen-Galerie innerhalb eines Datasets
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { Recording, Corpus } from '../../domain/corpus/types.ts';
+import type { Recording, Dataset } from '../../domain/corpus/types.ts';
 import {
     recordingList,
     recordingSetTags,
     recordingDelete,
     recordingDistinctValues,
-    corpusRunBirdnet,
+    datasetRunBirdnet,
     type BirdnetRunArgs,
     type BirdnetRunSummary,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
@@ -17,7 +17,7 @@ import { listen } from '@tauri-apps/api/event';
 
 export interface RecordingGalleryOptions {
     container: HTMLElement;
-    corpus: Corpus;
+    dataset: Dataset;
     onBack: () => void;
     onOpenRecording?: (recording: Recording) => void;
     onImport?: () => void;
@@ -28,7 +28,7 @@ const PAGE_SIZE = 50;
 
 export class RecordingGalleryPanel {
     private readonly container: HTMLElement;
-    private readonly corpus: Corpus;
+    private readonly dataset: Dataset;
     private readonly onBack: () => void;
     private readonly onOpenRecording: ((r: Recording) => void) | undefined;
     private readonly onImport: (() => void) | undefined;
@@ -50,7 +50,7 @@ export class RecordingGalleryPanel {
 
     constructor(opts: RecordingGalleryOptions) {
         this.container = opts.container;
-        this.corpus = opts.corpus;
+        this.dataset = opts.dataset;
         this.onBack = opts.onBack;
         this.onOpenRecording = opts.onOpenRecording;
         this.onImport = opts.onImport;
@@ -64,7 +64,7 @@ export class RecordingGalleryPanel {
     }
 
     private renderShell(): string {
-        const knownTags = this.corpus.knownTags ?? [];
+        const knownTags = this.dataset.knownTags ?? [];
         const tagPills = knownTags
             .map(
                 (t) =>
@@ -73,7 +73,7 @@ export class RecordingGalleryPanel {
             .join('');
 
         // Feld-Filter aus fieldSchema (nur primitive Felder mit Werten)
-        const fieldSchema = this.corpus.fieldSchema ?? [];
+        const fieldSchema = this.dataset.fieldSchema ?? [];
         const filterableFields = fieldSchema.filter((f) =>
             ['string', 'int', 'float'].includes(f.kind) && !f.system,
         );
@@ -96,9 +96,9 @@ export class RecordingGalleryPanel {
             <div class="recording-gallery">
                 <div class="recording-gallery__header">
                     <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Zurück">←</button>
-                    <h2 class="recording-gallery__title">${escapeHtml(this.corpus.name)}</h2>
+                    <h2 class="recording-gallery__title">${escapeHtml(this.dataset.name)}</h2>
                     <div class="recording-gallery__header-actions">
-                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="BirdNET auf dem ganzen Corpus ausführen">
+                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="BirdNET auf dem ganzen Dataset ausführen">
                             🔍 BirdNET
                         </button>
                         <button class="btn btn--primary" id="galleryImportBtn">+ Importieren</button>
@@ -131,7 +131,7 @@ export class RecordingGalleryPanel {
                 </div>
 
                 <div class="recording-gallery__stats" id="galleryStats">
-                    ${this.corpus.recordingCount.toLocaleString()} Aufnahmen
+                    ${this.dataset.recordingCount.toLocaleString()} Aufnahmen
                 </div>
 
                 <div class="recording-gallery__grid" id="galleryGrid">
@@ -195,7 +195,7 @@ export class RecordingGalleryPanel {
                 const field = sel.dataset.field!;
                 if (!this.fieldValues.has(field)) {
                     try {
-                        const vals = await recordingDistinctValues(this.corpus.id, field);
+                        const vals = await recordingDistinctValues(this.dataset.id, field);
                         this.fieldValues.set(field, vals);
                         // Optionen nachfüllen
                         vals.forEach((v) => {
@@ -230,7 +230,7 @@ export class RecordingGalleryPanel {
         this.isLoading = true;
         try {
             const batch = await recordingList({
-                corpusId: this.corpus.id,
+                datasetId: this.dataset.id,
                 limit: PAGE_SIZE,
                 offset: this.offset,
             });
@@ -377,7 +377,7 @@ export class RecordingGalleryPanel {
                     <div class="form-row">
                         <label class="form-label" for="birdnetScope">Umfang</label>
                         <select class="input" id="birdnetScope">
-                            <option value="all">Alle Aufnahmen (${this.corpus.recordingCount.toLocaleString()})</option>
+                            <option value="all">Alle Aufnahmen (${this.dataset.recordingCount.toLocaleString()})</option>
                             <option value="filtered">Gefilterte Aufnahmen (${this.filteredRecordings().length.toLocaleString()})</option>
                         </select>
                     </div>
@@ -414,7 +414,7 @@ export class RecordingGalleryPanel {
                 : undefined;
 
             overlay.remove();
-            this.runBirdnet({ corpusId: this.corpus.id, fieldName, minConf, lat, lon, week, recordingIds });
+            this.runBirdnet({ datasetId: this.dataset.id, fieldName, minConf, lat, lon, week, recordingIds });
         });
     }
 
@@ -433,7 +433,7 @@ export class RecordingGalleryPanel {
         // Tauri-Event-Listener für Fortschritt
         this.unlistenBirdnet?.();
         const unlistenHandle = await listen<{ current: number; total: number; filepath: string | null }>(
-            'corpus:birdnet-progress',
+            'dataset:birdnet-progress',
             (event) => {
                 const { current, total, filepath } = event.payload;
                 const pct = total > 0 ? Math.round((current / total) * 100) : 0;
@@ -445,7 +445,7 @@ export class RecordingGalleryPanel {
         this.unlistenBirdnet = () => unlistenHandle();
 
         try {
-            const summary: BirdnetRunSummary = await corpusRunBirdnet(args);
+            const summary: BirdnetRunSummary = await datasetRunBirdnet(args);
             this.onStatusMessage(
                 `BirdNET: ${summary.processed} analysiert, ${summary.errors} Fehler, ${summary.skipped} übersprungen.`,
             );

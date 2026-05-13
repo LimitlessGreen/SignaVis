@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════
-// commands/corpus_analysis.rs — BirdNET-Inferenz auf einem Corpus
+// commands/corpus_analysis.rs — BirdNET-Inferenz auf einem Dataset
 //
-// Der Command `corpus_run_birdnet` startet das Python-Sidecar-Skript
+// Der Command `dataset_run_birdnet` startet das Python-Sidecar-Skript
 // `birdnet_sidecar.py`, übergibt die Dateiliste per stdin (JSON),
 // liest JSON-Lines von stdout und schreibt SoundEvents-Ergebnisse
 // als dynamisches Feld in SurrealDB.
 //
 // Tauri-Events (global):
-//   "corpus:birdnet-progress" — { jobId, corpusId, current, total, filepath }
-//   "corpus:birdnet-result"   — { jobId, corpusId, recordingId, fieldName, detectionCount }
+//   "dataset:birdnet-progress" — { jobId, datasetId, current, total, filepath }
+//   "dataset:birdnet-result"   — { jobId, datasetId, recordingId, fieldName, detectionCount }
 // ═══════════════════════════════════════════════════════════════════════
 
 use serde::{Deserialize, Serialize};
@@ -25,9 +25,9 @@ use crate::helpers::time::now_millis;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CorpusBirdnetRunArgs {
-    /// ID des Corpus, dessen Recordings analysiert werden sollen.
-    pub corpus_id: String,
+pub struct DatasetBirdnetRunArgs {
+    /// ID des Datasets, dessen Recordings analysiert werden sollen.
+    pub dataset_id: String,
     /// Name des dynamischen Feldes, unter dem SoundEvents gespeichert werden.
     /// Beispiel: "birdnetV24". Muss `[a-zA-Z][a-zA-Z0-9_]*` entsprechen.
     pub field_name: String,
@@ -61,7 +61,7 @@ pub struct CorpusBirdnetRunArgs {
 #[serde(rename_all = "camelCase")]
 pub struct BirdnetRunSummary {
     pub job_id: String,
-    pub corpus_id: String,
+    pub dataset_id: String,
     pub field_name: String,
     pub processed: u64,
     pub errors: u64,
@@ -74,7 +74,7 @@ pub struct BirdnetRunSummary {
 #[serde(rename_all = "camelCase")]
 struct BirdnetProgressPayload {
     job_id: String,
-    corpus_id: String,
+    dataset_id: String,
     current: u64,
     total: u64,
     filepath: Option<String>,
@@ -84,7 +84,7 @@ struct BirdnetProgressPayload {
 #[serde(rename_all = "camelCase")]
 struct BirdnetResultPayload {
     job_id: String,
-    corpus_id: String,
+    dataset_id: String,
     recording_id: String,
     field_name: String,
     detection_count: usize,
@@ -179,37 +179,37 @@ fn resolve_sidecar_script(
 
 // ── Command ───────────────────────────────────────────────────────────
 
-/// Startet eine BirdNET-Inferenz auf einem Corpus (oder einer Teilmenge).
+/// Startet eine BirdNET-Inferenz auf einem Dataset (oder einer Teilmenge).
 ///
 /// Der Python-Sidecar-Prozess wird synchron in einem Tokio-Task ausgeführt.
 /// Fortschrittsereignisse werden als Tauri-Events emittiert:
-/// - `"corpus:birdnet-progress"` — nach jeder Datei
-/// - `"corpus:birdnet-result"`   — nach erfolgreicher SurrealDB-Schreiboperation
+/// - `"dataset:birdnet-progress"` — nach jeder Datei
+/// - `"dataset:birdnet-result"`   — nach erfolgreicher SurrealDB-Schreiboperation
 ///
 /// Der Command blockiert bis zum Abschluss aller Dateien.
 #[tauri::command]
-pub async fn corpus_run_birdnet(
+pub async fn dataset_run_birdnet(
     app: tauri::AppHandle,
     store: State<'_, CorpusStoreState>,
-    args: CorpusBirdnetRunArgs,
+    args: DatasetBirdnetRunArgs,
 ) -> Result<BirdnetRunSummary, String> {
     // ── Validierung ───────────────────────────────────────────────────
     let field_name = sanitize_field_name(&args.field_name)?;
-    let corpus_id = args.corpus_id.trim().to_string();
-    if corpus_id.is_empty() {
-        return Err("corpus_id darf nicht leer sein".into());
+    let dataset_id = args.dataset_id.trim().to_string();
+    if dataset_id.is_empty() {
+        return Err("dataset_id darf nicht leer sein".into());
     }
 
-    // Corpus muss existieren
+    // Dataset muss existieren
     store
-        .corpus_get(&corpus_id)
+        .dataset_get(&dataset_id)
         .await?
-        .ok_or_else(|| format!("Corpus '{corpus_id}' nicht gefunden"))?;
+        .ok_or_else(|| format!("Dataset '{dataset_id}' nicht gefunden"))?;
 
     let job_id = uuid::Uuid::new_v4().to_string();
 
     // ── Recordings laden ──────────────────────────────────────────────
-    let all_recordings = store.recording_list_by_corpus_all(&corpus_id).await?;
+    let all_recordings = store.recording_list_by_dataset_all(&dataset_id).await?;
 
     let recordings: Vec<_> = if let Some(ref ids) = args.recording_ids {
         let id_set: HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
@@ -224,7 +224,7 @@ pub async fn corpus_run_birdnet(
     if recordings.is_empty() {
         return Ok(BirdnetRunSummary {
             job_id,
-            corpus_id,
+            dataset_id,
             field_name,
             processed: 0,
             errors: 0,
@@ -309,10 +309,10 @@ pub async fn corpus_run_birdnet(
                 let total_ev = event["total"].as_u64().unwrap_or(total);
                 let filepath = event["filepath"].as_str().map(|s| s.to_string());
                 let _ = app.emit(
-                    "corpus:birdnet-progress",
+                    "dataset:birdnet-progress",
                     BirdnetProgressPayload {
                         job_id: job_id.clone(),
-                        corpus_id: corpus_id.clone(),
+                        dataset_id: dataset_id.clone(),
                         current,
                         total: total_ev,
                         filepath,
@@ -349,10 +349,10 @@ pub async fn corpus_run_birdnet(
                     .unwrap_or(0);
 
                 let _ = app.emit(
-                    "corpus:birdnet-result",
+                    "dataset:birdnet-result",
                     BirdnetResultPayload {
                         job_id: job_id.clone(),
-                        corpus_id: corpus_id.clone(),
+                        dataset_id: dataset_id.clone(),
                         recording_id: rec_id,
                         field_name: field_name.clone(),
                         detection_count,
@@ -373,11 +373,11 @@ pub async fn corpus_run_birdnet(
     // Child-Prozess einsammeln (verhindert Zombie-Prozesse)
     let _ = child.wait().await;
 
-    // ── Feld ins Corpus-Schema eintragen (idempotent) ─────────────────
+    // ── Feld ins Dataset-Schema eintragen (idempotent) ─────────────────
     if processed > 0 {
-        if let Ok(Some(mut corpus)) = store.corpus_get(&corpus_id).await {
-            if !corpus.field_schema.iter().any(|f| f.name == field_name) {
-                corpus.field_schema.push(FieldDefinition {
+        if let Ok(Some(mut dataset)) = store.dataset_get(&dataset_id).await {
+            if !dataset.field_schema.iter().any(|f| f.name == field_name) {
+                dataset.field_schema.push(FieldDefinition {
                     name: field_name.clone(),
                     kind: "sound_events".into(),
                     description: Some(format!(
@@ -388,16 +388,16 @@ pub async fn corpus_run_birdnet(
                     system: false,
                 });
                 if let Ok(now) = now_millis() {
-                    corpus.updated_at = now as i64;
+                    dataset.updated_at = now as i64;
                 }
-                let _ = store.corpus_update(&corpus).await;
+                let _ = store.dataset_update(&dataset).await;
             }
         }
     }
 
     Ok(BirdnetRunSummary {
         job_id,
-        corpus_id,
+        dataset_id,
         field_name,
         processed,
         errors,

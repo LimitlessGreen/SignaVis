@@ -2,7 +2,7 @@
 // domain/corpus/types.ts — Signavis v2 Datenmodell
 //
 // Kernkonzepte (FiftyOne-inspiriert, bioacoustic-angepasst):
-//   Corpus     → Dataset (oberster Behälter)
+//   Dataset    → Dataset (oberster Behälter)
 //   Recording  → Sample (Dokument pro Audiodatei)
 //   Field      → Field (typisierte Eigenschaft)
 //   Tag        → string-Label für Workflow-Zustände
@@ -111,8 +111,8 @@ export interface GeoLocation {
 export interface Recording {
     /** Eindeutige ID (UUID). */
     id: string;
-    /** Zugehöriger Corpus. */
-    corpusId: string;
+    /** Zugehöriges Dataset. */
+    datasetId: string;
     /** Absoluter Pfad zur Audiodatei. */
     filepath: string;
     /** Workflow-Tags (z. B. "train", "validated", "flagged"). */
@@ -137,7 +137,7 @@ export interface Recording {
 /** Leichtgewichtige Zusammenfassung für Listenansichten. */
 export interface RecordingSummary {
     id: string;
-    corpusId: string;
+    datasetId: string;
     filepath: string;
     tags: string[];
     duration: number;
@@ -146,9 +146,9 @@ export interface RecordingSummary {
     location?: GeoLocation;
 }
 
-// ── Corpus ───────────────────────────────────────────────────────────
+// ── Dataset ───────────────────────────────────────────────────────────
 
-export interface Corpus {
+export interface Dataset {
     /** Eindeutige ID. */
     id: string;
     /** Anzeigename. */
@@ -170,7 +170,7 @@ export interface Corpus {
     description?: string;
 }
 
-export interface CorpusSummary {
+export interface DatasetSummary {
     id: string;
     name: string;
     mediaType: 'audio';
@@ -201,8 +201,8 @@ export interface ViewStage {
 }
 
 export interface View {
-    /** Corpus, auf dem der View basiert. */
-    corpusId: string;
+    /** Dataset, auf dem der View basiert. */
+    datasetId: string;
     /** Geordnete Liste von View-Stages. */
     stages: ViewStage[];
 }
@@ -252,7 +252,7 @@ export interface AnalysisRunInfo {
 // ── Import-Konfiguration ─────────────────────────────────────────────
 
 export interface FolderImportConfig {
-    corpusId: string;
+    datasetId: string;
     /** Absoluter Pfad zum Quellordner. */
     folderPath: string;
     /**

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// corpus-types.test.mjs — Tests für das Corpus-Domänenmodell (v2)
+// corpus-types.test.mjs — Tests für das Dataset-Domänenmodell (v2)
 //
 // Prüft: Typkonstruktion, Validierungshelfer, ViewStage-Logik.
 // Keine Abhängigkeit auf Tauri — läuft in Node.js direkt.
@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 function makeRecording(overrides = {}) {
     return {
         id: 'rec-001',
-        corpusId: 'corpus-001',
+        datasetId: 'dataset-001',
         filepath: '/audio/test.wav',
         tags: [],
         metadata: {
@@ -30,11 +30,11 @@ function makeRecording(overrides = {}) {
     };
 }
 
-/** Erstellt ein minimales Corpus-Objekt. */
-function makeCorpus(overrides = {}) {
+/** Erstellt ein minimales Dataset-Objekt. */
+function makeDataset(overrides = {}) {
     return {
-        id: 'corpus-001',
-        name: 'Test Corpus',
+        id: 'dataset-001',
+        name: 'Test Dataset',
         mediaType: 'audio',
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -50,7 +50,7 @@ function makeCorpus(overrides = {}) {
 test('Recording: Basis-Felder vorhanden', () => {
     const rec = makeRecording();
     assert.equal(rec.id, 'rec-001');
-    assert.equal(rec.corpusId, 'corpus-001');
+    assert.equal(rec.datasetId, 'dataset-001');
     assert.equal(rec.filepath, '/audio/test.wav');
     assert.deepEqual(rec.tags, []);
 });
@@ -78,28 +78,28 @@ test('Recording: fields-Objekt akzeptiert beliebige Schlüssel', () => {
     assert.equal(rec.fields.site, 'Forest_A');
 });
 
-// ── Corpus ───────────────────────────────────────────────────────────
+// ── Dataset ───────────────────────────────────────────────────────────
 
-test('Corpus: Basis-Felder vorhanden', () => {
-    const c = makeCorpus();
-    assert.equal(c.id, 'corpus-001');
-    assert.equal(c.name, 'Test Corpus');
+test('Dataset: Basis-Felder vorhanden', () => {
+    const c = makeDataset();
+    assert.equal(c.id, 'dataset-001');
+    assert.equal(c.name, 'Test Dataset');
     assert.equal(c.mediaType, 'audio');
     assert.equal(c.recordingCount, 0);
     assert.deepEqual(c.fieldSchema, []);
     assert.deepEqual(c.knownTags, []);
 });
 
-test('Corpus: description ist optional', () => {
-    const c1 = makeCorpus();
+test('Dataset: description ist optional', () => {
+    const c1 = makeDataset();
     assert.equal(c1.description, undefined);
 
-    const c2 = makeCorpus({ description: 'Freilandaufnahmen 2024' });
+    const c2 = makeDataset({ description: 'Freilandaufnahmen 2024' });
     assert.equal(c2.description, 'Freilandaufnahmen 2024');
 });
 
-test('Corpus: knownTags können befüllt sein', () => {
-    const c = makeCorpus({ knownTags: ['reviewed', 'exported', 'low-quality'] });
+test('Dataset: knownTags können befüllt sein', () => {
+    const c = makeDataset({ knownTags: ['reviewed', 'exported', 'low-quality'] });
     assert.equal(c.knownTags.length, 3);
     assert.ok(c.knownTags.includes('low-quality'));
 });

@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Recording, SoundEvent } from '../../domain/corpus/types.ts';
-import { recordingSetTags, corpusRunBirdnet, type BirdnetRunArgs } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { recordingSetTags, datasetRunBirdnet, type BirdnetRunArgs } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { listen } from '@tauri-apps/api/event';
 
 export interface RecordingDetailPanelOptions {
@@ -337,7 +337,7 @@ export class RecordingDetailPanel {
         this.unlistenProgress?.();
         let unlistenFn: (() => void) | null = null;
         const unlistenHandle = await listen<{ filepath: string; current: number; total: number }>(
-            'corpus:birdnet-progress',
+            'dataset:birdnet-progress',
             (event) => {
                 const { current, total } = event.payload;
                 const pct = total > 0 ? Math.round((current / total) * 100) : 0;
@@ -350,11 +350,11 @@ export class RecordingDetailPanel {
 
         try {
             const args: BirdnetRunArgs = {
-                corpusId: r.corpusId,
+                datasetId: r.datasetId,
                 fieldName,
                 recordingIds: [r.id],
             };
-            await corpusRunBirdnet(args);
+            await datasetRunBirdnet(args);
 
             // Recording neu laden um Ergebnisse zu zeigen
             const { recordingGet } = await import('../../infrastructure/tauri/TauriCorpusAdapter.ts');

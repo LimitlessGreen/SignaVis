@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// commands/recordings.rs — Tauri IPC Commands für Recording-Verwaltung
+// commands/recordings.rs — Tauri IPC Commands für Recording-Verwaltung (Dataset-Kontext)
 // inkl. Ordner-Import-Pipeline
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -193,7 +193,7 @@ fn extract_path_fields(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingImportFolderArgs {
-    pub corpus_id: String,
+    pub dataset_id: String,
     pub folder_path: String,
     pub path_pattern: Option<String>,
     pub skip_duplicates: Option<bool>,
@@ -217,11 +217,11 @@ pub async fn recording_import_folder(
 ) -> Result<ImportResult, String> {
     let start = std::time::Instant::now();
 
-    // Corpus-Existenz prüfen
+    // Dataset-Existenz prüfen
     let _ = store
-        .corpus_get(&args.corpus_id)
+        .dataset_get(&args.dataset_id)
         .await?
-        .ok_or_else(|| format!("recording_import_folder: corpus not found: {}", args.corpus_id))?;
+        .ok_or_else(|| format!("recording_import_folder: dataset not found: {}", args.dataset_id))?;
 
     let folder = PathBuf::from(&args.folder_path);
     if !folder.exists() || !folder.is_dir() {
@@ -324,7 +324,7 @@ pub async fn recording_import_folder(
 
         let rec = RecordingRecord {
             id: Uuid::new_v4().to_string(),
-            corpus_id: args.corpus_id.clone(),
+            dataset_id: args.dataset_id.clone(),
             filepath: abs_path.to_string_lossy().into_owned(),
             tags: vec![],
             metadata,
@@ -360,16 +360,16 @@ pub async fn recording_import_folder(
         }
     }
 
-    // Recording-Count im Corpus aktualisieren
+    // Recording-Count im Dataset aktualisieren
     if imported > 0 {
-        if let Ok(Some(mut corpus)) = store.corpus_get(&args.corpus_id).await {
+        if let Ok(Some(mut dataset)) = store.dataset_get(&args.dataset_id).await {
             let total = store
-                .recording_count_by_corpus(&args.corpus_id)
+                .recording_count_by_dataset(&args.dataset_id)
                 .await
-                .unwrap_or(corpus.recording_count + imported);
-            corpus.recording_count = total;
-            corpus.updated_at = now;
-            let _ = store.corpus_update(&corpus).await;
+                .unwrap_or(dataset.recording_count + imported);
+            dataset.recording_count = total;
+            dataset.updated_at = now;
+            let _ = store.dataset_update(&dataset).await;
         }
     }
 
@@ -387,7 +387,7 @@ pub async fn recording_import_folder(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingListArgs {
-    pub corpus_id: String,
+    pub dataset_id: String,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
 }
@@ -400,7 +400,7 @@ pub async fn recording_list(
     let limit = args.limit.unwrap_or(100).min(1000);
     let offset = args.offset.unwrap_or(0);
     let recs = store
-        .recording_list_by_corpus(&args.corpus_id, limit, offset)
+        .recording_list_by_dataset(&args.dataset_id, limit, offset)
         .await?;
     recs.iter()
         .map(|r| serde_json::to_value(r).map_err(|e| format!("recording_list: serialize: {e}")))
@@ -455,22 +455,22 @@ pub async fn recording_delete(
 #[tauri::command]
 pub async fn recording_count(
     store: State<'_, CorpusStoreState>,
-    corpus_id: String,
+    dataset_id: String,
 ) -> Result<u64, String> {
-    store.recording_count_by_corpus(&corpus_id).await
+    store.recording_count_by_dataset(&dataset_id).await
 }
 
 // ── recording_distinct_values ─────────────────────────────────────────
 
 /// Gibt alle distinkten Werte für ein gegebenes Pfad-Feld innerhalb eines
-/// Corpus zurück. Wird für die Dropdown-Filter in der Toolbar verwendet.
+/// Datasets zurück. Wird für die Dropdown-Filter in der Toolbar verwendet.
 ///
 /// Beispiel: field_name = "site" → ["Waldrand-Nord", "Seeufer", …]
 #[tauri::command]
 pub async fn recording_distinct_values(
     store: State<'_, CorpusStoreState>,
-    corpus_id: String,
+    dataset_id: String,
     field_name: String,
 ) -> Result<Vec<String>, String> {
-    store.recording_distinct_field_values(&corpus_id, &field_name).await
+    store.recording_distinct_field_values(&dataset_id, &field_name).await
 }

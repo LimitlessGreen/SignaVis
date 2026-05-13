@@ -34,7 +34,7 @@ pub fn run() {
             let corpus_data_dir = app
                 .path()
                 .app_data_dir()
-                .map(|d| d.join("corpus"))
+                .map(|d| d.join("dataset"))
                 .map_err(|e| format!("corpus_store: app_data_dir: {e}"))?;
 
             let app_handle = app.handle().clone();
@@ -101,13 +101,13 @@ pub fn run() {
             grpc_analysis_get_species,
             grpc_analysis_clear_location,
             grpc_analysis_analyze,
-            // ── Corpus commands (v2 Architektur) ─────────────────────
-            corpus_create,
-            corpus_list,
-            corpus_get,
-            corpus_delete,
-            corpus_update_meta,
-            corpus_add_field_to_schema,
+            // ── Dataset commands (v2 Architektur) ────────────────────
+            dataset_create,
+            dataset_list,
+            dataset_get,
+            dataset_delete,
+            dataset_update_meta,
+            dataset_add_field_to_schema,
             // ── Recording commands (v2 Architektur) ──────────────────
             recording_import_folder,
             recording_list,
@@ -116,8 +116,8 @@ pub fn run() {
             recording_delete,
             recording_count,
             recording_distinct_values,
-            // ── Corpus-Analyse (BirdNET-Inferenz) ────────────────────
-            corpus_run_birdnet,
+            // ── Dataset-Analyse (BirdNET-Inferenz) ───────────────────
+            dataset_run_birdnet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SignaVis");

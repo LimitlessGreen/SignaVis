@@ -36,29 +36,29 @@ function makeTauriMock(result = {}) {
  * Wrapper der die TauriCorpusAdapter-Funktionen mit einem Mock-invoke aufruft.
  * Da der Adapter dynamisch importiert, simulieren wir hier die Logik direkt.
  */
-function corpusAdapterWith(invokeFn) {
+function datasetAdapterWith(invokeFn) {
     async function invoke(command, args) {
         return invokeFn(command, args);
     }
 
     return {
-        async corpusCreate(name, description) {
-            return invoke('corpus_create', { args: { name, description } });
+        async datasetCreate(name, description) {
+            return invoke('dataset_create', { args: { name, description } });
         },
-        async corpusList() {
-            return invoke('corpus_list');
+        async datasetList() {
+            return invoke('dataset_list');
         },
-        async corpusGet(id) {
-            return invoke('corpus_get', { id });
+        async datasetGet(id) {
+            return invoke('dataset_get', { id });
         },
-        async corpusDelete(id) {
-            return invoke('corpus_delete', { id });
+        async datasetDelete(id) {
+            return invoke('dataset_delete', { id });
         },
-        async corpusUpdateMeta(id, name, description) {
-            return invoke('corpus_update_meta', { args: { id, name, description } });
+        async datasetUpdateMeta(id, name, description) {
+            return invoke('dataset_update_meta', { args: { id, name, description } });
         },
-        async recordingList({ corpusId, limit, offset }) {
-            return invoke('recording_list', { args: { corpusId, limit, offset } });
+        async recordingList({ datasetId, limit, offset }) {
+            return invoke('recording_list', { args: { datasetId, limit, offset } });
         },
         async recordingGet(id) {
             return invoke('recording_get', { id });
@@ -69,13 +69,13 @@ function corpusAdapterWith(invokeFn) {
         async recordingDelete(id) {
             return invoke('recording_delete', { id });
         },
-        async recordingCount(corpusId) {
-            return invoke('recording_count', { corpusId });
+        async recordingCount(datasetId) {
+            return invoke('recording_count', { datasetId });
         },
         async recordingImportFolder(config) {
             return invoke('recording_import_folder', {
                 args: {
-                    corpusId: config.corpusId,
+                    datasetId: config.datasetId,
                     folderPath: config.folderPath,
                     pathPattern: config.pathPattern,
                     skipDuplicates: true,
@@ -86,61 +86,61 @@ function corpusAdapterWith(invokeFn) {
     };
 }
 
-// ── Corpus-Commands ──────────────────────────────────────────────────
+// ── Dataset-Commands ──────────────────────────────────────────────────
 
-test('corpusCreate: sendet korrekten IPC-Befehl', async () => {
-    const { calls, invokeFn } = makeTauriMock({ id: 'c1', name: 'Testkorpus' });
-    const adapter = corpusAdapterWith(invokeFn);
+test('datasetCreate: sendet korrekten IPC-Befehl', async () => {
+    const { calls, invokeFn } = makeTauriMock({ id: 'c1', name: 'Test Dataset' });
+    const adapter = datasetAdapterWith(invokeFn);
 
-    const result = await adapter.corpusCreate('Testkorpus', 'Beschreibung');
+    const result = await adapter.datasetCreate('Test Dataset', 'Beschreibung');
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].command, 'corpus_create');
-    assert.equal(calls[0].args.args.name, 'Testkorpus');
+    assert.equal(calls[0].command, 'dataset_create');
+    assert.equal(calls[0].args.args.name, 'Test Dataset');
     assert.equal(calls[0].args.args.description, 'Beschreibung');
     assert.equal(result.id, 'c1');
 });
 
-test('corpusCreate: description kann fehlen (undefined)', async () => {
+test('datasetCreate: description kann fehlen (undefined)', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'c2', name: 'Kein Desc' });
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.corpusCreate('Kein Desc');
+    await adapter.datasetCreate('Kein Desc');
     assert.equal(calls[0].args.args.description, undefined);
 });
 
-test('corpusList: sendet corpus_list ohne Argumente', async () => {
+test('datasetList: sendet dataset_list ohne Argumente', async () => {
     const { calls, invokeFn } = makeTauriMock([]);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    const result = await adapter.corpusList();
-    assert.equal(calls[0].command, 'corpus_list');
+    const result = await adapter.datasetList();
+    assert.equal(calls[0].command, 'dataset_list');
     assert.deepEqual(result, []);
 });
 
-test('corpusGet: sendet id korrekt', async () => {
+test('datasetGet: sendet id korrekt', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'abc', name: 'X' });
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.corpusGet('abc');
-    assert.equal(calls[0].command, 'corpus_get');
+    await adapter.datasetGet('abc');
+    assert.equal(calls[0].command, 'dataset_get');
     assert.equal(calls[0].args.id, 'abc');
 });
 
-test('corpusDelete: sendet id korrekt', async () => {
+test('datasetDelete: sendet id korrekt', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.corpusDelete('del-id');
-    assert.equal(calls[0].command, 'corpus_delete');
+    await adapter.datasetDelete('del-id');
+    assert.equal(calls[0].command, 'dataset_delete');
     assert.equal(calls[0].args.id, 'del-id');
 });
 
-test('corpusUpdateMeta: sendet alle Felder', async () => {
+test('datasetUpdateMeta: sendet alle Felder', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'x', name: 'Neu' });
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.corpusUpdateMeta('x', 'Neu', 'Neue Beschreibung');
-    assert.equal(calls[0].command, 'corpus_update_meta');
+    await adapter.datasetUpdateMeta('x', 'Neu', 'Neue Beschreibung');
+    assert.equal(calls[0].command, 'dataset_update_meta');
     assert.equal(calls[0].args.args.id, 'x');
     assert.equal(calls[0].args.args.name, 'Neu');
     assert.equal(calls[0].args.args.description, 'Neue Beschreibung');
@@ -148,20 +148,20 @@ test('corpusUpdateMeta: sendet alle Felder', async () => {
 
 // ── Recording-Commands ───────────────────────────────────────────────
 
-test('recordingList: sendet corpusId, limit, offset', async () => {
+test('recordingList: sendet datasetId, limit, offset', async () => {
     const { calls, invokeFn } = makeTauriMock([]);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    await adapter.recordingList({ corpusId: 'cid', limit: 50, offset: 0 });
+    await adapter.recordingList({ datasetId: 'cid', limit: 50, offset: 0 });
     assert.equal(calls[0].command, 'recording_list');
-    assert.equal(calls[0].args.args.corpusId, 'cid');
+    assert.equal(calls[0].args.args.datasetId, 'cid');
     assert.equal(calls[0].args.args.limit, 50);
     assert.equal(calls[0].args.args.offset, 0);
 });
 
 test('recordingGet: sendet id', async () => {
     const { calls, invokeFn } = makeTauriMock({ id: 'r1' });
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await adapter.recordingGet('r1');
     assert.equal(calls[0].command, 'recording_get');
@@ -170,7 +170,7 @@ test('recordingGet: sendet id', async () => {
 
 test('recordingSetTags: sendet id und tags-Array', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await adapter.recordingSetTags('r42', ['reviewed', 'Turdus merula']);
     assert.equal(calls[0].command, 'recording_set_tags');
@@ -180,7 +180,7 @@ test('recordingSetTags: sendet id und tags-Array', async () => {
 
 test('recordingSetTags: leeres Tags-Array ist gültig', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await adapter.recordingSetTags('r1', []);
     assert.deepEqual(calls[0].args.args.tags, []);
@@ -188,20 +188,20 @@ test('recordingSetTags: leeres Tags-Array ist gültig', async () => {
 
 test('recordingDelete: sendet id', async () => {
     const { calls, invokeFn } = makeTauriMock(undefined);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await adapter.recordingDelete('r99');
     assert.equal(calls[0].command, 'recording_delete');
     assert.equal(calls[0].args.id, 'r99');
 });
 
-test('recordingCount: sendet corpusId', async () => {
+test('recordingCount: sendet datasetId', async () => {
     const { calls, invokeFn } = makeTauriMock(42);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    const count = await adapter.recordingCount('corpus-xyz');
+    const count = await adapter.recordingCount('dataset-xyz');
     assert.equal(calls[0].command, 'recording_count');
-    assert.equal(calls[0].args.corpusId, 'corpus-xyz');
+    assert.equal(calls[0].args.datasetId, 'dataset-xyz');
     assert.equal(count, 42);
 });
 
@@ -212,10 +212,10 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
         imported: 10, skipped: 2, errors: 0, errorMessages: [], durationMs: 850,
     };
     const { calls, invokeFn } = makeTauriMock(importResult);
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     const result = await adapter.recordingImportFolder({
-        corpusId: 'c1',
+        datasetId: 'c1',
         folderPath: '/data/aufnahmen',
         pathPattern: '{recorder_id}/{site}/{week}',
         copyFiles: true,
@@ -223,7 +223,7 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
     });
 
     assert.equal(calls[0].command, 'recording_import_folder');
-    assert.equal(calls[0].args.args.corpusId, 'c1');
+    assert.equal(calls[0].args.args.datasetId, 'c1');
     assert.equal(calls[0].args.args.folderPath, '/data/aufnahmen');
     assert.equal(calls[0].args.args.pathPattern, '{recorder_id}/{site}/{week}');
     assert.equal(calls[0].args.args.skipDuplicates, true);
@@ -234,10 +234,10 @@ test('recordingImportFolder: sendet vollständige Konfiguration', async () => {
 
 test('recordingImportFolder: extensions ist optional (undefined)', async () => {
     const { calls, invokeFn } = makeTauriMock({ imported: 0, skipped: 0, errors: 0, errorMessages: [], durationMs: 0 });
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await adapter.recordingImportFolder({
-        corpusId: 'c1',
+        datasetId: 'c1',
         folderPath: '/data',
         pathPattern: '',
         copyFiles: false,
@@ -249,18 +249,18 @@ test('recordingImportFolder: extensions ist optional (undefined)', async () => {
 // ── Fehlerweiterleitung ───────────────────────────────────────────────
 
 test('Fehler wird korrekt weitergeleitet', async () => {
-    const { invokeFn } = makeTauriMock(new Error('IPC-Fehler: corpus nicht gefunden'));
-    const adapter = corpusAdapterWith(invokeFn);
+    const { invokeFn } = makeTauriMock(new Error('IPC-Fehler: dataset nicht gefunden'));
+    const adapter = datasetAdapterWith(invokeFn);
 
     await assert.rejects(
-        () => adapter.corpusGet('nonexistent'),
-        { message: 'IPC-Fehler: corpus nicht gefunden' },
+        () => adapter.datasetGet('nonexistent'),
+        { message: 'IPC-Fehler: dataset nicht gefunden' },
     );
 });
 
 test('recordingSetTags: Fehler bei ungültiger ID weitergeleitet', async () => {
     const { invokeFn } = makeTauriMock(new Error('recording not found'));
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
     await assert.rejects(
         () => adapter.recordingSetTags('bad-id', ['tag']),
@@ -270,8 +270,8 @@ test('recordingSetTags: Fehler bei ungültiger ID weitergeleitet', async () => {
 
 // ── Batch-Operationen ────────────────────────────────────────────────
 
-test('Mehrere Corpus erstellen und auflisten (Mock-Sequenz)', async () => {
-    const corpora = [
+test('Mehrere Datasets erstellen und auflisten (Mock-Sequenz)', async () => {
+    const datasets = [
         { id: 'c1', name: 'Alpha', recordingCount: 5 },
         { id: 'c2', name: 'Beta', recordingCount: 12 },
     ];
@@ -279,12 +279,12 @@ test('Mehrere Corpus erstellen und auflisten (Mock-Sequenz)', async () => {
     let callCount = 0;
     const invokeFn = async (command) => {
         callCount++;
-        if (command === 'corpus_list') return corpora;
-        return corpora[callCount - 2] ?? {};
+        if (command === 'dataset_list') return datasets;
+        return datasets[callCount - 2] ?? {};
     };
-    const adapter = corpusAdapterWith(invokeFn);
+    const adapter = datasetAdapterWith(invokeFn);
 
-    const list = await adapter.corpusList();
+    const list = await adapter.datasetList();
     assert.equal(list.length, 2);
     assert.equal(list[0].name, 'Alpha');
     assert.equal(list[1].recordingCount, 12);

@@ -7,7 +7,7 @@
 //   3. Import starten + Fortschritt
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { Corpus } from '../../domain/corpus/types.ts';
+import type { Dataset } from '../../domain/corpus/types.ts';
 import {
     recordingImportFolder,
     type ImportResult,
@@ -15,7 +15,7 @@ import {
 
 export interface ImportWizardOptions {
     container: HTMLElement;
-    corpus: Corpus;
+    dataset: Dataset;
     onDone: (result: ImportResult) => void;
     onCancel: () => void;
     onStatusMessage?: (msg: string) => void;
@@ -27,7 +27,7 @@ type WizardStep = 'source' | 'pattern' | 'running' | 'done';
 
 export class ImportWizardPanel {
     private readonly container: HTMLElement;
-    private readonly corpus: Corpus;
+    private readonly dataset: Dataset;
     private readonly onDone: (result: ImportResult) => void;
     private readonly onCancel: () => void;
     private readonly onStatusMessage: (msg: string) => void;
@@ -40,7 +40,7 @@ export class ImportWizardPanel {
 
     constructor(opts: ImportWizardOptions) {
         this.container = opts.container;
-        this.corpus = opts.corpus;
+        this.dataset = opts.dataset;
         this.onDone = opts.onDone;
         this.onCancel = opts.onCancel;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
@@ -56,7 +56,7 @@ export class ImportWizardPanel {
             <div class="import-wizard">
                 <div class="import-wizard__header">
                     <h2 class="import-wizard__title">Aufnahmen importieren</h2>
-                    <div class="import-wizard__subtitle">in Corpus: <strong>${escapeHtml(this.corpus.name)}</strong></div>
+                    <div class="import-wizard__subtitle">in Dataset: <strong>${escapeHtml(this.dataset.name)}</strong></div>
                 </div>
                 <div class="import-wizard__steps">
                     ${this.renderStepIndicator()}
@@ -311,7 +311,7 @@ export class ImportWizardPanel {
 
         try {
             const result = await recordingImportFolder({
-                corpusId: this.corpus.id,
+                datasetId: this.dataset.id,
                 folderPath: this.folderPath,
                 pathPattern: this.pathPattern || undefined,
             });

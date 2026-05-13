@@ -3,7 +3,7 @@
 //
 // Views:
 //   Labeling  — Bestehendes Labeling-Werkzeug (Projekt-Liste + Player + Jobs)
-//   Corpus    — Neuer Corpus Browser (v2 Architektur: Corpus/Recording/Import)
+//   Dataset   — Neuer Dataset Browser (v2 Architektur: Dataset/Recording/Import)
 // ═══════════════════════════════════════════════════════════════════════
 
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
@@ -19,8 +19,8 @@ import {
     type LocalAnalysisJob,
 } from '../infrastructure/tauri/TauriPlatformScaffold.ts';
 import type { ProjectSummary } from '../domain/project/types.ts';
-import type { Corpus, Recording } from '../domain/corpus/types.ts';
-import { CorpusBrowserPanel } from '../ui/panels/CorpusBrowserPanel.ts';
+import type { Dataset, Recording } from '../domain/corpus/types.ts';
+import { DatasetBrowserPanel } from '../ui/panels/CorpusBrowserPanel.ts';
 import { RecordingGalleryPanel } from '../ui/panels/RecordingGalleryPanel.ts';
 import { ImportWizardPanel } from '../ui/panels/ImportWizardPanel.ts';
 import { RecordingDetailPanel } from '../ui/panels/RecordingDetailPanel.ts';
@@ -57,27 +57,27 @@ const connection = new TauriConnectionBridge();
 let activeProjectId: string | null = null;
 let player: BirdNETPlayer | null = null;
 
-// ── Corpus Browser State ──────────────────────────────────────────────
+// ── Dataset Browser State ─────────────────────────────────────────────
 
-type AppView = 'labeling' | 'corpus';
+type AppView = 'labeling' | 'dataset';
 let activeView: AppView = 'labeling';
-let corpusBrowserPanel: CorpusBrowserPanel | null = null;
-let currentCorpus: Corpus | null = null;
+let datasetBrowserPanel: DatasetBrowserPanel | null = null;
+let currentDataset: Dataset | null = null;
 let recordingDetailPanel: RecordingDetailPanel | null = null;
 
-/** Wechselt zwischen "labeling" und "corpus" View. */
+/** Wechselt zwischen "labeling" und "dataset" View. */
 function switchView(view: AppView): void {
     activeView = view;
     const labelingEl = document.getElementById('labelingView')!;
-    const corpusEl   = document.getElementById('corpusBrowserView')!;
+    const datasetEl  = document.getElementById('datasetBrowserView')!;
 
-    if (view === 'corpus') {
+    if (view === 'dataset') {
         labelingEl.style.display = 'none';
-        corpusEl.style.display   = 'flex';
-        initCorpusView();
+        datasetEl.style.display  = 'flex';
+        initDatasetView();
     } else {
         labelingEl.style.display = '';
-        corpusEl.style.display   = 'none';
+        datasetEl.style.display  = 'none';
     }
 
     document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
@@ -85,23 +85,23 @@ function switchView(view: AppView): void {
     });
 }
 
-function initCorpusView(): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+function initDatasetView(): void {
+    const mount = document.getElementById('datasetBrowserMount')!;
 
-    if (!corpusBrowserPanel) {
-        corpusBrowserPanel = new CorpusBrowserPanel({
+    if (!datasetBrowserPanel) {
+        datasetBrowserPanel = new DatasetBrowserPanel({
             container: mount,
-            onCorpusSelect: (corpus) => showRecordingGallery(corpus),
+            onDatasetSelect: (dataset) => showRecordingGallery(dataset),
             onStatusMessage: setStatus,
         });
-        corpusBrowserPanel.mount().catch((e) => setStatus(`Corpus-Fehler: ${e}`));
+        datasetBrowserPanel.mount().catch((e) => setStatus(`Dataset-Fehler: ${e}`));
     }
 }
 
-function showRecordingGallery(corpus: Corpus): void {
-    currentCorpus = corpus;
-    const mount = document.getElementById('corpusBrowserMount')!;
-    const detailMount = document.getElementById('corpusDetailMount')!;
+function showRecordingGallery(dataset: Dataset): void {
+    currentDataset = dataset;
+    const mount = document.getElementById('datasetBrowserMount')!;
+    const detailMount = document.getElementById('datasetDetailMount')!;
 
     // Detail-Panel initialisieren (rechte Spalte)
     if (!recordingDetailPanel) {
@@ -114,21 +114,21 @@ function showRecordingGallery(corpus: Corpus): void {
 
     const gallery = new RecordingGalleryPanel({
         container: mount,
-        corpus,
+        dataset,
         onBack: () => {
-            corpusBrowserPanel = null;
+            datasetBrowserPanel = null;
             recordingDetailPanel = null;
-            const newPanel = new CorpusBrowserPanel({
+            const newPanel = new DatasetBrowserPanel({
                 container: mount,
-                onCorpusSelect: showRecordingGallery,
+                onDatasetSelect: showRecordingGallery,
                 onStatusMessage: setStatus,
             });
-            corpusBrowserPanel = newPanel;
+            datasetBrowserPanel = newPanel;
             newPanel.mount().catch((e) => setStatus(`Fehler: ${e}`));
             // Detail-Panel leeren
             detailMount.innerHTML = '';
         },
-        onImport: () => showImportWizard(corpus),
+        onImport: () => showImportWizard(dataset),
         onOpenRecording: (rec) => {
             // Zeige Detail-Panel statt direkt in Labeler zu springen
             recordingDetailPanel?.show(rec);
@@ -138,17 +138,17 @@ function showRecordingGallery(corpus: Corpus): void {
     gallery.mount().catch((e) => setStatus(`Galerie-Fehler: ${e}`));
 }
 
-function showImportWizard(corpus: Corpus): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+function showImportWizard(dataset: Dataset): void {
+    const mount = document.getElementById('datasetBrowserMount')!;
 
     const wizard = new ImportWizardPanel({
         container: mount,
-        corpus,
+        dataset,
         onDone: (result) => {
             setStatus(`Import: ${result.imported} importiert, ${result.skipped} übersprungen.`);
-            showRecordingGallery(corpus);
+            showRecordingGallery(dataset);
         },
-        onCancel: () => showRecordingGallery(corpus),
+        onCancel: () => showRecordingGallery(dataset),
         onStatusMessage: setStatus,
         openFolderDialog: () => openFolderDialogPath(),
     });
@@ -497,7 +497,7 @@ async function runAnalysis(): Promise<void> {
 //   Browser-Dev-Server (kein Tauri, kein Backend):
 //     npm run dev                          → http://localhost:5173
 //
-//   Tauri Desktop-App (empfohlen für Corpus/Recording-Features):
+//   Tauri Desktop-App (empfohlen für Dataset/Recording-Features):
 //     npm run desktop:dev                  → startet Vite + Tauri, öffnet Fenster
 //     npm run desktop:dev:grpc             → dito, mit gRPC-Analysis-Backend
 //

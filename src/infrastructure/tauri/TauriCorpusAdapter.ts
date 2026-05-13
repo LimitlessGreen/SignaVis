@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 // infrastructure/tauri/TauriCorpusAdapter.ts
-// IPC-Bridge für Corpus/Recording-Befehle (Signavis v2 Architektur)
+// IPC-Bridge für Dataset/Recording-Befehle (Signavis v2 Architektur)
 // ═══════════════════════════════════════════════════════════════════════
 
 import type {
-    Corpus,
-    CorpusSummary,
+    Dataset,
+    DatasetSummary,
     Recording,
     RecordingSummary,
     FolderImportConfig,
@@ -28,39 +28,39 @@ export interface ImportResult {
     durationMs: number;
 }
 
-// ── Corpus-Operationen ────────────────────────────────────────────────
+// ── Dataset-Operationen ───────────────────────────────────────────────
 
-export async function corpusCreate(
+export async function datasetCreate(
     name: string,
     description?: string,
-): Promise<Corpus> {
-    return invoke<Corpus>('corpus_create', { args: { name, description } });
+): Promise<Dataset> {
+    return invoke<Dataset>('dataset_create', { args: { name, description } });
 }
 
-export async function corpusList(): Promise<Corpus[]> {
-    return invoke<Corpus[]>('corpus_list');
+export async function datasetList(): Promise<Dataset[]> {
+    return invoke<Dataset[]>('dataset_list');
 }
 
-export async function corpusGet(id: string): Promise<Corpus> {
-    return invoke<Corpus>('corpus_get', { id });
+export async function datasetGet(id: string): Promise<Dataset> {
+    return invoke<Dataset>('dataset_get', { id });
 }
 
-export async function corpusDelete(id: string): Promise<void> {
-    return invoke<void>('corpus_delete', { id });
+export async function datasetDelete(id: string): Promise<void> {
+    return invoke<void>('dataset_delete', { id });
 }
 
-export async function corpusUpdateMeta(
+export async function datasetUpdateMeta(
     id: string,
     name?: string,
     description?: string,
-): Promise<Corpus> {
-    return invoke<Corpus>('corpus_update_meta', { args: { id, name, description } });
+): Promise<Dataset> {
+    return invoke<Dataset>('dataset_update_meta', { args: { id, name, description } });
 }
 
 // ── Recording-Operationen ─────────────────────────────────────────────
 
 export interface RecordingListArgs {
-    corpusId: string;
+    datasetId: string;
     limit?: number;
     offset?: number;
 }
@@ -70,7 +70,7 @@ export async function recordingImportFolder(
 ): Promise<ImportResult> {
     return invoke<ImportResult>('recording_import_folder', {
         args: {
-            corpusId: config.corpusId,
+            datasetId: config.datasetId,
             folderPath: config.folderPath,
             pathPattern: config.pathPattern,
             skipDuplicates: config.copyFiles === false ? undefined : true,
@@ -95,25 +95,25 @@ export async function recordingDelete(id: string): Promise<void> {
     return invoke<void>('recording_delete', { id });
 }
 
-export async function recordingCount(corpusId: string): Promise<number> {
-    return invoke<number>('recording_count', { corpusId });
+export async function recordingCount(datasetId: string): Promise<number> {
+    return invoke<number>('recording_count', { datasetId });
 }
 
 /**
- * Gibt alle distinkten Werte eines Pfad-Felds in einem Corpus zurück.
+ * Gibt alle distinkten Werte eines Pfad-Felds in einem Dataset zurück.
  * Für Dropdown-Filter in der Galerie-Toolbar.
  */
 export async function recordingDistinctValues(
-    corpusId: string,
+    datasetId: string,
     fieldName: string,
 ): Promise<string[]> {
-    return invoke<string[]>('recording_distinct_values', { corpusId, fieldName });
+    return invoke<string[]>('recording_distinct_values', { datasetId, fieldName });
 }
 
 // ── BirdNET-Inferenz ──────────────────────────────────────────────────
 
 export interface BirdnetRunArgs {
-    corpusId: string;
+    datasetId: string;
     /** Dynamisches Feld-Name für SoundEvents, z.B. "birdnetV24". */
     fieldName: string;
     minConf?: number;
@@ -135,28 +135,27 @@ export interface BirdnetRunArgs {
 
 export interface BirdnetRunSummary {
     jobId: string;
-    corpusId: string;
+    datasetId: string;
     fieldName: string;
     processed: number;
     errors: number;
     skipped: number;
 }
 
-export async function corpusRunBirdnet(args: BirdnetRunArgs): Promise<BirdnetRunSummary> {
-    return invoke<BirdnetRunSummary>('corpus_run_birdnet', { args });
+export async function datasetRunBirdnet(args: BirdnetRunArgs): Promise<BirdnetRunSummary> {
+    return invoke<BirdnetRunSummary>('dataset_run_birdnet', { args });
 }
 
-// ── Corpus-Schema ─────────────────────────────────────────────────────
+// ── Dataset-Schema ─────────────────────────────────────────────────────
 
-export interface CorpusAddFieldArgs {
-    corpusId: string;
+export interface DatasetAddFieldArgs {
+    datasetId: string;
     fieldName: string;
     fieldKind: string;
     description?: string;
     group?: string;
 }
 
-export async function corpusAddFieldToSchema(args: CorpusAddFieldArgs): Promise<Corpus> {
-    return invoke<Corpus>('corpus_add_field_to_schema', { args });
+export async function datasetAddFieldToSchema(args: DatasetAddFieldArgs): Promise<Dataset> {
+    return invoke<Dataset>('dataset_add_field_to_schema', { args });
 }
-

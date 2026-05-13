@@ -1,31 +1,31 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/CorpusBrowserPanel.ts — Corpus-Verwaltungsansicht
+// ui/panels/CorpusBrowserPanel.ts — Dataset-Verwaltungsansicht
 //
-// Zeigt alle Corpora, erlaubt Erstellen, Löschen und Auswählen.
+// Zeigt alle Datasets, erlaubt Erstellen, Löschen und Auswählen.
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { Corpus } from '../../domain/corpus/types.ts';
+import type { Dataset } from '../../domain/corpus/types.ts';
 import {
-    corpusCreate,
-    corpusList,
-    corpusDelete,
+    datasetCreate,
+    datasetList,
+    datasetDelete,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 
-export interface CorpusBrowserOptions {
+export interface DatasetBrowserOptions {
     container: HTMLElement;
-    onCorpusSelect: (corpus: Corpus) => void;
+    onDatasetSelect: (dataset: Dataset) => void;
     onStatusMessage?: (msg: string) => void;
 }
 
-export class CorpusBrowserPanel {
+export class DatasetBrowserPanel {
     private readonly container: HTMLElement;
-    private readonly onCorpusSelect: (corpus: Corpus) => void;
+    private readonly onDatasetSelect: (dataset: Dataset) => void;
     private readonly onStatusMessage: (msg: string) => void;
-    private corpora: Corpus[] = [];
+    private datasets: Dataset[] = [];
 
-    constructor(opts: CorpusBrowserOptions) {
+    constructor(opts: DatasetBrowserOptions) {
         this.container = opts.container;
-        this.onCorpusSelect = opts.onCorpusSelect;
+        this.onDatasetSelect = opts.onDatasetSelect;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
     }
 
@@ -37,45 +37,45 @@ export class CorpusBrowserPanel {
 
     private renderShell(): string {
         return `
-            <div class="corpus-browser">
-                <div class="corpus-browser__header">
-                    <h2 class="corpus-browser__title">Corpora</h2>
-                    <button class="btn btn--primary" id="corpusNewBtn">+ Neuer Corpus</button>
+            <div class="dataset-browser">
+                <div class="dataset-browser__header">
+                    <h2 class="dataset-browser__title">Datasets</h2>
+                    <button class="btn btn--primary" id="datasetNewBtn">+ Neues Dataset</button>
                 </div>
-                <div class="corpus-browser__create-form" id="corpusCreateForm" style="display:none">
+                <div class="dataset-browser__create-form" id="datasetCreateForm" style="display:none">
                     <input
                         type="text"
                         class="input"
-                        id="corpusNameInput"
-                        placeholder="Name des Corpus…"
+                        id="datasetNameInput"
+                        placeholder="Name des Datasets…"
                         maxlength="120"
                     />
                     <input
                         type="text"
                         class="input"
-                        id="corpusDescInput"
+                        id="datasetDescInput"
                         placeholder="Beschreibung (optional)"
                         maxlength="300"
                     />
-                    <div class="corpus-browser__form-actions">
-                        <button class="btn btn--primary" id="corpusCreateConfirm">Erstellen</button>
-                        <button class="btn btn--ghost" id="corpusCreateCancel">Abbrechen</button>
+                    <div class="dataset-browser__form-actions">
+                        <button class="btn btn--primary" id="datasetCreateConfirm">Erstellen</button>
+                        <button class="btn btn--ghost" id="datasetCreateCancel">Abbrechen</button>
                     </div>
                 </div>
-                <div class="corpus-browser__list" id="corpusList">
-                    <div class="corpus-browser__empty">Lade…</div>
+                <div class="dataset-browser__list" id="datasetList">
+                    <div class="dataset-browser__empty">Lade…</div>
                 </div>
             </div>
         `;
     }
 
     private bindEvents(): void {
-        const newBtn = this.container.querySelector('#corpusNewBtn') as HTMLButtonElement;
-        const createForm = this.container.querySelector('#corpusCreateForm') as HTMLElement;
-        const nameInput = this.container.querySelector('#corpusNameInput') as HTMLInputElement;
-        const descInput = this.container.querySelector('#corpusDescInput') as HTMLInputElement;
-        const confirmBtn = this.container.querySelector('#corpusCreateConfirm') as HTMLButtonElement;
-        const cancelBtn = this.container.querySelector('#corpusCreateCancel') as HTMLButtonElement;
+        const newBtn = this.container.querySelector('#datasetNewBtn') as HTMLButtonElement;
+        const createForm = this.container.querySelector('#datasetCreateForm') as HTMLElement;
+        const nameInput = this.container.querySelector('#datasetNameInput') as HTMLInputElement;
+        const descInput = this.container.querySelector('#datasetDescInput') as HTMLInputElement;
+        const confirmBtn = this.container.querySelector('#datasetCreateConfirm') as HTMLButtonElement;
+        const cancelBtn = this.container.querySelector('#datasetCreateCancel') as HTMLButtonElement;
 
         newBtn.addEventListener('click', () => {
             createForm.style.display = 'block';
@@ -108,8 +108,8 @@ export class CorpusBrowserPanel {
         }
         const desc = descInput.value.trim() || undefined;
         try {
-            const corpus = await corpusCreate(name, desc);
-            this.onStatusMessage(`Corpus "${corpus.name}" erstellt.`);
+            const dataset = await datasetCreate(name, desc);
+            this.onStatusMessage(`Dataset "${dataset.name}" erstellt.`);
             nameInput.value = '';
             descInput.value = '';
             form.style.display = 'none';
@@ -121,50 +121,50 @@ export class CorpusBrowserPanel {
 
     async refresh(): Promise<void> {
         try {
-            this.corpora = await corpusList();
+            this.datasets = await datasetList();
         } catch (e) {
-            this.onStatusMessage(`Fehler beim Laden der Corpora: ${e}`);
-            this.corpora = [];
+            this.onStatusMessage(`Fehler beim Laden der Datasets: ${e}`);
+            this.datasets = [];
         }
         this.renderList();
     }
 
     private renderList(): void {
-        const listEl = this.container.querySelector('#corpusList')!;
-        if (this.corpora.length === 0) {
+        const listEl = this.container.querySelector('#datasetList')!;
+        if (this.datasets.length === 0) {
             listEl.innerHTML = `
-                <div class="corpus-browser__empty">
-                    Noch keine Corpora vorhanden.<br>
-                    Erstelle einen neuen Corpus und importiere Aufnahmen.
+                <div class="dataset-browser__empty">
+                    Noch keine Datasets vorhanden.<br>
+                    Erstelle ein neues Dataset und importiere Aufnahmen.
                 </div>
             `;
             return;
         }
 
-        listEl.innerHTML = this.corpora
+        listEl.innerHTML = this.datasets
             .sort((a, b) => b.updatedAt - a.updatedAt)
-            .map((c) => this.renderCorpusCard(c))
+            .map((c) => this.renderDatasetCard(c))
             .join('');
 
         // Events für Cards binden
-        listEl.querySelectorAll('[data-open-corpus]').forEach((btn) => {
+        listEl.querySelectorAll('[data-open-dataset]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const id = (btn as HTMLElement).dataset.openCorpus!;
-                const corpus = this.corpora.find((c) => c.id === id);
-                if (corpus) this.onCorpusSelect(corpus);
+                const id = (btn as HTMLElement).dataset.openDataset!;
+                const dataset = this.datasets.find((c) => c.id === id);
+                if (dataset) this.onDatasetSelect(dataset);
             });
         });
 
-        listEl.querySelectorAll('[data-delete-corpus]').forEach((btn) => {
+        listEl.querySelectorAll('[data-delete-dataset]').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                const id = (btn as HTMLElement).dataset.deleteCorpus!;
-                const corpus = this.corpora.find((c) => c.id === id);
-                if (!corpus) return;
-                if (!confirm(`Corpus "${corpus.name}" und alle Aufnahmen löschen?`)) return;
+                const id = (btn as HTMLElement).dataset.deleteDataset!;
+                const dataset = this.datasets.find((c) => c.id === id);
+                if (!dataset) return;
+                if (!confirm(`Dataset "${dataset.name}" und alle Aufnahmen löschen?`)) return;
                 try {
-                    await corpusDelete(id);
-                    this.onStatusMessage(`Corpus "${corpus.name}" gelöscht.`);
+                    await datasetDelete(id);
+                    this.onStatusMessage(`Dataset "${dataset.name}" gelöscht.`);
                     await this.refresh();
                 } catch (e) {
                     this.onStatusMessage(`Fehler: ${e}`);
@@ -173,31 +173,31 @@ export class CorpusBrowserPanel {
         });
     }
 
-    private renderCorpusCard(corpus: Corpus): string {
-        const date = new Date(corpus.updatedAt).toLocaleDateString(undefined, {
+    private renderDatasetCard(dataset: Dataset): string {
+        const date = new Date(dataset.updatedAt).toLocaleDateString(undefined, {
             dateStyle: 'medium',
         });
-        const count = corpus.recordingCount.toLocaleString();
-        const desc = corpus.description
-            ? `<p class="corpus-card__desc">${escapeHtml(corpus.description)}</p>`
+        const count = dataset.recordingCount.toLocaleString();
+        const desc = dataset.description
+            ? `<p class="dataset-card__desc">${escapeHtml(dataset.description)}</p>`
             : '';
         return `
-            <div class="corpus-card" data-corpus-id="${escapeHtml(corpus.id)}">
-                <div class="corpus-card__body" data-open-corpus="${escapeHtml(corpus.id)}" role="button" tabindex="0">
-                    <div class="corpus-card__icon">🎙</div>
-                    <div class="corpus-card__info">
-                        <div class="corpus-card__name">${escapeHtml(corpus.name)}</div>
+            <div class="dataset-card" data-dataset-id="${escapeHtml(dataset.id)}">
+                <div class="dataset-card__body" data-open-dataset="${escapeHtml(dataset.id)}" role="button" tabindex="0">
+                    <div class="dataset-card__icon">🎙</div>
+                    <div class="dataset-card__info">
+                        <div class="dataset-card__name">${escapeHtml(dataset.name)}</div>
                         ${desc}
-                        <div class="corpus-card__meta">
+                        <div class="dataset-card__meta">
                             <span class="badge badge--neutral">${count} Aufnahmen</span>
-                            <span class="corpus-card__date">Zuletzt: ${date}</span>
+                            <span class="dataset-card__date">Zuletzt: ${date}</span>
                         </div>
                     </div>
                 </div>
                 <button
-                    class="btn btn--ghost btn--icon corpus-card__delete"
-                    data-delete-corpus="${escapeHtml(corpus.id)}"
-                    title="Corpus löschen"
+                    class="btn btn--ghost btn--icon dataset-card__delete"
+                    data-delete-dataset="${escapeHtml(dataset.id)}"
+                    title="Dataset löschen"
                 >✕</button>
             </div>
         `;
