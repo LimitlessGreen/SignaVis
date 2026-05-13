@@ -389,6 +389,8 @@ pub struct RecordingListArgs {
     pub dataset_id: String,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
+    /// When set, only recordings that carry this tag are returned.
+    pub tag_filter: Option<String>,
 }
 
 #[tauri::command]
@@ -399,7 +401,12 @@ pub async fn recording_list(
     let limit = args.limit.unwrap_or(100).min(1000);
     let offset = args.offset.unwrap_or(0);
     let recs = store
-        .recording_list_by_dataset(&args.dataset_id, limit, offset)
+        .recording_list_by_dataset(
+            &args.dataset_id,
+            limit,
+            offset,
+            args.tag_filter.as_deref(),
+        )
         .await?;
     recs.iter()
         .map(|r| serde_json::to_value(r).map_err(|e| format!("recording_list: serialize: {e}")))

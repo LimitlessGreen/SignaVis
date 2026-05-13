@@ -108,6 +108,8 @@ pub fn run() {
             dataset_delete,
             dataset_update_meta,
             dataset_add_field_to_schema,
+            dataset_save_view,
+            dataset_delete_view,
             // ── Recording commands (v2 Architektur) ──────────────────
             recording_import_folder,
             recording_list,

@@ -15,6 +15,18 @@ use std::path::PathBuf;
 
 // ── Data types ────────────────────────────────────────────────────────
 
+/// A saved view: a named, persisted filter/sort pipeline on a dataset.
+/// `stages` are opaque JSON so the Rust layer stays decoupled from the
+/// TypeScript ViewStage definitions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedView {
+    pub name: String,
+    /// Ordered list of ViewStage objects (schema defined in TypeScript).
+    pub stages: Vec<serde_json::Value>,
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioMetadata {
@@ -61,6 +73,8 @@ pub struct DatasetRecord {
     pub recording_count: u64,
     pub field_schema: Vec<FieldDefinition>,
     pub known_tags: Vec<String>,
+    #[serde(default)]
+    pub saved_views: Vec<SavedView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
@@ -268,24 +282,79 @@ pub struct CorpusStore {
             dataset_id: &str,
             limit: u64,
             offset: u64,
+            tag_filter: Option<&str>,
         ) -> Result<Vec<RecordingRecord>, String> {
             let cid = dataset_id.to_owned();
-            let mut response = self
-                .db
-                .query(
-                    "SELECT *, record::id(id) AS id FROM recording
-                     WHERE datasetId = $cid
-                     ORDER BY importedAt DESC, id ASC
-                     LIMIT $lim START $off",
-                )
-                .bind(("cid", cid))
-                .bind(("lim", limit))
-                .bind(("off", offset))
+            let (query, mut builder) = if let Some(tag) = tag_filter {
+                let q = "SELECT *, record::id(id) AS id FROM recording
+                         WHERE datasetId = $cid AND $tag IN tags
+                         ORDER BY importedAt DESC, id ASC
+                         LIMIT $lim START $off";
+                let b = self.db.query(q)
+                    .bind(("cid", cid))
+                    .bind(("tag", tag.to_owned()))
+                    .bind(("lim", limit))
+                    .bind(("off", offset));
+                (q, b)
+            } else {
+                let q = "SELECT *, record::id(id) AS id FROM recording
+                         WHERE datasetId = $cid
+                         ORDER BY importedAt DESC, id ASC
+                         LIMIT $lim START $off";
+                let b = self.db.query(q)
+                    .bind(("cid", cid))
+                    .bind(("lim", limit))
+                    .bind(("off", offset));
+                (q, b)
+            };
+            let _ = query; // suppress unused warning
+            let mut response = builder
                 .await
                 .map_err(|e| format!("recording_list_by_dataset: {e}"))?;
             let result: Vec<RecordingRecord> =
                 response.take(0).map_err(|e| format!("recording_list_by_dataset take: {e}"))?;
             Ok(result)
+        }
+
+        // ── Saved Views ───────────────────────────────────────────────
+
+        /// Upserts a saved view on a dataset (insert or replace by name).
+        pub async fn dataset_save_view(
+            &self,
+            dataset_id: &str,
+            view: SavedView,
+        ) -> Result<DatasetRecord, String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("dataset_save_view: dataset '{dataset_id}' not found"))?;
+            dataset.saved_views.retain(|v| v.name != view.name);
+            dataset.saved_views.push(view);
+            dataset.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            self.dataset_update(&dataset).await?;
+            Ok(dataset)
+        }
+
+        /// Removes a saved view by name. No-op if the name doesn't exist.
+        pub async fn dataset_delete_view(
+            &self,
+            dataset_id: &str,
+            view_name: &str,
+        ) -> Result<DatasetRecord, String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("dataset_delete_view: dataset '{dataset_id}' not found"))?;
+            dataset.saved_views.retain(|v| v.name != view_name);
+            dataset.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            self.dataset_update(&dataset).await?;
+            Ok(dataset)
         }
 
         pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {
@@ -557,6 +626,7 @@ mod json_fallback {
             dataset_id: &str,
             limit: u64,
             offset: u64,
+            tag_filter: Option<&str>,
         ) -> Result<Vec<RecordingRecord>, String> {
             let dir = self.recordings_dir(dataset_id);
             if !dir.exists() {
@@ -568,6 +638,9 @@ mod json_fallback {
                 .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
                 .filter_map(|e| std::fs::read_to_string(e.path()).ok())
                 .filter_map(|s| serde_json::from_str::<RecordingRecord>(&s).ok())
+                .filter(|r| {
+                    tag_filter.map_or(true, |tag| r.tags.iter().any(|t| t == tag))
+                })
                 .collect();
             recs.sort_by(|a, b| b.imported_at.cmp(&a.imported_at));
             Ok(recs
@@ -575,6 +648,45 @@ mod json_fallback {
                 .skip(offset as usize)
                 .take(limit as usize)
                 .collect())
+        }
+
+        // ── Saved Views ───────────────────────────────────────────────
+
+        pub async fn dataset_save_view(
+            &self,
+            dataset_id: &str,
+            view: SavedView,
+        ) -> Result<DatasetRecord, String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("dataset_save_view: dataset '{dataset_id}' not found"))?;
+            dataset.saved_views.retain(|v| v.name != view.name);
+            dataset.saved_views.push(view);
+            dataset.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            self.dataset_update(&dataset).await?;
+            Ok(dataset)
+        }
+
+        pub async fn dataset_delete_view(
+            &self,
+            dataset_id: &str,
+            view_name: &str,
+        ) -> Result<DatasetRecord, String> {
+            let mut dataset = self
+                .dataset_get(dataset_id)
+                .await?
+                .ok_or_else(|| format!("dataset_delete_view: dataset '{dataset_id}' not found"))?;
+            dataset.saved_views.retain(|v| v.name != view_name);
+            dataset.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            self.dataset_update(&dataset).await?;
+            Ok(dataset)
         }
 
         pub async fn recording_count_by_dataset(&self, dataset_id: &str) -> Result<u64, String> {

@@ -63,6 +63,8 @@ export interface RecordingListArgs {
     datasetId: string;
     limit?: number;
     offset?: number;
+    /** When set, only recordings carrying this tag are returned. */
+    tagFilter?: string;
 }
 
 export async function recordingImportFolder(
@@ -158,4 +160,22 @@ export interface DatasetAddFieldArgs {
 
 export async function datasetAddFieldToSchema(args: DatasetAddFieldArgs): Promise<Dataset> {
     return invoke<Dataset>('dataset_add_field_to_schema', { args });
+}
+
+// ── Saved views ────────────────────────────────────────────────────────
+
+export interface DatasetSaveViewArgs {
+    datasetId: string;
+    name: string;
+    stages: Record<string, unknown>[];
+}
+
+/** Upserts a saved view on a dataset (insert or replace by name). Returns updated dataset. */
+export async function datasetSaveView(args: DatasetSaveViewArgs): Promise<Dataset> {
+    return invoke<Dataset>('dataset_save_view', { args });
+}
+
+/** Removes a saved view by name. Returns updated dataset. */
+export async function datasetDeleteView(datasetId: string, name: string): Promise<Dataset> {
+    return invoke<Dataset>('dataset_delete_view', { args: { datasetId, name } });
 }

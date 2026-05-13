@@ -2,16 +2,19 @@
 // ui/panels/RecordingGalleryPanel.ts — Recording gallery within a dataset
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { Recording, Dataset } from '../../domain/corpus/types.ts';
+import type { Recording, Dataset, SavedView } from '../../domain/corpus/types.ts';
 import {
     recordingList,
     recordingSetTags,
     recordingDelete,
     recordingDistinctValues,
     datasetRunBirdnet,
+    datasetSaveView,
+    datasetDeleteView,
     type BirdnetRunArgs,
     type BirdnetRunSummary,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { FieldSchemaPanel } from './FieldSchemaPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
 import { listen } from '@tauri-apps/api/event';
 
@@ -22,17 +25,20 @@ export interface RecordingGalleryOptions {
     onOpenRecording?: (recording: Recording) => void;
     onImport?: () => void;
     onStatusMessage?: (msg: string) => void;
+    /** Called when a field is added so the dataset reference stays fresh. */
+    onDatasetUpdated?: (updated: Dataset) => void;
 }
 
 const PAGE_SIZE = 50;
 
 export class RecordingGalleryPanel {
     private readonly container: HTMLElement;
-    private readonly dataset: Dataset;
+    private dataset: Dataset;
     private readonly onBack: () => void;
     private readonly onOpenRecording: ((r: Recording) => void) | undefined;
     private readonly onImport: (() => void) | undefined;
     private readonly onStatusMessage: (msg: string) => void;
+    private readonly onDatasetUpdated: ((d: Dataset) => void) | undefined;
 
     private recordings: Recording[] = [];
     private offset = 0;
@@ -47,6 +53,7 @@ export class RecordingGalleryPanel {
     /** Running BirdNET job (prevents double-execution) */
     private birdnetRunning = false;
     private unlistenBirdnet: (() => void) | null = null;
+    private fieldSchemaPanel: FieldSchemaPanel | null = null;
 
     constructor(opts: RecordingGalleryOptions) {
         this.container = opts.container;
@@ -55,6 +62,7 @@ export class RecordingGalleryPanel {
         this.onOpenRecording = opts.onOpenRecording;
         this.onImport = opts.onImport;
         this.onStatusMessage = opts.onStatusMessage ?? ((m) => console.log(m));
+        this.onDatasetUpdated = opts.onDatasetUpdated;
     }
 
     async mount(): Promise<void> {
@@ -98,6 +106,12 @@ export class RecordingGalleryPanel {
                     <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Back">←</button>
                     <h2 class="recording-gallery__title">${escapeHtml(this.dataset.name)}</h2>
                     <div class="recording-gallery__header-actions">
+                        <button class="btn btn--ghost btn--sm" id="galleryFieldsBtn" title="View and manage dataset fields">
+                            Fields
+                        </button>
+                        <button class="btn btn--ghost btn--sm" id="gallerySaveViewBtn" title="Save current filters as a named view">
+                            Save view
+                        </button>
                         <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">
                             🔍 BirdNET
                         </button>
@@ -112,6 +126,8 @@ export class RecordingGalleryPanel {
                     <span class="progress-label" id="galleryProgressLabel">Starting BirdNET…</span>
                     <button class="btn btn--ghost btn--sm" id="galleryBirdnetCancel">Cancel</button>
                 </div>
+
+                ${this.renderSavedViewsBar()}
 
                 <div class="recording-gallery__toolbar">
                     <input
@@ -147,6 +163,23 @@ export class RecordingGalleryPanel {
         `;
     }
 
+    private renderSavedViewsBar(): string {
+        const views = this.dataset.savedViews ?? [];
+        if (views.length === 0) return '';
+        const pills = views.map((v) => `
+            <span class="saved-view-pill" data-view-name="${escapeHtml(v.name)}">
+                <button class="saved-view-pill__name" data-apply-view="${escapeHtml(v.name)}">${escapeHtml(v.name)}</button>
+                <button class="saved-view-pill__delete" data-delete-view="${escapeHtml(v.name)}" title="Delete view">✕</button>
+            </span>
+        `).join('');
+        return `
+            <div class="recording-gallery__saved-views" id="gallerySavedViews">
+                <span class="saved-views__label">Views:</span>
+                ${pills}
+            </div>
+        `;
+    }
+
     private bindEvents(): void {
         const backBtn = this.container.querySelector('#galleryBackBtn') as HTMLButtonElement;
         const importBtn = this.container.querySelector('#galleryImportBtn') as HTMLButtonElement;
@@ -156,6 +189,30 @@ export class RecordingGalleryPanel {
         backBtn.addEventListener('click', () => this.onBack());
         importBtn.addEventListener('click', () => this.onImport?.());
         loadMoreBtn.addEventListener('click', () => this.loadMore(false));
+
+        // Fields button
+        const fieldsBtn = this.container.querySelector('#galleryFieldsBtn') as HTMLButtonElement | null;
+        fieldsBtn?.addEventListener('click', () => this.openFieldSchemaPanel());
+
+        // Saved views — save current view
+        this.container.querySelector('#gallerySaveViewBtn')?.addEventListener('click', () => {
+            this.promptSaveView();
+        });
+
+        // Saved views — apply / delete
+        this.container.querySelectorAll('[data-apply-view]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = (btn as HTMLElement).dataset.applyView!;
+                this.applyView(name);
+            });
+        });
+        this.container.querySelectorAll('[data-delete-view]').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const name = (btn as HTMLElement).dataset.deleteView!;
+                await this.deleteView(name);
+            });
+        });
 
         const birdnetBtn = this.container.querySelector('#galleryBirdnetBtn') as HTMLButtonElement | null;
         birdnetBtn?.addEventListener('click', () => this.showBirdnetDialog());
@@ -184,7 +241,8 @@ export class RecordingGalleryPanel {
                     .querySelectorAll('[data-tag]')
                     .forEach((b) => b.classList.remove('tag-pill--active'));
                 btn.classList.add('tag-pill--active');
-                this.renderGrid();
+                // Tag filter is server-side: reload from offset 0.
+                this.loadMore(true);
             });
         });
 
@@ -233,6 +291,7 @@ export class RecordingGalleryPanel {
                 datasetId: this.dataset.id,
                 limit: PAGE_SIZE,
                 offset: this.offset,
+                tagFilter: this.activeTagFilter ?? undefined,
             });
             this.recordings.push(...batch);
             this.offset += batch.length;
@@ -252,9 +311,7 @@ export class RecordingGalleryPanel {
 
     private filteredRecordings(): Recording[] {
         return this.recordings.filter((r) => {
-            if (this.activeTagFilter && !r.tags.includes(this.activeTagFilter)) {
-                return false;
-            }
+            // Tag filter is applied server-side; only client-side search + field filters here.
             if (this.searchQuery) {
                 const fp = r.filepath.toLowerCase();
                 const tagMatch = r.tags.some((t) => t.toLowerCase().includes(this.searchQuery));
@@ -325,6 +382,146 @@ export class RecordingGalleryPanel {
                     this.onStatusMessage(`Tag error: ${e}`);
                 }
             });
+        });
+    }
+
+    // ── Field schema ──────────────────────────────────────────────────
+
+    private openFieldSchemaPanel(): void {
+        this.fieldSchemaPanel?.close();
+        this.fieldSchemaPanel = new FieldSchemaPanel({
+            dataset: this.dataset,
+            onDatasetUpdated: (updated) => {
+                this.dataset = updated;
+                this.onDatasetUpdated?.(updated);
+            },
+            onClose: () => { this.fieldSchemaPanel = null; },
+            onStatusMessage: this.onStatusMessage,
+        });
+        this.fieldSchemaPanel.open();
+    }
+
+    // ── Saved Views ───────────────────────────────────────────────────
+
+    /** Builds a view descriptor from the current filter state. */
+    private currentViewStages(): Record<string, unknown>[] {
+        const stages: Record<string, unknown>[] = [];
+        if (this.activeTagFilter) {
+            stages.push({ kind: 'match_tags', params: { tags: [this.activeTagFilter] } });
+        }
+        for (const [field, value] of this.fieldFilters) {
+            if (value) {
+                stages.push({ kind: 'match', params: { field, value } });
+            }
+        }
+        return stages;
+    }
+
+    private promptSaveView(): void {
+        const stages = this.currentViewStages();
+        if (stages.length === 0) {
+            this.onStatusMessage('No active filters to save as a view.');
+            return;
+        }
+        const name = window.prompt('Name for this view:')?.trim();
+        if (!name) return;
+        this.saveView(name, stages);
+    }
+
+    private async saveView(name: string, stages: Record<string, unknown>[]): Promise<void> {
+        try {
+            const updated = await datasetSaveView({ datasetId: this.dataset.id, name, stages });
+            this.dataset = updated;
+            this.onDatasetUpdated?.(updated);
+            this.onStatusMessage(`View "${name}" saved.`);
+            this.refreshSavedViewsBar();
+        } catch (e) {
+            this.onStatusMessage(`Error saving view: ${e}`);
+        }
+    }
+
+    private async deleteView(name: string): Promise<void> {
+        if (!confirm(`Delete saved view "${name}"?`)) return;
+        try {
+            const updated = await datasetDeleteView(this.dataset.id, name);
+            this.dataset = updated;
+            this.onDatasetUpdated?.(updated);
+            this.onStatusMessage(`View "${name}" deleted.`);
+            this.refreshSavedViewsBar();
+        } catch (e) {
+            this.onStatusMessage(`Error deleting view: ${e}`);
+        }
+    }
+
+    /** Applies a saved view: restores its filter state and reloads. */
+    private applyView(name: string): void {
+        const view = (this.dataset.savedViews ?? []).find((v: SavedView) => v.name === name);
+        if (!view) return;
+
+        // Reset current filters
+        this.activeTagFilter = null;
+        this.fieldFilters.clear();
+
+        // Restore from stages
+        for (const stage of view.stages) {
+            const s = stage as { kind: string; params: Record<string, unknown> };
+            if (s.kind === 'match_tags') {
+                const tags = s.params.tags as string[] | undefined;
+                if (tags?.[0]) this.activeTagFilter = tags[0];
+            } else if (s.kind === 'match') {
+                const field = s.params.field as string;
+                const value = s.params.value as string;
+                if (field && value) this.fieldFilters.set(field, value);
+            }
+        }
+
+        // Sync tag pills UI
+        this.container.querySelectorAll('[data-tag]').forEach((btn) => {
+            const tag = (btn as HTMLElement).dataset.tag ?? '';
+            btn.classList.toggle('tag-pill--active', tag === (this.activeTagFilter ?? ''));
+        });
+
+        this.onStatusMessage(`View "${name}" applied.`);
+        this.loadMore(true);
+    }
+
+    /** Re-renders just the saved views bar without full shell rebuild. */
+    private refreshSavedViewsBar(): void {
+        const existing = this.container.querySelector('#gallerySavedViews');
+        if (existing) {
+            // Replace the entire saved-views bar with re-rendered HTML
+            const tmp = document.createElement('div');
+            tmp.innerHTML = this.renderSavedViewsBar();
+            const newBar = tmp.firstElementChild;
+            if (newBar) {
+                existing.replaceWith(newBar);
+            } else {
+                existing.remove();
+            }
+        } else if (this.dataset.savedViews?.length) {
+            // Bar didn't exist yet — insert before toolbar
+            const toolbar = this.container.querySelector('.recording-gallery__toolbar');
+            if (toolbar) {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = this.renderSavedViewsBar();
+                const newBar = tmp.firstElementChild;
+                if (newBar) toolbar.before(newBar);
+            }
+        }
+        // Rebind events on the new bar
+        this.container.querySelectorAll('[data-apply-view]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.applyView((btn as HTMLElement).dataset.applyView!);
+            });
+        });
+        this.container.querySelectorAll('[data-delete-view]').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await this.deleteView((btn as HTMLElement).dataset.deleteView!);
+            });
+        });
+        this.container.querySelector('#gallerySaveViewBtn')?.addEventListener('click', () => {
+            this.promptSaveView();
         });
     }
 

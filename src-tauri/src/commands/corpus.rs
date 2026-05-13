@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::corpus_store::{DatasetRecord, CorpusStore, FieldDefinition};
+use crate::corpus_store::{DatasetRecord, CorpusStore, FieldDefinition, SavedView};
 use crate::helpers::time::now_millis;
 
 pub type CorpusStoreState = Arc<CorpusStore>;
@@ -203,4 +203,51 @@ pub async fn dataset_add_field_to_schema(
     }
 
     serde_json::to_value(&dataset).map_err(|e| format!("dataset_add_field_to_schema: {e}"))
+}
+
+// ── dataset_save_view ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatasetSaveViewArgs {
+    pub dataset_id: String,
+    pub name: String,
+    /// Ordered list of ViewStage objects (opaque JSON array).
+    pub stages: Vec<serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn dataset_save_view(
+    store: State<'_, CorpusStoreState>,
+    args: DatasetSaveViewArgs,
+) -> Result<JsonValue, String> {
+    let name = args.name.trim().to_string();
+    if name.is_empty() {
+        return Err("dataset_save_view: name must not be empty".into());
+    }
+    let view = SavedView {
+        name,
+        stages: args.stages,
+        created_at: now_millis()? as i64,
+    };
+    let dataset = store.dataset_save_view(&args.dataset_id, view).await?;
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_save_view: {e}"))
+}
+
+// ── dataset_delete_view ───────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatasetDeleteViewArgs {
+    pub dataset_id: String,
+    pub name: String,
+}
+
+#[tauri::command]
+pub async fn dataset_delete_view(
+    store: State<'_, CorpusStoreState>,
+    args: DatasetDeleteViewArgs,
+) -> Result<JsonValue, String> {
+    let dataset = store.dataset_delete_view(&args.dataset_id, &args.name).await?;
+    serde_json::to_value(&dataset).map_err(|e| format!("dataset_delete_view: {e}"))
 }
