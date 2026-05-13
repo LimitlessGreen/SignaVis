@@ -1709,3 +1709,150 @@ fn uuid_fallback() -> String {
         .as_millis()
         .to_string()
 }
+
+// ── dataset_run_finetuning ────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatasetFinetunArgs {
+    pub dataset_id: String,
+    /// Path to the exported training data directory.
+    pub training_data_dir: String,
+    /// Base model version to fine-tune (e.g. "2.4").
+    pub base_model: Option<String>,
+    /// Number of epochs.
+    pub epochs: Option<u32>,
+    /// Learning rate.
+    pub learning_rate: Option<f64>,
+    /// Path to the Python interpreter.
+    pub python_executable: Option<String>,
+    /// Output directory for the fine-tuned model.
+    pub output_dir: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinetuneRunSummary {
+    pub job_id: String,
+    pub dataset_id: String,
+    pub status: String,
+}
+
+/// Starts a BirdNET fine-tuning run as a background job.
+/// Uses the BirdNET Analyzer's built-in training CLI.
+/// Emits:
+///   "dataset:finetune-progress" — { jobId, line } (stdout lines)
+///   "dataset:finetune-done"     — { jobId, status, errorMessage? }
+#[tauri::command]
+pub async fn dataset_run_finetuning(
+    app: tauri::AppHandle,
+    store: State<'_, CorpusStoreState>,
+    args: DatasetFinetunArgs,
+) -> Result<FinetuneRunSummary, String> {
+    let dataset_id = args.dataset_id.trim().to_string();
+    store
+        .dataset_get(&dataset_id)
+        .await?
+        .ok_or_else(|| format!("dataset_run_finetuning: dataset '{dataset_id}' not found"))?;
+
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let python_exe = resolve_python(args.python_executable.as_deref());
+
+    // Persist a "queued" AnalysisRun
+    let run = AnalysisRunRecord {
+        key: job_id.clone(),
+        run_type: "training".into(),
+        config: serde_json::json!({
+            "trainingDataDir": args.training_data_dir,
+            "baseModel": args.base_model,
+            "epochs": args.epochs,
+            "learningRate": args.learning_rate,
+        }),
+        status: "queued".into(),
+        started_at: None, completed_at: None,
+        processed: None, errors: None, error_message: None,
+    };
+    store.upsert_analysis_run(&dataset_id, &run).await?;
+
+    let store_arc = std::sync::Arc::clone(&*store);
+    let app_clone = app.clone();
+    let job_id_task = job_id.clone();
+    let dataset_id_task = dataset_id.clone();
+    let training_data_dir = args.training_data_dir.clone();
+    let base_model = args.base_model.clone().unwrap_or_else(|| "2.4".into());
+    let epochs = args.epochs.unwrap_or(50);
+    let lr = args.learning_rate.unwrap_or(0.001);
+    let output_dir = args.output_dir.clone().unwrap_or_else(|| {
+        format!("{}/model_output", args.training_data_dir)
+    });
+
+    tokio::spawn(async move {
+        let now = || std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        let mut run = AnalysisRunRecord {
+            key: job_id_task.clone(),
+            run_type: "training".into(),
+            config: serde_json::json!({
+                "trainingDataDir": training_data_dir,
+                "baseModel": base_model,
+                "epochs": epochs,
+                "learningRate": lr,
+            }),
+            status: "running".into(),
+            started_at: Some(now()),
+            completed_at: None, processed: None, errors: None, error_message: None,
+        };
+        let _ = store_arc.upsert_analysis_run(&dataset_id_task, &run).await;
+
+        // Build the training command:
+        // python -m birdnet_analyzer.train
+        //   --i <training_data_dir> --o <output_dir>
+        //   --epochs <n> --lr <f> --model <version>
+        let mut cmd = tokio::process::Command::new(&python_exe);
+        cmd.args([
+            "-m", "birdnet_analyzer.train",
+            "--i", &training_data_dir,
+            "--o", &output_dir,
+            "--epochs", &epochs.to_string(),
+            "--lr", &lr.to_string(),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("Failed to start training: {e}");
+                run.status = "failed".into();
+                run.error_message = Some(msg.clone());
+                run.completed_at = Some(now());
+                let _ = store_arc.upsert_analysis_run(&dataset_id_task, &run).await;
+                let _ = app_clone.emit("dataset:finetune-done", serde_json::json!({
+                    "jobId": job_id_task, "status": "failed", "errorMessage": msg,
+                }));
+                return;
+            }
+        };
+
+        let stdout = child.stdout.take().unwrap();
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_clone.emit("dataset:finetune-progress", serde_json::json!({
+                "jobId": job_id_task, "line": line,
+            }));
+        }
+        let _ = child.wait().await;
+
+        run.status = "completed".into();
+        run.completed_at = Some(now());
+        let _ = store_arc.upsert_analysis_run(&dataset_id_task, &run).await;
+        let _ = app_clone.emit("dataset:finetune-done", serde_json::json!({
+            "jobId": job_id_task, "status": "completed",
+        }));
+    });
+
+    Ok(FinetuneRunSummary { job_id, dataset_id, status: "queued".into() })
+}

@@ -507,3 +507,168 @@ pub async fn recording_set_field(
         .recording_set_dynamic_field(&args.id, name, args.value)
         .await
 }
+
+// ── recording_export_training ─────────────────────────────────────────
+
+/// Export result: how many segments were written / skipped / failed.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTrainingResult {
+    pub exported: u64,
+    pub skipped: u64,
+    pub errors: u64,
+    pub output_dir: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingExportTrainingArgs {
+    pub dataset_id: String,
+    /// Field name that holds SoundEvents (e.g. "birdnetV24" or a manual label field).
+    pub label_field: String,
+    /// Minimum confidence to include a detection. 0.0 = include all.
+    pub min_confidence: Option<f64>,
+    /// Only export recordings with this tag (e.g. "train", "val").
+    /// None = export all recordings that have the label field set.
+    pub tag_filter: Option<String>,
+    /// Destination directory (created if it does not exist).
+    pub output_dir: String,
+    /// When true: copy the audio files and rename segments by time offsets.
+    /// When false: write only a CSV manifest (label, filepath, start, end).
+    pub copy_audio: Option<bool>,
+}
+
+/// Exports labelled audio segments in BirdNET training folder format:
+///
+/// ```
+/// <output_dir>/
+///   <Species Name>/
+///     <species>_<conf>_<uuid>.wav   (or symlink / CSV row)
+/// ```
+///
+/// Each SoundEvent with confidence >= min_confidence becomes one segment.
+/// Audio trimming is NOT performed here — the segment boundaries are
+/// written into a CSV manifest that a Python script can consume to
+/// actually cut the WAV files.
+#[tauri::command]
+pub async fn recording_export_training(
+    store: State<'_, CorpusStoreState>,
+    args: RecordingExportTrainingArgs,
+) -> Result<ExportTrainingResult, String> {
+    use std::io::Write;
+
+    let min_conf = args.min_confidence.unwrap_or(0.0);
+    let copy_audio = args.copy_audio.unwrap_or(false);
+    let output_dir = std::path::PathBuf::from(&args.output_dir);
+
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("recording_export_training: create output dir: {e}"))?;
+
+    // CSV manifest always written regardless of copy_audio flag
+    let manifest_path = output_dir.join("manifest.csv");
+    let mut manifest = std::fs::File::create(&manifest_path)
+        .map_err(|e| format!("recording_export_training: create manifest: {e}"))?;
+    writeln!(manifest, "label,confidence,filepath,start_s,end_s,recording_id")
+        .map_err(|e| format!("manifest write: {e}"))?;
+
+    let all = store.recording_list_by_dataset_all(&args.dataset_id).await?;
+    let candidates: Vec<_> = all
+        .into_iter()
+        .filter(|r| {
+            args.tag_filter
+                .as_deref()
+                .map_or(true, |tag| r.tags.iter().any(|t| t == tag))
+        })
+        .collect();
+
+    let mut exported: u64 = 0;
+    let mut skipped: u64 = 0;
+    let mut errors: u64 = 0;
+
+    for rec in &candidates {
+        // Retrieve full recording and serialize to JSON to navigate dynamic fields as Values.
+        let full = match store.recording_get(&rec.id).await {
+            Ok(Some(r)) => r,
+            _ => { errors += 1; continue; }
+        };
+
+        // Serialize the full recording to JSON so we can navigate dynamic fields as Values.
+        let full_val = match serde_json::to_value(&full) {
+            Ok(v) => v,
+            Err(_) => { errors += 1; continue; }
+        };
+
+        // Extract SoundEvents from the label field
+        let field_value = match full_val.get(&args.label_field) {
+            Some(v) => v.clone(),
+            None => { skipped += 1; continue; }
+        };
+
+        let sound_events = match field_value.get("soundEvents").and_then(|v| v.as_array()) {
+            Some(arr) => arr.clone(),
+            None => { skipped += 1; continue; }
+        };
+
+        for event in &sound_events {
+            let label = event.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let confidence = event.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let support = event.get("support").and_then(|v| v.as_array());
+            let start_s = support.and_then(|a| a.first()).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let end_s = support.and_then(|a| a.get(1)).and_then(|v| v.as_f64()).unwrap_or(3.0);
+
+            if confidence < min_conf || label.is_empty() {
+                skipped += 1;
+                continue;
+            }
+
+            // Write manifest row
+            writeln!(
+                manifest,
+                "{},{:.4},{},{:.3},{:.3},{}",
+                label, confidence, rec.filepath, start_s, end_s, rec.id,
+            ).map_err(|e| format!("manifest write row: {e}"))?;
+
+            if copy_audio {
+                // Create species folder
+                let species_dir = output_dir.join(sanitize_path_component(label));
+                if let Err(e) = std::fs::create_dir_all(&species_dir) {
+                    eprintln!("recording_export_training: mkdir {}: {e}", species_dir.display());
+                    errors += 1;
+                    continue;
+                }
+
+                // Copy whole file into the species folder (trimming done in post-processing)
+                let src = std::path::PathBuf::from(&rec.filepath);
+                let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("wav");
+                let dest_name = format!(
+                    "{}_{:.0}_{}.{}",
+                    sanitize_path_component(label),
+                    confidence * 100.0,
+                    &rec.id[..8],
+                    ext,
+                );
+                let dest = species_dir.join(dest_name);
+                if let Err(e) = std::fs::copy(&src, &dest) {
+                    eprintln!("recording_export_training: copy {}: {e}", src.display());
+                    errors += 1;
+                    continue;
+                }
+            }
+
+            exported += 1;
+        }
+    }
+
+    Ok(ExportTrainingResult {
+        exported,
+        skipped,
+        errors,
+        output_dir: args.output_dir,
+    })
+}
+
+fn sanitize_path_component(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' || c == '.' { c } else { '_' })
+        .collect()
+}

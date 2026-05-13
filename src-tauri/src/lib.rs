@@ -119,10 +119,12 @@ pub fn run() {
             recording_count,
             recording_distinct_values,
             recording_set_field,
+            recording_export_training,
             // ── Dataset analysis (BirdNET inference + run tracking) ──
             dataset_run_birdnet,
             dataset_list_runs,
             dataset_get_run,
+            dataset_run_finetuning,
             // ── Phase 3: Embeddings, UMAP, Similarity ───────────────
             dataset_run_embedding,
             dataset_compute_umap,

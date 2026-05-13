@@ -15,6 +15,8 @@ import {
     type BirdnetDonePayload,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { FieldSchemaPanel } from './FieldSchemaPanel.ts';
+import { TrainingSplitPanel } from './TrainingSplitPanel.ts';
+import { ExportPanel } from './ExportPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
 import { listen } from '@tauri-apps/api/event';
 
@@ -60,6 +62,8 @@ export class RecordingGalleryPanel {
     private birdnetRunning = false;
     private unlistenBirdnet: (() => void) | null = null;
     private fieldSchemaPanel: FieldSchemaPanel | null = null;
+    private splitOverlay: HTMLElement | null = null;
+    private exportOverlay: HTMLElement | null = null;
 
     constructor(opts: RecordingGalleryOptions) {
         this.container = opts.container;
@@ -114,17 +118,13 @@ export class RecordingGalleryPanel {
                     <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Back">←</button>
                     <h2 class="recording-gallery__title">${escapeHtml(this.dataset.name)}</h2>
                     <div class="recording-gallery__header-actions">
-                        <button class="btn btn--ghost btn--sm" id="galleryFieldsBtn" title="View and manage dataset fields">
-                            Fields
-                        </button>
-                        <button class="btn btn--ghost btn--sm" id="gallerySaveViewBtn" title="Save current filters as a named view">
-                            Save view
-                        </button>
-                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">
-                            🔍 BirdNET
-                        </button>
-                        <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Cluster-Browser öffnen">⬡ Cluster</button>
-                        <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="UMAP Scatter öffnen">⬖ Scatter</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryFieldsBtn" title="View and manage dataset fields">Fields</button>
+                        <button class="btn btn--ghost btn--sm" id="gallerySplitBtn" title="Assign train/val/test tags">Split</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryExportBtn" title="Export training data / fine-tune">Export</button>
+                        <button class="btn btn--ghost btn--sm" id="gallerySaveViewBtn" title="Save current filters as a named view">Save view</button>
+                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">🔍 BirdNET</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Open cluster browser">⬡ Clusters</button>
+                        <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="Open UMAP scatter plot">⬖ Scatter</button>
                         <button class="btn btn--primary" id="galleryImportBtn">+ Import</button>
                     </div>
                 </div>
@@ -206,6 +206,12 @@ export class RecordingGalleryPanel {
         // Fields button
         const fieldsBtn = this.container.querySelector('#galleryFieldsBtn') as HTMLButtonElement | null;
         fieldsBtn?.addEventListener('click', () => this.openFieldSchemaPanel());
+
+        // Split button
+        this.container.querySelector('#gallerySplitBtn')?.addEventListener('click', () => this.openSplitPanel());
+
+        // Export button
+        this.container.querySelector('#galleryExportBtn')?.addEventListener('click', () => this.openExportPanel());
 
         // Saved views — save current view
         this.container.querySelector('#gallerySaveViewBtn')?.addEventListener('click', () => {
@@ -412,6 +418,36 @@ export class RecordingGalleryPanel {
             onStatusMessage: this.onStatusMessage,
         });
         this.fieldSchemaPanel.open();
+    }
+
+    // ── Split & Export ────────────────────────────────────────────────
+
+    private openSplitPanel(): void {
+        this.splitOverlay?.remove();
+        this.splitOverlay = document.createElement('div');
+        this.splitOverlay.className = 'split-overlay';
+        document.body.appendChild(this.splitOverlay);
+        const panel = new TrainingSplitPanel({
+            container: this.splitOverlay,
+            dataset: this.dataset,
+            onStatusMessage: this.onStatusMessage,
+            onClose: () => { this.splitOverlay?.remove(); this.splitOverlay = null; },
+        });
+        panel.mount();
+    }
+
+    private openExportPanel(): void {
+        this.exportOverlay?.remove();
+        this.exportOverlay = document.createElement('div');
+        this.exportOverlay.className = 'export-overlay';
+        document.body.appendChild(this.exportOverlay);
+        const panel = new ExportPanel({
+            container: this.exportOverlay,
+            dataset: this.dataset,
+            onStatusMessage: this.onStatusMessage,
+            onClose: () => { this.exportOverlay?.remove(); this.exportOverlay = null; },
+        });
+        panel.mount();
     }
 
     // ── Saved Views ───────────────────────────────────────────────────
