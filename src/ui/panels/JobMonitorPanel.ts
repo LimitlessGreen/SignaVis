@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════
-// ui/panels/JobMonitorPanel.ts — Live job monitor widget
+// ui/panels/JobMonitorPanel.ts — Topbar job monitor chip + dropdown
 //
-// Shows running and recently completed analysis runs.
+// Renders a compact chip in the topbar.  When jobs are running a spinner
+// and count appear.  Clicking opens a dropdown with job details.
+//
 // Subscribes to Tauri events:
-//   "dataset:birdnet-progress" — updates the progress bar of a running job
-//   "dataset:birdnet-done"     — marks a job completed/failed, stores in history
-//
-// Designed to be mounted once at app startup and live for the session.
+//   "dataset:birdnet-progress" — updates active job progress
+//   "dataset:birdnet-done"     — moves job to history
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
@@ -17,7 +17,6 @@ import {
 
 export interface JobMonitorOptions {
     container: HTMLElement;
-    /** Called when the user clicks a completed job to navigate to its dataset. */
     onOpenDataset?: (datasetId: string) => void;
 }
 
@@ -41,14 +40,15 @@ interface DoneJob {
     errorMessage?: string;
 }
 
-const MAX_HISTORY = 10;
+const MAX_HISTORY = 8;
 
 export class JobMonitorPanel {
     private readonly container: HTMLElement;
     private readonly onOpenDataset: ((id: string) => void) | undefined;
 
-    private activeJobs: Map<string, ActiveJob> = new Map();
+    private activeJobs = new Map<string, ActiveJob>();
     private doneJobs: DoneJob[] = [];
+    private isOpen = false;
 
     private unlistenProgress: (() => void) | null = null;
     private unlistenDone: (() => void) | null = null;
@@ -59,81 +59,211 @@ export class JobMonitorPanel {
     }
 
     async mount(): Promise<void> {
-        this.render();
+        this.renderChip();
         await this.subscribeEvents();
     }
 
     dispose(): void {
         this.unlistenProgress?.();
         this.unlistenDone?.();
-        this.unlistenProgress = null;
-        this.unlistenDone = null;
     }
 
-    /** Load historical runs for a dataset into the history list. */
     async loadRunsForDataset(datasetId: string): Promise<void> {
         try {
             const runs = await datasetListRuns(datasetId);
             for (const run of runs) {
-                if (run.status === 'completed' || run.status === 'failed') {
-                    if (!this.doneJobs.some((d) => d.jobId === run.key)) {
-                        this.doneJobs.unshift({
-                            jobId: run.key,
-                            datasetId,
-                            label: this.labelForRun(run),
-                            status: run.status as 'completed' | 'failed',
-                            processed: run.processed ?? 0,
-                            errors: run.errors ?? 0,
-                            doneAt: run.completedAt ?? 0,
-                            errorMessage: run.errorMessage,
-                        });
-                    }
+                if ((run.status === 'completed' || run.status === 'failed')
+                    && !this.doneJobs.some((d) => d.jobId === run.key)) {
+                    this.doneJobs.unshift({
+                        jobId: run.key,
+                        datasetId,
+                        label: labelForRun(run),
+                        status: run.status as 'completed' | 'failed',
+                        processed: run.processed ?? 0,
+                        errors: run.errors ?? 0,
+                        doneAt: run.completedAt ?? 0,
+                        errorMessage: run.errorMessage,
+                    });
                 }
             }
             this.doneJobs = this.doneJobs.slice(0, MAX_HISTORY);
-            this.render();
-        } catch {
-            // Non-critical — ignore
-        }
+            this.renderChip();
+        } catch { /* non-critical */ }
     }
 
-    private labelForRun(run: AnalysisRunRecord): string {
-        const model = (run.config.model as string) ?? 'analysis';
-        const version = (run.config.version as string) ?? '';
-        const field = (run.config.outputField as string) ?? '';
-        return `${model}${version ? ` v${version}` : ''}${field ? ` → ${field}` : ''}`;
+    // ── Chip ──────────────────────────────────────────────────────────
+
+    private renderChip(): void {
+        const nRunning = this.activeJobs.size;
+        const hasAny   = nRunning > 0 || this.doneJobs.length > 0;
+
+        if (!hasAny) {
+            this.container.innerHTML = '';
+            return;
+        }
+
+        const chipClass = nRunning > 0 ? 'job-monitor-btn--running' : '';
+        const label = nRunning > 0
+            ? `${nRunning} running`
+            : `${this.doneJobs.length} recent`;
+
+        this.container.innerHTML = `
+            <div class="job-monitor-chip">
+                <button class="job-monitor-btn ${chipClass}" id="jmChipBtn">
+                    ${nRunning > 0 ? '<span class="job-monitor-btn__spinner"></span>' : '●'}
+                    ${escapeHtml(label)}
+                </button>
+                <div class="job-monitor-panel" id="jmPanel" hidden></div>
+            </div>
+        `;
+
+        this.container.querySelector('#jmChipBtn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePanel();
+        });
+
+        document.addEventListener('click', () => this.closePanel());
+
+        if (this.isOpen) this.openPanel();
     }
+
+    private togglePanel(): void {
+        this.isOpen ? this.closePanel() : this.openPanel();
+    }
+
+    private openPanel(): void {
+        this.isOpen = true;
+        const panel = this.container.querySelector<HTMLElement>('#jmPanel');
+        if (!panel) return;
+        panel.hidden = false;
+        panel.innerHTML = this.renderPanelContent();
+        this.bindPanelEvents(panel);
+    }
+
+    private closePanel(): void {
+        this.isOpen = false;
+        const panel = this.container.querySelector<HTMLElement>('#jmPanel');
+        if (panel) panel.hidden = true;
+    }
+
+    // ── Panel content ─────────────────────────────────────────────────
+
+    private renderPanelContent(): string {
+        const activeSections = Array.from(this.activeJobs.values())
+            .map((job) => this.renderActiveJob(job))
+            .join('');
+
+        const doneSections = this.doneJobs
+            .map((job) => this.renderDoneJob(job))
+            .join('');
+
+        const hasActive = this.activeJobs.size > 0;
+        const hasDone   = this.doneJobs.length > 0;
+
+        return `
+            <div class="job-monitor-panel__header">
+                Jobs
+                ${hasDone ? `<button class="btn btn--ghost btn--xs" id="jmClearBtn">Clear</button>` : ''}
+            </div>
+            <div class="job-monitor-panel__body">
+                ${hasActive ? `
+                    <div class="jm-section">
+                        <div class="jm-section-label">Running</div>
+                        ${activeSections}
+                    </div>
+                ` : ''}
+                ${hasDone ? `
+                    <div class="jm-section">
+                        <div class="jm-section-label">Recent</div>
+                        ${doneSections}
+                    </div>
+                ` : ''}
+                ${!hasActive && !hasDone ? '<div class="job-monitor-panel__empty">No jobs yet.</div>' : ''}
+            </div>
+        `;
+    }
+
+    private renderActiveJob(job: ActiveJob): string {
+        const pct = job.total > 0 ? Math.round((job.current / job.total) * 100) : 0;
+        return `
+            <div class="jm-job jm-job--running">
+                <div class="jm-job__header">
+                    <span class="jm-job__label">${escapeHtml(job.label)}</span>
+                    <span class="jm-job__meta">${job.current} / ${job.total}</span>
+                </div>
+                <div class="progress-bar" style="height:3px">
+                    <div class="progress-bar__fill" style="width:${pct}%"></div>
+                </div>
+                <div class="jm-job__file">${escapeHtml(job.currentFile)}</div>
+            </div>
+        `;
+    }
+
+    private renderDoneJob(job: DoneJob): string {
+        const isOk  = job.status === 'completed';
+        const icon  = isOk ? '✓' : '✕';
+        const cls   = isOk ? 'jm-job--ok' : 'jm-job--error';
+        const meta  = isOk
+            ? `${job.processed} processed${job.errors > 0 ? `, ${job.errors} err` : ''}`
+            : (job.errorMessage?.slice(0, 40) ?? 'failed');
+        const ago   = formatAgo(job.doneAt);
+        return `
+            <div class="jm-job jm-job--clickable ${cls}"
+                 data-open-dataset="${escapeHtml(job.datasetId)}"
+                 title="Open dataset">
+                <span class="jm-job__icon">${icon}</span>
+                <span class="jm-job__label">${escapeHtml(job.label)}</span>
+                <span class="jm-job__meta">${escapeHtml(meta)} · ${ago}</span>
+            </div>
+        `;
+    }
+
+    private bindPanelEvents(panel: HTMLElement): void {
+        panel.querySelector('#jmClearBtn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.doneJobs = [];
+            this.renderChip();
+        });
+
+        panel.querySelectorAll('[data-open-dataset]').forEach((el) => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.onOpenDataset?.((el as HTMLElement).dataset.openDataset!);
+                this.closePanel();
+            });
+        });
+
+        // Prevent clicks inside panel from closing it
+        panel.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // ── Event subscriptions ───────────────────────────────────────────
 
     private async subscribeEvents(): Promise<void> {
         const { listen } = await import('@tauri-apps/api/event');
 
         const unlistenProgress = await listen<{
-            jobId: string;
-            datasetId: string;
-            current: number;
-            total: number;
-            filepath: string | null;
-        }>('dataset:birdnet-progress', (event) => {
-            const { jobId, datasetId, current, total, filepath } = event.payload;
+            jobId: string; datasetId: string;
+            current: number; total: number; filepath: string | null;
+        }>('dataset:birdnet-progress', (ev) => {
+            const { jobId, datasetId, current, total, filepath } = ev.payload;
             const existing = this.activeJobs.get(jobId);
             this.activeJobs.set(jobId, {
-                jobId,
-                datasetId,
+                jobId, datasetId,
                 label: existing?.label ?? 'BirdNET',
-                current,
-                total,
+                current, total,
                 currentFile: filepath ? (filepath.split('/').pop() ?? filepath) : '…',
             });
-            this.render();
+            this.renderChip();
+            if (this.isOpen) this.openPanel();
         });
 
         const unlistenDone = await listen<BirdnetDonePayload>(
             'dataset:birdnet-done',
-            (event) => {
-                const p = event.payload;
+            (ev) => {
+                const p = ev.payload;
                 const active = this.activeJobs.get(p.jobId);
                 this.activeJobs.delete(p.jobId);
-
                 this.doneJobs.unshift({
                     jobId: p.jobId,
                     datasetId: p.datasetId,
@@ -145,113 +275,31 @@ export class JobMonitorPanel {
                     errorMessage: p.errorMessage,
                 });
                 this.doneJobs = this.doneJobs.slice(0, MAX_HISTORY);
-                this.render();
+                this.renderChip();
+                if (this.isOpen) this.openPanel();
             },
         );
 
         this.unlistenProgress = unlistenProgress;
         this.unlistenDone = unlistenDone;
     }
+}
 
-    private render(): void {
-        const hasActive = this.activeJobs.size > 0;
-        const hasDone = this.doneJobs.length > 0;
-
-        if (!hasActive && !hasDone) {
-            this.container.innerHTML = '';
-            return;
-        }
-
-        const activeHtml = Array.from(this.activeJobs.values())
-            .map((job) => this.renderActive(job))
-            .join('');
-
-        const doneHtml = this.doneJobs
-            .map((job) => this.renderDone(job))
-            .join('');
-
-        this.container.innerHTML = `
-            <div class="job-monitor">
-                ${hasActive ? `
-                <div class="job-monitor__section">
-                    <div class="job-monitor__section-label">Running</div>
-                    ${activeHtml}
-                </div>` : ''}
-                ${hasDone ? `
-                <div class="job-monitor__section">
-                    <div class="job-monitor__section-label">
-                        Recent
-                        <button class="btn btn--ghost btn--xs" id="jobMonitorClear">Clear</button>
-                    </div>
-                    ${doneHtml}
-                </div>` : ''}
-            </div>
-        `;
-
-        this.container.querySelector('#jobMonitorClear')?.addEventListener('click', () => {
-            this.doneJobs = [];
-            this.render();
-        });
-
-        this.container.querySelectorAll('[data-open-dataset]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const id = (btn as HTMLElement).dataset.openDataset!;
-                this.onOpenDataset?.(id);
-            });
-        });
-    }
-
-    private renderActive(job: ActiveJob): string {
-        const pct = job.total > 0 ? Math.round((job.current / job.total) * 100) : 0;
-        return `
-            <div class="job-row job-row--running">
-                <div class="job-row__header">
-                    <span class="job-row__label">${escapeHtml(job.label)}</span>
-                    <span class="job-row__count">${job.current} / ${job.total}</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-bar__fill" style="width:${pct}%"></div>
-                </div>
-                <div class="job-row__file">${escapeHtml(job.currentFile)}</div>
-            </div>
-        `;
-    }
-
-    private renderDone(job: DoneJob): string {
-        const isOk = job.status === 'completed';
-        const stateClass = isOk ? 'job-row--ok' : 'job-row--error';
-        const icon = isOk ? '✓' : '✕';
-        const summary = isOk
-            ? `${job.processed} processed${job.errors > 0 ? `, ${job.errors} errors` : ''}`
-            : (job.errorMessage ? job.errorMessage.slice(0, 80) : 'failed');
-        const ago = formatAgo(job.doneAt);
-        return `
-            <div class="job-row ${stateClass}"
-                 data-open-dataset="${escapeHtml(job.datasetId)}"
-                 role="button"
-                 tabindex="0"
-                 title="Open dataset">
-                <span class="job-row__icon">${icon}</span>
-                <span class="job-row__label">${escapeHtml(job.label)}</span>
-                <span class="job-row__summary">${escapeHtml(summary)}</span>
-                <span class="job-row__ago">${ago}</span>
-            </div>
-        `;
-    }
+function labelForRun(run: AnalysisRunRecord): string {
+    const model   = (run.config.model as string) ?? 'analysis';
+    const version = (run.config.version as string) ?? '';
+    const field   = (run.config.outputField as string) ?? '';
+    return `${model}${version ? ` v${version}` : ''}${field ? ` → ${field}` : ''}`;
 }
 
 function escapeHtml(s: string): string {
-    return s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function formatAgo(ts: number): string {
     if (!ts) return '';
-    const diff = Math.round((Date.now() - ts) / 1000);
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-    return `${Math.round(diff / 3600)}h ago`;
+    const s = Math.round((Date.now() - ts) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
 }

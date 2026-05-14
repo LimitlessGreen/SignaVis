@@ -1,33 +1,133 @@
-.job-monitor {
-  padding: 4px 12px;
-  background: var(--color-surface-raised, #1e1e1e);
-  border-bottom: 1px solid var(--color-border, #333);
-  font-size: 12px;
+// ── Job Monitor — topbar chip + dropdown panel ────────────────────────
+//
+// In the topbar: a compact chip showing a spinner + "N running" when
+// jobs are active, or the last completed job status.
+// Clicking the chip opens a dropdown panel with job details.
 
-  &__section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; }
-  &__section-label {
-    color: var(--color-text-muted, #888);
-    min-width: 52px;
-    display: flex; align-items: center; gap: 6px;
+.job-monitor-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.job-monitor-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+
+  &:hover { background: var(--color-accent-faint); border-color: var(--color-accent); color: var(--color-text-primary); }
+
+  &--running {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-faint);
+  }
+
+  &__spinner {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--color-accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: jm-spin 0.7s linear infinite;
+    flex-shrink: 0;
   }
 }
 
-.job-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 3px 8px; border-radius: 4px;
-  cursor: pointer; min-width: 0;
+@keyframes jm-spin { to { transform: rotate(360deg); } }
 
-  &--running { background: var(--color-surface, #2a2a2a); flex-direction: column; align-items: stretch; }
-  &--ok      { color: var(--color-success, #4caf50); }
-  &--error   { color: var(--color-error, #f44336); }
+// ── Dropdown panel (opens below the chip) ────────────────────────────
 
-  &__header  { display: flex; justify-content: space-between; }
-  &__label   { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__count   { color: var(--color-text-muted, #888); font-variant-numeric: tabular-nums; }
-  &__file    { color: var(--color-text-muted, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  &__ago     { color: var(--color-text-muted, #888); white-space: nowrap; }
-  &__icon    { width: 14px; text-align: center; }
+.job-monitor-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 500;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  min-width: 300px;
+  max-width: 380px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+  }
+
+  &__body {
+    padding: 6px 0;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  &__empty {
+    padding: 16px 12px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
 }
 
-.btn--xs { font-size: 10px; padding: 1px 6px; }
+// ── Job rows inside the dropdown ──────────────────────────────────────
+
+.jm-section { padding: 4px 0; }
+
+.jm-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  padding: 4px 12px 2px;
+}
+
+.jm-job {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: default;
+
+  &--clickable { cursor: pointer; }
+  &--clickable:hover { background: var(--color-accent-faint); }
+
+  &__icon   { width: 14px; text-align: center; flex-shrink: 0; }
+  &__label  { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta   { color: var(--color-text-secondary); white-space: nowrap; font-size: 11px; }
+}
+
+.jm-job--ok    .jm-job__icon { color: var(--color-success); }
+.jm-job--error .jm-job__icon { color: var(--color-danger); }
+.jm-job--running {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  background: var(--input-bg);
+  border-radius: 4px;
+  margin: 2px 8px;
+  padding: 8px;
+
+  .jm-job__header { display: flex; justify-content: space-between; }
+  .jm-job__file   { font-size: 11px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
