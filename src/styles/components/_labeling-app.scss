@@ -303,8 +303,16 @@ html[data-theme="light"] { @include sponsor-light; }
   align-items: center;
 }
 
-/* ── Workspace (activity bar and sidebar moved to their own partials) */
-.workspace { display: flex; min-height: 0; overflow: hidden; }
+/* ── Workspace — shared base for both the labeling app and the desktop app.
+   Both use a flex container that fills its parent and clips overflow.
+   Row direction (labeling), column direction (desktop) is set by child rules. */
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
 /* Activity bar styles moved to src/styles/components/_activity-bar.scss */
 /* Sidebar styles moved to src/styles/components/_sidebar.scss */
 
