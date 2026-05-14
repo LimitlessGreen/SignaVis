@@ -1,46 +1,78 @@
-.field-schema-overlay {
-  position: fixed; inset: 0; z-index: 300;
-  display: flex; align-items: center; justify-content: flex-end;
-}
-
-.field-schema-backdrop {
-  position: absolute; inset: 0; background: rgba(0,0,0,.4);
-}
+// ── Field Schema Panel ────────────────────────────────────────────────
+// .field-schema-overlay base style is in _export-panel.scss.
+// This file contains the panel-specific slide-in layout and content.
 
 .field-schema-panel {
-  position: relative; z-index: 1;
-  background: var(--color-surface, #1e1e1e);
-  border-left: 1px solid var(--color-border, #333);
+  // Slides in from the right as a sidebar — different from the centered dialogs
+  background: var(--color-bg-surface);
+  border-left: 1px solid var(--color-border);
   width: min(520px, 95vw);
   height: 100vh;
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  // Positioned inside .field-schema-overlay (fixed, flex, justify-content: flex-end)
+  align-self: stretch;
 
   &__header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border, #333);
+    border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
   }
+
   &__title { font-size: 15px; font-weight: 600; margin: 0; }
-  &__body  { padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+  &__body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
 }
+
+// Backdrop behind the slide-in panel
+.field-schema-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+}
+
+// Override the centering from shared overlay — align to the right edge
+.field-schema-overlay {
+  justify-content: flex-end;
+}
+
+// ── Sections ──────────────────────────────────────────────────────────
 
 .field-schema-section {
-  &__label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
-              color: var(--color-text-muted, #888); margin-bottom: 8px; }
-  &__details > summary { cursor: pointer; user-select: none; }
-  &--add { border-top: 1px solid var(--color-border, #333); padding-top: 14px; }
+  &__label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+  }
+
+  &__details > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: revert;
+  }
+
+  &--add {
+    border-top: 1px solid var(--color-border);
+    padding-top: 14px;
+  }
 }
 
-.field-schema-empty { color: var(--color-text-muted, #888); font-size: 13px; }
+.field-schema-empty { color: var(--color-text-secondary); font-size: 13px; }
 
-.field-table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
-  th { text-align: left; color: var(--color-text-muted, #888); padding: 3px 6px; font-weight: 500; }
-  td { padding: 4px 6px; border-top: 1px solid var(--color-border, #333); }
-  &--muted td, &--muted th { opacity: .65; }
-}
+// ── Field table ───────────────────────────────────────────────────────
 
 .field-table {
   width: 100%;
@@ -49,21 +81,24 @@
 
   th {
     text-align: left;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
     padding: 3px 6px;
     font-weight: 500;
   }
 
   td { padding: 4px 6px; border-top: 1px solid var(--color-border); }
+
   &--muted td, &--muted th { opacity: 0.65; }
 }
 
 .field-row {
-  &__name   { font-weight: 500; }
-  &__kind   { }
-  &__group  { color: var(--color-text-muted); }
-  &__desc   { color: var(--color-text-muted); font-size: 11px; }
+  &__name  { font-weight: 500; }
+  &__kind  { }
+  &__group { color: var(--color-text-secondary); }
+  &__desc  { color: var(--color-text-secondary); font-size: 11px; }
 }
+
+// ── Add field form ────────────────────────────────────────────────────
 
 .field-add-form {
   display: grid;
@@ -75,5 +110,5 @@
 
 .field-add-error {
   font-size: 12px;
-  color: var(--color-error);
+  color: var(--color-danger);
 }

@@ -60,10 +60,10 @@ export class ExportPanel {
                     <button class="btn btn--ghost btn--icon" id="exportClose" title="Close">✕</button>
                 </div>
 
-                <div class="export-panel__tabs">
-                    <button class="export-tab ${this.activeTab === 'export' ? 'export-tab--active' : ''}"
+                <div class="xc-sub-tabs">
+                    <button class="xc-sub-tab ${this.activeTab === 'export' ? 'active' : ''}"
                         data-tab="export">Export training data</button>
-                    <button class="export-tab ${this.activeTab === 'finetune' ? 'export-tab--active' : ''}"
+                    <button class="xc-sub-tab ${this.activeTab === 'finetune' ? 'active' : ''}"
                         data-tab="finetune">Fine-tune BirdNET</button>
                 </div>
 

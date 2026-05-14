@@ -1,67 +1,48 @@
-// ── Dataset Browser ──────────────────────────────────────────────────
+// ── Dataset Browser ───────────────────────────────────────────────────
 
 .dataset-browser {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 760px;
+  max-width: 900px;
 
-  &__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  &__title {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-    color: var(--color-text-primary);
-  }
+  &__header     { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  &__title      { font-size: 18px; font-weight: 600; color: var(--color-text-primary); }
 
   &__create-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    background: var(--input-bg);
+    background: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
-  }
-
-  &__form-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  &__list {
+    border-radius: 6px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
+
+  &__form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  &__list         { display: flex; flex-direction: column; gap: 8px; }
 
   &__empty {
-    padding: 48px 16px;
+    padding: 32px;
     text-align: center;
     color: var(--color-text-secondary);
-    font-size: 13px;
-    line-height: 1.6;
+    font-style: italic;
+    line-height: 1.8;
   }
 }
+
+// ── Dataset card ──────────────────────────────────────────────────────
 
 .dataset-card {
   display: flex;
   align-items: stretch;
+  background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--input-bg);
-  transition: border-color 0.12s, background 0.12s;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.15s;
 
-  &:hover {
-    border-color: var(--color-accent);
-    background: var(--color-accent-faint);
-  }
+  &:hover { border-color: var(--color-accent); }
 
   &__body {
     display: flex;
@@ -70,89 +51,52 @@
     flex: 1;
     padding: 12px 14px;
     cursor: pointer;
-    min-width: 0;
   }
 
-  &__icon {
-    font-size: 22px;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-
-  &__info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  &__name {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__desc {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--color-text-secondary);
-  }
-
-  &__date {
-    color: var(--color-text-secondary);
-  }
+  &__icon  { font-size: 24px; flex-shrink: 0; }
+  &__info  { display: flex; flex-direction: column; gap: 4px; }
+  &__name  { font-weight: 600; font-size: 14px; }
+  &__desc  { font-size: 12px; color: var(--color-text-secondary); }
+  &__meta  { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  &__date  { color: var(--color-text-secondary); }
 
   &__delete {
-    flex-shrink: 0;
-    margin: 8px;
-    opacity: 0;
-    transition: opacity 0.12s;
+    align-self: center;
+    margin-right: 10px;
+    opacity: 0.4;
   }
 
-  &:hover &__delete {
-    opacity: 1;
-  }
+  &:hover &__delete { opacity: 1; }
 }
 
-// ── Shared badge (used across v2 panels) ─────────────────────────────
+// ── Shared badge ─────────────────────────────────────────────────────
 
 .badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   white-space: nowrap;
 
-  &--neutral { background: var(--input-bg-weak); color: var(--color-text-secondary); }
+  &--neutral { background: rgba(255,255,255,0.08); color: var(--color-text-secondary); }
   &--accent  { background: var(--color-accent-faint); color: var(--color-accent); }
-  &--ok      { background: var(--color-success-faint); color: var(--color-success); }
-  &--error   { background: var(--color-danger-soft); color: var(--color-danger); }
+  &--ok,
+  &--success { background: var(--color-success-faint); color: var(--color-success); }
+  &--error,
+  &--danger  { background: var(--color-danger-soft); color: var(--color-danger); }
 }
 
 // ── Shared progress bar ───────────────────────────────────────────────
 
 .progress-bar {
-  width: 100%;
   height: 4px;
   background: var(--color-border);
   border-radius: 2px;
   overflow: hidden;
+  width: 100%;
 
   &__fill {
     height: 100%;
@@ -164,4 +108,22 @@
 .progress-label {
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+
+// ── Misc shared ───────────────────────────────────────────────────────
+
+.empty-hint {
+  padding: 14px 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.visibility-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  &--shared { background: hsl(210 80% 40% / 0.25); color: hsl(210 80% 70%); border-color: hsl(210 80% 40% / 0.4); }
+  &--public { background: hsl(140 60% 35% / 0.25); color: hsl(140 60% 65%); border-color: hsl(140 60% 35% / 0.4); }
 }
