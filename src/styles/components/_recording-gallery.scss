@@ -49,10 +49,11 @@
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 8px;
     overflow-y: auto;
     flex: 1;
+    align-content: start;
   }
 
   &__loading,
@@ -79,41 +80,91 @@
 
 .recording-card {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  flex-direction: column;   // waveform on top, info below
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  padding: 10px;
+  overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.1s;
+  transition: border-color 0.12s, box-shadow 0.12s;
 
-  &:hover     { border-color: var(--color-accent); background: var(--color-accent-faint); }
+  &:hover {
+    border-color: var(--color-accent);
+    box-shadow: 0 2px 12px rgba(56,189,248,0.12);
+  }
   &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
+  // Full-width waveform thumbnail at the top of the card
   &__waveform {
-    width: 80px;
-    height: 36px;
+    width: 100%;
+    height: 52px;
     flex-shrink: 0;
-    border-radius: 3px;
-    background: var(--color-bg-tertiary, #1a1f2e) no-repeat center / cover;
-    // Placeholder stripe pattern while thumbnail loads
+    position: relative;
+    background: var(--color-bg-tertiary) no-repeat center / cover;
+    // Animated shimmer placeholder while thumbnail loads
     background-image: repeating-linear-gradient(
       90deg,
       var(--color-border) 0 1px,
-      transparent 1px 4px
+      transparent 1px 6px
     );
+    background-size: 100% 100%;
   }
 
+  // Once JS sets style.backgroundImage the CSS gradient is overridden (inline > class)
   &__waveform--loaded {
-    // background-image is set inline by JS; reset the placeholder
-    background-image: none;
+    // No change needed — inline style from JS wins automatically
   }
 
-  &__info  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  // Species badges overlaid in the bottom-left of the waveform area
+  &__species {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    max-width: calc(100% - 8px);
+    pointer-events: none;
+  }
+
+  &__info  {
+    padding: 7px 8px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
   &__name  { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__meta  { display: flex; gap: 6px; font-size: 11px; color: var(--color-text-secondary); }
+  &__meta  { display: flex; gap: 6px; font-size: 10px; color: var(--color-text-secondary); }
   &__tags  { display: flex; gap: 3px; flex-wrap: wrap; }
+}
+
+// ── Species detection badges (on card waveform) ───────────────────────
+
+.species-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+  letter-spacing: 0.01em;
+
+  &--high {
+    background: rgba(74, 222, 128, 0.75);   // success green
+    color: #000;
+  }
+  &--mid {
+    background: rgba(245, 158, 11, 0.75);   // amber
+    color: #000;
+  }
+  &--low {
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255,255,255,0.75);
+  }
 }
 
 // ── Tag pills ─────────────────────────────────────────────────────────

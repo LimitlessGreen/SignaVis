@@ -736,22 +736,27 @@ export class RecordingGalleryPanel {
 
     private renderRecordingCard(r: Recording): string {
         const filename = r.filepath.split('/').pop() ?? r.filepath;
-        const dur = r.metadata.duration > 0
-            ? formatDuration(r.metadata.duration)
-            : '?';
-        const sr = r.metadata.sampleRate > 0
-            ? `${Math.round(r.metadata.sampleRate / 1000)}kHz`
-            : '';
+        const dur = r.metadata.duration > 0 ? formatDuration(r.metadata.duration) : '?';
+        const sr  = r.metadata.sampleRate > 0 ? `${Math.round(r.metadata.sampleRate / 1000)}kHz` : '';
+
         const tags = r.tags
-            .map(
-                (t) =>
-                    `<button
-                        class="tag-pill tag-pill--sm tag-pill--active"
-                        data-toggle-tag="${escapeHtml(t)}"
-                        data-recording-id="${escapeHtml(r.id)}"
-                        title="Remove tag: ${escapeHtml(t)}"
-                    >${escapeHtml(t)}</button>`,
-            )
+            .map((t) => `<button
+                class="tag-pill tag-pill--sm tag-pill--active"
+                data-toggle-tag="${escapeHtml(t)}"
+                data-recording-id="${escapeHtml(r.id)}"
+                title="Remove tag: ${escapeHtml(t)}"
+            >${escapeHtml(t)}</button>`)
+            .join('');
+
+        // Collect top-3 species from any SoundEvents field on this recording
+        const speciesBadges = topSpecies(r.fields, 3)
+            .map(({ label, confidence }) => {
+                const pct = Math.round(confidence * 100);
+                const cls = confidence >= 0.8 ? 'species-badge--high'
+                          : confidence >= 0.5 ? 'species-badge--mid'
+                          : 'species-badge--low';
+                return `<span class="species-badge ${cls}" title="${escapeHtml(label)} (${pct}%)">${escapeHtml(shortLabel(label))}</span>`;
+            })
             .join('');
 
         return `
@@ -766,7 +771,9 @@ export class RecordingGalleryPanel {
                     class="recording-card__waveform"
                     data-waveform-path="${escapeHtml(r.filepath)}"
                     aria-hidden="true"
-                ></div>
+                >
+                    ${speciesBadges ? `<div class="recording-card__species">${speciesBadges}</div>` : ''}
+                </div>
                 <div class="recording-card__info">
                     <div class="recording-card__name" title="${escapeHtml(r.filepath)}">${escapeHtml(filename)}</div>
                     <div class="recording-card__meta">
@@ -793,4 +800,46 @@ function formatDuration(s: number): string {
     const m = Math.floor(s / 60);
     const sec = Math.round(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// ── Species badge helpers ─────────────────────────────────────────────
+
+interface SpeciesHit { label: string; confidence: number; }
+
+/**
+ * Extracts the top N unique species by confidence from all SoundEvents
+ * fields on a recording.  Returns an empty array if no analysis exists.
+ */
+function topSpecies(fields: Record<string, unknown>, maxCount: number): SpeciesHit[] {
+    const best = new Map<string, number>(); // label → max confidence
+
+    for (const value of Object.values(fields ?? {})) {
+        if (!value || typeof value !== 'object') continue;
+        const events = (value as Record<string, unknown>).soundEvents;
+        if (!Array.isArray(events)) continue;
+        for (const ev of events) {
+            if (!ev || typeof ev !== 'object') continue;
+            const label = (ev as Record<string, unknown>).label;
+            const conf  = (ev as Record<string, unknown>).confidence;
+            if (typeof label !== 'string' || typeof conf !== 'number') continue;
+            if (!best.has(label) || conf > best.get(label)!) {
+                best.set(label, conf);
+            }
+        }
+    }
+
+    return Array.from(best.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxCount)
+        .map(([label, confidence]) => ({ label, confidence }));
+}
+
+/**
+ * Returns a short display name from a scientific species label.
+ * "Turdus merula" → "T. merula"
+ */
+function shortLabel(label: string): string {
+    const parts = label.split(' ');
+    if (parts.length >= 2) return `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+    return label;
 }
