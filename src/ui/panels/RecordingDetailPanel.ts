@@ -13,7 +13,7 @@ import {
     datasetRunBirdnet,
     type BirdnetRunArgs,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
-import { listen } from '@tauri-apps/api/event';
+import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 
 export interface RecordingDetailPanelOptions {
     /** Container element — typically the right column of the desktop app */

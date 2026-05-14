@@ -240,7 +240,7 @@ export class JobMonitorPanel {
     // ── Event subscriptions ───────────────────────────────────────────
 
     private async subscribeEvents(): Promise<void> {
-        const { listen } = await import('@tauri-apps/api/event');
+        const { tauriListen: listen } = await import('../../infrastructure/tauri/TauriCorpusAdapter.ts');
 
         const unlistenProgress = await listen<{
             jobId: string; datasetId: string;

@@ -13,7 +13,58 @@ import type {
 
 type InvokeArgs = Record<string, unknown>;
 
+// In non-Tauri contexts (browser dev/demo mode), delegate to the mock adapter
+// so the UI is fully functional without a running desktop backend.
+let _mockAdapter: typeof import('./MockCorpusAdapter.ts') | null = null;
+
+async function isMockMode(): Promise<boolean> {
+    try {
+        await import('@tauri-apps/api/core');
+        // If the import succeeds but window.__TAURI__ is absent, we're in browser
+        return !(window as unknown as Record<string, unknown>).__TAURI__;
+    } catch {
+        return true;
+    }
+}
+
+async function getMock() {
+    if (!_mockAdapter) {
+        _mockAdapter = await import('./MockCorpusAdapter.ts');
+    }
+    return _mockAdapter;
+}
+
 async function invoke<T>(command: string, args?: InvokeArgs): Promise<T> {
+    if (await isMockMode()) {
+        // Route to mock adapter by command name
+        const m = await getMock();
+        const a = (args?.args ?? args ?? {}) as Record<string, unknown>;
+        const routes: Record<string, () => Promise<unknown>> = {
+            dataset_create:            () => m.datasetCreate(a.name as string, a.description as string),
+            dataset_list:              () => m.datasetList(),
+            dataset_get:               () => m.datasetGet((args?.id ?? a.id) as string),
+            dataset_delete:            () => m.datasetDelete((args?.id ?? a.id) as string),
+            dataset_update_meta:       () => m.datasetUpdateMeta(a.id as string, a.name as string, a.description as string),
+            dataset_add_field_to_schema: () => m.datasetAddFieldToSchema(a as never),
+            dataset_save_view:         () => m.datasetSaveView(a as never),
+            dataset_delete_view:       () => m.datasetDeleteView(a.datasetId as string, a.name as string),
+            dataset_list_runs:         () => m.datasetListRuns((args?.datasetId ?? a.datasetId) as string),
+            dataset_get_run:           () => m.datasetGetRun((args?.datasetId ?? a.datasetId) as string, (args?.jobId ?? a.jobId) as string),
+            dataset_run_birdnet:       () => m.datasetRunBirdnet(a as never),
+            recording_list:            () => m.recordingList(a as never),
+            recording_get:             () => m.recordingGet((args?.id ?? a.id) as string),
+            recording_set_tags:        () => m.recordingSetTags(a.id as string, a.tags as string[]),
+            recording_delete:          () => m.recordingDelete((args?.id ?? a.id) as string),
+            recording_set_field:       () => m.recordingSetField(a.id as string, a.fieldName as string, a.value),
+            recording_count:           () => m.recordingCount((args?.datasetId ?? a.datasetId) as string),
+            recording_distinct_values: () => m.recordingDistinctValues((args?.datasetId ?? a.datasetId) as string, (args?.fieldName ?? a.fieldName) as string),
+            recording_import_folder:   () => m.recordingImportFolder(),
+        };
+        const handler = routes[command];
+        if (handler) return handler() as Promise<T>;
+        console.warn(`[MockAdapter] Unhandled command: ${command}`);
+        return undefined as unknown as T;
+    }
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
     return tauriInvoke<T>(command, args);
 }
@@ -214,6 +265,23 @@ export async function datasetGetRun(
     jobId: string,
 ): Promise<AnalysisRunRecord | null> {
     return invoke<AnalysisRunRecord | null>('dataset_get_run', { datasetId, jobId });
+}
+
+// ── Event listen helper (works in both Tauri and demo/browser mode) ───
+
+export async function tauriListen<T>(
+    event: string,
+    handler: (e: { payload: T }) => void,
+): Promise<() => void> {
+    if (await isMockMode()) {
+        const mockListen = (window as unknown as Record<string, unknown>).__SIGNAVIS_MOCK_LISTEN__ as
+            ((ev: string, h: (e: { payload: T }) => void) => () => void) | undefined;
+        if (mockListen) return mockListen(event, handler);
+        // No bridge installed yet — no-op
+        return () => { /* no-op */ };
+    }
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen<T>(event, handler);
 }
 
 // ── BirdNET done event ─────────────────────────────────────────────────

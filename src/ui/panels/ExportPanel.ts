@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { Dataset } from '../../domain/corpus/types.ts';
-import { listen } from '@tauri-apps/api/event';
+import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

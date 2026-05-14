@@ -18,7 +18,7 @@ import { FieldSchemaPanel } from './FieldSchemaPanel.ts';
 import { TrainingSplitPanel } from './TrainingSplitPanel.ts';
 import { ExportPanel } from './ExportPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
-import { listen } from '@tauri-apps/api/event';
+import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 
 export interface RecordingGalleryOptions {
     container: HTMLElement;

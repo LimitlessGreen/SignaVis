@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import '../styles/main.scss'; // Vite compiles SCSS in dev, extracts CSS in prod
+import { installMockEventBridge } from '../infrastructure/tauri/mock-event-bridge.ts';
 
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
 import { TauriConnectionBridge } from '../infrastructure/tauri/TauriConnectionBridge.ts';
@@ -792,14 +793,23 @@ async function buildNativeMenu(): Promise<void> {
 // ── Boot ──────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
-    if (!isTauriContext()) {
-        document.body.innerHTML =
-            '<p style="padding:2rem;color:#f87171">This page requires the SignaVis desktop app.</p>';
-        return;
+    // Install mock event bridge first — needed in browser/demo mode so that
+    // Tauri listen() calls are satisfied by the in-memory mock.
+    installMockEventBridge();
+
+    const demoMode = !isTauriContext();
+    if (demoMode) {
+        // Show a non-intrusive demo banner
+        const banner = document.createElement('div');
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c5c00;color:#fcd34d;font-size:11px;padding:3px 12px;text-align:center;pointer-events:none';
+        banner.textContent = '⚠ Demo mode — running with mock data. No Tauri desktop backend connected.';
+        document.body.appendChild(banner);
+        // Push down the app body slightly
+        document.body.style.paddingTop = '22px';
     }
 
     applyTheme(currentTheme());
-    await initConnectionUI();
+    if (!demoMode) await initConnectionUI();
 
     // Theme toggle
     const themeBtn = document.getElementById('themeToggleBtn');
