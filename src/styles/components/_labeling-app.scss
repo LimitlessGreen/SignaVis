@@ -43,32 +43,9 @@ html, body {
 .brand-title {
   text-decoration: none;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--color-text-primary);
-  background: linear-gradient(
-    90deg,
-    var(--color-text-primary) 0%,
-    var(--color-text-primary) 35%,
-    #ffd700 50%,
-    var(--color-text-primary) 65%,
-    var(--color-text-primary) 100%
-  );
-  background-size: 250% 100%;
-  background-position: 0% center;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  transition: background-position 0s, letter-spacing 0.3s ease;
-
-  .brand.is-active & {
-    background-position: 100% center;
-    letter-spacing: 0.08em;
-    animation: brand-shimmer 1.8s ease infinite;
-  }
-}
-@keyframes brand-shimmer {
-  0%   { background-position: 150% center; }
-  100% { background-position: -50% center; }
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--color-accent);
 }
 .heart-link {
   display: inline-flex; align-items: center;
