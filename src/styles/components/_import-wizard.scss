@@ -1,0 +1,225 @@
+// ── Import Wizard ─────────────────────────────────────────────────────
+
+.import-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 680px;
+  padding: 4px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+}
+
+// ── Wizard step indicators ────────────────────────────────────────────
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.wizard-step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+
+  &__num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  &--active {
+    color: var(--color-accent);
+
+    .wizard-step-indicator__num {
+      background: var(--color-accent-faint);
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+  }
+
+  &--done {
+    color: var(--color-success);
+
+    .wizard-step-indicator__num {
+      background: var(--color-success-faint);
+      border-color: var(--color-success);
+      color: var(--color-success);
+    }
+  }
+}
+
+.wizard-step-sep {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+  margin: 0 8px;
+  max-width: 40px;
+}
+
+// ── Wizard step content ───────────────────────────────────────────────
+
+.wizard-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+// ── Folder path input row ─────────────────────────────────────────────
+
+.wizard-path-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+// ── Pattern editor ────────────────────────────────────────────────────
+
+.wizard-pattern-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wizard-pattern-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+
+  code {
+    background: var(--input-bg-weak);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+}
+
+.wizard-pattern-preview {
+  padding: 10px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  min-height: 60px;
+
+  &--empty { color: var(--color-text-secondary); font-style: italic; }
+}
+
+.pattern-token {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-accent-faint);
+  color: var(--color-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  margin: 1px 2px;
+  border: 1px solid var(--color-accent);
+}
+
+.pattern-literal {
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+// ── Wizard footer / progress ──────────────────────────────────────────
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.wizard-footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wizard-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.wizard-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wizard-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--color-danger-soft);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-danger);
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+// ── Done screen ───────────────────────────────────────────────────────
+
+.wizard-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 16px;
+  text-align: center;
+
+  &__icon { font-size: 40px; }
+  &__title { font-size: 16px; font-weight: 600; }
+  &__stats {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+  }
+  &__stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  &__stat-num { font-size: 22px; font-weight: 700; color: var(--color-text-primary); }
+  &__actions { display: flex; gap: 8px; }
+}

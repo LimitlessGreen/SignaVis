@@ -11,6 +11,8 @@
   Color   : --color-*        (all theme-switching color values)
   Form    : --input-*        (form element backgrounds / hover states)
   Surface : --shadow-*, --scrollbar-*
+  Aliases : --color-surface, --color-text, --color-text-muted, etc.
+            (shorthand names used by v2 panels)
 */
 
 /* ═══════════════════════════════════════════════════════
@@ -63,6 +65,15 @@
     --input-bg-weak:          rgba(255, 255, 255, 0.06);
     --input-hover-bg:         rgba(255, 255, 255, 0.04);
     --shadow-strong:          rgba(0, 0, 0, 0.50);
+
+    /* Shorthand aliases for v2 panels */
+    --color-surface:          var(--color-bg-surface);
+    --color-surface-raised:   var(--color-bg-secondary);
+    --color-text:             var(--color-text-primary);
+    --color-text-muted:       var(--color-text-secondary);
+    --color-error:            var(--color-danger);
+    --color-ok:               var(--color-success);
+    --color-bg:               var(--color-bg-primary);
 
     /* Scrollbars */
     --scrollbar-width:        10px;

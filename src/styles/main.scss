@@ -46,13 +46,20 @@
 // Shared utilities & responsive
 @use "components/utilities";
 
-// Phase 3: Embedding & Similarity panels
-@use "components/similarity-browser";
-@use "components/scatterplot";
-// Phase 4: Clustering & Active Learning
-@use "components/cluster-browser";
-@use "components/xc-import";
+// v2 Dataset panels
+@use "components/dataset-browser";
+@use "components/recording-gallery";
+@use "components/detail-panel";
+@use "components/import-wizard";
+@use "components/field-schema";
 @use "components/job-monitor";
 @use "components/training-split";
 @use "components/export-panel";
-@use "components/field-schema";
+
+// Phase 3: Embedding & Similarity panels
+@use "components/similarity-browser";
+@use "components/scatterplot";
+// Phase 4: Clustering
+@use "components/cluster-browser";
+// Phase 7: Xeno-Canto import
+@use "components/xc-import";
