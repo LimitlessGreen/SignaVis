@@ -40,9 +40,10 @@ export function createOidcAuthMiddleware(config = {}) {
     return (_req, _res, next) => next();
   }
 
-  const jwksUrl = new URL(`${issuer}/protocol/openid-connect/certs`);
+  const jwksBase = (config.jwksUrl || process.env.OIDC_JWKS_URL || '').trim().replace(/\/$/, '');
+  const jwksUrl = new URL(jwksBase || `${issuer}/protocol/openid-connect/certs`);
   const jwks = createRemoteJWKSet(jwksUrl);
-  console.log(`[auth] enabled issuer=${issuer} audience=${audience || 'n/a'} mode=${mode}`);
+  console.log(`[auth] enabled issuer=${issuer} jwks=${jwksUrl.href} audience=${audience || 'n/a'} mode=${mode}`);
 
   return async (req, res, next) => {
     const token = bearerTokenFromHeader(req.headers.authorization);

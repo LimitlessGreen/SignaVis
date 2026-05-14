@@ -2,10 +2,20 @@ import { Pool } from 'pg';
 import { createClient } from 'redis';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const redis = createClient({ url: process.env.REDIS_URL });
-redis.on('error', (err) => console.error('redis error', err.message));
+
+function makeRedis() {
+  const c = createClient({ url: process.env.REDIS_URL });
+  c.on('error', (err) => console.error('redis error', err.message));
+  return c;
+}
+
+const redis = makeRedis();
+const redisPlatformQueue = makeRedis();
+const redisImportQueue = makeRedis();
 
 await redis.connect();
+await redisPlatformQueue.connect();
+await redisImportQueue.connect();
 
 const JOB_QUEUE_KEY = 'aw:jobs';
 const JOB_PROCESSING_KEY = 'aw:jobs:processing';
@@ -155,7 +165,7 @@ async function recoverStaleRunningJobs() {
 async function runPlatformJobs() {
   console.log('platform job queue worker started');
   while (true) {
-    const jobId = await redis.brPopLPush(JOB_QUEUE_KEY, JOB_PROCESSING_KEY, 0);
+    const jobId = await redisPlatformQueue.brPopLPush(JOB_QUEUE_KEY, JOB_PROCESSING_KEY, 0);
     if (!jobId) {
       continue;
     }
@@ -191,7 +201,7 @@ async function processJob(jobId) {
 async function runLegacyImportJobs() {
   console.log('legacy import queue worker started');
   while (true) {
-    const data = await redis.brPop('aw:import-jobs', 0);
+    const data = await redisImportQueue.brPop('aw:import-jobs', 0);
     const jobId = data?.element;
     if (!jobId) continue;
 
