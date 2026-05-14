@@ -23,45 +23,50 @@
 
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <span class="heart-wrap">
-          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="heart-link">
-            <span class="heart">♥</span>
-          </a>
-        </span>
-        <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="brand-title">SignaVis - Labeling</a>
+      <!-- Left: brand + file controls -->
+      <div class="topbar-left">
+        <div class="brand">
+          <span class="heart-wrap">
+            <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="heart-link">
+              <span class="heart">♥</span>
+            </a>
+          </span>
+          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="brand-title">SignaVis</a>
+        </div>
+        <div class="sponsor-card" role="tooltip">
+          <div class="sponsor-card__glow"></div>
+          <p class="sponsor-card__title">♥ Support this project</p>
+          <p class="sponsor-card__body">SignaVis is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
+          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta">Become a Sponsor →</a>
+        </div>
+        <span class="tb-sep"></span>
+        <span class="file-label" id="fileLabel">No file loaded</span>
+        <select id="modeSelect" class="tb-select" title="Mode">
+          <option value="multifile">Multi-file</option>
+          <option value="standalone">Standalone</option>
+        </select>
+        <button class="tb-btn" id="browseBtn" type="button">Browse</button>
+        <button class="tb-btn" id="loadSampleBtn" type="button">Demo</button>
+        <input id="fileInput" type="file" accept="audio/*" hidden />
       </div>
-      <div class="sponsor-card" role="tooltip">
-        <div class="sponsor-card__glow"></div>
-        <p class="sponsor-card__title">♥ Support this project</p>
-        <p class="sponsor-card__body">SignaVis is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
-        <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta">Become a Sponsor →</a>
-      </div>
-      <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
-      <span class="tb-sep"></span>
-      <span class="file-label" id="fileLabel">No file loaded</span>
-      <select id="modeSelect" class="tb-select" title="Mode">
-        <option value="multifile">Multi-file</option>
-        <option value="standalone">Standalone</option>
-      </select>
-      <button class="tb-btn" id="browseBtn" type="button">Browse</button>
-      <button class="tb-btn" id="loadSampleBtn" type="button">Demo</button>
-      <input id="fileInput" type="file" accept="audio/*" hidden />
-      <span class="tb-spacer"></span>
 
-      <!-- Species search bar — mounted by JS via createSpeciesSearchWidget -->
+      <!-- Centre: species search -->
       <div class="species-search" id="speciesSearchMount"></div>
 
-      <span class="tb-spacer"></span>
-      <span class="tb-meta" id="selectionMeta"></span>
-      <span class="tb-sep"></span>
-      <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
-      <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
-      <span class="tb-sep"></span>
-      <button class="tb-btn tb-xc-key" id="xcKeyIndicator" type="button" title="Xeno-canto API Key">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="16.5" r="5.5"/></svg>
-        <span id="xcKeyLabel">XC API Key</span>
-      </button>
+      <!-- Right: taxonomy + settings -->
+      <div class="topbar-right">
+        <span class="tb-meta" id="selectionMeta"></span>
+        <span class="tb-sep"></span>
+        <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
+        <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
+        <span class="tb-sep"></span>
+        <button class="tb-btn tb-xc-key" id="xcKeyIndicator" type="button" title="Xeno-canto API Key">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="16.5" r="5.5"/></svg>
+          <span id="xcKeyLabel">XC API Key</span>
+        </button>
+        <span class="tb-sep"></span>
+        <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
+      </div>
     </header>
 
     <!-- API key missing modal -->
