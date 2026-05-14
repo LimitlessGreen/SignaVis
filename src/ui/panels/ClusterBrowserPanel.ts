@@ -77,7 +77,7 @@ export class ClusterBrowserPanel {
             const clusterCount = this.clusters.filter(c => c.clusterId >= 0).length;
             const noiseCount   = this.clusters.find(c => c.clusterId === -1)?.recordings.length ?? 0;
             this.opts.onStatusMessage(
-                `${clusterCount} Cluster geladen, ${noiseCount} nicht zugeordnet.`,
+                `${clusterCount} clusters loaded, ${noiseCount} unassigned.`,
             );
         } catch (err) {
             this.opts.onStatusMessage(`Error: ${err}`);

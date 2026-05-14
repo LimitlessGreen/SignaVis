@@ -96,3 +96,12 @@
 
 .input-with-btn { display: flex; gap: 6px; }
 .form-actions   { display: flex; gap: 8px; padding-top: 4px; }
+
+// When mounted directly inside a pane (not in an overlay), fill available space
+#exportPaneMount > .export-panel {
+  width: 100%;
+  max-width: 680px;
+  max-height: none;
+  box-shadow: none;
+  border: 1px solid var(--color-border);
+}

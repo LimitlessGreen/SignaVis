@@ -4,6 +4,8 @@
 // Workflow tabs: Datasets | Gallery | Analyze | Annotate | Export
 // ═══════════════════════════════════════════════════════════════════════
 
+import '../styles/main.scss'; // Vite compiles SCSS in dev, extracts CSS in prod
+
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
 import { TauriConnectionBridge } from '../infrastructure/tauri/TauriConnectionBridge.ts';
 import type { ConnectionStatus } from '../infrastructure/tauri/TauriConnectionBridge.ts';
@@ -282,7 +284,11 @@ function switchAnalyzeSubTab(sub: AnalyzeSubTab): void {
                 onStatusMessage: setStatus,
                 onShowClusters: () => switchAnalyzeSubTab('clusters'),
             });
-            panel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
+            // Load all recordings, then mount scatter with their embedding data
+            import('../infrastructure/tauri/TauriCorpusAdapter.ts').then(async ({ recordingList }) => {
+                const recordings = await recordingList({ datasetId: dataset.id, limit: 10000 });
+                panel.mount(recordings).catch((e) => setStatus(`Scatter error: ${e}`));
+            }).catch((e) => setStatus(`Scatter load error: ${e}`));
         }
     }
 
@@ -318,12 +324,19 @@ function switchAnalyzeSubTab(sub: AnalyzeSubTab): void {
                 </div>
             `;
             mount.querySelector('#analyzeRunBirdnetBtn')?.addEventListener('click', () => {
-                // Navigate to gallery which has the BirdNET dialog
+                // Switch to gallery and wait for mount before triggering the BirdNET dialog
                 showGallery();
-                setTimeout(() => {
-                    const btn = document.querySelector<HTMLButtonElement>('#galleryBirdnetBtn');
-                    btn?.click();
-                }, 300);
+                const galleryMount = document.getElementById('galleryMount')!;
+                const observer = new MutationObserver(() => {
+                    const btn = galleryMount.querySelector<HTMLButtonElement>('#galleryBirdnetBtn');
+                    if (btn) {
+                        observer.disconnect();
+                        btn.click();
+                    }
+                });
+                observer.observe(galleryMount, { childList: true, subtree: true });
+                // Safety timeout to avoid observer leak
+                setTimeout(() => observer.disconnect(), 3000);
             });
         }
     }
@@ -558,8 +571,7 @@ async function readDirFlat(dirPath: string): Promise<FsEntry[]> {
 async function ensurePlayer(): Promise<BirdNETPlayer> {
     const container = document.getElementById('playerContainer')!;
     if (!player) {
-        const { BirdNETPlayer: P } = await import('./BirdNETPlayer.ts');
-        player = new P(container, {});
+        player = new BirdNETPlayer(container, {});
     }
     return player;
 }
@@ -844,12 +856,19 @@ async function boot(): Promise<void> {
         jobMonitorPanel.mount().catch(console.error);
     }
 
-    // Mount sidebar new-dataset button
+    // Sidebar new-dataset button: navigate to Datasets tab, then open create form
     document.getElementById('sidebarNewDatasetBtn')?.addEventListener('click', () => {
-        setWorkflowTab('datasets');
-        // Show the create form in the dataset browser
-        const btn = document.querySelector<HTMLButtonElement>('#datasetNewBtn');
-        btn?.click();
+        showDatasets();
+        // Wait for DatasetBrowserPanel to render its button
+        const mount = document.getElementById('datasetBrowserMount')!;
+        const tryClick = () => {
+            const btn = mount.querySelector<HTMLButtonElement>('#datasetNewBtn');
+            if (btn) { btn.click(); return; }
+        };
+        tryClick();
+        const obs = new MutationObserver(() => { tryClick(); obs.disconnect(); });
+        obs.observe(mount, { childList: true, subtree: true });
+        setTimeout(() => obs.disconnect(), 2000);
     });
 
     await buildNativeMenu();
