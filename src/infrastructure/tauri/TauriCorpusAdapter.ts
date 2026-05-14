@@ -17,14 +17,9 @@ type InvokeArgs = Record<string, unknown>;
 // so the UI is fully functional without a running desktop backend.
 let _mockAdapter: typeof import('./MockCorpusAdapter.ts') | null = null;
 
-async function isMockMode(): Promise<boolean> {
-    try {
-        await import('@tauri-apps/api/core');
-        // If the import succeeds but window.__TAURI__ is absent, we're in browser
-        return !(window as unknown as Record<string, unknown>).__TAURI__;
-    } catch {
-        return true;
-    }
+// Synchronous check — Tauri v2 always sets window.__TAURI_INTERNALS__
+function isMockMode(): boolean {
+    return typeof (globalThis as unknown as Record<string, unknown>).__TAURI_INTERNALS__ === 'undefined';
 }
 
 async function getMock() {
@@ -35,7 +30,7 @@ async function getMock() {
 }
 
 async function invoke<T>(command: string, args?: InvokeArgs): Promise<T> {
-    if (await isMockMode()) {
+    if (isMockMode()) {
         // Route to mock adapter by command name
         const m = await getMock();
         const a = (args?.args ?? args ?? {}) as Record<string, unknown>;
@@ -273,7 +268,7 @@ export async function tauriListen<T>(
     event: string,
     handler: (e: { payload: T }) => void,
 ): Promise<() => void> {
-    if (await isMockMode()) {
+    if (isMockMode()) {
         const mockListen = (window as unknown as Record<string, unknown>).__SIGNAVIS_MOCK_LISTEN__ as
             ((ev: string, h: (e: { payload: T }) => void) => () => void) | undefined;
         if (mockListen) return mockListen(event, handler);

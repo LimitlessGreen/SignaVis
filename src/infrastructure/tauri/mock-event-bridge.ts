@@ -11,7 +11,7 @@
 const _handlers = new Map<string, Set<(payload: unknown) => void>>();
 
 function isBrowserMode(): boolean {
-    return !(window as unknown as Record<string, unknown>).__TAURI__;
+    return typeof (globalThis as unknown as Record<string, unknown>).__TAURI_INTERNALS__ === 'undefined';
 }
 
 /** Call once at app boot to install the mock event bridge. */
