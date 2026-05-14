@@ -1,0 +1,142 @@
+// ── Workflow tab bar ──────────────────────────────────────────────────
+// The 5 persistent workflow tabs in the topbar:
+// Datasets | Gallery | Analyze | Annotate | Export
+
+.wf-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.wf-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+
+  &__icon { font-size: 11px; opacity: 0.8; }
+
+  &:hover:not(:disabled) {
+    background: var(--color-accent-faint);
+    color: var(--color-text-primary);
+  }
+
+  &--active {
+    background: var(--color-accent-faint);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  &--disabled,
+  &:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+// ── Dataset context pill (topbar, visible when a dataset is open) ─────
+
+.topbar-dataset-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--color-accent-faint);
+  border: 1px solid var(--color-accent);
+  font-size: 11px;
+  max-width: 220px;
+  overflow: hidden;
+
+  &__icon { flex-shrink: 0; font-size: 12px; }
+  &__name { font-weight: 600; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__count { color: var(--color-text-secondary); white-space: nowrap; flex-shrink: 0; }
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// ── Workspace pane system ─────────────────────────────────────────────
+
+.workspace {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.wf-pane {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+
+  &--active { display: flex; }
+}
+
+// ── Analyze tab pane ──────────────────────────────────────────────────
+
+.analyze-tabs {
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.analyze-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.analyze-panel {
+  height: 100%;
+  overflow: auto;
+}
+
+// ── Annotate tab pane ─────────────────────────────────────────────────
+
+.annotate-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  color: var(--color-text-secondary);
+  padding: 32px;
+  text-align: center;
+
+  &__icon { font-size: 40px; opacity: 0.4; }
+
+  &__text {
+    font-size: 14px;
+    max-width: 340px;
+    line-height: 1.6;
+
+    strong { color: var(--color-text-primary); }
+    em     { color: var(--color-accent); font-style: normal; }
+  }
+}
+
+.annotate-player {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  > * { flex: 1; min-height: 0; }
+}

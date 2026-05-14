@@ -1,25 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════
-// src/app/desktop-app.ts — Desktop application entry point (Tauri only)
+// src/app/desktop-app.ts — SignaVis Desktop entry point
 //
-// Views:
-//   Labeling  — Existing labeling tool (project list + player + jobs)
-//   Dataset   — New dataset browser (v2 architecture: Dataset/Recording/Import)
+// Workflow tabs: Datasets | Gallery | Analyze | Annotate | Export
 // ═══════════════════════════════════════════════════════════════════════
 
 import { BirdNETPlayer } from './BirdNETPlayer.ts';
 import { TauriConnectionBridge } from '../infrastructure/tauri/TauriConnectionBridge.ts';
 import type { ConnectionStatus } from '../infrastructure/tauri/TauriConnectionBridge.ts';
 import { TauriProjectRepository, isTauriContext } from '../infrastructure/tauri/TauriProjectRepository.ts';
-import {
-    tauriProjectCreate,
-    tauriAssetImportLocal,
-    tauriAnalysisRunLocal,
-    tauriListLocalJobs,
-    tauriCancelLocalJob,
-    type LocalAnalysisJob,
-} from '../infrastructure/tauri/TauriPlatformScaffold.ts';
-import type { ProjectSummary } from '../domain/project/types.ts';
-import type { Dataset, Recording, SoundEvent, SoundEvents } from '../domain/corpus/types.ts';
+import type { Dataset, Recording, SoundEvents } from '../domain/corpus/types.ts';
 import type { LinkedLabel } from '../shared/label.types.ts';
 import { DatasetBrowserPanel } from '../ui/panels/CorpusBrowserPanel.ts';
 import { RecordingGalleryPanel } from '../ui/panels/RecordingGalleryPanel.ts';
@@ -30,22 +19,11 @@ import { EmbeddingScatterPanel } from '../ui/panels/EmbeddingScatterPanel.ts';
 import { ClusterBrowserPanel } from '../ui/panels/ClusterBrowserPanel.ts';
 import { XcImportPanel } from '../ui/panels/XcImportPanel.ts';
 import { JobMonitorPanel } from '../ui/panels/JobMonitorPanel.ts';
+import { ExportPanel } from '../ui/panels/ExportPanel.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
-const projectList         = document.getElementById('projectList')!;
-const newProjectBtn       = document.getElementById('newProjectBtn')!;
-const openFolderBtn       = document.getElementById('openFolderBtn')!;
-const importFileBtn       = document.getElementById('importFileBtn')!;
-const runAnalysisBtn      = document.getElementById('runAnalysisBtn')!;
-const refreshJobsBtn      = document.getElementById('refreshJobsBtn')!;
-const jobList             = document.getElementById('jobList')!;
 const statusBar           = document.getElementById('statusBar')!;
-const fileBrowserPanel    = document.getElementById('fileBrowserPanel')!;
-const fileList            = document.getElementById('fileList')!;
-const folderLabel         = document.getElementById('folderLabel')!;
-const playerContainer     = document.getElementById('playerContainer')!;
-const centrePlaceholder   = document.getElementById('centrePlaceholder')!;
 const connSegment         = document.getElementById('connSegment')!;
 const connLabel           = document.getElementById('connLabel')!;
 const connPopover         = document.getElementById('connPopover')!;
@@ -69,41 +47,88 @@ const connLoginBtn        = document.getElementById('connLoginBtn')!;
 const connApplyBtn        = document.getElementById('connApplyBtn')!;
 const connCancelBtn       = document.getElementById('connCancelBtn')!;
 
-// ── State ─────────────────────────────────────────────────────────────
-
-const repo       = new TauriProjectRepository();
-const connection = new TauriConnectionBridge();
+// Stub refs for legacy IPC code that still references these elements
+const repo                = new TauriProjectRepository();
+const connection          = new TauriConnectionBridge();
 let activeProjectId: string | null = null;
 let player: BirdNETPlayer | null = null;
 
-// ── Dataset Browser State ─────────────────────────────────────────────
+// ── Workflow tab state ────────────────────────────────────────────────
 
-type AppView = 'labeling' | 'dataset';
-let activeView: AppView = 'labeling';
+type WorkflowTab = 'datasets' | 'gallery' | 'analyze' | 'annotate' | 'export';
+let activeTab: WorkflowTab = 'datasets';
 let currentDataset: Dataset | null = null;
+let currentRecording: Recording | null = null;
+
+// Panel instances (created once, reused)
 let recordingDetailPanel: RecordingDetailPanel | null = null;
 let similarityBrowserPanel: SimilarityBrowserPanel | null = null;
-let embeddingScatterPanel: EmbeddingScatterPanel | null = null;
 let clusterBrowserPanel: ClusterBrowserPanel | null = null;
 let xcImportPanel: XcImportPanel | null = null;
 let jobMonitorPanel: JobMonitorPanel | null = null;
+let exportPanelInstance: ExportPanel | null = null;
 
-// ── Sidebar helpers ───────────────────────────────────────────────────
+// Analyze sub-tab
+type AnalyzeSubTab = 'birdnet' | 'scatter' | 'clusters';
+let activeAnalyzeSubTab: AnalyzeSubTab = 'birdnet';
 
-/** Refresh the persistent sidebar dataset list and context section. */
+// ── Tab controller ────────────────────────────────────────────────────
+
+function setWorkflowTab(tab: WorkflowTab, force = false): void {
+    if (tab === activeTab && !force) return;
+    activeTab = tab;
+
+    // Show/hide panes
+    document.querySelectorAll<HTMLElement>('.wf-pane').forEach((pane) => {
+        pane.classList.toggle('wf-pane--active', pane.id === `pane-${tab}`);
+    });
+
+    // Update tab buttons
+    document.querySelectorAll<HTMLButtonElement>('[data-wf-tab]').forEach((btn) => {
+        btn.classList.toggle('wf-tab--active', btn.dataset.wfTab === tab);
+    });
+}
+
+/** Unlock tabs that require an open dataset. */
+function updateTabState(): void {
+    const hasDataset = !!currentDataset;
+    const hasRecording = !!currentRecording;
+
+    (['gallery', 'analyze', 'annotate', 'export'] as const).forEach((tab) => {
+        const btn = document.querySelector<HTMLButtonElement>(`[data-wf-tab="${tab}"]`);
+        if (!btn) return;
+        const enabled = hasDataset || (tab === 'annotate' && hasRecording);
+        btn.disabled = !enabled;
+        btn.classList.toggle('wf-tab--disabled', !enabled);
+    });
+
+    // Update topbar dataset pill
+    const pill      = document.getElementById('topbarDatasetPill');
+    const pillName  = document.getElementById('topbarDatasetName');
+    const pillCount = document.getElementById('topbarDatasetCount');
+    if (pill && pillName && pillCount) {
+        if (currentDataset) {
+            pill.style.display = 'flex';
+            pillName.textContent = currentDataset.name;
+            pillCount.textContent = `${currentDataset.recordingCount.toLocaleString()} recordings`;
+        } else {
+            pill.style.display = 'none';
+        }
+    }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────
+
 async function refreshSidebar(datasets?: Dataset[]): Promise<void> {
     const listEl    = document.getElementById('sidebarDatasetList');
     const contextEl = document.getElementById('sidebarContext');
     if (!listEl) return;
 
-    // Load datasets if not provided
     if (!datasets) {
         try {
             const { datasetList } = await import('../infrastructure/tauri/TauriCorpusAdapter.ts');
             datasets = await datasetList();
-        } catch {
-            datasets = [];
-        }
+        } catch { datasets = []; }
     }
 
     if (datasets.length === 0) {
@@ -113,23 +138,20 @@ async function refreshSidebar(datasets?: Dataset[]): Promise<void> {
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .map((d) => `
                 <button class="ds-sidebar__dataset-item ${d.id === currentDataset?.id ? 'ds-sidebar__dataset-item--active' : ''}"
-                    data-sidebar-dataset="${escapeHtml(d.id)}"
-                    title="${escapeHtml(d.name)}">
+                    data-sidebar-dataset="${escapeHtml(d.id)}" title="${escapeHtml(d.name)}">
                     <span class="ds-sidebar__dataset-name">${escapeHtml(d.name)}</span>
                     <span class="ds-sidebar__dataset-count">${d.recordingCount.toLocaleString()}</span>
                 </button>
-            `)
-            .join('');
+            `).join('');
         listEl.querySelectorAll<HTMLButtonElement>('[data-sidebar-dataset]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const id = btn.dataset.sidebarDataset!;
-                const ds = datasets!.find((d) => d.id === id);
-                if (ds) navigateToDataset(ds);
+            btn.addEventListener('click', () => {
+                const ds = datasets!.find((d) => d.id === btn.dataset.sidebarDataset);
+                if (ds) openDataset(ds);
             });
         });
     }
 
-    // Context section: saved views + analysis runs of active dataset
+    // Context: saved views + runs of current dataset
     if (contextEl && currentDataset) {
         contextEl.style.display = '';
         const viewsEl = document.getElementById('sidebarViews');
@@ -137,142 +159,241 @@ async function refreshSidebar(datasets?: Dataset[]): Promise<void> {
 
         if (viewsEl) {
             const views = currentDataset.savedViews ?? [];
-            if (views.length === 0) {
-                viewsEl.innerHTML = '<div class="ds-sidebar__empty-sm">No saved views</div>';
-            } else {
-                viewsEl.innerHTML = views
-                    .map((v) => `<button class="ds-sidebar__view-item" data-sidebar-view="${escapeHtml(v.name)}">${escapeHtml(v.name)}</button>`)
-                    .join('');
-            }
+            viewsEl.innerHTML = views.length === 0
+                ? '<div class="ds-sidebar__empty-sm">No saved views</div>'
+                : views.map((v) => `
+                    <button class="ds-sidebar__view-item" data-sidebar-view="${escapeHtml(v.name)}">${escapeHtml(v.name)}</button>
+                `).join('');
         }
 
         if (runsEl) {
             const runs = Object.values(currentDataset.analysisRuns ?? {});
-            if (runs.length === 0) {
-                runsEl.innerHTML = '<div class="ds-sidebar__empty-sm">No runs yet</div>';
-            } else {
-                runsEl.innerHTML = runs
-                    .slice(-5)
-                    .reverse()
-                    .map((r) => {
-                        const icon = r.status === 'completed' ? '✓' : r.status === 'failed' ? '✕' : '⏳';
-                        const cls  = r.status === 'completed' ? 'run--ok' : r.status === 'failed' ? 'run--err' : 'run--pending';
-                        return `<div class="ds-sidebar__run-item ${cls}">${icon} ${escapeHtml((r.config as { outputField?: string })?.outputField ?? r.type ?? 'run')}</div>`;
-                    })
-                    .join('');
-            }
+            runsEl.innerHTML = runs.length === 0
+                ? '<div class="ds-sidebar__empty-sm">No runs yet</div>'
+                : runs.slice(-5).reverse().map((r) => {
+                    const icon = r.status === 'completed' ? '✓' : r.status === 'failed' ? '✕' : '⏳';
+                    const cls  = `run--${r.status === 'completed' ? 'ok' : r.status === 'failed' ? 'err' : 'pending'}`;
+                    const label = (r.config as { outputField?: string })?.outputField ?? r.type ?? 'run';
+                    return `<div class="ds-sidebar__run-item ${cls}">${icon} ${escapeHtml(label)}</div>`;
+                }).join('');
         }
     } else if (contextEl) {
         contextEl.style.display = 'none';
     }
 }
 
-/** Update the breadcrumb bar. */
-function setBreadcrumb(datasetName?: string, viewLabel?: string): void {
-    const bar      = document.getElementById('dsBreadcrumb');
-    const dsLabel  = document.getElementById('breadcrumbDataset');
-    const viewSpan = document.getElementById('breadcrumbView');
-    if (!bar) return;
+// ── Dataset navigation ────────────────────────────────────────────────
 
-    if (!datasetName) {
-        bar.style.display = 'none';
-        return;
-    }
-    bar.style.display = 'flex';
-    if (dsLabel) dsLabel.textContent = datasetName;
-    if (viewSpan) {
-        viewSpan.textContent = viewLabel ? ` › ${viewLabel}` : '';
-        viewSpan.style.display = viewLabel ? '' : 'none';
-    }
-}
+function openDataset(dataset: Dataset): void {
+    currentDataset = dataset;
+    currentRecording = null;
 
-/** Navigate to a dataset's gallery and persist the selection. */
-function navigateToDataset(dataset: Dataset): void {
-    // Remember last used dataset
     try { localStorage.setItem('signavis:lastDatasetId', dataset.id); } catch { /* ignore */ }
-    showRecordingGallery(dataset);
+
+    updateTabState();
+    refreshSidebar();
+    showGallery();
 }
 
-// ── View switching ────────────────────────────────────────────────────
+function showDatasets(): void {
+    currentDataset = null;
+    currentRecording = null;
+    updateTabState();
+    refreshSidebar();
+    setWorkflowTab('datasets');
 
-/** Switches between "labeling" and "dataset" top-level views. */
-function switchView(view: AppView): void {
-    activeView = view;
-    const labelingEl = document.getElementById('labelingView')!;
-    const datasetEl  = document.getElementById('datasetBrowserView')!;
-
-    if (view === 'dataset') {
-        labelingEl.style.display = 'none';
-        datasetEl.style.display  = 'flex';
-        initDatasetView();
-    } else {
-        labelingEl.style.display = '';
-        datasetEl.style.display  = 'none';
-    }
-
-    document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
-        btn.classList.toggle('view-tab--active', btn.dataset.view === view);
+    const mount = document.getElementById('datasetBrowserMount')!;
+    const panel = new DatasetBrowserPanel({
+        container: mount,
+        onDatasetSelect: openDataset,
+        onStatusMessage: setStatus,
     });
+    panel.mount().catch((e) => setStatus(`Dataset error: ${e}`));
 }
 
-function initDatasetView(): void {
-    // Mount the job monitor once
-    if (!jobMonitorPanel) {
-        const jobMount = document.getElementById('jobMonitorMount');
-        if (jobMount) {
-            jobMonitorPanel = new JobMonitorPanel({
-                container: jobMount,
-                onOpenDataset: (id) => {
-                    if (currentDataset?.id === id) return;
-                },
+function showGallery(): void {
+    if (!currentDataset) return;
+    setWorkflowTab('gallery');
+
+    // Ensure detail + similarity panels are mounted once
+    initDetailPanels();
+
+    const mount   = document.getElementById('galleryMount')!;
+    const dataset = currentDataset;
+
+    const gallery = new RecordingGalleryPanel({
+        container: mount,
+        dataset,
+        onBack: () => { setWorkflowTab('datasets'); showDatasets(); },
+        onImport: () => showImportWizard(dataset),
+        onImportFromXc: () => showXcImportPanel(dataset),
+        onOpenRecording: (rec) => {
+            currentRecording = rec;
+            updateTabState();
+            switchDetailTab('detail');
+            recordingDetailPanel?.show(rec);
+        },
+        onDatasetUpdated: (updated) => {
+            currentDataset = updated;
+            updateTabState();
+            refreshSidebar();
+        },
+        onShowClusters: () => showAnalyzeTab('clusters'),
+        onShowScatter:  () => showAnalyzeTab('scatter'),
+        onStatusMessage: setStatus,
+    });
+    gallery.mount().catch((e) => setStatus(`Gallery error: ${e}`));
+}
+
+function showAnalyzeTab(sub: AnalyzeSubTab = activeAnalyzeSubTab): void {
+    if (!currentDataset) return;
+    setWorkflowTab('analyze');
+    switchAnalyzeSubTab(sub);
+}
+
+function switchAnalyzeSubTab(sub: AnalyzeSubTab): void {
+    activeAnalyzeSubTab = sub;
+
+    document.querySelectorAll<HTMLButtonElement>('[data-analyze-tab]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.analyzeTab === sub);
+    });
+
+    const panels: Record<AnalyzeSubTab, string> = {
+        birdnet:  'analyzeBirdnetMount',
+        scatter:  'analyzeScatterMount',
+        clusters: 'analyzeClustersMount',
+    };
+    Object.entries(panels).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = key === sub ? '' : 'none';
+    });
+
+    if (!currentDataset) return;
+    const dataset = currentDataset;
+
+    if (sub === 'scatter') {
+        const mount = document.getElementById('analyzeScatterMount')!;
+        if (!mount.dataset.mounted) {
+            mount.dataset.mounted = '1';
+            const panel = new EmbeddingScatterPanel({
+                container: mount,
+                dataset,
+                onOpenRecording: (rec) => { currentRecording = rec; updateTabState(); setWorkflowTab('annotate'); openInAnnotate(rec); },
+                onStatusMessage: setStatus,
+                onShowClusters: () => switchAnalyzeSubTab('clusters'),
             });
-            jobMonitorPanel.mount().catch(console.error);
+            panel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
         }
     }
 
-    // Wire up sidebar new-dataset button
-    const newBtn = document.getElementById('sidebarNewDatasetBtn');
-    if (newBtn && !newBtn.dataset.wired) {
-        newBtn.dataset.wired = '1';
-        newBtn.addEventListener('click', () => showDatasetList());
+    if (sub === 'clusters') {
+        const mount = document.getElementById('analyzeClustersMount')!;
+        if (!clusterBrowserPanel) {
+            clusterBrowserPanel = new ClusterBrowserPanel({
+                container: mount,
+                dataset,
+                onOpenRecording: (rec) => { currentRecording = rec; updateTabState(); setWorkflowTab('annotate'); openInAnnotate(rec); },
+                onStatusMessage: setStatus,
+            });
+        } else {
+            clusterBrowserPanel.updateDataset(dataset);
+        }
+        clusterBrowserPanel.load().catch((e) => setStatus(`Cluster error: ${e}`));
     }
 
-    // Wire breadcrumb home button
-    const homeBtn = document.getElementById('breadcrumbHome');
-    if (homeBtn && !homeBtn.dataset.wired) {
-        homeBtn.dataset.wired = '1';
-        homeBtn.addEventListener('click', () => showDatasetList());
+    if (sub === 'birdnet') {
+        const mount = document.getElementById('analyzeBirdnetMount')!;
+        if (!mount.dataset.mounted) {
+            mount.dataset.mounted = '1';
+            // Show a simple BirdNET run panel — same dialog trigger as gallery but in a pane
+            mount.innerHTML = `
+                <div style="padding:24px;max-width:540px">
+                    <h3 style="margin-bottom:12px;font-size:15px;font-weight:600">BirdNET Inference</h3>
+                    <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;line-height:1.6">
+                        Run BirdNET on your dataset to detect species in recordings.
+                        Results are stored as SoundEvents fields on each recording.
+                    </p>
+                    <button class="btn btn--primary" id="analyzeRunBirdnetBtn">🔍 Run BirdNET on dataset…</button>
+                    <div style="margin-top:20px" id="analyzeBirdnetResults"></div>
+                </div>
+            `;
+            mount.querySelector('#analyzeRunBirdnetBtn')?.addEventListener('click', () => {
+                // Navigate to gallery which has the BirdNET dialog
+                showGallery();
+                setTimeout(() => {
+                    const btn = document.querySelector<HTMLButtonElement>('#galleryBirdnetBtn');
+                    btn?.click();
+                }, 300);
+            });
+        }
     }
+}
 
-    // Wire right sidebar tabs
-    document.querySelectorAll<HTMLButtonElement>('[data-detail-tab]').forEach((tab) => {
-        if (tab.dataset.wired) return;
-        tab.dataset.wired = '1';
-        tab.addEventListener('click', () => switchDetailTab(tab.dataset.detailTab as 'detail' | 'similar'));
+function showImportWizard(dataset: Dataset): void {
+    const mount = document.getElementById('galleryMount')!;
+    const wizard = new ImportWizardPanel({
+        container: mount,
+        dataset,
+        onDone: (result) => {
+            setStatus(`Import: ${result.imported} imported, ${result.skipped} skipped.`);
+            showGallery();
+        },
+        onCancel: () => showGallery(),
+        onStatusMessage: setStatus,
+        openFolderDialog: () => openFolderDialogPath(),
     });
+    wizard.mount();
+}
 
-    // Mount similarity panel into its slot now (once)
+function showXcImportPanel(dataset: Dataset): void {
+    const mount = document.getElementById('galleryMount')!;
+    xcImportPanel = new XcImportPanel({
+        container: mount,
+        dataset,
+        onBack: () => { xcImportPanel = null; showGallery(); },
+        onStatusMessage: setStatus,
+        onImported: (count) => { if (count > 0) setStatus(`XC import: ${count} recordings added.`); },
+    });
+    xcImportPanel.mount();
+}
+
+/** Open a recording in the Annotate tab. */
+function openInAnnotate(rec: Recording): void {
+    currentRecording = rec;
+    updateTabState();
+    setWorkflowTab('annotate');
+
+    const hint = document.getElementById('annotateHint');
+    const playerEl = document.getElementById('playerContainer');
+    if (hint) hint.style.display = 'none';
+    if (playerEl) playerEl.hidden = false;
+
+    loadAudioFile(rec.filepath);
+    setStatus(`Annotating: ${rec.filepath.split('/').pop()}`);
+}
+
+// ── Detail panel helpers ──────────────────────────────────────────────
+
+function initDetailPanels(): void {
+    // Mount similarity browser once
     if (!similarityBrowserPanel) {
         const simMount = document.getElementById('similarityMount');
         if (simMount) {
             similarityBrowserPanel = new SimilarityBrowserPanel({
                 container: simMount,
-                onOpenRecording: (rec) => {
-                    switchDetailTab('detail');
-                    recordingDetailPanel?.show(rec);
-                },
+                onOpenRecording: (rec) => { switchDetailTab('detail'); recordingDetailPanel?.show(rec); },
                 onStatusMessage: setStatus,
             });
         }
     }
 
-    // Mount detail panel into its slot now (once)
+    // Mount detail panel once
     if (!recordingDetailPanel) {
-        const detailWrapper = document.getElementById('detailPanelWrapper');
-        if (detailWrapper) {
+        const wrapper = document.getElementById('detailPanelWrapper');
+        if (wrapper) {
             recordingDetailPanel = new RecordingDetailPanel({
-                container: detailWrapper,
-                onOpenInLabeler: (rec) => openRecordingInLabeler(rec),
+                container: wrapper,
+                onOpenInLabeler: (rec) => openInAnnotate(rec),
                 onStatusMessage: setStatus,
                 onFindSimilar: (rec) => {
                     switchDetailTab('similar');
@@ -281,164 +402,16 @@ function initDatasetView(): void {
             });
         }
     }
-
-    // Restore last used dataset or show list
-    const lastId = (() => { try { return localStorage.getItem('signavis:lastDatasetId'); } catch { return null; } })();
-    if (lastId && !currentDataset) {
-        import('../infrastructure/tauri/TauriCorpusAdapter.ts').then(async ({ datasetGet, datasetList }) => {
-            try {
-                const [ds, all] = await Promise.all([datasetGet(lastId), datasetList()]);
-                await refreshSidebar(all);
-                navigateToDataset(ds);
-            } catch {
-                showDatasetList();
-            }
-        });
-    } else if (!currentDataset) {
-        showDatasetList();
-    } else {
-        refreshSidebar();
-    }
 }
 
-// ── Detail sidebar tab switching ──────────────────────────────────────
-
 function switchDetailTab(tab: 'detail' | 'similar'): void {
-    const detailWrapper = document.getElementById('detailPanelWrapper');
-    const simMount      = document.getElementById('similarityMount');
+    const wrapper  = document.getElementById('detailPanelWrapper');
+    const simMount = document.getElementById('similarityMount');
     document.querySelectorAll<HTMLButtonElement>('[data-detail-tab]').forEach((btn) => {
         btn.classList.toggle('ds-detail__tab--active', btn.dataset.detailTab === tab);
     });
-    if (detailWrapper) detailWrapper.style.display = tab === 'detail' ? '' : 'none';
-    if (simMount)       simMount.style.display      = tab === 'similar' ? '' : 'none';
-}
-
-// ── Main content navigation ───────────────────────────────────────────
-
-function showDatasetList(): void {
-    currentDataset = null;
-    embeddingScatterPanel = null;
-    clusterBrowserPanel   = null;
-    xcImportPanel         = null;
-
-    setBreadcrumb();
-    refreshSidebar();
-
-    const mount = document.getElementById('datasetBrowserMount')!;
-    const panel = new DatasetBrowserPanel({
-        container: mount,
-        onDatasetSelect: (ds) => navigateToDataset(ds),
-        onStatusMessage: setStatus,
-    });
-    panel.mount().catch((e) => setStatus(`Dataset error: ${e}`));
-}
-
-function showRecordingGallery(dataset: Dataset): void {
-    currentDataset = dataset;
-    embeddingScatterPanel = null;
-    clusterBrowserPanel   = null;
-    xcImportPanel         = null;
-
-    setBreadcrumb(dataset.name, 'Gallery');
-    refreshSidebar();
-
-    const mount = document.getElementById('datasetBrowserMount')!;
-    const gallery = new RecordingGalleryPanel({
-        container: mount,
-        dataset,
-        onBack: () => showDatasetList(),
-        onImport: () => showImportWizard(dataset),
-        onImportFromXc: () => showXcImportPanel(dataset),
-        onOpenRecording: (rec) => {
-            switchDetailTab('detail');
-            recordingDetailPanel?.show(rec);
-        },
-        onDatasetUpdated: (updated) => {
-            currentDataset = updated;
-            refreshSidebar();
-        },
-        onShowClusters: () => showClusterBrowser(dataset),
-        onShowScatter:  () => showScatterPanel(dataset),
-        onStatusMessage: setStatus,
-    });
-    gallery.mount().catch((e) => setStatus(`Gallery error: ${e}`));
-}
-
-function showClusterBrowser(dataset: Dataset): void {
-    currentDataset = dataset;
-    setBreadcrumb(dataset.name, 'Clusters');
-
-    const mount = document.getElementById('datasetBrowserMount')!;
-    if (clusterBrowserPanel) {
-        clusterBrowserPanel.updateDataset(dataset);
-        clusterBrowserPanel.load().catch((e) => setStatus(`Cluster error: ${e}`));
-        return;
-    }
-    clusterBrowserPanel = new ClusterBrowserPanel({
-        container: mount,
-        dataset,
-        onOpenRecording: (rec) => {
-            switchDetailTab('detail');
-            recordingDetailPanel?.show(rec);
-        },
-        onStatusMessage: setStatus,
-    });
-    clusterBrowserPanel.load().catch((e) => setStatus(`Cluster error: ${e}`));
-}
-
-function showScatterPanel(dataset: Dataset): void {
-    currentDataset = dataset;
-    setBreadcrumb(dataset.name, 'Scatter');
-
-    const mount = document.getElementById('datasetBrowserMount')!;
-    if (!embeddingScatterPanel) {
-        embeddingScatterPanel = new EmbeddingScatterPanel({
-            container: mount,
-            dataset,
-            onOpenRecording: (rec) => {
-                switchDetailTab('detail');
-                recordingDetailPanel?.show(rec);
-            },
-            onStatusMessage: setStatus,
-            onShowClusters: () => showClusterBrowser(dataset),
-        });
-    }
-    embeddingScatterPanel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
-}
-
-function showImportWizard(dataset: Dataset): void {
-    setBreadcrumb(dataset.name, 'Import');
-    const mount = document.getElementById('datasetBrowserMount')!;
-    const wizard = new ImportWizardPanel({
-        container: mount,
-        dataset,
-        onDone: (result) => {
-            setStatus(`Import: ${result.imported} imported, ${result.skipped} skipped.`);
-            showRecordingGallery(dataset);
-        },
-        onCancel: () => showRecordingGallery(dataset),
-        onStatusMessage: setStatus,
-        openFolderDialog: () => openFolderDialogPath(),
-    });
-    wizard.mount();
-}
-
-function showXcImportPanel(dataset: Dataset): void {
-    setBreadcrumb(dataset.name, 'Xeno-canto Import');
-    const mount = document.getElementById('datasetBrowserMount')!;
-    xcImportPanel = new XcImportPanel({
-        container: mount,
-        dataset,
-        onBack: () => {
-            xcImportPanel = null;
-            showRecordingGallery(dataset);
-        },
-        onStatusMessage: setStatus,
-        onImported: (count) => {
-            if (count > 0) setStatus(`XC import: ${count} recordings added.`);
-        },
-    });
-    xcImportPanel.mount();
+    if (wrapper)  wrapper.style.display  = tab === 'detail' ? '' : 'none';
+    if (simMount) simMount.style.display = tab === 'similar' ? '' : 'none';
 }
 
 async function openFolderDialogPath(): Promise<string | null> {
@@ -454,15 +427,13 @@ async function openFolderDialogPath(): Promise<string | null> {
 }
 
 function openRecordingInLabeler(recording: Recording): void {
-    // Switch to labeling view and load the file
-    switchView('labeling');
+    openInAnnotate(recording);
     const labels = extractSpectrogramLabels(recording);
     loadAudioFile(recording.filepath).then(() => {
         if (labels.length > 0) {
             ensurePlayer().then((p) => p.setSpectrogramLabels(labels)).catch(() => { /* ignore */ });
         }
     }).catch(() => { /* error already shown in status bar */ });
-    setStatus(`Opening: ${recording.filepath.split('/').pop()}`);
 }
 
 /** Converts all SoundEvents fields on a recording to spectrogram labels. */
@@ -581,233 +552,26 @@ async function readDirFlat(dirPath: string): Promise<FsEntry[]> {
     return result;
 }
 
-// ── File browser ──────────────────────────────────────────────────────
 
-async function openFolder(): Promise<void> {
-    const dir = await openFolderDialog();
-    if (!dir) return;
-
-    folderLabel.textContent = dir.split(/[/\\]/).pop() ?? dir;
-    setStatus(`Scanning ${dir}…`);
-    fileList.innerHTML = '<li class="empty-hint">Scanning…</li>';
-    fileBrowserPanel.hidden = false;
-
-    let files: FsEntry[];
-    try {
-        files = await readDirFlat(dir);
-    } catch (err) {
-        setStatus(`Could not read folder: ${err}`);
-        fileList.innerHTML = '<li class="empty-hint">Could not read folder.</li>';
-        return;
-    }
-
-    if (files.length === 0) {
-        fileList.innerHTML = '<li class="empty-hint">No audio files found.</li>';
-        setStatus('No audio files in selected folder.');
-        return;
-    }
-
-    setStatus(`Found ${files.length} audio file(s)`);
-    fileList.innerHTML = files.map((f) => `
-        <li class="file-item" data-path="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">
-            <svg class="file-item__icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-            </svg>
-            <span class="file-item__name">${escapeHtml(f.name ?? f.path.split(/[/\\]/).pop() ?? '')}</span>
-            <button class="tb-btn file-item__load-btn" data-path="${escapeHtml(f.path)}" type="button">Open</button>
-        </li>
-    `).join('');
-
-    fileList.querySelectorAll<HTMLButtonElement>('.file-item__load-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            loadAudioFile(btn.dataset.path!);
-        });
-    });
-    fileList.querySelectorAll<HTMLLIElement>('.file-item').forEach((li) => {
-        li.addEventListener('dblclick', () => loadAudioFile(li.dataset.path!));
-    });
-}
-
-// ── Player ────────────────────────────────────────────────────────────
+// ── Player (Annotate tab) ─────────────────────────────────────────────
 
 async function ensurePlayer(): Promise<BirdNETPlayer> {
-    if (player) return player;
-
-    centrePlaceholder.hidden = true;
-    playerContainer.hidden = false;
-
-    // Wait one animation frame so the browser computes layout before the player
-    // reads container dimensions for canvas sizing.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
-    player = new BirdNETPlayer(playerContainer, {
-        showFileOpen: false,
-        enableProgressiveSpectrogram: true,
-        showOverview: true,
-        showTransport: true,
-    });
-    await player.ready;
-    // Trigger a resize so canvas dimensions match the now-visible container.
-    player.resize();
+    const container = document.getElementById('playerContainer')!;
+    if (!player) {
+        const { BirdNETPlayer: P } = await import('./BirdNETPlayer.ts');
+        player = new P(container, {});
+    }
     return player;
 }
 
-// Tracks the current blob URL so we can revoke it when a new file is loaded.
-let _currentBlobUrl: string | null = null;
-
 async function loadAudioFile(filePath: string): Promise<void> {
-    const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
-    setStatus(`Loading ${fileName}…`);
-
-    fileList.querySelectorAll('.file-item').forEach((li) => {
-        (li as HTMLElement).classList.toggle(
-            'file-item--active',
-            (li as HTMLElement).dataset.path === filePath,
-        );
-    });
-
+    const p = await ensurePlayer();
     try {
-        // Read the file as binary via tauri-plugin-fs, then wrap in a Blob URL.
-        // This avoids asset-protocol CSP/scope issues entirely.
-        const bytes = await tauriInvoke<number[]>('plugin:fs|read_file', { path: filePath });
-        const ext = (filePath.split('.').pop() ?? 'wav').toLowerCase();
-        const mimeMap: Record<string, string> = {
-            wav: 'audio/wav', mp3: 'audio/mpeg', flac: 'audio/flac',
-            ogg: 'audio/ogg', aac: 'audio/aac', m4a: 'audio/mp4',
-            opus: 'audio/ogg; codecs=opus', aif: 'audio/aiff', aiff: 'audio/aiff',
-        };
-        const mime = mimeMap[ext] ?? 'audio/wav';
-        const blob = new Blob([new Uint8Array(bytes)], { type: mime });
-
-        if (_currentBlobUrl) URL.revokeObjectURL(_currentBlobUrl);
-        _currentBlobUrl = URL.createObjectURL(blob);
-
-        const p = await ensurePlayer();
-        await p.loadUrl(_currentBlobUrl);
-        setStatus(`Loaded: ${fileName}`);
-    } catch (err) {
-        setStatus(`Failed to load file: ${err}`);
-    }
-}
-
-// ── Import single file ─────────────────────────────────────────────────
-
-async function importSingleFile(): Promise<void> {
-    if (!activeProjectId) {
-        setStatus('Select or create a project first.');
-        return;
-    }
-    const filePath = await openFileDialog();
-    if (!filePath) return;
-
-    setStatus(`Importing ${filePath.split(/[/\\]/).pop()}…`);
-    try {
-        const asset = await tauriAssetImportLocal(activeProjectId, filePath);
-        setStatus(`Imported: ${filePath.split(/[/\\]/).pop()} (${(asset.sizeBytes / 1024).toFixed(1)} KB)`);
-        await refreshProjects();
-        // Also open in player
-        await loadAudioFile(filePath);
-    } catch (err) {
-        setStatus(`Import failed: ${err}`);
-    }
-}
-
-// ── Project list ──────────────────────────────────────────────────────
-
-async function refreshProjects(): Promise<void> {
-    let summaries: ProjectSummary[];
-    try {
-        summaries = await repo.list();
-    } catch (err) {
-        setStatus(`Failed to load projects: ${err}`);
-        return;
-    }
-    if (summaries.length === 0) {
-        projectList.innerHTML = '<li class="empty-hint">No projects yet.</li>';
-        return;
-    }
-    projectList.innerHTML = summaries.map((p) => `
-        <li class="project-item${p.id === activeProjectId ? ' project-item--active' : ''}"
-            data-project-id="${p.id}">
-            <span class="project-item__name">${escapeHtml(p.name)}</span>
-            <span class="project-item__meta">${p.labelCount} labels · ${formatDate(p.updatedAt)}</span>
-        </li>
-    `).join('');
-    projectList.querySelectorAll<HTMLLIElement>('.project-item').forEach((el) => {
-        el.addEventListener('click', () => selectProject(el.dataset.projectId!));
-    });
-}
-
-function selectProject(id: string): void {
-    activeProjectId = id;
-    projectList.querySelectorAll<HTMLLIElement>('.project-item').forEach((el) => {
-        el.classList.toggle('project-item--active', el.dataset.projectId === id);
-    });
-    setStatus(`Project selected`);
-    refreshJobs();
-}
-
-async function createProject(): Promise<void> {
-    const name = prompt('Project name:', 'New Project');
-    if (name === null) return;
-    try {
-        const created = await tauriProjectCreate(name.trim() || undefined);
-        setStatus(`Created project: ${created.name}`);
-        activeProjectId = created.id;
-        await refreshProjects();
-    } catch (err) {
-        setStatus(`Error creating project: ${err}`);
-    }
-}
-
-// ── Job queue ──────────────────────────────────────────────────────────
-
-async function refreshJobs(): Promise<void> {
-    let jobs: LocalAnalysisJob[];
-    try {
-        jobs = await tauriListLocalJobs(activeProjectId ?? undefined);
-    } catch (err) {
-        setStatus(`Failed to load jobs: ${err}`);
-        return;
-    }
-    if (jobs.length === 0) {
-        jobList.innerHTML = '<li class="empty-hint">No analysis jobs for this project.</li>';
-        return;
-    }
-    jobList.innerHTML = jobs.map((j) => `
-        <li class="job-item">
-            <span class="job-item__id">${escapeHtml(j.id.slice(0, 18))}…</span>
-            ${jobStatusBadge(j.status)}
-            <span class="job-item__meta">${formatDate(j.createdAt)}</span>
-            ${j.status === 'running' || j.status === 'queued'
-                ? `<button class="tb-btn tb-btn--danger cancel-job-btn" data-job-id="${escapeHtml(j.id)}" type="button">Cancel</button>`
-                : ''}
-        </li>
-    `).join('');
-    jobList.querySelectorAll<HTMLButtonElement>('.cancel-job-btn').forEach((btn) => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            try {
-                await tauriCancelLocalJob(btn.dataset.jobId!);
-                setStatus('Job cancelled');
-                await refreshJobs();
-            } catch (err) {
-                setStatus(`Cancel failed: ${err}`);
-            }
-        });
-    });
-}
-
-async function runAnalysis(): Promise<void> {
-    if (!activeProjectId) { setStatus('Select a project first.'); return; }
-    setStatus('Starting analysis…');
-    try {
-        const job = await tauriAnalysisRunLocal(activeProjectId, undefined, 'local');
-        setStatus(`Analysis started — status: ${job.status}`);
-        await refreshJobs();
-    } catch (err) {
-        setStatus(`Analysis failed: ${err}`);
+        const { convertFileSrc } = await import('@tauri-apps/api/core') as { convertFileSrc?: (p: string) => string };
+        const url = convertFileSrc ? convertFileSrc(filePath) : filePath;
+        await p.loadUrl(url);
+    } catch (e) {
+        setStatus(`Could not load audio: ${e}`);
     }
 }
 
@@ -969,10 +733,7 @@ async function buildNativeMenu(): Promise<void> {
         const fileMenu = await Submenu.new({
             text: 'File',
             items: [
-                await MenuItem.new({ id: 'new-project',  text: 'New Project',        accelerator: 'CmdOrCtrl+N', action: createProject }),
-                await PredefinedMenuItem.new({ item: 'Separator' }),
-                await MenuItem.new({ id: 'open-folder',  text: 'Open Folder…',       accelerator: 'CmdOrCtrl+O', action: openFolder }),
-                await MenuItem.new({ id: 'import-file',  text: 'Import Audio File…', accelerator: 'CmdOrCtrl+I', action: importSingleFile }),
+                await MenuItem.new({ id: 'new-dataset',  text: 'New Dataset',        accelerator: 'CmdOrCtrl+N', action: () => { setWorkflowTab('datasets'); document.querySelector<HTMLButtonElement>('#datasetNewBtn')?.click(); } }),
                 await PredefinedMenuItem.new({ item: 'Separator' }),
                 await PredefinedMenuItem.new({ item: 'CloseWindow' }),
             ],
@@ -981,10 +742,9 @@ async function buildNativeMenu(): Promise<void> {
         const analysisMenu = await Submenu.new({
             text: 'Analysis',
             items: [
-                await MenuItem.new({ id: 'run-analysis',      text: 'Run Analysis',         accelerator: 'CmdOrCtrl+R',       action: runAnalysis }),
-                await MenuItem.new({ id: 'refresh-jobs',      text: 'Refresh Job List',     accelerator: 'CmdOrCtrl+Shift+R', action: refreshJobs }),
+                await MenuItem.new({ id: 'go-analyze', text: 'Run Analysis…', accelerator: 'CmdOrCtrl+R', action: () => showAnalyzeTab() }),
                 await PredefinedMenuItem.new({ item: 'Separator' }),
-                await MenuItem.new({ id: 'backend-settings',  text: 'Backend Settings…',    accelerator: 'CmdOrCtrl+,',       action: openConnPopover }),
+                await MenuItem.new({ id: 'backend-settings', text: 'Backend Settings…', accelerator: 'CmdOrCtrl+,', action: openConnPopover }),
             ],
         });
 
@@ -1026,43 +786,107 @@ async function boot(): Promise<void> {
         return;
     }
 
-    // ── View switcher tabs ───────────────────────────────────────────────
-    document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const view = btn.dataset.view as AppView | undefined;
-            if (view) switchView(view);
-        });
-    });
-
-    newProjectBtn.addEventListener('click', createProject);
-    openFolderBtn.addEventListener('click', openFolder);
-    importFileBtn.addEventListener('click', importSingleFile);
-    runAnalysisBtn.addEventListener('click', runAnalysis);
-    refreshJobsBtn.addEventListener('click', refreshJobs);
-
     applyTheme(currentTheme());
     await initConnectionUI();
 
-    // Theme toggle button in topbar (mirrors the menu item).
+    // Theme toggle
     const themeBtn = document.getElementById('themeToggleBtn');
     if (themeBtn) {
-        const updateThemeBtn = () => {
-            const isDark = currentTheme() === 'dark';
-            themeBtn.textContent = isDark ? '☀' : '☾';
-            themeBtn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+        const sync = () => {
+            const dark = currentTheme() === 'dark';
+            themeBtn.textContent = dark ? '☀' : '☾';
+            themeBtn.title = dark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
         };
-        updateThemeBtn();
-        themeBtn.addEventListener('click', () => {
-            applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
-            updateThemeBtn();
-        });
+        sync();
+        themeBtn.addEventListener('click', () => { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); sync(); });
     }
 
-    await Promise.all([
-        refreshProjects(),
-        buildNativeMenu(),
-    ]);
+    // Wire workflow tab buttons
+    document.querySelectorAll<HTMLButtonElement>('[data-wf-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.wfTab as WorkflowTab;
+            if (btn.disabled) return;
+            if (tab === 'gallery')  showGallery();
+            else if (tab === 'analyze') showAnalyzeTab();
+            else if (tab === 'annotate') setWorkflowTab('annotate');
+            else if (tab === 'export')  showExportTab();
+            else if (tab === 'datasets') showDatasets();
+        });
+    });
+
+    // Wire analyze sub-tabs
+    document.querySelectorAll<HTMLButtonElement>('[data-analyze-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            switchAnalyzeSubTab(btn.dataset.analyzeTab as AnalyzeSubTab);
+        });
+    });
+
+    // Wire detail sidebar tabs
+    document.querySelectorAll<HTMLButtonElement>('[data-detail-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            switchDetailTab(btn.dataset.detailTab as 'detail' | 'similar');
+        });
+    });
+
+    // Wire annotate hint button
+    document.getElementById('annotateGoGalleryBtn')?.addEventListener('click', () => showGallery());
+
+    // Mount job monitor
+    const jobMount = document.getElementById('jobMonitorMount');
+    if (jobMount && !jobMonitorPanel) {
+        jobMonitorPanel = new JobMonitorPanel({
+            container: jobMount,
+            onOpenDataset: (id) => {
+                if (currentDataset?.id !== id) return;
+                showGallery();
+            },
+        });
+        jobMonitorPanel.mount().catch(console.error);
+    }
+
+    // Mount sidebar new-dataset button
+    document.getElementById('sidebarNewDatasetBtn')?.addEventListener('click', () => {
+        setWorkflowTab('datasets');
+        // Show the create form in the dataset browser
+        const btn = document.querySelector<HTMLButtonElement>('#datasetNewBtn');
+        btn?.click();
+    });
+
+    await buildNativeMenu();
+
+    // Boot the datasets pane: load sidebar, then restore last dataset or show list
+    const { datasetGet, datasetList } = await import('../infrastructure/tauri/TauriCorpusAdapter.ts');
+    const lastId = (() => { try { return localStorage.getItem('signavis:lastDatasetId'); } catch { return null; } })();
+    const allDatasets = await datasetList().catch(() => []);
+    await refreshSidebar(allDatasets);
+
+    if (lastId) {
+        try {
+            const ds = await datasetGet(lastId);
+            openDataset(ds);
+        } catch {
+            showDatasets();
+        }
+    } else {
+        showDatasets();
+    }
+
+    updateTabState();
     setStatus('Ready');
+}
+
+function showExportTab(): void {
+    if (!currentDataset) return;
+    setWorkflowTab('export');
+    const mount = document.getElementById('exportPaneMount')!;
+    if (!exportPanelInstance) {
+        exportPanelInstance = new ExportPanel({
+            container: mount,
+            dataset: currentDataset,
+            onStatusMessage: setStatus,
+        });
+        exportPanelInstance.mount();
+    }
 }
 
 boot().catch((err) => console.error('[desktop-app] boot failed:', err));

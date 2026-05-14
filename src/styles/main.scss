@@ -46,7 +46,8 @@
 // Shared utilities & responsive
 @use "components/utilities";
 
-// v2 Dataset layout + panels
+// v2 workflow tabs + Dataset layout + panels
+@use "components/workflow-tabs";
 @use "components/dataset-layout";
 @use "components/dataset-browser";
 @use "components/recording-gallery";
