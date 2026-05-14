@@ -51,5 +51,8 @@
 @use "components/scatterplot";
 // Phase 4: Clustering & Active Learning
 @use "components/cluster-browser";
-// Phase 7: Xeno-canto import
 @use "components/xc-import";
+@use "components/job-monitor";
+@use "components/training-split";
+@use "components/export-panel";
+@use "components/field-schema";

@@ -1,0 +1,33 @@
+.job-monitor {
+  padding: 4px 12px;
+  background: var(--color-surface-raised, #1e1e1e);
+  border-bottom: 1px solid var(--color-border, #333);
+  font-size: 12px;
+
+  &__section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; }
+  &__section-label {
+    color: var(--color-text-muted, #888);
+    min-width: 52px;
+    display: flex; align-items: center; gap: 6px;
+  }
+}
+
+.job-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 8px; border-radius: 4px;
+  cursor: pointer; min-width: 0;
+
+  &--running { background: var(--color-surface, #2a2a2a); flex-direction: column; align-items: stretch; }
+  &--ok      { color: var(--color-success, #4caf50); }
+  &--error   { color: var(--color-error, #f44336); }
+
+  &__header  { display: flex; justify-content: space-between; }
+  &__label   { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__count   { color: var(--color-text-muted, #888); font-variant-numeric: tabular-nums; }
+  &__file    { color: var(--color-text-muted, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  &__ago     { color: var(--color-text-muted, #888); white-space: nowrap; }
+  &__icon    { width: 14px; text-align: center; }
+}
+
+.btn--xs { font-size: 10px; padding: 1px 6px; }

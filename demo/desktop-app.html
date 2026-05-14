@@ -678,8 +678,8 @@
     <span class="brand-title">SignaVis</span>
     <div class="tb-sep"></div>
     <div class="view-tabs" id="viewTabs">
-      <button class="view-tab view-tab--active" data-view="labeling" type="button">Beschriftung</button>
-      <button class="view-tab" data-view="corpus" type="button">Corpus Browser</button>
+      <button class="view-tab view-tab--active" data-view="labeling" type="button">Labeling</button>
+      <button class="view-tab" data-view="dataset" type="button">Datasets</button>
     </div>
     <span class="tb-spacer"></span>
     <button class="tb-btn" id="themeToggleBtn" type="button" style="font-size:14px;padding:2px 8px;line-height:1">☀</button>
@@ -694,10 +694,15 @@
     <button id="refreshJobsBtn" type="button"></button>
   </div>
 
-  <!-- ── Corpus Browser View (hidden by default) ──────────────── -->
-  <div id="corpusBrowserView" style="display:none; flex:1; overflow:hidden;">
-    <div id="corpusBrowserMount" style="flex:1; height:100%; overflow:auto; padding:16px; min-width:0;"></div>
-    <div id="corpusDetailMount" class="corpus-detail-sidebar"></div>
+  <!-- ── Dataset Browser View (hidden by default) ─────────────── -->
+  <div id="datasetBrowserView" style="display:none; flex:1; overflow:hidden; flex-direction:column;">
+    <!-- Job monitor bar -->
+    <div id="jobMonitorMount" style="flex-shrink:0;"></div>
+    <!-- Main area: dataset/gallery panel + detail sidebar -->
+    <div style="display:flex; flex:1; overflow:hidden;">
+      <div id="datasetBrowserMount" style="flex:1; height:100%; overflow:auto; padding:16px; min-width:0;"></div>
+      <div id="datasetDetailMount" class="corpus-detail-sidebar"></div>
+    </div>
   </div>
 
   <!-- ── Main layout ───────────────────────────────────────────── -->

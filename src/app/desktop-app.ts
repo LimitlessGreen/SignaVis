@@ -29,6 +29,7 @@ import { SimilarityBrowserPanel } from '../ui/panels/SimilarityBrowserPanel.ts';
 import { EmbeddingScatterPanel } from '../ui/panels/EmbeddingScatterPanel.ts';
 import { ClusterBrowserPanel } from '../ui/panels/ClusterBrowserPanel.ts';
 import { XcImportPanel } from '../ui/panels/XcImportPanel.ts';
+import { JobMonitorPanel } from '../ui/panels/JobMonitorPanel.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
@@ -77,7 +78,7 @@ let player: BirdNETPlayer | null = null;
 
 // ── Dataset Browser State ─────────────────────────────────────────────
 
-type AppView = 'labeling' | 'corpus';
+type AppView = 'labeling' | 'dataset';
 let activeView: AppView = 'labeling';
 let datasetBrowserPanel: DatasetBrowserPanel | null = null;
 let currentDataset: Dataset | null = null;
@@ -86,14 +87,15 @@ let similarityBrowserPanel: SimilarityBrowserPanel | null = null;
 let embeddingScatterPanel: EmbeddingScatterPanel | null = null;
 let clusterBrowserPanel: ClusterBrowserPanel | null = null;
 let xcImportPanel: XcImportPanel | null = null;
+let jobMonitorPanel: JobMonitorPanel | null = null;
 
 /** Switches between "labeling" and "dataset" view. */
 function switchView(view: AppView): void {
     activeView = view;
     const labelingEl = document.getElementById('labelingView')!;
-    const datasetEl  = document.getElementById('corpusBrowserView')!;
+    const datasetEl  = document.getElementById('datasetBrowserView')!;
 
-    if (view === 'corpus') {
+    if (view === 'dataset') {
         labelingEl.style.display = 'none';
         datasetEl.style.display  = 'flex';
         initDatasetView();
@@ -108,7 +110,19 @@ function switchView(view: AppView): void {
 }
 
 function initDatasetView(): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+    const mount = document.getElementById('datasetBrowserMount')!;
+
+    // Mount the job monitor once
+    if (!jobMonitorPanel) {
+        const jobMount = document.getElementById('jobMonitorMount');
+        if (jobMount) {
+            jobMonitorPanel = new JobMonitorPanel({
+                container: jobMount,
+                onOpenDataset: (_id) => { /* dataset navigation handled by gallery */ },
+            });
+            jobMonitorPanel.mount().catch(console.error);
+        }
+    }
 
     if (!datasetBrowserPanel) {
         datasetBrowserPanel = new DatasetBrowserPanel({
@@ -122,8 +136,8 @@ function initDatasetView(): void {
 
 function showRecordingGallery(dataset: Dataset): void {
     currentDataset = dataset;
-    const mount = document.getElementById('corpusBrowserMount')!;
-    const detailMount = document.getElementById('corpusDetailMount')!;
+    const mount = document.getElementById('datasetBrowserMount')!;
+    const detailMount = document.getElementById('datasetDetailMount')!;
 
     // Initialise detail panel (right column)
     if (!recordingDetailPanel) {
@@ -171,7 +185,7 @@ function showRecordingGallery(dataset: Dataset): void {
         onShowClusters: () => showClusterBrowser(dataset),
         onShowScatter: () => {
             // Lazy-init the scatter panel in the main mount area
-            const scatterMount = document.getElementById('corpusBrowserMount')!;
+            const scatterMount = document.getElementById('datasetBrowserMount')!;
             if (!embeddingScatterPanel) {
                 embeddingScatterPanel = new EmbeddingScatterPanel({
                     container: scatterMount,
@@ -213,7 +227,7 @@ function showSimilarRecordings(rec: Recording, detailMount: HTMLElement, _datase
 
 /** Shows (or creates) the Cluster Browser in the corpus main area. */
 function showClusterBrowser(dataset: Dataset): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+    const mount = document.getElementById('datasetBrowserMount')!;
 
     if (clusterBrowserPanel) {
         clusterBrowserPanel.updateDataset(dataset);
@@ -225,7 +239,7 @@ function showClusterBrowser(dataset: Dataset): void {
         container: mount,
         dataset,
         onOpenRecording: (rec) => {
-            const detailMount = document.getElementById('corpusDetailMount')!;
+            const detailMount = document.getElementById('datasetDetailMount')!;
             showRecordingDetail(rec, detailMount);
         },
         onStatusMessage: setStatus,
@@ -245,7 +259,7 @@ function createSimilarityMount(detailMount: HTMLElement): HTMLElement {
 }
 
 function showImportWizard(dataset: Dataset): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+    const mount = document.getElementById('datasetBrowserMount')!;
 
     const wizard = new ImportWizardPanel({
         container: mount,
@@ -262,7 +276,7 @@ function showImportWizard(dataset: Dataset): void {
 }
 
 function showXcImportPanel(dataset: Dataset): void {
-    const mount = document.getElementById('corpusBrowserMount')!;
+    const mount = document.getElementById('datasetBrowserMount')!;
     xcImportPanel = new XcImportPanel({
         container: mount,
         dataset,
