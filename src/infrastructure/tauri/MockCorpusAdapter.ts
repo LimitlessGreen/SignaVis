@@ -23,6 +23,34 @@ import type {
     BirdnetDonePayload,
 } from './TauriCorpusAdapter.ts';
 
+// ── Constants (must be declared before the builders that use them) ────
+
+const SPECIES = [
+    'Turdus merula', 'Erithacus rubecula', 'Parus major',
+    'Fringilla coelebs', 'Sylvia atricapilla', 'Phylloscopus collybita',
+    'Carduelis carduelis', 'Cyanistes caeruleus', 'Troglodytes troglodytes',
+    'Passer domesticus',
+];
+
+function randomDetections() {
+    const n = 1 + Math.floor(Math.random() * 4);
+    const used = new Set<string>();
+    const events = [];
+    for (let i = 0; i < n; i++) {
+        const species = SPECIES[Math.floor(Math.random() * SPECIES.length)];
+        if (used.has(species)) continue;
+        used.add(species);
+        const start = Math.floor(Math.random() * 50) * 3;
+        events.push({
+            label:      species,
+            confidence: 0.5 + Math.random() * 0.48,
+            support:    [start, start + 3],
+            tags:       [],
+        });
+    }
+    return events;
+}
+
 // ── In-memory store ───────────────────────────────────────────────────
 
 let datasets: Dataset[] = buildDatasets();
@@ -364,28 +392,3 @@ function buildXcRecordings(): Recording[] {
     return recs;
 }
 
-const SPECIES = [
-    'Turdus merula', 'Erithacus rubecula', 'Parus major',
-    'Fringilla coelebs', 'Sylvia atricapilla', 'Phylloscopus collybita',
-    'Carduelis carduelis', 'Cyanistes caeruleus', 'Troglodytes troglodytes',
-    'Passer domesticus',
-];
-
-function randomDetections() {
-    const n = 1 + Math.floor(Math.random() * 4);
-    const used = new Set<string>();
-    const events = [];
-    for (let i = 0; i < n; i++) {
-        const species = SPECIES[Math.floor(Math.random() * SPECIES.length)];
-        if (used.has(species)) continue;
-        used.add(species);
-        const start = Math.floor(Math.random() * 50) * 3;
-        events.push({
-            label:      species,
-            confidence: 0.5 + Math.random() * 0.48,
-            support:    [start, start + 3],
-            tags:       [],
-        });
-    }
-    return events;
-}
