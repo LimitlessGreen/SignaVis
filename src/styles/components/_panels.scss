@@ -214,32 +214,50 @@ select::-ms-expand { display: none; }
 .xc-field .input { height: 22px; padding: 1px 5px; font-size: 11px; border-radius: 3px; }
 .xc-field .xc-textarea { height: auto; min-height: 44px; padding: 3px 5px; font-size: 11px; border-radius: 3px; resize: vertical; }
 
-/* Collapsible sub-section (Project / Scope) */
-.xc-collapsible { margin-top: 10px; position: relative; }
+/* Collapsible sub-section (Project / Scope) — flat language, matches
+   .label-set-section / .rec-set-header. Header and body form one block. */
+.xc-collapsible {
+  margin: 8px 8px 0;
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.005));
+  overflow: hidden;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: rgba(148,163,184,0.35);
+    pointer-events: none;
+  }
+}
 .xc-collapsible-hdr {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 8px 12px 8px 13px;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--color-text-secondary);
   cursor: pointer;
   user-select: none;
-  transition: color 0.12s, transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
   background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px var(--shadow-strong);
-  z-index: 2;
+  border-bottom: 1px solid transparent;
+  transition: color 0.12s, background 120ms ease, border-color 120ms ease;
 }
-.xc-collapsible-hdr:hover { color: var(--color-text-primary); transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.32); background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface); }
-.xc-collapsible-hdr:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 0 0 4px rgba(56,189,248,0.06); }
-.xc-collapsible-chevron { font-size: 14px; line-height: 1; margin-right: 6px; transition: transform 0.15s ease; display: inline-block; }
-.xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); }
-.xc-collapsible-body { display: none; margin-top: 10px; padding: 10px 12px; background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.28); z-index: 1; }
+.xc-collapsible-hdr:hover {
+  color: var(--color-text-primary);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
+              var(--color-bg-surface);
+}
+.xc-collapsible-hdr:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+.xc-collapsible.expanded > .xc-collapsible-hdr { border-bottom-color: var(--color-border); color: var(--color-text-primary); }
+.xc-collapsible-chevron { font-size: 12px; line-height: 1; transition: transform 0.18s ease; display: inline-block; color: var(--color-text-secondary); }
+.xc-collapsible.expanded .xc-collapsible-chevron { transform: rotate(90deg); color: var(--color-text-primary); }
+.xc-collapsible-body { display: none; padding: 10px 12px; background: rgba(0,0,0,0.18); }
 .xc-collapsible.expanded .xc-collapsible-body { display: flex; flex-direction: column; gap: 0; }
 
 /* BibTeX collapsible in About panel: use theme colors instead of hardcoded light background */

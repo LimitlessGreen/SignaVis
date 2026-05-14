@@ -705,10 +705,14 @@ tr.multi-selected {
 // Scientific name indented to align with group name inside set
 .label-set-body .label-group-sci { padding-left: 50px; }
 
-/* ── Section header (Labels tab) ─────────────────────────────────────── */
-// Reusable, sticky section divider used between Recordings / Labels lists
-// in the labels panel. Provides clear typographic hierarchy.
-.lbl-section-header {
+/* ── Section header ──────────────────────────────────────────────────── */
+// Sticky section divider used to group panel sections in the sidebar
+// (Labels: Recordings / Labels; BirdNET: Model / Detection / Location;
+// XC: Load / Recording / Profile / API / Actions). Provides clear
+// typographic hierarchy without nested cards.
+.sidebar-section-header,
+.lbl-section-header {     // legacy alias
+  position: relative;
   position: sticky;
   top: 0;
   z-index: 4;
@@ -737,6 +741,7 @@ tr.multi-selected {
     border-radius: 1px;
     opacity: 0.7;
   }
+  .sidebar-section-count,
   .lbl-section-count {
     margin-left: auto;
     font-size: 9px;

@@ -156,6 +156,7 @@
 
   <!-- ── Sidebar panel: BirdNET ───────────────────────────────────── -->
   <div id="panelBirdnet" class="scroll-panel" hidden>
+    <div class="sidebar-section-header">Model &amp; Backend</div>
     <div class="panel-section">
       <label class="field-label" for="birdnetModelUrl">Model URL</label>
       <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
@@ -176,6 +177,7 @@
       </div>
       <p class="field-hint">For server/cloud mode, enter the base URL of the analysis API.</p>
     </div>
+    <div class="sidebar-section-header">Detection</div>
     <div class="panel-section">
       <div class="slider-row">
         <label class="field-label" for="birdnetConfidence" style="margin:0">Min. Confidence</label>
@@ -203,8 +205,9 @@
       <label class="field-label" for="birdnetAuthor">Author</label>
       <input id="birdnetAuthor" class="input" placeholder="(optional)" />
     </div>
+    <div class="sidebar-section-header">Location</div>
     <div class="panel-section">
-      <label class="field-label">Location <span class="meta" id="birdnetGeoStatus"></span></label>
+      <label class="field-label">Coordinates <span class="meta" id="birdnetGeoStatus"></span></label>
       <div class="geo-input-row">
         <input id="birdnetLat" class="input" type="number" step="0.0001" min="-90"  max="90"  placeholder="Latitude" />
         <input id="birdnetLon" class="input" type="number" step="0.0001" min="-180" max="180" placeholder="Longitude" />
@@ -232,6 +235,7 @@
         <input id="birdnetGeoThreshold" type="range" min="0.001" max="0.5" step="0.001" value="0.01" class="range-input" />
       </div>
     </div>
+    <div class="sidebar-section-header">Run</div>
     <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
       <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
     </div>
@@ -245,6 +249,7 @@
   <div id="panelXc" class="scroll-panel" hidden>
 
     <!-- ── 1. Load Recording ── -->
+    <div class="sidebar-section-header">Recording</div>
     <div class="panel-section">
       <label class="field-label" for="xcIdInput">Load XC Recording</label>
       <div class="xc-load-row">
@@ -267,6 +272,7 @@
     </div>
 
     <!-- ── 3. Author / Set sub-tabs ── -->
+    <div class="sidebar-section-header">Profile</div>
     <div class="xc-sub-tabs-wrap">
       <nav class="xc-sub-tabs" role="tablist" aria-label="Xeno-canto sub-sections">
         <button class="xc-sub-tab active" id="xcTabAuthorBtn" type="button" role="tab" aria-selected="true"  aria-controls="xcTabAuthor">Author</button>
@@ -287,6 +293,7 @@
     </div>
 
     <!-- ── 4. API Key ── -->
+    <div class="sidebar-section-header">Connection</div>
     <div class="panel-section">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
       <div class="xc-key-input-row">
@@ -303,6 +310,7 @@
     </div>
 
     <!-- ── 5. Actions ── -->
+    <div class="sidebar-section-header">Actions</div>
     <div class="panel-actions xc-actions">
       <div class="xc-action-row">
         <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button">Export JSON</button>
