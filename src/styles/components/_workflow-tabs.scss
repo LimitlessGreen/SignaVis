@@ -80,10 +80,13 @@
 .wf-pane {
   display: none;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
-  flex-direction: column;
 
-  &--active { display: flex; }
+  &--active {
+    display: flex;
+    flex-direction: column;  // explicitly on active pane, not on hidden ones
+  }
 }
 
 // ── Analyze tab pane ──────────────────────────────────────────────────

@@ -150,6 +150,8 @@
 
   &__content {
     flex: 1;
+    display: flex;
+    flex-direction: column;
     overflow: auto;
     padding: 20px 24px;
     min-width: 0;
