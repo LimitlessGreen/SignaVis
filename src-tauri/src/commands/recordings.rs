@@ -223,12 +223,54 @@ pub async fn recording_import_folder(
         .await?
         .ok_or_else(|| format!("recording_import_folder: dataset not found: {}", args.dataset_id))?;
 
-    let folder = PathBuf::from(&args.folder_path);
+    // Accept either a plain directory path or a glob-like pattern such as
+    // "/recordings/*.wav" or "/data/**/bird*.flac".
+    // We resolve the base directory and derive a filename filter from the pattern.
+    let raw_path = &args.folder_path;
+    let (folder, filename_glob): (PathBuf, Option<String>) = if raw_path.contains('*') || raw_path.contains('?') {
+        let p = PathBuf::from(raw_path);
+        // Split at the last path component that contains a wildcard
+        let parent = p.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+        let pattern = p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string());
+        (parent, pattern)
+    } else {
+        (PathBuf::from(raw_path), None)
+    };
+
     if !folder.exists() || !folder.is_dir() {
         return Err(format!(
             "recording_import_folder: path is not a directory: {}",
             folder.display()
         ));
+    }
+
+    /// Simple glob matching: `*` matches any sequence of non-separator chars,
+    /// `?` matches a single non-separator char. Case-insensitive.
+    fn glob_match(pattern: &str, name: &str) -> bool {
+        let p: Vec<char> = pattern.to_lowercase().chars().collect();
+        let n: Vec<char> = name.to_lowercase().chars().collect();
+        let mut pi = 0usize;
+        let mut ni = 0usize;
+        let mut star_pi = usize::MAX;
+        let mut star_ni = 0usize;
+        while ni < n.len() {
+            if pi < p.len() && (p[pi] == '?' || p[pi] == n[ni]) {
+                pi += 1; ni += 1;
+            } else if pi < p.len() && p[pi] == '*' {
+                star_pi = pi; star_ni = ni;
+                pi += 1;
+            } else if star_pi != usize::MAX {
+                star_ni += 1;
+                ni = star_ni;
+                pi = star_pi + 1;
+            } else {
+                return false;
+            }
+        }
+        while pi < p.len() && p[pi] == '*' { pi += 1; }
+        pi == p.len()
     }
 
     let skip_dupes = args.skip_duplicates.unwrap_or(true);
@@ -253,6 +295,14 @@ pub async fn recording_import_folder(
         let path = entry.path();
         if !path.is_file() {
             continue;
+        }
+
+        // Filename glob filter (when user specified a pattern like *.wav)
+        if let Some(ref pat) = filename_glob {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !glob_match(pat, fname) {
+                continue;
+            }
         }
 
         // Extension filter

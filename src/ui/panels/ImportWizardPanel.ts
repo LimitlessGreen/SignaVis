@@ -113,19 +113,23 @@ export class ImportWizardPanel {
     private renderSourceStep(): string {
         return `
             <div class="wizard-step-content">
-                <p class="wizard-hint">Choose the folder containing the audio files. The folder is scanned recursively.</p>
+                <p class="wizard-hint">
+                    Enter a folder path or a glob pattern to select specific files.
+                    Folders are scanned recursively.
+                </p>
                 <div class="wizard-folder-row">
                     <input
                         type="text"
                         class="input"
                         id="folderPathInput"
-                        placeholder="/path/to/folder"
+                        placeholder="/path/to/folder  or  /recordings/*.wav"
                         value="${escapeHtml(this.folderPath)}"
                     />
                     ${this.openFolderDialog ? `<button class="btn btn--secondary" id="browseFolderBtn">Browse…</button>` : ''}
                 </div>
                 <p class="wizard-hint wizard-hint--sm">
-                    Supported formats: WAV, FLAC, MP3, OGG, OPUS, AAC, M4A, AIFF
+                    Glob examples: <code>*.wav</code>, <code>bird_*.flac</code>, <code>2024*</code><br>
+                    Formats: WAV, FLAC, MP3, OGG, OPUS, AAC, M4A, AIFF
                 </p>
             </div>
         `;

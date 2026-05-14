@@ -140,3 +140,13 @@
 
   > * { flex: 1; min-height: 0; }
 }
+
+// ── Export pane: center content ───────────────────────────────────────
+
+#exportPaneMount {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+  flex: 1;
+}

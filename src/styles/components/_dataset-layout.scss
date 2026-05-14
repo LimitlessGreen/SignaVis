@@ -151,8 +151,18 @@
   &__content {
     flex: 1;
     overflow: auto;
-    padding: 14px 16px;
+    padding: 20px 24px;
     min-width: 0;
+
+    // Centre content panels that declare a max-width
+    > .dataset-browser,
+    > .import-wizard,
+    > .recording-gallery,
+    > .cluster-browser,
+    > .similarity-browser,
+    > .scatter-panel {
+      margin: 0 auto;
+    }
   }
 }
 
