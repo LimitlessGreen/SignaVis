@@ -71,11 +71,9 @@
 
 // ── Workspace pane system ─────────────────────────────────────────────
 // .workspace base is defined in _labeling-app.scss (shared between both apps).
-// The desktop app's #workspace needs column stacking for its panes.
-
-#workspace {
-  flex-direction: column;
-}
+// No flex-direction override needed here: only one .wf-pane is visible at
+// a time (others have display:none), so the single active pane fills the
+// workspace automatically regardless of row/column direction.
 
 .wf-pane {
   display: none;
