@@ -140,11 +140,13 @@
       <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
     </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
+    <div class="lbl-section-header">Recordings</div>
     <div id="recordingExplorerMount"></div>
     <div class="panel-hint">
       <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit · <kbd>Ctrl</kbd>+click multi-select
     </div>
     <div class="label-list-scroll">
+      <div class="lbl-section-header">Labels<span class="lbl-section-count" id="labelListCount">0</span></div>
       <div class="label-list" id="labelList"></div>
       <div class="labels-empty" id="labelsEmpty">
         No labels — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.
@@ -1660,6 +1662,7 @@
     const labelList = new LabelList({
       container: document.getElementById('labelList'),
       emptyEl:   document.getElementById('labelsEmpty'),
+      badgeEl:   document.getElementById('labelListCount'),
       resolveName,
       tagStore,
       accordion: true,

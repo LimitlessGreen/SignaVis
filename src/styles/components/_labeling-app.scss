@@ -421,13 +421,15 @@ html[data-theme="light"] { @include sponsor-light; }
 }
 
 /* ── Recording Explorer ── */
+// Sits below a sticky section header (.lbl-section-header) in the Labels
+// panel. Uses the same flat / indent-guide language as the label list so
+// the two halves of the panel feel like one coherent system.
 .recording-explorer {
   display: flex;
   flex-direction: column;
-  /* Distinct background + bottom border separates explorer from the label list */
-  background: var(--color-bg-secondary, rgba(0,0,0,0.18));
-  border-bottom: 2px solid var(--color-border);
-  padding-bottom: 4px;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 0 6px;
 }
 
 /* Set header (hierarchy parent node) */
@@ -435,32 +437,39 @@ html[data-theme="light"] { @include sponsor-light; }
   display: flex;
   align-items: center;
   gap: 7px;
-  /* Slightly taller hit target for comfortable clicking */
-  padding: 10px 12px;
+  padding: 7px 12px 7px 15px;     // +3px for left rail
+  margin: 0 6px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--color-text-primary);
   cursor: pointer;
   user-select: none;
-  /* Floating card look */
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px var(--shadow-strong);
+  border-radius: 6px 6px 0 0;
+  border-bottom: none;
   position: relative;
   z-index: 2;
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  transition: background 120ms ease;
+  // Coloured rail (matches the label-set rail language; neutral here)
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: rgba(148,163,184,0.40);
+    border-radius: 6px 0 0 0;
+    pointer-events: none;
+  }
 }
 .rec-set-header:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 24px rgba(0,0,0,0.32);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
+              var(--color-bg-surface);
 }
 .rec-set-header:focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 0 0 4px rgba(56,189,248,0.06);
 }
 /* Chevron — bigger and easier to read */
 .rec-set-chevron {
@@ -469,9 +478,11 @@ html[data-theme="light"] { @include sponsor-light; }
   flex-shrink: 0;
   color: var(--color-text-secondary);
   line-height: 1;
-  transition: color 0.1s;
+  transition: color 0.1s, transform 0.18s ease;
 }
 .rec-set-header:hover .rec-set-chevron { color: var(--color-text-primary); }
+.rec-set-header[aria-expanded="true"] .rec-set-chevron,
+.rec-set-header.expanded .rec-set-chevron { transform: rotate(90deg); }
 /* Set name — larger than the child recording rows */
 .rec-set-name {
   flex: 1;
@@ -481,18 +492,29 @@ html[data-theme="light"] { @include sponsor-light; }
   font-size: 12px;
 }
 
-/* Body — indented children */
+/* Body — flat, with vertical indent guide aligned to the chevron */
 .rec-set-body {
-  margin-top: 8px;
-  padding: 8px 8px 8px 12px;
-  background: var(--color-bg-surface);
+  margin: 0 6px;
+  padding: 4px 0 6px;
+  background: rgba(0,0,0,0.18);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding-left: 12px;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
   position: relative;
   z-index: 1;
 }
 .rec-set-body[hidden] { display: none; }
+// Indent-guide line — aligns with chevron at ~22px from the section's left edge
+.rec-set-body::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 4px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--color-border);
+  pointer-events: none;
+}
 
 .recording-explorer-empty {
   padding: 5px 12px;
@@ -507,23 +529,37 @@ html[data-theme="light"] { @include sponsor-light; }
 }
 
 .recording-explorer-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px 3px 10px;
+  padding: 3px 8px 3px 36px;       // indent past the guide line at 24px
   font-size: 11px;
   cursor: pointer;
   color: var(--color-text-secondary);
   transition: background 0.08s, color 0.08s;
   border-radius: 0;
 }
+// Connector tick from the indent-guide line to each row
+.rec-set-body .recording-explorer-row::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: var(--color-border);
+  pointer-events: none;
+}
 .recording-explorer-row:hover {
-  background: var(--color-bg-hover, rgba(255,255,255,0.05));
+  background: var(--color-accent-faint);
   color: var(--color-text-primary);
 }
 .recording-explorer-row.active {
   color: var(--color-text-primary);
   font-weight: 600;
+  background: rgba(56, 189, 248, 0.10);
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .recording-explorer-icon {

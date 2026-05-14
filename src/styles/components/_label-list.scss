@@ -75,23 +75,36 @@
 .label-origin-add-set-btn:hover { opacity: 1; background: var(--color-accent-faint); }
 
 /* ── Annotation set section — LEVEL 1 ────────────────────────────────── */
-// Each set is a visually distinct card/block separated from siblings
+// Flat, calm container. Hierarchy is signalled by:
+//   • coloured left rail on the section (origin-tinted)
+//   • sticky header with subtle elevated background (no heavy shadow)
+//   • indent-guide line in the body that aligns with the chevron
 .label-set-section {
-  // Use spacing between set cards so headers can appear as floating cards
-  margin-bottom: 12px;
-  padding-bottom: 0;
-  // 4px left accent, colored by origin (always visible)
-  border-left: 4px solid rgba(255,255,255,0.08);
-  // keep stacking context for shadows
+  margin: 0 6px 6px;
   position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.015),
+    rgba(255,255,255,0.005));
+  overflow: hidden;
+  // Coloured rail on the left edge, origin-tinted (mapped below)
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: rgba(148,163,184,0.35);
+    pointer-events: none;
+  }
 }
-.label-set-section:has(.label-set-origin--birdnet)  { border-left-color: rgba(16,185,129,0.5); }
-.label-set-section:has(.label-set-origin--xeno-canto) { border-left-color: rgba(56,189,248,0.5); }
-.label-set-section:has(.label-set-origin--manual)   { border-left-color: rgba(148,163,184,0.35); }
+.label-set-section:has(.label-set-origin--birdnet)::before     { background: rgba(16,185,129,0.55); }
+.label-set-section:has(.label-set-origin--xeno-canto)::before  { background: rgba(56,189,248,0.55); }
+.label-set-section:has(.label-set-origin--manual)::before      { background: rgba(148,163,184,0.40); }
 
 // Locked set
 .label-set-section--locked {
-  opacity: 0.88;
+  opacity: 0.92;
   > .label-set-header { cursor: default; }
   .label-set-lock-btn--locked { opacity: 1 !important; color: #fbbf24 !important; }
 }
@@ -100,26 +113,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px 8px 13px;   // +3px for left rail
   cursor: pointer;
   user-select: none;
-  /* Floating card look for set header */
   background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.30);
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-  position: relative;
+  border-bottom: 1px solid transparent;
+  position: sticky;
+  top: 0;
   z-index: 3;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 .label-set-header:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.34);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent), var(--color-bg-surface);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
+              var(--color-bg-surface);
 }
 .label-set-section.expanded > .label-set-header {
   border-bottom-color: var(--color-border);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
 }
 
 .label-set-chevron {
@@ -248,16 +258,24 @@
   background: rgba(56, 189, 248, 0.08);
 }
 
-/* Set body — visual container under the floating header */
+/* Set body — flat, with vertical indent guide aligned to the header chevron */
 .label-set-body {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: rgba(0,0,0,0.06);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  padding: 4px 0 6px;
+  background: rgba(0,0,0,0.18);
   position: relative;
   z-index: 1;
+}
+// Indent-guide line (VS Code-style tree guide)
+.label-set-body::before {
+  content: '';
+  position: absolute;
+  // Align with the centre of the header chevron (13px header padding-left + 10px chevron centre)
+  left: 22px;
+  top: 4px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--color-border);
+  pointer-events: none;
 }
 
 /* Group row drop target */
@@ -329,11 +347,13 @@
 }
 
 /* ── Species group — LEVEL 2 ──────────────────────────────────────────── */
-.label-group { border-bottom: 1px solid var(--color-border); }
+.label-group {
+  position: relative;
+  border-bottom: 1px solid var(--color-border);
+}
 
-/* Groups inside a set: lighter border, no bottom on last */
-.label-set-body .label-group { border-bottom-color: rgba(255,255,255,0.05); }
-.label-set-body .label-group:last-child { border-bottom: none; }
+/* Groups inside a set: no own bottom border — body has its own divider system */
+.label-set-body .label-group { border-bottom: none; }
 
 .label-group-row {
   display: flex;
@@ -347,10 +367,21 @@
 }
 .label-group-row:hover { background: var(--color-accent-faint); }
 
-/* LEVEL 2 inside set: indent + slightly lighter bg to distinguish from set header */
+/* LEVEL 2 inside set: indent past the guide line, no extra background */
 .label-set-body .label-group-row {
-  padding-left: 16px;
-  background: rgba(255,255,255,0.025);
+  padding-left: 32px;     // past the guide line at 22px
+  background: transparent;
+}
+// Connector tick from the indent-guide line to the group row
+.label-set-body .label-group::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: 17px;              // ~ centre of the row
+  width: 8px;
+  height: 1px;
+  background: var(--color-border);
+  pointer-events: none;
 }
 .label-set-body .label-group-row:hover { background: var(--color-accent-faint); }
 
@@ -510,13 +541,14 @@
   outline-offset: -1px;
 }
 
-/* LEVEL 3: instances inside a set — bar shifts right with the extra indent */
+/* LEVEL 3: instances inside a set — extra indent so colour bar sits past the
+   set's vertical guide line at 22px without crossing it */
 .label-set-body .label-instance {
-  padding-left: 34px;
-  background: rgba(0,0,0,0.08);
+  padding-left: 44px;
+  background: transparent;
   border-top-color: rgba(255,255,255,0.04);
 }
-.label-set-body .label-instance::before { left: 20px; }
+.label-set-body .label-instance::before { left: 32px; }
 .label-set-body .label-instance:hover { background: var(--color-accent-faint); }
 
 /* ── Instance header row ─────────────────────────────────────────────── */
@@ -671,4 +703,49 @@ tr.multi-selected {
 /* ── Visual hierarchy helpers ─────────────────────────────────────────── */
 
 // Scientific name indented to align with group name inside set
-.label-set-body .label-group-sci { padding-left: 34px; }
+.label-set-body .label-group-sci { padding-left: 50px; }
+
+/* ── Section header (Labels tab) ─────────────────────────────────────── */
+// Reusable, sticky section divider used between Recordings / Labels lists
+// in the labels panel. Provides clear typographic hierarchy.
+.lbl-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 12px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--color-text-secondary);
+  background: linear-gradient(180deg,
+    var(--color-bg-primary) 0%,
+    var(--color-bg-primary) 70%,
+    rgba(0,0,0,0) 100%);
+  // 2px coloured underline only beneath the title text
+  &::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    bottom: 4px;
+    width: 18px;
+    height: 2px;
+    background: var(--color-accent);
+    border-radius: 1px;
+    opacity: 0.7;
+  }
+  .lbl-section-count {
+    margin-left: auto;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: var(--color-text-secondary);
+    letter-spacing: 0;
+    text-transform: none;
+    font-weight: 700;
+  }
+}
