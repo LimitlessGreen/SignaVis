@@ -38,7 +38,6 @@
       margin-right: 4px;
     }
     .tb-sep { width: 1px; height: 20px; background: var(--color-border); flex-shrink: 0; margin: 0 2px; }
-    .tb-spacer { flex: 1; }
 
     .tb-btn {
       display: inline-flex;
@@ -390,10 +389,17 @@
 
   <!-- ── Topbar ─────────────────────────────────────────────────────── -->
   <header class="topbar">
-    <span class="brand-title">SignaVis</span>
-    <div class="tb-sep"></div>
+    <!-- Left: brand + dataset context -->
+    <div class="topbar-left">
+      <span class="brand-title">SignaVis</span>
+      <div class="topbar-dataset-pill" id="topbarDatasetPill" style="display:none">
+        <span class="topbar-dataset-pill__icon">🎙</span>
+        <span class="topbar-dataset-pill__name" id="topbarDatasetName"></span>
+        <span class="topbar-dataset-pill__count" id="topbarDatasetCount"></span>
+      </div>
+    </div>
 
-    <!-- Workflow tabs -->
+    <!-- Centre: workflow tabs -->
     <nav class="wf-tabs" id="wfTabs">
       <button class="wf-tab wf-tab--active" data-wf-tab="datasets" type="button">
         <span class="wf-tab__icon">⊞</span> Datasets
@@ -412,14 +418,7 @@
       </button>
     </nav>
 
-    <!-- Active dataset pill (visible once a dataset is open) -->
-    <div class="topbar-dataset-pill" id="topbarDatasetPill" style="display:none">
-      <span class="topbar-dataset-pill__icon">🎙</span>
-      <span class="topbar-dataset-pill__name" id="topbarDatasetName"></span>
-      <span class="topbar-dataset-pill__count" id="topbarDatasetCount"></span>
-    </div>
-
-    <span class="tb-spacer"></span>
+    <!-- Right: actions -->
     <div class="topbar-right">
       <div id="jobMonitorMount" style="display:contents"></div>
       <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme">☀</button>

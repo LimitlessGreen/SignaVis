@@ -6,6 +6,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .wf-tab {
@@ -63,10 +64,18 @@
   &__count { color: var(--color-text-secondary); white-space: nowrap; flex-shrink: 0; }
 }
 
+// Three-column topbar layout: left | centre (tabs) | right
+// flex: 1 on both flanks keeps the tabs perfectly centred on widescreen.
+.topbar-left,
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex: 1;
+}
+
+.topbar-right {
+  justify-content: flex-end;
 }
 
 // ── Workspace pane system ─────────────────────────────────────────────
