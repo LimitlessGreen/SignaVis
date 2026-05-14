@@ -1031,6 +1031,10 @@
       labelSets: new Map(),
       /** ID of the currently active annotation set (new labels are assigned to it) */
       activeSetId: null,
+      /** @type {Set<string>} setIds whose labels are hidden from the spectrogram */
+      hiddenSetIds: new Set(),
+      /** @type {Set<string>} `${setId}|${speciesName}` keys whose labels are hidden */
+      hiddenSpeciesKeys: new Set(),
       /** Editable recording metadata for XC upload context */
       recordingEditMeta: defaultRecordingEditMeta(),
       xcLabelPool: [],
@@ -1200,10 +1204,11 @@
     }
 
     function deleteLabelSet(id) {
-      for (const lbl of state.labels) {
-        if (lbl.setId === id) lbl.setId = null;
-      }
+      // Remove the set's labels along with the set itself — orphaned
+      // labels would otherwise float in the unassigned bucket.
+      state.labels = state.labels.filter((lbl) => lbl.setId !== id);
       state.labelSets.delete(id);
+      state.hiddenSetIds?.delete(id);
       if (state.activeSetId === id) state.activeSetId = null;
       syncToPlayer();
       xcPanel._rebuildSetSection?.();
@@ -1719,6 +1724,18 @@
           labelList.render(state.labels);
         }
       },
+      onToggleSetVisibility: (setId, hide) => {
+        if (hide) state.hiddenSetIds.add(setId);
+        else state.hiddenSetIds.delete(setId);
+        labelList.setHiddenSets(state.hiddenSetIds);
+        syncToPlayer();
+      },
+      onToggleSpeciesVisibility: (speciesKey, hide) => {
+        if (hide) state.hiddenSpeciesKeys.add(speciesKey);
+        else state.hiddenSpeciesKeys.delete(speciesKey);
+        labelList.setHiddenSpecies(state.hiddenSpeciesKeys);
+        syncToPlayer();
+      },
     });
     labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
@@ -1899,9 +1916,21 @@
       labelList.setLockedIds?.(lockedIds);
     }
 
+    function _visibleLabels() {
+      const hSets = state.hiddenSetIds;
+      const hSpecies = state.hiddenSpeciesKeys;
+      if (!hSets.size && !hSpecies.size) return state.labels;
+      return state.labels.filter((l) => {
+        const setKey = l.setId || '';
+        if (setKey && hSets.has(setKey)) return false;
+        if (hSpecies.has(`${setKey}|${l.label || '(unlabeled)'}`)) return false;
+        return true;
+      });
+    }
+
     function syncToPlayer() {
       saveCurrentAnnotationsIfNeeded();
-      player.setSpectrogramLabels(state.labels);
+      player.setSpectrogramLabels(_visibleLabels());
       _pushLockedIds(_computeLockedIds());
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
@@ -1917,7 +1946,7 @@
 
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
     function syncToPlayerSoft() {
-      player.setSpectrogramLabels(state.labels);
+      player.setSpectrogramLabels(_visibleLabels());
       _pushLockedIds(_computeLockedIds());
       sidebar.setBadge('labels', state.labels.length || '');
       if (!_skipPropsRefresh && propsPanel._pinnedLabel) {

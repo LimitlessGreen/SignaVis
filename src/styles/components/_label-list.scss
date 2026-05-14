@@ -109,6 +109,24 @@
   .label-set-lock-btn--locked { opacity: 1 !important; color: #fbbf24 !important; }
 }
 
+// Hidden set — dimmed, italic name; rail desaturated
+.label-set-section--hidden {
+  &::before { opacity: 0.35; }
+  > .label-set-header .label-set-name { font-style: italic; opacity: 0.55; }
+  > .label-set-header { background: transparent; }
+  .label-set-body { opacity: 0.55; }
+  // Show the eye-off icon permanently so the hidden state is obvious
+  .label-set-vis-btn--hidden { opacity: 1 !important; color: var(--color-accent) !important; }
+}
+
+// Hidden species group — dimmed name, eye-off button always visible
+.label-group--hidden {
+  > .label-group-row .label-group-name { font-style: italic; opacity: 0.55; }
+  > .label-group-instances { opacity: 0.55; }
+  .label-group-vis-btn--hidden { opacity: 1 !important; color: var(--color-accent) !important; }
+}
+.label-group-vis-btn { padding: 0 3px; }
+
 .label-set-header {
   display: flex;
   align-items: center;

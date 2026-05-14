@@ -87,6 +87,10 @@ export class LabelList {
     _onSeek: any;
     _onSync: any;
     _onToggleLockSet: any;
+    _onToggleSetVisibility: any;
+    _onToggleSpeciesVisibility: any;
+    _hiddenSetIds: any;
+    _hiddenSpeciesKeys: any;
     _resolveName: any;
     _tagStore: any;
     closest: any;
@@ -161,7 +165,16 @@ export class LabelList {
     this._bulkToolbar = null;
     /** @type {Set<string>} ids that must not be edited */
     this._lockedIds = new Set();
+    /** @type {Set<string>} setKeys whose labels are hidden from the spectrogram */
+    this._hiddenSetIds = new Set();
+    /** @type {Set<string>} `${setKey}|${speciesName}` keys whose labels are hidden */
+    this._hiddenSpeciesKeys = new Set();
+    this._onToggleSetVisibility = opts.onToggleSetVisibility || null;
+    this._onToggleSpeciesVisibility = opts.onToggleSpeciesVisibility || null;
   }
+
+  setHiddenSets(ids: any = []) { this._hiddenSetIds = new Set(ids); }
+  setHiddenSpecies(keys: any = []) { this._hiddenSpeciesKeys = new Set(keys); }
 
   set onRemove(fn: any) { this._onRemove = fn; }
   set onBulkEdit(fn: any) { this._onBulkEdit = fn; }
@@ -253,7 +266,7 @@ export class LabelList {
           const frag = document.createDocumentFragment();
           for (const name of names) {
             const instances = nameMap.get(name).slice().sort((a: any, b: any) => a.start - b.start);
-            frag.appendChild(this._buildGroup(instances, locked));
+            frag.appendChild(this._buildGroup(instances, locked, setKey));
           }
           return frag;
         }, locked);
@@ -261,7 +274,7 @@ export class LabelList {
       } else {
         for (const name of names) {
           const instances = nameMap.get(name).slice().sort((a: any, b: any) => a.start - b.start);
-          this._container.appendChild(this._buildGroup(instances, false));
+          this._container.appendChild(this._buildGroup(instances, false, ''));
         }
       }
     }
@@ -489,6 +502,8 @@ export class LabelList {
     const section = document.createElement('div');
     section.className = 'label-set-section';
     if (locked) section.classList.add('label-set-section--locked');
+    const setHidden = this._hiddenSetIds.has(setKey);
+    if (setHidden) section.classList.add('label-set-section--hidden');
 
     const isExpanded = this._expandedSets.has(setKey) !== false;  // expanded by default
     if (!this._expandedSets.has(setKey + '__init')) {
@@ -601,6 +616,17 @@ export class LabelList {
       convBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onConvertSetToManual(setKey); });
       setActions.appendChild(convBtn);
     }
+    if (this._onToggleSetVisibility) {
+      const visBtn = document.createElement('button');
+      visBtn.className = 'act-btn label-set-action-btn label-set-vis-btn';
+      visBtn.title = setHidden ? 'Show set on spectrogram' : 'Hide set on spectrogram';
+      if (setHidden) visBtn.classList.add('label-set-vis-btn--hidden');
+      visBtn.innerHTML = setHidden
+        ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4"/><path d="M2 2l12 12"/><circle cx="8" cy="8" r="2"/></svg>'
+        : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>';
+      visBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetVisibility(setKey, !setHidden); });
+      setActions.appendChild(visBtn);
+    }
     if (this._onToggleLockSet) {
       const lockBtn = document.createElement('button');
       lockBtn.className = 'act-btn label-set-action-btn label-set-lock-btn';
@@ -652,7 +678,11 @@ export class LabelList {
       delBtn.textContent = '×';
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (confirm(`Delete set "${setInfo?.name || setKey}"? Labels will remain without a set.`)) {
+        const n = totalCount;
+        const msg = n > 0
+          ? `Delete set "${setInfo?.name || setKey}" and its ${n} label${n === 1 ? '' : 's'}? This cannot be undone.`
+          : `Delete set "${setInfo?.name || setKey}"?`;
+        if (confirm(msg)) {
           this._onDeleteSet(setKey);
         }
       });
@@ -754,14 +784,18 @@ export class LabelList {
 
   // ── Species group builder ───────────────────────────────────────────
 
-  _buildGroup(instances: any, locked = false) {
+  _buildGroup(instances: any, locked = false, setKey: string = '') {
     const representative = instances[0];
     const { display, scientific } = this._resolveName(representative);
     const origin = representative.origin || 'manual';
     const groupKey = `${origin}::${representative.label || '(unlabeled)'}`;
+    const speciesName = representative.label || '(unlabeled)';
+    const speciesHideKey = `${setKey}|${speciesName}`;
+    const speciesHidden = this._hiddenSpeciesKeys.has(speciesHideKey);
 
     const group = document.createElement('div');
     group.className = 'label-group';
+    if (speciesHidden) group.classList.add('label-group--hidden');
     // expose group key so we can find/close groups later (used by accordion behaviour)
     group.dataset.groupKey = groupKey;
 
@@ -833,6 +867,17 @@ export class LabelList {
     spacer.style.flex = '1';
     row.appendChild(spacer);
 
+    if (this._onToggleSpeciesVisibility) {
+      const visBtn = document.createElement('button');
+      visBtn.className = 'act-btn label-group-vis-btn';
+      visBtn.title = speciesHidden ? 'Show species on spectrogram' : 'Hide species on spectrogram';
+      if (speciesHidden) visBtn.classList.add('label-group-vis-btn--hidden');
+      visBtn.innerHTML = speciesHidden
+        ? '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4"/><path d="M2 2l12 12"/><circle cx="8" cy="8" r="2"/></svg>'
+        : '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>';
+      visBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSpeciesVisibility(speciesHideKey, !speciesHidden); });
+      row.appendChild(visBtn);
+    }
     if (!locked) {
       const editBtn = document.createElement('button');
       editBtn.className = 'act-btn';
