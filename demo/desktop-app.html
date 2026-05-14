@@ -388,13 +388,13 @@
 </head>
 <body>
 
-  <!-- ── Topbar: brand + view switcher + theme toggle ── -->
+  <!-- ── Topbar ─────────────────────────────────────────────────── -->
   <header class="topbar">
     <span class="brand-title">SignaVis</span>
     <div class="tb-sep"></div>
     <div class="view-tabs" id="viewTabs">
-      <button class="view-tab view-tab--active" data-view="labeling" type="button">Labeling</button>
-      <button class="view-tab" data-view="dataset" type="button">Datasets</button>
+      <button class="view-tab" data-view="labeling" type="button">Labeling</button>
+      <button class="view-tab view-tab--active" data-view="dataset" type="button">Datasets</button>
     </div>
     <span class="tb-spacer"></span>
     <button class="tb-btn" id="themeToggleBtn" type="button" style="font-size:14px;padding:2px 8px;line-height:1">☀</button>
@@ -409,15 +409,54 @@
     <button id="refreshJobsBtn" type="button"></button>
   </div>
 
-  <!-- ── Dataset Browser View (hidden by default) ─────────────── -->
-  <div id="datasetBrowserView" style="display:none; flex:1; overflow:hidden; flex-direction:column;">
-    <!-- Job monitor bar -->
-    <div id="jobMonitorMount" style="flex-shrink:0;"></div>
-    <!-- Main area: dataset/gallery panel + detail sidebar -->
-    <div style="display:flex; flex:1; overflow:hidden;">
-      <div id="datasetBrowserMount" style="flex:1; height:100%; overflow:auto; padding:16px; min-width:0;"></div>
-      <div id="datasetDetailMount" class="corpus-detail-sidebar"></div>
+  <!-- ── Dataset Browser View ────────────────────────────────────── -->
+  <div id="datasetBrowserView" class="ds-view">
+
+    <!-- Left sidebar: persistent dataset list + context nav -->
+    <nav class="ds-sidebar" id="datasetSidebar">
+      <div class="ds-sidebar__header">
+        <span class="ds-sidebar__title">Datasets</span>
+        <button class="btn btn--ghost btn--icon ds-sidebar__new-btn" id="sidebarNewDatasetBtn" title="New dataset">+</button>
+      </div>
+      <div class="ds-sidebar__dataset-list" id="sidebarDatasetList">
+        <div class="ds-sidebar__empty">Loading…</div>
+      </div>
+
+      <!-- Context section: only visible when a dataset is active -->
+      <div class="ds-sidebar__context" id="sidebarContext" style="display:none">
+        <div class="ds-sidebar__section-label">Views</div>
+        <div class="ds-sidebar__views" id="sidebarViews"></div>
+
+        <div class="ds-sidebar__section-label" style="margin-top:12px">Analysis</div>
+        <div class="ds-sidebar__runs" id="sidebarRuns"></div>
+      </div>
+    </nav>
+
+    <!-- Main content: breadcrumb + swappable panel area -->
+    <div class="ds-main">
+      <!-- Breadcrumb / context bar -->
+      <div class="ds-breadcrumb" id="dsBreadcrumb" style="display:none">
+        <button class="ds-breadcrumb__home" id="breadcrumbHome" title="All datasets">⊞</button>
+        <span class="ds-breadcrumb__sep">›</span>
+        <span class="ds-breadcrumb__dataset" id="breadcrumbDataset"></span>
+        <span class="ds-breadcrumb__view" id="breadcrumbView"></span>
+        <!-- Job monitor inline -->
+        <div class="ds-breadcrumb__jobs" id="jobMonitorMount"></div>
+      </div>
+      <!-- Panel mount -->
+      <div id="datasetBrowserMount" class="ds-main__content"></div>
     </div>
+
+    <!-- Right sidebar: detail + tabs -->
+    <aside class="ds-detail" id="datasetDetailMount">
+      <div class="ds-detail__tabs" id="detailTabs">
+        <button class="ds-detail__tab ds-detail__tab--active" data-detail-tab="detail">Detail</button>
+        <button class="ds-detail__tab" data-detail-tab="similar">Similar</button>
+      </div>
+      <div class="ds-detail__body" id="detailPanelWrapper"></div>
+      <div class="ds-detail__body" id="similarityMount" style="display:none"></div>
+    </aside>
+
   </div>
 
   <!-- ── Main layout ───────────────────────────────────────────── -->

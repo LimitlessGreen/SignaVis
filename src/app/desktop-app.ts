@@ -80,7 +80,6 @@ let player: BirdNETPlayer | null = null;
 
 type AppView = 'labeling' | 'dataset';
 let activeView: AppView = 'labeling';
-let datasetBrowserPanel: DatasetBrowserPanel | null = null;
 let currentDataset: Dataset | null = null;
 let recordingDetailPanel: RecordingDetailPanel | null = null;
 let similarityBrowserPanel: SimilarityBrowserPanel | null = null;
@@ -89,7 +88,114 @@ let clusterBrowserPanel: ClusterBrowserPanel | null = null;
 let xcImportPanel: XcImportPanel | null = null;
 let jobMonitorPanel: JobMonitorPanel | null = null;
 
-/** Switches between "labeling" and "dataset" view. */
+// ── Sidebar helpers ───────────────────────────────────────────────────
+
+/** Refresh the persistent sidebar dataset list and context section. */
+async function refreshSidebar(datasets?: Dataset[]): Promise<void> {
+    const listEl    = document.getElementById('sidebarDatasetList');
+    const contextEl = document.getElementById('sidebarContext');
+    if (!listEl) return;
+
+    // Load datasets if not provided
+    if (!datasets) {
+        try {
+            const { datasetList } = await import('../infrastructure/tauri/TauriCorpusAdapter.ts');
+            datasets = await datasetList();
+        } catch {
+            datasets = [];
+        }
+    }
+
+    if (datasets.length === 0) {
+        listEl.innerHTML = '<div class="ds-sidebar__empty">No datasets yet.<br>Click + to create one.</div>';
+    } else {
+        listEl.innerHTML = datasets
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map((d) => `
+                <button class="ds-sidebar__dataset-item ${d.id === currentDataset?.id ? 'ds-sidebar__dataset-item--active' : ''}"
+                    data-sidebar-dataset="${escapeHtml(d.id)}"
+                    title="${escapeHtml(d.name)}">
+                    <span class="ds-sidebar__dataset-name">${escapeHtml(d.name)}</span>
+                    <span class="ds-sidebar__dataset-count">${d.recordingCount.toLocaleString()}</span>
+                </button>
+            `)
+            .join('');
+        listEl.querySelectorAll<HTMLButtonElement>('[data-sidebar-dataset]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.sidebarDataset!;
+                const ds = datasets!.find((d) => d.id === id);
+                if (ds) navigateToDataset(ds);
+            });
+        });
+    }
+
+    // Context section: saved views + analysis runs of active dataset
+    if (contextEl && currentDataset) {
+        contextEl.style.display = '';
+        const viewsEl = document.getElementById('sidebarViews');
+        const runsEl  = document.getElementById('sidebarRuns');
+
+        if (viewsEl) {
+            const views = currentDataset.savedViews ?? [];
+            if (views.length === 0) {
+                viewsEl.innerHTML = '<div class="ds-sidebar__empty-sm">No saved views</div>';
+            } else {
+                viewsEl.innerHTML = views
+                    .map((v) => `<button class="ds-sidebar__view-item" data-sidebar-view="${escapeHtml(v.name)}">${escapeHtml(v.name)}</button>`)
+                    .join('');
+            }
+        }
+
+        if (runsEl) {
+            const runs = Object.values(currentDataset.analysisRuns ?? {});
+            if (runs.length === 0) {
+                runsEl.innerHTML = '<div class="ds-sidebar__empty-sm">No runs yet</div>';
+            } else {
+                runsEl.innerHTML = runs
+                    .slice(-5)
+                    .reverse()
+                    .map((r) => {
+                        const icon = r.status === 'completed' ? '✓' : r.status === 'failed' ? '✕' : '⏳';
+                        const cls  = r.status === 'completed' ? 'run--ok' : r.status === 'failed' ? 'run--err' : 'run--pending';
+                        return `<div class="ds-sidebar__run-item ${cls}">${icon} ${escapeHtml((r.config as { outputField?: string })?.outputField ?? r.type ?? 'run')}</div>`;
+                    })
+                    .join('');
+            }
+        }
+    } else if (contextEl) {
+        contextEl.style.display = 'none';
+    }
+}
+
+/** Update the breadcrumb bar. */
+function setBreadcrumb(datasetName?: string, viewLabel?: string): void {
+    const bar      = document.getElementById('dsBreadcrumb');
+    const dsLabel  = document.getElementById('breadcrumbDataset');
+    const viewSpan = document.getElementById('breadcrumbView');
+    if (!bar) return;
+
+    if (!datasetName) {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = 'flex';
+    if (dsLabel) dsLabel.textContent = datasetName;
+    if (viewSpan) {
+        viewSpan.textContent = viewLabel ? ` › ${viewLabel}` : '';
+        viewSpan.style.display = viewLabel ? '' : 'none';
+    }
+}
+
+/** Navigate to a dataset's gallery and persist the selection. */
+function navigateToDataset(dataset: Dataset): void {
+    // Remember last used dataset
+    try { localStorage.setItem('signavis:lastDatasetId', dataset.id); } catch { /* ignore */ }
+    showRecordingGallery(dataset);
+}
+
+// ── View switching ────────────────────────────────────────────────────
+
+/** Switches between "labeling" and "dataset" top-level views. */
 function switchView(view: AppView): void {
     activeView = view;
     const labelingEl = document.getElementById('labelingView')!;
@@ -110,157 +216,199 @@ function switchView(view: AppView): void {
 }
 
 function initDatasetView(): void {
-    const mount = document.getElementById('datasetBrowserMount')!;
-
     // Mount the job monitor once
     if (!jobMonitorPanel) {
         const jobMount = document.getElementById('jobMonitorMount');
         if (jobMount) {
             jobMonitorPanel = new JobMonitorPanel({
                 container: jobMount,
-                onOpenDataset: (_id) => { /* dataset navigation handled by gallery */ },
+                onOpenDataset: (id) => {
+                    if (currentDataset?.id === id) return;
+                },
             });
             jobMonitorPanel.mount().catch(console.error);
         }
     }
 
-    if (!datasetBrowserPanel) {
-        datasetBrowserPanel = new DatasetBrowserPanel({
-            container: mount,
-            onDatasetSelect: (dataset) => showRecordingGallery(dataset),
-            onStatusMessage: setStatus,
-        });
-        datasetBrowserPanel.mount().catch((e) => setStatus(`Dataset error: ${e}`));
+    // Wire up sidebar new-dataset button
+    const newBtn = document.getElementById('sidebarNewDatasetBtn');
+    if (newBtn && !newBtn.dataset.wired) {
+        newBtn.dataset.wired = '1';
+        newBtn.addEventListener('click', () => showDatasetList());
     }
+
+    // Wire breadcrumb home button
+    const homeBtn = document.getElementById('breadcrumbHome');
+    if (homeBtn && !homeBtn.dataset.wired) {
+        homeBtn.dataset.wired = '1';
+        homeBtn.addEventListener('click', () => showDatasetList());
+    }
+
+    // Wire right sidebar tabs
+    document.querySelectorAll<HTMLButtonElement>('[data-detail-tab]').forEach((tab) => {
+        if (tab.dataset.wired) return;
+        tab.dataset.wired = '1';
+        tab.addEventListener('click', () => switchDetailTab(tab.dataset.detailTab as 'detail' | 'similar'));
+    });
+
+    // Mount similarity panel into its slot now (once)
+    if (!similarityBrowserPanel) {
+        const simMount = document.getElementById('similarityMount');
+        if (simMount) {
+            similarityBrowserPanel = new SimilarityBrowserPanel({
+                container: simMount,
+                onOpenRecording: (rec) => {
+                    switchDetailTab('detail');
+                    recordingDetailPanel?.show(rec);
+                },
+                onStatusMessage: setStatus,
+            });
+        }
+    }
+
+    // Mount detail panel into its slot now (once)
+    if (!recordingDetailPanel) {
+        const detailWrapper = document.getElementById('detailPanelWrapper');
+        if (detailWrapper) {
+            recordingDetailPanel = new RecordingDetailPanel({
+                container: detailWrapper,
+                onOpenInLabeler: (rec) => openRecordingInLabeler(rec),
+                onStatusMessage: setStatus,
+                onFindSimilar: (rec) => {
+                    switchDetailTab('similar');
+                    similarityBrowserPanel?.showSimilarTo(rec).catch((e) => setStatus(`Similarity error: ${e}`));
+                },
+            });
+        }
+    }
+
+    // Restore last used dataset or show list
+    const lastId = (() => { try { return localStorage.getItem('signavis:lastDatasetId'); } catch { return null; } })();
+    if (lastId && !currentDataset) {
+        import('../infrastructure/tauri/TauriCorpusAdapter.ts').then(async ({ datasetGet, datasetList }) => {
+            try {
+                const [ds, all] = await Promise.all([datasetGet(lastId), datasetList()]);
+                await refreshSidebar(all);
+                navigateToDataset(ds);
+            } catch {
+                showDatasetList();
+            }
+        });
+    } else if (!currentDataset) {
+        showDatasetList();
+    } else {
+        refreshSidebar();
+    }
+}
+
+// ── Detail sidebar tab switching ──────────────────────────────────────
+
+function switchDetailTab(tab: 'detail' | 'similar'): void {
+    const detailWrapper = document.getElementById('detailPanelWrapper');
+    const simMount      = document.getElementById('similarityMount');
+    document.querySelectorAll<HTMLButtonElement>('[data-detail-tab]').forEach((btn) => {
+        btn.classList.toggle('ds-detail__tab--active', btn.dataset.detailTab === tab);
+    });
+    if (detailWrapper) detailWrapper.style.display = tab === 'detail' ? '' : 'none';
+    if (simMount)       simMount.style.display      = tab === 'similar' ? '' : 'none';
+}
+
+// ── Main content navigation ───────────────────────────────────────────
+
+function showDatasetList(): void {
+    currentDataset = null;
+    embeddingScatterPanel = null;
+    clusterBrowserPanel   = null;
+    xcImportPanel         = null;
+
+    setBreadcrumb();
+    refreshSidebar();
+
+    const mount = document.getElementById('datasetBrowserMount')!;
+    const panel = new DatasetBrowserPanel({
+        container: mount,
+        onDatasetSelect: (ds) => navigateToDataset(ds),
+        onStatusMessage: setStatus,
+    });
+    panel.mount().catch((e) => setStatus(`Dataset error: ${e}`));
 }
 
 function showRecordingGallery(dataset: Dataset): void {
     currentDataset = dataset;
+    embeddingScatterPanel = null;
+    clusterBrowserPanel   = null;
+    xcImportPanel         = null;
+
+    setBreadcrumb(dataset.name, 'Gallery');
+    refreshSidebar();
+
     const mount = document.getElementById('datasetBrowserMount')!;
-    const detailMount = document.getElementById('datasetDetailMount')!;
-
-    // Initialise detail panel (right column)
-    if (!recordingDetailPanel) {
-        recordingDetailPanel = new RecordingDetailPanel({
-            container: detailMount,
-            onOpenInLabeler: (rec) => openRecordingInLabeler(rec),
-            onStatusMessage: setStatus,
-            onFindSimilar: (rec) => showSimilarRecordings(rec, detailMount, dataset),
-        });
-    }
-    // Initialise similarity browser (reused across calls)
-    if (!similarityBrowserPanel) {
-        const simMount = document.getElementById('similarityMount') ?? createSimilarityMount(detailMount);
-        similarityBrowserPanel = new SimilarityBrowserPanel({
-            container: simMount,
-            onOpenRecording: (rec) => recordingDetailPanel?.show(rec),
-            onStatusMessage: setStatus,
-        });
-    }
-
     const gallery = new RecordingGalleryPanel({
         container: mount,
         dataset,
-        onBack: () => {
-            datasetBrowserPanel = null;
-            recordingDetailPanel = null;
-            similarityBrowserPanel = null;
-            embeddingScatterPanel = null;
-            clusterBrowserPanel = null;
-            const newPanel = new DatasetBrowserPanel({
-                container: mount,
-                onDatasetSelect: showRecordingGallery,
-                onStatusMessage: setStatus,
-            });
-            datasetBrowserPanel = newPanel;
-            newPanel.mount().catch((e) => setStatus(`Error: ${e}`));
-            // Clear detail panel
-            detailMount.innerHTML = '';
-        },
+        onBack: () => showDatasetList(),
         onImport: () => showImportWizard(dataset),
         onImportFromXc: () => showXcImportPanel(dataset),
         onOpenRecording: (rec) => {
-            showRecordingDetail(rec, detailMount);
+            switchDetailTab('detail');
+            recordingDetailPanel?.show(rec);
+        },
+        onDatasetUpdated: (updated) => {
+            currentDataset = updated;
+            refreshSidebar();
         },
         onShowClusters: () => showClusterBrowser(dataset),
-        onShowScatter: () => {
-            // Lazy-init the scatter panel in the main mount area
-            const scatterMount = document.getElementById('datasetBrowserMount')!;
-            if (!embeddingScatterPanel) {
-                embeddingScatterPanel = new EmbeddingScatterPanel({
-                    container: scatterMount,
-                    dataset,
-                    onOpenRecording: (rec) => showRecordingDetail(rec, detailMount),
-                    onStatusMessage: setStatus,
-                    onShowClusters: () => showClusterBrowser(dataset),
-                });
-            }
-            embeddingScatterPanel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
-        },
+        onShowScatter:  () => showScatterPanel(dataset),
         onStatusMessage: setStatus,
     });
     gallery.mount().catch((e) => setStatus(`Gallery error: ${e}`));
 }
 
-/** Shows the recording detail panel in the detail sidebar. */
-function showRecordingDetail(rec: Recording, detailMount: HTMLElement): void {
-    // Ensure the detail panel is visible (similarity may have swapped it)
-    if (!recordingDetailPanel) return;
-    const simMount = document.getElementById('similarityMount');
-    if (simMount) simMount.style.display = 'none';
-    const detailWrapper = detailMount.querySelector<HTMLElement>('.detail-panel-wrapper');
-    if (detailWrapper) detailWrapper.style.display = '';
-    recordingDetailPanel.show(rec);
-}
-
-/** Shows the similarity browser in the detail sidebar for the given recording. */
-function showSimilarRecordings(rec: Recording, detailMount: HTMLElement, _dataset: Dataset): void {
-    if (!similarityBrowserPanel) return;
-    // Hide the recording detail panel, show the similarity panel
-    const simMount = document.getElementById('similarityMount');
-    if (!simMount) return;
-    const detailWrapper = detailMount.querySelector<HTMLElement>('.detail-panel-wrapper');
-    if (detailWrapper) detailWrapper.style.display = 'none';
-    simMount.style.display = '';
-    similarityBrowserPanel.showSimilarTo(rec).catch((e) => setStatus(`Similarity error: ${e}`));
-}
-
-/** Shows (or creates) the Cluster Browser in the corpus main area. */
 function showClusterBrowser(dataset: Dataset): void {
-    const mount = document.getElementById('datasetBrowserMount')!;
+    currentDataset = dataset;
+    setBreadcrumb(dataset.name, 'Clusters');
 
+    const mount = document.getElementById('datasetBrowserMount')!;
     if (clusterBrowserPanel) {
         clusterBrowserPanel.updateDataset(dataset);
-        clusterBrowserPanel.load().catch((e) => setStatus(`Cluster-Fehler: ${e}`));
+        clusterBrowserPanel.load().catch((e) => setStatus(`Cluster error: ${e}`));
         return;
     }
-
     clusterBrowserPanel = new ClusterBrowserPanel({
         container: mount,
         dataset,
         onOpenRecording: (rec) => {
-            const detailMount = document.getElementById('datasetDetailMount')!;
-            showRecordingDetail(rec, detailMount);
+            switchDetailTab('detail');
+            recordingDetailPanel?.show(rec);
         },
         onStatusMessage: setStatus,
     });
-    clusterBrowserPanel.load().catch((e) => setStatus(`Cluster-Fehler: ${e}`));
+    clusterBrowserPanel.load().catch((e) => setStatus(`Cluster error: ${e}`));
 }
 
-/** Creates a hidden similarity panel mount inside the detail sidebar. */
-function createSimilarityMount(detailMount: HTMLElement): HTMLElement {
-    // Wrap existing content
-    const existing = detailMount.innerHTML;
-    detailMount.innerHTML = `
-        <div class="detail-panel-wrapper" style="height:100%;overflow:auto;">${existing}</div>
-        <div id="similarityMount" style="display:none;height:100%;overflow:auto;"></div>
-    `;
-    return detailMount.querySelector('#similarityMount') as HTMLElement;
+function showScatterPanel(dataset: Dataset): void {
+    currentDataset = dataset;
+    setBreadcrumb(dataset.name, 'Scatter');
+
+    const mount = document.getElementById('datasetBrowserMount')!;
+    if (!embeddingScatterPanel) {
+        embeddingScatterPanel = new EmbeddingScatterPanel({
+            container: mount,
+            dataset,
+            onOpenRecording: (rec) => {
+                switchDetailTab('detail');
+                recordingDetailPanel?.show(rec);
+            },
+            onStatusMessage: setStatus,
+            onShowClusters: () => showClusterBrowser(dataset),
+        });
+    }
+    embeddingScatterPanel.mount([]).catch((e) => setStatus(`Scatter error: ${e}`));
 }
 
 function showImportWizard(dataset: Dataset): void {
+    setBreadcrumb(dataset.name, 'Import');
     const mount = document.getElementById('datasetBrowserMount')!;
-
     const wizard = new ImportWizardPanel({
         container: mount,
         dataset,
@@ -276,6 +424,7 @@ function showImportWizard(dataset: Dataset): void {
 }
 
 function showXcImportPanel(dataset: Dataset): void {
+    setBreadcrumb(dataset.name, 'Xeno-canto Import');
     const mount = document.getElementById('datasetBrowserMount')!;
     xcImportPanel = new XcImportPanel({
         container: mount,

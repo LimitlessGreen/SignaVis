@@ -119,18 +119,30 @@ export class RecordingGalleryPanel {
         return `
             <div class="recording-gallery">
                 <div class="recording-gallery__header">
-                    <button class="btn btn--ghost btn--icon" id="galleryBackBtn" title="Back">←</button>
                     <h2 class="recording-gallery__title">${escapeHtml(this.dataset.name)}</h2>
                     <div class="recording-gallery__header-actions">
-                        <button class="btn btn--ghost btn--sm" id="galleryFieldsBtn" title="View and manage dataset fields">Fields</button>
-                        <button class="btn btn--ghost btn--sm" id="gallerySplitBtn" title="Assign train/val/test tags">Split</button>
-                        <button class="btn btn--ghost btn--sm" id="galleryExportBtn" title="Export training data / fine-tune">Export</button>
-                        <button class="btn btn--ghost btn--sm" id="gallerySaveViewBtn" title="Save current filters as a named view">Save view</button>
-                        <button class="btn btn--ghost" id="galleryBirdnetBtn" title="Run BirdNET on the entire dataset">🔍 BirdNET</button>
-                        <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Open cluster browser">⬡ Clusters</button>
-                        <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="Open UMAP scatter plot">⬖ Scatter</button>
-                        <button class="btn btn--ghost btn--sm" id="galleryXcImportBtn" title="Search and import from Xeno-canto">XC Import</button>
-                        <button class="btn btn--primary" id="galleryImportBtn">+ Import</button>
+                        <!-- Primary action -->
+                        <button class="btn btn--primary btn--sm" id="galleryImportBtn">+ Import</button>
+
+                        <!-- Analysis group -->
+                        <div class="btn-group">
+                            <button class="btn btn--ghost btn--sm" id="galleryBirdnetBtn" title="Run BirdNET inference">🔍 BirdNET</button>
+                            <button class="btn btn--ghost btn--sm" id="galleryClusterBtn" title="Open cluster browser">⬡ Clusters</button>
+                            <button class="btn btn--ghost btn--sm" id="galleryScatterBtn" title="Open UMAP scatter">⬖ Scatter</button>
+                        </div>
+
+                        <!-- Manage menu -->
+                        <div class="btn-menu-wrap" id="galleryManageWrap">
+                            <button class="btn btn--ghost btn--sm" id="galleryManageBtn" title="Dataset management">⋯</button>
+                            <div class="btn-menu" id="galleryManageMenu" hidden>
+                                <button class="btn-menu__item" id="galleryFieldsBtn">Fields…</button>
+                                <button class="btn-menu__item" id="gallerySplitBtn">Train/val/test split…</button>
+                                <button class="btn-menu__item" id="galleryExportBtn">Export &amp; fine-tune…</button>
+                                <div class="btn-menu__divider"></div>
+                                <button class="btn-menu__item" id="galleryXcImportBtn">Import from Xeno-canto…</button>
+                                <button class="btn-menu__item" id="gallerySaveViewBtn">Save current view…</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -196,28 +208,35 @@ export class RecordingGalleryPanel {
     }
 
     private bindEvents(): void {
-        const backBtn = this.container.querySelector('#galleryBackBtn') as HTMLButtonElement;
-        const importBtn = this.container.querySelector('#galleryImportBtn') as HTMLButtonElement;
+        const importBtn   = this.container.querySelector('#galleryImportBtn') as HTMLButtonElement;
         const loadMoreBtn = this.container.querySelector('#galleryLoadMore') as HTMLButtonElement;
         const searchInput = this.container.querySelector('#gallerySearch') as HTMLInputElement;
 
-        backBtn.addEventListener('click', () => this.onBack());
         importBtn.addEventListener('click', () => this.onImport?.());
-        this.container.querySelector('#galleryXcImportBtn')?.addEventListener('click', () => this.onImportFromXc?.());
+        this.container.querySelector('#galleryXcImportBtn')?.addEventListener('click', () => { this.onImportFromXc?.(); });
         loadMoreBtn.addEventListener('click', () => this.loadMore(false));
 
         this.container.querySelector('#galleryClusterBtn')?.addEventListener('click', () => this.onShowClusters?.());
         this.container.querySelector('#galleryScatterBtn')?.addEventListener('click', () => this.onShowScatter?.());
 
+        // Manage menu toggle
+        const manageBtn  = this.container.querySelector('#galleryManageBtn') as HTMLButtonElement | null;
+        const manageMenu = this.container.querySelector('#galleryManageMenu') as HTMLElement | null;
+        manageBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (manageMenu) manageMenu.hidden = !manageMenu.hidden;
+        });
+        document.addEventListener('click', () => { if (manageMenu) manageMenu.hidden = true; }, { once: false });
+
         // Fields button
         const fieldsBtn = this.container.querySelector('#galleryFieldsBtn') as HTMLButtonElement | null;
-        fieldsBtn?.addEventListener('click', () => this.openFieldSchemaPanel());
+        fieldsBtn?.addEventListener('click', () => { if (manageMenu) manageMenu.hidden = true; this.openFieldSchemaPanel(); });
 
         // Split button
-        this.container.querySelector('#gallerySplitBtn')?.addEventListener('click', () => this.openSplitPanel());
+        this.container.querySelector('#gallerySplitBtn')?.addEventListener('click', () => { if (manageMenu) manageMenu.hidden = true; this.openSplitPanel(); });
 
         // Export button
-        this.container.querySelector('#galleryExportBtn')?.addEventListener('click', () => this.openExportPanel());
+        this.container.querySelector('#galleryExportBtn')?.addEventListener('click', () => { if (manageMenu) manageMenu.hidden = true; this.openExportPanel(); });
 
         // Saved views — save current view
         this.container.querySelector('#gallerySaveViewBtn')?.addEventListener('click', () => {

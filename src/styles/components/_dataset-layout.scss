@@ -1,0 +1,292 @@
+// ── Dataset view 3-column layout ─────────────────────────────────────
+
+.ds-view {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+// ── Left sidebar ──────────────────────────────────────────────────────
+
+.ds-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 8px;
+    flex-shrink: 0;
+  }
+
+  &__title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+  }
+
+  &__new-btn {
+    width: 22px;
+    height: 22px;
+    font-size: 16px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  &__dataset-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2px 0 8px;
+  }
+
+  &__dataset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    font-size: 12px;
+    color: var(--color-text-primary);
+    transition: background 0.1s, border-color 0.1s;
+
+    &:hover { background: var(--color-accent-faint); border-left-color: var(--color-accent); }
+
+    &--active {
+      background: var(--color-accent-faint);
+      border-left-color: var(--color-accent);
+      font-weight: 600;
+    }
+  }
+
+  &__dataset-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  &__dataset-count {
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__context {
+    border-top: 1px solid var(--color-border);
+    padding: 8px 0 10px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    max-height: 240px;
+  }
+
+  &__section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    padding: 0 12px 4px;
+  }
+
+  &__view-item {
+    display: block;
+    width: 100%;
+    padding: 4px 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover { color: var(--color-text-primary); background: var(--color-accent-faint); }
+  }
+
+  &__run-item {
+    padding: 3px 12px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &.run--ok      { color: var(--color-success); }
+    &.run--err     { color: var(--color-danger); }
+    &.run--pending { color: var(--color-text-secondary); }
+  }
+
+  &__empty    { padding: 12px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
+  &__empty-sm { padding: 3px 12px; font-size: 11px; color: var(--color-text-secondary); font-style: italic; }
+}
+
+// ── Main content area ─────────────────────────────────────────────────
+
+.ds-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+
+  &__content {
+    flex: 1;
+    overflow: auto;
+    padding: 14px 16px;
+    min-width: 0;
+  }
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────
+
+.ds-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background: var(--color-bg-secondary);
+  font-size: 12px;
+
+  &__home {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 3px;
+
+    &:hover { color: var(--color-accent); background: var(--color-accent-faint); }
+  }
+
+  &__sep      { color: var(--color-text-secondary); user-select: none; }
+  &__dataset  { font-weight: 600; color: var(--color-text-primary); }
+  &__view     { color: var(--color-text-secondary); }
+
+  &__jobs {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+}
+
+// ── Right detail sidebar ──────────────────────────────────────────────
+
+.ds-detail {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg-surface);
+
+  &__tabs {
+    display: flex;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  &__tab {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 12px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    transition: color 0.1s, border-color 0.1s;
+
+    &:hover { color: var(--color-text-primary); }
+
+    &--active {
+      color: var(--color-accent);
+      border-bottom-color: var(--color-accent);
+    }
+  }
+
+  &__body {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+// ── Gallery toolbar: button group ─────────────────────────────────────
+
+.btn-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+
+  .btn {
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid var(--color-border);
+
+    &:last-child { border-right: none; }
+  }
+}
+
+// ── Manage drop-down menu ─────────────────────────────────────────────
+
+.btn-menu-wrap {
+  position: relative;
+}
+
+.btn-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 200px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+
+  &__item {
+    display: block;
+    width: 100%;
+    padding: 7px 14px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: 12px;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+
+    &:hover { background: var(--color-accent-faint); color: var(--color-accent); }
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 4px 0;
+  }
+}
