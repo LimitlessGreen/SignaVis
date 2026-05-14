@@ -24,11 +24,14 @@ html, body {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 0 12px;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   font-size: 12px;
+  overflow: hidden;          // prevent wrapping / height growth
+  flex-shrink: 0;            // topbar never shrinks in the app column
+  min-width: 0;
 }
 .heart-wrap {
   display: inline-flex; align-items: center;
@@ -268,9 +271,16 @@ html, body {
 html[data-theme="light"] { @include sponsor-light; }
 
 .file-label {
-  color: var(--color-text-secondary); max-width: 200px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--color-text-secondary);
+  max-width: 200px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
+
+  @media (max-width: 700px) { display: none; }
 }
 
 /* Buttons: legacy `.tb-*` classes are mapped to AW components in buttons partial */
@@ -290,15 +300,52 @@ html[data-theme="light"] { @include sponsor-light; }
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
 }
-.tb-meta { }
-.tb-sep { }
-.tb-spacer { }
+// Topbar layout helpers
+.tb-spacer {
+  flex: 1 1 0;
+  min-width: 4px;
+  max-width: 80px;    // caps the gap so items don't spread too far
+}
+.tb-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 18px;
+  background: var(--color-border);
+  margin: 0 2px;
+}
+.tb-meta {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+// Items that must never disappear
+.tb-btn, .tb-select {
+  flex-shrink: 0;
+}
+
+// Items that can shrink away completely at narrow widths
+.tb-xc-key,
+#taxonomyMeta,
+#taxonomyLangSelect {
+  @media (max-width: 900px) {
+    display: none;
+  }
+}
+
+// Species search: shrinks before hiding
+.species-search {
+  flex: 0 1 260px;
+  min-width: 80px;
+}
 
 /* ── Species Search Bar ── */
-/* Component rules live in _species-search.scss — only topbar layout here. */
+/* Component rules live in _species-search.scss — topbar flex layout above. */
 .species-search {
-  flex: 0 1 320px;
-  min-width: 120px;
   display: flex;
   align-items: center;
 }
