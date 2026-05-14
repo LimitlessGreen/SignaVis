@@ -45,7 +45,30 @@ html, body {
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 0.02em;
-  color: var(--color-accent);
+  color: var(--color-accent);  // fallback if background-clip unsupported
+  background: linear-gradient(
+    90deg,
+    var(--color-accent) 0%,
+    var(--color-accent) 35%,
+    #ffd700 50%,
+    var(--color-accent) 65%,
+    var(--color-accent) 100%
+  );
+  background-size: 250% 100%;
+  background-position: 0% center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition: letter-spacing 0.3s ease;
+
+  .brand.is-active & {
+    letter-spacing: 0.08em;
+    animation: brand-shimmer 1.8s ease infinite;
+  }
+}
+@keyframes brand-shimmer {
+  0%   { background-position: 150% center; }
+  100% { background-position: -50% center; }
 }
 .heart-link {
   display: inline-flex; align-items: center;
@@ -228,17 +251,18 @@ html, body {
     }
   }
   .brand-title {
+    // Light mode: use darker accent shade so gradient reads on light toolbar
     background: linear-gradient(
       90deg,
-      #1a1a2e 0%,
-      #1a1a2e 35%,
+      #0369a1 0%,
+      #0369a1 35%,
       #c8860a 50%,
-      #1a1a2e 65%,
-      #1a1a2e 100%
+      #0369a1 65%,
+      #0369a1 100%
     );
     background-size: 250% 100%;
-    background-clip: text;
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 }
