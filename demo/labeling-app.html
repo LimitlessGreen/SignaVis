@@ -156,28 +156,38 @@
 
   <!-- ── Sidebar panel: BirdNET ───────────────────────────────────── -->
   <div id="panelBirdnet" class="scroll-panel" hidden>
-    <div class="sidebar-section-header">Model &amp; Backend</div>
-    <div class="panel-section">
-      <label class="field-label" for="birdnetModelUrl">Model URL</label>
-      <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
-      <p class="field-hint">TF.js Layers format — folder containing model.json and labels.json</p>
+    <div class="sidebar-section-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Detection</span>
+      <button id="birdnetBackendToggle" type="button" title="Backend &amp; Model settings"
+        aria-expanded="false" aria-controls="birdnetBackendWrap"
+        onclick="(function(btn){var w=document.getElementById('birdnetBackendWrap');var opening=w.hidden;w.hidden=!opening;btn.style.opacity=opening?'1':'0.45';btn.setAttribute('aria-expanded',String(opening));})(this)"
+        style="background:none;border:none;cursor:pointer;padding:2px 4px;color:var(--color-text-muted,#9CA3AF);display:flex;align-items:center;gap:3px;font-size:0.68rem;opacity:0.45;line-height:1;border-radius:3px;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Backend
+      </button>
     </div>
-    <div class="panel-section">
-      <label class="field-label" for="analysisModeSelect">Analysis backend</label>
-      <select id="analysisModeSelect" class="field-select">
-        <option value="local">Local (Browser)</option>
-        <option value="server">Server</option>
-        <option value="hybrid">Hybrid (Auto)</option>
-        <option value="cloud">Cloud</option>
-      </select>
-      <label class="field-label" for="analysisEndpointInput" style="margin-top:8px">Backend endpoint</label>
-      <input id="analysisEndpointInput" class="input" placeholder="http://localhost:8787" />
-      <div class="panel-actions" style="margin-top:8px">
-        <button class="sidebar-action-btn secondary" id="analysisApplyBtn" type="button">Apply backend</button>
+    <div id="birdnetBackendWrap" hidden>
+      <div class="panel-section">
+        <label class="field-label" for="birdnetModelUrl">Model URL</label>
+        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
+        <p class="field-hint">TF.js Layers format — folder containing model.json and labels.json</p>
       </div>
-      <p class="field-hint">For server/cloud mode, enter the base URL of the analysis API.</p>
+      <div class="panel-section">
+        <label class="field-label" for="analysisModeSelect">Analysis backend</label>
+        <select id="analysisModeSelect" class="field-select">
+          <option value="local">Local (Browser)</option>
+          <option value="server">Server</option>
+          <option value="hybrid">Hybrid (Auto)</option>
+          <option value="cloud">Cloud</option>
+        </select>
+        <label class="field-label" for="analysisEndpointInput" style="margin-top:8px">Backend endpoint</label>
+        <input id="analysisEndpointInput" class="input" placeholder="http://localhost:8787" />
+        <div class="panel-actions" style="margin-top:8px">
+          <button class="sidebar-action-btn secondary" id="analysisApplyBtn" type="button">Apply backend</button>
+        </div>
+        <p class="field-hint">For server/cloud mode, enter the base URL of the analysis API.</p>
+      </div>
     </div>
-    <div class="sidebar-section-header">Detection</div>
     <div class="panel-section">
       <div class="slider-row">
         <label class="field-label" for="birdnetConfidence" style="margin:0">Min. Confidence</label>
