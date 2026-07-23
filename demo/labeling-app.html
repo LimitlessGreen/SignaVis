@@ -925,111 +925,117 @@
 
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
-    rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: document.getElementById('panelAudio') });
+
+    if (import.meta.env.DEV) {
+      rightBar.addPanel('audio', { icon: ICONS.audio, label: 'Audio', element: document.getElementById('panelAudio') });
+    }
+
     rightBar.setActive('properties');
 
     // Audio panel bindings
-    (function setupAudioPanel() {
-      const methodSelect = document.getElementById('audioMethodSelect');
-      const heteroControls = document.getElementById('heterodyneControls');
-      const dividerControls = document.getElementById('dividerControls');
-      const statusEl = document.getElementById('audioStatus');
+    if (import.meta.env.DEV) {
+      (function setupAudioPanel() {
+        const methodSelect = document.getElementById('audioMethodSelect');
+        const heteroControls = document.getElementById('heterodyneControls');
+        const dividerControls = document.getElementById('dividerControls');
+        const statusEl = document.getElementById('audioStatus');
 
-      // Keep original audio on the player so processing always uses the original file
-      let lastProcessedUrl = null;
+        // Keep original audio on the player so processing always uses the original file
+        let lastProcessedUrl = null;
 
-      if (!methodSelect) return;
+        if (!methodSelect) return;
 
-      methodSelect.addEventListener('change', () => {
-        if (methodSelect.value === 'heterodyne') {
-          heteroControls.style.display = '';
-          dividerControls.style.display = 'none';
-        } else {
-          heteroControls.style.display = 'none';
-          dividerControls.style.display = '';
-        }
-      });
-
-      async function saveOriginalIfNeeded(buf) {
-        if (!buf || player.__originalAudioBuffer) return;
-        try {
-          player.__originalAudioBuffer = buf;
-          const blob = audioBufferToWav(buf);
-          player.__originalBlobUrl = URL.createObjectURL(blob);
-        } catch (e) {
-          player.__originalBlobUrl = null;
-        }
-      }
-
-      async function loadProcessedBuffer(rendered) {
-        if (lastProcessedUrl) try { URL.revokeObjectURL(lastProcessedUrl); } catch (e) {}
-        const blob = audioBufferToWav(rendered);
-        const url = URL.createObjectURL(blob);
-        lastProcessedUrl = url;
-        await player.loadUrl(url);
-        player.play();
-      }
-
-      document.getElementById('audioHeterodyneBtn')?.addEventListener('click', async () => {
-        const currentBuf = player._state?.audioBuffer;
-        if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
-        await saveOriginalIfNeeded(currentBuf);
-        const sourceBuf = player.__originalAudioBuffer || currentBuf;
-        const carrier = Number(document.getElementById('heterodyneFreq').value) || 20000;
-        const lowpass = Number(document.getElementById('heterodyneLowpass').value) || 8000;
-        statusEl.textContent = 'Processing...';
-        try {
-          const rendered = await heterodyneDownmix(sourceBuf, carrier, lowpass);
-          await loadProcessedBuffer(rendered);
-          statusEl.textContent = 'Done: audio loaded into player.';
-        } catch (err) {
-          console.error(err);
-          statusEl.textContent = 'Processing error: ' + (err.message || err);
-        }
-      });
-
-      document.getElementById('audioDividerBtn')?.addEventListener('click', async () => {
-        const currentBuf = player._state?.audioBuffer;
-        if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
-        await saveOriginalIfNeeded(currentBuf);
-        const sourceBuf = player.__originalAudioBuffer || currentBuf;
-        const divisor = Math.max(1, parseInt(document.getElementById('dividerFactor').value, 10) || 8);
-        statusEl.textContent = 'Processing...';
-        try {
-          const rendered = await resampleDivider(sourceBuf, divisor);
-          await loadProcessedBuffer(rendered);
-          statusEl.textContent = 'Done: audio loaded into player.';
-        } catch (err) {
-          console.error(err);
-          statusEl.textContent = 'Processing error: ' + (err.message || err);
-        }
-      });
-
-      // Restore handlers (two buttons for convenience)
-      const restoreHandler = async () => {
-        if (!player.__originalAudioBuffer && !player.__originalBlobUrl) { statusEl.textContent = 'No original saved.'; return; }
-        statusEl.textContent = 'Restoring...';
-        try {
-          if (player.__originalBlobUrl) {
-            await player.loadUrl(player.__originalBlobUrl);
-            player.play();
-          } else if (player.__originalAudioBuffer) {
-            const blob = audioBufferToWav(player.__originalAudioBuffer);
-            const url = URL.createObjectURL(blob);
-            await player.loadUrl(url);
-            player.play();
-            player.__originalBlobUrl = url;
+        methodSelect.addEventListener('change', () => {
+          if (methodSelect.value === 'heterodyne') {
+            heteroControls.style.display = '';
+            dividerControls.style.display = 'none';
+          } else {
+            heteroControls.style.display = 'none';
+            dividerControls.style.display = '';
           }
-          statusEl.textContent = 'Original restored.';
-        } catch (e) {
-          console.error(e);
-          statusEl.textContent = 'Error restoring original.';
-        }
-      };
+        });
 
-      document.getElementById('audioRestoreBtn')?.addEventListener('click', restoreHandler);
-      document.getElementById('audioRestoreBtnDivider')?.addEventListener('click', restoreHandler);
-    })();
+        async function saveOriginalIfNeeded(buf) {
+          if (!buf || player.__originalAudioBuffer) return;
+          try {
+            player.__originalAudioBuffer = buf;
+            const blob = audioBufferToWav(buf);
+            player.__originalBlobUrl = URL.createObjectURL(blob);
+          } catch (e) {
+            player.__originalBlobUrl = null;
+          }
+        }
+
+        async function loadProcessedBuffer(rendered) {
+          if (lastProcessedUrl) try { URL.revokeObjectURL(lastProcessedUrl); } catch (e) {}
+          const blob = audioBufferToWav(rendered);
+          const url = URL.createObjectURL(blob);
+          lastProcessedUrl = url;
+          await player.loadUrl(url);
+          player.play();
+        }
+
+        document.getElementById('audioHeterodyneBtn')?.addEventListener('click', async () => {
+          const currentBuf = player._state?.audioBuffer;
+          if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
+          await saveOriginalIfNeeded(currentBuf);
+          const sourceBuf = player.__originalAudioBuffer || currentBuf;
+          const carrier = Number(document.getElementById('heterodyneFreq').value) || 20000;
+          const lowpass = Number(document.getElementById('heterodyneLowpass').value) || 8000;
+          statusEl.textContent = 'Processing...';
+          try {
+            const rendered = await heterodyneDownmix(sourceBuf, carrier, lowpass);
+            await loadProcessedBuffer(rendered);
+            statusEl.textContent = 'Done: audio loaded into player.';
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Processing error: ' + (err.message || err);
+          }
+        });
+
+        document.getElementById('audioDividerBtn')?.addEventListener('click', async () => {
+          const currentBuf = player._state?.audioBuffer;
+          if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
+          await saveOriginalIfNeeded(currentBuf);
+          const sourceBuf = player.__originalAudioBuffer || currentBuf;
+          const divisor = Math.max(1, parseInt(document.getElementById('dividerFactor').value, 10) || 8);
+          statusEl.textContent = 'Processing...';
+          try {
+            const rendered = await resampleDivider(sourceBuf, divisor);
+            await loadProcessedBuffer(rendered);
+            statusEl.textContent = 'Done: audio loaded into player.';
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Processing error: ' + (err.message || err);
+          }
+        });
+
+        // Restore handlers (two buttons for convenience)
+        const restoreHandler = async () => {
+          if (!player.__originalAudioBuffer && !player.__originalBlobUrl) { statusEl.textContent = 'No original saved.'; return; }
+          statusEl.textContent = 'Restoring...';
+          try {
+            if (player.__originalBlobUrl) {
+              await player.loadUrl(player.__originalBlobUrl);
+              player.play();
+            } else if (player.__originalAudioBuffer) {
+              const blob = audioBufferToWav(player.__originalAudioBuffer);
+              const url = URL.createObjectURL(blob);
+              await player.loadUrl(url);
+              player.play();
+              player.__originalBlobUrl = url;
+            }
+            statusEl.textContent = 'Original restored.';
+          } catch (e) {
+            console.error(e);
+            statusEl.textContent = 'Error restoring original.';
+          }
+        };
+
+        document.getElementById('audioRestoreBtn')?.addEventListener('click', restoreHandler);
+        document.getElementById('audioRestoreBtnDivider')?.addEventListener('click', restoreHandler);
+      })();
+    }
 
     // ── App state ─────────────────────────────────────────────────────
     let getSuggestions = (q, n) => [];  // populated after taxonomy loads
