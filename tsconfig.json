@@ -5,13 +5,8 @@
     "checkJs": true,
     "noEmit": true,
 
-    /* ── Strict flags: enable individually (goal: all true) ── */
-    "strict": false,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "noImplicitThis": true,
-    "noImplicitAny": true,
+    /* ── Strict flags ── */
+    "strict": true,
 
     /* ── Module & target (match Vite config) ── */
     "target": "ES2020",

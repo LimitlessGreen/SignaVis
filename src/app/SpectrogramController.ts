@@ -52,7 +52,6 @@ import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 export class SpectrogramController extends EventTarget {
     _d: any;
     _enableProgressive: boolean;
-    enableProgressive: boolean;
     processor: any;
     colorizer: any;
     _data: Float32Array | null;
@@ -375,7 +374,7 @@ export class SpectrogramController extends EventTarget {
         } catch (error) {
             if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
             this._emit('transportstatechange', { state: 'error', reason: 'spectrogram-error' });
-            this._emit('error', { message: error?.message || String(error), source: 'spectrogram' });
+            this._emit('error', { message: (error as any)?.message || String(error), source: 'spectrogram' });
             throw error;
         }
     }

@@ -332,7 +332,7 @@ export class XenoCantoApiClient {
                 {
                     status: 0,
                     retryable: true,
-                    errors: [error?.message || String(error)],
+                    errors: [(error as any)?.message || String(error)],
                     cause: error,
                 },
             );

@@ -367,7 +367,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         try { p._state?.seekTo?.(label.start); } catch {}
       }
     } catch (err) {
-      refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">Could not load reference: ${esc(err?.message || String(err))}</div>`;
+      refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">Could not load reference: ${esc((err as any)?.message || String(err))}</div>`;
     }
   }
 
@@ -536,7 +536,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       disableLabeling(p);
     } catch (err) {
       if (playerWrap.isConnected) {
-        playerWrap.innerHTML = `<div class="rc-status rc-status-error" style="padding:8px;font-size:11px">${esc(err?.message || 'Load failed')}</div>`;
+        playerWrap.innerHTML = `<div class="rc-status rc-status-error" style="padding:8px;font-size:11px">${esc((err as any)?.message || 'Load failed')}</div>`;
       }
     }
   }
@@ -601,7 +601,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       prevBtn.disabled = page <= 1;
       nextBtn.disabled = page >= numPages;
     } catch (err) {
-      gridSection.innerHTML = `<div class="rc-status rc-status-error">${esc(err?.message || String(err))}</div>`;
+      gridSection.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || String(err))}</div>`;
       pageInfo.textContent = '';
       prevBtn.disabled = true;
       nextBtn.disabled = true;

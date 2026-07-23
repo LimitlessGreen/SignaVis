@@ -442,11 +442,11 @@ export class XenoCantoPanel {
         lastError = new Error('Response too small to be valid audio — the file may not exist.');
       } else { lastError = new Error(`HTTP ${res.status}`); }
     } catch (err) {
-      if (err.code === 'XC_NOT_FOUND') throw err; // propagate immediately, no proxy fallback
+      if ((err as any).code === 'XC_NOT_FOUND') throw err; // propagate immediately, no proxy fallback
       lastError = err;
     }
 
-    if (!this.useProxies) throw new Error(`Could not download XC${clean} directly: ${lastError?.message || 'unknown error'}`);
+    if (!this.useProxies) throw new Error(`Could not download XC${clean} directly: ${(lastError as any)?.message || 'unknown error'}`);
 
     const candidates = [
       { name: 'CodeTabs',   url: `https://api.codetabs.com/v1/proxy?quest=${directUrl}` },
@@ -464,7 +464,7 @@ export class XenoCantoPanel {
         return { xcId: clean, buffer: buf, audioUrl: directUrl };
       } catch (err) { lastError = err; }
     }
-    throw new Error(`Could not download XC${clean}: ${lastError?.message || 'unknown error'}`);
+    throw new Error(`Could not download XC${clean}: ${(lastError as any)?.message || 'unknown error'}`);
   }
 
   /**

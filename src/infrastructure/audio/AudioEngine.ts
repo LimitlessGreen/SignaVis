@@ -87,14 +87,6 @@ export class AudioEngine extends AudioEngineBase {
   _lastTimeupdateEmitAt: number;
   pixelsPerSecond: number;
   loopPlayback: boolean;
-  allowCustomPlayback: boolean;
-  labelId: string | null;
-  id: string | number | null;
-  start: number | null;
-  end: number | null;
-  freqMin: number | null;
-  freqMax: number | null;
-  token: number | string | null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
