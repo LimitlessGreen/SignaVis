@@ -439,7 +439,7 @@ export class BirdNETPanel {
       this.onResults(labelsToAdd);
       this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
     } catch (err) {
-      this.statusEl.textContent = `Error: ${err?.message || String(err)}`;
+      this.statusEl.textContent = `Error: ${(err as any)?.message || String(err)}`;
       this.birdnet.dispose();
     } finally {
       this.analyzeBtn.disabled = false;

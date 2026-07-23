@@ -218,7 +218,7 @@ export class ExplorePanel {
       });
       await this.refreshExplore();
     } catch (err) {
-      cardsEl.innerHTML = `<div class="sp-cards-empty">Failed to load model: ${esc(err?.message || String(err))}</div>`;
+      cardsEl.innerHTML = `<div class="sp-cards-empty">Failed to load model: ${esc((err as any)?.message || String(err))}</div>`;
     }
   }
 
@@ -261,7 +261,7 @@ export class ExplorePanel {
       this._renderExploreCards(cardsEl, filtered);
       this._exploreReady = true;
     } catch (err) {
-      if (statusEl) statusEl.textContent = `Error: ${err?.message || String(err)}`;
+      if (statusEl) statusEl.textContent = `Error: ${(err as any)?.message || String(err)}`;
     } finally {
       this._loading = false;
       if (refreshBtn) refreshBtn.disabled = false;

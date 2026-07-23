@@ -207,7 +207,15 @@ class FakeWorker {
 }
 
 globalThis.Blob = class { constructor(parts, opts) { this._parts = parts; } };
-globalThis.URL = { createObjectURL: () => 'blob:fake', revokeObjectURL: () => {} };
+
+// Use a proper URL mock that remains a constructor (Node.js 22 has a global URL)
+const OriginalURL = globalThis.URL;
+const MockURL = class extends OriginalURL {
+  static createObjectURL = () => 'blob:fake';
+  static revokeObjectURL = () => {};
+};
+globalThis.URL = MockURL;
+
 globalThis.Worker = FakeWorker;
 
 // Now import SnrComputer (browser globals already set above)

@@ -61,7 +61,7 @@
     "build:desktop": "npm run build:css && vite build --config demo/vite.demo.config.js",
     "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --checkers 4",
     "postinstall": "node ./scripts/postinstall.js",
     "types:generate": "node ./scripts/generate-types.js",
     "taxonomy:build:local": "node ./scripts/build-birdnet-taxonomy.js --source ../BirdNET-Analyzer/birdnet_analyzer/labels/V2.4 --output ./demo/data/birdnet-taxonomy.v2.4.json --model V2.4 --source-url https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4",
@@ -98,8 +98,8 @@
     "@tauri-apps/cli": "^2",
     "lucide-static": "^1.8.0",
     "sass": "^1.70.0",
-    "tsx": "^4.19.4",
-    "typescript": "^6.0.2",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
     "vite": "^8.0.8",
     "wavesurfer.js": "^7.12.6"
   }
