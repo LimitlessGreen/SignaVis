@@ -47,6 +47,9 @@ python-wrapper/XC*.flac
 
 TODO.md
 
+scripts/build_species_bundle.py
+tools/.cache/
+
 # Diagrams (generated / working files)
 docs/diagrams/
 python-wrapper/uv.lock
@@ -55,3 +58,9 @@ docs_drafts
 
 # Local platform testenv runtime data
 platform/.local-testenv/
+.artifacts
+
+# Generated Taxonomy & Species Images
+demo/data/cornell-taxonomy.json
+demo/data/species_images/
+demo/data/birdnet-taxonomy.v2.4.json

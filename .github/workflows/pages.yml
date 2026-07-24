@@ -28,14 +28,45 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Clone BirdNET-Analyzer labels
+        run: |
+          git clone --depth 1 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream
+
+      - name: Get labels hash
+        id: labels-hash
+        run: |
+          echo "hash=$(find _birdnet_upstream/birdnet_analyzer/labels/V2.4 -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+
+      - name: Cache Cornell Taxonomy
+        uses: actions/cache@v4
+        with:
+          path: demo/data/cornell-taxonomy.json
+          key: cornell-taxonomy-${{ runner.os }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
+          restore-keys: |
+            cornell-taxonomy-${{ runner.os }}-
+
+      - name: Cache Species Images
+        id: cache-species
+        uses: actions/cache@v4
+        with:
+          path: |
+            demo/data/species_images
+            demo/data/birdnet-taxonomy.v2.4.json
+          key: species-assets-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
+
+      - name: Build taxonomy and download images
+        if: steps.cache-species.outputs.cache-hit != 'true'
+        run: npm run taxonomy:build
 
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-
-      - name: Install JS dependencies
-        run: npm ci
 
       - name: Install docs dependencies
         run: |

@@ -13,7 +13,7 @@
  * Clicking any card pre-fills the topbar species selector for drawing new labels.
  */
 
-const BIRD_IMG_BASE = 'https://birdnet.cornell.edu/api2/bird/';
+const BIRD_IMG_BASE = './data/species_images/';
 
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
@@ -344,6 +344,8 @@ export class ExplorePanel {
         : (s.common || s.scientific);
       const pct = (s.geoscore * 100).toFixed(1);
 
+      const imgAttribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
+
       container.appendChild(this._makeCard({
         scientificName: s.scientific,
         commonName,
@@ -353,6 +355,7 @@ export class ExplorePanel {
         metaLeft:   'occurrence probability',
         metaRight:  `${pct}%`,
         labeled:    labeled.has(s.scientific),
+        imgTitle:   imgAttribution,
       }));
     }
   }
@@ -369,9 +372,9 @@ export class ExplorePanel {
   /**
    * Build one species card element.
    * @param {{ scientificName:string, commonName:string, badgeText:string, badgeTitle:string,
-   *           barValue:number|null, metaLeft:string, metaRight:string, labeled:boolean }} opts
+   *           barValue:number|null, metaLeft:string, metaRight:string, labeled:boolean, imgTitle?:string }} opts
    */
-  _makeCard({ scientificName, commonName, badgeText, badgeTitle, barValue, metaLeft, metaRight, labeled }: any) {
+  _makeCard({ scientificName, commonName, badgeText, badgeTitle, barValue, metaLeft, metaRight, labeled, imgTitle }: any) {
     const card = document.createElement('div');
     card.className = 'sp-card' + (this._onSpeciesSelect ? ' sp-card--clickable' : '')
                                + (labeled ? ' sp-card--labeled' : '');
@@ -385,7 +388,7 @@ export class ExplorePanel {
       : null;
 
     card.innerHTML = `
-      <div class="sp-card-img-wrap">
+      <div class="sp-card-img-wrap" title="${esc(imgTitle || '')}">
         <img class="sp-card-img" src="${esc(imgSrc)}" alt="${esc(commonName)}" loading="lazy" />
       </div>
       <div class="sp-card-body">
