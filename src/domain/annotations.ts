@@ -1970,8 +1970,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const wrapper = state?.d?.canvasWrapper;
         if (!wrapper || !c) return 0;
         const rect = wrapper.getBoundingClientRect();
-        const localY = clamp(clientY - rect.top, 0, rect.height);
-        return localY / Math.max(1, rect.height) * c.canvasHeight;
+        const { canvasY } = c.clientToCanvas(0, clientY, rect, 0);
+        return canvasY;
     }
 
     _clientYToFreq(clientY: number) {
@@ -1980,9 +1980,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const wrapper = state?.d?.canvasWrapper;
         if (!wrapper || !c) return 0;
         const rect = wrapper.getBoundingClientRect();
-        const localY = clamp(clientY - rect.top, 0, rect.height);
-        const canvasY = localY / Math.max(1, rect.height) * c.canvasHeight;
-        return c.pixelYToFrequency(canvasY);
+        const { freq } = c.clientToTimeFreq(0, clientY, rect, 0);
+        return freq;
     }
 
     _getMaxFreq() {
