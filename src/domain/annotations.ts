@@ -672,10 +672,10 @@ export class AnnotationLayer extends AnnotationLayerBase {
             e.stopPropagation();
         };
 
-        root.addEventListener('pointermove', onPointerMove, true);
+        document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);
-        this._domCleanups.push(() => root.removeEventListener('pointermove', onPointerMove, true));
+        this._domCleanups.push(() => document.removeEventListener('pointermove', onPointerMove, true));
         this._domCleanups.push(() => document.removeEventListener('pointerup', onPointerUp, true));
         this._domCleanups.push(() => document.removeEventListener('pointercancel', onPointerUp, true));
     }
