@@ -1075,7 +1075,7 @@ export class PlayerState {
         if (this.interaction.ctx.panIsMiddle && this.interaction.ctx.panSource !== 'waveform'
             && this._showSpectrogram && this._freqZoom.isZoomed) {
             const wrapper = this.d.canvasWrapper;
-            const height = wrapper?.getBoundingClientRect().height || 1;
+            const height = wrapper?.clientHeight || 1;
             const boundedMax = this.coords.boundedMaxFreq;
             const startMin = this.interaction.ctx.panStartFreqViewMin ?? 0;
             const startMax = this.interaction.ctx.panStartFreqViewMax ?? boundedMax;
@@ -1114,12 +1114,9 @@ export class PlayerState {
         // Shift + Wheel = vertical frequency zoom (spectrogram only)
         if (event.shiftKey && source !== 'waveform' && this._showSpectrogram) {
             event.preventDefault();
-            const localY = event.clientY - rect.top;
-            const canvasY = (localY / Math.max(1, rect.height))
-                * (this.d.spectrogramCanvas?.height || rect.height);
-            const freqAtCursor = this.coords.pixelYToFrequency(canvasY);
+            const { freq } = this.coords.clientToTimeFreq(event.clientX, event.clientY, rect, wrapper.scrollLeft);
             const zoomIn = event.deltaY < 0;
-            this._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
+            this._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freq);
             return;
         }
 
