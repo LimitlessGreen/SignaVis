@@ -64,3 +64,5 @@ platform/.local-testenv/
 demo/data/cornell-taxonomy.json
 demo/data/species_images/
 demo/data/birdnet-taxonomy.v2.4.json
+
+schema_cornel.json
