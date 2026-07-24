@@ -40,7 +40,7 @@ jobs:
           echo "hash=$(find _birdnet_upstream/birdnet_analyzer/labels/V2.4 -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
 
       - name: Cache Cornell Taxonomy
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: demo/data/cornell-taxonomy.json
           key: cornell-taxonomy-${{ runner.os }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
@@ -49,7 +49,7 @@ jobs:
 
       - name: Cache Species Images
         id: cache-species
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: |
             demo/data/species_images
