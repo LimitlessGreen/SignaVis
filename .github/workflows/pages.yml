@@ -35,7 +35,7 @@ jobs:
 
       - name: Clone BirdNET-Analyzer labels
         run: |
-          git clone --depth 1 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream
+          git clone --depth 1 --branch v2.4.0 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream
 
       - name: Get labels hash
         id: labels-hash
