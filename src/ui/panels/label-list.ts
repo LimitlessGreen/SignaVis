@@ -92,6 +92,7 @@ export class LabelList {
     _hiddenSetIds: any;
     _hiddenSpeciesKeys: any;
     _resolveName: any;
+    _taxonomy: any;
     _tagStore: any;
     closest: any;
     _lockedIds: any;
@@ -121,6 +122,7 @@ export class LabelList {
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
    * @param {(setId: string) => boolean} [opts.canDeleteSet]  Return false to hide the delete button for a specific set
+   * @param {import('../../infrastructure/taxonomyResolver.ts').TaxonomyResolver} [opts.taxonomy]
    * @param {((anchor: HTMLElement, onSelect: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
    */
   constructor(opts: any) {
@@ -128,6 +130,7 @@ export class LabelList {
     this._emptyEl = opts.emptyEl;
     this._badgeEl = opts.badgeEl || null;
     this._resolveName = opts.resolveName;
+    this._taxonomy = opts.taxonomy || null;
     this._onSync = opts.onSync;
     this._onSeek = opts.onSeek;
     this._onEdit = opts.onEdit;
