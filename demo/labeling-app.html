@@ -687,6 +687,8 @@
           // avoids capturing the empty fallback if modal is opened before taxonomy loads.
           getSuggestions: (q, n) => getSuggestions(q, n),
           BirdNETPlayer,
+          taxonomy,
+          getLang: () => state.taxonomyLang,
           // Resolve vernacular → scientific name by searching all taxonomy records.
           resolveSci: (name) => {
             if (!taxonomy?.records) return '';
@@ -2772,6 +2774,11 @@
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
       saveCurrentAnnotationsIfNeeded();
+    });
+
+    player.on('spectrogramlabelrefcalls', (e) => {
+      const label = e.detail?.label;
+      if (label) openRefCalls(label);
     });
 
     // ── Context menus on label surfaces ─────────────────────────────────────

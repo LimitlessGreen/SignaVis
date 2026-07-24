@@ -28,6 +28,8 @@ import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
 import ModalManager from '../modal/modal-manager.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
+const BIRD_IMG_BASE = './data/species_images/';
+const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
 // Compact player options (mirrors storybook compact-embed story)
 const COMPACT_PLAYER_OPTS = {
@@ -78,8 +80,22 @@ function injectCss() {
 .rc-search-row {
   padding: 10px 20px; border-bottom: 1px solid var(--color-border);
   flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+  background: var(--color-bg-surface);
 }
 .rc-search-row .species-search-widget { flex: 1; max-width: 480px; }
+.rc-profile {
+  display: flex; gap: 20px; padding: 20px; border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-primary); align-items: flex-start;
+}
+.rc-profile-img-wrap {
+  width: 200px; height: 150px; border-radius: 8px; overflow: hidden;
+  background: #111; flex-shrink: 0; border: 1px solid var(--color-border);
+}
+.rc-profile-img { width: 100%; height: 100%; object-fit: cover; }
+.rc-profile-info { flex: 1; min-width: 0; }
+.rc-profile-common { font-size: 24px; font-weight: 800; margin-bottom: 4px; color: var(--color-text-primary); }
+.rc-profile-sci { font-size: 16px; font-style: italic; color: var(--color-text-secondary); margin-bottom: 12px; }
+.rc-profile-meta { font-size: 12px; color: var(--color-text-secondary); opacity: 0.8; }
 .rc-body {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column;
 }
@@ -219,8 +235,10 @@ function groupByType(recordings: any, preferredType: any) {
  * @param {object}   opts.xcPanel       XenoCantoPanel instance (for apiKey + fetchAudio)
  * @param {function} opts.getSuggestions Species suggestion provider
  * @param {function} opts.BirdNETPlayer  BirdNETPlayer constructor
+ * @param {object}   opts.taxonomy      TaxonomyResolver instance
+ * @param {function} opts.getLang       Function returning current language code
  */
-export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '' }: any) {
+export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -249,15 +267,6 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   header.appendChild(closeBtn);
   dialog.appendChild(header);
 
-  // Search row
-  const searchRow = document.createElement('div');
-  searchRow.className = 'rc-search-row';
-  const searchLabel = document.createElement('span');
-  searchLabel.style.cssText = 'font-size:12px;color:var(--color-text-secondary);white-space:nowrap';
-  searchLabel.textContent = 'Search:';
-  searchRow.appendChild(searchLabel);
-  dialog.appendChild(searchRow);
-
   // Body
   const body = document.createElement('div');
   body.className = 'rc-body';
@@ -274,6 +283,20 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   refPlayerWrap.className = 'rc-ref-player';
   refSection.appendChild(refPlayerWrap);
   body.appendChild(refSection);
+
+  // Profile section
+  const profileSection = document.createElement('div');
+  profileSection.className = 'rc-profile';
+  body.appendChild(profileSection);
+
+  // Search row (moved into body)
+  const searchRow = document.createElement('div');
+  searchRow.className = 'rc-search-row';
+  const searchLabel = document.createElement('span');
+  searchLabel.style.cssText = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-text-secondary);white-space:nowrap';
+  searchLabel.textContent = 'Compare with:';
+  searchRow.appendChild(searchLabel);
+  body.appendChild(searchRow);
 
   // Grid section
   const gridSection = document.createElement('div');
@@ -329,11 +352,36 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         if (!sci) return;
         _currentSciName = sci;
         titleEl.textContent = `Reference Calls — ${sci}`;
+        renderProfile(sci);
         _currentPage = 1;
         loadPage(1);
       },
     });
     searchRow.appendChild(_searchWidget.el);
+  }
+
+  function renderProfile(sciName: string) {
+    profileSection.innerHTML = '';
+    const record = taxonomy?.resolve(sciName);
+    const lang = getLang?.() || 'en';
+    const commonName = record ? (taxonomy.resolveCommonName(record, lang) || sciName) : sciName;
+
+    const imgSrc = sciName
+      ? `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp`
+      : FALLBACK_SVG;
+
+    const imgAttribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
+
+    profileSection.innerHTML = `
+      <div class="rc-profile-img-wrap">
+        <img class="rc-profile-img" src="${esc(imgSrc)}" alt="${esc(commonName)}" onerror="this.src='${FALLBACK_SVG}'" />
+      </div>
+      <div class="rc-profile-info">
+        <div class="rc-profile-common">${esc(commonName)}</div>
+        <div class="rc-profile-sci">${esc(sciName)}</div>
+        ${imgAttribution ? `<div class="rc-profile-meta">${esc(imgAttribution)}</div>` : ''}
+      </div>
+    `;
   }
 
   // ── Reference player (labeled segment) ───────────────────────────
@@ -636,6 +684,13 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
     // Mount reference player
     mountRefPlayer(audioUrl, label);
+
+    // Render species profile
+    if (sci) {
+      renderProfile(sci);
+    } else {
+      profileSection.innerHTML = '';
+    }
 
     // Load first page of XC recordings
     if (sci) {
