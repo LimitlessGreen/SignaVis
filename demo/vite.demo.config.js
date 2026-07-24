@@ -17,7 +17,11 @@ function copyStaticPlugin(pairs) {
     name: 'copy-static',
     closeBundle() {
       for (const { src, dest } of pairs) {
-        cpSync(src, dest, { recursive: true });
+        if (existsSync(src)) {
+          cpSync(src, dest, { recursive: true });
+        } else {
+          console.warn(`[copy-static] Source not found, skipping: ${src}`);
+        }
       }
     },
   };

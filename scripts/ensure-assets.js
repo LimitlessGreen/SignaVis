@@ -9,9 +9,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 const TAXONOMY_FILE = path.join(ROOT, 'demo', 'data', 'birdnet-taxonomy.v2.4.json');
+const IMAGE_DIR = path.join(ROOT, 'demo', 'data', 'species_images');
 const UPSTREAM_LABELS = path.join(ROOT, '_birdnet_upstream', 'birdnet_analyzer', 'labels', 'V2.4');
 
 function main() {
+    // Ensure directory exists even if empty to avoid build errors
+    if (!fs.existsSync(IMAGE_DIR)) {
+        fs.mkdirSync(IMAGE_DIR, { recursive: true });
+    }
+
     if (fs.existsSync(TAXONOMY_FILE)) {
         console.log('[ensure-assets] Taxonomy file found.');
         return;
