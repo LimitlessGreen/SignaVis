@@ -688,6 +688,7 @@ export class BirdNETPlayer {
         fwd(this.spectrogramLabels, 'spectrogramlabelcreate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelupdate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelremove', (ce: CustomEvent) => this._removeFromLinkedLabels((ce.detail as any).label));
+        fwd(this.spectrogramLabels, 'spectrogramlabelrefcalls', (ce: CustomEvent) => this._emit('spectrogramlabelrefcalls', ce.detail));
 
         // stampmodechange comes from SpectrogramLabelLayer
         this.spectrogramLabels.addEventListener('stampmodechange', (e: Event) => {

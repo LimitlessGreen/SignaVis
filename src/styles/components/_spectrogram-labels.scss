@@ -445,6 +445,39 @@
     color: #fca5a5;
 }
 
+/* ── Label reference calls button on hover ── */
+.label-refcalls-btn {
+    position: absolute;
+    bottom: 2px;
+    right: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(0, 0, 0, 0.7);
+    color: #e2e8f0;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s, background 0.12s;
+    padding: 0;
+    z-index: 5;
+}
+
+.spectrogram-label-region:hover .label-refcalls-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.label-refcalls-btn:hover {
+    background: rgba(16, 185, 129, 0.35);
+    border-color: rgba(16, 185, 129, 0.8);
+    color: #d1fae5;
+}
+
 /* Locked labels — no resize handles, no-drop cursor */
 .spectrogram-label-region--locked {
     cursor: not-allowed;

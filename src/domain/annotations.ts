@@ -1169,6 +1169,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>
             ${aiTagHtml}${lockIconHtml}
             ${!isBlocked ? `
+            <button class="label-refcalls-btn" type="button" title="Reference calls">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+            </button>
             <button class="label-edit-btn" type="button" title="Edit label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -1225,6 +1230,19 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this.dispatchEvent(new CustomEvent('spectrogramlabelremove', { detail: { label: { ...label } } }));
             });
             deleteBtn.addEventListener('pointerdown', (event) => {
+                event.stopPropagation();
+            });
+        }
+
+        const refBtn = el.querySelector('.label-refcalls-btn') as HTMLButtonElement | null;
+        if (refBtn && !isBlocked) {
+            refBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._suppressClickUntil = performance.now() + 250;
+                this.dispatchEvent(new CustomEvent('spectrogramlabelrefcalls', { detail: { label: { ...label } } }));
+            });
+            refBtn.addEventListener('pointerdown', (event) => {
                 event.stopPropagation();
             });
         }
