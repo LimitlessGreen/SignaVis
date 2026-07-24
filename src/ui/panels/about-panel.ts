@@ -43,6 +43,10 @@ export function createAboutPanel() {
 }</pre>
         </details>
 
+        <h4>Taxonomy &amp; Images</h4>
+        <p>Species taxonomy and preview images are powered by the <a href="https://birdnet.cornell.edu/taxonomy" target="_blank" rel="noopener noreferrer">Cornell Taxonomy API</a>.</p>
+        <p>Images are subject to their respective authors' licenses. Please refer to the image hover popovers for specific author attribution.</p>
+
         <h4>Dependencies</h4>
         <ul>
           <li>jsoneditor</li>

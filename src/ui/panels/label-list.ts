@@ -16,7 +16,7 @@
 import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
-const BIRD_IMG_BASE = 'https://birdnet.cornell.edu/api2/bird/';
+const BIRD_IMG_BASE = './data/species_images/';
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
@@ -810,8 +810,12 @@ export class LabelList {
     // Bird thumbnail — shown once per species group, not per instance
     const sciName = representative.scientificName || scientific || null;
     if (sciName) {
+      const record = this._taxonomy?.resolve(sciName);
+      const imgAttribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
+
       const imgWrap = document.createElement('div');
       imgWrap.className = 'lbl-group-img-wrap';
+      if (imgAttribution) imgWrap.title = imgAttribution;
       const img = document.createElement('img');
       img.className = 'lbl-group-img';
       const imgSrc = `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp`;
@@ -831,7 +835,7 @@ export class LabelList {
       popImg.addEventListener('error', () => { popImg.src = BIRD_IMG_FALLBACK; }, { once: true });
       const popCaption = document.createElement('span');
       popCaption.className = 'lbl-img-popover-caption';
-      popCaption.textContent = sciName;
+      popCaption.textContent = imgAttribution ? `${sciName}\n${imgAttribution}` : sciName;
       popover.appendChild(popImg);
       popover.appendChild(popCaption);
       imgWrap.appendChild(popover);
