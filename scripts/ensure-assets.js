@@ -42,7 +42,7 @@ function main() {
         console.warn('\n[ensure-assets] ⚠️  REQUIRED ASSETS MISSING');
         console.warn('The species database and images are missing and required for the labeling app.');
         console.warn('To build them locally, run:');
-        console.warn('\n  git clone --depth 1 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream');
+        console.warn('\n  git clone --depth 1 --branch v2.4.0 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream');
         console.warn('  npm run taxonomy:build\n');
 
         // We don't exit with error here to allow vite to start, but the app will show a warning.
