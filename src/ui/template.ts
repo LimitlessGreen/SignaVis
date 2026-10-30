@@ -267,14 +267,14 @@ export function createPlayerHTML(opts = {}) {
                     <input type="checkbox" data-aw="noiseReductionCheck"> Noise Reduction
                 </label>
             </div>
-            <div class="settings-row">
+            <div class="settings-row" data-expert>
                 <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
                     <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast
                 </label>
             </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-expert>
             <h3 class="settings-section-title">Overlay</h3>
             <div class="settings-row">
                 <label class="settings-label" title="Weighted mean frequency of the magnitude spectrum per frame">
@@ -293,7 +293,7 @@ export function createPlayerHTML(opts = {}) {
             </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-expert>
             <h3 class="settings-section-title">DSP</h3>
             <div class="settings-row">
                 <label class="settings-label">Frequency</label>
@@ -365,7 +365,7 @@ export function createPlayerHTML(opts = {}) {
             </div>
         </div>
 
-        <div class="settings-section" data-aw="pcenSection">
+        <div class="settings-section" data-aw="pcenSection" data-expert>
             <h3 class="settings-section-title">
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                     <input type="checkbox" data-aw="pcenEnabledCheck" checked>

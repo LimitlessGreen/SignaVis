@@ -16,7 +16,7 @@
 
 import { DSP_PROFILES, QUALITY_LEVELS } from '../shared/constants.ts';
 import { jsonGetItem, jsonSetItem } from '../shared/storageJson.ts';
-import { readDspSettings, applyDspSettings } from './dsp/DspSettings.ts';
+import { readDspSettings, applyDspSettings, DSP_SETTINGS_DEFAULTS } from './dsp/DspSettings.ts';
 
 import type { IStorage } from '../infrastructure/storage/IStorage.ts';
 import type { UndoCommand } from './undoStack.ts';
@@ -368,6 +368,32 @@ export class PresetManager {
 
     persistCurrentSettings() {
         jsonSetItem(this.#storage, LS_LAST_SETTINGS, this.getCurrentPresetSettings());
+    }
+
+    /**
+     * Settings of the preset the controls are measured against: the selected preset,
+     * else the favourite, else 'xc'. Missing fields fall back to the DSP defaults.
+     */
+    getReferenceSettings(): Record<string, any> {
+        const resolve = (name: string) => name.startsWith('user:')
+            ? this.loadUserPresets()[name.slice(5)]
+            : DSP_PROFILES[name];
+        const p = resolve(this.#d.presetSelect?.value || '')
+            || resolve(this.getFavouritePreset() || '')
+            || DSP_PROFILES.xc;
+        return { ...DSP_SETTINGS_DEFAULTS, ...p };
+    }
+
+    /** Reset the given settings keys to the reference preset, keep all others. */
+    resetToReference(keys: string[]) {
+        const ref = this.getReferenceSettings();
+        const next: Record<string, any> = this.getCurrentPresetSettings();
+        for (const k of keys) next[k] = ref[k];
+        this.#applyControls(next);
+        this.syncQualitySlider();
+        this.updatePcenSectionDimming();
+        this.persistCurrentSettings();
+        this.#onRegen();
     }
 
     loadLastSettings(): Record<string, any> | null {
