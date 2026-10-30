@@ -140,6 +140,12 @@ export class PlayerState {
     transportState: any;
     _lastTimeReadoutText: any;
     _uiFrameId: any;
+    /** Zoom (pps) + scroll position _drawViewport last drew, and in which frame. */
+    _drawnViewport = '';
+    _drawnViewportFrame: number | null = null;
+    /** Ctrl+wheel zoom steps collected until the next frame. */
+    _freqViewRedrawRafId = 0;
+    _pendingWheelZoom: { factor: number; clientX: number; source: string } | null = null;
     _uiPending: any;
     _cleanups: any;
     target: any;
@@ -262,10 +268,15 @@ export class PlayerState {
             },
             getBoundedMaxFreq:  () => this.coords.boundedMaxFreq,
             onFreqViewChange:   () => {
+                // Coords now (the next wheel step anchors on them), pixels once per frame.
                 this._updateCoords();
-                this._drawSpectrogram();
-                this._createFrequencyLabels();
-                this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
+                if (this._freqViewRedrawRafId) return;
+                this._freqViewRedrawRafId = requestAnimationFrame(() => {
+                    this._freqViewRedrawRafId = 0;
+                    this._drawSpectrogram();
+                    this._createFrequencyLabels();
+                    this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
+                });
             },
             emitZoomChange:     (pps) => this._emit('zoomchange', { pixelsPerSecond: pps }),
             getPixelsPerSecond: () => this.pixelsPerSecond,
@@ -303,10 +314,8 @@ export class PlayerState {
             getAudioBuffer:  () => this.audioBuffer,
             getWavesurfer:   () => this.wavesurfer,
             scheduleUiUpdate: (detail?: any) => this._scheduleUiUpdate(detail as any),
-            onRedrawNeeded: () => {
-                if (this._spectro.hasData) this._drawSpectrogram();
-                this._drawMainWaveform();
-            },
+            onRedrawNeeded: () => this._drawViewport(false),
+            onZoomApplied:  () => { this._updateCoords(); this._syncTrackWidth(); },
             getSpectroHasData: () => this._spectro.hasData,
             emit: (event: string, detail?: any) => this._emit(event, detail),
         });
@@ -770,6 +779,13 @@ export class PlayerState {
         this._setTransportState('ready', readyReason);
         this.d.fileInfo?.classList.remove('loading');
 
+        // The waveform only needs the decoded audio: show it while the
+        // spectrogram (a pyramid for long files) is still being computed.
+        this._syncTrackWidth();
+        this._drawMainWaveform();
+        this._drawOverviewWaveform();
+        this._syncOverviewWindowToViewport();
+
         await this._spectro.generate({ autoAdjust: true });
         this._drawMainWaveform();
         this._drawOverviewWaveform();
@@ -919,6 +935,32 @@ export class PlayerState {
     }
 
     // The remaining pipeline methods (_generateSpectrogram, _setExternalSpectrogram,
+    /**
+     * Spectrogram + waveform for the current scroll / zoom, drawn once per view:
+     * setting scrollLeft (overview drag, zoom) draws right away, and the scroll
+     * event that follows (often a frame later) only echoes that position, so
+     * `fromScroll` skips a view already drawn. Other requests skip it only
+     * within the same frame, since other state may have changed meanwhile.
+     */
+    _drawViewport(fromScroll: boolean) {
+        const key = `${this.pixelsPerSecond}|${this._viewport.getPrimaryScrollLeft()}`;
+        const frame = document.timeline?.currentTime as number | null ?? null;
+        if (key === this._drawnViewport && (fromScroll || frame === this._drawnViewportFrame)) return;
+        if (this._spectro.hasData) this._drawSpectrogram();
+        this._drawMainWaveform();
+        this._drawnViewport = key;
+        this._drawnViewportFrame = frame;
+    }
+
+    /** Scroll extent for the current zoom, ahead of the (per-frame) redraw. */
+    _syncTrackWidth() {
+        if (!this.audioBuffer) return;
+        const w = `${Math.max(1, Math.floor(this.audioBuffer.duration * this.pixelsPerSecond))}px`;
+        for (const el of [this.d.canvasSizer, this.d.waveformContent]) {
+            if (el && el.style.width !== w) el.style.width = w;
+        }
+    }
+
     // _setExternalSpectrogramImage, _autoContrast, _autoFrequency, _buildSpectrogramGrayscale,
     // etc.) now live in SpectrogramController. PlayerState delegates via this._spectro.
 
@@ -1114,14 +1156,23 @@ export class PlayerState {
 
         const wrapper = source === 'waveform' ? this.d.waveformWrapper : this.d.canvasWrapper;
         if (!wrapper) return;
-        const rect = wrapper.getBoundingClientRect();
-        const localX = event.clientX - rect.left;
-        const timeAtCursor = this.coords.scrollXToTime(wrapper.scrollLeft + localX);
-
         if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
             const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
-            this._setPixelsPerSecond(this.pixelsPerSecond * factor, true, timeAtCursor, localX);
+            // Wheels and touchpads send several events per frame: zoom once per frame.
+            const pending = this._pendingWheelZoom;
+            if (pending) {
+                pending.factor *= factor;
+                pending.clientX = event.clientX;
+                return;
+            }
+            const next = { factor, clientX: event.clientX, source };
+            requestAnimationFrame(() => {
+                this._pendingWheelZoom = null;
+                this._viewport.zoomByScale(next.factor, next.clientX, next.source);
+                this._viewport._redrawNow();
+            });
+            this._pendingWheelZoom = next;
             return;
         }
 
@@ -1129,6 +1180,7 @@ export class PlayerState {
         if (event.shiftKey && source !== 'waveform' && this._showSpectrogram) {
             event.preventDefault();
             const { freq } = this.coords.clientToTimeFreq(event.clientX, event.clientY, rect, wrapper.scrollLeft);
+            const rect = wrapper.getBoundingClientRect();
             const zoomIn = event.deltaY < 0;
             this._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freq);
             return;

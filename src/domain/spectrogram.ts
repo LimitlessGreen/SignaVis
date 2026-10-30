@@ -590,22 +590,28 @@ export function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, sc
     ctx.textBaseline = 'top';
 
     // Start at the first visible minor line instead of walking the whole file.
+    // One path per line style instead of one stroke per line.
+    const major = new Path2D();
+    const minor = new Path2D();
+    const labels: [number, number][] = [];
     const tStart = Math.max(0, Math.floor(scrollLeft / pixelsPerSecond / minorStep)) * minorStep;
     for (let t = tStart; t <= duration; t += minorStep) {
         const absX = Math.round(t * pixelsPerSecond);
         const x = absX - scrollLeft + 0.5;
-        if (x < 0 || x > width) continue;
+        if (x < 0) continue;
+        if (x > width) break;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
-        ctx.strokeStyle = isMajor ? 'rgba(148,163,184,0.35)' : 'rgba(148,163,184,0.18)';
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-        if (isMajor) {
-            ctx.fillStyle = majorColor;
-            ctx.fillText(formatGridTime(t, majorStep), x + 3, 4);
-        }
+        const path = isMajor ? major : minor;
+        path.moveTo(x, 0);
+        path.lineTo(x, height);
+        if (isMajor) labels.push([t, x]);
     }
+    ctx.strokeStyle = 'rgba(148,163,184,0.18)';
+    ctx.stroke(minor);
+    ctx.strokeStyle = 'rgba(148,163,184,0.35)';
+    ctx.stroke(major);
+    ctx.fillStyle = majorColor;
+    for (const [t, x] of labels) ctx.fillText(formatGridTime(t, majorStep), x + 3, 4);
     ctx.restore();
 }
 
