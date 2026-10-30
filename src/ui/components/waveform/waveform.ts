@@ -38,61 +38,78 @@ function installThemeObserver(canvas: any, redrawFn: () => void) {
 
 function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number; scrollLeft?: number }) {
     if (width <= 0) return;
-    const textColor = getCssVar('--color-text-secondary', '#cbd5e1');
+    const css = getComputedStyle(document.documentElement);
+    const textColor = css.getPropertyValue('--color-text-secondary').trim() || '#cbd5e1';
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = getCssVar('--color-bg-secondary', '#1e293b');
+    ctx.fillStyle = css.getPropertyValue('--color-bg-secondary').trim() || '#1e293b';
     ctx.fillRect(0, 0, width, height);
     ctx.font = '11px monospace';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = textColor;
-    ctx.strokeStyle = colorWithAlpha(getCssVar('--color-text-secondary', '#cbd5e1'), 0.25);
+    ctx.strokeStyle = colorWithAlpha(textColor, 0.25);
 
+    const ticks = new Path2D();
+    const labels: [number, number][] = [];
     const tStart = Math.max(0, Math.floor(scrollLeft / pixelsPerSecond / minorStep)) * minorStep;
     for (let t = tStart; t <= duration; t += minorStep) {
         const x = Math.round(t * pixelsPerSecond) - scrollLeft + 0.5;
         if (x < 0) continue;
         if (x > width) break;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
-        const lineHeight = isMajor ? 14 : 8;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, lineHeight);
-        ctx.stroke();
-        if (isMajor) {
-            ctx.fillText(formatGridTime(t, majorStep), x + 3, height / 2);
-        }
+        ticks.moveTo(x, 0);
+        ticks.lineTo(x, isMajor ? 14 : 8);
+        if (isMajor) labels.push([t, x]);
     }
+    ctx.stroke(ticks);
+    for (const [t, x] of labels) ctx.fillText(formatGridTime(t, majorStep), x + 3, height / 2);
 }
 
 // ─── Peak cache ─────────────────────────────────────────────────────
 
-// Min/max per PEAK_BLOCK samples, built once per buffer. Lets zoomed-out
-// redraws (long recordings) touch ~1/1024 of the samples.
+// Min/max per block of samples, built once per buffer: a fine level (32) for
+// medium zoom, a coarse one (1024, from the fine one) for zoomed-out views of
+// long recordings. Scrolling then touches a fraction of the samples.
+const PEAK_BLOCK_FINE = 32;
 const PEAK_BLOCK = 1024;
-const peakCache = new WeakMap<AudioBuffer, { min: Float32Array; max: Float32Array }>();
+type Peaks = { block: number; min: Float32Array; max: Float32Array };
+const peakCache = new WeakMap<AudioBuffer, { fine: Peaks; coarse: Peaks }>();
+
+function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
+    const n = Math.ceil(min.length / factor);
+    const outMin = new Float32Array(n);
+    const outMax = new Float32Array(n);
+    for (let b = 0; b < n; b++) {
+        let lo = Infinity, hi = -Infinity;
+        const end = Math.min(min.length, (b + 1) * factor);
+        for (let i = b * factor; i < end; i++) {
+            if (min[i] < lo) lo = min[i];
+            if (max[i] > hi) hi = max[i];
+        }
+        outMin[b] = lo; outMax[b] = hi;
+    }
+    return { block, min: outMin, max: outMax };
+}
 
 function getPeaks(audioBuffer: AudioBuffer) {
     let peaks = peakCache.get(audioBuffer);
     if (peaks) return peaks;
     const data = audioBuffer.getChannelData(0);
-    const n = Math.ceil(data.length / PEAK_BLOCK);
-    const min = new Float32Array(n);
-    const max = new Float32Array(n);
-    for (let b = 0; b < n; b++) {
-        let lo = Infinity, hi = -Infinity;
-        const end = Math.min(data.length, (b + 1) * PEAK_BLOCK);
-        for (let i = b * PEAK_BLOCK; i < end; i++) {
-            const v = data[i];
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
-        }
-        min[b] = lo; max[b] = hi;
-    }
-    peaks = { min, max };
+    const fine = reducePeaks(data, data, PEAK_BLOCK_FINE, PEAK_BLOCK_FINE);
+    const coarse = reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK);
+    peaks = { fine, coarse };
     peakCache.set(audioBuffer, peaks);
     return peaks;
+}
+
+function setCanvasSize(canvas: HTMLCanvasElement, width: number, height: number) {
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+}
+
+function setStyle(el: HTMLElement, prop: 'width' | 'display', value: string) {
+    if (el.style[prop] !== value) el.style[prop] = value;
 }
 
 // ─── Main Waveform ──────────────────────────────────────────────────
@@ -139,12 +156,12 @@ export function renderMainWaveform({
     const timelineHeight = showTimeline ? clamp(Math.round(clampedWaveformHeight * 0.22), 18, 32) : 0;
     const ampHeight = Math.max(32, clampedWaveformHeight - timelineHeight);
 
-    amplitudeCanvas.width = width;
-    amplitudeCanvas.height = ampHeight;
-    waveformTimelineCanvas.width = width;
-    waveformTimelineCanvas.height = timelineHeight;
-    waveformTimelineCanvas.style.display = showTimeline ? 'block' : 'none';
-    waveformContent.style.width = `${totalWidth}px`;
+    // Resizing a canvas reallocates it, and style writes invalidate layout:
+    // only touch what changed (this runs on every scroll frame).
+    setCanvasSize(amplitudeCanvas, width, ampHeight);
+    setCanvasSize(waveformTimelineCanvas, width, timelineHeight);
+    setStyle(waveformTimelineCanvas, 'display', showTimeline ? 'block' : 'none');
+    setStyle(waveformContent, 'width', `${totalWidth}px`);
 
     const channelData = audioBuffer.getChannelData(0);
     const totalSamples = channelData.length;
@@ -152,55 +169,70 @@ export function renderMainWaveform({
     const ampScale = 1 / Math.max(1e-6, amplitudePeakAbs);
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
 
+    const css = getComputedStyle(document.documentElement);
+    const cssVar = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const gridColor = cssVar('--color-text-secondary', '#94a3b8');
+
     ampCtx.clearRect(0, 0, width, ampHeight);
-    ampCtx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
+    ampCtx.fillStyle = cssVar('--color-bg-tertiary', '#0f3460');
     ampCtx.fillRect(0, 0, width, ampHeight);
+    // Grid: one path per line style instead of one stroke per line.
+    const majorGrid = new Path2D();
+    const minorGrid = new Path2D();
     const tStart = Math.max(0, Math.floor(sl / pixelsPerSecond / minorStep)) * minorStep;
     for (let t = tStart; t <= audioBuffer.duration; t += minorStep) {
         const x = Math.round(t * pixelsPerSecond) - sl + 0.5;
         if (x > width) break;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
-        ampCtx.strokeStyle = isMajor ? colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.22) : colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.12);
-        ampCtx.beginPath();
-        ampCtx.moveTo(x, 0);
-        ampCtx.lineTo(x, ampHeight);
-        ampCtx.stroke();
+        const path = isMajor ? majorGrid : minorGrid;
+        path.moveTo(x, 0);
+        path.lineTo(x, ampHeight);
     }
-    ampCtx.strokeStyle = colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.35);
+    ampCtx.strokeStyle = colorWithAlpha(gridColor, 0.12);
+    ampCtx.stroke(minorGrid);
+    ampCtx.strokeStyle = colorWithAlpha(gridColor, 0.22);
+    ampCtx.stroke(majorGrid);
+    ampCtx.strokeStyle = colorWithAlpha(gridColor, 0.35);
     ampCtx.beginPath();
     ampCtx.moveTo(0, midY + 0.5);
     ampCtx.lineTo(width, midY + 0.5);
     ampCtx.stroke();
 
-    ampCtx.strokeStyle = getCssVar('--color-accent', '#60a5fa');
+    ampCtx.strokeStyle = cssVar('--color-accent', '#60a5fa');
     ampCtx.lineWidth = 1;
     const samplesPerPx = totalSamples / totalWidth;
-    const peaks = samplesPerPx >= 4 * PEAK_BLOCK ? getPeaks(audioBuffer) : null;
+    // A level only when a column spans several of its blocks (edge blocks may
+    // reach slightly past the column).
+    const peaks = samplesPerPx >= 4 * PEAK_BLOCK ? getPeaks(audioBuffer).coarse
+        : samplesPerPx >= 4 * PEAK_BLOCK_FINE ? getPeaks(audioBuffer).fine
+        : null;
+    // Raw min/max per column, scaled and clamped once (clamping is monotonic).
+    ampCtx.beginPath();
     for (let x = 0; x < width; x++) {
         const start = Math.floor((x + sl) * samplesPerPx);
         const end = Math.min(totalSamples, Math.floor((x + sl + 1) * samplesPerPx));
-        let min = 1;
-        let max = -1;
+        let lo = Infinity;
+        let hi = -Infinity;
         if (peaks) {
-            const b1 = Math.min(peaks.min.length, Math.ceil(end / PEAK_BLOCK));
-            for (let b = Math.floor(start / PEAK_BLOCK); b < b1; b++) {
-                const lo = clamp(peaks.min[b] * ampScale, -1, 1);
-                const hi = clamp(peaks.max[b] * ampScale, -1, 1);
-                if (lo < min) min = lo;
-                if (hi > max) max = hi;
+            const b1 = Math.min(peaks.min.length, Math.ceil(end / peaks.block));
+            for (let b = Math.floor(start / peaks.block); b < b1; b++) {
+                if (peaks.min[b] < lo) lo = peaks.min[b];
+                if (peaks.max[b] > hi) hi = peaks.max[b];
             }
         } else {
             for (let i = start; i < end; i++) {
-                const v = clamp(channelData[i] * ampScale, -1, 1);
-                if (v < min) min = v;
-                if (v > max) max = v;
+                const v = channelData[i];
+                if (v < lo) lo = v;
+                if (v > hi) hi = v;
             }
         }
-        ampCtx.beginPath();
+        if (lo > hi) continue;
+        const min = clamp(lo * ampScale, -1, 1);
+        const max = clamp(hi * ampScale, -1, 1);
         ampCtx.moveTo(x + 0.5, (1 + min) * midY);
         ampCtx.lineTo(x + 0.5, (1 + max) * midY);
-        ampCtx.stroke();
     }
+    ampCtx.stroke();
 
     if (showTimeline && timelineHeight > 0) {
         drawWaveformTimeline({

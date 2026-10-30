@@ -40,6 +40,8 @@ export interface ViewportManagerOptions {
     getWavesurfer: () => unknown;
     scheduleUiUpdate: (opts?: { redrawSpectrogram?: boolean }) => void;
     onRedrawNeeded: () => void;
+    /** Cheap, synchronous: refresh coords and the scroll extent after a pps change. */
+    onZoomApplied?: () => void;
     getSpectroHasData: () => boolean;
     emit: (name: string, detail?: unknown) => void;
 }
@@ -54,6 +56,8 @@ export class ViewportManager extends EventTarget {
     _getWavesurfer: any;
     _scheduleUiUpdate: any;
     _onRedrawNeeded: any;
+    _onZoomApplied: () => void;
+    _emittedPps = NaN;
     _getSpectroHasData: any;
     _emitHost: any;
     pixelsPerSecond: any;
@@ -91,7 +95,7 @@ export class ViewportManager extends EventTarget {
      */
     constructor({ d, coords, interaction, layout, playbackViewportConfig,
                   getAudioBuffer, getWavesurfer, scheduleUiUpdate,
-                  onRedrawNeeded, getSpectroHasData, emit }: ViewportManagerOptions) {
+                  onRedrawNeeded, onZoomApplied, getSpectroHasData, emit }: ViewportManagerOptions) {
         super();
 
         this._d           = d;
@@ -105,6 +109,7 @@ export class ViewportManager extends EventTarget {
         this._getWavesurfer    = getWavesurfer;
         this._scheduleUiUpdate = scheduleUiUpdate;
         this._onRedrawNeeded   = onRedrawNeeded;
+        this._onZoomApplied    = onZoomApplied ?? (() => {});
         this._getSpectroHasData = getSpectroHasData;
         this._emitHost         = emit;
 
@@ -438,19 +443,14 @@ export class ViewportManager extends EventTarget {
             d.zoomSlider.value      = String(Math.round(effectivePps / sliderStep) * sliderStep);
             d.zoomValue.textContent = `${effectivePps < 10 ? effectivePps.toFixed(2) : Math.round(effectivePps)} px/s`;
 
-            const ws = this._getWavesurfer();
-            if (ws) ws.zoom(effectivePps);
-
-            if (buf && redraw) {
-                // Redraw BEFORE emitting zoomchange so coords are up-to-date
-                // when listeners (e.g. label layers) receive the event.
-                this._onRedrawNeeded();
-                this._emitHost('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
-                this.dispatchEvent(new CustomEvent('zoomchange', { detail: { pixelsPerSecond: this.pixelsPerSecond } }));
-            } else {
-                // Deferred — queue a redraw via RAF
-                this._requestSpectrogramRedraw();
-            }
+            // The hidden WaveSurfer instance only plays audio; zooming it would
+            // re-render its own (invisible) waveform on every step.
+            //
+            // Coords and scroll extent follow right away (the scroll below is
+            // clamped against them); the draw is coalesced to one per frame,
+            // however many wheel / slider events arrive.
+            this._onZoomApplied();
+            if (buf) this._requestSpectrogramRedraw();
         }
 
         this._setLinkedScrollLeft(bounded);
@@ -460,11 +460,26 @@ export class ViewportManager extends EventTarget {
         if (this._zoomRedrawRafId) return;
         this._zoomRedrawRafId = requestAnimationFrame(() => {
             this._zoomRedrawRafId = 0;
-            if (!this._getAudioBuffer()) return;
-            this._onRedrawNeeded();
-            this._emitHost('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
-            this.dispatchEvent(new CustomEvent('zoomchange', { detail: { pixelsPerSecond: this.pixelsPerSecond } }));
+            this._redrawNow(true);
         });
+    }
+
+    /**
+     * Draw now (dropping a queued frame redraw). zoomchange goes out after the
+     * draw, so listeners (e.g. label layers) see current coords; without
+     * `forceEmit` only when the zoom level actually changed.
+     */
+    _redrawNow(forceEmit = false) {
+        if (this._zoomRedrawRafId) {
+            cancelAnimationFrame(this._zoomRedrawRafId);
+            this._zoomRedrawRafId = 0;
+        }
+        if (!this._getAudioBuffer()) return;
+        this._onRedrawNeeded();
+        if (!forceEmit && this.pixelsPerSecond === this._emittedPps) return;
+        this._emittedPps = this.pixelsPerSecond;
+        this._emitHost('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
+        this.dispatchEvent(new CustomEvent('zoomchange', { detail: { pixelsPerSecond: this.pixelsPerSecond } }));
     }
 
     _syncOverviewWindowToViewport() {
@@ -601,14 +616,12 @@ export class ViewportManager extends EventTarget {
         if (this._overviewViewportRafId) return;
         this._overviewViewportRafId = requestAnimationFrame(() => {
             this._overviewViewportRafId = 0;
-            const redraw = this._overviewNeedsFinalRedraw;
+            const final = this._overviewNeedsFinalRedraw;
             this._overviewNeedsFinalRedraw = false;
-            this._applyOverviewWindowToViewport(redraw);
-            if (!redraw) {
-                // Same-frame draw for smooth drag response
-                this._onRedrawNeeded();
-                this._emitHost('zoomchange', { pixelsPerSecond: this.pixelsPerSecond });
-            }
+            this._applyOverviewWindowToViewport();
+            // Same-frame draw, so the view keeps up with the overview window;
+            // the scroll event that follows finds this position already drawn.
+            this._redrawNow(final);
         });
     }
 
@@ -617,7 +630,11 @@ export class ViewportManager extends EventTarget {
         if (!this._layout.showOverview || !buf) return;
         const dur      = buf.duration;
         const viewDur  = Math.max(0.01, (this.windowEndNorm - this.windowStartNorm) * dur);
-        const targetPps = this._getViewportWidth() / viewDur;
+        const vw       = this._getViewportWidth();
+        let targetPps  = vw / viewDur;
+        // Moving the window keeps its span: keep the zoom exactly, instead of
+        // re-deriving it with rounding noise that would count as a zoom change.
+        if (Math.abs(targetPps - this.pixelsPerSecond) < 0.01) targetPps = this.pixelsPerSecond;
         this._setPixelsPerSecond(targetPps, redraw, this.windowStartNorm * dur, 0);
     }
 

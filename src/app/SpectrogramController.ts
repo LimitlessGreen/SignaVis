@@ -932,9 +932,7 @@ export class SpectrogramController extends EventTarget {
             const width        = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
             const sl           = vw > 0 ? (p.scrollLeft ?? 0) : 0;
 
-            if (this._d.canvasSizer) this._d.canvasSizer.style.width = `${totalWidth}px`;
-            this._d.spectrogramCanvas.width  = width;
-            this._d.spectrogramCanvas.height = canvasHeight;
+            this._sizeViewCanvas(totalWidth, width, canvasHeight);
 
             const ctx = this._d.spectrogramCanvas.getContext('2d');
             const gpu = ctx ? this._drawGpuTiles(tm, p, width, canvasHeight, sl) : null;
@@ -986,6 +984,30 @@ export class SpectrogramController extends EventTarget {
         let freqViewSrcCrop = null;
         if (p.freqViewMin != null && p.freqViewMax != null) {
             const baseH = this._baseCanvas.height;
+    /**
+     * Scroll extent and viewport canvas size. Runs on every scroll frame, so
+     * unchanged sizes are left alone: a canvas resize reallocates its bitmap
+     * and a style write invalidates layout. A kept canvas gets the state a
+     * resize would have reset.
+     */
+    private _sizeViewCanvas(totalWidth: number, width: number, height: number) {
+        const sizer = this._d.canvasSizer as HTMLElement | null;
+        const w = `${totalWidth}px`;
+        if (sizer && sizer.style.width !== w) sizer.style.width = w;
+        const canvas = this._d.spectrogramCanvas as HTMLCanvasElement;
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+            return;
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.imageSmoothingEnabled = true;
+    }
+
             const srcYTop    = p.coords.frequencyToBaseYFraction(p.freqViewMax) * baseH;
             const srcYBottom = p.coords.frequencyToBaseYFraction(p.freqViewMin) * baseH;
             freqViewSrcCrop = { srcY: srcYTop, srcH: Math.max(1, srcYBottom - srcYTop) };
@@ -1057,9 +1079,7 @@ export class SpectrogramController extends EventTarget {
         const width = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
         const sl = vw > 0 ? (p.scrollLeft ?? 0) : 0;
         const canvas = this._d.spectrogramCanvas;
-        if (this._d.canvasSizer) this._d.canvasSizer.style.width = `${totalWidth}px`;
-        canvas.width = width;
-        canvas.height = height;
+        this._sizeViewCanvas(totalWidth, width, height);
 
         // Centred frames: frame i sits at i · hop / sr; the time axis spans totalWidth.
         const framesPerSec = this._audioBuffer.sampleRate / Math.max(1, this._hopSize);
