@@ -69,6 +69,9 @@ Tests: Payload-Snapshot gegen Fv0-Feldliste; Pflicht/Warn-Validierung; Import mi
 - BirdNET: Fortschrittsbalken sichtbar; Ergebnis-Darstellung dezent (nur Rahmen, keine Füllung, oder nur Zeitspur).
 - `collectSetLabels(setId)` als eine Funktion; Export, Upload und Button nutzen sie.
 - Inline-`onclick`/Styles im BirdNET-Backend-Toggle in Code/SCSS verschieben.
+- Geo-Filter-Checkbox deaktiviert mit Begründung, solange das Area-Modell fehlt (statt „(requires area model)“ zum Anklicken).
+- No-Key-Modal: Text verweist auf den „Xeno Canto tab“ (entfällt in Phase 3) → auf Topbar-Indikator/Assistent umstellen;
+  nicht bei jedem XC-Laden zeigen, sondern einmal bzw. als dezenter Hinweis in der Statusleiste.
 
 ## Phase 2 — Datenmodell: Set → Aufnahmen → Labels
 - `modeSelect` entfernen. Immer eine Arbeitssitzung mit 1…n Aufnahmen; neue Datei wird **hinzugefügt**,
@@ -106,6 +109,9 @@ Modal oder Tab, eine Seite mit Checkliste, live aktualisiert:
 6. **Vorschau**: „Set ‚X‘ · 3 Aufnahmen · 17 Labels · 4 Warnungen“, JSON ansehen/herunterladen, „An XC senden“.
    Hinweis: landet im XC-Konto zur Prüfung; nicht editierbar, nur löschen + neu.
 - Export als Datei läuft über denselben Assistenten (ohne Schritte 1/4-Eigentum).
+- Export-Menü klar benannt statt „Export“/„Copy“ (Labels) vs. „Export JSON“ (XC): **Annota-JSON (XC)**,
+  **SignaVis-Projekt (vollständig, zum Weiterarbeiten)**, ggf. Raven-Tabelle/CSV; „In Zwischenablage“ als Option im selben Menü.
+  Umfang immer angezeigt (Set/Aufnahmen/Labels).
 
 ## Phase 5 — Aufnahme-Kontext & Karte
 - Ein Kontextblock pro Aufnahme: Datum/Zeit, Ort, Gerät. Quellen automatisch: XC-Metadaten, GUANO, Dateiname;
@@ -129,6 +135,11 @@ Modal oder Tab, eine Seite mit Checkliste, live aktualisiert:
 - Doppelte Wellenform/Label-Spur: eine Übersicht; Label-Spur optional.
 - Einheitliche Abschnittsköpfe (Audio-Tab), Checkbox-Stil, Explore-Kartenstil als Vorbild.
 - Shortcuts: `N`/`P` nächste/vorige Aufnahme, `B` BirdNET auf aktueller Aufnahme, `U` Upload-Assistent.
+- Properties → Abschnitt „Annotation Set“ nur noch Zusammenfassung (Name, Lizenz, Status) + Link „im Projekt bearbeiten“;
+  Set-Felder sind nur an einer Stelle editierbar (Projekt-Tab/Assistent).
+- Topbar: Sponsor-Popover nicht beim Überfahren des Logos, sondern im „?“-Menü/About; Brand schlanker.
+- Modals (Long-Recording, XC-not-found, No-Key) einheitlich über `ModalManager` statt eigener `xc-nokey-*`-Dialoge.
+- Dark Mode und schmale Fenster (≤1280 px) prüfen — bisher nur hell bei 1600 px angesehen.
 
 ---
 
@@ -138,7 +149,8 @@ Jede Phase einzeln committen.
 
 ## Prüfung
 - Unit-Tests: Payload/Validierung (0, 4), Import (0), Datenmodell-Migration (2).
-- Screenshots vorher/nachher je Phase: Skript `shots.py` (Playwright, Demo laden, alle Tabs) nach `tools/` übernehmen.
+- Screenshots vorher/nachher je Phase: Skript `shots.py` (Playwright, Demo laden, alle Tabs) nach `tools/` übernehmen,
+  hell + dunkel, 1600 und 1280 px, plus Szenario „XC-Aufnahme geladen“ (braucht Key).
 - Ein echter Test-Upload mit eigener Aufnahme + Key (Nutzer), Antwort/Warnungen dokumentieren.
 
 ## Offene Fragen
