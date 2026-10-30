@@ -4,6 +4,8 @@ export interface WindowEventsHost {
     readonly audioBuffer: AudioBuffer | null;
     readonly waveformDisplayHeight: number;
     readonly spectrogramDisplayHeight: number;
+    readonly pixelsPerSecond: number;
+    _setPixelsPerSecond(pps: number, redraw: boolean): void;
     _queueCompactToolbarLayoutRefresh(): void;
     _shouldCompactToolbarBeActive(): boolean;
     _setCompactToolbarOpen(open: boolean): void;
@@ -30,6 +32,8 @@ export class WindowEventsController implements UiController {
 
         const relayout = () => {
             if (!h.audioBuffer) return;
+            // Re-clamp: a wider view raises the fill-the-view minimum zoom.
+            h._setPixelsPerSecond(h.pixelsPerSecond, false);
             h._invalidateSpectrogramHeightCache();
             h._drawSpectrogram();
             h._drawMainWaveform();

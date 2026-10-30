@@ -410,12 +410,17 @@ export class ViewportManager extends EventTarget {
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false });
     }
 
-    /** Slider minimum, lowered for long recordings so the whole track can fit the view. */
+    /**
+     * The zoom at which the whole track exactly fills the view: below the slider
+     * minimum for long recordings, above it for short ones (which would
+     * otherwise sit as a narrow strip at the left edge).
+     */
     _getMinPps(): number {
         const sliderMin = Math.max(1, Number(this._d.zoomSlider?.min || 20));
         const duration  = this._getAudioBuffer()?.duration || 0;
         if (!duration) return sliderMin;
-        return Math.min(sliderMin, Math.max(1, this._getViewportWidth()) / duration);
+        const maxPps = Number(this._d.zoomSlider?.max) || Infinity;
+        return Math.min(maxPps, Math.max(1, this._getViewportWidth()) / duration);
     }
 
     _setPixelsPerSecond(nextPps: number, redraw: boolean, anchorTime?: number, anchorPixel?: number) {
