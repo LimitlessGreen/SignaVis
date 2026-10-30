@@ -67,3 +67,16 @@
   font-size: 10px; padding: 2px 6px; cursor: pointer;
 }
 .spectrogram-settings-panel .mini-btn:hover { color: var(--color-text-primary); border-color: #3a5580; }
+
+/* Expert mode: advanced controls ([data-expert]) are hidden unless the panel is in expert mode */
+.spectrogram-settings-panel:not(.expert-mode) [data-expert] { display: none; }
+.spectrogram-settings-panel .expert-mode-section {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.spectrogram-settings-panel .expert-hint {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px; line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+.spectrogram-settings-panel .expert-hint[hidden] { display: none; }
+.spectrogram-settings-panel .expert-hint span { flex: 1; }
