@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WASM Spectrogram Bench</title>
+<style>
+    :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #999; } }
+    body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; margin: 16px; }
+    canvas { width: 100%; height: 200px; image-rendering: pixelated; background: #000; display: block; margin: 8px 0; }
+    pre { color: var(--muted); white-space: pre-wrap; }
+    label { margin-right: 12px; }
+</style>
+</head>
+<body>
+<h1>WASM spectrogram bench</h1>
+<p>
+    <input type="file" id="file" accept=".wav,audio/wav">
+    <label><input type="checkbox" id="runJs"> also run JS reference (decodes the whole file — only for &lt; ~1 h)</label>
+    <label><input type="checkbox" id="noCache"> ignore cache</label>
+    <button id="clear">clear OPFS cache</button>
+</p>
+<p id="status"></p>
+<canvas id="overview"></canvas>
+<canvas id="detail"></canvas>
+<pre id="log"></pre>
+<script type="module">
+import { WasmSpectrogramService } from '../src/infrastructure/wasm-dsp/WasmSpectrogramService.ts';
+import { computeSpectrogram } from '../src/domain/dsp.ts';
+
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $('log').textContent += s + '\n'; console.log(s); };
+
+const params = {
+    fftSize: 2048, hopSize: 0, winLength: 0, nMels: 160, scale: 'mel', window: 'hann',
+    pcen: { gain: 0.8, bias: 0.01, root: 4, smoothing: 0.025 },
+};
+
+function draw(canvas, data, frames, bins, lo, hi) {
+    canvas.width = frames; canvas.height = bins;
+    const g = canvas.getContext('2d');
+    const img = g.createImageData(frames, bins);
+    for (let x = 0; x < frames; x++) for (let y = 0; y < bins; y++) {
+        const v = Math.max(0, Math.min(255, 255 * (data[x * bins + y] - lo) / (hi - lo)));
+        const i = ((bins - 1 - y) * frames + x) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+}
+
+$('clear').onclick = async () => {
+    if (!navigator.storage?.getDirectory) return;
+    const root = await navigator.storage.getDirectory();
+    try { await root.removeEntry('aw-spectrograms', { recursive: true }); } catch {}
+    log('OPFS cache cleared');
+};
+
+$('file').onchange = async () => {
+    const file = $('file').files[0];
+    if (!file) return;
+    if ($('noCache').checked) await $('clear').onclick();
+    // hop/window from the header so params match the player (100 fps, 4× hop).
+    const head = new DataView(await file.slice(0, 64).arrayBuffer());
+    const sr = head.getUint32(24, true);
+    const p = { ...params, hopSize: Math.floor(sr / 100), winLength: 4 * Math.floor(sr / 100) };
+
+    const q = new URLSearchParams(location.search);
+    const svc = await WasmSpectrogramService.create(
+        q.has('workers') ? Number(q.get('workers')) : undefined,
+        { shareModule: q.get('share') !== '0' },
+    );
+    log(`module ${q.get('share') === '0' ? 'compiled per worker' : 'shared'}`);
+    log(`${file.name}: ${(file.size / 2 ** 20).toFixed(0)} MB, ${svc.workerCount} compute workers`);
+    const t0 = performance.now();
+    let lastTiming = null;
+    svc.onTiming = (t) => { lastTiming = t; };
+    const { meta, fromCache, persistent } = await svc.open(file, p, (f, ms) => {
+        $('status').textContent = `${(f * 100).toFixed(1)} % — ${(ms / 1000).toFixed(1)} s`;
+    });
+    if (lastTiming) log(`coordinator ms: ${JSON.stringify(Object.fromEntries(Object.entries(lastTiming).map(([k, v]) => [k, Math.round(v)])))}`);
+    const ms = performance.now() - t0;
+    const minutes = meta.nSamples / meta.params.sampleRate / 60;
+    log(`WASM: ${(ms / 1000).toFixed(2)} s for ${minutes.toFixed(1)} min (${(ms / 1000 / minutes).toFixed(3)} s/min)${fromCache ? ' [cache]' : ''}${persistent ? '' : ' [in-memory, no OPFS]'}`);
+    log(`levels: ${meta.levels.map((l) => `×${l.factor}:${l.nFrames}`).join(' ')}  stats p2=${meta.stats.p2.toFixed(3)} p98=${meta.stats.p98.toFixed(3)}`);
+    if (performance.memory) log(`JS heap: ${(performance.memory.usedJSHeapSize / 2 ** 20).toFixed(0)} MB`);
+
+    const top = meta.levels.length - 1;
+    const lo = meta.stats.p2, hi = meta.stats.p98;
+    let t = performance.now();
+    const ov = await svc.tile(top, 0, meta.levels[top].nFrames);
+    log(`overview tile (level ${top}, ${meta.levels[top].nFrames} frames): ${(performance.now() - t).toFixed(1)} ms`);
+    // Max-pooled levels are brighter than level 0 → contrast from the level itself.
+    const sorted = Float32Array.from(ov).sort();
+    const lvLo = sorted[Math.floor(sorted.length * 0.02)], lvHi = sorted[Math.floor(sorted.length * 0.98)];
+    log(`overview level stats p2=${lvLo.toFixed(3)} p98=${lvHi.toFixed(3)} (level 0: ${lo.toFixed(3)}/${hi.toFixed(3)})`);
+    draw($('overview'), ov, meta.levels[top].nFrames, meta.bins, q.get('lvstats') === '0' ? lo : lvLo, q.get('lvstats') === '0' ? hi : lvHi);
+
+    const mid = Math.floor(meta.levels[0].nFrames / 2);
+    t = performance.now();
+    const det = await svc.tile(0, mid, mid + 3000);
+    log(`30 s detail tile from the middle: ${(performance.now() - t).toFixed(1)} ms`);
+    draw($('detail'), det, det.length / meta.bins, meta.bins, lo, hi);
+
+    if ($('runJs').checked) {
+        t = performance.now();
+        const ctx = new AudioContext({ sampleRate: sr });
+        const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+        const tDec = performance.now() - t;
+        {
+            // How does the browser's decode compare to the raw PCM in the file?
+            const raw = new DataView(await file.slice(44, 44 + 2 * 32000).arrayBuffer());
+            const dec = buf.getChannelData(0);
+            let d = 0, at = 0;
+            for (let i = 0; i < raw.byteLength / 2; i++) {
+                const e = Math.abs(raw.getInt16(2 * i, true) / 32768 - dec[i]);
+                if (e > d) { d = e; at = i; }
+            }
+            log(`decodeAudioData vs raw PCM (first 1 s): max diff ${d.toExponential(2)} at sample ${at} (ctx ${ctx.sampleRate} Hz, buffer ${buf.sampleRate} Hz)`);
+        }
+        t = performance.now();
+        const r = computeSpectrogram({ channelData: buf.getChannelData(0), sampleRate: sr, frameRate: 100, nMels: 160,
+            fftSize: 2048, windowSize: p.winLength, hopSize: p.hopSize, usePcen: true, scale: 'mel',
+            pcenGain: 0.8, pcenBias: 0.01, pcenRoot: 4, pcenSmoothing: 0.025 });
+        const tJs = performance.now() - t;
+        log(`JS: decode ${(tDec / 1000).toFixed(2)} s + spectrogram ${(tJs / 1000).toFixed(2)} s (single thread, main)`);
+        const l0 = await svc.tile(0, 0, r.nFrames);
+        let err = 0, at = 0, big = 0, bigLowBins = 0, errAbove3 = 0;
+        for (let i = 0; i < l0.length; i++) {
+            const e = Math.abs(l0[i] - r.data[i]) / Math.max(1, Math.abs(r.data[i]));
+            if (e > 1e-2) { big++; if (i % meta.bins < 3) bigLowBins++; }
+            if (i % meta.bins >= 3) errAbove3 = Math.max(errAbove3, e);
+            if (e > err) { err = e; at = i; }
+        }
+        log(`values > 1e-2 in mel bins 0–2: ${bigLowBins} of ${big}; max rel err for bins ≥ 3: ${errAbove3.toExponential(2)}`);
+        log(`frames JS ${r.nFrames} vs WASM ${meta.levels[0].nFrames}`);
+        log(`parity WASM(f16) vs JS: max rel err ${err.toExponential(2)} at frame ${Math.floor(at / meta.bins)} bin ${at % meta.bins} (js ${r.data[at]}, wasm ${l0[at]}), ${big} values > 1e-2`);
+    }
+    svc.dispose();
+};
+</script>
+</body>
+</html>

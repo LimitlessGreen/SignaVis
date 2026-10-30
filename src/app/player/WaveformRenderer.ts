@@ -40,6 +40,8 @@ export interface WaveformRendererDeps {
     getEffectiveSpectrogramHeight: () => number;
     getCoords:               () => CoordinateSystem;
     scheduleUiUpdate:        () => void;
+    getScrollLeft?:          () => number;
+    getViewportWidth?:       () => number;
 }
 
 export class WaveformRenderer {
@@ -54,6 +56,8 @@ export class WaveformRenderer {
     #getEffectiveSpectrogramHeight: () => number;
     #getCoords: () => CoordinateSystem;
     #scheduleUiUpdate: () => void;
+    #getScrollLeft: () => number;
+    #getViewportWidth: () => number;
 
     constructor(deps: WaveformRendererDeps) {
         this.#d = deps.d;
@@ -67,6 +71,8 @@ export class WaveformRenderer {
         this.#getEffectiveSpectrogramHeight = deps.getEffectiveSpectrogramHeight;
         this.#getCoords = deps.getCoords;
         this.#scheduleUiUpdate = deps.scheduleUiUpdate;
+        this.#getScrollLeft = deps.getScrollLeft ?? (() => 0);
+        this.#getViewportWidth = deps.getViewportWidth ?? (() => 0);
     }
 
     // ── Public rendering API ─────────────────────────────────────────
@@ -86,6 +92,8 @@ export class WaveformRenderer {
             waveformHeight:    effectiveWaveformHeight,
             amplitudePeakAbs:  this.#getAmplitudePeakAbs(),
             showTimeline:      this.#getShowWaveformTimeline(),
+            scrollLeft:        this.#getScrollLeft(),
+            viewportWidth:     this.#getViewportWidth(),
         });
         this.#scheduleUiUpdate();
     }

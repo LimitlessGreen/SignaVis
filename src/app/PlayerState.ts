@@ -359,6 +359,8 @@ export class PlayerState {
             getEffectiveSpectrogramHeight: () => this._getEffectiveSpectrogramHeight(),
             getCoords:               () => this.coords,
             scheduleUiUpdate:        () => this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true }),
+            getScrollLeft:           () => this._getPrimaryScrollLeft(),
+            getViewportWidth:        () => this._getViewportWidth(),
         });
 
         // ── ToolbarController ──
@@ -713,7 +715,7 @@ export class PlayerState {
 
         try {
             const result = await this._engine.loadFromFile(file);
-            await this._onAudioLoaded(result, file.name, 'file-loaded');
+            await this._onAudioLoaded(result, file.name, 'file-loaded', file);
         } catch (error) {
             this._onAudioLoadError(error, 'file');
         }
@@ -733,19 +735,21 @@ export class PlayerState {
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            await this._onAudioLoaded(result, name, 'url-loaded');
+            // Empty placeholder File: identifies the URL for the WASM tile cache; samples come from the decoded buffer.
+            const sourceRef = new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
+            await this._onAudioLoaded(result, name, 'url-loaded', sourceRef);
         } catch (error) {
             this._onAudioLoadError(error, 'url');
             throw error;
         }
     }
 
-    async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string) {
+    async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null) {
         this.sampleRateHz = sampleRate;
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {
-            this._spectro.setAudio(this._engine.audioBuffer, sampleRate);
+            this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile);
         }
         this._spectro.updateMaxFreqOptions(sampleRate);
 

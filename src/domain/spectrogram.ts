@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { MAX_BASE_SPECTROGRAM_WIDTH } from '../shared/constants.ts';
-import { clamp, getTimeGridSteps } from '../shared/utils.ts';
+import { clamp, getTimeGridSteps, formatGridTime } from '../shared/utils.ts';
 import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.ts';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.ts';
 import {
@@ -568,7 +568,9 @@ export function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, sc
     ctx.font = '11px monospace';
     ctx.textBaseline = 'top';
 
-    for (let t = 0; t <= duration; t += minorStep) {
+    // Start at the first visible minor line instead of walking the whole file.
+    const tStart = Math.max(0, Math.floor(scrollLeft / pixelsPerSecond / minorStep)) * minorStep;
+    for (let t = tStart; t <= duration; t += minorStep) {
         const absX = Math.round(t * pixelsPerSecond);
         const x = absX - scrollLeft + 0.5;
         if (x < 0 || x > width) continue;
@@ -580,7 +582,7 @@ export function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, sc
         ctx.stroke();
         if (isMajor) {
             ctx.fillStyle = majorColor;
-            ctx.fillText(`${t.toFixed(1)}s`, x + 3, 4);
+            ctx.fillText(formatGridTime(t, majorStep), x + 3, 4);
         }
     }
     ctx.restore();

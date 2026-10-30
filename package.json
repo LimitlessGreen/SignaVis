@@ -59,6 +59,7 @@
     "dev:analysis-mock": "node ./scripts/mock-analysis-server.mjs",
     "build": "npm run build:css && vite build && node ./scripts/generate-types.js",
     "build:desktop": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.demo.config.js",
+    "build:wasm": "wasm-pack build src-tauri/crates/aw-dsp-wasm --release --target web --out-dir ../../../src/infrastructure/wasm-dsp/pkg --no-pack && node -e \"require('fs').rmSync('src/infrastructure/wasm-dsp/pkg/.gitignore',{force:true})\"",
     "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
     "typecheck": "tsc --noEmit --checkers 4",

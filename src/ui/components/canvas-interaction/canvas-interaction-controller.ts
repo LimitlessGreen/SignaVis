@@ -11,6 +11,7 @@ export interface CanvasInteractionHost {
     _getPrimaryScrollWrapper(): HTMLElement;
     _setLinkedScrollLeft(x: number): void;
     _drawSpectrogram(): void;
+    _drawMainWaveform(): void;
     _handleCanvasClick(e: MouseEvent): void;
     _handleWaveformClick(e: MouseEvent): void;
     _updateCrosshair(e: MouseEvent): void;
@@ -43,12 +44,14 @@ export class CanvasInteractionController implements UiController {
             h._setLinkedScrollLeft(this.d.canvasWrapper.scrollLeft);
             // Synchronous redraw so canvas doesn't lag behind the label overlay
             if (h._spectro.hasData) h._drawSpectrogram();
+            h._drawMainWaveform();
         });
         on(this.d.waveformWrapper, 'scroll', () => {
             if (h.scrollSyncLock) return;
             if (h._getPrimaryScrollWrapper() !== this.d.waveformWrapper) return;
             h._setLinkedScrollLeft(this.d.waveformWrapper.scrollLeft);
             if (h._spectro.hasData) h._drawSpectrogram();
+            h._drawMainWaveform();
         });
 
         on(this.d.canvasWrapper, 'wheel', (e: WheelEvent) => h._handleWheel(e, 'spectrogram'), { passive: false });

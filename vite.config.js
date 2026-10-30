@@ -2,6 +2,10 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
+    server: {
+        // Cargo build dirs churn (and lock .exe files on Windows → EBUSY crash).
+        watch: { ignored: ['**/src-tauri/**/target/**', '**/src-tauri/crates/*/pkg/**'] },
+    },
     build: {
         lib: {
             entry: resolve(__dirname, 'src/app/BirdNETPlayer.ts'),

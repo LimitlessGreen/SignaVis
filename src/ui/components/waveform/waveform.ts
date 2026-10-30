@@ -2,7 +2,7 @@
 // Waveform — canvas rendering for waveform, timeline, overview and frequency labels
 // ═══════════════════════════════════════════════════════════════════════
 
-import { clamp, getTimeGridSteps, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
+import { clamp, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
     try {
@@ -35,7 +35,7 @@ function installThemeObserver(canvas: any, redrawFn: () => void) {
 
 // ─── Waveform Timeline (private helper) ─────────────────────────────
 
-function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number }) {
+function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond, scrollLeft = 0 }: { ctx: CanvasRenderingContext2D; width: number; height: number; duration: number; pixelsPerSecond: number; scrollLeft?: number }) {
     if (width <= 0) return;
     const textColor = getCssVar('--color-text-secondary', '#cbd5e1');
     const { majorStep, minorStep } = getTimeGridSteps(pixelsPerSecond);
@@ -48,9 +48,11 @@ function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }:
     ctx.fillStyle = textColor;
     ctx.strokeStyle = colorWithAlpha(getCssVar('--color-text-secondary', '#cbd5e1'), 0.25);
 
-    for (let t = 0; t <= duration; t += minorStep) {
-        const x = Math.round(t * pixelsPerSecond) + 0.5;
-        if (x < 0 || x > width) continue;
+    const tStart = Math.max(0, Math.floor(scrollLeft / pixelsPerSecond / minorStep)) * minorStep;
+    for (let t = tStart; t <= duration; t += minorStep) {
+        const x = Math.round(t * pixelsPerSecond) - scrollLeft + 0.5;
+        if (x < 0) continue;
+        if (x > width) break;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
         const lineHeight = isMajor ? 14 : 8;
         ctx.beginPath();
@@ -58,13 +60,44 @@ function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond }:
         ctx.lineTo(x, lineHeight);
         ctx.stroke();
         if (isMajor) {
-            ctx.fillText(`${t.toFixed(1)}s`, x + 3, height / 2);
+            ctx.fillText(formatGridTime(t, majorStep), x + 3, height / 2);
         }
     }
 }
 
+// ─── Peak cache ─────────────────────────────────────────────────────
+
+// Min/max per PEAK_BLOCK samples, built once per buffer. Lets zoomed-out
+// redraws (long recordings) touch ~1/1024 of the samples.
+const PEAK_BLOCK = 1024;
+const peakCache = new WeakMap<AudioBuffer, { min: Float32Array; max: Float32Array }>();
+
+function getPeaks(audioBuffer: AudioBuffer) {
+    let peaks = peakCache.get(audioBuffer);
+    if (peaks) return peaks;
+    const data = audioBuffer.getChannelData(0);
+    const n = Math.ceil(data.length / PEAK_BLOCK);
+    const min = new Float32Array(n);
+    const max = new Float32Array(n);
+    for (let b = 0; b < n; b++) {
+        let lo = Infinity, hi = -Infinity;
+        const end = Math.min(data.length, (b + 1) * PEAK_BLOCK);
+        for (let i = b * PEAK_BLOCK; i < end; i++) {
+            const v = data[i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+        min[b] = lo; max[b] = hi;
+    }
+    peaks = { min, max };
+    peakCache.set(audioBuffer, peaks);
+    return peaks;
+}
+
 // ─── Main Waveform ──────────────────────────────────────────────────
 
+// Canvases are viewport-sized and sticky (like the spectrogram canvas);
+// waveformContent keeps the full track width so scrolling still works.
 export function renderMainWaveform({
     audioBuffer,
     amplitudeCanvas,
@@ -74,6 +107,8 @@ export function renderMainWaveform({
     waveformHeight = 100,
     amplitudePeakAbs,
     showTimeline = true,
+    scrollLeft = 0,
+    viewportWidth = 0,
 }: {
     audioBuffer: AudioBuffer;
     amplitudeCanvas: HTMLCanvasElement;
@@ -83,6 +118,8 @@ export function renderMainWaveform({
     waveformHeight?: number;
     amplitudePeakAbs: number;
     showTimeline?: boolean;
+    scrollLeft?: number;
+    viewportWidth?: number;
 }) {
     if (!audioBuffer) return;
 
@@ -91,10 +128,12 @@ export function renderMainWaveform({
     if (!ampCtx || !timelineCtx) return;
 
     try {
-        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline };
+        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline, scrollLeft, viewportWidth };
     } catch (e) {}
 
-    const width = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
+    const totalWidth = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
+    const width = viewportWidth > 0 ? Math.min(viewportWidth, totalWidth) : totalWidth;
+    const sl = viewportWidth > 0 ? clamp(scrollLeft, 0, Math.max(0, totalWidth - width)) : 0;
     const clampedWaveformHeight = Math.max(64, Math.floor(waveformHeight));
     const timelineHeight = showTimeline ? clamp(Math.round(clampedWaveformHeight * 0.22), 18, 32) : 0;
     const ampHeight = Math.max(32, clampedWaveformHeight - timelineHeight);
@@ -104,7 +143,7 @@ export function renderMainWaveform({
     waveformTimelineCanvas.width = width;
     waveformTimelineCanvas.height = timelineHeight;
     waveformTimelineCanvas.style.display = showTimeline ? 'block' : 'none';
-    waveformContent.style.width = `${width}px`;
+    waveformContent.style.width = `${totalWidth}px`;
 
     const channelData = audioBuffer.getChannelData(0);
     const totalSamples = channelData.length;
@@ -115,8 +154,10 @@ export function renderMainWaveform({
     ampCtx.clearRect(0, 0, width, ampHeight);
     ampCtx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
     ampCtx.fillRect(0, 0, width, ampHeight);
-    for (let t = 0; t <= audioBuffer.duration; t += minorStep) {
-        const x = Math.round(t * pixelsPerSecond) + 0.5;
+    const tStart = Math.max(0, Math.floor(sl / pixelsPerSecond / minorStep)) * minorStep;
+    for (let t = tStart; t <= audioBuffer.duration; t += minorStep) {
+        const x = Math.round(t * pixelsPerSecond) - sl + 0.5;
+        if (x > width) break;
         const isMajor = Math.abs((t / majorStep) - Math.round(t / majorStep)) < 0.0001;
         ampCtx.strokeStyle = isMajor ? colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.22) : colorWithAlpha(getCssVar('--color-text-secondary', '#94a3b8'), 0.12);
         ampCtx.beginPath();
@@ -132,15 +173,27 @@ export function renderMainWaveform({
 
     ampCtx.strokeStyle = getCssVar('--color-accent', '#60a5fa');
     ampCtx.lineWidth = 1;
+    const samplesPerPx = totalSamples / totalWidth;
+    const peaks = samplesPerPx >= 4 * PEAK_BLOCK ? getPeaks(audioBuffer) : null;
     for (let x = 0; x < width; x++) {
-        const start = Math.floor(x * totalSamples / width);
-        const end = Math.min(totalSamples, Math.floor((x + 1) * totalSamples / width));
+        const start = Math.floor((x + sl) * samplesPerPx);
+        const end = Math.min(totalSamples, Math.floor((x + sl + 1) * samplesPerPx));
         let min = 1;
         let max = -1;
-        for (let i = start; i < end; i++) {
-            const v = clamp(channelData[i] * ampScale, -1, 1);
-            if (v < min) min = v;
-            if (v > max) max = v;
+        if (peaks) {
+            const b1 = Math.min(peaks.min.length, Math.ceil(end / PEAK_BLOCK));
+            for (let b = Math.floor(start / PEAK_BLOCK); b < b1; b++) {
+                const lo = clamp(peaks.min[b] * ampScale, -1, 1);
+                const hi = clamp(peaks.max[b] * ampScale, -1, 1);
+                if (lo < min) min = lo;
+                if (hi > max) max = hi;
+            }
+        } else {
+            for (let i = start; i < end; i++) {
+                const v = clamp(channelData[i] * ampScale, -1, 1);
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
         }
         ampCtx.beginPath();
         ampCtx.moveTo(x + 0.5, (1 + min) * midY);
@@ -155,6 +208,7 @@ export function renderMainWaveform({
             height: timelineHeight,
             duration: audioBuffer.duration,
             pixelsPerSecond,
+            scrollLeft: sl,
         });
     }
 
