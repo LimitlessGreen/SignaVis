@@ -43,6 +43,14 @@
   font-family: 'Cascadia Code', 'Consolas', monospace;
 }
 .spectrogram-settings-panel .settings-range { flex: 1; height: 4px; accent-color: var(--color-accent); }
+.spectrogram-settings-panel .settings-value {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.spectrogram-settings-panel .settings-value:empty { display: none; }
 .spectrogram-settings-panel .quality-label-bar {
   display: flex; justify-content: space-between;
   font-size: 9px; color: var(--color-text-secondary);

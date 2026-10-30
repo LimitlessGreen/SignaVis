@@ -31,6 +31,9 @@ interface BuildSpectrogramOpts {
     colourScale?: string;
     noiseReduction?: boolean;
     clahe?: boolean;
+    /** Keep values as they are (dB) instead of mapping [absLogMin, absLogMax] → [0, 1];
+     *  the contrast window is applied later (shader / colorizeRaw). */
+    raw?: boolean;
 }
 
 // Worker constructor - loaded lazily via Vite's ?worker&inline.
@@ -223,7 +226,7 @@ void main() {
 }`;
 
 const _FS = `#version 300 es
-precision mediump float;
+precision highp float;
 uniform sampler2D u_gray;
 uniform sampler2D u_lut;
 uniform float u_floor;
@@ -623,6 +626,7 @@ export function buildSpectrogramGrayscale({
     colourScale = 'dbSquared',
     noiseReduction = false,
     clahe = false,
+    raw = false,
 }: BuildSpectrogramOpts) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
@@ -691,7 +695,10 @@ export function buildSpectrogramGrayscale({
             const value = (sumLo + (sumHi - sumLo) * frac) / Math.max(1, count);
             let pixel;
 
-            if (colourScale === 'phase') {
+            if (raw) {
+                gray[y * width + x] = value;
+                continue;
+            } else if (colourScale === 'phase') {
                 pixel = (value + Math.PI) / (2 * Math.PI);
             } else if (colourScale === 'meter') {
                 const normalized = (value - spectrogramAbsLogMin) / dataRange;
@@ -707,7 +714,7 @@ export function buildSpectrogramGrayscale({
     }
 
     // ── CLAHE (Contrast Limited Adaptive Histogram Equalization) ──
-    if (clahe && colourScale !== 'phase') {
+    if (clahe && !raw && colourScale !== 'phase') {
         applyCLAHE(gray, width, height);
     }
 
@@ -833,6 +840,15 @@ export function applyCLAHE(gray: Float32Array, width: number, height: number, nT
             gray[y * width + x] = clamp(top + (bot - top) * fy, 0, 1);
         }
     }
+}
+
+/** Maps raw (dB) values to [0, 1] over [lo, hi] — CPU stand-in for the shader window. */
+export function windowGrayscale(grayInfo: NonNullable<GrayInfo>, lo: number, hi: number): NonNullable<GrayInfo> {
+    const { gray, width, height } = grayInfo;
+    const out = new Float32Array(gray.length);
+    const rcp = 1 / Math.max(1e-6, hi - lo);
+    for (let i = 0; i < gray.length; i++) out[i] = clamp((gray[i] - lo) * rcp, 0, 1);
+    return { gray: out, width, height };
 }
 
 /**

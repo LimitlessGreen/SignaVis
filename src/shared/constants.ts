@@ -32,6 +32,12 @@ export const PERCH_PCEN_BIAS = 0.01;
 export const PERCH_PCEN_ROOT = 4.0;
 export const PERCH_PCEN_TIME_CONSTANT = 0.4;  // s (≈ 0.025 per frame at 100 fps)
 
+// v2 contrast window in dB: black = noise floor + floor, white = black + range.
+export const DB_CONTRAST = {
+    floor: { min: -30, max: 40, def: 0 },
+    range: { min: 20, max: 120, def: 70 },
+} as const;
+
 // Classic (Xeno-Canto-style) spectrogram defaults
 export const CLASSIC_FRAME_RATE = 100;
 export const CLASSIC_N_MELS = 160;

@@ -132,6 +132,10 @@ export interface DomRefs {
     gainModeSelect:          HTMLSelectElement | null;
     floorSlider:             HTMLInputElement  | null;
     ceilSlider:              HTMLInputElement  | null;
+    floorLabel:              HTMLElement       | null;
+    ceilLabel:               HTMLElement       | null;
+    floorValue:              HTMLElement       | null;
+    ceilValue:               HTMLElement       | null;
     autoContrastBtn:         HTMLButtonElement | null;
     autoFreqBtn:             HTMLButtonElement | null;
 
