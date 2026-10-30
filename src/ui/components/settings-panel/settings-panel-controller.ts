@@ -3,7 +3,7 @@ import type { DomRefs } from '../../../app/domRefs.ts';
 
 export interface SettingsPanelHost {
     readonly audioBuffer: AudioBuffer | null;
-    _freqView: { resetSilent(): void };
+    _freqZoom: { resetSilent(): void };
     _spectro: { hasData: boolean; buildGrayscale(): void; buildBaseImage(scheme: any): void };
     _presets: { currentColorScheme: any; bindEvents(on: OnFn): void };
     _emit(event: string, detail: any): void;
@@ -27,7 +27,7 @@ export class SettingsPanelController implements UiController {
 
         on(this.d.maxFreqSelect, 'change', () => {
             if (h.audioBuffer && h._spectro.hasData) {
-                h._freqView.resetSilent();
+                h._freqZoom.resetSilent();
                 h._emit('spectrogramscalechange', { maxFreq: parseFloat(this.d.maxFreqSelect!.value) });
                 h._updateCoords();
                 h._createFrequencyLabels();
