@@ -76,6 +76,8 @@ export class ViewportManager extends EventTarget {
     _lastSelectionStart: any;
     _lastSelectionEnd: any;
     _lastViewRangeTextStart: any;
+    /** Overview container width the window element was last laid out for. */
+    _overviewLayoutWidth = 0;
     _lastViewRangeTextEnd: any;
     /**
      * @param {object} opts
@@ -507,7 +509,10 @@ export class ViewportManager extends EventTarget {
 
         this.windowStartNorm = nextStartNorm;
         this.windowEndNorm   = nextEndNorm;
-        if (moved) this._updateOverviewWindowElement();
+        // A container resize alone (side panel, scrollbar) leaves the element's
+        // pixel position stale even though the normalized range is unchanged.
+        const cw = d.overviewContainer?.clientWidth || 0;
+        if (moved || cw !== this._overviewLayoutWidth) this._updateOverviewWindowElement();
 
         // View-range display text
         const rangeChanged = Math.abs(startTime - this._lastViewRangeTextStart) > 0.05
@@ -538,6 +543,7 @@ export class ViewportManager extends EventTarget {
         if (!this._layout.showOverview) return;
         const cw = this._d.overviewContainer?.clientWidth || 0;
         if (cw <= 0) return;
+        this._overviewLayoutWidth = cw;
         const minW = 8;
         let left  = this.windowStartNorm * cw;
         let width = Math.max(minW, this.windowEndNorm * cw - left);

@@ -25,7 +25,7 @@ export function bindUiControllers(d: any, state: import('./PlayerState.ts').Play
         new PlayheadController(d, state),
         new DocumentEventsController(state),
         new OverviewController(d, state),
-        new WindowEventsController(state),
+        new WindowEventsController(state, [d.canvasWrapper, d.overviewContainer]),
     ];
     for (const c of controllers) c.bind(on);
 }
