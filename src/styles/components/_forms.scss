@@ -120,6 +120,16 @@
 
 /* Annotation set section — subtle tint to distinguish from recording/label sections */
 .props-section--set .props-section-title { color: rgba(56, 189, 248, 0.65); }
+.props-set-edit-link {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-size: 11px;
+  cursor: pointer;
+  &:hover { text-decoration: underline; }
+}
 .props-section--set .props-section-body { background: rgba(56, 189, 248, 0.03); }
 .props-readonly { opacity: 0.65; }
 .props-editable { }

@@ -153,6 +153,9 @@ export class Sidebar {
     this._onResize?.();
   }
 
+  /** True while no panel is shown. */
+  get collapsed() { return this._collapsed; }
+
   /** Toggle: if panel is active collapse, otherwise activate. */
   toggle(id: any) {
     if (this._activeId === id && !this._collapsed) {
