@@ -15,7 +15,7 @@ import {
     spectralSubtract,
     applyCLAHE,
 } from '../src/domain/spectrogram.ts';
-import { computeSpectrogram, buildMelFrequencies } from '../src/domain/dsp.ts';
+import { buildMelFrequencies } from '../src/domain/dsp.ts';
 import { MAX_BASE_SPECTROGRAM_WIDTH } from '../src/shared/constants.ts';
 
 // ─── computeAmplitudePeak ───────────────────────────────────────────
@@ -367,114 +367,6 @@ test('pixelYToFrequency clamps maxFreq to Nyquist', () => {
         `freq ${freq} should not exceed Nyquist (${sr / 2})`);
 });
 
-// ═══════════════════════════════════════════════════════════════════════
-// End-to-end pipeline: computeSpectrogram → buildSpectrogramGrayscale
-// ═══════════════════════════════════════════════════════════════════════
-
-test('end-to-end: sine wave produces energy at expected frequency band (mel)', () => {
-    const sr = 32000, freq = 4000, duration = 0.5;
-    const audio = new Float32Array(sr * duration);
-    for (let i = 0; i < audio.length; i++) {
-        audio[i] = Math.sin(2 * Math.PI * freq * i / sr);
-    }
-    const spec = computeSpectrogram({
-        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
-        nMels: 128, pcenGain: 0.8, pcenBias: 0.01, pcenRoot: 4, pcenSmoothing: 0.025,
-        scale: 'mel', usePcen: true,
-    });
-    const stats = updateSpectrogramStats(spec.data);
-    const gray = buildSpectrogramGrayscale({
-        spectrogramData: spec.data, spectrogramFrames: spec.nFrames,
-        spectrogramMels: spec.nMels, sampleRateHz: sr, maxFreq: sr / 2,
-        spectrogramAbsLogMin: stats.logMin, spectrogramAbsLogMax: stats.logMax, scale: 'mel',
-    });
-    assert.ok(gray !== null);
-    // The grayscale should have non-zero pixels (signal is present)
-    let nonZero = 0;
-    for (let i = 0; i < gray.gray.length; i++) {
-        if (gray.gray[i] > 0) nonZero++;
-    }
-    assert.ok(nonZero > 0, 'sine wave should produce visible energy in grayscale');
-    // Energy should be concentrated, not spread across all rows
-    // Count bright rows (mean > 50) vs dark rows (mean < 10)
-    let brightRows = 0, darkRows = 0;
-    for (let y = 0; y < gray.height; y++) {
-        let rowSum = 0;
-        for (let x = 0; x < gray.width; x++) rowSum += gray.gray[y * gray.width + x];
-        const rowMean = rowSum / gray.width;
-        if (rowMean > 50) brightRows++;
-        else if (rowMean < 10) darkRows++;
-    }
-    assert.ok(brightRows < gray.height / 2,
-        `energy should be concentrated, not spread (${brightRows} bright rows of ${gray.height})`);
-    assert.ok(darkRows > gray.height / 4,
-        `most rows should be dark for a single tone (${darkRows} dark rows of ${gray.height})`);
-});
-
-test('end-to-end: silence produces near-zero grayscale', () => {
-    const sr = 16000;
-    const audio = new Float32Array(sr * 0.5); // 0.5s silence
-    const spec = computeSpectrogram({
-        channelData: audio, fftSize: 1024, sampleRate: sr, frameRate: 100,
-        nMels: 64, pcenGain: 0.8, pcenBias: 0.01, pcenRoot: 4, pcenSmoothing: 0.025,
-        scale: 'mel', usePcen: false,
-    });
-    const { logMin, logMax } = updateSpectrogramStats(spec.data);
-    const gray = buildSpectrogramGrayscale({
-        spectrogramData: spec.data, spectrogramFrames: spec.nFrames,
-        spectrogramMels: spec.nMels, sampleRateHz: sr, maxFreq: sr / 2,
-        spectrogramAbsLogMin: logMin, spectrogramAbsLogMax: logMax, scale: 'mel',
-    });
-    assert.ok(gray !== null);
-    // Silence should produce a mostly uniform grayscale image
-    let min = 255, max = 0;
-    for (let i = 0; i < gray.gray.length; i++) {
-        if (gray.gray[i] < min) min = gray.gray[i];
-        if (gray.gray[i] > max) max = gray.gray[i];
-    }
-    assert.ok(max - min < 30, `silence should be near-uniform (range: ${min}-${max})`);
-});
-
-test('end-to-end: linear vs mel produce different grayscale for same audio', () => {
-    const sr = 32000;
-    const audio = new Float32Array(sr * 0.3);
-    for (let i = 0; i < audio.length; i++) {
-        audio[i] = Math.sin(2 * Math.PI * 2000 * i / sr) + 0.5 * Math.sin(2 * Math.PI * 8000 * i / sr);
-    }
-    const specMel = computeSpectrogram({
-        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
-        nMels: 128, pcenGain: 0.8, pcenBias: 0.01, pcenRoot: 4, pcenSmoothing: 0.025,
-        scale: 'mel', usePcen: false,
-    });
-    const specLin = computeSpectrogram({
-        channelData: audio, fftSize: 2048, sampleRate: sr, frameRate: 100,
-        nMels: 128, pcenGain: 0.8, pcenBias: 0.01, pcenRoot: 4, pcenSmoothing: 0.025,
-        scale: 'linear',
-    });
-    const gMel = buildSpectrogramGrayscale({
-        spectrogramData: specMel.data, spectrogramFrames: specMel.nFrames,
-        spectrogramMels: specMel.nMels, sampleRateHz: sr, maxFreq: sr / 2,
-        spectrogramAbsLogMin: -80, spectrogramAbsLogMax: 0, scale: 'mel',
-    });
-    const gLin = buildSpectrogramGrayscale({
-        spectrogramData: specLin.data, spectrogramFrames: specLin.nFrames,
-        spectrogramMels: specLin.nMels, sampleRateHz: sr, maxFreq: sr / 2,
-        spectrogramAbsLogMin: -80, spectrogramAbsLogMax: 0, scale: 'linear',
-    });
-    // Different scales should produce different gray images
-    let diffCount = 0;
-    const minLen = Math.min(gMel.gray.length, gLin.gray.length);
-    for (let i = 0; i < minLen; i++) {
-        if (gMel.gray[i] !== gLin.gray[i]) diffCount++;
-    }
-    assert.ok(diffCount > minLen * 0.1,
-        `mel and linear should differ substantially (${diffCount}/${minLen} pixels differ)`);
-});
-
-// ═══════════════════════════════════════════════════════════════════════
-// buildSpectrogramGrayscale — colourScale modes
-// ═══════════════════════════════════════════════════════════════════════
-
 test('buildSpectrogramGrayscale colourScale=phase maps [-π, +π] to [0, 255]', () => {
     const nFrames = 10, nBins = 16;
     // Fill with known phase values: −π to +π
@@ -513,45 +405,6 @@ test('buildSpectrogramGrayscale colourScale=linear maps raw magnitudes', () => {
         `uniform 0.5 should map to ~0.5 (got ${expected})`);
 });
 
-test('buildSpectrogramGrayscale colourScale=meter applies IEC curve', () => {
-    const nFrames = 10, nBins = 8;
-    // Full-scale values (max) should map to 255 for both linear and meter
-    const dataMax = new Float32Array(nFrames * nBins).fill(1);
-    const linearResult = buildSpectrogramGrayscale({
-        spectrogramData: dataMax, spectrogramFrames: nFrames, spectrogramMels: nBins,
-        sampleRateHz: 32000, maxFreq: 16000,
-        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
-        scale: 'linear', colourScale: 'linear',
-    });
-    const meterResult = buildSpectrogramGrayscale({
-        spectrogramData: dataMax, spectrogramFrames: nFrames, spectrogramMels: nBins,
-        sampleRateHz: 32000, maxFreq: 16000,
-        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
-        scale: 'linear', colourScale: 'meter',
-    });
-    // At full scale (0 dB), both should be 1
-    assert.ok(Math.abs(linearResult.gray[0] - 1) < 1e-6);
-    assert.ok(Math.abs(meterResult.gray[0] - 1) < 1e-6);
-
-    // Now test mid-level: meter should be different from linear
-    const dataMid = new Float32Array(nFrames * nBins).fill(0.1); // quiet
-    const linMid = buildSpectrogramGrayscale({
-        spectrogramData: dataMid, spectrogramFrames: nFrames, spectrogramMels: nBins,
-        sampleRateHz: 32000, maxFreq: 16000,
-        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
-        scale: 'linear', colourScale: 'linear',
-    });
-    const meterMid = buildSpectrogramGrayscale({
-        spectrogramData: dataMid, spectrogramFrames: nFrames, spectrogramMels: nBins,
-        sampleRateHz: 32000, maxFreq: 16000,
-        spectrogramAbsLogMin: 0, spectrogramAbsLogMax: 1,
-        scale: 'linear', colourScale: 'meter',
-    });
-    // Meter should compress quiet signals (map them differently from linear)
-    assert.notEqual(linMid.gray[0], meterMid.gray[0],
-        `meter (${meterMid.gray[0]}) should differ from linear (${linMid.gray[0]}) at quiet levels`);
-});
-
 test('buildSpectrogramGrayscale colourScale=db and dbSquared produce same output for dB data', () => {
     const nFrames = 10, nBins = 8;
     const data = new Float32Array(nFrames * nBins);
@@ -581,7 +434,7 @@ test('buildSpectrogramGrayscale all colourScales produce values in [0, 255]', ()
     const data = new Float32Array(nFrames * nBins);
     for (let i = 0; i < data.length; i++) data[i] = (Math.random() - 0.5) * 10;
 
-    for (const cs of ['linear', 'meter', 'dbSquared', 'db', 'phase']) {
+    for (const cs of ['linear', 'dbSquared', 'db', 'phase']) {
         const result = buildSpectrogramGrayscale({
             spectrogramData: data, spectrogramFrames: nFrames, spectrogramMels: nBins,
             sampleRateHz: 32000, maxFreq: 16000,

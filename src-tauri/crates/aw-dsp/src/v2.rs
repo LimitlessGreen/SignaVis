@@ -10,6 +10,8 @@
 //     least one FFT bin so no band is ever empty
 //   • PCEN smoothing is a time constant in seconds (hop-independent)
 //   • reassignment accumulates power, then converts to dB
+//   • output: dBFS (default), magnitude (sine amplitude units: a sine of
+//     amplitude A reads A) or phase (radians, −π … π)
 // ═══════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "parallel")]
@@ -49,6 +51,20 @@ pub enum FreqScale {
     Log { bands: usize, f_min: f64, f_max: f64 },
 }
 
+/// What each output cell holds. PCEN only applies to `Db`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Output {
+    /// dBFS, or PCEN when `pcen` is set.
+    #[default]
+    Db,
+    /// √power in sine amplitude units.
+    Magnitude,
+    /// Phase in radians at the window start; band scales take the
+    /// filter-weighted circular mean of the bin phases.
+    Phase,
+}
+
 /// Per-channel energy normalisation (Wang et al. 2017, librosa conventions).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,8 +96,10 @@ pub struct StftParams {
     pub scale: FreqScale,
     /// None → dBFS.
     pub pcen: Option<Pcen>,
-    /// Time-frequency reassignment (dBFS output only).
+    /// Time-frequency reassignment (not with phase output).
     pub reassign: bool,
+    #[serde(default)]
+    pub output: Output,
 }
 
 impl StftParams {
@@ -91,7 +109,7 @@ impl StftParams {
         let win_len = ((win_ms * 1e-3 * sample_rate as f64).round() as usize).max(16);
         let hop = ((win_len as f64 * (1.0 - overlap.clamp(0.0, 0.99))).round() as usize).max(1);
         let n_fft = (win_len * zero_pad.max(1)).next_power_of_two();
-        Self { sample_rate, win_len, hop, n_fft, window, scale, pcen: None, reassign: false }
+        Self { sample_rate, win_len, hop, n_fft, window, scale, pcen: None, reassign: false, output: Output::Db }
     }
 
     /// Sets the sample rate taken from the audio and resolves a band `f_max`
@@ -109,6 +127,8 @@ impl StftParams {
         if self.hop == 0 { return Err("hop must be ≥ 1".into()); }
         if self.win_len > self.n_fft { return Err(format!("win_len {} > n_fft {}", self.win_len, self.n_fft)); }
         if self.pcen.is_some() && self.reassign { return Err("PCEN and reassignment are exclusive".into()); }
+        if self.pcen.is_some() && self.output != Output::Db { return Err("PCEN needs dB output".into()); }
+        if self.reassign && self.output == Output::Phase { return Err("reassignment has no phase output".into()); }
         if let Some(p) = self.pcen {
             if !(p.time_constant > 0.0) { return Err("pcen.time_constant must be > 0".into()); }
         }
@@ -336,18 +356,38 @@ impl Stft {
         }
     }
 
-    /// Linear power for frames [f0, f0+n) → `out` (n × out_bins).
-    /// `samples` covers `sample_range(f0, n)`.
+    /// Phase of one frame per output row (see `Output::Phase`).
+    fn frame_phase(&self, frame: &[f32], s: &mut Scratch, row: &mut [f32]) {
+        self.fft_into(frame, &self.win, s, 0);
+        if self.fb.is_empty() {
+            for (o, c) in row.iter_mut().zip(&s.spec) { *o = c.im.atan2(c.re); }
+            return;
+        }
+        for (o, b) in row.iter_mut().zip(&self.fb) {
+            let (mut sin, mut cos) = (0f64, 0f64);
+            for (&w, c) in b.weights.iter().zip(&s.spec[b.start..]) {
+                let ph = (c.im as f64).atan2(c.re as f64);
+                sin += w as f64 * ph.sin();
+                cos += w as f64 * ph.cos();
+            }
+            *o = sin.atan2(cos) as f32;
+        }
+    }
+
+    /// Linear power (phase for `Output::Phase`) for frames [f0, f0+n) →
+    /// `out` (n × out_bins). `samples` covers `sample_range(f0, n)`.
     pub fn power_block(&self, samples: &[f32], n: usize, out: &mut [f32]) {
         let bins = self.params.out_bins();
         assert_eq!(out.len(), n * bins);
         if self.params.reassign { return self.reassigned_block(samples, n, out); }
+        let phase = self.params.output == Output::Phase;
         const PER_TASK: usize = 32;
         let hop = self.params.hop;
         let wl = self.params.win_len;
         let task = |scratch: &mut Scratch, t: usize, chunk: &mut [f32]| {
             for (j, row) in chunk.chunks_mut(bins).enumerate() {
                 let off = (t * PER_TASK + j) * hop;
+                if phase { self.frame_phase(&samples[off..off + wl], scratch, row); continue; }
                 self.frame_power(&samples[off..off + wl], scratch);
                 self.reduce(&scratch.power, row);
             }
@@ -433,9 +473,14 @@ impl Stft {
         PcenState(m)
     }
 
-    /// Power → dBFS or PCEN, in place. Frames must arrive in order.
+    /// Power → dBFS, PCEN or magnitude, in place (phase stays). Frames must arrive in order.
     pub fn finalize(&self, data: &mut [f32], state: &mut PcenState) {
         let bins = self.params.out_bins();
+        match self.params.output {
+            Output::Phase => return,
+            Output::Magnitude => return data.iter_mut().for_each(|v| *v = v.max(0.0).sqrt()),
+            Output::Db => {}
+        }
         match self.params.pcen {
             None => data.iter_mut().for_each(|v| *v = if *v > 0.0 { (10.0 * v.log10()).max(DB_FLOOR) } else { DB_FLOOR }),
             Some(p) => {

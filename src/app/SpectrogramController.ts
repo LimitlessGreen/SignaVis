@@ -15,19 +15,15 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    PROGRESSIVE_CHUNK_SECONDS, PROGRESSIVE_MIN_DURATION_SEC,
     PERCH_FRAME_RATE,
     CQT_FMIN, CQT_BINS_PER_OCTAVE,
     windowHopFromOverlap,
     fftSizeFromOversampling,
-    TILE_MODE_MIN_DURATION_SEC,
     WASM_TILE_MIN_DURATION_SEC,
-    SPECTROGRAM_ENGINE,
     DB_CONTRAST,
 } from '../shared/constants.ts';
 
-import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
-import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions, wasmV2ParamsFromDspOptions, v2BinFrequencies } from './WasmTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily.
 import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 
@@ -44,11 +40,9 @@ import {
     drawTimeGrid,
     GpuColorizer,
     renderSpectrogram,
-    createSpectrogramProcessor,
     createSpectralFeaturesProcessor,
 } from '../domain/spectrogram.ts';
 
-import { computeReassignedSpectrogram } from '../domain/dsp.ts';
 import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
@@ -57,13 +51,9 @@ import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
  *
  * @param {Object} d  DOM element refs (same shape as PlayerState.d)
- * @param {Object} [opts]
- * @param {boolean} [opts.enableProgressive=false]
  */
 export class SpectrogramController extends EventTarget {
     _d: any;
-    _enableProgressive: boolean;
-    processor: any;
     colorizer: any;
     _data: Float32Array | null;
     _nFrames: number;
@@ -101,7 +91,7 @@ export class SpectrogramController extends EventTarget {
     _externalMode: boolean;
     _externalImageConfig: { freqRange: [number, number] | null; freqScale: string | null } | null;
     _audioBuffer: AudioBuffer | null;
-    _tileManager: SpectrogramTileManager | WasmTileManager | null;
+    _tileManager: WasmTileManager | null;
     _sourceFile: File | null;
     _spectralFeatures: SpectralFeatures | null;
     _ridges: Ridge[] | null;
@@ -112,12 +102,9 @@ export class SpectrogramController extends EventTarget {
     _freqAxisRafId: number | undefined;
     _lastFreqAxisH: number;
     value: any;
-    constructor(d: any, opts: any = {}) {
+    constructor(d: any) {
         super();
         this._d = d;
-        this._enableProgressive = opts.enableProgressive === true;
-
-        this.processor = createSpectrogramProcessor();
         this.colorizer = new GpuColorizer();
         this._sfProcessor = createSpectralFeaturesProcessor();
         this._sfGeneration = 0;
@@ -284,18 +271,15 @@ export class SpectrogramController extends EventTarget {
 
         this._activeScale = scale;
 
-        const v2Params = SPECTROGRAM_ENGINE === 'v2'
-            ? wasmV2ParamsFromDspOptions({ ...options, reassigned: useReassigned })
-            : null;
+        const v2Params = wasmV2ParamsFromDspOptions({ ...options, reassigned: useReassigned });
         this._v2Params = v2Params;
-        // Part of the cache key, so results of the two engines never mix.
-        (options as Record<string, unknown>).engine = v2Params ? 'v2' : 'v1';
+        // Part of the cache key, so results of older engines are never reused.
+        (options as Record<string, unknown>).engine = 'v2';
 
         // ── Tile mode for long audio ─────────────────────────────────────
         // WASM pyramid for long local files (WAV read directly, other formats from
-        // the decoded PCM); falls back to the full JS path on failure.
-        const wasmParams = v2Params ?? (useReassigned ? null : wasmParamsFromDspOptions(options));
-        if (wasmParams && isWasmTileSource(this._sourceFile)
+        // the decoded PCM); on failure the whole file is computed in one piece.
+        if (v2Params && isWasmTileSource(this._sourceFile)
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
@@ -303,20 +287,17 @@ export class SpectrogramController extends EventTarget {
                 file,
                 nativePath:   this._sourcePath,
                 source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
-                wasmParams,
+                wasmParams:   v2Params,
                 duration:     this._audioBuffer!.duration,
                 colorOptions: this._getCurrentColorOptions(),
                 onProgress:   (f) => this._emit('progress', { chunk: 0, totalChunks: 0, percent: Math.round(f * 100) }),
             })).then(() => true, (err) => {
-                console.warn('WASM spectrogram failed, falling back to JS:', err);
+                console.warn('Spectrogram pyramid failed, computing the whole file:', err);
                 this._tileManager?.dispose();
                 this._tileManager = null;
                 return false;
             });
             if (ok) return;
-        } else if (this._audioBuffer.duration >= TILE_MODE_MIN_DURATION_SEC) {
-            await this._startTileMode(options, autoAdjust);
-            return;
         }
 
         const t0 = performance.now();
@@ -375,42 +356,9 @@ export class SpectrogramController extends EventTarget {
             }
             // ── Cache miss: run DSP ──────────────────────────────────────
 
-            let result;
-
-            if (v2Params) {
-                result = await this._computeV2(channelData, v2Params, colourScale).catch((err) => {
-                    console.warn('v2 spectrogram failed, falling back to JS:', err);
-                    return null;
-                });
-            }
-            this._engineV2 = !!result;
-            if (result) {
-                // computed by the v2 engine above
-            } else if (useReassigned) {
-                result = computeReassignedSpectrogram({ channelData, ...options });
-            } else {
-                const shouldUseProgressive = this._enableProgressive
-                    && this._audioBuffer.duration >= PROGRESSIVE_MIN_DURATION_SEC
-                    && typeof this.processor.computeProgressive === 'function';
-
-                if (shouldUseProgressive) {
-                    const chunkResults = [];
-                    for await (const progress of this.processor.computeProgressive(channelData, {
-                        ...options,
-                        chunkSeconds: PROGRESSIVE_CHUNK_SECONDS,
-                    })) {
-                        chunkResults.push(progress.result);
-                        this._emit('progress', {
-                            chunk: progress.chunk,
-                            totalChunks: progress.totalChunks,
-                            percent: progress.percent,
-                        });
-                    }
-                    result = this._mergeProgressiveResults(chunkResults, options.nMels);
-                } else {
-                    result = await this.processor.compute(channelData, options);
-                }
-            }
+            if (!v2Params) throw new Error(`Unsupported spectrogram settings (scale ${scale}, window ${windowFunction})`);
+            const result = await this._computeV2(channelData, v2Params, colourScale);
+            this._engineV2 = true;
 
             this._data      = result.data;
             this._nFrames   = result.nFrames;
@@ -418,11 +366,10 @@ export class SpectrogramController extends EventTarget {
             this._hopSize   = result.hopSize || Math.max(1, Math.floor(this._sampleRateHz / PERCH_FRAME_RATE));
             this._winLength = result.winLength || 4 * this._hopSize;
             this._colourScale = result.colourScale || colourScale;
-            this._bandFloor   = this._engineV2 ? (result as { bandFloor?: ArrayLike<number> }).bandFloor ?? null : null;
+            this._bandFloor   = result.bandFloor ?? null;
 
-            // Persist to cache (non-blocking). A JS fallback after a v2 failure
-            // must not be stored under the v2 key.
-            if (!v2Params || this._engineV2) spectrogramCache.set(cacheKey, {
+            // Persist to cache (non-blocking).
+            spectrogramCache.set(cacheKey, {
                 dataBuffer: new Uint8Array(((this._data as Float32Array)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,
@@ -479,7 +426,7 @@ export class SpectrogramController extends EventTarget {
     private async _startTileMode(
         dspOptions: Record<string, any>,
         autoAdjust: boolean,
-        createManager?: () => Promise<WasmTileManager>,
+        createManager: () => Promise<WasmTileManager>,
     ): Promise<void> {
         const d = this._d;
         if (d.recomputingOverlay) d.recomputingOverlay.hidden = false;
@@ -495,16 +442,7 @@ export class SpectrogramController extends EventTarget {
 
         const t0 = performance.now();
         const audioBuffer = this._audioBuffer!;
-        const tm = createManager
-            ? await createManager()
-            : new SpectrogramTileManager({
-                channelData:   audioBuffer.getChannelData(0),
-                sampleRate:    audioBuffer.sampleRate,
-                totalDuration: audioBuffer.duration,
-                nMels:         dspOptions.nMels,
-                dspOptions,
-                colorOptions:  this._getCurrentColorOptions(),
-            });
+        const tm = await createManager();
         if (this._audioBuffer !== audioBuffer) { tm.dispose(); return; } // another file was loaded meanwhile
 
         this._tileManager = tm;
@@ -1126,7 +1064,7 @@ export class SpectrogramController extends EventTarget {
     }
 
     /** Tile mode on the GPU (dB values and window, no CLAHE/phase). Null → CPU tiles. */
-    private _drawGpuTiles(tm: SpectrogramTileManager | WasmTileManager, p: any,
+    private _drawGpuTiles(tm: WasmTileManager, p: any,
                           width: number, height: number, scrollLeft: number): HTMLCanvasElement | null {
         if (!(tm instanceof WasmTileManager) || !tm.gpuEligible || !this._gainDbMode) return null;
         if ((this._colourScale || this._d.colourScaleSelect?.value || 'dbSquared') === 'phase') return null;
@@ -1323,7 +1261,6 @@ export class SpectrogramController extends EventTarget {
     destroy() {
         if (this._zoomRedrawRafId) { cancelAnimationFrame(this._zoomRedrawRafId); this._zoomRedrawRafId = 0; }
         if (typeof this._freqAxisRafId === 'number') { cancelAnimationFrame(this._freqAxisRafId); this._freqAxisRafId = undefined; }
-        this.processor.dispose();
         this._sfProcessor.dispose();
         this.colorizer.dispose();
         this._wasmSvc?.then((svc) => svc.dispose(), () => {});
@@ -1385,7 +1322,8 @@ export class SpectrogramController extends EventTarget {
     /** v2 values in dB (not PCEN): contrast is a dB window above the noise floor. */
     _isDbContrast(): boolean {
         const tm = this._tileManager;
-        return tm ? tm instanceof WasmTileManager && tm.dbValues : this._engineV2 && !this._v2Params?.pcen;
+        const p = this._v2Params;
+        return tm ? tm.dbValues : this._engineV2 && !p?.pcen && (p?.output ?? 'db') === 'db';
     }
 
     _isNoiseFloorContrast(): boolean {
@@ -1409,23 +1347,6 @@ export class SpectrogramController extends EventTarget {
             : computeSpectrogramStats(this._data as Float32Array);
         this._absLogMin = stats.logMin;
         this._absLogMax = stats.logMax;
-    }
-
-    _mergeProgressiveResults(chunkResults: any[], nMels: number) {
-        if (!chunkResults.length) return { data: new Float32Array(0), nFrames: 0, nMels, hopSize: 0, winLength: 0 };
-        const actualNMels = chunkResults[0].nMels || nMels;
-        let totalSize = 0;
-        for (const chunk of chunkResults) totalSize += chunk.data.length;
-        const totalFrames = Math.floor(totalSize / actualNMels);
-        const data = new Float32Array(totalFrames * actualNMels);
-        let offset = 0;
-        for (const chunk of chunkResults) {
-            const toCopy = Math.min(chunk.data.length, data.length - offset);
-            if (toCopy > 0) data.set(chunk.data.subarray(0, toCopy), offset);
-            offset += toCopy;
-        }
-        const first = chunkResults[0] || {};
-        return { data, nFrames: totalFrames, nMels: actualNMels, hopSize: first.hopSize, winLength: first.winLength };
     }
 
     /** Keep the freq-axis height element in sync with the rendered canvas height. */

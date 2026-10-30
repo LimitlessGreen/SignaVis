@@ -8,8 +8,6 @@
 // GPU straight from the dB values (renderGpu), otherwise colorized on the CPU
 // when first drawn (renderToCanvas; CLAHE, PCEN, legacy contrast).
 //
-// Same public surface as SpectrogramTileManager so SpectrogramController can
-// treat both alike.
 //
 // Events emitted:
 //   'tileready'  — a tile finished loading (or the colour options changed)
@@ -27,10 +25,10 @@ import type {
     WasmSpectrogramService,
     WasmSpecParams,
     StftParamsV2,
+    V2Output,
     AnySpecParams,
     PyramidMeta,
 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
-import type { TileColorOptions } from './SpectrogramTileManager.ts';
 import { isTauriSpectrogramSource } from '../infrastructure/tauri/TauriSpectrogramService.ts';
 
 /** What the tile manager needs from a pyramid backend (WASM workers or Tauri). */
@@ -44,6 +42,20 @@ const TILE_FRAMES = 1024;          // frames of the chosen level per tile
 const TILE_MAX_IN_MEMORY = 48;     // LRU limit across all levels
 const TILE_PRELOAD_AHEAD = 1;
 
+export interface TileColorOptions {
+    colorScheme: string;
+    maxFreq: number;
+    floor01: number;
+    ceil01: number;
+    /** v2 dB window (see DB_CONTRAST); when set, floor01/ceil01 are ignored. */
+    floorDb?: number;
+    rangeDb?: number;
+    noiseReduction: boolean;
+    clahe: boolean;
+    scale: string;
+    colourScale: string;
+}
+
 interface Tile {
     key: string;
     level: number;
@@ -55,33 +67,19 @@ interface Tile {
     lastUsed: number;
 }
 
-/** DSP options as built by SpectrogramController.generate(). */
-export function wasmParamsFromDspOptions(o: Record<string, any>): WasmSpecParams | null {
-    if (o.scale !== 'mel' && o.scale !== 'linear') return null;
-    const windows = ['hann', 'hamming', 'blackman', 'blackmanHarris'];
-    if (!windows.includes(o.windowFunction || 'hann')) return null;
-    return {
-        fftSize:   o.fftSize,
-        hopSize:   o.hopSize || 0,
-        winLength: o.windowSize || 0,
-        nMels:     o.nMels,
-        scale:     o.scale,
-        window:    o.windowFunction || 'hann',
-        pcen: o.usePcen
-            ? { gain: o.pcenGain, bias: o.pcenBias, root: o.pcenRoot, smoothing: o.pcenSmoothing }
-            : null,
-    };
-}
-
 /**
- * v2 engine params (dBFS / PCEN, centred frames) from the same DSP options.
- * Returns null for modes v2 does not produce (phase, raw-magnitude scales).
+ * v2 engine params (centred frames) from the DSP options built by
+ * SpectrogramController.generate(). Colour scale 'linear' → magnitude output,
+ * 'phase' → phase, dB scales → dBFS / PCEN. Null for unsupported settings.
  * 'cqt' maps to v2 log bands whose centres equal buildCQTFrequencies(), so the
  * existing axis stays exact.
  */
 export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2 | null {
     if (o.scale !== 'mel' && o.scale !== 'linear' && o.scale !== 'cqt') return null;
-    if (o.colourScale && o.colourScale !== 'dbSquared' && o.colourScale !== 'db') return null;
+    const cs = o.colourScale || 'dbSquared';
+    const output: V2Output | null = cs === 'linear' ? 'magnitude' : cs === 'phase' ? 'phase'
+        : cs === 'dbSquared' || cs === 'db' ? 'db' : null;
+    if (!output) return null;
     const winLen = o.windowSize || 0;
     const nFft = Math.max(o.fftSize || 0, winLen);
     if (!winLen || !o.hopSize) return null;
@@ -89,7 +87,8 @@ export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2
     const window = fn === 'kaiser' ? { kind: 'kaiser' as const, beta: 6 }
         : ['hann', 'hamming', 'blackman', 'blackmanHarris'].includes(fn) ? { kind: fn } : null;
     if (!window) return null;
-    const reassign = !!o.reassigned;
+    // Reassignment has no phase output.
+    const reassign = !!o.reassigned && output !== 'phase';
     return {
         winLen, hop: o.hopSize, nFft,
         window: window as StftParamsV2['window'],
@@ -97,11 +96,12 @@ export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2
         scale: o.scale === 'linear' ? { kind: 'linear' }
             : o.scale === 'cqt' ? logBandsForCqtAxis(o.nMels)
             : { kind: 'mel', bands: o.nMels, fMin: 0, fMax: 0 },
-        // Reassignment and PCEN are exclusive; reassignment wins when both are set.
-        pcen: o.usePcen && !reassign
+        // PCEN only for dB output; reassignment wins when both are set.
+        pcen: o.usePcen && !reassign && output === 'db'
             ? { gain: o.pcenGain, bias: o.pcenBias, power: 1 / (o.pcenRoot || 2), eps: 1e-6, timeConstant: o.pcenTimeConstant }
             : null,
         reassign,
+        output,
     };
 }
 
@@ -247,8 +247,11 @@ export class WasmTileManager extends EventTarget {
     /** Black/white points come from the noise floor (median) and p99.9. */
     get noiseFloorContrast(): boolean { return this.v2; }
 
-    /** v2 values are dBFS (PCEN output is not), so the dB contrast window applies. */
-    get dbValues(): boolean { return this.v2 && !(this.meta.params as StftParamsV2).pcen; }
+    /** v2 values are dBFS (PCEN, magnitude and phase are not), so the dB contrast window applies. */
+    get dbValues(): boolean {
+        const p = this.meta.params as StftParamsV2;
+        return this.v2 && !p.pcen && (p.output ?? 'db') === 'db';
+    }
 
     /** Black/white point for tiles of `level` (max-pooled levels are brighter). */
     private contrastRange(level: number): [number, number] {
