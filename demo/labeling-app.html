@@ -126,6 +126,8 @@
   <div id="panelLabels" hidden>
     <div class="panel-toolbar">
       <span class="tb-spacer"></span>
+      <button class="tb-btn" id="importSetBtn" type="button" title="Import an Annota-JSON set file (XC &quot;Download set&quot; or SignaVis export)">Import…</button>
+      <input id="importSetInput" type="file" accept=".json,application/json" hidden />
       <button class="tb-btn" id="exportMenuBtn" type="button" aria-haspopup="menu" title="Export labels">Export ▾</button>
     </div>
     <div class="label-list-scroll">
@@ -521,6 +523,8 @@
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
     import { saveSessionSets, restoreSessionSets } from '../src/app/session-sets.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
+    import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
+    import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
     import { isOwnSet, normalizeSet, markSetEdited, markSetUploaded, setStatusFromValidation, adoptLabels, ensureOwnSet, migrateSessionState } from '../src/app/annotation-sets.ts';
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
     import { AnnotatorProfile } from '../src/app/annotator-profile.ts';
@@ -2266,6 +2270,72 @@
       fileLabel.textContent = filename;
     }
 
+    /**
+     * Move each label's embedded annotationSet into the set registry (one locked set per original
+     * XC set, matched by URI or name); labels without one go to a locked "XC{nr} Imported" set.
+     */
+    function promoteXcAnnotationSets(labels, xcId) {
+      const setIdMap = new Map(); // "uri||name" → setId
+      // Fallback set key for XC labels without per-annotation set metadata
+      const _xcFallbackKey = `xc-fallback-${xcId}`;
+      for (const lbl of labels) {
+        if (lbl.annotationSet) {
+          const as = lbl.annotationSet;
+          const key = as.uri || as.name || '';
+          if (key && !setIdMap.has(key)) {
+            // Find existing matching set in registry (by uri or name)
+            let existingId = null;
+            for (const [id, s] of state.labelSets) {
+              if ((as.uri && s.uri === as.uri) || (as.name && s.name === as.name)) {
+                existingId = id;
+                // Ensure existing XC sets are locked
+                if (!s.locked) s.locked = true;
+                break;
+              }
+            }
+            if (!existingId) {
+              const newSet = createLabelSet({
+                name: as.name || `XC${xcId}`,
+                license: as.license || '',
+                creator: as.creator || '',
+                uri: as.uri || '',
+                date: as.date || '',
+                origin: 'xeno-canto',
+                locked: true,
+              });
+              existingId = newSet.id;
+            }
+            setIdMap.set(key, existingId);
+          }
+          lbl.setId = key ? (setIdMap.get(key) || null) : null;
+          delete lbl.annotationSet; // migrate to flat setId reference
+        } else {
+          // No per-annotation set metadata — group under a fallback "XC{id} Imported" set
+          if (!setIdMap.has(_xcFallbackKey)) {
+            let existingFallbackId = null;
+            for (const [id, s] of state.labelSets) {
+              if (s.origin === 'xeno-canto' && s.xcFallbackId === xcId) {
+                existingFallbackId = id;
+                if (!s.locked) s.locked = true;
+                break;
+              }
+            }
+            if (!existingFallbackId) {
+              const fallbackSet = createLabelSet({
+                name: `XC${xcId} Imported`,
+                origin: 'xeno-canto',
+                locked: true,
+                xcFallbackId: xcId,
+              });
+              existingFallbackId = fallbackSet.id;
+            }
+            setIdMap.set(_xcFallbackKey, existingFallbackId);
+          }
+          lbl.setId = setIdMap.get(_xcFallbackKey);
+        }
+      }
+    }
+
     async function importXenoCantoLabels(xcId) {
       const result = await xcPanel.importLabels(xcId, state.sampleRate);
       state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
@@ -2321,66 +2391,7 @@
 
       if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
 
-      // ── Promote embedded annotationSet objects into the set registry ──
-      const setIdMap = new Map(); // "uri||name" → setId
-      // Fallback set key for XC labels without per-annotation set metadata
-      const _xcFallbackKey = `xc-fallback-${result.xcId}`;
-      for (const lbl of result.labels) {
-        if (lbl.annotationSet) {
-          const as = lbl.annotationSet;
-          const key = as.uri || as.name || '';
-          if (key && !setIdMap.has(key)) {
-            // Find existing matching set in registry (by uri or name)
-            let existingId = null;
-            for (const [id, s] of state.labelSets) {
-              if ((as.uri && s.uri === as.uri) || (as.name && s.name === as.name)) {
-                existingId = id;
-                // Ensure existing XC sets are locked
-                if (!s.locked) s.locked = true;
-                break;
-              }
-            }
-            if (!existingId) {
-              const newSet = createLabelSet({
-                name: as.name || `XC${result.xcId}`,
-                license: as.license || '',
-                creator: as.creator || '',
-                uri: as.uri || '',
-                date: as.date || '',
-                origin: 'xeno-canto',
-                locked: true,
-              });
-              existingId = newSet.id;
-            }
-            setIdMap.set(key, existingId);
-          }
-          lbl.setId = key ? (setIdMap.get(key) || null) : null;
-          delete lbl.annotationSet; // migrate to flat setId reference
-        } else {
-          // No per-annotation set metadata — group under a fallback "XC{id} Imported" set
-          if (!setIdMap.has(_xcFallbackKey)) {
-            let existingFallbackId = null;
-            for (const [id, s] of state.labelSets) {
-              if (s.origin === 'xeno-canto' && s.xcFallbackId === result.xcId) {
-                existingFallbackId = id;
-                if (!s.locked) s.locked = true;
-                break;
-              }
-            }
-            if (!existingFallbackId) {
-              const fallbackSet = createLabelSet({
-                name: `XC${result.xcId} Imported`,
-                origin: 'xeno-canto',
-                locked: true,
-                xcFallbackId: result.xcId,
-              });
-              existingFallbackId = fallbackSet.id;
-            }
-            setIdMap.set(_xcFallbackKey, existingFallbackId);
-          }
-          lbl.setId = setIdMap.get(_xcFallbackKey);
-        }
-      }
+      promoteXcAnnotationSets(result.labels, result.xcId);
 
       state.labels = result.labels;
       if (recordingManager?.activeId) state._labelsEntryId = recordingManager.activeId;
@@ -2977,6 +2988,72 @@
         ],
       });
     });
+
+    // ── Import an Annota-JSON set file (XC "Download set" or own export) ──
+    // Labels go to the recordings with the same XC number, each original set as a locked set.
+    const importSetInput = document.getElementById('importSetInput');
+    document.getElementById('importSetBtn').addEventListener('click', () => importSetInput.click());
+    importSetInput.addEventListener('change', async () => {
+      const file = importSetInput.files?.[0];
+      importSetInput.value = '';
+      if (file) await importAnnotaSetFile(file);
+    });
+
+    async function importAnnotaSetFile(file) {
+      let parsed = null;
+      try { parsed = readAnnotaSetFile(JSON.parse(await file.text())); } catch { /* reported below */ }
+      if (!parsed) { selectionMeta.textContent = `${file.name}: not an Annota-JSON annotation set`; return; }
+
+      saveCurrentAnnotationsIfNeeded();
+      const setsBefore = new Set(state.labelSets.keys());
+      const labelsBefore = state.labels;
+      const entriesBefore = [];
+      const missing = [];
+      let imported = 0;
+      let activeTouched = false;
+      for (const [nr, raw] of parsed.byXcNr) {
+        const entry = recordingManager.findByXcId(nr);
+        if (!entry) { missing.push(`XC${nr}`); continue; }
+        const isActive = entry.id === recordingManager.activeId;
+        const { labels } = mapXenoCantoLabelsToSpectrogram(raw, {
+          xcId: nr, recording: entry.xcRecordingMeta || {},
+          sampleRate: (isActive ? state.sampleRate : entry.sampleRate) || state.sampleRate,
+        });
+        promoteXcAnnotationSets(labels, nr);
+        const ids = new Set(labels.map((l) => l.id));
+        if (isActive) {
+          state.labels = [...state.labels.filter((l) => !ids.has(l.id)), ...labels];
+          state._labelsEntryId = entry.id;
+          activeTouched = true;
+        } else {
+          entriesBefore.push([entry.id, entry.annotations || []]);
+          recordingManager.update(entry.id, { annotations: [...(entry.annotations || []).filter((a) => !ids.has(a.id)), ...labels] });
+        }
+        imported += labels.length;
+      }
+
+      const refresh = () => {
+        relocalizeAllLabels();
+        syncToPlayer();
+        labelList.render(state.labels);
+        recordingExplorer?.render?.();
+        saveSessionSets(state);
+      };
+      if (imported) refresh();
+      const parts = [`${imported} label${imported === 1 ? '' : 's'} imported from ${file.name}`];
+      if (missing.length) parts.push(`no recording for ${missing.join(', ')} — add it under Project → Recordings, then import again`);
+      if (parsed.skipped) parts.push(`${parsed.skipped} without XC number skipped`);
+      selectionMeta.textContent = parts.join(' · ');
+      if (!imported) return;
+      showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
+        if (activeTouched) state.labels = labelsBefore;
+        for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
+        for (const id of [...state.labelSets.keys()]) if (!setsBefore.has(id)) state.labelSets.delete(id);
+        refresh();
+        selectionMeta.textContent = `Import of ${file.name} undone`;
+      });
+      sidebar.setActive('labels');
+    }
 
     function upsertLabel(label) {
       if (!label?.id) return;
