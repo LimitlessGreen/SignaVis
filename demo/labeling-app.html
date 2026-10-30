@@ -290,6 +290,7 @@
         <button class="sidebar-action-btn secondary" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download</button>
       </div>
       <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Send to Xeno-canto</button>
+      <p class="field-hint" id="xcUploadTargetHint" hidden></p>
       <p class="field-hint">The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.</p>
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
@@ -521,7 +522,7 @@
     import { saveSessionSets, restoreSessionSets } from '../src/app/session-sets.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
     import { isOwnSet, normalizeSet, markSetEdited, markSetUploaded, setStatusFromValidation, adoptLabels, ensureOwnSet, migrateSessionState } from '../src/app/annotation-sets.ts';
-    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta } from '../src/ui/panels/xc-panel.ts';
+    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
     import { AnnotatorProfile } from '../src/app/annotator-profile.ts';
     import { RecordingManager, defaultRecordingEntry } from '../src/app/recording-manager.ts';
     import { RecordingExplorer } from '../src/ui/panels/recording-explorer.ts';
@@ -2610,6 +2611,17 @@
     function openXcExportModal() { try { window.xcExportModalApi.open(); } catch (e) {} }
 
     xcExportSetBtn.addEventListener('click', () => openXcExportModal());
+
+    // Test server (?xcenv=acc): say so on the button so nobody mistakes it for a real upload
+    {
+      const target = xcUploadTarget();
+      const hint = document.getElementById('xcUploadTargetHint');
+      if (target.env !== 'live') {
+        xcUploadBtn.textContent = `Send to ${target.env.toUpperCase()} test server`;
+        hint.textContent = `Uploads go to ${target.label}. Open the app with ?xcenv=live to switch back.`;
+        hint.hidden = false;
+      }
+    }
 
     xcUploadBtn.addEventListener('click', async () => {
       xcUploadBtn.disabled = true;

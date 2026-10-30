@@ -32,7 +32,24 @@ const API_KEY_STORAGE     = 'signavis.xc-api-key.v1';
 const SET_META_STORAGE    = 'signavis.xc-set-meta.v2';
 // Profile fields that are auto-saved per manual set (persisted by labeling-app.html)
 const LABELER_PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
-const XC_UPLOAD_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotation-set';
+const XC_ENV_STORAGE = 'signavis.xc-env.v1';
+
+/** Upload servers: 'acc' is XC's acceptance server (behind HTTP Basic auth xc:xc) for test uploads. */
+export const XC_UPLOAD_TARGETS: Record<string, { env: string; label: string; endpoint: string; basicAuth?: string }> = {
+  live: { env: 'live', label: 'xeno-canto.org', endpoint: 'https://xeno-canto.org/api/3/upload/annotation-set' },
+  acc:  { env: 'acc', label: 'acc.xeno-canto.org (test server)', endpoint: 'https://acc.xeno-canto.org/api/3/upload/annotation-set', basicAuth: 'xc:xc' },
+};
+
+/** Current upload server: `?xcenv=acc|live` in the URL switches and remembers it, default live. */
+export function xcUploadTarget() {
+  let env = '';
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('xcenv')?.toLowerCase() || '';
+    if (XC_UPLOAD_TARGETS[fromUrl]) { env = fromUrl; localStorage.setItem(XC_ENV_STORAGE, env); }
+    else env = localStorage.getItem(XC_ENV_STORAGE) || '';
+  } catch { /* no window/storage */ }
+  return XC_UPLOAD_TARGETS[env] || XC_UPLOAD_TARGETS.live;
+}
 
 // ── Read-only recording metadata (from XC API) ──────────────────────
 
@@ -796,14 +813,15 @@ export class XenoCantoPanel {
     const payload = this.buildAnnotationSetPayload(labels, labelSets, recordingEditMeta);
     onStatus?.('Uploading to Xeno-canto…');
 
-    const res = await fetch(XC_UPLOAD_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'key': this.apiKey },
-      body: JSON.stringify(payload),
-    });
+    const target = xcUploadTarget();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'key': this.apiKey };
+    if (target.basicAuth) headers.Authorization = `Basic ${btoa(target.basicAuth)}`;
+    const res = await fetch(target.endpoint, { method: 'POST', headers, body: JSON.stringify(payload) });
 
     let body;
     try { body = await res.json(); } catch { body = { message: await res.text().catch(() => 'Unknown response') }; }
+    // XC answers a successful upload with a bare JSON string ("Successfully uploaded … Visit …/account to import")
+    if (typeof body === 'string') body = { message: body };
 
     if (!res.ok) {
       return {
