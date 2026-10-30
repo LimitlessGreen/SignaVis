@@ -264,7 +264,6 @@
     <!-- ── Upload assistant: live checklist (key · profile · set · recordings · labels) ── -->
     <div class="sidebar-section-header">Upload check</div>
     <div id="xcChecklist" class="ua-checklist"></div>
-    
     <!-- ── API key + profile form (mounted into checklist steps) ── -->
     <div id="xcAuthorContainer" class="ua-host"></div>
     <div id="xcKeySection" class="ua-host">
@@ -997,7 +996,7 @@
       onResize: () => player?.resize?.(),
     });
 
-    rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
+    rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
     rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
 
@@ -1516,7 +1515,7 @@
       state.selected = null;
       selectionMeta.textContent = '';
       currentXcId = entry.xcId || null;
-      xcPanel._activeSetId = null;
+      xcPanel._activeSetId = state.ownSetId;
       setActiveSet(state.ownSetId);
       // Revoke any previous blob object URL
       if (state.activeObjectUrl) {
@@ -2242,7 +2241,7 @@
       state._labelsEntryId = null;  // labels no longer belong to any entry
       state.xcLabelPool = [];
       state.recordingEditMeta = defaultRecordingEditMeta();
-      xcPanel._activeSetId = null;
+      xcPanel._activeSetId = state.ownSetId;
       setActiveSet(state.ownSetId);
 
       xcPanel._rebuildSetSection?.();
@@ -3298,6 +3297,7 @@
       // and allow a UI rebuild callback to re-render set sections.
       restoreSessionSets(state, { rebuild: () => xcPanel._rebuildSetSection?.() });
     }
+    xcPanel._rebuildSetSection?.();  // the own set was created silently before the panel existed
     labelList.render(state.labels);
     await loadBirdnetTaxonomy();
     autoLoadFromParams();

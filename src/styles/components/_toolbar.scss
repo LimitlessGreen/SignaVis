@@ -25,9 +25,10 @@
 
 .toolbar-secondary {
   display: inline-flex;
+  flex-wrap: wrap;  // narrow players (side bars open): wrap instead of clipping
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 // Inline flex wrapper for grouped buttons (prevents internal line-wrap)

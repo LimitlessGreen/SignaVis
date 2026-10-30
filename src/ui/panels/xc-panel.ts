@@ -211,6 +211,8 @@ function buildField(f: any, value: any, onChange: any) {
     input.className = 'props-input';
     input.placeholder = f.placeholder || '';
   }
+  // Stored licenses may be free-form ("CC BY-NC-SA 4.0") — show them as the matching XC code
+  if (f.type === 'select' && f.key === 'license') value = normalizeLicenseValue(value) || value;
   input.value = value ?? '';
   input.addEventListener('input', () => onChange(input.value));
   input.addEventListener('change', () => onChange(input.value.trim()));
