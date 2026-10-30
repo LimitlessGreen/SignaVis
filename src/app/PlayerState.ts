@@ -93,9 +93,9 @@ export interface PlaybackViewportConfig {
  */
 export function sanitizePlaybackViewportConfig(partial: Partial<PlaybackViewportConfig> = {}, current: Partial<PlaybackViewportConfig> = {}): PlaybackViewportConfig {
     return {
-        followGuardLeftRatio:      clampNumber(partial.followGuardLeftRatio,      0.05, 0.95,  current.followGuardLeftRatio      ?? 0.35),
-        followGuardRightRatio:     clampNumber(partial.followGuardRightRatio,     0.05, 0.95,  current.followGuardRightRatio     ?? 0.65),
-        followTargetRatio:         clampNumber(partial.followTargetRatio,         0.1,  0.9,   current.followTargetRatio         ?? 0.5),
+        followGuardLeftRatio:      clampNumber(partial.followGuardLeftRatio,      0.05, 0.95,  current.followGuardLeftRatio      ?? 0.1),
+        followGuardRightRatio:     clampNumber(partial.followGuardRightRatio,     0.05, 0.95,  current.followGuardRightRatio     ?? 0.8),
+        followTargetRatio:         clampNumber(partial.followTargetRatio,         0.1,  0.9,   current.followTargetRatio         ?? 0.33),
         followCatchupDurationMs:   clampNumber(partial.followCatchupDurationMs,   80,   2500,  current.followCatchupDurationMs   ?? 240),
         followCatchupSeekDurationMs: clampNumber(partial.followCatchupSeekDurationMs, 100, 3000, current.followCatchupSeekDurationMs ?? 360),
         smoothLerp:                clampNumber(partial.smoothLerp,                0.02, 0.95,  current.smoothLerp                ?? 0.18),
@@ -488,8 +488,8 @@ export class PlayerState {
     updatePlaybackViewportConfig(partial = {}) {
         this._playbackViewportConfig = this._sanitizePlaybackViewportConfig(partial);
         if (this._playbackViewportConfig.followGuardLeftRatio >= this._playbackViewportConfig.followGuardRightRatio) {
-            this._playbackViewportConfig.followGuardLeftRatio = 0.35;
-            this._playbackViewportConfig.followGuardRightRatio = 0.65;
+            this._playbackViewportConfig.followGuardLeftRatio = 0.1;
+            this._playbackViewportConfig.followGuardRightRatio = 0.8;
         }
         this._viewport?.updateConfig(this._playbackViewportConfig);
         this._emit('followconfigchange', { ...this._playbackViewportConfig });
@@ -866,6 +866,10 @@ export class PlayerState {
         }
         // Delegate to engine — handles custom segment stop, clamp, wavesurfer.setTime, onUiUpdate
         this._engine.seekToTime(timeSec, centerView, options);
+        // Paused click near the view edge: glide so the playhead sits at the follow target.
+        if (options.userInitiated && !centerView && this.followPlayback && !this.wavesurfer?.isPlaying()) {
+            this._viewport.revealSeekTarget(timeSec);
+        }
     }
 
     _seekByDelta(deltaSec: number) {

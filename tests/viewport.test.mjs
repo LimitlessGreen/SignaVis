@@ -171,9 +171,9 @@ test('FrequencyViewport: setFromSlider(50) produces a range between full and max
 
 test('sanitizePlaybackViewportConfig: returns all default values for empty input', () => {
     const cfg = sanitizePlaybackViewportConfig({});
-    assert.equal(cfg.followGuardLeftRatio, 0.35);
-    assert.equal(cfg.followGuardRightRatio, 0.65);
-    assert.equal(cfg.followTargetRatio, 0.5);
+    assert.equal(cfg.followGuardLeftRatio, 0.1);
+    assert.equal(cfg.followGuardRightRatio, 0.8);
+    assert.equal(cfg.followTargetRatio, 0.33);
     assert.equal(cfg.followCatchupDurationMs, 240);
     assert.equal(cfg.followCatchupSeekDurationMs, 360);
     assert.equal(cfg.smoothLerp, 0.18);
@@ -221,7 +221,7 @@ test('sanitizePlaybackViewportConfig: non-numeric string and undefined fall back
         followGuardLeftRatio: 'bad',
         followCatchupDurationMs: undefined,
     });
-    assert.equal(cfg.followGuardLeftRatio, 0.35, 'string "bad" → Number("bad") = NaN → fallback');
+    assert.equal(cfg.followGuardLeftRatio, 0.1, 'string "bad" → Number("bad") = NaN → fallback');
     assert.equal(cfg.followCatchupDurationMs, 240, 'undefined → NaN → fallback');
 });
 
@@ -237,7 +237,7 @@ test('sanitizePlaybackViewportConfig: current values are preserved as fallback',
     assert.equal(cfg.followGuardLeftRatio, 0.25);
     assert.equal(cfg.smoothLerp, 0.4);
     // Keys not in current fall back to built-in defaults
-    assert.equal(cfg.followTargetRatio, 0.5);
+    assert.equal(cfg.followTargetRatio, 0.33);
 });
 
 test('sanitizePlaybackViewportConfig: NaN falls back to default', () => {

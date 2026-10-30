@@ -77,9 +77,9 @@ function createFakeContainer() {
 
 test('PlayerState: sanitizePlaybackViewportConfig returns all ten defaults', () => {
     const cfg = sanitizePlaybackViewportConfig();
-    assert.strictEqual(cfg.followGuardLeftRatio,       0.35);
-    assert.strictEqual(cfg.followGuardRightRatio,      0.65);
-    assert.strictEqual(cfg.followTargetRatio,          0.5);
+    assert.strictEqual(cfg.followGuardLeftRatio,       0.1);
+    assert.strictEqual(cfg.followGuardRightRatio,      0.8);
+    assert.strictEqual(cfg.followTargetRatio,          0.33);
     assert.strictEqual(cfg.followCatchupDurationMs,    240);
     assert.strictEqual(cfg.followCatchupSeekDurationMs,360);
     assert.strictEqual(cfg.smoothLerp,                 0.18);
@@ -118,7 +118,7 @@ test('PlayerState: sanitizePlaybackViewportConfig falls back to `current` when p
 
 test('PlayerState: sanitizePlaybackViewportConfig ignores NaN (falls back to built-in default)', () => {
     const cfg = sanitizePlaybackViewportConfig({ followTargetRatio: NaN });
-    assert.strictEqual(cfg.followTargetRatio, 0.5);
+    assert.strictEqual(cfg.followTargetRatio, 0.33);
 });
 
 // ─── 2. Constructor guard-clauses ─────────────────────────────────────
@@ -213,7 +213,7 @@ test('PlayerState: updatePlaybackViewportConfig partial update preserves other f
     });
 
     const before = ps.getPlaybackViewportConfig();
-    assert.strictEqual(before.followTargetRatio, 0.5);
+    assert.strictEqual(before.followTargetRatio, 0.33);
 
     ps.updatePlaybackViewportConfig({ followTargetRatio: 0.6 });
 

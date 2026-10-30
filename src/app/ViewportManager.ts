@@ -238,6 +238,23 @@ export class ViewportManager extends EventTarget {
     }
 
     /**
+     * After a paused click-seek into the outer edge of the view, glide the
+     * view so the playhead lands at the follow target (a third from the left
+     * by default, leaving look-ahead for playback). Clicks inside the view
+     * leave it alone, so placing the playhead for labeling doesn't scroll.
+     * @param {number} timeSec
+     */
+    revealSeekTarget(timeSec: number) {
+        const vw       = this._getViewportWidth();
+        const position = this._coords.timeToScrollX(timeSec);
+        const rel      = (position - this._getPrimaryScrollLeft()) / vw;
+        if (rel > 0.1 && rel < 0.9) return;
+        this._followLastPosition = position;
+        this._cancelFollowCatchupAnimation();
+        this._animateFollowCatchupTo(position - vw * this._cfg.followTargetRatio);
+    }
+
+    /**
      * Cycle through follow modes: follow → smooth → free → follow.
      * @returns {string} new follow mode
      */
