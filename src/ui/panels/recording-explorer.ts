@@ -23,6 +23,8 @@ export class RecordingExplorer {
     _collapsed: any;
     _container: any;
     _getSetName: any;
+    _getSetStatus: any;
+    _getOwnSetId: any;
     _manager: any;
     _onActivate: any;
     _onAddXc: any;
@@ -43,6 +45,8 @@ export class RecordingExplorer {
         this._container        = opts.container;
         this._manager          = opts.manager;
         this._getSetName       = opts.getSetName || (() => 'Annotations');
+        this._getSetStatus     = opts.getSetStatus || null;
+        this._getOwnSetId      = opts.getOwnSetId || (() => null);
         this._onRenameSet      = opts.onRenameSet || null;
         this._onActivate       = opts.onActivate;
         this._onAddXc          = opts.onAddXc || null;
@@ -64,18 +68,18 @@ export class RecordingExplorer {
 
         // ── Set header (parent node) ──────────────────────────────────
         const header = document.createElement('div');
-        header.className = 'rec-set-header';
+        header.className = 'rec-session-header';
         header.setAttribute('role', 'button');
         header.setAttribute('aria-expanded', String(!this._collapsed));
         header.tabIndex = 0;
 
         const chevron = document.createElement('span');
-        chevron.className = 'rec-set-chevron';
+        chevron.className = 'rec-session-chevron';
         chevron.setAttribute('aria-hidden', 'true');
         chevron.textContent = this._collapsed ? '▸' : '▾';
 
         const nameEl = document.createElement('span');
-        nameEl.className = 'rec-set-name';
+        nameEl.className = 'rec-session-name';
         nameEl.textContent = this._getSetName();
         nameEl.title = 'Click to rename set';
 
@@ -111,6 +115,18 @@ export class RecordingExplorer {
         header.appendChild(chevron);
         header.appendChild(nameEl);
 
+        // Status of the own set: draft → ready → uploaded
+        const status = this._getSetStatus?.();
+        if (status) {
+            const badge = document.createElement('span');
+            badge.className = `rec-session-status rec-session-status--${status}`;
+            badge.textContent = status;
+            badge.title = status === 'uploaded'
+                ? 'Uploaded to Xeno-canto — further changes need delete + re-upload on XC'
+                : status === 'ready' ? 'No errors — ready to upload' : 'Draft';
+            header.appendChild(badge);
+        }
+
         // ── Set-level reset button (hover-visible) ────────────────────
         if (this._onResetSet) {
             const resetSetBtn = document.createElement('button');
@@ -140,7 +156,7 @@ export class RecordingExplorer {
 
         // ── Body (children) ───────────────────────────────────────────
         const body = document.createElement('div');
-        body.className = 'rec-set-body';
+        body.className = 'rec-session-body';
         body.hidden = this._collapsed;
 
         const entries  = this._manager.getAll();
@@ -179,6 +195,27 @@ export class RecordingExplorer {
                 label.textContent = xcTag + (sciName ? ' · ' + sciName : (!xcTag ? entry.filename : ''));
                 label.title = entry.filename;
 
+                // Own-set labels in this recording; recordings without XC number can't be uploaded
+                const ownSetId = this._getOwnSetId?.();
+                const anns = entry.annotations || [];
+                const nOwn = ownSetId ? anns.filter((a: any) => a.setId === ownSetId).length : anns.length;
+                const meta = document.createElement('span');
+                meta.className = 'recording-explorer-meta';
+                meta.textContent = String(nOwn);
+                meta.title = `${nOwn} label${nOwn === 1 ? '' : 's'} in your set`;
+                if (!entry.xcId) {
+                    meta.textContent += ' ⚠';
+                    meta.title += ' · no XC number — cannot be uploaded';
+                    meta.classList.add('recording-explorer-meta--warn');
+                    meta.title += ' (click to assign)';
+                    meta.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const val = prompt(`XC number for ${entry.filename} (your own upload):`, '');
+                        if (val == null) return;
+                        if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
+                    });
+                }
+
                 // Reset button (hover only) — clears annotations for this recording
                 const resetBtn = document.createElement('button');
                 resetBtn.type = 'button';
@@ -205,6 +242,7 @@ export class RecordingExplorer {
 
                 li.appendChild(icon);
                 li.appendChild(label);
+                li.appendChild(meta);
                 if (this._onResetRecording) li.appendChild(resetBtn);
                 li.appendChild(removeBtn);
 
