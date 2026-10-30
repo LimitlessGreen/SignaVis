@@ -138,6 +138,8 @@ export class PlayerState {
     _playbackViewportConfig: any;
     sampleRateHz: any;
     ultrasoundInfo: UltrasoundInfo | null = null;
+    /** Last detector settings, reused when the mode is picked from the transport bar. */
+    detectorSettings = { carrierHz: 0, divisor: 10, envelope: false };
     amplitudePeakAbs: number;
     transportState: any;
     _lastTimeReadoutText: any;
@@ -212,6 +214,7 @@ export class PlayerState {
             this._emit('timeupdate', e.detail);
         });
         this._engine.addEventListener('segmentstart', (e: CustomEvent<any>) => this._emit('segmentplaystart', e.detail));
+        this._engine.addEventListener('listenmodechange', (e: CustomEvent<any>) => this._onListenModeChange(e.detail.mode));
         this._engine.addEventListener('segmentend', (e: CustomEvent<any>) => this._emit('segmentplayend', e.detail));
         this._engine.addEventListener('segmentloop', (e: CustomEvent<any>) => this._emit('segmentloop', e.detail));
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
@@ -765,6 +768,7 @@ export class PlayerState {
     async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null, sourcePath: string | null = null) {
         this.sampleRateHz = sampleRate;
         this._setTimeExpansion(1);
+        this.detectorSettings.carrierHz = 0;
         this.ultrasoundInfo = this._engine.audioBuffer
             ? analyzeUltrasound(this._engine.audioBuffer.getChannelData(0), sampleRate, this._engine.guano)
             : null;
@@ -984,12 +988,38 @@ export class PlayerState {
     }
 
     _setTimeExpansion(factor: number) {
-        const before = this._engine.timeExpansion;
-        this._engine.setTimeExpansion(factor);
-        const now = this._engine.timeExpansion;
-        if (this.d.slowdownSelect) this.d.slowdownSelect.value = String(now);
+        this._setListenMode({ kind: 'expansion', factor });
+    }
+
+    _setListenMode(mode: any) {
+        if (mode?.kind === 'heterodyne') this.detectorSettings.carrierHz = mode.carrierHz;
+        if (mode?.kind === 'division') {
+            this.detectorSettings.divisor = mode.divisor;
+            this.detectorSettings.envelope = !!mode.envelope;
+        }
+        this._engine.setListenMode(mode);
+    }
+
+    /** Transport-bar choice: a slowdown factor, 'heterodyne' or 'division'. */
+    _selectListenMode(value: string) {
+        if (value === 'heterodyne') {
+            const peak = this.ultrasoundInfo?.peakHz;
+            const carrierHz = this.detectorSettings.carrierHz || (peak ? Math.round(peak / 1000) * 1000 : 40000);
+            this._setListenMode({ kind: 'heterodyne', carrierHz });
+        } else if (value === 'division') {
+            this._setListenMode({ kind: 'division', divisor: this.detectorSettings.divisor, envelope: this.detectorSettings.envelope });
+        } else {
+            this._setListenMode({ kind: 'expansion', factor: parseFloat(value) || 1 });
+        }
+    }
+
+    /** Engine reports the mode it switched to (also after the WASM module loaded). */
+    _onListenModeChange(mode: any) {
+        if (this.d.slowdownSelect) {
+            this.d.slowdownSelect.value = mode.kind === 'expansion' ? String(mode.factor) : mode.kind;
+        }
         this._updateUltrasoundChip();
-        if (now !== before) this._emit('timeexpansionchange', { factor: now });
+        this._emit('listenmodechange', { mode });
     }
 
     _applyUltrasoundSuggestion() {
@@ -1002,7 +1032,9 @@ export class PlayerState {
         const chip = this.d.ultrasoundChip;
         if (!chip) return;
         const info = this.ultrasoundInfo;
-        const show = !!info && info.suggestedExpansion > 1 && this._engine.timeExpansion === 1;
+        const mode = this._engine.listenMode;
+        const plain = !mode || (mode.kind === 'expansion' && mode.factor === 1);
+        const show = !!info && info.suggestedExpansion > 1 && plain;
         chip.hidden = !show;
         if (!show) return;
         const peak = info!.peakHz != null ? ` ≈ ${(info!.peakHz / 1000).toFixed(0)} kHz` : '';

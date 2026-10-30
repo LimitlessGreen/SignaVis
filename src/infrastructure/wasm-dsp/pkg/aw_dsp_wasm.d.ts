@@ -48,6 +48,31 @@ export function clahe(gray: Float32Array, width: number, height: number, tiles_x
 export function decodeF16(bytes: Uint8Array): Float32Array;
 
 /**
+ * Integer decimation from `sample_rate` to `detectorOutputRate`.
+ */
+export function detectorDecimation(sample_rate: number): number;
+
+/**
+ * Sample rate of the heterodyne / frequency-division output (≈ 48 kHz).
+ */
+export function detectorOutputRate(sample_rate: number): number;
+
+/**
+ * Background level for frequencyDivision (see aw_dsp::detector::division_noise_level).
+ */
+export function divisionNoiseLevel(samples: Float32Array, sample_rate: number, highpass_hz: number): number;
+
+/**
+ * Frequency-division detector output (see aw_dsp::detector::frequency_division).
+ */
+export function frequencyDivision(samples: Float32Array, sample_rate: number, divisor: number, highpass_hz: number, noise_level: number, keep_envelope: boolean): Float32Array;
+
+/**
+ * Heterodyne detector output (see aw_dsp::detector::heterodyne).
+ */
+export function heterodyne(samples: Float32Array, sample_rate: number, first_sample: number, carrier_hz: number, bandwidth_hz: number): Float32Array;
+
+/**
  * Convert interleaved PCM bytes to mono f32, channel 0 only
  * (matches AudioBuffer.getChannelData(0) in the JS path).
  */
@@ -68,6 +93,11 @@ export interface InitOutput {
     readonly bandFloor: (a: number, b: number, c: number) => [number, number];
     readonly clahe: (a: number, b: number, c: any, d: number, e: number, f: number, g: number, h: number) => void;
     readonly decodeF16: (a: number, b: number) => [number, number];
+    readonly detectorDecimation: (a: number) => number;
+    readonly detectorOutputRate: (a: number) => number;
+    readonly divisionNoiseLevel: (a: number, b: number, c: number, d: number) => number;
+    readonly frequencyDivision: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly heterodyne: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly wasmpyramidbuilderv2_finish: (a: number) => [number, number, number, number];
     readonly wasmpyramidbuilderv2_nLevels: (a: number) => number;
     readonly wasmpyramidbuilderv2_new: (a: number, b: number, c: number) => [number, number, number];

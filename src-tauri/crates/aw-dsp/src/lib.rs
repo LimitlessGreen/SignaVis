@@ -6,6 +6,7 @@
 // very long recordings stream through `pyramid` into an on-disk store.
 // ═══════════════════════════════════════════════════════════════════════
 
+pub mod detector;
 pub mod display;
 pub mod pyramid;
 pub mod source;
