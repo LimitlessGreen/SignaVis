@@ -69,6 +69,10 @@ export class ViewportManager extends EventTarget {
     _smoothSeekFocusUntil: any;
     _followCatchupRafId: any;
     _followCatchupAnim: any;
+    /** Last playhead x seen by applyFollowScroll (follow catch-up tracks it). */
+    _followLastPosition = 0;
+    /** Smooth-mode follower: fractional scroll, playhead velocity estimate. */
+    _smoothFollow: { scroll: number; vel: number; pos: number; at: number } | null = null;
     _zoomRedrawRafId: any;
     _overviewViewportRafId: any;
     _overviewNeedsFinalRedraw: any;
@@ -181,6 +185,7 @@ export class ViewportManager extends EventTarget {
      */
     applyFollowScroll(position: number) {
         const vw = this._getViewportWidth();
+        this._followLastPosition = position;
         if (this.followMode === 'smooth') {
             this._applySmoothFollow(position, vw);
         } else {
@@ -207,6 +212,7 @@ export class ViewportManager extends EventTarget {
                 : 'free';
         this.followPlayback = this.followMode !== 'free';
         if (this.followMode !== 'follow') this._cancelFollowCatchupAnimation();
+        this._smoothFollow = null;
         this.dispatchEvent(new CustomEvent('followchange', { detail: { mode: this.followMode } }));
         this._emitHost('followmodechange', { mode: this.followMode });
         return this.followMode;
@@ -657,37 +663,41 @@ export class ViewportManager extends EventTarget {
         this._followCatchupAnim = null;
     }
 
-    _animateFollowCatchupTo(targetScrollLeft: number) {
+    /** Scroll position that puts the playhead at the follow target ratio. */
+    _followIdealScroll(position: number, vw: number) {
         const buf = this._getAudioBuffer();
-        if (!buf) return;
-        const vw  = this._getViewportWidth();
-        const tw  = Math.max(1, Math.floor(this._coords.timeToScrollX(buf.duration)));
-        const maxScroll = Math.max(0, tw - vw);
-        const target    = clamp(targetScrollLeft, 0, maxScroll);
-        const start     = this._getPrimaryScrollLeft();
-        const delta     = target - start;
-        if (Math.abs(delta) < 1) return;
+        const tw  = buf ? Math.max(1, Math.floor(this._coords.timeToScrollX(buf.duration))) : 0;
+        return clamp(position - vw * this._cfg.followTargetRatio, 0, Math.max(0, tw - vw));
+    }
+
+    /**
+     * Page-style catch-up. The tween eases out the offset to the *moving*
+     * playhead target, so the view lands exactly on the playhead instead of
+     * on where it was when the tween started (which made it stop and lurch).
+     */
+    _animateFollowCatchupTo(targetScrollLeft: number) {
+        if (!this._getAudioBuffer()) return;
+        if (this._followCatchupAnim) return; // already tracking the playhead
+        const vw     = this._getViewportWidth();
+        const start  = this._getPrimaryScrollLeft();
+        const ideal  = this._followIdealScroll(targetScrollLeft + vw * this._cfg.followTargetRatio, vw);
+        const offset = start - ideal;
+        if (Math.abs(offset) < 1) return;
 
         const now = performance.now();
-        const inSeekFocus = now < this._smoothSeekFocusUntil;
-        const duration = inSeekFocus
+        const duration = now < this._smoothSeekFocusUntil
             ? this._cfg.followCatchupSeekDurationMs
             : this._cfg.followCatchupDurationMs;
-
-        if (this._followCatchupAnim) {
-            if (Math.abs(this._followCatchupAnim.target - target) < 6) return;
-        }
-
-        this._cancelFollowCatchupAnimation();
-        this._followCatchupAnim = { start, target, startedAt: now, duration };
-        const easeOutCubic = (t: number) => 1 - ((1 - t) ** 3);
+        this._followCatchupAnim = { offset, startedAt: now, duration };
+        const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2);
 
         const tick = (ts: number) => {
             const anim = this._followCatchupAnim;
             if (!anim) return;
-            const t     = clamp((ts - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
-            const eased = easeOutCubic(t);
-            const next  = anim.start + (anim.target - anim.start) * eased;
+            const t    = clamp((ts - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
+            const vwNow = this._getViewportWidth();
+            const next = this._followIdealScroll(this._followLastPosition, vwNow)
+                + anim.offset * (1 - easeInOutCubic(t));
             this._setLinkedScrollLeft(next);
             if (t >= 1) { this._cancelFollowCatchupAnimation(); return; }
             this._followCatchupRafId = requestAnimationFrame(tick);
@@ -695,26 +705,44 @@ export class ViewportManager extends EventTarget {
         this._followCatchupRafId = requestAnimationFrame(tick);
     }
 
+    /**
+     * Continuous follow. Frame-rate independent: the view moves with the
+     * playhead's estimated velocity (feed-forward, so the playhead stays put
+     * without lag) and an exponential correction closes the remaining gap.
+     * Scroll is kept fractional here, so integer scrollLeft rounding and the
+     * coarse media clock no longer turn into stop-and-go steps.
+     */
     _applySmoothFollow(position: number, viewportWidth?: number) {
-        const buf = this._getAudioBuffer();
-        if (!buf) return;
-        const vw         = Math.max(1, viewportWidth || this._getViewportWidth());
-        const totalWidth = Math.max(1, Math.floor(this._coords.timeToScrollX(buf.duration)));
-        const maxScroll  = Math.max(0, totalWidth - vw);
-        const target     = clamp(position - vw * this._cfg.followTargetRatio, 0, maxScroll);
-        const current    = this._getPrimaryScrollLeft();
-        const delta      = target - current;
-        if (Math.abs(delta) < 0.6) return;
-        const inSeekFocus = performance.now() < this._smoothSeekFocusUntil;
-        const lerp     = inSeekFocus ? this._cfg.smoothSeekLerp    : this._cfg.smoothLerp;
-        const minStep  = inSeekFocus
-            ? vw * this._cfg.smoothSeekMinStepRatio
-            : vw * this._cfg.smoothMinStepRatio;
-        const step = Math.sign(delta) * Math.min(
-            Math.abs(delta),
-            Math.max(minStep, Math.abs(delta) * lerp, 1),
-        );
-        this._setLinkedScrollLeft(current + step);
+        if (!this._getAudioBuffer()) return;
+        const vw     = Math.max(1, viewportWidth || this._getViewportWidth());
+        const target = this._followIdealScroll(position, vw);
+        const now    = performance.now();
+        const actual = this._getPrimaryScrollLeft();
+
+        let st = this._smoothFollow;
+        // (Re)start after a pause/seek gap or when something else moved the view.
+        if (!st || now - st.at > 120 || Math.abs(actual - st.scroll) > 2) {
+            st = this._smoothFollow = { scroll: actual, vel: 0, pos: position, at: now };
+            return;
+        }
+        const dt = Math.max(1, now - st.at);
+        // Playhead velocity (px/ms), low-passed against the jittery media clock;
+        // a jump (seek) is not a velocity.
+        const rawVel = (position - st.pos) / dt;
+        if (Math.abs(rawVel) * dt < vw * 0.25) st.vel += (rawVel - st.vel) * (1 - Math.exp(-dt / 150));
+        // Convert the per-frame lerp config into a time constant (60 fps reference).
+        const lerp = now < this._smoothSeekFocusUntil ? this._cfg.smoothSeekLerp : this._cfg.smoothLerp;
+        const tau  = -16.67 / Math.log(1 - clamp(lerp, 0.01, 0.95));
+
+        let next = st.scroll + st.vel * dt;
+        next += (target - next) * (1 - Math.exp(-dt / tau));
+        st.scroll = next;
+        st.pos    = position;
+        st.at     = now;
+        this._setLinkedScrollLeft(next);
+        // Keep in sync with what the browser actually applied (clamping at the edges).
+        const applied = this._getPrimaryScrollLeft();
+        if (Math.abs(applied - next) > 2) st.scroll = applied;
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
