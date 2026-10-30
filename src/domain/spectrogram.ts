@@ -26,6 +26,8 @@ interface BuildSpectrogramOpts {
     spectrogramAbsLogMin: number;
     spectrogramAbsLogMax: number;
     scale?: string;
+    /** Row centre frequencies from the engine; must match CoordinateSystem's binFreqs. */
+    binFreqs?: ArrayLike<number> | null;
     colourScale?: string;
     noiseReduction?: boolean;
     clahe?: boolean;
@@ -464,7 +466,8 @@ export function noiseFloorStats(spectrogramData: NumArray) {
  * @param {string} [scale='mel'] - 'mel' or 'linear'
  * @param {number} [energyThreshold=0.08] - fraction of peak-bin energy
  */
-export function detectMaxFrequency(spectrogramData: NumArray, nFrames: number, nMels: number, sampleRate: number, scale = 'mel', energyThreshold = 0.08) {
+export function detectMaxFrequency(spectrogramData: NumArray, nFrames: number, nMels: number, sampleRate: number, scale = 'mel', energyThreshold = 0.08,
+                                   binFreqs: ArrayLike<number> | null = null) {
     if (!spectrogramData || nFrames <= 0 || nMels <= 0) return sampleRate / 2;
 
     // Accumulate mean energy per bin
@@ -509,7 +512,9 @@ export function detectMaxFrequency(spectrogramData: NumArray, nFrames: number, n
 
     // Map bin to Hz
     let detectedHz: number;
-    if (scale === 'linear') {
+    if (binFreqs && binFreqs.length === nMels) {
+        detectedHz = binFreqs[Math.min(nMels - 1, upperBin)];
+    } else if (scale === 'linear') {
         const binHz = (sampleRate / 2) / nMels;
         detectedHz = Math.min(nMels - 1, upperBin) * binHz;
     } else {
@@ -614,6 +619,7 @@ export function buildSpectrogramGrayscale({
     sampleRateHz, maxFreq,
     spectrogramAbsLogMin, spectrogramAbsLogMax,
     scale = 'mel',
+    binFreqs = null,
     colourScale = 'dbSquared',
     noiseReduction = false,
     clahe = false,
@@ -623,11 +629,12 @@ export function buildSpectrogramGrayscale({
     const width  = clamp(spectrogramFrames, 1, MAX_BASE_SPECTROGRAM_WIDTH);
     const height = spectrogramMels;
     const framesPerPixel = spectrogramFrames / width;
-    const isLinear = scale === 'linear';
+    const table = binFreqs && binFreqs.length === spectrogramMels ? Float32Array.from(binFreqs) : null;
+    const isLinear = !table && scale === 'linear';
 
     const boundedMaxFreq = Math.min(maxFreq, sampleRateHz / 2);
 
-    const melFreqs = isLinear ? null : buildMelFrequencies(sampleRateHz, spectrogramMels);
+    const melFreqs = table ?? (isLinear ? null : buildMelFrequencies(sampleRateHz, spectrogramMels));
     const maxBin = computeMaxBin({
         isLinear,
         nyquist: sampleRateHz / 2,

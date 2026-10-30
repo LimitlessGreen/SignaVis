@@ -1169,6 +1169,7 @@ export class PlayerState {
             canvasHeight: this.d.spectrogramCanvas?.height || 0,
             maxFreq: parseFloat(this.d.maxFreqSelect?.value || '10000'),
             spectrogramMels: this._spectro.nMels,
+            binFreqs: this._spectro.binFreqs,
             scale: this.d.scaleSelect?.value || 'mel',
             frameRate: PERCH_FRAME_RATE,
             hopSize: this._spectro.hopSize || 0,
