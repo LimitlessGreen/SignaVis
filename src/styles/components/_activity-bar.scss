@@ -1,6 +1,6 @@
 /* Activity Bar component — migrated from legacy demo CSS */
 .activity-bar {
-  width: 36px;
+  width: 52px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -33,7 +33,7 @@
 .activity-btn:hover { color: var(--color-text-primary); background: rgba(57, 181, 255, 0.08); }
 .activity-btn.active { color: var(--color-accent); background: rgba(57, 181, 255, 0.12); box-shadow: inset 2px 0 0 var(--color-accent); }
 .activity-btn-icon svg { width: 18px; height: 18px; display: block; pointer-events: none; stroke-width: 1.5; }
-.activity-btn-label { writing-mode: vertical-lr; text-orientation: mixed; font-size: 9px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; pointer-events: none; user-select: none; }
+.activity-btn-label { font-size: 9px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; pointer-events: none; user-select: none; }
 .activity-badge { position: absolute; top: 2px; right: 2px; min-width: 13px; height: 13px; border-radius: 7px; background: var(--color-accent); color: #000; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 2px; line-height: 1; }
 
 /* Flash animation — draws attention to a tab without switching */
@@ -49,7 +49,7 @@
 }
 
 @media (max-width: 700px) {
-  .activity-bar { width: 30px; }
-  .activity-btn-label { font-size: 8px; }
+  .activity-bar { width: 40px; }
+  .activity-btn-label { display: none; }
   .activity-btn-icon svg { width: 15px; height: 15px; }
 }

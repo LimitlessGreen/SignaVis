@@ -18,6 +18,8 @@
  *   explorer.render();
  */
 
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
+
 export class RecordingExplorer {
     // TypeScript property declarations (migrated from JS)
     _collapsed: any;
@@ -31,6 +33,7 @@ export class RecordingExplorer {
     _onRenameSet: any;
     _onResetRecording: any;
     _onResetSet: any;
+    _onRemoveRecording: any;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -40,6 +43,7 @@ export class RecordingExplorer {
      * @param {(xcId: string) => Promise<void>}   [opts.onAddXc]
      * @param {(entry: object) => void}            [opts.onResetRecording]  Clear annotations for one recording
      * @param {() => void}                         [opts.onResetSet]        Clear annotations for all recordings
+     * @param {(entry) => void}                    [opts.onRemoveRecording] Remove a recording (host may offer Undo)
      */
     constructor(opts: any) {
         this._container        = opts.container;
@@ -52,10 +56,33 @@ export class RecordingExplorer {
         this._onAddXc          = opts.onAddXc || null;
         this._onResetRecording = opts.onResetRecording || null;
         this._onResetSet       = opts.onResetSet || null;
+        this._onRemoveRecording = opts.onRemoveRecording || null;
         this._collapsed        = false;
 
         this._manager.addEventListener('change',       () => this.render());
         this._manager.addEventListener('activechange', () => this.render());
+    }
+
+    /** "⋯" button opening a context menu with the given items. */
+    _menuButton(title: string, items: () => any[]) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'recording-explorer-menu';
+        btn.title = title;
+        btn.setAttribute('aria-haspopup', 'menu');
+        btn.textContent = '⋯';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const r = btn.getBoundingClientRect();
+            showContextMenu({ x: r.left, y: r.bottom, items: items() });
+        });
+        return btn;
+    }
+
+    _promptXcId(entry: any) {
+        const val = prompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '');
+        if (val == null) return;
+        if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
     }
 
     render() {
@@ -127,20 +154,11 @@ export class RecordingExplorer {
             header.appendChild(badge);
         }
 
-        // ── Set-level reset button (hover-visible) ────────────────────
+        // ── Session menu (hover-visible) — deletions go through the host, which offers Undo ──
         if (this._onResetSet) {
-            const resetSetBtn = document.createElement('button');
-            resetSetBtn.type = 'button';
-            resetSetBtn.className = 'recording-explorer-reset-set';
-            resetSetBtn.title = 'Clear all annotations in this session';
-            resetSetBtn.textContent = '↺';
-            resetSetBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                if (confirm('Clear all annotations for every recording in this session?')) {
-                    await this._onResetSet();
-                }
-            });
-            header.appendChild(resetSetBtn);
+            header.appendChild(this._menuButton('Session actions', () => [
+                { label: 'Clear all labels in this session', danger: true, action: () => this._onResetSet() },
+            ]));
         }
 
         const toggle = () => {
@@ -208,43 +226,28 @@ export class RecordingExplorer {
                     meta.title += ' · no XC number — cannot be uploaded';
                     meta.classList.add('recording-explorer-meta--warn');
                     meta.title += ' (click to assign)';
-                    meta.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const val = prompt(`XC number for ${entry.filename} (your own upload):`, '');
-                        if (val == null) return;
-                        if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
-                    });
+                    meta.addEventListener('click', (e) => { e.stopPropagation(); this._promptXcId(entry); });
                 }
 
-                // Reset button (hover only) — clears annotations for this recording
-                const resetBtn = document.createElement('button');
-                resetBtn.type = 'button';
-                resetBtn.className = 'recording-explorer-reset';
-                resetBtn.title = 'Clear annotations for this recording';
-                resetBtn.textContent = '↺';
-                resetBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    if (confirm(`Clear all annotations for ${label.textContent}?`)) {
-                        await this._onResetRecording?.(entry);
-                    }
-                });
-
-                // Remove button (hover only)
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'recording-explorer-remove';
-                removeBtn.title = 'Remove from session';
-                removeBtn.innerHTML = '&times;';
-                removeBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this._manager.remove(entry.id);
+                const rowItems = () => [
+                    { label: entry.xcId ? `Change XC number (XC${entry.xcId})…` : 'Assign XC number…',
+                      action: () => this._promptXcId(entry) },
+                    { separator: true },
+                    ...(this._onResetRecording ? [{ label: 'Clear labels of this recording', danger: true,
+                      action: () => this._onResetRecording(entry) }] : []),
+                    { label: 'Remove from session', danger: true,
+                      action: () => (this._onRemoveRecording ? this._onRemoveRecording(entry) : this._manager.remove(entry.id)) },
+                ];
+                const menuBtn = this._menuButton('Recording actions', rowItems);
+                li.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showContextMenu({ x: e.clientX, y: e.clientY, items: rowItems() });
                 });
 
                 li.appendChild(icon);
                 li.appendChild(label);
                 li.appendChild(meta);
-                if (this._onResetRecording) li.appendChild(resetBtn);
-                li.appendChild(removeBtn);
+                li.appendChild(menuBtn);
 
                 li.addEventListener('click', () => {
                     if (entry.id !== activeId) this._onActivate?.(entry);
