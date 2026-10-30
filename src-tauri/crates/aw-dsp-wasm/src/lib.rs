@@ -2,99 +2,16 @@
 // aw-dsp-wasm — browser bindings for aw-dsp
 //
 // Split for a worker pool without SharedArrayBuffer:
-//   compute workers:  WasmEngine.blockValues(samples, warmup, n)  (parallel,
-//                     PCEN included via warm-up frames)
-//   coordinator:      WasmPyramidBuilder → bytes per level → OPFS
+//   compute workers:  WasmStft.blockValues(…)  (parallel, PCEN included
+//                     via warm-up frames)
+//   coordinator:      WasmPyramidBuilderV2 → bytes per level → OPFS
 // WAV parsing happens here too so JS only slices the File.
 // ═══════════════════════════════════════════════════════════════════════
 
 use aw_dsp::pyramid::{PyramidBuilder, VecSink};
-use aw_dsp::{PcenState, SpecEngine, SpecParams};
 use wasm_bindgen::prelude::*;
 
-fn parse_params(json: &str) -> Result<SpecParams, JsError> {
-    serde_json::from_str(json).map_err(|e| JsError::new(&format!("params: {e}")))
-}
-
-#[wasm_bindgen]
-pub struct WasmEngine { engine: SpecEngine, state: PcenState }
-
-#[wasm_bindgen]
-impl WasmEngine {
-    #[wasm_bindgen(constructor)]
-    pub fn new(params_json: &str) -> Result<WasmEngine, JsError> {
-        let engine = SpecEngine::new(parse_params(params_json)?);
-        let state = engine.new_pcen_state();
-        Ok(Self { engine, state })
-    }
-
-    #[wasm_bindgen(js_name = outBins)]
-    pub fn out_bins(&self) -> usize { self.engine.params.out_bins() }
-
-    #[wasm_bindgen(js_name = nFrames)]
-    pub fn n_frames(&self, n_samples: f64) -> f64 { self.engine.params.n_frames(n_samples as u64) as f64 }
-
-    #[wasm_bindgen(js_name = samplesForFrames)]
-    pub fn samples_for_frames(&self, n: usize) -> usize { self.engine.samples_for_frames(n) }
-
-    /// Band energies for `n_frames` frames; `samples[0]` is the first
-    /// sample of the first frame. Independent per block → parallelisable.
-    #[wasm_bindgen(js_name = bandEnergies)]
-    pub fn band_energies(&self, samples: &[f32], n_frames: usize) -> Vec<f32> {
-        let mut out = vec![0f32; n_frames * self.out_bins()];
-        self.engine.band_energies(samples, &mut out);
-        out
-    }
-
-    /// Finalized values for one block, independent of other blocks
-    /// (PCEN warm-up, see aw_dsp::SpecEngine::block_values).
-    #[wasm_bindgen(js_name = blockValues)]
-    pub fn block_values(&self, samples: &[f32], warmup: usize, n_frames: usize) -> Vec<f32> {
-        self.engine.block_values(samples, warmup, n_frames)
-    }
-
-    #[wasm_bindgen(js_name = pcenWarmup)]
-    pub fn pcen_warmup(&self) -> usize { self.engine.pcen_warmup(1e-12) }
-
-    /// PCEN / dB in place. Must be called on consecutive blocks in order.
-    pub fn finalize(&mut self, data: &mut [f32]) { self.engine.finalize(data, &mut self.state); }
-}
-
-#[wasm_bindgen]
-pub struct WasmPyramidBuilder { builder: Option<PyramidBuilder>, sink: VecSink }
-
-#[wasm_bindgen]
-impl WasmPyramidBuilder {
-    #[wasm_bindgen(constructor)]
-    pub fn new(params_json: &str, n_samples: f64) -> Result<WasmPyramidBuilder, JsError> {
-        let builder = PyramidBuilder::new(parse_params(params_json)?, n_samples as u64);
-        Ok(Self { builder: Some(builder), sink: VecSink::default() })
-    }
-
-    #[wasm_bindgen(js_name = nLevels)]
-    pub fn n_levels(&self) -> usize { self.builder.as_ref().map_or(0, |b| b.n_levels()) }
-
-    #[wasm_bindgen(js_name = pushBlock)]
-    pub fn push_block(&mut self, block: &[f32]) -> Result<(), JsError> {
-        let b = self.builder.as_mut().ok_or_else(|| JsError::new("builder finished"))?;
-        b.push_block(block, &mut self.sink).map_err(|e| JsError::new(&e.to_string()))
-    }
-
-    /// Drain encoded bytes produced so far for `level` (append to its file).
-    #[wasm_bindgen(js_name = takeLevel)]
-    pub fn take_level(&mut self, level: usize) -> Vec<u8> {
-        self.sink.0.get_mut(level).map(std::mem::take).unwrap_or_default()
-    }
-
-    /// Flush partial groups; returns meta JSON. Drain levels afterwards.
-    pub fn finish(&mut self) -> Result<String, JsError> {
-        let b = self.builder.take().ok_or_else(|| JsError::new("builder finished"))?;
-        let meta = b.finish(&mut self.sink).map_err(|e| JsError::new(&e.to_string()))?;
-        serde_json::to_string(&meta).map_err(|e| JsError::new(&e.to_string()))
-    }
-}
-
-// ── v2 engine (dBFS / PCEN, centred frames) ─────────────────────────
+// ── Engine (dBFS / PCEN, centred frames) ────────────────────────────
 //
 // Workflow per block (coordinator):
 //   [lo, hi] = stft.blockFrameRange(f0, n, total)
