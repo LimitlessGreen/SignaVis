@@ -31,7 +31,6 @@ export const ANNOTA_WARN_ANNOTATION_FIELDS = [
     'annotator', 'frequency_low', 'frequency_high', 'sound_type', 'sex', 'life_stage', 'annotation_remarks',
 ] as const;
 
-export const XC_CONTRIBUTOR_URI_PREFIX = 'https://xeno-canto.org/contributor/';
 
 const str = (v: any) => (v == null ? '' : String(v).trim());
 
@@ -64,14 +63,6 @@ export function xcContributorId(v: any) {
     const s = str(v);
     const m = s.match(/xeno-canto\.org\/contributor\/([^/?#\s]+)/i);
     return m ? m[1] : s;
-}
-
-/** XC contributor URI for set_creator_id; other URIs are kept as they are. */
-export function xcContributorUri(v: any) {
-    const s = str(v);
-    if (!s) return '';
-    if (/^https?:\/\//i.test(s)) return s;
-    return XC_CONTRIBUTOR_URI_PREFIX + s;
 }
 
 /** Comma-/semicolon-separated owner input → normalized list string (format still to be confirmed by XC). */
@@ -168,7 +159,7 @@ export function buildAnnotaPayload(opts: AnnotaBuildOptions) {
         set_name: str(s.name) || `SignaVis annotations ${now.toISOString().slice(0, 16)}`,
         annotation_software_name_and_version: opts.softwareNameAndVersion || 'SignaVis',
         set_creator: annotator,
-        set_creator_id: xcContributorUri(s.creatorId),
+        set_creator_id: xcContributorId(s.creatorId),  // bare ID; XC flags the URI form as invalid
         set_owner: normalizeOwnerList(s.owner),
         set_license: str(s.license),
         project_uri: str(s.projectUri),

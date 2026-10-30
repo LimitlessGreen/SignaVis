@@ -33,7 +33,7 @@ test('set fields: scope, owner list, creator URI, remarks', () => {
     const p = buildAnnotaPayload({ set: SET, labels: [LABEL] });
     assert.deepEqual(p.scope, [{ taxon_coverage: 'Aves', completeness: 'part' }]);
     assert.equal(p.set_owner, 'Org A, Org B');
-    assert.equal(p.set_creator_id, 'https://xeno-canto.org/contributor/ABCDEFGHIJ');
+    assert.equal(p.set_creator_id, 'ABCDEFGHIJ');
     assert.equal(p.set_remarks, 'test set');
     assert.equal(p.annotations[0].annotator_xc_id, 'ABCDEFGHIJ');
 });
