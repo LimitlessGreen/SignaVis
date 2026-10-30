@@ -10,12 +10,12 @@
 
 import {
     initSync, clahe, bandFloor, WasmStft,
-    heterodyne, frequencyDivision, divisionNoiseLevel, detectorDecimation, detectorOutputRate,
+    heterodyne, frequencyDivision, divisionNoiseLevel, pitchShift, detectorDecimation, detectorOutputRate,
 } from './pkg/aw_dsp_wasm.js';
 
 const api = {
     clahe, bandFloor, WasmStft,
-    heterodyne, frequencyDivision, divisionNoiseLevel, detectorDecimation, detectorOutputRate,
+    heterodyne, frequencyDivision, divisionNoiseLevel, pitchShift, detectorDecimation, detectorOutputRate,
 };
 let ready = false;
 const listeners: Array<() => void> = [];

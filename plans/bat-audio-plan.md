@@ -70,7 +70,14 @@ ziehen oder Alt+Klick ins Spektrogramm stimmt ab (Raster 0,5 kHz, wirkt beim Los
 UI: Moduswahl in der Transportleiste (Zeitdehnung / Heterodyn / Frequenzteilung / später
 Pitch-Shift) mit dem jeweiligen Parameter (Faktor, Trägerfrequenz, Teiler).
 
-### Phase 4 — Pitch-Shift (Rubberband vs. Signalsmith Stretch)
-- Lizenz: Rubberband GPLv2+ ist AGPL-kompatibel; Signalsmith MIT.
-- Desktop zuerst (Rust), WASM später. Vorher Hörvergleich an FM-Rufen (Transienten!).
-- Einsatz: Echtzeit-Überblick (Pulsrate, Feeding Buzz, Sozialrufe), nicht Einzelruf-Analyse.
+### Phase 4 — Pitch-Shift in Echtzeit (erledigt)
+- Eigener Phase-Vocoder in `aw_dsp::detector::pitch_shift` statt Rubberband/Signalsmith: beide
+  sind C++ und nur mit Emscripten-Aufwand nach WASM zu bringen. Unser Fall (großer Shift nach
+  unten, Tempo 1:1) erlaubt Synthese direkt bei 48 kHz: Eingangsframe = Ausgangsframe ×
+  Dezimierung (2048 → 256 bei 384 kHz), Bin k → k/Faktor, Phasen-Akkumulation, 4× Overlap.
+- Modus `{ kind: 'pitch', factor }` (÷4…÷32), Transport „Pitch ÷“, Audio-Tab.
+- Alle Echtzeit-Modi rendern jetzt im Worker (`detector.worker.ts`): erster Abschnitt 1 s,
+  danach 5 s, je 2 s vor Ablauf angefordert und lückenlos auf der AudioContext-Uhr angesetzt;
+  Cache für Label-Loops. Browser-Test (384 kHz): Start 0,13–0,5 s, kein Unterlauf.
+- Grenze: Rufe kürzer als ein Frame (~5 ms) werden etwas verschmiert; für die Rufform
+  bleibt Zeitdehnung das Mittel der Wahl.

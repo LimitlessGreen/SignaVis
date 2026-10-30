@@ -300,8 +300,9 @@ export class BirdNETPlayer {
 
     /**
      * Listening mode for ultrasound: `{ kind: 'expansion', factor }`,
-     * `{ kind: 'heterodyne', carrierHz }` or `{ kind: 'division', divisor, envelope }`.
-     * Detector modes play in real time; emits 'listenmodechange' once active.
+     * `{ kind: 'heterodyne', carrierHz }`, `{ kind: 'division', divisor, envelope }`
+     * or `{ kind: 'pitch', factor }`. All but expansion play in real time;
+     * emits 'listenmodechange' once active.
      */
     setListenMode(mode: any) { this._state?._setListenMode(mode); }
     get listenMode(): any { return this._state?._engine?.listenMode ?? { kind: 'expansion', factor: 1 }; }

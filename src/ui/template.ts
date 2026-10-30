@@ -114,6 +114,7 @@ export function createPlayerHTML(opts = {}) {
             <option value="16">×16</option>
             <option value="heterodyne">Heterodyne</option>
             <option value="division">Freq. division</option>
+            <option value="pitch">Pitch ÷</option>
         </select>
         <button type="button" data-aw="ultrasoundChip" class="toolbar-btn ultrasound-chip" hidden></button>
 

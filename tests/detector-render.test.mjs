@@ -81,3 +81,12 @@ test('frequency-division chunk divides by the divisor', () => {
   const f = zcFreq(chunk.buffer.getChannelData(0), 48000);
   assert.ok(Math.abs(f - 4500) < 300, `got ${f}`);
 });
+
+test('pitch-shift chunk: frequency ÷ factor at 48 kHz, tempo kept', () => {
+  const src = toneBuffer(45000, 1);
+  const chunk = renderDetectorChunk(src, { kind: 'pitch', factor: 10 }, 0.2, 0.5, 1);
+  assert.equal(chunk.buffer.sampleRate, 48000);
+  assert.ok(Math.abs(chunk.buffer.duration - 0.3) < 1e-3, `duration ${chunk.buffer.duration}`);
+  const f = zcFreq(chunk.buffer.getChannelData(0), 48000);
+  assert.ok(Math.abs(f - 4500) < 50, `got ${f}`);
+});

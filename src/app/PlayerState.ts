@@ -141,7 +141,7 @@ export class PlayerState {
     sampleRateHz: any;
     ultrasoundInfo: UltrasoundInfo | null = null;
     /** Last detector settings, reused when the mode is picked from the transport bar. */
-    detectorSettings = { carrierHz: 0, divisor: 10, envelope: false };
+    detectorSettings = { carrierHz: 0, divisor: 10, envelope: false, pitchFactor: 10 };
     amplitudePeakAbs: number;
     transportState: any;
     _lastTimeReadoutText: any;
@@ -1009,10 +1009,11 @@ export class PlayerState {
             this.detectorSettings.divisor = mode.divisor;
             this.detectorSettings.envelope = !!mode.envelope;
         }
+        if (mode?.kind === 'pitch') this.detectorSettings.pitchFactor = mode.factor;
         this._engine.setListenMode(mode);
     }
 
-    /** Transport-bar choice: a slowdown factor, 'heterodyne' or 'division'. */
+    /** Transport-bar choice: a slowdown factor, 'heterodyne', 'division' or 'pitch'. */
     _selectListenMode(value: string) {
         if (value === 'heterodyne') {
             const peak = this.ultrasoundInfo?.peakHz;
@@ -1020,6 +1021,8 @@ export class PlayerState {
             this._setListenMode({ kind: 'heterodyne', carrierHz });
         } else if (value === 'division') {
             this._setListenMode({ kind: 'division', divisor: this.detectorSettings.divisor, envelope: this.detectorSettings.envelope });
+        } else if (value === 'pitch') {
+            this._setListenMode({ kind: 'pitch', factor: this.detectorSettings.pitchFactor });
         } else {
             this._setListenMode({ kind: 'expansion', factor: parseFloat(value) || 1 });
         }

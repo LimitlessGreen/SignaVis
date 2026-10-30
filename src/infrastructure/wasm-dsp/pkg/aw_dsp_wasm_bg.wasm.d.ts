@@ -11,6 +11,7 @@ export const detectorOutputRate: (a: number) => number;
 export const divisionNoiseLevel: (a: number, b: number, c: number, d: number) => number;
 export const frequencyDivision: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
 export const heterodyne: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const pitchShift: (a: number, b: number, c: number, d: number) => [number, number];
 export const wasmpyramidbuilderv2_finish: (a: number) => [number, number, number, number];
 export const wasmpyramidbuilderv2_nLevels: (a: number) => number;
 export const wasmpyramidbuilderv2_new: (a: number, b: number, c: number) => [number, number, number];

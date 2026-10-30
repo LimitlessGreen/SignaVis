@@ -132,6 +132,12 @@ pub fn heterodyne(samples: &[f32], sample_rate: f32, first_sample: f64, carrier_
     aw_dsp::detector::heterodyne(samples, sample_rate, first_sample, carrier_hz, bandwidth_hz)
 }
 
+/// Phase-vocoder pitch shift ÷ factor, tempo kept (see aw_dsp::detector::pitch_shift).
+#[wasm_bindgen(js_name = pitchShift)]
+pub fn pitch_shift(samples: &[f32], sample_rate: f32, factor: f32) -> Vec<f32> {
+    aw_dsp::detector::pitch_shift(samples, sample_rate, factor)
+}
+
 /// Background level for frequencyDivision (see aw_dsp::detector::division_noise_level).
 #[wasm_bindgen(js_name = divisionNoiseLevel)]
 pub fn division_noise_level(samples: &[f32], sample_rate: f32, highpass_hz: f32) -> f32 {
