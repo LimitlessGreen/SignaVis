@@ -51,6 +51,17 @@ export interface PyramidMeta {
 
 let modulePromise: Promise<WebAssembly.Module> | null = null;
 
+function compileModule(): Promise<WebAssembly.Module> {
+    modulePromise ??= WebAssembly.compileStreaming(fetch(wasmUrl))
+        .catch(async () => WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer()));
+    return modulePromise;
+}
+
+/** Initialises the main-thread instance (wasmMain) without starting workers. */
+export async function loadWasmMain(): Promise<void> {
+    initWasmMain(await compileModule());
+}
+
 export class WasmSpectrogramService {
     private coord: Worker;
     private computes: Worker[];
@@ -77,9 +88,7 @@ export class WasmSpectrogramService {
             const bytes = await (await fetch(wasmUrl)).arrayBuffer();
             return new WasmSpectrogramService(bytes, nWorkers);
         }
-        modulePromise ??= WebAssembly.compileStreaming(fetch(wasmUrl))
-            .catch(async () => WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer()));
-        const module = await modulePromise;
+        const module = await compileModule();
         initWasmMain(module);
         return new WasmSpectrogramService(module, nWorkers);
     }

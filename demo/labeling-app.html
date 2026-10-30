@@ -909,14 +909,29 @@
           <label class="field-label" for="audioModeSelect">Method</label>
           <select id="audioModeSelect" class="field-select">
             <option value="expansion">Time expansion</option>
-            <option value="heterodyne" disabled>Heterodyne (coming)</option>
-            <option value="division" disabled>Frequency division (coming)</option>
+            <option value="heterodyne">Heterodyne detector</option>
+            <option value="division">Frequency-division detector</option>
           </select>
-          <label class="field-label" for="audioExpansionSelect">Slowdown</label>
-          <select id="audioExpansionSelect" class="field-select">
-            ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
-          </select>
-          <p class="field-hint">Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10.</p>
+          <div data-mode="expansion">
+            <label class="field-label" for="audioExpansionSelect">Slowdown</label>
+            <select id="audioExpansionSelect" class="field-select">
+              ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
+            </select>
+            <p class="field-hint">Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10. Keeps every detail of the call.</p>
+          </div>
+          <div data-mode="heterodyne" hidden>
+            <label class="field-label" for="audioCarrierInput">Tuning (kHz)</label>
+            <input id="audioCarrierInput" class="input" type="number" min="10" max="150" step="1" value="40" />
+            <p class="field-hint">Real time, like a hand-held detector: calls within about ±6 kHz of the tuning sound as the difference tone. Tune to the call's peak frequency.</p>
+          </div>
+          <div data-mode="division" hidden>
+            <label class="field-label" for="audioDivisorSelect">Divide by</label>
+            <select id="audioDivisorSelect" class="field-select">
+              ${[5, 8, 10, 16, 20].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
+            </select>
+            <label class="field-label"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
+            <p class="field-hint">Real time, like a frequency-division detector: every call at once, all frequencies divided. Sounds rough by nature; quiet background stays silent.</p>
+          </div>
         </div>
         <div class="panel-section">
           <h3>Recording</h3>
@@ -930,13 +945,41 @@
           </details>
         </div>`;
 
+      const modeSel = el.querySelector('#audioModeSelect');
       const expansionSel = el.querySelector('#audioExpansionSelect');
+      const carrierInput = el.querySelector('#audioCarrierInput');
+      const divisorSel = el.querySelector('#audioDivisorSelect');
+      const envelopeCheck = el.querySelector('#audioEnvelopeCheck');
+      divisorSel.value = '10';
       const statusEl = el.querySelector('#audioDetectStatus');
       const applyBtn = el.querySelector('#audioApplySuggestionBtn');
       const guanoDetails = el.querySelector('#audioGuanoDetails');
       const guanoList = el.querySelector('#audioGuanoList');
 
-      expansionSel.addEventListener('change', () => player.setTimeExpansion(Number(expansionSel.value)));
+      const showModeFields = (kind) => {
+        for (const box of el.querySelectorAll('[data-mode]')) box.hidden = box.dataset.mode !== kind;
+      };
+      const modeFromFields = () => {
+        switch (modeSel.value) {
+          case 'heterodyne': return { kind: 'heterodyne', carrierHz: (Number(carrierInput.value) || 40) * 1000 };
+          case 'division': return { kind: 'division', divisor: Number(divisorSel.value), envelope: envelopeCheck.checked };
+          default: return { kind: 'expansion', factor: Number(expansionSel.value) };
+        }
+      };
+      const applyFields = () => {
+        showModeFields(modeSel.value);
+        player.setListenMode(modeFromFields());
+      };
+      modeSel.addEventListener('change', () => {
+        // Switching to time expansion from a detector: start with the suggestion, not ×1.
+        if (modeSel.value === 'expansion' && Number(expansionSel.value) === 1) {
+          expansionSel.value = String(player.ultrasoundInfo?.suggestedExpansion ?? 1);
+        }
+        applyFields();
+      });
+      for (const input of [expansionSel, carrierInput, divisorSel, envelopeCheck]) {
+        input.addEventListener('change', applyFields);
+      }
       applyBtn.addEventListener('click', () => {
         const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
         if (f > 1) player.setTimeExpansion(f);
@@ -944,18 +987,29 @@
 
       const syncSuggestion = () => {
         const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
-        applyBtn.hidden = !(f > 1 && player.timeExpansion !== f);
+        const mode = player.listenMode;
+        applyBtn.hidden = !(f > 1 && !(mode.kind === 'expansion' && mode.factor === f));
         applyBtn.textContent = `Play ×${f} slower`;
       };
 
-      player.on('timeexpansionchange', (e) => {
-        expansionSel.value = String(e.detail.factor);
+      // The transport bar can change the mode too: mirror whatever is active.
+      const syncFields = (mode) => {
+        modeSel.value = mode.kind;
+        if (mode.kind === 'expansion') expansionSel.value = String(mode.factor);
+        if (mode.kind === 'heterodyne') carrierInput.value = String(Math.round(mode.carrierHz / 1000));
+        if (mode.kind === 'division') {
+          divisorSel.value = String(mode.divisor);
+          envelopeCheck.checked = !!mode.envelope;
+        }
+        showModeFields(mode.kind);
         syncSuggestion();
-      });
+      };
+      player.on('listenmodechange', (e) => syncFields(e.detail.mode));
 
       player.on('ultrasoundinfo', (e) => {
         const info = e.detail;
-        expansionSel.value = String(player.timeExpansion);
+        if (info?.peakHz) carrierInput.value = String(Math.round(info.peakHz / 1000));
+        syncFields(player.listenMode);
         if (!info) { statusEl.textContent = 'No audio loaded.'; syncSuggestion(); return; }
         const parts = [];
         if (info.storedExpansion > 1) {

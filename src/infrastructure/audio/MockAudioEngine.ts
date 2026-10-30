@@ -161,7 +161,12 @@ export class MockAudioEngine extends AudioEngineBase {
     override setVolume(val: number): void { this.volume = clamp(val, 0, 1); }
     timeExpansion = 1;
     guano: Record<string, string> | null = null;
-    override setTimeExpansion(factor: number): void { this.timeExpansion = clamp(factor, 1, 16); }
+    listenMode: any = { kind: 'expansion', factor: 1 };
+    override setTimeExpansion(factor: number): void { this.setListenMode({ kind: 'expansion', factor }); }
+    override setListenMode(mode: any): void {
+        this.listenMode = mode?.kind === 'expansion' ? { kind: 'expansion', factor: clamp(mode.factor, 1, 16) } : { ...mode };
+        this.timeExpansion = this.listenMode.kind === 'expansion' ? this.listenMode.factor : 1;
+    }
 
     override toggleMute(): void {
         if (this.muted) {

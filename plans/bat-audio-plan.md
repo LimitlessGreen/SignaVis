@@ -44,6 +44,17 @@ immer in Originalzeit.
 ### Phase 3 — Detektor-Modi wie in der Feldarbeit (Rust, aw-dsp)
 Ziel: anbieten, was Leute von Heterodyn- und Frequenzteiler-Detektoren kennen.
 
+**3a erledigt:** `aw_dsp::detector` (heterodyne, frequency_division, division_noise_level),
+WASM-Exports, `detectorRender.ts` (15-s-Abschnitte, Lead-in/-out für die Filter,
+Raster der Dezimierung → 1:1 Originalzeit). Engine: `setListenMode`, Detektor-Wiedergabe über
+den Web-Audio-Pfad (auch Label-Ausschnitte; Bandpass dort aus, der Detektor wählt das Band).
+Transportleiste: ×1…×16 / Heterodyne / Freq. division; Audio-Tab mit Abstimmung, Teiler,
+Hüllkurve. Abweichung vom Plan: Heterodyn als echte Mischung (Seitenbänder falten wie am
+Gerät), nicht analytisch. Rauschschwelle des Teilers über die ganze Aufnahme geschätzt, sonst
+bleibt ein reiner Ruf-Ausschnitt stumm.
+
+**3b offen:** Trägerlinie im Spektrogramm, per Klick/Ziehen abstimmen.
+
 **Heterodyn**
 - Komplexe Mischung (analytisches Signal) ohne Spiegelfrequenz, Ausgabe 48 kHz.
 - Nur den gespielten Abschnitt rendern; Zeitabbildung 1:1.

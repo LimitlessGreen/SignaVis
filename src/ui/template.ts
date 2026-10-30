@@ -105,13 +105,15 @@ export function createPlayerHTML(opts = {}) {
             </svg>
         </button>
         <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Volume"${hide(o.showVolume)}>
-        <select data-aw="slowdownSelect" class="toolbar-select" title="Slow down playback (pitch drops along) — ×10 makes bat calls audible"${hide(o.showVolume)}>
+        <select data-aw="slowdownSelect" class="toolbar-select" title="Listening mode for ultrasound: slow down (pitch drops along, ×10 makes bat calls audible), or a heterodyne / frequency-division detector"${hide(o.showVolume)}>
             <option value="1">×1</option>
             <option value="2">×2</option>
             <option value="4">×4</option>
             <option value="8">×8</option>
             <option value="10">×10</option>
             <option value="16">×16</option>
+            <option value="heterodyne">Heterodyne</option>
+            <option value="division">Freq. division</option>
         </select>
         <button type="button" data-aw="ultrasoundChip" class="toolbar-btn ultrasound-chip" hidden></button>
 

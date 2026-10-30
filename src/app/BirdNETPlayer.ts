@@ -297,6 +297,14 @@ export class BirdNETPlayer {
      */
     setTimeExpansion(factor: number) { this._state?._setTimeExpansion(factor); }
     get timeExpansion(): number { return this._state?._engine?.timeExpansion ?? 1; }
+
+    /**
+     * Listening mode for ultrasound: `{ kind: 'expansion', factor }`,
+     * `{ kind: 'heterodyne', carrierHz }` or `{ kind: 'division', divisor, envelope }`.
+     * Detector modes play in real time; emits 'listenmodechange' once active.
+     */
+    setListenMode(mode: any) { this._state?._setListenMode(mode); }
+    get listenMode(): any { return this._state?._engine?.listenMode ?? { kind: 'expansion', factor: 1 }; }
     /** Ultrasound verdict for the loaded recording (also emitted as 'ultrasoundinfo'). */
     get ultrasoundInfo() { return this._state?.ultrasoundInfo ?? null; }
 

@@ -217,6 +217,77 @@ export function decodeF16(bytes) {
 }
 
 /**
+ * Integer decimation from `sample_rate` to `detectorOutputRate`.
+ * @param {number} sample_rate
+ * @returns {number}
+ */
+export function detectorDecimation(sample_rate) {
+    const ret = wasm.detectorDecimation(sample_rate);
+    return ret >>> 0;
+}
+
+/**
+ * Sample rate of the heterodyne / frequency-division output (≈ 48 kHz).
+ * @param {number} sample_rate
+ * @returns {number}
+ */
+export function detectorOutputRate(sample_rate) {
+    const ret = wasm.detectorOutputRate(sample_rate);
+    return ret;
+}
+
+/**
+ * Background level for frequencyDivision (see aw_dsp::detector::division_noise_level).
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @param {number} highpass_hz
+ * @returns {number}
+ */
+export function divisionNoiseLevel(samples, sample_rate, highpass_hz) {
+    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.divisionNoiseLevel(ptr0, len0, sample_rate, highpass_hz);
+    return ret;
+}
+
+/**
+ * Frequency-division detector output (see aw_dsp::detector::frequency_division).
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @param {number} divisor
+ * @param {number} highpass_hz
+ * @param {number} noise_level
+ * @param {boolean} keep_envelope
+ * @returns {Float32Array}
+ */
+export function frequencyDivision(samples, sample_rate, divisor, highpass_hz, noise_level, keep_envelope) {
+    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.frequencyDivision(ptr0, len0, sample_rate, divisor, highpass_hz, noise_level, keep_envelope);
+    var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
+ * Heterodyne detector output (see aw_dsp::detector::heterodyne).
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @param {number} first_sample
+ * @param {number} carrier_hz
+ * @param {number} bandwidth_hz
+ * @returns {Float32Array}
+ */
+export function heterodyne(samples, sample_rate, first_sample, carrier_hz, bandwidth_hz) {
+    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.heterodyne(ptr0, len0, sample_rate, first_sample, carrier_hz, bandwidth_hz);
+    var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
  * Convert interleaved PCM bytes to mono f32, channel 0 only
  * (matches AudioBuffer.getChannelData(0) in the JS path).
  * @param {Uint8Array} bytes

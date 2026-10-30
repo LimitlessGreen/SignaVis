@@ -21,10 +21,33 @@
 import { clamp, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
+import { wasmMain } from '../wasm-dsp/wasmMain.ts';
+import { renderDetectorChunk, listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
 
 /** Browsers reject playbackRate below 1/16. */
 export const MAX_TIME_EXPANSION = 16;
+/** Detector output is rendered this far ahead per step. */
+const DETECTOR_CHUNK_SEC = 15;
+
+export type { ListenMode };
+
+function normalizeListenMode(mode: ListenMode): ListenMode {
+  switch (mode?.kind) {
+    case 'heterodyne':
+      return { kind: 'heterodyne', carrierHz: Math.max(1000, Number(mode.carrierHz) || 40000), ...(mode.bandwidthHz ? { bandwidthHz: mode.bandwidthHz } : {}) };
+    case 'division':
+      return { kind: 'division', divisor: clamp(Math.round(Number(mode.divisor) || 10), 2, 64), envelope: !!mode.envelope };
+    default:
+      return { kind: 'expansion', factor: clamp(Number((mode as any)?.factor) || 1, 1, MAX_TIME_EXPANSION) };
+  }
+}
+
+/** Loads the main-thread WASM instance the detector modes run on. */
+function loadDetectorDsp(): Promise<void> {
+  if (wasmMain()) return Promise.resolve();
+  return import('../wasm-dsp/WasmSpectrogramService.ts').then((m) => m.loadWasmMain());
+}
 
 /**
  * @typedef {Object} SegmentFilter
@@ -92,6 +115,9 @@ export class AudioEngine extends AudioEngineBase {
   pixelsPerSecond: number;
   loopPlayback: boolean;
   timeExpansion: number;
+  listenMode: ListenMode;
+  _peakFor: AudioBuffer | null;
+  _peak: number;
   guano: Record<string, string> | null;
   ctx: any;
   bandpass: any;
@@ -141,6 +167,10 @@ export class AudioEngine extends AudioEngineBase {
     this.loopPlayback = false;
     /** @type {number} Playback slowdown with pitch dropping along (×10 makes bat calls audible). */
     this.timeExpansion = 1;
+    /** @type {ListenMode} How playback makes ultrasound audible (time expansion ×1 = plain). */
+    this.listenMode = { kind: 'expansion', factor: 1 };
+    this._peakFor = null;
+    this._peak = 1;
     /** @type {Record<string,string>|null} GUANO metadata of the loaded WAV (bat detectors). */
     this.guano = null;
   }
@@ -212,7 +242,12 @@ export class AudioEngine extends AudioEngineBase {
       return;
     }
     this._clearActiveSegment();
-    if (this.wavesurfer && this.audioBuffer) this.wavesurfer.playPause();
+    if (!this.wavesurfer || !this.audioBuffer) return;
+    if (this._isDetectorMode()) {
+      this._playDetectorFull(this.wavesurfer.getCurrentTime());
+      return;
+    }
+    this.wavesurfer.playPause();
   }
 
   /**
@@ -238,6 +273,15 @@ export class AudioEngine extends AudioEngineBase {
    */
   seekToTime(timeSec: number, centerView = false, options: any = {}) {
     if (!this.audioBuffer) return;
+    const custom = this._customSegmentPlayback;
+    if (custom?.full && options.allowCustomPlayback !== true) {
+      // Detector playback of the whole file keeps playing from the new position.
+      const t = clamp(timeSec, 0, this.audioBuffer.duration);
+      if (this.wavesurfer) this.wavesurfer.setTime(t);
+      this._restartCustomSegmentSource(custom, t);
+      this._emit('uiupdate', { time: t, fromPlayback: false, centerView, emitSeek: true, immediate: true });
+      return;
+    }
     if (this._customSegmentPlayback && options.allowCustomPlayback !== true) {
       this._stopCustomSegmentPlayback('paused', this._customSegmentPlayback.currentTimeSec);
     }
@@ -278,6 +322,10 @@ export class AudioEngine extends AudioEngineBase {
     const start = clamp(startSec, 0, dur);
     const end = clamp(endSec, 0, dur);
     if (end - start < 0.01) return;
+    if (this._isDetectorMode()) {
+      this._startCustomPlayback({ start, end, labelId: options?.labelId || null });
+      return;
+    }
     this._clearActiveSegment();
     const token = this._segmentPlayToken;
     this.playbackMode = 'segment';
@@ -346,38 +394,50 @@ export class AudioEngine extends AudioEngineBase {
     const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
     const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
 
-    this._stopCustomSegmentPlayback('stopped', start);
+    this._startCustomPlayback({ start, end, freqMinHz: fLo, freqMaxHz: fHi, labelId: options?.labelId || null });
+  }
+
+  /**
+   * Plays [start, end] through a dedicated AudioContext graph: bandpassed when
+   * frequencies are given, through the bat detector in heterodyne / division
+   * mode. `full` is ordinary playback of the whole file in a detector mode.
+   */
+  _startCustomPlayback({ start, end, freqMinHz = null, freqMaxHz = null, labelId = null, full = false, startAt = start }: {
+    start: number; end: number; freqMinHz?: number | null; freqMaxHz?: number | null;
+    labelId?: string | null; full?: boolean; startAt?: number;
+  }) {
+    this._stopCustomSegmentPlayback('stopped', startAt);
     this._clearPlaybackFilter();
 
     if (this.wavesurfer?.isPlaying()) {
       this._suppressNextPauseHandler = true;
       this.wavesurfer.pause();
     }
-    this.seekToTime(start, false, { allowCustomPlayback: true });
+    this.seekToTime(startAt, false, { allowCustomPlayback: true });
 
     const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!Ctor) {
-      this.playSegment(start, end, { labelId: options?.labelId });
+      if (!this._isDetectorMode()) this.playSegment(start, end, { labelId });
       return;
     }
 
+    const filtered = freqMinHz != null && freqMaxHz != null;
     const token = ++this._segmentPlayToken;
-    this.playbackMode = 'segment';
-    this._activeSegmentLabelId = options?.labelId || null;
-    this._activeSegmentStart = start;
-    this._activeSegmentEnd = end;
-    this._activeSegmentFilter = {
-      type: 'bandpass',
-      freqMinHz: fLo,
-      freqMaxHz: fHi,
-    };
+    if (!full) {
+      this.playbackMode = 'segment';
+      this._activeSegmentLabelId = labelId;
+      this._activeSegmentStart = start;
+      this._activeSegmentEnd = end;
+      this._activeSegmentFilter = filtered ? { type: 'bandpass', freqMinHz, freqMaxHz } : null;
+    }
 
     const ctx = new Ctor();
     const bandpass = ctx.createBiquadFilter();
-    bandpass.type = 'bandpass';
-    const bp = this._bandpassParams(fLo, fHi);
-    bandpass.frequency.value = bp.frequency;
-    bandpass.Q.value = bp.q;
+    if (filtered) {
+      const bp = this._bandpassParams(freqMinHz!, freqMaxHz!);
+      bandpass.frequency.value = bp.frequency;
+      bandpass.Q.value = bp.q;
+    }
 
     const gain = ctx.createGain();
     gain.gain.value = this.muted ? 0 : this.volume;
@@ -394,19 +454,28 @@ export class AudioEngine extends AudioEngineBase {
       gain,
       startSec: start,
       endSec: end,
-      freqMinHz: fLo,
-      freqMaxHz: fHi,
+      freqMinHz,
+      freqMaxHz,
+      filtered,
+      full,
+      chunk: null as DetectorChunk | null,
       timeExpansion: this.timeExpansion,
       startAtCtx: 0,
-      runStartSec: start,
+      runStartSec: startAt,
       sourceGeneration: 0,
       rafId: 0,
-      currentTimeSec: start,
+      currentTimeSec: startAt,
     };
     this._customSegmentPlayback = playback;
-    this._startCustomSegmentSource(playback);
-    this._emit('transportstatechange', { state: 'playing_segment', reason: 'bandpass-segment-start' });
-    this._emit('segmentstart', { start, end, filter: { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi } });
+    this._startCustomSegmentSource(playback, null, startAt);
+    if (this._customSegmentPlayback !== playback) return;
+    if (full) {
+      this._emit('play', {});
+      this._emit('transportstatechange', { state: this.loopPlayback ? 'playing_loop' : 'playing', reason: 'detector-start' });
+    } else {
+      this._emit('transportstatechange', { state: 'playing_segment', reason: 'bandpass-segment-start' });
+      this._emit('segmentstart', { start, end, ...(filtered ? { filter: { type: 'bandpass', freqMinHz, freqMaxHz } } : {}) });
+    }
 
     const onFrame = () => {
       if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== token) return;
@@ -429,6 +498,45 @@ export class AudioEngine extends AudioEngineBase {
     playback.rafId = requestAnimationFrame(onFrame);
   }
 
+  /** Detector-mode playback of the whole file from `fromSec`. */
+  _playDetectorFull(fromSec: number) {
+    if (!this.audioBuffer) return;
+    const dur = this.audioBuffer.duration;
+    const t = fromSec >= dur - 0.01 ? 0 : clamp(fromSec, 0, dur);
+    this._startCustomPlayback({ start: 0, end: dur, full: true, startAt: t });
+  }
+
+  _isDetectorMode() {
+    return this.listenMode.kind !== 'expansion';
+  }
+
+  /** Detector output covering `atSec`, rendered on demand and reused while it fits. */
+  _detectorChunk(playback: any, atSec: number): DetectorChunk | null {
+    const mode = this.listenMode;
+    if (mode.kind === 'expansion' || !this.audioBuffer) return null;
+    const c: DetectorChunk | null = playback.chunk;
+    if (c && c.key === listenModeKey(mode) && atSec >= c.startSec && atSec < c.endSec - 0.01) return c;
+    const end = Math.min(playback.endSec, atSec + DETECTOR_CHUNK_SEC);
+    playback.chunk = renderDetectorChunk(this.audioBuffer, mode, atSec, end, this._heterodyneGain());
+    return playback.chunk;
+  }
+
+  /** Make-up gain so the loudest call reaches about -2 dBFS after heterodyning. */
+  _heterodyneGain() {
+    if (!this.audioBuffer) return 1;
+    if (this._peakFor !== this.audioBuffer) {
+      const ch = this.audioBuffer.getChannelData(0);
+      let peak = 0;
+      for (let i = 0; i < ch.length; i++) {
+        const a = Math.abs(ch[i]);
+        if (a > peak) peak = a;
+      }
+      this._peakFor = this.audioBuffer;
+      this._peak = peak;
+    }
+    return clamp(0.8 / Math.max(this._peak, 1e-4), 1, 30);
+  }
+
   /**
    * Stops active segment playback.
    * @param {string} [reason]
@@ -445,17 +553,53 @@ export class AudioEngine extends AudioEngineBase {
    * @param {number} factor
    */
   setTimeExpansion(factor: number) {
-    const f = clamp(Number(factor) || 1, 1, MAX_TIME_EXPANSION);
-    if (f === this.timeExpansion) return;
-    this.timeExpansion = f;
-    this._applyPlaybackRate();
-    const playback = this._customSegmentPlayback;
-    if (playback) {
-      // Restart so the bandpass is re-centred on the new output frequencies.
-      this._retargetCustomSegmentPlayback({
-        start: playback.startSec, end: playback.endSec,
-        freqMinHz: playback.freqMinHz, freqMaxHz: playback.freqMaxHz,
+    this.setListenMode({ kind: 'expansion', factor });
+  }
+
+  /**
+   * How playback makes ultrasound audible: time expansion, or a heterodyne /
+   * frequency-division detector as in field work. Spectrogram, labels and
+   * playhead stay in recording time. Playing audio continues at the same spot.
+   */
+  setListenMode(mode: ListenMode) {
+    const next = normalizeListenMode(mode);
+    if (listenModeKey(next) === listenModeKey(this.listenMode)) return;
+    if (next.kind !== 'expansion' && !wasmMain()) {
+      loadDetectorDsp().then(() => this.setListenMode(next)).catch((err) => {
+        this._emit('error', { message: `Detector DSP failed to load: ${err?.message || err}` });
       });
+      return;
+    }
+
+    const custom = this._customSegmentPlayback;
+    const wsPlaying = !custom && !!this.wavesurfer?.isPlaying();
+    const t = this.getCurrentTime();
+    this.listenMode = next;
+    this.timeExpansion = next.kind === 'expansion' ? next.factor : 1;
+    this._applyPlaybackRate();
+    this._emit('listenmodechange', { mode: next });
+
+    if (custom) {
+      if (custom.full && next.kind === 'expansion') {
+        this._stopCustomSegmentPlayback('paused', t);
+        this.wavesurfer?.play();
+        return;
+      }
+      if (custom.filtered) {
+        // The bandpass sits behind the source: re-centre it on the new output frequencies.
+        const bp = this._bandpassParams(custom.freqMinHz, custom.freqMaxHz);
+        custom.bandpass.frequency.value = bp.frequency;
+        custom.bandpass.Q.value = bp.q;
+      }
+      this._restartCustomSegmentSource(custom, t);
+    } else if (wsPlaying && next.kind !== 'expansion') {
+      const segment = this.playbackMode === 'segment' && this._activeSegmentEnd != null
+        ? { start: this._activeSegmentStart ?? 0, end: this._activeSegmentEnd, labelId: this._activeSegmentLabelId }
+        : null;
+      this._suppressNextPauseHandler = true;
+      this.wavesurfer.pause();
+      if (segment) this._startCustomPlayback({ ...segment, startAt: t });
+      else this._playDetectorFull(t);
     }
   }
 
@@ -677,14 +821,39 @@ export class AudioEngine extends AudioEngineBase {
     if (!playback || !this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
     playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
     const generation = playback.sourceGeneration;
+    const runStart = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
     const nextSource = source || playback.ctx.createBufferSource();
-    nextSource.buffer = this.audioBuffer;
-    nextSource.playbackRate.value = 1 / this.timeExpansion;
-    playback.timeExpansion = this.timeExpansion;
+    let offset = runStart;
+    let until = playback.endSec;
+    if (this._isDetectorMode()) {
+      const chunk = this._detectorChunk(playback, runStart);
+      if (!chunk) {
+        this._stopCustomSegmentPlayback('paused', runStart);
+        this._emit('error', { message: 'Detector DSP is still loading, try again in a moment.' });
+        void loadDetectorDsp();
+        return;
+      }
+      nextSource.buffer = chunk.buffer;
+      nextSource.playbackRate.value = 1;
+      playback.timeExpansion = 1;
+      offset = runStart - chunk.startSec;
+      until = Math.min(playback.endSec, chunk.endSec);
+      // The detector already selects the band; a bandpass on its output would be meaningless.
+      playback.bandpass.type = 'allpass';
+    } else {
+      nextSource.buffer = this.audioBuffer;
+      nextSource.playbackRate.value = 1 / this.timeExpansion;
+      playback.timeExpansion = this.timeExpansion;
+      playback.bandpass.type = playback.filtered ? 'bandpass' : 'allpass';
+    }
     nextSource.connect(playback.bandpass);
     nextSource.onended = () => {
       if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
       if (playback.sourceGeneration !== generation) return;
+      if (until < playback.endSec - 0.001) {
+        this._restartCustomSegmentSource(playback, until); // next detector chunk
+        return;
+      }
       if (this.loopPlayback) {
         this._loopCustomSegmentPlayback(playback);
         return;
@@ -692,9 +861,9 @@ export class AudioEngine extends AudioEngineBase {
       this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
     };
     playback.source = nextSource;
-    playback.runStartSec = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
+    playback.runStartSec = runStart;
     playback.startAtCtx = playback.ctx.currentTime + 0.005;
-    nextSource.start(playback.startAtCtx, playback.runStartSec, playback.endSec - playback.runStartSec);
+    nextSource.start(playback.startAtCtx, offset, Math.max(0.001, until - runStart));
   }
 
   /**
@@ -779,12 +948,19 @@ export class AudioEngine extends AudioEngineBase {
     this._clearActiveSegment();
 
     if (Number.isFinite(targetTimeSec as number)) {
+      // Detector playback of the whole file resumes from here.
+      if (active.full) this.wavesurfer?.setTime(targetTimeSec as number);
       this._emit('uiupdate', { time: targetTimeSec as number, fromPlayback: false, immediate: true });
     }
     this._emit('pause', {});
-    this._emit('transportstatechange', { state: reason === 'paused' ? 'paused_segment' : 'stopped', reason: 'bandpass-segment-stop' });
+    const paused = reason === 'paused';
+    this._emit('transportstatechange', {
+      state: paused ? (active.full ? 'paused' : 'paused_segment') : 'stopped',
+      reason: active.full ? 'detector-stop' : 'bandpass-segment-stop',
+    });
     if (options && (options as any).emitEnd) {
-      this._emit('segmentend', { end: targetTimeSec ?? 0 });
+      if (active.full) this._emit('finish', {});
+      else this._emit('segmentend', { end: targetTimeSec ?? 0 });
     }
   }
 

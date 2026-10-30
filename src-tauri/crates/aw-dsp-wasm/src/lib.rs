@@ -116,6 +116,34 @@ pub fn band_floor(values: &[f32], bins: usize) -> Vec<f32> {
 #[wasm_bindgen(js_name = decodeF16)]
 pub fn decode_f16(bytes: &[u8]) -> Vec<f32> { aw_dsp::pyramid::decode_f16(bytes) }
 
+// ── Bat-detector listening modes ────────────────────────────────────
+
+/// Sample rate of the heterodyne / frequency-division output (≈ 48 kHz).
+#[wasm_bindgen(js_name = detectorOutputRate)]
+pub fn detector_output_rate(sample_rate: f32) -> f32 { aw_dsp::detector::output_rate(sample_rate) }
+
+/// Integer decimation from `sample_rate` to `detectorOutputRate`.
+#[wasm_bindgen(js_name = detectorDecimation)]
+pub fn detector_decimation(sample_rate: f32) -> usize { aw_dsp::detector::decimation(sample_rate) }
+
+/// Heterodyne detector output (see aw_dsp::detector::heterodyne).
+#[wasm_bindgen]
+pub fn heterodyne(samples: &[f32], sample_rate: f32, first_sample: f64, carrier_hz: f32, bandwidth_hz: f32) -> Vec<f32> {
+    aw_dsp::detector::heterodyne(samples, sample_rate, first_sample, carrier_hz, bandwidth_hz)
+}
+
+/// Background level for frequencyDivision (see aw_dsp::detector::division_noise_level).
+#[wasm_bindgen(js_name = divisionNoiseLevel)]
+pub fn division_noise_level(samples: &[f32], sample_rate: f32, highpass_hz: f32) -> f32 {
+    aw_dsp::detector::division_noise_level(samples, sample_rate, highpass_hz)
+}
+
+/// Frequency-division detector output (see aw_dsp::detector::frequency_division).
+#[wasm_bindgen(js_name = frequencyDivision)]
+pub fn frequency_division(samples: &[f32], sample_rate: f32, divisor: u32, highpass_hz: f32, noise_level: f32, keep_envelope: bool) -> Vec<f32> {
+    aw_dsp::detector::frequency_division(samples, sample_rate, divisor, highpass_hz, noise_level, keep_envelope)
+}
+
 // ── WAV ─────────────────────────────────────────────────────────────
 
 /// Parse a WAV header from the first bytes of a file (64 KiB is plenty).
