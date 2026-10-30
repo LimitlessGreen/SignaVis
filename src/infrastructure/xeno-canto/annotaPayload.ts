@@ -95,6 +95,8 @@ function isoDate(v: any) {
 /** Labels whose frequency range was never set explicitly (e.g. full-band) carry `freqUnset`. */
 function labelFrequencies(l: any) {
     if (l?.freqUnset || l?.tags?.freqUnset) return { low: null, high: null };
+    // AI detections (BirdNET) span 0–Nyquist: a time-only label, not a measured frequency range
+    if (l?.aiSuggested && !(Number(l?.freqMin) > 0)) return { low: null, high: null };
     const low = freqValue(l?.freqMin);
     const high = freqValue(l?.freqMax);
     // freqMin = freqMax = 0 means "not set" in older data

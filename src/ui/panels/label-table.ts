@@ -33,6 +33,17 @@ export const TAG_PRESETS = [
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 
+/**
+ * Replace the option lists (e.g. with XC's per-group vocabulary). Arrays are updated in place,
+ * so every view holding a reference to TAG_PRESETS sees the new values on its next render.
+ */
+export function setTagPresetOptions(lists: Partial<Record<string, string[]>>) {
+  for (const p of TAG_PRESETS) {
+    const next = lists[p.key];
+    if (Array.isArray(next) && next.length) p.options.splice(0, p.options.length, ...next);
+  }
+}
+
 function fmt(sec: any) {
   return Number(sec).toFixed(2) + 's';
 }

@@ -334,6 +334,7 @@
       <div class="help-section">
         <h3>Labels</h3>
         <div class="shortcut-grid">
+          <kbd>1 – 9</kbd> <span class="sc-desc">Set sound type of the selected label (n-th value of the XC list)</span>
           <kbd>Ctrl + C</kbd> <span class="sc-desc">Copy selected label</span>
           <kbd>Ctrl + V</kbd> <span class="sc-desc">Paste label at current time</span>
           <kbd>Ctrl + Z</kbd> <span class="sc-desc">Undo</span>
@@ -524,7 +525,9 @@
     import { PropertiesPanel } from '../src/ui/panels/properties-panel.ts';
     import { SnrComputer } from '../src/ui/components/snr-computer/snr-computer.ts';
     import { CustomTagStore } from '../src/app/custom-tag-store.ts';
-    import { TAG_PRESETS } from '../src/ui/panels/label-table.ts';
+    import { TAG_PRESETS, setTagPresetOptions } from '../src/ui/panels/label-table.ts';
+    import { TagVocabularyCache, recordingGroup } from '../src/app/tag-vocabulary.ts';
+    import { fetchXcGroupProperties } from '../src/infrastructure/xeno-canto/xcGroupProperties.ts';
     import { createAboutPanel } from '../src/ui/panels/about-panel.ts';
     import { ExplorePanel } from '../src/ui/panels/explore-panel.ts';
     import { showContextMenu } from '../src/ui/components/context-menu/context-menu.ts';
@@ -866,6 +869,44 @@
     // Re-sync player presets whenever the CustomTagStore changes (e.g. from PropertiesPanel)
     window.addEventListener('aw:customTagStoreChanged', () => {
       try { syncTagPresets(); } catch (e) { /* ignore */ }
+    });
+
+    // ── Tag vocabulary: XC value lists (sound type / sex / life stage) per species group ──
+    const tagVocab = new TagVocabularyCache();
+    const _vocabRequested = new Set();
+
+    /** Use the lists of the active recording's group; load them from XC once per group. */
+    function applyTagVocabulary() {
+      const entry = recordingManager?.getActive?.();
+      const group = recordingGroup(entry?.xcRecordingMeta);
+      setTagPresetOptions(tagVocab.get(group));
+      syncTagPresets();
+      try { propsPanel.refreshTagOptions(); } catch (e) { /* not ready yet */ }
+
+      const nr = entry?.xcId;
+      if (!nr || !xcPanel?.apiKey || (group && tagVocab.has(group)) || _vocabRequested.has(nr)) return;
+      _vocabRequested.add(nr);
+      fetchXcGroupProperties(nr, { apiKey: xcPanel.apiKey })
+        .then((r) => {
+          if (!r) return;
+          tagVocab.set(r.group || group, r.vocab);
+          if (recordingManager.getActive()?.xcId === nr) applyTagVocabulary();
+        })
+        .catch(() => { /* keep fallback lists */ });
+    }
+
+    // Keys 1–9 set the selected label's sound type to the n-th value of the current list
+    document.addEventListener('keydown', (e) => {
+      if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const lbl = propsPanel.displayedLabel;
+      if (!lbl || lbl.readonly || state.labelSets.get(lbl.setId)?.locked) return;
+      const value = TAG_PRESETS.find((p) => p.key === 'soundType')?.options[Number(e.key) - 1];
+      if (!value) return;
+      e.preventDefault();
+      propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
+      selectionMeta.textContent = `Sound type: ${value} (key ${e.key})`;
     });
 
     // ── Right sidebar ─────────────────────────────────────────────────
@@ -1384,6 +1425,7 @@
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
       refreshUploadChecklist();
+      applyTagVocabulary();
       try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
     };
 
@@ -1504,6 +1546,7 @@
       }
       xcPanel._rebuildSetSection?.();
       try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
+      try { applyTagVocabulary(); } catch (e) { /* not initialized yet */ }
       const _entryMeta = entry.xcRecordingMeta;
       const _entryGen  = _entryMeta?.gen || '';
       const _entryEn   = _entryMeta?.en  || '';
@@ -2181,6 +2224,7 @@
       state.recordingMeta = result.recordingMeta || null;
       birdnetPanel.setLocationFromMeta(state.recordingMeta);
       try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
+      try { applyTagVocabulary(); } catch (e) { /* not initialized yet */ }
       const recGen = result.recording?.gen || '';
       const recEn = result.recording?.en || '';
       propsPanel.setRecordingMeta(state.recordingMeta, {
