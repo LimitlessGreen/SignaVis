@@ -52,7 +52,7 @@ Recording metadata (location, date, device) is **not** part of the payload — X
   "set_name": "My annotation set",
   "annotation_software_name_and_version": "SignaVis 1.2.3",
   "set_creator": "Annotator Name",
-  "set_creator_id": "https://xeno-canto.org/contributor/ABCDEFGHIJ",
+  "set_creator_id": "ABCDEFGHIJ",
   "set_owner": "Org A, Org B",
   "set_license": "CC-BY-NC",
   "project_uri": "",
