@@ -5,6 +5,7 @@
  */
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 
@@ -98,10 +99,11 @@ const SET_FIELD_GROUPS = [
       { key: 'name',      label: 'Set Name',     type: 'text',   required: true,  placeholder: 'My annotation set' },
       { key: 'license',   label: 'License',      type: 'select', options: SET_LICENSES },
       { key: 'creator',   label: 'Creator',      type: 'text',   placeholder: 'Your name' },
-      { key: 'creatorId', label: 'Creator ID',   type: 'text',   placeholder: 'XC username (optional)' },
-      { key: 'owner',     label: 'Owner',        type: 'text',   placeholder: 'Organisation / person' },
+      { key: 'creatorId', label: 'Creator ID',   type: 'text',   placeholder: 'XC contributor ID or URI' },
+      { key: 'owner',     label: 'Owner',        type: 'text',   placeholder: 'Organisations / persons, comma-separated' },
       { key: 'source',    label: 'Set Source',   type: 'text',   placeholder: 'Origin description' },
       { key: 'uri',       label: 'Set URI',      type: 'text',   placeholder: 'https://…' },
+      { key: 'remarks',   label: 'Remarks',      type: 'text',   placeholder: '(optional)' },
     ],
   },
   {
@@ -115,11 +117,8 @@ const SET_FIELD_GROUPS = [
   {
     label: 'Scope',
     fields: [
-      {
-        key: 'taxonCoverage', label: 'Taxon Coverage', type: 'select',
-        options: ['', 'all sounds', 'target species', 'partial'],
-      },
-      { key: 'completeness', label: 'Completeness', type: 'text', placeholder: 'e.g. complete, partial' },
+      { key: 'taxonCoverage', label: 'Focal taxon', type: 'text', placeholder: 'e.g. Aves, Turdus merula' },
+      { key: 'completeness', label: 'Completeness', type: 'select', options: ['', 'all', 'part'] },
     ],
   },
 ];
@@ -141,6 +140,7 @@ export function defaultSetInfo(partial = {}) {
     projectName: '',
     projectUri: '',
     funding: '',
+    remarks: '',
     taxonCoverage: '',
     completeness: '',
     /** xcId string of the recording this was auto-created for (fallback XC sets only) */
@@ -731,11 +731,10 @@ export class XenoCantoPanel {
    * Build XC annotation set JSON payload.
    * @param {any[]} labels
    * @param {Map<string,object>} [labelSets]
-   * @param {object} [recordingEditMeta]
+   * @param {object} [_recordingEditMeta] unused — Annota-JSON Fv0 takes recording metadata from XC via xc_nr
    */
-  buildAnnotationSetPayload(labels: any, labelSets: any, recordingEditMeta: any) {
+  buildAnnotationSetPayload(labels: any, labelSets: any, _recordingEditMeta?: any) {
     const sets = labelSets || this._getLabelSets?.() || new Map();
-    const recMeta = recordingEditMeta || this._getRecordingEditMeta?.() || {};
     const xcNr = this.xcId || '';
 
     // Resolve active set
@@ -751,11 +750,7 @@ export class XenoCantoPanel {
 
     // Merge annotator profile fields as fallbacks (profile provides defaults when set fields are empty)
     const prof = this._annotatorProfile;
-    const effectiveCreator   = sm.creator   || (prof?.name       ?? '');
-    const effectiveCreatorId = sm.creatorId || (prof?.xcUsername ?? '');
-    const effectiveLicenseRaw= sm.license   || (prof?.license    ?? '');
-    const effectiveLicense   = normalizeLicenseValue(effectiveLicenseRaw) || 'CC-BY-NC';
-    const effectiveOwner     = sm.owner     || (prof?.owner      ?? '');
+    const effectiveLicense = normalizeLicenseValue(sm.license || (prof?.license ?? '')) || 'CC-BY-NC';
 
     // Filter labels to the active set if one is selected
     let targetLabels = labels || [];
@@ -764,71 +759,21 @@ export class XenoCantoPanel {
       if (filtered.length) targetLabels = filtered;
     }
 
-    const annotations = targetLabels
-      .filter((l: any) => l.start != null && l.end != null)
-      .map((l: any, i: any) => {
-        // Allow per-label override of xc number (used when exporting sets spanning multiple recordings)
-        const labelXcNr = (l && (l.xc_nr || l.xcId)) || xcNr || '';
-        return {
-          annotation_source_id: String(i + 1),
-          xc_nr: labelXcNr,
-          annotator: l.author || effectiveCreator,
-          annotator_xc_id: effectiveCreatorId,
-          start_time: Number(l.start).toFixed(6),
-          end_time: Number(l.end).toFixed(6),
-          frequency_low: Number(l.freqMin || 0).toFixed(1),
-          frequency_high: Number(l.freqMax || 0).toFixed(1),
-          scientific_name: l.scientificName || '',
-          sound_type: l.tags?.soundType || '',
-          date_identified: '',
-          sex: l.tags?.sex || '',
-          life_stage: l.tags?.lifeStage || '',
-          animal_seen: l.tags?.animalSeen || '',
-          playback_used: l.tags?.playbackUsed || '',
-          collection_date: recMeta.dateTime ? recMeta.dateTime.slice(0, 10) : '',
-          collection_specimen: '',
-          temperature: '',
-          annotation_remarks: l.tags?.remarks || '',
-          overlap: '',
-        };
-      });
-
-    // Build recording context for upload
-    const recContext = {
-      latitude: recMeta.lat || '',
-      longitude: recMeta.lng || '',
-      recording_date: recMeta.dateTime ? recMeta.dateTime.slice(0, 10) : '',
-      recording_time: recMeta.dateTime ? recMeta.dateTime.slice(11, 16) : '',
-      rating: recMeta.rating || '',
-      type: recMeta.type || '',
-      target_species: recMeta.targetSpecies || '',
-      recorder: recMeta.recorder || '',
-      microphone: recMeta.microphone || '',
-      accessories: recMeta.accessories || '',
-      contributors: recMeta.contributors ? recMeta.contributors.split(',').map((s: any) => s.trim()).filter(Boolean) : [],
-      comments: recMeta.comments || '',
-    };
-
     // Attach app version when available (injected by the demo page at runtime)
     const softwareVersion = (typeof window !== 'undefined' && (window as any).AUDIO_WORKBENCH_VERSION) ? ` ${(window as any).AUDIO_WORKBENCH_VERSION}` : '';
-    const softwareNameAndVersion = `SignaVis${softwareVersion}`;
 
-    return {
-      set_source: sm.source || '',
-      set_uri: sm.uri || '',
-      set_name: sm.name || `SignaVis annotations ${new Date().toISOString().slice(0, 16)}`,
-      annotation_software_name_and_version: softwareNameAndVersion,
-      set_creator: effectiveCreator,
-      set_creator_id: effectiveCreatorId,
-      set_owner: effectiveOwner,
-      set_license: effectiveLicense,
-      project_uri: sm.projectUri || '',
-      project_name: sm.projectName || '',
-      funding: sm.funding || '',
-      scope: [{ taxon_coverage: sm.taxonCoverage || '', completeness: sm.completeness || '' }],
-      recording_context: recContext,
-      annotations,
-    };
+    return buildAnnotaPayload({
+      set: {
+        ...sm,
+        license: effectiveLicense,
+        creator:   sm.creator   || (prof?.name       ?? ''),
+        creatorId: sm.creatorId || (prof?.xcUsername ?? ''),
+        owner:     sm.owner     || (prof?.owner      ?? ''),
+      },
+      labels: targetLabels,
+      defaultXcNr: xcNr,
+      softwareNameAndVersion: `SignaVis${softwareVersion}`,
+    });
   }
 
   // ── Upload / Export ─────────────────────────────────────────────────

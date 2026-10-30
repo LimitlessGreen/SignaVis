@@ -1341,6 +1341,8 @@ export class BirdNETPlayer {
             origin: meta.origin,
             author: meta.author,
             tags: meta.tags,
+            createdAt: (label as any)?.createdAt || new Date().toISOString(),
+            ...((label as any)?.updatedAt ? { updatedAt: (label as any).updatedAt } : {}),
         };
     }
 }
