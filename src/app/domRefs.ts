@@ -91,7 +91,7 @@ export interface DomRefs {
     pcenGainInput:           HTMLInputElement  | null;
     pcenBiasInput:           HTMLInputElement  | null;
     pcenRootInput:           HTMLInputElement  | null;
-    pcenSmoothingInput:      HTMLInputElement  | null;
+    pcenTimeConstantInput:   HTMLInputElement  | null;
     pcenEnabledCheck:        HTMLInputElement  | null;
     pcenSection:             HTMLElement       | null;
     windowSizeSelect:        HTMLSelectElement | null;

@@ -27,6 +27,7 @@ import type {
     PyramidMeta,
 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 import type { TileColorOptions } from './SpectrogramTileManager.ts';
+import { CQT_FMIN, CQT_BINS_PER_OCTAVE } from '../shared/constants.ts';
 
 const TILE_FRAMES = 1024;          // frames of the chosen level per tile
 const TILE_MAX_IN_MEMORY = 48;     // LRU limit across all levels
@@ -63,10 +64,12 @@ export function wasmParamsFromDspOptions(o: Record<string, any>): WasmSpecParams
 
 /**
  * v2 engine params (dBFS / PCEN, centred frames) from the same DSP options.
- * Returns null for modes v2 does not produce (phase, raw-magnitude scales, CQT).
+ * Returns null for modes v2 does not produce (phase, raw-magnitude scales).
+ * 'cqt' maps to v2 log bands whose centres equal buildCQTFrequencies(), so the
+ * existing axis stays exact.
  */
 export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2 | null {
-    if (o.scale !== 'mel' && o.scale !== 'linear') return null;
+    if (o.scale !== 'mel' && o.scale !== 'linear' && o.scale !== 'cqt') return null;
     if (o.colourScale && o.colourScale !== 'dbSquared' && o.colourScale !== 'db') return null;
     const winLen = o.windowSize || 0;
     const nFft = Math.max(o.fftSize || 0, winLen);
@@ -80,13 +83,23 @@ export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2
         winLen, hop: o.hopSize, nFft,
         window: window as StftParamsV2['window'],
         // fMax 0 → Nyquist (resolved in the worker).
-        scale: o.scale === 'linear' ? { kind: 'linear' } : { kind: 'mel', bands: o.nMels, fMin: 0, fMax: 0 },
+        scale: o.scale === 'linear' ? { kind: 'linear' }
+            : o.scale === 'cqt' ? logBandsForCqtAxis(o.nMels)
+            : { kind: 'mel', bands: o.nMels, fMin: 0, fMax: 0 },
         // Reassignment and PCEN are exclusive; reassignment wins when both are set.
         pcen: o.usePcen && !reassign
-            ? { gain: o.pcenGain, bias: o.pcenBias, power: 1 / (o.pcenRoot || 2), eps: 1e-6, smoothing: o.pcenSmoothing }
+            ? { gain: o.pcenGain, bias: o.pcenBias, power: 1 / (o.pcenRoot || 2), eps: 1e-6, timeConstant: o.pcenTimeConstant }
             : null,
         reassign,
     };
+}
+
+/** v2 log edges are geometric over bands + 1 steps with centres at edges[1..=bands];
+ *  shifting f_min one step down puts centre k at CQT_FMIN · 2^(k / CQT_BINS_PER_OCTAVE). */
+function logBandsForCqtAxis(bands: number): StftParamsV2['scale'] {
+    const step = Math.pow(2, 1 / CQT_BINS_PER_OCTAVE);
+    const fMin = CQT_FMIN / step;
+    return { kind: 'log', bands, fMin, fMax: fMin * Math.pow(step, bands + 1) };
 }
 
 const isV2 = (p: AnySpecParams): p is StftParamsV2 => typeof (p as StftParamsV2).winLen === 'number';

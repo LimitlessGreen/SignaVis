@@ -172,6 +172,7 @@ export class PlayerState {
             storage: this._storage,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
+            getSampleRate: () => this.audioBuffer?.sampleRate,
         });
         this._presets.populatePresetDropdown();
         this._presets.applyFavouritePresetControls();
@@ -627,7 +628,7 @@ export class PlayerState {
             pcenGainInput:          q('pcenGainInput'),
             pcenBiasInput:          q('pcenBiasInput'),
             pcenRootInput:          q('pcenRootInput'),
-            pcenSmoothingInput:     q('pcenSmoothingInput'),
+            pcenTimeConstantInput:  q('pcenTimeConstantInput'),
             pcenEnabledCheck:       q('pcenEnabledCheck'),
             pcenSection:            q('pcenSection'),
             windowSizeSelect:       q('windowSize'),
@@ -750,6 +751,7 @@ export class PlayerState {
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {
             this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile);
+            this._presets.syncQualitySlider();
         }
         this._spectro.updateMaxFreqOptions(sampleRate);
 
