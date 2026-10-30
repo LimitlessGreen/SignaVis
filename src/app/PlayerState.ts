@@ -731,7 +731,8 @@ export class PlayerState {
     //  Load from URL (programmatic)
     // ═════════════════════════════════════════════════════════════════
 
-    async loadUrl(url: string) {
+    /** @param localPath  file path behind `url` (desktop app), enables the native spectrogram. */
+    async loadUrl(url: string, localPath: string | null = null) {
         this.d.fileInfo!.innerHTML = `<span class="statusbar-label">Loading…</span>`;
         this.d.fileInfo!.classList.add('loading');
         this._setTransportState('loading', 'url-load');
@@ -743,19 +744,19 @@ export class PlayerState {
             );
             // Empty placeholder File: identifies the URL for the WASM tile cache; samples come from the decoded buffer.
             const sourceRef = new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
-            await this._onAudioLoaded(result, name, 'url-loaded', sourceRef);
+            await this._onAudioLoaded(result, name, 'url-loaded', sourceRef, localPath);
         } catch (error) {
             this._onAudioLoadError(error, 'url');
             throw error;
         }
     }
 
-    async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null) {
+    async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null, sourcePath: string | null = null) {
         this.sampleRateHz = sampleRate;
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {
-            this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile);
+            this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile, sourcePath);
             this._presets.syncQualitySlider();
         }
         this._spectro.updateMaxFreqOptions(sampleRate);

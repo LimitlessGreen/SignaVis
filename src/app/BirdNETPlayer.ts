@@ -254,11 +254,13 @@ export class BirdNETPlayer {
     /**
      * Load audio from a URL (http, blob:, data: URLs all supported).
      * @param {string} url
+     * @param {string|null} [localPath] - file path behind the URL (desktop app);
+     *   lets long WAV files use the native spectrogram pyramid
      * @returns {Promise<void>}
      */
-    async loadUrl(url: string) {
+    async loadUrl(url: string, localPath: string | null = null) {
         await this.ready;
-        return this._state?.loadUrl(url);
+        return this._state?.loadUrl(url, localPath);
     }
 
     /**

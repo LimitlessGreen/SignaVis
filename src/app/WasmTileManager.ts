@@ -27,6 +27,13 @@ import type {
     PyramidMeta,
 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 import type { TileColorOptions } from './SpectrogramTileManager.ts';
+import { isTauriSpectrogramSource } from '../infrastructure/tauri/TauriSpectrogramService.ts';
+
+/** What the tile manager needs from a pyramid backend (WASM workers or Tauri). */
+interface PyramidSource {
+    tile(level: number, f0: number, f1: number): Promise<Float32Array>;
+    dispose(): void;
+}
 import { CQT_FMIN, CQT_BINS_PER_OCTAVE } from '../shared/constants.ts';
 
 const TILE_FRAMES = 1024;          // frames of the chosen level per tile
@@ -159,7 +166,7 @@ export class WasmTileManager extends EventTarget {
     readonly nMels: number;
     readonly meta: PyramidMeta;
     readonly fromCache: boolean;
-    private readonly svc: WasmSpectrogramService;
+    private readonly svc: PyramidSource;
     private readonly duration: number;
     private readonly frameSec: number;       // seconds per level-0 frame
     private colorOptions: TileColorOptions;
@@ -173,16 +180,33 @@ export class WasmTileManager extends EventTarget {
     globalMin: number;
     globalMax: number;
 
-    /** Computes (or loads from OPFS) the pyramid for `file`. */
+    /**
+     * Computes (or loads from cache) the pyramid for `file`. In the desktop app a
+     * local WAV `nativePath` is built by the Rust backend instead (disk cache);
+     * on failure this falls back to the WASM workers.
+     */
     static async create(params: {
         file: File;
         /** Data actually read by the workers; defaults to `file` (cache key stays `file`). */
         source?: Blob;
+        /** Local file path (desktop app). */
+        nativePath?: string | null;
         wasmParams: AnySpecParams;
         duration: number;
         colorOptions: TileColorOptions;
         onProgress?: (fraction: number) => void;
     }): Promise<WasmTileManager> {
+        if (isTauriSpectrogramSource(params.nativePath)) {
+            const { TauriSpectrogramService } = await import('../infrastructure/tauri/TauriSpectrogramService.ts');
+            const native = await TauriSpectrogramService.create();
+            try {
+                const { meta, fromCache } = await native.open(params.nativePath, params.wasmParams, params.onProgress);
+                return new WasmTileManager(native, meta, fromCache, params.duration, params.colorOptions);
+            } catch (err) {
+                native.dispose();
+                console.warn('Native spectrogram failed, using WASM:', err);
+            }
+        }
         const { WasmSpectrogramService } = await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts');
         const svc = await WasmSpectrogramService.create();
         try {
@@ -195,7 +219,7 @@ export class WasmTileManager extends EventTarget {
         }
     }
 
-    private constructor(svc: WasmSpectrogramService, meta: PyramidMeta, fromCache: boolean,
+    private constructor(svc: PyramidSource, meta: PyramidMeta, fromCache: boolean,
                         duration: number, colorOptions: TileColorOptions) {
         super();
         this.svc = svc;

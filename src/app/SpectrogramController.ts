@@ -76,6 +76,8 @@ export class SpectrogramController extends EventTarget {
     _absLogMax: number;
     /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
     _engineV2 = false;
+    /** Local file path of the audio (desktop app), for the native pyramid. */
+    _sourcePath: string | null = null;
     /** Direct viewport renderer for v2 data (replaces stages 1–2 when eligible). */
     _gpuView: GpuSpectrogramView | null = null;
     /** Data the GPU view refused (too large), so the CPU path is used for it. */
@@ -199,7 +201,8 @@ export class SpectrogramController extends EventTarget {
      * @param {number} sampleRateHz
      * @param {File|null} [sourceFile]  source file (or URL placeholder); enables the WASM tile pipeline
      */
-    setAudio(audioBuffer: AudioBuffer, sampleRateHz: number, sourceFile: File | null = null) {
+    setAudio(audioBuffer: AudioBuffer, sampleRateHz: number, sourceFile: File | null = null, sourcePath: string | null = null) {
+        this._sourcePath = sourcePath;
         this._tileManager?.dispose();
         this._tileManager    = null;
         this._spectralFeatures = null;
@@ -298,6 +301,7 @@ export class SpectrogramController extends EventTarget {
             const audioBuffer = this._audioBuffer;
             const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
                 file,
+                nativePath:   this._sourcePath,
                 source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
                 wasmParams,
                 duration:     this._audioBuffer!.duration,
