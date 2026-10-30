@@ -45,6 +45,19 @@ und „Annota-JSON FINAL Fv0“ (März 2026).
 
 ---
 
+## Umsetzungsstand (Branch `labeling-workflow`, 2026-10-30)
+| Phase | Commit | Kern |
+|---|---|---|
+| 0 | f05f898 | `src/infrastructure/xeno-canto/annotaPayload.ts` (Build/Validierung Fv0), Import Array/Objekt |
+| 1 | be43e1e | `collectSetLabels()`, Demo im Explorer, BirdNET-Fortschritt/Rahmen, Geo-Filter, Upload-Tooltip |
+| 2 | b58b6d9 | `src/app/annotation-sets.ts`, `state.ownSetId`, Modus entfernt, „New…“, XC-Nr. zuordnen |
+| 3 | e3a966f | Tabs Project/Labels/Analyse/Upload, „?“-Menü, ⋯-Menüs + Undo-Toast |
+| 4–7 | — | offen; nächster Schritt Phase 4 |
+
+Noch offen aus 0–3: Upload-Button setzt geladene XC-Aufnahme voraus (`xc-panel.ts:_uploadBlockReason`) → in Phase 4 pro Aufnahme über `xc_nr` prüfen;
+BirdNET-Labels exportieren 0–Nyquist als Frequenz → Phase 6; „New…“/XC-Nr.-Zuordnung noch mit `confirm`/`prompt`;
+`shots.py` nutzt alte Tab-Namen → vor dem Abschlusstest anpassen. Gesamttest (Screenshots, echter Upload) erst nach Phase 7.
+
 ## Phase 0 — Payload auf Annota-JSON Fv0 (klein, unabhängig)
 `xc-panel.ts:buildAnnotationSetPayload`, `xenoCantoApi.ts`, `xenoCantoRecordingsApi.ts`:
 - `recording_context` entfernen.
