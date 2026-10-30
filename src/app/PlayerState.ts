@@ -903,6 +903,7 @@ export class PlayerState {
             currentTime:    this._getCurrentTime(),
             scrollLeft:     this.d.canvasWrapper?.scrollLeft ?? 0,
             viewportWidth:  this.d.canvasWrapper?.clientWidth ?? 0,
+            coords:         this.coords,
         };
     }
 
@@ -910,6 +911,9 @@ export class PlayerState {
     _drawSpectrogram() {
         if (!this._showSpectrogram) return;
         if (!this._spectro.hasData) return;
+        // The bin mapping (nMels, maxFreq, zoom) must be current for draw(); the
+        // second update picks up the canvas height draw() may have changed.
+        this._updateCoords();
         this._spectro.draw(this._getSpectrogramDrawParams());
         this._updateCoords();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });

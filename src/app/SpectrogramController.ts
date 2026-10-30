@@ -39,6 +39,9 @@ import {
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
     windowGrayscale,
+    getSpectrogramColor,
+    limitBandFloor,
+    drawTimeGrid,
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
@@ -46,6 +49,7 @@ import {
 } from '../domain/spectrogram.ts';
 
 import { computeReassignedSpectrogram } from '../domain/dsp.ts';
+import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 
@@ -72,6 +76,11 @@ export class SpectrogramController extends EventTarget {
     _absLogMax: number;
     /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
     _engineV2 = false;
+    /** Direct viewport renderer for v2 data (replaces stages 1–2 when eligible). */
+    _gpuView: GpuSpectrogramView | null = null;
+    /** Data the GPU view refused (too large), so the CPU path is used for it. */
+    _gpuRefused: unknown = null;
+    _gpuFloorRef: unknown = null;
     /** v2: per-band noise floor (dB) of _data, for noise reduction. */
     _bandFloor: ArrayLike<number> | null = null;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
@@ -885,6 +894,7 @@ export class SpectrogramController extends EventTarget {
         if (!this._data) return;
         const d = this._d;
         this._syncGainSliders();
+        if (this._gpuViewEligible()) { this._grayInfo = null; return; }
         const colourScale = this._colourScale || d.colourScaleSelect?.value || 'dbSquared';
         const clahe = d.claheCheck?.checked ?? false;
         const win = this._dbWindow();
@@ -929,6 +939,7 @@ export class SpectrogramController extends EventTarget {
             return null;
         }
         this._syncGainSliders();
+        if (this._gpuViewEligible()) { this._baseCanvas = null; return null; }
         const win = this._dbWindow();
         if (!this._grayInfo || (win && !this._grayRaw && win.join() !== this._grayWindowKey)) this.buildGrayscale();
         const d = this._d;
@@ -1013,8 +1024,17 @@ export class SpectrogramController extends EventTarget {
 
         // ── Standard (non-tile) mode ───────────────────────────────────
         if (!this._data || this._nFrames <= 0) return;
-        if (!this._baseCanvas) this.buildBaseImage(p.colorScheme);
-        if (!this._baseCanvas) return;
+        if (!this._drawGpuView(p)) {
+            if (!this._baseCanvas) this.buildBaseImage(p.colorScheme);
+            if (!this._baseCanvas) return;
+            this._drawBaseImage(p);
+        }
+        this._drawOverlays(p);
+    }
+
+    /** CPU path: scale the stage-2 base image into the viewport. */
+    private _drawBaseImage(p: any) {
+        if (!this._baseCanvas || !this._audioBuffer) return;
 
         let freqViewSrcCrop = null;
         if (p.freqViewMin != null && p.freqViewMax != null) {
@@ -1038,11 +1058,71 @@ export class SpectrogramController extends EventTarget {
             viewportWidth:     p.viewportWidth,
             totalWidth,
         });
+    }
 
+    /** v2 data, dB window, no CLAHE/phase, and the GPU accepted the data. */
+    _gpuViewEligible(): boolean {
+        const d = this._d;
+        return !!this._data && this._engineV2 && !!this._gainDbMode && !this._tileManager
+            && this._gpuRefused !== this._data
+            && !(d.claheCheck?.checked ?? false)
+            && (this._colourScale || d.colourScaleSelect?.value || 'dbSquared') !== 'phase'
+            && (this._gpuView ??= new GpuSpectrogramView()).ok;
+    }
+
+    /** Renders the visible viewport straight from the dB data. False → use the CPU path. */
+    private _drawGpuView(p: any): boolean {
+        if (!this._gpuViewEligible() || !this._audioBuffer) return false;
+        const view = this._gpuView!;
+        const data = this._data as Float32Array;
+        if (!view.holds(data)) {
+            if (!view.setData(data, this._nFrames, this._nMels)) { this._gpuRefused = data; return false; }
+            this._gpuFloorRef = null;
+        }
+        if (this._gpuFloorRef !== this._bandFloor) {
+            view.setBandFloor(this._bandFloor ? limitBandFloor(this._bandFloor) : null);
+            this._gpuFloorRef = this._bandFloor;
+        }
+        const scheme = p.colorScheme || this._d.colorSchemeSelect?.value || 'grayscale';
+        view.setLut(scheme, (t) => getSpectrogramColor(t, scheme));
+
+        const duration = this._audioBuffer.duration;
+        const totalWidth = Math.max(1, Math.floor(duration * p.pixelsPerSecond));
+        const height = Math.max(140, Math.floor(p.effectiveHeight));
+        const vw = p.viewportWidth ?? 0;
+        const width = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
+        const sl = vw > 0 ? (p.scrollLeft ?? 0) : 0;
+        const canvas = this._d.spectrogramCanvas;
+        if (this._d.canvasSizer) this._d.canvasSizer.style.width = `${totalWidth}px`;
+        canvas.width = width;
+        canvas.height = height;
+
+        // Centred frames: frame i sits at i · hop / sr; the time axis spans totalWidth.
+        const framesPerSec = this._audioBuffer.sampleRate / Math.max(1, this._hopSize);
+        const framesPerPx = duration / totalWidth * framesPerSec;
+        const coords = p.coords;
+        const binTop = coords.yFractionToBinFractional(0);
+        const binsPerPx = (binTop - coords.yFractionToBinFractional(1)) / height;
+        const [lo, hi] = this._dbWindow()!;
+        const out = view.render({
+            width, height, frame0: sl * framesPerPx, framesPerPx, binTop, binsPerPx, lo, hi,
+            useFloor: (this._d.noiseReductionCheck?.checked ?? false) && !!this._bandFloor,
+        });
+        const ctx = canvas.getContext('2d');
+        if (!out || !ctx) return false;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(out, 0, 0);
+        drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond: p.pixelsPerSecond, scrollLeft: sl });
+        return true;
+    }
+
+    /** Spectral overlays and axis sync after the spectrogram itself is drawn. */
+    private _drawOverlays(p: any) {
         // Spectral overlay (centroid + F0 + ridges) drawn on top of the rendered canvas.
         if (this._spectralFeatures || this._ridges) {
             const ctx = (this._d.spectrogramCanvas as HTMLCanvasElement).getContext('2d');
-            if (ctx) {
+            if (ctx && this._audioBuffer) {
+                const totalWidth = Math.max(1, Math.floor(this._audioBuffer.duration * p.pixelsPerSecond));
                 const canvasHeight = Math.max(140, Math.floor(p.effectiveHeight));
                 const vw = p.viewportWidth ?? 0;
                 const sl = vw > 0 ? (p.scrollLeft ?? 0) : 0;
@@ -1080,6 +1160,13 @@ export class SpectrogramController extends EventTarget {
             if (this._d.floorSlider) this._d.floorSlider.value = String(DB_CONTRAST.floor.def);
             if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(DB_CONTRAST.range.def);
             this.updateGainReadout();
+            if (redraw) this._emit('needsredraw');
+            return;
+        }
+        if (this._isNoiseFloorContrast()) {
+            // v2 PCEN: the % range already spans noise floor (median) … p99.9.
+            if (this._d.floorSlider) this._d.floorSlider.value = '0';
+            if (this._d.ceilSlider)  this._d.ceilSlider.value  = '100';
             if (redraw) this._emit('needsredraw');
             return;
         }
@@ -1234,7 +1321,7 @@ export class SpectrogramController extends EventTarget {
      * Values carry over only in fixed gain mode and only when they fit the new range.
      */
     _syncGainSliders(): void {
-        const db = this._isNoiseFloorContrast();
+        const db = this._isDbContrast();
         if (db === this._gainDbMode) return;
         this._gainDbMode = db;
         const d = this._d;
@@ -1266,6 +1353,12 @@ export class SpectrogramController extends EventTarget {
         const f = parseFloat(d.floorSlider?.value || '0');
         if (d.floorValue) d.floorValue.textContent = db ? `${f > 0 ? '+' : ''}${f} dB` : '';
         if (d.ceilValue)  d.ceilValue.textContent  = db ? `${d.ceilSlider?.value} dB` : '';
+    }
+
+    /** v2 values in dB (not PCEN): contrast is a dB window above the noise floor. */
+    _isDbContrast(): boolean {
+        const tm = this._tileManager;
+        return tm ? tm instanceof WasmTileManager && tm.dbValues : this._engineV2 && !this._v2Params?.pcen;
     }
 
     _isNoiseFloorContrast(): boolean {
