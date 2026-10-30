@@ -1007,17 +1007,34 @@ export class SpectrogramController extends EventTarget {
         });
     }
 
-    /** v2 data, dB window, no CLAHE/phase, and the GPU accepted the data. */
+    /** v2 data, no CLAHE, and the GPU accepted the data. */
     _gpuViewEligible(): boolean {
         const d = this._d;
-        return !!this._data && this._engineV2 && !!this._gainDbMode && !this._tileManager
+        return !!this._data && this._engineV2 && !this._tileManager
             && this._gpuRefused !== this._data
             && !(d.claheCheck?.checked ?? false)
-            && (this._colourScale || d.colourScaleSelect?.value || 'dbSquared') !== 'phase'
             && (this._gpuView ??= new GpuSpectrogramView()).ok;
     }
 
-    /** Renders the visible viewport straight from the dB data. False → use the CPU path. */
+    _isPhase(): boolean {
+        return (this._colourScale || this._d.colourScaleSelect?.value || 'dbSquared') === 'phase';
+    }
+
+    /**
+     * Value window [black, white] for the GPU view, as the CPU path maps it:
+     * the dB window, or the % sliders over noise floor … p99.9 (phase: −π … π).
+     */
+    private _gpuWindow(phase: boolean): [number, number] {
+        const win = this._dbWindow();
+        if (win) return win;
+        const d = this._d;
+        const [a, b] = phase ? [-Math.PI, Math.PI] : [this._absLogMin, this._absLogMax];
+        const f = parseFloat(d.floorSlider?.value || '0') / 100;
+        const c = parseFloat(d.ceilSlider?.value || '100') / 100;
+        return [a + f * (b - a), a + c * (b - a)];
+    }
+
+    /** Renders the visible viewport straight from the data. False → use the CPU path. */
     private _drawGpuView(p: any): boolean {
         if (!this._gpuViewEligible() || !this._audioBuffer) return false;
         const view = this._gpuView!;
@@ -1050,10 +1067,12 @@ export class SpectrogramController extends EventTarget {
         const coords = p.coords;
         const binTop = coords.yFractionToBinFractional(0);
         const binsPerPx = (binTop - coords.yFractionToBinFractional(1)) / height;
-        const [lo, hi] = this._dbWindow()!;
+        const phase = this._isPhase();
+        const [lo, hi] = this._gpuWindow(phase);
         const out = view.render({
             width, height, frame0: sl * framesPerPx, framesPerPx, binTop, binsPerPx, lo, hi,
-            useFloor: (this._d.noiseReductionCheck?.checked ?? false) && !!this._bandFloor,
+            useFloor: (this._d.noiseReductionCheck?.checked ?? false) && !!this._bandFloor && !phase,
+            pool: phase ? 'nearest' : 'max',
         });
         const ctx = canvas.getContext('2d');
         if (!out || !ctx) return false;
@@ -1063,11 +1082,10 @@ export class SpectrogramController extends EventTarget {
         return true;
     }
 
-    /** Tile mode on the GPU (dB values and window, no CLAHE/phase). Null → CPU tiles. */
+    /** Tile mode on the GPU (no CLAHE). Null → CPU tiles. */
     private _drawGpuTiles(tm: WasmTileManager, p: any,
                           width: number, height: number, scrollLeft: number): HTMLCanvasElement | null {
-        if (!(tm instanceof WasmTileManager) || !tm.gpuEligible || !this._gainDbMode) return null;
-        if ((this._colourScale || this._d.colourScaleSelect?.value || 'dbSquared') === 'phase') return null;
+        if (!(tm instanceof WasmTileManager) || !tm.gpuEligible) return null;
         const view = (this._gpuView ??= new GpuSpectrogramView());
         if (!view.ok) return null;
         // The tiles replace the band floor and data on the view; the full-data path re-uploads.

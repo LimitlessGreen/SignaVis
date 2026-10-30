@@ -3,9 +3,11 @@
 //
 // Replaces stage 1 (time/frequency resampling into a base image) and the
 // drawImage scaling of stage 3 for the v2 engine: the fragment shader maps
-// each display pixel to its frame and bin range, max-pools the dB values
+// each display pixel to its frame and bin range, max-pools the values
 // inside it (narrow tonal lines survive any zoom), subtracts the per-band
-// noise floor, applies the dB window and colours through the LUT.
+// noise floor, applies the value window and colours through the LUT. Any
+// v2 output works (dB, PCEN, magnitude); phase is sampled at the pixel
+// centre instead of pooled.
 //
 // Data layout: row-major [frame][bin] values packed into an R32F texture of
 // PACK_W texels per row (texel index = frame · bins + bin), so long files are
@@ -27,7 +29,7 @@ const FS = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
-uniform sampler2D u_data;   // packed dB values
+uniform sampler2D u_data;   // packed values
 uniform sampler2D u_floor;  // per-band noise floor (bins × 1)
 uniform sampler2D u_lut;    // 256 × 1 RGBA
 uniform int   u_bins;
@@ -38,6 +40,7 @@ uniform float u_framesPerPx;
 uniform float u_binTop;     // fractional bin at y = 0 (top edge)
 uniform float u_binsPerPx;  // decrease of the bin per pixel downwards (> 0)
 uniform float u_useFloor;
+uniform bool  u_maxPool;    // false: value at the pixel centre (phase)
 uniform float u_lo;
 uniform float u_rcpRange;
 out vec4 fragColor;
@@ -50,6 +53,10 @@ float cell(int f, int b) {
 
 // Value at a frame for the pixel row's bin span [b0, b1].
 float column(int f, float b0, float b1) {
+    if (!u_maxPool) {
+        int c = int(clamp(floor(0.5 * (b0 + b1) + 0.5), 0.0, float(u_bins - 1)));
+        return cell(f, c);
+    }
     if (b1 - b0 < 1.0) {
         // Less than one bin per pixel: linear between the two nearest bins.
         float c = clamp(0.5 * (b0 + b1), 0.0, float(u_bins - 1));
@@ -75,8 +82,8 @@ void main() {
     float x = gl_FragCoord.x - 0.5;
     float f0 = u_frame0 + x * u_framesPerPx;
     float v;
-    if (u_framesPerPx < 1.0) {
-        // Zoomed in: nearest frame (crisp time axis, as the old drawImage path).
+    if (u_framesPerPx < 1.0 || !u_maxPool) {
+        // Zoomed in (or no pooling): nearest frame, crisp time axis.
         int f = int(clamp(floor(f0 + 0.5 * u_framesPerPx + 0.5), 0.0, float(u_frames - 1)));
         v = column(f, b0, b1);
     } else {
@@ -99,11 +106,13 @@ export interface GpuViewParams {
     /** Fractional bin at the top edge of the image, and bins per pixel downwards. */
     binTop: number;
     binsPerPx: number;
-    /** dB window [lo, hi] → [black, white]. */
+    /** Value window [lo, hi] → [black, white]. */
     lo: number;
     hi: number;
     /** Subtract the uploaded band floor. */
     useFloor: boolean;
+    /** 'max' (default) pools all values under a pixel; 'nearest' samples its centre (phase). */
+    pool?: 'max' | 'nearest';
     /** Draw only pixel columns [x0, x1) and keep the rest of the image (tiles). */
     x0?: number;
     x1?: number;
@@ -150,7 +159,7 @@ export class GpuSpectrogramView {
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { this.gl = null; return; }
         this.prog = p;
         for (const n of ['u_data', 'u_floor', 'u_lut', 'u_bins', 'u_frames', 'u_height', 'u_frame0', 'u_framesPerPx',
-            'u_binTop', 'u_binsPerPx', 'u_useFloor', 'u_lo', 'u_rcpRange']) {
+            'u_binTop', 'u_binsPerPx', 'u_useFloor', 'u_maxPool', 'u_lo', 'u_rcpRange']) {
             this.u[n] = gl.getUniformLocation(p, n);
         }
         const vao = gl.createVertexArray();
@@ -182,7 +191,7 @@ export class GpuSpectrogramView {
     }
 
     /**
-     * Makes row-major [frame][bin] dB values the current data, uploading them
+     * Makes row-major [frame][bin] values the current data, uploading them
      * unless still cached. False if too large or unsupported.
      */
     setData(data: Float32Array, frames: number, bins: number): boolean {
@@ -290,6 +299,7 @@ export class GpuSpectrogramView {
         gl.uniform1f(this.u.u_binTop, p.binTop);
         gl.uniform1f(this.u.u_binsPerPx, p.binsPerPx);
         gl.uniform1f(this.u.u_useFloor, p.useFloor ? 1 : 0);
+        gl.uniform1i(this.u.u_maxPool, p.pool === 'nearest' ? 0 : 1);
         gl.uniform1f(this.u.u_lo, p.lo);
         gl.uniform1f(this.u.u_rcpRange, 1 / Math.max(1e-6, p.hi - p.lo));
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

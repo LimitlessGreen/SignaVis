@@ -345,9 +345,27 @@ export class WasmTileManager extends EventTarget {
         return [lo, lo + opts.rangeDb];
     }
 
-    /** True when renderGpu can draw the tiles: dB values and window, no CLAHE. */
+    /** Phase values (radians): fixed range, no noise floor, no pooling. */
+    private get phase(): boolean {
+        return this.meta.params.output === 'phase' || this.colorOptions.colourScale === 'phase';
+    }
+
+    /**
+     * Value window [black, white] for tiles of `level`, as the CPU path maps
+     * them: the dB window, or the % sliders over the contrast range
+     * (noise floor … p99.9) or over [−π, π] for phase.
+     */
+    private valueWindow(level: number): [number, number] {
+        const db = this.dbWindow(level);
+        if (db) return db;
+        const [a, b] = this.phase ? [-Math.PI, Math.PI] : this.contrastRange(level);
+        const { floor01, ceil01 } = this.colorOptions;
+        return [a + floor01 * (b - a), a + ceil01 * (b - a)];
+    }
+
+    /** True when renderGpu can draw the tiles (CLAHE needs the CPU image). */
     get gpuEligible(): boolean {
-        return this.dbWindow(0) !== null && !this.colorOptions.clahe;
+        return !this.colorOptions.clahe;
     }
 
     /** Level-0 frame centres are at i · hop; a tile's first frame centre is its start time. */
@@ -371,7 +389,7 @@ export class WasmTileManager extends EventTarget {
 
     /**
      * Renders the visible tiles into `view` (sized width × height) straight from
-     * their dB values. LUT is set by the caller. False → use renderToCanvas.
+     * their values. LUT is set by the caller. Null → use renderToCanvas.
      */
     renderGpu(view: GpuSpectrogramView, params: {
         width: number;
@@ -384,7 +402,8 @@ export class WasmTileManager extends EventTarget {
     }): HTMLCanvasElement | null {
         if (!this.gpuEligible || !view.ok) return null;
         const { width, height, pixelsPerSecond: pps, scrollLeft } = params;
-        const useFloor = !!this.colorOptions.noiseReduction;
+        const phase = this.phase;
+        const useFloor = !!this.colorOptions.noiseReduction && !phase;
         view.clear(width, height);
         let floorLevel = -1;
         for (const tile of this.drawOrder(pps)) {
@@ -399,7 +418,7 @@ export class WasmTileManager extends EventTarget {
                 view.setBandFloor(floor ? limitBandFloor(floor) : null);
                 floorLevel = tile.level;
             }
-            const [lo, hi] = this.dbWindow(tile.level)!;
+            const [lo, hi] = this.valueWindow(tile.level);
             const framesPerPx = 1 / (g.frameSec * pps);
             view.render({
                 width, height, x0, x1,
@@ -407,6 +426,7 @@ export class WasmTileManager extends EventTarget {
                 framesPerPx,
                 binTop: params.binTop, binsPerPx: params.binsPerPx,
                 lo, hi, useFloor: useFloor && floorLevel === tile.level,
+                pool: phase ? 'nearest' : 'max',
             });
         }
         return view.canvas;
