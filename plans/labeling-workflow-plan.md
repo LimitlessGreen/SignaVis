@@ -55,12 +55,29 @@ und „Annota-JSON FINAL Fv0“ (März 2026).
 | 4 | 2ac8883 | `src/app/upload-checklist.ts` + `src/ui/panels/upload-assistant.ts`: Live-Checkliste mit Sprüngen, Vorschau, Export-Menü |
 | 5 | 67dc9c4 | `src/app/recording-context.ts` + `src/ui/panels/recording-context-block.ts`: Kontext je Aufnahme, eine Koordinatenquelle für BirdNET/Explore |
 | 6 | e5aadbc | `src/app/tag-vocabulary.ts` + `xcGroupProperties.ts`: XC-Wertelisten je Gruppe, Tasten 1–9 → Sound type, BirdNET ohne Frequenz |
-| 7 | — | offen; nächster Schritt Phase 7 |
+| 7a | bd5ee84 | Rechte Leiste zu (öffnet bei Label-Auswahl), Set-Zusammenfassung in Properties, Statusleiste, Shortcuts N/P/B/U, Sponsor auch im „?“-Menü (Herz-Popover bleibt) |
+| 7b | bf4f42f | Wellenform oben per Schalter (Display-Tab, nach Reload), Audio-Tab-Köpfe, `.app-modal-*` |
+| Test | 2e659eb | Screenshot-Gesamttest (`tools/labeling-snapshots/shots.py`): Set-Bindung Projekt-Tab, Lizenz-Anzeige, Toolbar-Umbruch, Steuerzeichen, Tab „Display“ |
+| Test | 58aeb1d | Echte XC-Antwort: Wertelisten unter `group-sound-properties` |
+| Upload | fc2d9c4 | `?xcenv=acc` → acc.xeno-canto.org (Basic xc:xc); Erfolgsmeldung = JSON-String |
+| Upload | 74ca29b, e32fe4c, e784bb8 | `set_creator_id` als reine ID; Lizenz mit Version (`CC-BY-NC-SA-4.0`); XC-User-ID optional mit Warnung |
+| Import | 25fbbdf | „Import…“ im Labels-Tab für Annota-Set-Dateien (XC „Download set“), `annotaSetFile.ts` |
 
-Noch offen aus 0–6: `group_properties`-Format unverifiziert (Parser tolerant, beim Abschlusstest prüfen); Abiotisch/unbekannt als `scientific_name` — XC-Konvention ungeklärt, nicht umgesetzt; Kontext nur im Projekt-Tab (nicht in Properties), Explorer-Zeile ohne 📍; Ortsname nicht per Reverse-Geocoding; Export „SignaVis-Projekt (vollständig)“ fehlt (kein Re-Import vorhanden) — Menü bietet Annota-JSON, Labels-JSON der Aufnahme, Zwischenablage;
-Eigentumsprüfung vergleicht nur Recordist-Name mit Profilname (Warnung, kein Fehler); `invalidateXenoCantoRecordingCache` nach Upload nur für `xcPanel.xcId`;
-„New…“/XC-Nr.-Zuordnung noch mit `confirm`/`prompt`;
-`shots.py` nutzt alte Tab-Namen → vor dem Abschlusstest anpassen. Gesamttest (Screenshots, echter Upload) erst nach Phase 7.
+### Erkenntnisse aus den Tests mit XC (2026-10-30)
+- Upload-API legt nur eine Datei ab (`annotation-set-….json`); geprüft wird erst beim **Import im XC-Account** — die API meldet keine Fehler/Warnungen.
+- acc.xeno-canto.org: HTTP Basic `xc`/`xc`, normaler API-Key gilt, fremde Aufnahmen erlaubt → Testserver für Uploads.
+- „Nur eigene Aufnahmen“: für die meisten Nutzer Fehler beim Import, für Berechtigte nur Warnung → App warnt nur.
+- `set_creator_id` darf leer sein: XC lässt Creator ID leer und trägt die Uploader-ID aus dem Key ein. URI-Form + Fake-ID „xc“ gab „Creator ID invalid“; reine ID mit echter ID noch unbestätigt.
+- Lizenz: XC speichert mit Version; `CC-BY-NC-SA` wurde zu `CC-BY-NC-SA-4.0`. Wir senden jetzt mit Version; CC0-Schreibweise unbekannt (senden `CC0`).
+- Recording-API liefert Annotationen mit `original_set_metadata` (Objekt) je Annotation; Download-Dateien haben die Set-Metadaten oben.
+- Headless-Playwright braucht einen normalen User-Agent, sonst CORS-Block durch XC.
+
+### Noch offen
+- CC0-Schreibweise bei XC; `set_owner`-Format; Abiotisch/unbekannt als `scientific_name`.
+- Set-Datei-Import lädt fehlende Aufnahmen nicht automatisch nach.
+- Lizenz-Anzeige zeigt gespeicherten Freitext („CC BY-NC-SA 4.0“), gesendet wird der XC-Code.
+- Kontext nur im Projekt-Tab; Ortsname ohne Reverse-Geocoding; „New…“/XC-Nr.-Zuordnung noch mit `confirm`/`prompt`.
+- Merge von `labeling-workflow` (abgezweigt von `spectrogram-v2`) mit Nutzer klären.
 
 ## Phase 0 — Payload auf Annota-JSON Fv0 (klein, unabhängig)
 `xc-panel.ts:buildAnnotationSetPayload`, `xenoCantoApi.ts`, `xenoCantoRecordingsApi.ts`:
