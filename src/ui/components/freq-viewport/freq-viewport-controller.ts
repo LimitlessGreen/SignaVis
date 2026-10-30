@@ -4,13 +4,13 @@ import type { DomRefs } from '../../../app/domRefs.ts';
 export interface FreqViewportHost {
     readonly audioBuffer: AudioBuffer | null;
     _showSpectrogram: boolean;
-    _freqView: {
+    _freqZoom: {
         isZoomed: boolean;
         min: number | null;
         max: number | null;
         set(min: number, max: number): void;
-        setFromSlider(value: number, boundedMax: number): void;
-        zoom(factor: number, centerHz: number, boundedMax: number): void;
+        setFromSlider(value: number): void;
+        zoom(factor: number, centerHz: number): void;
     };
     coords: { boundedMaxFreq: number; pixelYToFrequency(y: number): number };
 }
@@ -40,7 +40,7 @@ export class FreqViewportController implements UiController {
                 let newMax = startMax + deltaHz;
                 if (newMin < 0) { newMin = 0; newMax = range; }
                 if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                h._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
+                h._freqZoom.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
             };
             const onUp = () => {
                 if (!dragging) return;
@@ -51,12 +51,12 @@ export class FreqViewportController implements UiController {
             };
             on(this.d.freqAxisSpacer, 'pointerdown', (e: PointerEvent) => {
                 if (e.button !== 0 || !h._showSpectrogram) return;
-                if (!h._freqView.isZoomed) return;
+                if (!h._freqZoom.isZoomed) return;
                 e.preventDefault();
                 dragging = true;
                 startY = e.clientY;
-                startMin = h._freqView.min ?? 0;
-                startMax = h._freqView.max ?? h.coords.boundedMaxFreq;
+                startMin = h._freqZoom.min ?? 0;
+                startMax = h._freqZoom.max ?? h.coords.boundedMaxFreq;
                 document.body.style.cursor = 'ns-resize';
                 document.addEventListener('pointermove', onMove);
                 document.addEventListener('pointerup', onUp);
@@ -73,15 +73,12 @@ export class FreqViewportController implements UiController {
             const canvasY = (localY / Math.max(1, rect.height)) * canvasH;
             const freqAtCursor = h.coords.pixelYToFrequency(canvasY);
             const zoomIn = e.deltaY < 0;
-            h._freqView.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor, h.coords.boundedMaxFreq);
+            h._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freqAtCursor);
         }, { passive: false });
 
         // Freq zoom slider
         on(this.d.freqZoomSlider, 'input', (e: Event) => {
-            h._freqView.setFromSlider(
-                parseInt((e.target as HTMLInputElement).value, 10),
-                h.coords.boundedMaxFreq
-            );
+            h._freqZoom.setFromSlider(parseInt((e.target as HTMLInputElement).value, 10));
         });
 
         // Freq scrollbar drag
@@ -102,7 +99,7 @@ export class FreqViewportController implements UiController {
                 let newMax = startMax - deltaHz;
                 if (newMin < 0) { newMin = 0; newMax = range; }
                 if (newMax > boundedMax) { newMax = boundedMax; newMin = boundedMax - range; }
-                h._freqView.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
+                h._freqZoom.set(Math.max(0, newMin), Math.min(boundedMax, newMax));
             };
             const onUp = () => {
                 if (!dragging) return;
@@ -112,13 +109,13 @@ export class FreqViewportController implements UiController {
                 document.removeEventListener('pointerup', onUp);
             };
             on(this.d.freqScrollbarThumb, 'pointerdown', (e: PointerEvent) => {
-                if (!h._freqView.isZoomed) return;
+                if (!h._freqZoom.isZoomed) return;
                 e.preventDefault();
                 e.stopPropagation();
                 dragging = true;
                 startY = e.clientY;
-                startMin = h._freqView.min ?? 0;
-                startMax = h._freqView.max ?? h.coords.boundedMaxFreq;
+                startMin = h._freqZoom.min ?? 0;
+                startMax = h._freqZoom.max ?? h.coords.boundedMaxFreq;
                 this.d.freqScrollbar?.classList.add('active');
                 document.addEventListener('pointermove', onMove);
                 document.addEventListener('pointerup', onUp);

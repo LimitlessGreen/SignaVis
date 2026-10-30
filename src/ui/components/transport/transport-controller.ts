@@ -6,8 +6,8 @@ export interface TransportHost {
     readonly audioBuffer: AudioBuffer | null;
     loopPlayback: boolean;
     _compactToolbarOpen: boolean;
-    _freqView: { reset(): void };
-    d: { audioFile: HTMLInputElement };
+    _freqZoom: { reset(): void };
+    d: { audioFile: HTMLInputElement | null };
     _handleFileSelect(e: Event): void;
     _togglePlayPause(): void;
     _stopPlayback(): void;
@@ -32,7 +32,7 @@ export class TransportController implements UiController {
 
     bind(on: OnFn): void {
         const h = this.host;
-        on(this.d.openFileBtn, 'click', () => h.d.audioFile.click());
+        on(this.d.openFileBtn, 'click', () => h.d.audioFile?.click());
         on(this.d.compactMoreBtn, 'click', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
@@ -53,12 +53,12 @@ export class TransportController implements UiController {
             h._updateToggleButtons();
         });
         on(this.d.crosshairToggleBtn, 'click', () => h._toggleCrosshair());
-        on(this.d.freqZoomResetBtn, 'click', () => h._freqView.reset());
+        on(this.d.freqZoomResetBtn, 'click', () => h._freqZoom.reset());
         on(this.d.fitViewBtn, 'click', () => h._fitEntireTrackInView());
         on(this.d.resetViewBtn, 'click', () => {
             h._setPixelsPerSecond(DEFAULT_ZOOM_PPS, true);
             h._setLinkedScrollLeft(0);
-            h._freqView.reset();
+            h._freqZoom.reset();
             h._syncOverviewWindowToViewport();
         });
     }

@@ -14,7 +14,7 @@ import type { UiController, OnFn } from '../ui/components/shared/controller.type
  * Keep UI controller wiring in one place to simplify PlayerState and
  * make future replacement/composition of controller sets easier.
  */
-export function bindUiControllers(d: any, state: any, on: OnFn): void {
+export function bindUiControllers(d: any, state: import('./PlayerState.ts').PlayerState, on: OnFn): void {
     const controllers: UiController[] = [
         new TransportController(d, state),
         new FreqViewportController(d, state),
