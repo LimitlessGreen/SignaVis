@@ -682,10 +682,14 @@
      * Falls back silently (returns true) on any error so download still proceeds.
      */
     async function checkXcDuration(xcId) {
-      const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
-      // Long recordings are rendered by the WASM tile pipeline when available — no need to block.
+      // Long recordings are rendered by the WASM tile pipeline when available — no need to
+      // block, so skip the API round-trip entirely and start the download right away.
       const wasmTiling = typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
-      if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC && !wasmTiling) {
+      if (wasmTiling) return true;
+      if (xcPanel.apiKey) player.showLoadingOverlay(`Checking XC${xcId}…`, { detail: 'Fetching recording metadata', progress: null });
+      const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
+      if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
+        player.hideLoadingOverlay();
         const mins  = Math.floor(durationSec / 60);
         const secs  = Math.round(durationSec % 60);
         const limit = MAX_SUPPORTED_DURATION_SEC / 60;
@@ -700,11 +704,54 @@
       return true;
     }
 
-    function makeXcProgress(onStatus) {
+    function fmtMB(bytes) {
+      const mb = bytes / 1048576;
+      return mb.toFixed(mb < 10 ? 1 : 0);
+    }
+
+    /**
+     * Progress reporter for an XC load: download (bytes, speed, source) → decode → spectrogram.
+     * Writes to the top bar, the file label and the spectrogram overlay.
+     */
+    function makeXcProgress(xcId) {
       xcProgressStart();
+      const title = `Downloading XC${String(xcId).replace(/^xc/i, '')}…`;
+      let source = 'Direct';
+      let t0 = performance.now();
+      let lastPaint = 0;
+      const show = (text, opts = {}) => {
+        fileLabel.textContent = opts.detail ? `${text} ${opts.detail}` : text;
+        player.showLoadingOverlay(text, opts);
+      };
+      show(title, { detail: 'Connecting…', progress: null });
       return {
-        onStatus: (msg) => { onStatus?.(msg); },
-        onProgress: (fraction) => xcProgressUpdate(fraction),
+        onStatus: (msg) => {
+          // xcPanel reports "Loading XC123 (Direct)…" / "(CorsProxy)…" when it (re)tries a source.
+          const m = /\(([^)]+)\)/.exec(msg);
+          if (m && m[1] !== source) { source = m[1]; t0 = performance.now(); }
+          show(title, { detail: source === 'Direct' ? 'Connecting…' : `Direct download failed — trying ${source}…`, progress: null });
+        },
+        onProgress: (fraction, received = 0, total = 0) => {
+          xcProgressUpdate(fraction);
+          if (!received) return;
+          const now = performance.now();
+          if (now - lastPaint < 100) return;
+          lastPaint = now;
+          const secs = (now - t0) / 1000;
+          const parts = [total > 0 ? `${fmtMB(received)} / ${fmtMB(total)} MB` : `${fmtMB(received)} MB`];
+          if (total > 0) parts.push(`${Math.round(fraction * 100)}%`);
+          if (secs > 0.3) parts.push(`${fmtMB(received / secs)} MB/s`);
+          if (source !== 'Direct') parts.push(`via ${source}`);
+          show(title, { detail: parts.join(' · '), progress: total > 0 ? fraction : null });
+        },
+        decoding: (bytes) => {
+          xcProgressDone();
+          show(`Decoding XC${String(xcId).replace(/^xc/i, '')}…`, { detail: `${fmtMB(bytes)} MB downloaded`, progress: null });
+        },
+        fail: () => {
+          xcProgressDone();
+          player.hideLoadingOverlay();
+        },
       };
     }
 
@@ -1538,12 +1585,11 @@
           if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
             // Re-fetch through xcPanel so CORS proxy fallback is active
             if (!await checkXcDuration(entry.xcId)) return;
-            const _xcp1 = makeXcProgress((msg) => { fileLabel.textContent = msg; player.showLoadingOverlay(msg); });
+            const _xcp1 = makeXcProgress(entry.xcId);
             const audio = await xcPanel.fetchAudio(entry.xcId, _xcp1.onStatus, _xcp1.onProgress);
-            xcProgressDone();
+            _xcp1.decoding(audio.buffer.byteLength);
             const blob = new Blob([audio.buffer], { type: 'audio/mpeg' });
             _lastAudioUrl = URL.createObjectURL(blob);
-            player.showLoadingOverlay('Decoding…');
             await player.loadFile(new File([blob], entry.filename, { type: 'audio/mpeg' }));
           } else {
             // Blob URL (local file) — same origin, no CORS issue
@@ -2527,9 +2573,10 @@
       xcLoadBtn.textContent = '…';
       try {
         if (!await checkXcDuration(raw)) { xcLoadBtn.disabled = false; xcLoadBtn.textContent = 'Load'; return; }
-        const _xcp2 = makeXcProgress((msg) => { fileLabel.textContent = msg; });
+        const _xcp2 = makeXcProgress(raw);
+        xcPanel.prefetchRecording(raw); // labels/metadata load in parallel with the audio
         const audio = await xcPanel.fetchAudio(raw, _xcp2.onStatus, _xcp2.onProgress);
-        xcProgressDone();
+        _xcp2.decoding(audio.buffer.byteLength);
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Save current annotations to the leaving entry, then create a new RecordingEntry
@@ -2557,6 +2604,7 @@
         sidebar.setActive('labels');
       } catch (err) {
         xcProgressDone();
+        player.hideLoadingOverlay();
         showXcError(err);
       } finally {
         xcLoadBtn.disabled = false;
@@ -2799,9 +2847,10 @@
       }
       try {
         if (!await checkXcDuration(xcid)) return;
-        const _xcp3 = makeXcProgress((msg) => { fileLabel.textContent = msg; });
+        const _xcp3 = makeXcProgress(xcid);
+        xcPanel.prefetchRecording(xcid); // labels/metadata load in parallel with the audio
         const audio = await xcPanel.fetchAudio(xcid, _xcp3.onStatus, _xcp3.onProgress);
-        xcProgressDone();
+        _xcp3.decoding(audio.buffer.byteLength);
         currentXcId = audio.xcId;
         updateUrlXcId(audio.xcId);
         // Create a RecordingEntry for this auto-loaded XC recording
@@ -2827,6 +2876,7 @@
         }
       } catch (err) {
         xcProgressDone();
+        player.hideLoadingOverlay();
         showXcError(err);
       }
     }
@@ -3388,8 +3438,10 @@
     }
     xcPanel._rebuildSetSection?.();  // the own set was created silently before the panel existed
     labelList.render(state.labels);
-    await loadBirdnetTaxonomy();
+    // Start the XC download right away — the 7 MB taxonomy loads in parallel and
+    // re-localizes any labels imported before it finished.
     autoLoadFromParams();
+    await loadBirdnetTaxonomy();
   </script>
   <script>
     (() => {

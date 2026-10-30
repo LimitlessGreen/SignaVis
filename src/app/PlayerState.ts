@@ -823,6 +823,7 @@ export class PlayerState {
         console.error(`Error loading audio (${source}):`, error);
         this._setTransportState('error', `${source}-load-failed`);
         this.d.fileInfo?.classList.remove('loading');
+        if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
         this._emit('error', { message: error?.message || String(error), source });
     }
 
