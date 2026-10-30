@@ -185,19 +185,19 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <div class="settings-section quality-slider-section">
-            <h3 class="settings-section-title">Quality</h3>
+            <h3 class="settings-section-title" title="Window length: short windows show fast song sharply in time, long windows separate close frequencies">Time ↔ Frequency</h3>
             <div class="settings-row quality-slider-row">
-                <span class="quality-end-label">⚡</span>
+                <span class="quality-end-label">⏱</span>
                 <input type="range" data-aw="qualitySlider" class="settings-range quality-range" min="0" max="4" value="2" step="1" list="qualityStops">
-                <span class="quality-end-label">🔬</span>
+                <span class="quality-end-label">〰</span>
                 <datalist id="qualityStops">
                     <option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option>
                 </datalist>
             </div>
             <div class="quality-label-bar">
-                <span>Performance</span><span>Balanced</span><span>Quality</span><span>High</span><span>Ultra</span>
+                <span>Time</span><span></span><span>Balanced</span><span></span><span>Frequency</span>
             </div>
-            <div class="quality-level-display" data-aw="qualityLevelDisplay">Quality</div>
+            <div class="quality-level-display" data-aw="qualityLevelDisplay">Balanced</div>
         </div>
 
         <div class="settings-section">

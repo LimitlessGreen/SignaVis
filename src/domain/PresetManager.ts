@@ -227,7 +227,7 @@ export class PresetManager {
         if (fav && Array.from(sel.options).some(o => o.value === fav)) {
             sel.value = fav;
         } else {
-            sel.value = 'birder';
+            sel.value = 'xc';
         }
     }
 
@@ -275,7 +275,7 @@ export class PresetManager {
         }
         if (!p) p = this.loadLastSettings();
         if (!p) {
-            const defaultKey = this.#d.presetSelect?.value || 'birder';
+            const defaultKey = this.#d.presetSelect?.value || 'xc';
             p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
@@ -285,6 +285,7 @@ export class PresetManager {
             if (this.#d.presetSelect) this.#d.presetSelect.value = '';
         }
         this.updatePresetButtons();
+        this.syncQualitySlider();
     }
 
     /** Clear preset dropdown selection (set to Custom), persist settings. */
@@ -303,8 +304,8 @@ export class PresetManager {
         if (d.windowSizeSelect)    d.windowSizeSelect.value    = String(level.windowSize);
         if (d.overlapSelect)       d.overlapSelect.value       = String(level.overlapLevel);
         if (d.oversamplingSelect)  d.oversamplingSelect.value  = String(level.oversamplingLevel);
-        if (d.nMelsInput)          d.nMelsInput.value          = String(level.nMels);
-        if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = level.label;
+        if (d.nMelsInput && level.nMels != null) d.nMelsInput.value = String(level.nMels);
+        if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(level);
         this.clearPresetHighlight();
         this.#onRegen();
     }
@@ -318,11 +319,11 @@ export class PresetManager {
         const nm = parseInt(d.nMelsInput?.value         || '0',  10);
         const idx = QUALITY_LEVELS.findIndex(l =>
             l.windowSize === ws && l.overlapLevel === ol &&
-            l.oversamplingLevel === os && l.nMels === nm,
+            l.oversamplingLevel === os && (l.nMels == null || l.nMels === nm),
         );
         if (idx >= 0) {
             d.qualitySlider.value = String(idx);
-            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = QUALITY_LEVELS[idx].label;
+            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(QUALITY_LEVELS[idx]);
         } else {
             if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = 'Custom';
         }
@@ -744,4 +745,9 @@ export class PresetManager {
         };
         input.click();
     }
+}
+
+/** e.g. "Balanced · 1024 samples (23 ms @ 44.1 kHz)". */
+function qualityLabel(level: { label: string; windowSize: number }): string {
+    return `${level.label} · ${level.windowSize} samples (${(level.windowSize / 44.1).toFixed(1)} ms @ 44.1 kHz)`;
 }

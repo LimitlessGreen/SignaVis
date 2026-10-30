@@ -87,10 +87,35 @@ export interface QualityLevel {
     windowSize: number;
     overlapLevel: number;
     oversamplingLevel: number;
-    nMels: number;
+    nMels?: number;
 }
 
+// Every built-in profile sets clahe / noiseReduction / gainMode explicitly:
+// applyDspSettings leaves absent fields untouched, so a profile that omits
+// them inherits whatever the previous preset left behind.
 export const DSP_PROFILES: Record<string, DspProfile> = {
+    // Xeno-canto-like sonogram: short window for fast song (11.6 ms @ 44.1 kHz),
+    // 75 % overlap, 2× zero-padding, dBFS with noise-floor auto contrast.
+    xc: {
+        scale: 'linear',
+        colourScale: 'dbSquared',
+        windowSize: 512,
+        overlapLevel: 3,       // 75 %
+        oversamplingLevel: 1,  // 2× → fft 1024
+        nMels: CLASSIC_N_MELS,
+        usePcen: false,
+        pcenGain: PERCH_PCEN_GAIN,
+        pcenBias: PERCH_PCEN_BIAS,
+        pcenRoot: PERCH_PCEN_ROOT,
+        pcenSmoothing: PERCH_PCEN_SMOOTHING,
+        windowFunction: 'hann',
+        colorScheme: 'grayscale',
+        reassigned: false,
+        noiseReduction: false,
+        clahe: false,
+        gainMode: 'auto',
+        maxFreqMode: 'nyquist',
+    },
     perch: {
         scale: 'mel',
         windowSize: 1024,
@@ -106,13 +131,18 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         windowFunction: 'hann',
         colorScheme: 'grayscale',
         reassigned: false,
+        noiseReduction: false,
+        clahe: false,
+        gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
     classic: {
         scale: 'linear',
-        windowSize: 2048,
-        overlapLevel: 2,       // 50 %
-        oversamplingLevel: 0,  // 1× → fft 2048
+        colourScale: 'dbSquared',
+        // Was 2048 / 50 %: a 46 ms window with 23 ms hop smears fast song.
+        windowSize: 1024,
+        overlapLevel: 3,       // 75 %
+        oversamplingLevel: 1,  // 2× → fft 2048
         nMels: CLASSIC_N_MELS,
         frameRate: CLASSIC_FRAME_RATE,
         usePcen: false,
@@ -123,6 +153,9 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         windowFunction: 'hann',
         colorScheme: 'xenocanto',
         reassigned: false,
+        noiseReduction: false,
+        clahe: false,
+        gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
     birder: {
@@ -141,10 +174,9 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         colorScheme: 'inferno',
         reassigned: false,
         noiseReduction: false,
-        clahe: true,
-        gainMode: 'fixed',
-        gainFloor: 49,
-        gainCeil: 100,
+        // CLAHE and a fixed floor overrode the noise-floor contrast of the v2 engine.
+        clahe: false,
+        gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
 };
@@ -162,16 +194,18 @@ export const TIMEUPDATE_THROTTLE_MS = 66;
 export const CQT_FMIN = 32.7;           // C1
 export const CQT_BINS_PER_OCTAVE = 24;
 
-// ─── Quality Levels (NVIDIA-style Performance ↔ Quality slider) ────
-// Each level fully determines DSP parameters.  The slider index (0-4)
-// maps directly into this array.
+// ─── Time ↔ Frequency resolution (former quality slider) ──────────
+// Window length is a trade-off, not a quality setting: long windows resolve
+// frequency but smear fast song in time. Every stop uses 75 % overlap and
+// 2× zero-padding, which are the settings that actually cost quality when
+// lowered. nMels is left alone (unset).
 
 export const QUALITY_LEVELS: QualityLevel[] = [
-    { label: 'Performance', windowSize: 256,  overlapLevel: 1, oversamplingLevel: 0, nMels: 80  },
-    { label: 'Balanced',    windowSize: 512,  overlapLevel: 2, oversamplingLevel: 0, nMels: 128 },
-    { label: 'Quality',     windowSize: 1024, overlapLevel: 2, oversamplingLevel: 1, nMels: 160 },
-    { label: 'High',        windowSize: 2048, overlapLevel: 3, oversamplingLevel: 1, nMels: 200 },
-    { label: 'Ultra',       windowSize: 4096, overlapLevel: 3, oversamplingLevel: 2, nMels: 256 },
+    { label: 'Time',      windowSize: 256,  overlapLevel: 3, oversamplingLevel: 1 },
+    { label: 'Time+',     windowSize: 512,  overlapLevel: 3, oversamplingLevel: 1 },
+    { label: 'Balanced',  windowSize: 1024, overlapLevel: 3, oversamplingLevel: 1 },
+    { label: 'Freq+',     windowSize: 2048, overlapLevel: 3, oversamplingLevel: 1 },
+    { label: 'Frequency', windowSize: 4096, overlapLevel: 3, oversamplingLevel: 1 },
 ];
 
 // ─── Colour Scales (SV-style amplitude mapping) ────────────────────
