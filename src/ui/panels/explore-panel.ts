@@ -196,7 +196,7 @@ export class ExplorePanel {
     const coords = this._getCoords?.();
     if (!coords) {
       controlsEl.hidden = true;
-      cardsEl.innerHTML = `<div class="sp-cards-empty">Set a recording location in the BirdNET panel to see species ranked by occurrence probability for your region.</div>`;
+      cardsEl.innerHTML = `<div class="sp-cards-empty">Set the recording's location (Project tab) to see species ranked by occurrence probability for your region.</div>`;
       return;
     }
     this.refreshExplore();
