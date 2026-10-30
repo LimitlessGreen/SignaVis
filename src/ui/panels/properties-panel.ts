@@ -63,21 +63,12 @@ const LABEL_FIELDS = [
 
 const PRESET_MAP = new Map(TAG_PRESETS.map((p) => [p.key, p.options]));
 
-const SET_FIELDS = [
-  { key: 'name',         label: 'Set Name',     edit: 'text' },
-  { key: 'license',      label: 'License',      edit: 'text' },
-  { key: 'creator',      label: 'Creator',      edit: 'text' },
-  { key: 'creatorId',    label: 'Creator ID',   edit: 'text' },
-  { key: 'owner',        label: 'Owner',        edit: 'text' },
-  { key: 'source',       label: 'Set Source',   edit: 'text' },
-  { key: 'uri',          label: 'Set URI',      edit: 'text' },
-  { key: 'projectName',  label: 'Project',      edit: 'text' },
-  { key: 'projectUri',   label: 'Project URI',  edit: 'text' },
-  { key: 'funding',      label: 'Funding',      edit: 'text' },
-  { key: 'taxonCoverage',label: 'Taxon cover.', edit: 'text' },
-  { key: 'completeness', label: 'Completeness', edit: 'text' },
-  { key: 'createdOn',    label: 'Created on' },
-  { key: 'origin',       label: 'Origin' },
+// Set fields are edited in the Project tab only; Properties shows a summary.
+const SET_SUMMARY_FIELDS = [
+  { key: 'name',    label: 'Set Name' },
+  { key: 'license', label: 'License' },
+  { key: 'status',  label: 'Status' },
+  { key: 'origin',  label: 'Origin' },
 ];
 
 export class PropertiesPanel {
@@ -100,7 +91,7 @@ export class PropertiesPanel {
     lat: any;
     lon: any;
     onChange: any;
-    onSetChange: any;
+    onEditSet: any;
     speciesSearchFactory: any;
     _hoverLabel: any;
     _lockedIds: any;
@@ -151,10 +142,10 @@ export class PropertiesPanel {
      */
     this.onChange = null;
     /**
-     * Called when the user edits a set field. Signature: (setId, updates) => void
-     * @type {((id: string, updates: object) => void)|null}
+     * Called by the "Edit in project" link of the set summary. Signature: (setId) => void
+     * @type {((setId: string) => void)|null}
      */
-    this.onSetChange = null;
+    this.onEditSet = null;
 
     this._build();
   }
@@ -358,38 +349,28 @@ export class PropertiesPanel {
     this._setSection.hidden = !setInfo;
     this._setBody.innerHTML = '';
     if (!setInfo) return;
-    const isLocked = !!lbl && (lbl.readonly === true || this._lockedIds.has(lbl.id));
-    const editable = !this._hoverLabel && !isLocked;
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
-    for (const f of SET_FIELDS) {
+    for (const f of SET_SUMMARY_FIELDS) {
       const raw = setInfo[f.key];
-      if (!f.edit && (raw == null || raw === '')) continue;
-      if (!editable && (raw == null || raw === '')) continue;
+      if (raw == null || raw === '') continue;
       const dt = document.createElement('dt');
       dt.textContent = f.label;
       const dd = document.createElement('dd');
-      if (editable && f.edit) {
-        dd.classList.add('props-editable');
-        const inp = document.createElement('input');
-        inp.type = 'text';
-        inp.className = 'props-input';
-        inp.dataset.focusKey = `set:${f.key}`;
-        inp.value = raw ?? '';
-        inp.placeholder = f.label;
-        inp.addEventListener('change', () => {
-          this.onSetChange?.(setId, { [f.key]: inp.value.trim() });
-        });
-        this._bindEnterBlur(inp);
-        dd.appendChild(inp);
-      } else {
-        dd.textContent = String(raw ?? '');
-        dd.classList.add('props-readonly');
-      }
+      dd.textContent = String(raw);
+      dd.classList.add('props-readonly');
       dl.appendChild(dt);
       dl.appendChild(dd);
     }
     this._setBody.appendChild(dl);
+    if (!setInfo.locked && this.onEditSet) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'props-set-edit-link';
+      link.textContent = 'Edit in project →';
+      link.addEventListener('click', () => this.onEditSet?.(setId));
+      this._setBody.appendChild(link);
+    }
   }
 
   _renderLabel() {
@@ -476,16 +457,8 @@ export class PropertiesPanel {
       }
     }
 
-    // Set section
-    const setId = lbl?.setId ?? null;
-    const setInfo = setId && this._getSetInfo ? this._getSetInfo(setId) : null;
-    if (setInfo) {
-      for (const f of SET_FIELDS) {
-        if (!f.edit) continue;
-        const input = this._setBody.querySelector(`[data-focus-key="set:${f.key}"]`);
-        if (input && input !== active) input.value = setInfo[f.key] ?? '';
-      }
-    }
+    // Set section is a read-only summary — re-render it
+    this._renderSet();
   }
 
   // ── Grid builders ─────────────────────────────────────────────────

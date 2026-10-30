@@ -48,10 +48,7 @@
 
       <!-- Right: taxonomy + settings -->
       <div class="topbar-right">
-        <span class="tb-meta" id="selectionMeta"></span>
-        <span class="tb-sep"></span>
         <select id="taxonomyLangSelect" class="tb-select" title="Label language"><option value="en_uk">en_uk</option></select>
-        <span class="tb-meta" id="taxonomyMeta">Taxonomy loading…</span>
         <span class="tb-sep"></span>
         <button class="tb-btn tb-xc-key" id="xcKeyIndicator" type="button" title="Xeno-canto API Key">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="16.5" r="5.5"/></svg>
@@ -335,6 +332,9 @@
         <h3>Labels</h3>
         <div class="shortcut-grid">
           <kbd>1 – 9</kbd> <span class="sc-desc">Set sound type of the selected label (n-th value of the XC list)</span>
+          <kbd>N / P</kbd> <span class="sc-desc">Next / previous recording</span>
+          <kbd>B</kbd> <span class="sc-desc">Run BirdNET on the current recording</span>
+          <kbd>U</kbd> <span class="sc-desc">Open the upload assistant</span>
           <kbd>Ctrl + C</kbd> <span class="sc-desc">Copy selected label</span>
           <kbd>Ctrl + V</kbd> <span class="sc-desc">Paste label at current time</span>
           <kbd>Ctrl + Z</kbd> <span class="sc-desc">Undo</span>
@@ -376,6 +376,12 @@
     <div class="statusbar-section">
       <span>Commit</span>
       <a class="statusbar-label" id="appCommit" href="#" target="_blank" rel="noopener noreferrer">—</a>
+    </div>
+    <div class="statusbar-section">
+      <span class="statusbar-label" id="taxonomyMeta">Taxonomy loading…</span>
+    </div>
+    <div class="statusbar-section">
+      <span class="statusbar-label" id="selectionMeta"></span>
     </div>
     <div class="statusbar-spacer"></div>
     <div class="statusbar-section" style="white-space:nowrap">
@@ -847,6 +853,7 @@
           { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
           { separator: true },
           { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
+          { label: '♥ Sponsor SignaVis', action: () => window.open('https://github.com/sponsors/LimitlessGreen', '_blank', 'noopener') },
         ],
       });
     });
@@ -909,6 +916,31 @@
       selectionMeta.textContent = `Sound type: ${value} (key ${e.key})`;
     });
 
+    // N / P next / previous recording, B BirdNET on the current one, U upload assistant
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const k = e.key.toLowerCase();
+      if (k === 'n' || k === 'p') {
+        const all = recordingManager.getAll();
+        const i = all.findIndex((r) => r.id === recordingManager.getActive()?.id);
+        const next = all[i + (k === 'n' ? 1 : -1)];
+        if (!next) return;
+        e.preventDefault();
+        activateRecordingEntry(next);
+      } else if (k === 'b') {
+        const btn = document.getElementById('birdnetAnalyzeBtn');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        sidebar.setActive('analyse');
+        btn.click();
+      } else if (k === 'u') {
+        e.preventDefault();
+        sidebar.setActive('upload');
+      }
+    });
+
     // ── Right sidebar ─────────────────────────────────────────────────
     const specPanel = new SpectrogramSettingsPanel(player);
     specPanel.relocate();
@@ -940,8 +972,10 @@
     const snrComputer = new SnrComputer();
     snrComputer.setOnResult((id, status, value) => propsPanel.setSnr(id, status, value));
 
+    // Closed by default (v2 key drops the old always-open state); opens on label selection
     const rightBar = new Sidebar(document.getElementById('workspace'), {
       side: 'right',
+      storageKey: 'signavis.sidebar-right.v2',
       onResize: () => player?.resize?.(),
     });
 
@@ -1100,9 +1134,6 @@
 
       return el;
     }
-
-
-    rightBar.setActive('properties');
 
     // ── App state ─────────────────────────────────────────────────────
     let getSuggestions = (q, n) => [];  // populated after taxonomy loads
@@ -1805,8 +1836,9 @@
         try { labelTable.highlightRow(labelId); } catch (e) {}
       }
 
-      // Pin properties
+      // Pin properties (open the right bar if it is closed)
       try { propsPanel.pinLabel(lbl); } catch (e) {}
+      if (rightBar.collapsed) rightBar.setActive('properties');
 
       // Trigger non-blocking SNR computation for the selected label
       const _audioBuffer = player._state?.audioBuffer;
@@ -1887,7 +1919,7 @@
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
     };
-    propsPanel.onSetChange = (setId, updates) => updateSet(setId, updates);
+    propsPanel.onEditSet = () => sidebar.setActive('project');
 
     player.on('labelfocus', (e) => {
       const id = e.detail?.id || null;

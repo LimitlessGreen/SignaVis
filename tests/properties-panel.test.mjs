@@ -403,25 +403,29 @@ test('Enter key on text input triggers blur and change', async () => {
   });
 });
 
-test('set-field data-focus-key: in-place patch updates set fields', async () => {
+test('set section: read-only summary refreshes and links to the project tab', async () => {
   await withFakeDOM(async () => {
     const { PropertiesPanel } = await import('../src/ui/panels/properties-panel.ts');
     const setInfo = { name: 'My Set', creator: 'Alice', license: '', origin: 'manual' };
     const panel = new PropertiesPanel({
       getSetInfo: (id) => id === 'S1' ? setInfo : null,
     });
+    let edited = null;
+    panel.onEditSet = (id) => { edited = id; };
     const lbl = makeLabel({ setId: 'S1' });
     panel.pinLabel(lbl);
 
-    const nameInput = panel._setBody.querySelector('[data-focus-key="set:name"]');
-    assert.ok(nameInput, 'set name input should have data-focus-key');
-    assert.equal(nameInput.value, 'My Set');
+    const values = () => panel._setBody.children[0].children.filter((c) => c.tagName === 'DD').map((c) => c.textContent);
+    assert.equal(panel._setBody.querySelector('[data-focus-key="set:name"]'), null, 'no set inputs');
+    assert.deepEqual(values(), ['My Set', 'manual']);
 
     // Simulate external set update — same label structure, just value changed
     setInfo.name = 'Renamed Set';
     panel.refreshLabel({ ...lbl }); // triggers _patchValues since sig unchanged
+    assert.deepEqual(values(), ['Renamed Set', 'manual']);
 
-    assert.equal(nameInput.value, 'Renamed Set', 'set field updated in-place');
+    panel._setBody.querySelector('.props-set-edit-link')._emit('click');
+    assert.equal(edited, 'S1');
   });
 });
 
