@@ -272,6 +272,14 @@
     box-shadow: 0 0 0 1px rgba(255,255,255,0.55), 0 0 0 2px rgba(0,0,0,0.42);
 }
 
+/* ── Zoom box ("Lupe") ── */
+.spectrogram-label-draft.zoom-box {
+    border-style: dashed;
+    border-color: rgba(125, 211, 252, 0.95);
+    background: rgba(125, 211, 252, 0.1);
+    z-index: 30;
+}
+
 /* ── Snap to call preview ── */
 .spectrogram-label-draft.snap-preview {
     border-color: rgba(250, 204, 21, 0.98);

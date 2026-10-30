@@ -873,6 +873,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _snapSensitivity: number = SNAP_DEFAULT_SENSITIVITY;
     _snap: { time: number; freq: number; result: SnapResult } | null = null;
     _snapEl: HTMLElement | null = null;
+    /** Zoom box ("Lupe"): drag a field → 'zoomboxselect', right-click → 'zoomboxback'. */
+    zoomBoxMode: boolean = false;
+    _zoomBox: { startTime: number; startFreq: number; endTime: number; endFreq: number; x0: number; y0: number } | null = null;
+    _zoomBoxEl: HTMLElement | null = null;
     _axisConstraint: any = null;
     _draftEl: any = null;
     _drawing: any = null;
@@ -1496,8 +1500,57 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this.dispatchEvent(new CustomEvent('snapmodechange', { detail: { active: false } }));
     }
 
+    exitZoomBoxMode() {
+        if (!this.zoomBoxMode) return;
+        this.zoomBoxMode = false;
+        this._clearZoomBox();
+        this.dispatchEvent(new CustomEvent('zoomboxmodechange', { detail: { active: false } }));
+    }
+
+    _clearZoomBox() {
+        this._zoomBox = null;
+        if (this._zoomBoxEl?.parentNode) this._zoomBoxEl.parentNode.removeChild(this._zoomBoxEl);
+        this._zoomBoxEl = null;
+    }
+
+    _updateZoomBox() {
+        const box = this._zoomBox;
+        if (!box || !this.overlay) return;
+        if (!this._zoomBoxEl) {
+            this._zoomBoxEl = document.createElement('div');
+            this._zoomBoxEl.className = 'spectrogram-label-draft zoom-box';
+            this.overlay.appendChild(this._zoomBoxEl);
+        }
+        const width = parseFloat(this.overlay.style.width) || 1;
+        const height = parseFloat(this.overlay.style.height) || 1;
+        const g = this._toGeometry(this._normalize({
+            start: box.startTime,
+            end: box.endTime,
+            freqMin: Math.min(box.startFreq, box.endFreq),
+            freqMax: Math.max(box.startFreq, box.endFreq),
+            label: '',
+        }), width, height);
+        Object.assign(this._zoomBoxEl.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
+    }
+
     _bindDrawingInteractions(wrapper: any) {
         const onPointerDown = (e: PointerEvent) => {
+            if (this.zoomBoxMode && (e.button === 0 || e.button === 2)) {
+                if (!this.player?._state?.audioBuffer) return;
+                this.player?._state?._blockSeekClicks?.(400);
+                if (e.button === 2) {
+                    this._suppressContextMenuUntil = performance.now() + 400;
+                    this.dispatchEvent(new CustomEvent('zoomboxback'));
+                } else {
+                    const t = this._clientXToTime(e.clientX);
+                    const f = this._clientYToFreq(e.clientY);
+                    this._zoomBox = { startTime: t, startFreq: f, endTime: t, endFreq: f, x0: e.clientX, y0: e.clientY };
+                    this._updateZoomBox();
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (this.snapMode && e.button === 0) {
                 if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
                 if (!this.player?._state?.audioBuffer) return;
@@ -1569,6 +1622,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 e.stopPropagation();
                 return;
             }
+            if (this._zoomBox) {
+                this._zoomBox.endTime = this._clientXToTime(e.clientX);
+                this._zoomBox.endFreq = this._clientYToFreq(e.clientY);
+                this._updateZoomBox();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (this._drawing) {
                 this._drawing.endTime = this._clientXToTime(e.clientX);
                 this._drawing.endFreq = this._clientYToFreq(e.clientY);
@@ -1579,6 +1640,22 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         };
 
         const onPointerUp = (e: PointerEvent) => {
+            if (this._zoomBox) {
+                const box = this._zoomBox;
+                this._clearZoomBox();
+                // A plain click (tiny drag) does nothing
+                if (Math.abs(e.clientX - box.x0) >= 6 && Math.abs(e.clientY - box.y0) >= 6) {
+                    this.dispatchEvent(new CustomEvent('zoomboxselect', { detail: {
+                        start: Math.min(box.startTime, box.endTime),
+                        end: Math.max(box.startTime, box.endTime),
+                        freqMin: Math.min(box.startFreq, box.endFreq),
+                        freqMax: Math.max(box.startFreq, box.endFreq),
+                    } }));
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (this._editing) {
                 this._finishEditInteraction();
                 e.preventDefault();
@@ -1598,7 +1675,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         // Prevent browser context-menu in stamp mode (and briefly after exiting via right-click)
         const onContextMenu = (e: Event) => {
-            if (this.stampMode || this._suppressContextMenuUntil > performance.now()) {
+            if (this.stampMode || this.zoomBoxMode || this._suppressContextMenuUntil > performance.now()) {
                 e.preventDefault(); e.stopPropagation();
             }
         };
@@ -1614,6 +1691,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if (e.key === 'Enter') this._commitSnap();
                 else if (this._snap) this._clearSnap();
                 else this.exitSnapMode();
+                return;
+            }
+
+            if (this.zoomBoxMode && e.key === 'Escape') {
+                e.preventDefault();
+                if (this._zoomBox) this._clearZoomBox();
+                else this.exitZoomBoxMode();
                 return;
             }
 
