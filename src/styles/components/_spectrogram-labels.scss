@@ -132,6 +132,9 @@
     border-style: solid;
     outline: none;
     opacity: 0.85;
+    /* Frame only — detections often span the full band and would hide the spectrogram */
+    background: transparent;
+    box-shadow: none;
 }
 .spectrogram-label-region.suggestion:hover {
     opacity: 1;

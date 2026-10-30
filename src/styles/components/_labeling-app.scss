@@ -666,3 +666,47 @@ html[data-theme="light"] { @include sponsor-light; }
   color: var(--color-warning, #f59e0b);
   padding: 2px 2px 0;
 }
+
+/* ── BirdNET panel ── */
+.birdnet-backend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--color-text-muted, #9CA3AF);
+  font-size: 0.68rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+
+  &[aria-expanded="true"],
+  &:hover { opacity: 1; }
+}
+
+.birdnet-progress {
+  height: 4px;
+  margin: 6px 14px;
+  border-radius: 2px;
+  background: var(--color-border, rgba(127, 127, 127, 0.25));
+  overflow: hidden;
+}
+
+.birdnet-progress-bar {
+  width: 0;
+  height: 100%;
+  background: var(--color-accent, #10b981);
+  transition: width 0.2s ease;
+}
+
+.birdnet-status {
+  display: block;
+  padding: 0 14px;
+}
+
+.geo-filter-toggle.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

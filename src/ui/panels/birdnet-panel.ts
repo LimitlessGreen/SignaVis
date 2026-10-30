@@ -134,6 +134,7 @@ export class BirdNETPanel {
     this._restoreModelUrl();
     this._restoreGeoCoords();
     this._bindEvents();
+    if (this.birdnet?.loaded) this._setGeoFilterAvailable(!!this.birdnet.hasAreaModel);
   }
 
   /** Extract BirdNET version string from the currently configured model URL. */
@@ -255,12 +256,31 @@ export class BirdNETPanel {
         },
       });
       this._loadedModelUrl = modelUrl;
+      this._setGeoFilterAvailable(!!result.hasAreaModel);
       if (this.statusEl) this.statusEl.textContent =
         result.hasAreaModel ? 'Area model loaded ✓' : 'Model loaded ✓';
       return result;
     } finally {
       this.progressWrap.style.display = 'none';
     }
+  }
+
+  /** The geo filter needs the area model; keep the checkbox disabled (with reason) until it is loaded. */
+  _setGeoFilterAvailable(available: boolean) {
+    const cb = this.geoFilterCheckbox;
+    if (!cb) return;
+    cb.disabled = !available;
+    if (!available) {
+      cb.checked = false;
+      if (this.geoFilterSliderWrap) this.geoFilterSliderWrap.hidden = true;
+    }
+    const label = cb.closest('label');
+    if (label) {
+      label.classList.toggle('is-disabled', !available);
+      label.title = available ? '' : 'This model has no area model — geo filter unavailable';
+    }
+    const hint = label?.querySelector('.meta');
+    if (hint) hint.hidden = available;
   }
 
   _geoStatus(msg: any) {
@@ -387,6 +407,7 @@ export class BirdNETPanel {
           },
         });
         this._loadedModelUrl = modelUrl;
+        this._setGeoFilterAvailable(!!loadResult.hasAreaModel);
         if (loadResult.hasAreaModel) {
           this.statusEl.textContent = 'Area model loaded ✓';
         }
