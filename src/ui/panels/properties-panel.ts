@@ -176,6 +176,12 @@ export class PropertiesPanel {
     this._tagStore = store || null;
   }
 
+  /** Rebuild the label form after the tag option lists changed. */
+  refreshTagOptions() {
+    this._renderSig = null;
+    this._renderLabel();
+  }
+
   // ── Public API ────────────────────────────────────────────────────
 
   /**
