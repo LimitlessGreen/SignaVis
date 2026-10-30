@@ -21,10 +21,16 @@ function parseXcLen(len: any) {
 
 // ── Annotator profile field definitions ─────────────────────────────
 
+// XC stores licenses with version ("CC-BY-4.0"); send them the same way. CC0 stays unversioned
+// until XC's spelling for it is known.
+const LICENSE_CODES = ['CC-BY-NC-SA', 'CC-BY-NC-ND', 'CC-BY-SA', 'CC-BY-NC', 'CC-BY', 'CC0'];
+const withLicenseVersion = (code: string) => (code === 'CC0' ? code : `${code}-4.0`);
+const SET_LICENSES = ['', ...LICENSE_CODES.map(withLicenseVersion)];
+
 const AUTHOR_FIELDS = [
   { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },
   { key: 'xcUsername', label: 'XC user ID',    type: 'text', placeholder: 'xeno-canto contributor ID', required: true },
-  { key: 'license',    label: 'Default License', type: 'select', options: ['', 'CC-BY-NC-SA', 'CC-BY-NC-ND', 'CC-BY-SA', 'CC-BY-NC', 'CC-BY', 'CC0'] },
+  { key: 'license',    label: 'Default License', type: 'select', options: SET_LICENSES },
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];
 
@@ -97,15 +103,6 @@ export function defaultRecordingEditMeta() {
 
 // ── Set license options ──────────────────────────────────────────────
 
-const SET_LICENSES = [
-  '',
-  'CC-BY-NC-SA',
-  'CC-BY-NC-ND',
-  'CC-BY-SA',
-  'CC-BY-NC',
-  'CC-BY',
-  'CC0',
-];
 
 // ── Set metadata field groups ────────────────────────────────────────
 
@@ -163,9 +160,15 @@ export function defaultSetInfo(partial = {}) {
 
 /**
  * Normalize a free-form license string into one of the accepted XC codes.
- * Returns the normalized code (e.g. 'CC-BY-NC-SA') or an empty string when unknown.
+ * Returns the versioned XC code (e.g. 'CC-BY-NC-SA-4.0') or an empty string when unknown.
  */
-function normalizeLicenseValue(raw: any) {
+export function normalizeLicenseValue(raw: any) {
+  const code = licenseBaseCode(raw);
+  return code ? withLicenseVersion(code) : '';
+}
+
+/** License code without version ('CC-BY-NC-SA'), or '' when unknown. */
+function licenseBaseCode(raw: any) {
   if (!raw) return '';
   let s = String(raw).trim().toUpperCase();
   // Remove common version tokens like '4.0' and stray punctuation
