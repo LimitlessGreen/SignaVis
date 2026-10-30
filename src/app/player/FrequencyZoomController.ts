@@ -72,6 +72,10 @@ export class FrequencyZoomController {
         this.#freqView.set(min, max);
     }
 
+    setFromSlider(sliderValue: number): void {
+        this.#freqView.setFromSlider(sliderValue, this.#getBoundedMaxFreq());
+    }
+
     reset(): void {
         this.#freqView.reset();
     }

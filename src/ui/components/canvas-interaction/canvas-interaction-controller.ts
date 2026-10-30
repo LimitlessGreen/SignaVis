@@ -6,7 +6,7 @@ import { isTypingContext } from '../../../shared/utils.ts';
 export interface CanvasInteractionHost {
     readonly audioBuffer: AudioBuffer | null;
     readonly scrollSyncLock: boolean;
-    _freqView: { reset(): void };
+    _freqZoom: { reset(): void };
     _spectro: { hasData: boolean };
     _getPrimaryScrollWrapper(): HTMLElement;
     _setLinkedScrollLeft(x: number): void;
@@ -32,7 +32,7 @@ export class CanvasInteractionController implements UiController {
 
         on(this.d.canvasWrapper, 'click', (e: MouseEvent) => h._handleCanvasClick(e));
         on(this.d.canvasWrapper, 'dblclick', (e: MouseEvent) => {
-            if (e.shiftKey) { e.preventDefault(); h._freqView.reset(); }
+            if (e.shiftKey) { e.preventDefault(); h._freqZoom.reset(); }
         });
         on(this.d.canvasWrapper, 'mousemove', (e: MouseEvent) => h._updateCrosshair(e));
         on(this.d.canvasWrapper, 'mouseleave', () => h._hideCrosshair());
