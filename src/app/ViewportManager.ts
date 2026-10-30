@@ -403,9 +403,17 @@ export class ViewportManager extends EventTarget {
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false });
     }
 
+    /** Slider minimum, lowered for long recordings so the whole track can fit the view. */
+    _getMinPps(): number {
+        const sliderMin = Math.max(1, Number(this._d.zoomSlider?.min || 20));
+        const duration  = this._getAudioBuffer()?.duration || 0;
+        if (!duration) return sliderMin;
+        return Math.min(sliderMin, Math.max(1, this._getViewportWidth()) / duration);
+    }
+
     _setPixelsPerSecond(nextPps: number, redraw: boolean, anchorTime?: number, anchorPixel?: number) {
         const d         = this._d;
-        const minPps    = Number(d.zoomSlider.min);
+        const minPps    = this._getMinPps();
         const maxPps    = Number(d.zoomSlider.max);
         const sliderStep = Number(d.zoomSlider.step || 1);
         const vw        = this._getViewportWidth();
@@ -428,7 +436,7 @@ export class ViewportManager extends EventTarget {
         if (changed) {
             this.pixelsPerSecond    = effectivePps;
             d.zoomSlider.value      = String(Math.round(effectivePps / sliderStep) * sliderStep);
-            d.zoomValue.textContent = `${Math.round(effectivePps)} px/s`;
+            d.zoomValue.textContent = `${effectivePps < 10 ? effectivePps.toFixed(2) : Math.round(effectivePps)} px/s`;
 
             const ws = this._getWavesurfer();
             if (ws) ws.zoom(effectivePps);
@@ -528,7 +536,7 @@ export class ViewportManager extends EventTarget {
         const duration = Math.max(0.001, buf?.duration || 0.001);
         const vw       = Math.max(1, this._getViewportWidth());
         const d        = this._d;
-        const minPps   = Math.max(1, Number(d.zoomSlider?.min || 20));
+        const minPps   = this._getMinPps();
         const maxPps   = Math.max(minPps, Number(d.zoomSlider?.max || 450));
         const minSpanNorm = Math.max(MIN_WINDOW_NORM, (vw / maxPps) / duration);
         const maxSpanNorm = Math.min(1, (vw / minPps) / duration);

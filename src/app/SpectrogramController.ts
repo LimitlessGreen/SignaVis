@@ -21,10 +21,11 @@ import {
     windowHopFromOverlap,
     fftSizeFromOversampling,
     TILE_MODE_MIN_DURATION_SEC,
-    TILE_SECONDS,
+    WASM_TILE_MIN_DURATION_SEC,
 } from '../shared/constants.ts';
 
 import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions } from './WasmTileManager.ts';
 
 import {
     updateSpectrogramStats as computeSpectrogramStats,
@@ -69,7 +70,8 @@ export class SpectrogramController extends EventTarget {
     _externalMode: boolean;
     _externalImageConfig: { freqRange: [number, number] | null; freqScale: string | null } | null;
     _audioBuffer: AudioBuffer | null;
-    _tileManager: SpectrogramTileManager | null;
+    _tileManager: SpectrogramTileManager | WasmTileManager | null;
+    _sourceFile: File | null;
     _spectralFeatures: SpectralFeatures | null;
     _ridges: Ridge[] | null;
     _sfProcessor: ReturnType<typeof createSpectralFeaturesProcessor>;
@@ -120,6 +122,7 @@ export class SpectrogramController extends EventTarget {
         this._audioBuffer = null;
         this._sampleRateHz = 44100;
         this._tileManager = null;
+        this._sourceFile = null;
         this._spectralFeatures = null;
         this._ridges = null;
 
@@ -155,13 +158,15 @@ export class SpectrogramController extends EventTarget {
      * Called by PlayerState whenever a new audio file is loaded.
      * @param {AudioBuffer} audioBuffer
      * @param {number} sampleRateHz
+     * @param {File|null} [sourceFile]  source file (or URL placeholder); enables the WASM tile pipeline
      */
-    setAudio(audioBuffer: AudioBuffer, sampleRateHz: number) {
+    setAudio(audioBuffer: AudioBuffer, sampleRateHz: number, sourceFile: File | null = null) {
         this._tileManager?.dispose();
         this._tileManager    = null;
         this._spectralFeatures = null;
         this._ridges           = null;
         this._audioBuffer    = audioBuffer;
+        this._sourceFile     = sourceFile;
         this._sampleRateHz = sampleRateHz;
         this._externalMode = false;
         this._externalImageConfig = null;
@@ -233,7 +238,28 @@ export class SpectrogramController extends EventTarget {
         this._activeScale = scale;
 
         // ── Tile mode for long audio ─────────────────────────────────────
-        if (this._audioBuffer.duration >= TILE_MODE_MIN_DURATION_SEC) {
+        // WASM pyramid for long local files (WAV read directly, other formats from
+        // the decoded PCM); falls back to the full JS path on failure.
+        const wasmParams = useReassigned ? null : wasmParamsFromDspOptions(options);
+        if (wasmParams && isWasmTileSource(this._sourceFile)
+            && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
+            const file = this._sourceFile;
+            const audioBuffer = this._audioBuffer;
+            const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
+                file,
+                source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
+                wasmParams,
+                duration:     this._audioBuffer!.duration,
+                colorOptions: this._getCurrentColorOptions(),
+                onProgress:   (f) => this._emit('progress', { chunk: 0, totalChunks: 0, percent: Math.round(f * 100) }),
+            })).then(() => true, (err) => {
+                console.warn('WASM spectrogram failed, falling back to JS:', err);
+                this._tileManager?.dispose();
+                this._tileManager = null;
+                return false;
+            });
+            if (ok) return;
+        } else if (this._audioBuffer.duration >= TILE_MODE_MIN_DURATION_SEC) {
             await this._startTileMode(options, autoAdjust);
             return;
         }
@@ -381,7 +407,11 @@ export class SpectrogramController extends EventTarget {
 
     // ── Tile mode ─────────────────────────────────────────────────────
 
-    private async _startTileMode(dspOptions: Record<string, any>, autoAdjust: boolean): Promise<void> {
+    private async _startTileMode(
+        dspOptions: Record<string, any>,
+        autoAdjust: boolean,
+        createManager?: () => Promise<WasmTileManager>,
+    ): Promise<void> {
         const d = this._d;
         if (d.recomputingOverlay) d.recomputingOverlay.hidden = false;
         this._emit('transportstatechange', { state: 'rendering', reason: 'spectrogram-generate' });
@@ -394,18 +424,26 @@ export class SpectrogramController extends EventTarget {
         this._grayInfo = null;
         this._baseCanvas = null;
 
-        const channelData = this._audioBuffer!.getChannelData(0);
-        const tm = new SpectrogramTileManager({
-            channelData,
-            sampleRate:    this._audioBuffer!.sampleRate,
-            totalDuration: this._audioBuffer!.duration,
-            nMels:         dspOptions.nMels,
-            dspOptions,
-            colorOptions:  this._getCurrentColorOptions(),
-        });
+        const t0 = performance.now();
+        const audioBuffer = this._audioBuffer!;
+        const tm = createManager
+            ? await createManager()
+            : new SpectrogramTileManager({
+                channelData:   audioBuffer.getChannelData(0),
+                sampleRate:    audioBuffer.sampleRate,
+                totalDuration: audioBuffer.duration,
+                nMels:         dspOptions.nMels,
+                dspOptions,
+                colorOptions:  this._getCurrentColorOptions(),
+            });
+        if (this._audioBuffer !== audioBuffer) { tm.dispose(); return; } // another file was loaded meanwhile
 
         this._tileManager = tm;
-        this._nMels = dspOptions.nMels;
+        this._nMels = tm.nMels;
+        if (tm instanceof WasmTileManager) {
+            this._hopSize = tm.hopSize;
+            this._winLength = tm.winLength;
+        }
 
         // Forward tile-ready events as needsredraw to PlayerState.
         tm.addEventListener('tileready', () => {
@@ -437,15 +475,18 @@ export class SpectrogramController extends EventTarget {
                 this.setMaxFreqToNyquist();
             }
         }
+        // Auto-adjust may have changed maxFreq / floor / ceil after the first tile was colorized.
+        tm.updateColorOptions(this._getCurrentColorOptions());
 
         if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
         this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-ready' });
-        this._emit('computetime', { durationMs: 0 });
+        this._emit('computetime', { durationMs: Math.round(performance.now() - t0) });
         this._emit('ready', {
             duration:   this._audioBuffer!.duration,
             sampleRate: this._audioBuffer!.sampleRate,
             nFrames:    0,
-            nMels:      dspOptions.nMels,
+            nMels:      tm.nMels,
+            wasmTiles:  tm instanceof WasmTileManager,
         });
         this._emit('needsredraw');
     }
@@ -882,7 +923,7 @@ export class SpectrogramController extends EventTarget {
             // Schedule background loading for the visible viewport.
             const startTime = sl / p.pixelsPerSecond;
             const endTime   = (sl + width) / p.pixelsPerSecond;
-            tm.requestViewport(startTime, endTime);
+            tm.requestViewport(startTime, endTime, p.pixelsPerSecond);
 
             this._syncFreqAxisHeight();
             return;

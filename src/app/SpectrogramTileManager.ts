@@ -111,7 +111,7 @@ export class SpectrogramTileManager extends EventTarget {
 
     // ── Viewport scheduling ─────────────────────────────────────────
 
-    requestViewport(startTime: number, endTime: number): void {
+    requestViewport(startTime: number, endTime: number, _pixelsPerSecond?: number): void {
         if (this.disposed) return;
 
         const firstTile = Math.max(0, Math.floor(startTime / TILE_SECONDS));

@@ -200,13 +200,16 @@
     position: relative;
 }
 
-[data-aw="amplitudeCanvas"] {
-    display: block;
-    image-rendering: pixelated;
-}
-
+/* Viewport-width only, pinned like the spectrogram canvas (see renderMainWaveform). */
+[data-aw="amplitudeCanvas"],
 [data-aw="waveformTimelineCanvas"] {
     display: block;
+    position: sticky;
+    left: 0;
+}
+
+[data-aw="amplitudeCanvas"] {
+    image-rendering: pixelated;
 }
 
 /* ═══ Split / Resize Handles ═══ */

@@ -725,7 +725,9 @@
      */
     async function checkXcDuration(xcId) {
       const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
-      if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
+      // Long recordings are rendered by the WASM tile pipeline when available — no need to block.
+      const wasmTiling = typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
+      if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC && !wasmTiling) {
         const mins  = Math.floor(durationSec / 60);
         const secs  = Math.round(durationSec % 60);
         const limit = MAX_SUPPORTED_DURATION_SEC / 60;
@@ -2026,7 +2028,8 @@
       state.activeObjectUrl = blobUrl;
       _lastAudioUrl = blobUrl;
       try {
-        const file = new File([blob], filename, { type: mimeType });
+        // Fixed lastModified keeps the WASM spectrogram cache key stable across re-downloads.
+        const file = new File([blob], filename, { type: mimeType, lastModified: 0 });
         await player.loadFile(file);
       } catch {
         await player.loadUrl(blobUrl);
@@ -2588,8 +2591,9 @@
       currentXcId = null;
       updateUrlXcId(null);
       syncToPlayer();
-      await player.loadFile(file);
+      // Set before loading: the 'ready' event reads it for the properties panel.
       fileLabel.textContent = file.name;
+      await player.loadFile(file);
       // Clear any saved original when a new file is explicitly loaded by the user
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;
@@ -2621,8 +2625,8 @@
       currentXcId = null;
       updateUrlXcId(null);
       syncToPlayer();
-      await player.loadUrl('./samples/birdsong.wav');
       fileLabel.textContent = 'birdsong.wav';
+      await player.loadUrl('./samples/birdsong.wav');
       // Clear any previously saved original when loading the demo sample
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;
@@ -2640,8 +2644,9 @@
       });
 
       // Show long-recording warning unless it was already shown via the API pre-check.
+      // Not needed when the WASM tile pipeline handles the file.
       const duration = player.duration || 0;
-      if (duration > MAX_SUPPORTED_DURATION_SEC && !state._longRecordingChecked) {
+      if (duration > MAX_SUPPORTED_DURATION_SEC && !state._longRecordingChecked && !e.detail?.wasmTiles) {
         const mins = Math.floor(duration / 60);
         const secs = Math.round(duration % 60);
         const limit = MAX_SUPPORTED_DURATION_SEC / 60;

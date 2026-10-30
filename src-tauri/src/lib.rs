@@ -76,6 +76,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(SpectrogramState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -139,6 +140,11 @@ pub fn run() {
             dataset_compute_hardness,
             // ── Phase 7: Xeno-canto import ───────────────────────────
             xc_download_recording,
+            // ── Native spectrogram (long recordings) ─────────────────
+            spectrogram_open,
+            spectrogram_open_v2,
+            spectrogram_tile,
+            spectrogram_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SignaVis");

@@ -40,7 +40,17 @@ walkdir   = "2"
 sha2      = "0.10"
 hex       = "0.4"
 uuid      = { version = "1", features = ["v4"] }
+aw-dsp    = { path = "crates/aw-dsp" }
 
 
 
+
+
+# DSP must stay fast under `tauri dev` (unoptimised FFT is ~20x slower).
+[profile.dev.package.aw-dsp]
+opt-level = 3
+[profile.dev.package.realfft]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
 

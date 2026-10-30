@@ -46,8 +46,22 @@ export function getTimeGridSteps(pixelsPerSecond: number): { majorStep: number; 
         pixelsPerSecond >= 320 ? 0.5 :
         pixelsPerSecond >= 180 ? 1 :
         pixelsPerSecond >= 90  ? 2 :
-        pixelsPerSecond >= 45  ? 5 : 10;
+        pixelsPerSecond >= 45  ? 5 :
+        // Zoomed far out (long recordings): keep major lines ≥ ~200 px apart.
+        LONG_GRID_STEPS.find(step => step * pixelsPerSecond >= 200) ?? LONG_GRID_STEPS[LONG_GRID_STEPS.length - 1];
     return { majorStep, minorStep: majorStep / 2 };
+}
+
+const LONG_GRID_STEPS = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
+
+/** Grid label: seconds below one-minute steps, otherwise h:mm:ss / m:ss. */
+export function formatGridTime(t: number, majorStep: number): string {
+    if (majorStep < 60) return `${t.toFixed(1)}s`;
+    const s = Math.round(t);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 export function hexToRgb(hex: string): [number, number, number] | null {
