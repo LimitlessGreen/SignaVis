@@ -563,7 +563,7 @@ export class ViewportManager extends EventTarget {
         const vw       = Math.max(1, this._getViewportWidth());
         const d        = this._d;
         const minPps   = this._getMinPps();
-        const maxPps   = Math.max(minPps, Number(d.zoomSlider?.max || 450));
+        const maxPps   = Math.max(minPps, Number(d.zoomSlider?.max || 2000));
         const minSpanNorm = Math.max(MIN_WINDOW_NORM, (vw / maxPps) / duration);
         const maxSpanNorm = Math.min(1, (vw / minPps) / duration);
         return {
