@@ -909,13 +909,15 @@ export class PlayerState {
         // playhead (and the follow scroll derived from it) moves evenly.
         const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing);
 
-        if (this.d.playhead) this.d.playhead.style.transform = `translateX(${position}px)`;
-        if (this.d.waveformPlayhead) this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
-
         // Follow-mode scroll — delegated to ViewportManager
         if (fromPlayback && playing && this.followPlayback) {
             this._viewport.applyFollowScroll(position);
         }
+
+        // Smooth follow pins the playhead to a screen spot once settled.
+        const shownX = this._viewport.pinnedPlayheadX(playing) ?? position;
+        if (this.d.playhead) this.d.playhead.style.transform = `translateX(${shownX}px)`;
+        if (this.d.waveformPlayhead) this.d.waveformPlayhead.style.transform = `translateX(${shownX}px)`;
 
         this._syncOverviewWindowToViewport();
 
