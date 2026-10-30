@@ -105,7 +105,8 @@ export function buildUploadChecklist(input: ChecklistInput): ChecklistResult {
     {
         const issues: CheckIssue[] = [];
         if (!str(profile.name)) issues.push({ level: mode === 'upload' ? 'error' : 'warning', message: 'Your name is missing (set creator / annotator).', targets: [{ kind: 'profile' }] });
-        if (!str(profile.xcUsername)) issues.push({ level: 'warning', message: 'XC user ID is missing (set_creator_id / annotator_xc_id).', targets: [{ kind: 'profile' }] });
+        // Optional: without it XC leaves Creator ID empty and only records the uploader from the API key (verified on acc)
+        if (!str(profile.xcUsername)) issues.push({ level: 'warning', message: 'XC user ID is empty — XC will only record you as uploader, not as creator.', targets: [{ kind: 'profile' }] });
         steps.push({
             id: 'profile', title: 'Profile', status: stepStatus(issues),
             summary: [str(profile.name), str(profile.xcUsername)].filter(Boolean).join(' · ') || 'Not set',

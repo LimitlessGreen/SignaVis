@@ -29,7 +29,7 @@ const SET_LICENSES = ['', ...LICENSE_CODES.map(withLicenseVersion)];
 
 const AUTHOR_FIELDS = [
   { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },
-  { key: 'xcUsername', label: 'XC user ID',    type: 'text', placeholder: 'xeno-canto contributor ID', required: true },
+  { key: 'xcUsername', label: 'XC user ID',    type: 'text', placeholder: 'xeno-canto contributor ID (optional)' },
   { key: 'license',    label: 'Default License', type: 'select', options: SET_LICENSES },
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];

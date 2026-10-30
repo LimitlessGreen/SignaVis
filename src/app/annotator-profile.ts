@@ -44,7 +44,7 @@ export class AnnotatorProfile extends EventTarget {
      * Used to gate XC upload and dismiss the onboarding banner.
      */
     isComplete() {
-        return !!(this._data.name.trim() && this._data.xcUsername.trim());
+        return !!this._data.name.trim();  // XC user ID is optional (checklist warns)
     }
 
     // ── Setters ─────────────────────────────────────────────────────────
