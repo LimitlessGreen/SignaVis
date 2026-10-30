@@ -119,6 +119,9 @@ export class BirdNETPlayer {
     map: any;
     _stampBtn: any;
     _snapBtn: HTMLButtonElement | null = null;
+    _zoomBoxBtn: HTMLButtonElement | null = null;
+    /** Views before each zoom-box step (right-click in zoom-box mode goes back one). */
+    _zoomBoxHistory: { pps: number; startTime: number; freqMin: number | null; freqMax: number | null }[] = [];
     target: any;
     _drawBtn: any;
     trim: any;
@@ -737,6 +740,13 @@ export class BirdNETPlayer {
             this.root?.classList.toggle('snap-mode-active', on);
             this._emit('snapmodechange', (e as CustomEvent).detail);
         });
+        this.spectrogramLabels.addEventListener('zoomboxmodechange', (e: Event) => {
+            const on = (e as CustomEvent).detail?.active ?? false;
+            this._zoomBoxBtn?.classList.toggle('active', on);
+            this.root?.classList.toggle('zoombox-mode-active', on);
+        });
+        this.spectrogramLabels.addEventListener('zoomboxselect', (e: Event) => this._zoomToBox((e as CustomEvent).detail));
+        this.spectrogramLabels.addEventListener('zoomboxback', () => this._zoomBoxBack());
 
         // Tag events forwarded from LabelEditorModal via the layer
         const fwdTag = (layer: EventTarget) => {
@@ -887,6 +897,7 @@ export class BirdNETPlayer {
             if (on && this.spectrogramLabels) {
                 this.spectrogramLabels.exitStampMode();
                 this.spectrogramLabels.exitSnapMode();
+                this.spectrogramLabels.exitZoomBoxMode();
             }
             drawBtn.classList.toggle('active', on);
             this.root?.classList.toggle('draw-mode-active', on);
@@ -910,6 +921,7 @@ export class BirdNETPlayer {
                 }
                 // disable draw and snap mode when entering stamp mode
                 this.spectrogramLabels.exitSnapMode();
+                this.spectrogramLabels.exitZoomBoxMode();
                 this.spectrogramLabels.drawMode = false;
                 if (this._drawBtn) this._drawBtn.classList.remove('active');
                 this.root?.classList.remove('draw-mode-active');
@@ -929,6 +941,7 @@ export class BirdNETPlayer {
             const layer = this.spectrogramLabels;
             if (layer.snapMode) { layer.exitSnapMode(); return; }
             layer.exitStampMode();
+            layer.exitZoomBoxMode();
             layer.drawMode = false;
             this._drawBtn?.classList.remove('active');
             this.root?.classList.remove('draw-mode-active');
@@ -937,6 +950,63 @@ export class BirdNETPlayer {
             this.root?.classList.add('snap-mode-active');
         });
         secondary.appendChild(snapBtn);
+
+        // Zoom box ("Lupe") — drag a field to zoom time and frequency onto it
+        const zoomBoxBtn = document.createElement('button');
+        zoomBoxBtn.className = 'toolbar-btn toggle-btn';
+        zoomBoxBtn.title = 'Magnifier: drag a field to zoom into it (right-click = back, Esc = leave)';
+        zoomBoxBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg> Zoom`;
+        this._zoomBoxBtn = zoomBoxBtn;
+        zoomBoxBtn.addEventListener('click', () => {
+            const layer = this.spectrogramLabels;
+            if (layer.zoomBoxMode) { layer.exitZoomBoxMode(); return; }
+            layer.exitStampMode();
+            layer.exitSnapMode();
+            layer.drawMode = false;
+            this._drawBtn?.classList.remove('active');
+            this.root?.classList.remove('draw-mode-active');
+            layer.zoomBoxMode = true;
+            this._zoomBoxHistory = [];
+            zoomBoxBtn.classList.add('active');
+            this.root?.classList.add('zoombox-mode-active');
+        });
+        secondary.appendChild(zoomBoxBtn);
+    }
+
+    /** Zoom time and frequency so the dragged box fills the spectrogram view. */
+    _zoomToBox(box: { start: number; end: number; freqMin: number; freqMax: number }) {
+        const st = this._state;
+        if (!st?.audioBuffer) return;
+        const pps = st.pixelsPerSecond;
+        this._zoomBoxHistory.push({
+            pps,
+            startTime: st._getPrimaryScrollLeft() / pps,
+            freqMin: st._freqZoom.min,
+            freqMax: st._freqZoom.max,
+        });
+        const boundedMax = st.coords.boundedMaxFreq;
+        const minSpan = Math.max(100, boundedMax * 0.02);
+        let fMin = Math.max(0, box.freqMin);
+        let fMax = Math.min(boundedMax, box.freqMax);
+        if (fMax - fMin < minSpan) {
+            const mid = (fMin + fMax) / 2;
+            fMin = Math.max(0, mid - minSpan / 2);
+            fMax = Math.min(boundedMax, fMin + minSpan);
+        }
+        if (fMin <= 1 && fMax >= boundedMax - 1) st._freqZoom.reset();
+        else st._freqZoom.set(fMin, fMax);
+        const span = Math.max(0.01, box.end - box.start);
+        st._setPixelsPerSecond(st._getViewportWidth() / span, true, box.start, 0);
+    }
+
+    /** Restore the view from before the last zoom-box step. */
+    _zoomBoxBack() {
+        const st = this._state;
+        const prev = this._zoomBoxHistory.pop();
+        if (!st?.audioBuffer || !prev) return;
+        if (prev.freqMin == null || prev.freqMax == null) st._freqZoom.reset();
+        else st._freqZoom.set(prev.freqMin, prev.freqMax);
+        st._setPixelsPerSecond(prev.pps, true, prev.startTime, 0);
     }
 
     /** Public getter for current species bar selection. */

@@ -44,3 +44,7 @@
 .daw-shell.snap-mode-active .spectrogram-canvas-wrapper {
     cursor: cell;
 }
+
+.daw-shell.zoombox-mode-active .spectrogram-canvas-wrapper {
+    cursor: zoom-in;
+}
