@@ -977,13 +977,6 @@ export class SpectrogramController extends EventTarget {
         this._drawOverlays(p);
     }
 
-    /** CPU path: scale the stage-2 base image into the viewport. */
-    private _drawBaseImage(p: any) {
-        if (!this._baseCanvas || !this._audioBuffer) return;
-
-        let freqViewSrcCrop = null;
-        if (p.freqViewMin != null && p.freqViewMax != null) {
-            const baseH = this._baseCanvas.height;
     /**
      * Scroll extent and viewport canvas size. Runs on every scroll frame, so
      * unchanged sizes are left alone: a canvas resize reallocates its bitmap
@@ -1008,6 +1001,13 @@ export class SpectrogramController extends EventTarget {
         ctx.imageSmoothingEnabled = true;
     }
 
+    /** CPU path: scale the stage-2 base image into the viewport. */
+    private _drawBaseImage(p: any) {
+        if (!this._baseCanvas || !this._audioBuffer) return;
+
+        let freqViewSrcCrop = null;
+        if (p.freqViewMin != null && p.freqViewMax != null) {
+            const baseH = this._baseCanvas.height;
             const srcYTop    = p.coords.frequencyToBaseYFraction(p.freqViewMax) * baseH;
             const srcYBottom = p.coords.frequencyToBaseYFraction(p.freqViewMin) * baseH;
             freqViewSrcCrop = { srcY: srcYTop, srcH: Math.max(1, srcYBottom - srcYTop) };

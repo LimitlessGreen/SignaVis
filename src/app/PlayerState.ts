@@ -934,7 +934,6 @@ export class PlayerState {
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
     }
 
-    // The remaining pipeline methods (_generateSpectrogram, _setExternalSpectrogram,
     /**
      * Spectrogram + waveform for the current scroll / zoom, drawn once per view:
      * setting scrollLeft (overview drag, zoom) draws right away, and the scroll
@@ -961,6 +960,7 @@ export class PlayerState {
         }
     }
 
+    // The remaining pipeline methods (_generateSpectrogram, _setExternalSpectrogram,
     // _setExternalSpectrogramImage, _autoContrast, _autoFrequency, _buildSpectrogramGrayscale,
     // etc.) now live in SpectrogramController. PlayerState delegates via this._spectro.
 
@@ -1158,8 +1158,8 @@ export class PlayerState {
         if (!wrapper) return;
         if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
-            const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
             // Wheels and touchpads send several events per frame: zoom once per frame.
+            const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
             const pending = this._pendingWheelZoom;
             if (pending) {
                 pending.factor *= factor;
@@ -1179,8 +1179,8 @@ export class PlayerState {
         // Shift + Wheel = vertical frequency zoom (spectrogram only)
         if (event.shiftKey && source !== 'waveform' && this._showSpectrogram) {
             event.preventDefault();
-            const { freq } = this.coords.clientToTimeFreq(event.clientX, event.clientY, rect, wrapper.scrollLeft);
             const rect = wrapper.getBoundingClientRect();
+            const { freq } = this.coords.clientToTimeFreq(event.clientX, event.clientY, rect, wrapper.scrollLeft);
             const zoomIn = event.deltaY < 0;
             this._freqZoom.zoom(zoomIn ? 1.15 : 1 / 1.15, freq);
             return;
