@@ -4,20 +4,24 @@
 // The whole file is computed once by WasmSpectrogramService (Rust/WASM,
 // multi-worker, cached in OPFS) into a max-pooled level pyramid. This class
 // only fetches the frames visible at the current zoom, picking the coarsest
-// level that still has ≥ 1 frame per display pixel, and colorizes them.
+// level that still has ≥ 1 frame per display pixel, and renders them: on the
+// GPU straight from the dB values (renderGpu), otherwise colorized on the CPU
+// when first drawn (renderToCanvas; CLAHE, PCEN, legacy contrast).
 //
 // Same public surface as SpectrogramTileManager so SpectrogramController can
 // treat both alike.
 //
 // Events emitted:
-//   'tileready'  — a tile finished and was colorized
+//   'tileready'  — a tile finished loading (or the colour options changed)
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
     drawTimeGrid,
+    limitBandFloor,
 } from '../domain/spectrogram.ts';
+import type { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily in create().
 import type {
     WasmSpectrogramService,
@@ -339,10 +343,85 @@ export class WasmTileManager extends EventTarget {
 
     updateColorOptions(opts: TileColorOptions): void {
         this.colorOptions = opts;
-        for (const tile of this.tiles.values()) {
-            if (tile.state === 'ready') this._colorize(tile);
-        }
+        // Re-colorized lazily by renderToCanvas; the GPU path needs no canvases.
+        for (const tile of this.tiles.values()) tile.canvas = null;
         this.dispatchEvent(new CustomEvent('tileready'));
+    }
+
+    /** dB window [lo, hi] for tiles of `level`; null when the values are not dB or the sliders are %. */
+    private dbWindow(level: number): [number, number] | null {
+        const opts = this.colorOptions;
+        if (!this.dbValues || opts.floorDb === undefined || opts.rangeDb === undefined) return null;
+        // Each level uses its own noise floor (max pooling raises it).
+        const lo = (opts.noiseReduction ? 0 : this.contrastRange(level)[0]) + opts.floorDb;
+        return [lo, lo + opts.rangeDb];
+    }
+
+    /** True when renderGpu can draw the tiles: dB values and window, no CLAHE. */
+    get gpuEligible(): boolean {
+        return this.dbWindow(0) !== null && !this.colorOptions.clahe;
+    }
+
+    /** Level-0 frame centres are at i · hop; a tile's first frame centre is its start time. */
+    private tileGeometry(tile: Tile, pps: number, scrollLeft: number) {
+        const frameSec = this.meta.levels[tile.level].factor * this.frameSec;
+        const t0 = tile.idx * TILE_FRAMES * frameSec;
+        return {
+            frameSec, t0,
+            x0: (t0 - frameSec / 2) * pps - scrollLeft,
+            x1: (t0 + (tile.nFrames - 0.5) * frameSec) * pps - scrollLeft,
+        };
+    }
+
+    /** Ready tiles of all loaded levels, the target level last so it is drawn on top. */
+    private drawOrder(pps: number): Tile[] {
+        const target = this.levelFor(pps);
+        return [...this.tiles.values()]
+            .filter(t => t.state === 'ready' && t.data)
+            .sort((a, b) => Math.abs(b.level - target) - Math.abs(a.level - target));
+    }
+
+    /**
+     * Renders the visible tiles into `view` (sized width × height) straight from
+     * their dB values. LUT is set by the caller. False → use renderToCanvas.
+     */
+    renderGpu(view: GpuSpectrogramView, params: {
+        width: number;
+        height: number;
+        pixelsPerSecond: number;
+        scrollLeft: number;
+        /** Fractional bin at the top edge, and bins per pixel downwards. */
+        binTop: number;
+        binsPerPx: number;
+    }): HTMLCanvasElement | null {
+        if (!this.gpuEligible || !view.ok) return null;
+        const { width, height, pixelsPerSecond: pps, scrollLeft } = params;
+        const useFloor = !!this.colorOptions.noiseReduction;
+        view.clear(width, height);
+        let floorLevel = -1;
+        for (const tile of this.drawOrder(pps)) {
+            const g = this.tileGeometry(tile, pps, scrollLeft);
+            const x0 = Math.floor(Math.max(0, g.x0));
+            const x1 = Math.ceil(Math.min(width, g.x1));
+            if (x1 <= x0) continue;
+            tile.lastUsed = Date.now();
+            if (!view.setData(tile.data!, tile.nFrames, this.nMels)) return null;
+            if (useFloor && floorLevel !== tile.level) {
+                const floor = this.meta.levels[tile.level]?.stats.bandFloor;
+                view.setBandFloor(floor ? limitBandFloor(floor) : null);
+                floorLevel = tile.level;
+            }
+            const [lo, hi] = this.dbWindow(tile.level)!;
+            const framesPerPx = 1 / (g.frameSec * pps);
+            view.render({
+                width, height, x0, x1,
+                frame0: (scrollLeft / pps - g.t0) / g.frameSec,
+                framesPerPx,
+                binTop: params.binTop, binsPerPx: params.binsPerPx,
+                lo, hi, useFloor: useFloor && floorLevel === tile.level,
+            });
+        }
+        return view.canvas;
     }
 
     // ── Rendering ───────────────────────────────────────────────────
@@ -369,7 +448,7 @@ export class WasmTileManager extends EventTarget {
         for (const level of levels) {
             const frameSec = this.meta.levels[level].factor * this.frameSec;
             for (const tile of this.tiles.values()) {
-                if (tile.level !== level || tile.state !== 'ready' || !tile.canvas) continue;
+                if (tile.level !== level || tile.state !== 'ready') continue;
                 // Centred frames: level-0 frame i covers [(i − ½)·hop, (i + ½)·hop).
                 const t0 = tile.idx * TILE_FRAMES * frameSec - (this.v2 ? this.frameSec / 2 : 0);
                 const x0 = t0 * pps - scrollLeft;
@@ -382,6 +461,8 @@ export class WasmTileManager extends EventTarget {
                 const visRight = Math.ceil(Math.min(viewportWidth, x1));
                 if (visRight <= visLeft) continue;
 
+                if (!tile.canvas) this._colorize(tile);
+                if (!tile.canvas) continue;
                 const w = tile.canvas.width;
                 const srcX = ((visLeft - x0) / (x1 - x0)) * w;
                 const srcW = Math.max(1, ((visRight - visLeft) / (x1 - x0)) * w);
@@ -443,7 +524,6 @@ export class WasmTileManager extends EventTarget {
             tile.nFrames = f1 - f0;
             tile.state = 'ready';
             this.tilesComputed++;
-            this._colorize(tile);
             this.dispatchEvent(new CustomEvent('tileready', { detail: { key: tile.key } }));
         } catch (err) {
             if (!this.disposed) {
@@ -457,13 +537,9 @@ export class WasmTileManager extends EventTarget {
         if (!tile.data || tile.nFrames <= 0) return;
         const opts = this.colorOptions;
         // v2 + dB sliders: one window [noise + floor, noise + floor + range] in dB.
-        // Each level uses its own noise floor (max pooling raises it).
-        const dbWindow = this.dbValues && opts.floorDb !== undefined && opts.rangeDb !== undefined;
-        let [lo, hi] = this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax];
-        if (dbWindow) {
-            lo = (opts.noiseReduction ? 0 : lo) + opts.floorDb!;
-            hi = lo + opts.rangeDb!;
-        }
+        const dbWindow = this.dbWindow(tile.level);
+        const [lo, hi] = dbWindow
+            ?? (this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax]);
         const grayInfo = buildSpectrogramGrayscale({
             spectrogramData:      tile.data,
             spectrogramFrames:    tile.nFrames,

@@ -999,7 +999,12 @@ export class SpectrogramController extends EventTarget {
             this._d.spectrogramCanvas.height = canvasHeight;
 
             const ctx = this._d.spectrogramCanvas.getContext('2d');
-            if (ctx) {
+            const gpu = ctx ? this._drawGpuTiles(tm, p, width, canvasHeight, sl) : null;
+            if (ctx && gpu) {
+                ctx.clearRect(0, 0, width, canvasHeight);
+                ctx.drawImage(gpu, 0, 0);
+                drawTimeGrid({ ctx, width, height: canvasHeight, duration, pixelsPerSecond: p.pixelsPerSecond, scrollLeft: sl });
+            } else if (ctx) {
                 ctx.clearRect(0, 0, width, canvasHeight);
 
                 let freqViewSrcCrop = null;
@@ -1118,6 +1123,24 @@ export class SpectrogramController extends EventTarget {
         ctx.drawImage(out, 0, 0);
         drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond: p.pixelsPerSecond, scrollLeft: sl });
         return true;
+    }
+
+    /** Tile mode on the GPU (dB values and window, no CLAHE/phase). Null → CPU tiles. */
+    private _drawGpuTiles(tm: SpectrogramTileManager | WasmTileManager, p: any,
+                          width: number, height: number, scrollLeft: number): HTMLCanvasElement | null {
+        if (!(tm instanceof WasmTileManager) || !tm.gpuEligible || !this._gainDbMode) return null;
+        if ((this._colourScale || this._d.colourScaleSelect?.value || 'dbSquared') === 'phase') return null;
+        const view = (this._gpuView ??= new GpuSpectrogramView());
+        if (!view.ok) return null;
+        // The tiles replace the band floor and data on the view; the full-data path re-uploads.
+        this._gpuFloorRef = null;
+        const scheme = p.colorScheme || this._d.colorSchemeSelect?.value || 'grayscale';
+        view.setLut(scheme, (t) => getSpectrogramColor(t, scheme));
+        const binTop = p.coords.yFractionToBinFractional(0);
+        return tm.renderGpu(view, {
+            width, height, pixelsPerSecond: p.pixelsPerSecond, scrollLeft,
+            binTop, binsPerPx: (binTop - p.coords.yFractionToBinFractional(1)) / height,
+        });
     }
 
     /** Spectral overlays and axis sync after the spectrogram itself is drawn. */
