@@ -22,6 +22,8 @@ import {
 import type {
     WasmSpectrogramService,
     WasmSpecParams,
+    StftParamsV2,
+    AnySpecParams,
     PyramidMeta,
 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 import type { TileColorOptions } from './SpectrogramTileManager.ts';
@@ -58,6 +60,36 @@ export function wasmParamsFromDspOptions(o: Record<string, any>): WasmSpecParams
             : null,
     };
 }
+
+/**
+ * v2 engine params (dBFS / PCEN, centred frames) from the same DSP options.
+ * Returns null for modes v2 does not produce (phase, raw-magnitude scales, CQT).
+ */
+export function wasmV2ParamsFromDspOptions(o: Record<string, any>): StftParamsV2 | null {
+    if (o.scale !== 'mel' && o.scale !== 'linear') return null;
+    if (o.colourScale && o.colourScale !== 'dbSquared' && o.colourScale !== 'db') return null;
+    const winLen = o.windowSize || 0;
+    const nFft = Math.max(o.fftSize || 0, winLen);
+    if (!winLen || !o.hopSize) return null;
+    const fn = o.windowFunction || 'hann';
+    const window = fn === 'kaiser' ? { kind: 'kaiser' as const, beta: 6 }
+        : ['hann', 'hamming', 'blackman', 'blackmanHarris'].includes(fn) ? { kind: fn } : null;
+    if (!window) return null;
+    const reassign = !!o.reassigned;
+    return {
+        winLen, hop: o.hopSize, nFft,
+        window: window as StftParamsV2['window'],
+        // fMax 0 → Nyquist (resolved in the worker).
+        scale: o.scale === 'linear' ? { kind: 'linear' } : { kind: 'mel', bands: o.nMels, fMin: 0, fMax: 0 },
+        // Reassignment and PCEN are exclusive; reassignment wins when both are set.
+        pcen: o.usePcen && !reassign
+            ? { gain: o.pcenGain, bias: o.pcenBias, power: 1 / (o.pcenRoot || 2), eps: 1e-6, smoothing: o.pcenSmoothing }
+            : null,
+        reassign,
+    };
+}
+
+const isV2 = (p: AnySpecParams): p is StftParamsV2 => typeof (p as StftParamsV2).winLen === 'number';
 
 /** Any source qualifies: WAV files are read directly, everything else via pcmWavBlob(). */
 export function isWasmTileSource(file: File | null): file is File {
@@ -113,7 +145,7 @@ export class WasmTileManager extends EventTarget {
         file: File;
         /** Data actually read by the workers; defaults to `file` (cache key stays `file`). */
         source?: Blob;
-        wasmParams: WasmSpecParams;
+        wasmParams: AnySpecParams;
         duration: number;
         colorOptions: TileColorOptions;
         onProgress?: (fraction: number) => void;
@@ -138,16 +170,40 @@ export class WasmTileManager extends EventTarget {
         this.fromCache = fromCache;
         this.nMels = meta.bins;
         this.duration = duration;
-        this.frameSec = meta.params.hopSize / meta.params.sampleRate;
+        this.v2 = isV2(meta.params);
+        this.frameSec = this.hopSize / meta.params.sampleRate;
         this.colorOptions = colorOptions;
         // Level-0 range of the whole file: stable, so tiles never need re-colorizing.
-        this.globalMin = meta.stats.min;
-        this.globalMax = meta.stats.max;
+        // v2 (dBFS / PCEN): black point at the median — the noise floor of sparse
+        // recordings such as bird song — instead of the minimum, which leaves
+        // the background mid-grey.
+        [this.globalMin, this.globalMax] = this.contrastRange(0);
+    }
+
+    /** v2 stores use centred frames (frame i at i·hop) and noise-floor contrast. */
+    private readonly v2: boolean;
+
+    /** Black/white points come from the noise floor (median) and p99.9. */
+    get noiseFloorContrast(): boolean { return this.v2; }
+
+    /** Black/white point for tiles of `level` (max-pooled levels are brighter). */
+    private contrastRange(level: number): [number, number] {
+        const st = this.meta.levels[level]?.stats ?? this.meta.stats;
+        if (this.v2 && st.median !== undefined && st.p999 !== undefined && st.p999 > st.median) {
+            return [st.median, st.p999];
+        }
+        return [this.meta.stats.min, this.meta.stats.max];
     }
 
     get hasTiles(): boolean { return this.tilesComputed > 0; }
-    get hopSize(): number { return this.meta.params.hopSize; }
-    get winLength(): number { return this.meta.params.winLength; }
+    get hopSize(): number {
+        const p = this.meta.params;
+        return isV2(p) ? p.hop : (p as WasmSpecParams).hopSize;
+    }
+    get winLength(): number {
+        const p = this.meta.params;
+        return isV2(p) ? p.winLen : (p as WasmSpecParams).winLength;
+    }
 
     firstReadyTileData(): Float32Array | null {
         for (const tile of this.tiles.values()) {
@@ -247,7 +303,8 @@ export class WasmTileManager extends EventTarget {
             const frameSec = this.meta.levels[level].factor * this.frameSec;
             for (const tile of this.tiles.values()) {
                 if (tile.level !== level || tile.state !== 'ready' || !tile.canvas) continue;
-                const t0 = tile.idx * TILE_FRAMES * frameSec;
+                // Centred frames: level-0 frame i covers [(i − ½)·hop, (i + ½)·hop).
+                const t0 = tile.idx * TILE_FRAMES * frameSec - (this.v2 ? this.frameSec / 2 : 0);
                 const x0 = t0 * pps - scrollLeft;
                 const x1 = (t0 + tile.nFrames * frameSec) * pps - scrollLeft;
                 if (x1 <= 0 || x0 >= viewportWidth) continue;
@@ -332,14 +389,15 @@ export class WasmTileManager extends EventTarget {
     private _colorize(tile: Tile): void {
         if (!tile.data || tile.nFrames <= 0) return;
         const opts = this.colorOptions;
+        const [lo, hi] = this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax];
         const grayInfo = buildSpectrogramGrayscale({
             spectrogramData:      tile.data,
             spectrogramFrames:    tile.nFrames,
             spectrogramMels:      this.nMels,
             sampleRateHz:         this.meta.params.sampleRate,
             maxFreq:              opts.maxFreq,
-            spectrogramAbsLogMin: this.globalMin,
-            spectrogramAbsLogMax: this.globalMax,
+            spectrogramAbsLogMin: lo,
+            spectrogramAbsLogMax: hi,
             scale:                opts.scale,
             colourScale:          opts.colourScale,
             noiseReduction:       opts.noiseReduction,

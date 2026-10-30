@@ -20,6 +20,9 @@ export const PROGRESSIVE_MIN_DURATION_SEC = 60;
 // ─── Tile-based lazy rendering (for long audio files) ──────────────
 export const TILE_MODE_MIN_DURATION_SEC = Infinity; // tile mode disabled for now
 export const WASM_TILE_MIN_DURATION_SEC = 10 * 60; // long WAV files use the WASM pyramid
+/** Spectrogram DSP engine: 'v2' = Rust aw_dsp::v2 (dBFS / PCEN, centred
+ *  frames) via WASM where the settings allow it, 'v1' = previous pipeline. */
+export const SPECTROGRAM_ENGINE: 'v1' | 'v2' = 'v2';
 export const TILE_SECONDS = 30;                // audio seconds covered by one tile
 export const TILE_MAX_IN_MEMORY = 16;          // LRU limit (16 × 30 s = 8 min in RAM)
 export const PERCH_FRAME_RATE = 100;
