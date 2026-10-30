@@ -83,6 +83,7 @@ export class BirdNETPanel {
     geoThresholdInput: any;
     geoThresholdVal: any;
     getAudioBuffer: any;
+    getContext: any;
     latInput: any;
     lonInput: any;
     mapBtn: any;
@@ -119,6 +120,8 @@ export class BirdNETPanel {
    * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
    * @param {(labels: any[]) => void} opts.onResults
    * -- Geo / location (all optional) --
+   * @param {() => {coords: {lat:number,lon:number}|null, date: string|null}|null} [opts.getContext]
+   *        Recording context (single coordinate/date source); replaces the lat/lon inputs when given
    * @param {HTMLInputElement} [opts.latInput]
    * @param {HTMLInputElement} [opts.lonInput]
    * @param {HTMLButtonElement} [opts.geoBtn]
@@ -194,6 +197,7 @@ export class BirdNETPanel {
   }
 
   _getCoords() {
+    if (this.getContext) return this.getContext()?.coords ?? null;
     if (!this.latInput || !this.lonInput) return null;
     const lat = parseFloat(this.latInput.value);
     const lon = parseFloat(this.lonInput.value);
@@ -234,7 +238,12 @@ export class BirdNETPanel {
   getCoords() { return this._getCoords(); }
 
   /** Return the recording date string used for season-aware geo filtering, or null. */
-  getRecordingDate() { return this._recordingDate || null; }
+  getRecordingDate() { return this._date(); }
+
+  _date() {
+    if (this.getContext) return this.getContext()?.date || null;
+    return this._recordingDate || null;
+  }
 
   /**
    * Load the BirdNET model without running analysis.
@@ -419,10 +428,10 @@ export class BirdNETPanel {
       if (coords && this.birdnet.hasAreaModel) {
         this.statusEl.textContent = 'Applying location filter…';
         const geoResult = await this.birdnet.setLocation(coords.lat, coords.lon, {
-          date: this._recordingDate || undefined,
+          date: this._date() || undefined,
         });
         if (geoResult.ok && geoResult.week) {
-          const dateLabel = this._recordingDate
+          const dateLabel = this._date()
             ? `recording date (week ${geoResult.week})`
             : `today (week ${geoResult.week})`;
           this.statusEl.textContent = `Location filter applied — ${dateLabel}`;

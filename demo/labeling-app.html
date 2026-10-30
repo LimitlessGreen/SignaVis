@@ -199,20 +199,9 @@
     </div>
     <div class="sidebar-section-header">Location</div>
     <div class="panel-section">
-      <label class="field-label">Coordinates <span class="meta" id="birdnetGeoStatus"></span></label>
-      <div class="geo-input-row">
-        <input id="birdnetLat" class="input" type="number" step="0.0001" min="-90"  max="90"  placeholder="Latitude" />
-        <input id="birdnetLon" class="input" type="number" step="0.0001" min="-180" max="180" placeholder="Longitude" />
-      </div>
-      <div class="geo-action-row">
-        <button id="birdnetGeoBtn" type="button" class="geo-action-btn">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
-          Locate
-        </button>
-        <button id="birdnetMapBtn" type="button" class="geo-action-btn">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-          Map
-        </button>
+      <div class="birdnet-location-line">
+        <span id="birdnetLocationLine" class="meta">No location set</span>
+        <button class="tb-btn" id="birdnetLocationEditBtn" type="button" title="Edit the recording's location in the Project tab">Edit</button>
       </div>
       <label class="field-check geo-filter-toggle" id="birdnetGeoFilterLabel"
         title="Needs the BirdNET area model — available once a model with area model is loaded">
@@ -260,6 +249,9 @@
     </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
     <div id="recordingExplorerMount"></div>
+
+    <div class="sidebar-section-header">Recording context</div>
+    <div id="recordingContextBlock" class="panel-section rc-block"></div>
 
     <div class="props-section">
       <div class="props-section-title xc-section-hdr"><span>Current recording (from XC)</span></div>
@@ -539,6 +531,8 @@
     import { showUndoToast } from '../src/ui/components/toast/undo-toast.ts';
     import { buildUploadChecklist } from '../src/app/upload-checklist.ts';
     import { UploadAssistant } from '../src/ui/panels/upload-assistant.ts';
+    import { resolveRecordingContext, formatCoords, CONTEXT_SOURCE_TEXT } from '../src/app/recording-context.ts';
+    import { RecordingContextBlock } from '../src/ui/panels/recording-context-block.ts';
     import {
       loadAnalysisBackendConfig,
       normalizeAnalysisBackendConfig,
@@ -1509,6 +1503,7 @@
         birdnetPanel.setLocationFromMeta(null);
       }
       xcPanel._rebuildSetSection?.();
+      try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
       const _entryMeta = entry.xcRecordingMeta;
       const _entryGen  = _entryMeta?.gen || '';
       const _entryEn   = _entryMeta?.en  || '';
@@ -1919,15 +1914,11 @@
       progressBar:        document.getElementById('birdnetProgressBar'),
       statusEl:           document.getElementById('birdnetStatus'),
       analyzeBtn:         document.getElementById('birdnetAnalyzeBtn'),
-      latInput:           document.getElementById('birdnetLat'),
-      lonInput:           document.getElementById('birdnetLon'),
-      geoBtn:             document.getElementById('birdnetGeoBtn'),
-      mapBtn:             document.getElementById('birdnetMapBtn'),
+      getContext:         () => recordingContextForAnalysis(),
       geoThresholdInput:   document.getElementById('birdnetGeoThreshold'),
       geoThresholdVal:     document.getElementById('birdnetGeoThresholdVal'),
       geoFilterCheckbox:   document.getElementById('birdnetGeoFilterEnabled'),
       geoFilterSliderWrap: document.getElementById('birdnetGeoFilterSliderWrap'),
-      geoStatusEl:         document.getElementById('birdnetGeoStatus'),
       birdnet,
       getAudioBuffer: () => player._state?.audioBuffer,
       resolveLabel: (det, audioBuffer) => {
@@ -1951,6 +1942,63 @@
         syncToPlayer();
         sidebar.setActive('labels');
       },
+    });
+
+    // ── Recording context (date/time, location, device) ──────────────
+    // One source for BirdNET's geo filter and Explore; manual values override XC / GUANO / file name.
+    const recordingContextBlock = new RecordingContextBlock({
+      el: document.getElementById('recordingContextBlock'),
+      onChange: (field, value) => {
+        const entry = recordingManager.getActive();
+        if (!entry) return;
+        const manual = { ...(entry.context || {}) };
+        if (value == null || value === '') delete manual[field]; else manual[field] = value;
+        recordingManager.update(entry.id, { context: manual });
+        renderRecordingContext();
+      },
+    });
+
+    function currentRecordingContext() {
+      const entry = recordingManager.getActive();
+      if (!entry) return null;
+      return resolveRecordingContext({
+        manual: entry.context,
+        xc: entry.xcRecordingMeta || state.recordingMeta,
+        guano: entry.guano,
+        filename: entry.filename,
+      });
+    }
+
+    function recordingContextForAnalysis() {
+      const ctx = currentRecordingContext();
+      return ctx ? { coords: ctx.coords.value, date: ctx.date.value } : null;
+    }
+
+    function renderRecordingContext() {
+      const ctx = currentRecordingContext();
+      recordingContextBlock.render(ctx);
+      const line = document.getElementById('birdnetLocationLine');
+      if (ctx?.coords.value) {
+        const date = ctx.date.value ? ` · ${ctx.date.value}` : '';
+        line.textContent = `📍 ${formatCoords(ctx.coords.value, 3)}${date} (${CONTEXT_SOURCE_TEXT[ctx.coords.source]})`;
+      } else {
+        line.textContent = 'No location set — the geo filter needs one.';
+      }
+    }
+
+    document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => sidebar.setActive('project'));
+    recordingManager.addEventListener('activechange', () => renderRecordingContext());
+    recordingManager.addEventListener('change', () => renderRecordingContext());
+    renderRecordingContext();
+
+    // GUANO metadata arrives with the ultrasound analysis of a loaded WAV
+    player.on('ultrasoundinfo', (e) => {
+      const entry = recordingManager.getActive();
+      const guano = e.detail?.guano || null;
+      if (entry && JSON.stringify(entry.guano || null) !== JSON.stringify(guano)) {
+        recordingManager.update(entry.id, { guano });
+      }
+      renderRecordingContext();
     });
 
     // ── Explore panel (species cards) ─────────────────────────────────
@@ -2132,6 +2180,7 @@
       state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
       state.recordingMeta = result.recordingMeta || null;
       birdnetPanel.setLocationFromMeta(state.recordingMeta);
+      try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
       const recGen = result.recording?.gen || '';
       const recEn = result.recording?.en || '';
       propsPanel.setRecordingMeta(state.recordingMeta, {
