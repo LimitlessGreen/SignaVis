@@ -158,10 +158,8 @@
   <div id="panelBirdnet" class="scroll-panel" hidden>
     <div class="sidebar-section-header" style="display:flex;align-items:center;justify-content:space-between;">
       <span>Detection</span>
-      <button id="birdnetBackendToggle" type="button" title="Backend &amp; Model settings"
-        aria-expanded="false" aria-controls="birdnetBackendWrap"
-        onclick="(function(btn){var w=document.getElementById('birdnetBackendWrap');var opening=w.hidden;w.hidden=!opening;btn.style.opacity=opening?'1':'0.45';btn.setAttribute('aria-expanded',String(opening));})(this)"
-        style="background:none;border:none;cursor:pointer;padding:2px 4px;color:var(--color-text-muted,#9CA3AF);display:flex;align-items:center;gap:3px;font-size:0.68rem;opacity:0.45;line-height:1;border-radius:3px;">
+      <button id="birdnetBackendToggle" class="birdnet-backend-toggle" type="button" title="Backend &amp; Model settings"
+        aria-expanded="false" aria-controls="birdnetBackendWrap">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Backend
       </button>
@@ -232,10 +230,11 @@
           Map
         </button>
       </div>
-      <label class="field-check geo-filter-toggle">
-        <input id="birdnetGeoFilterEnabled" type="checkbox" />
+      <label class="field-check geo-filter-toggle" id="birdnetGeoFilterLabel"
+        title="Needs the BirdNET area model — available once a model with area model is loaded">
+        <input id="birdnetGeoFilterEnabled" type="checkbox" disabled />
         Enable geo filter
-        <span class="meta" style="margin-left:4px">(requires area model)</span>
+        <span class="meta" id="birdnetGeoFilterHint">(needs area model)</span>
       </label>
       <div id="birdnetGeoFilterSliderWrap" hidden>
         <div class="slider-row" style="margin-top:6px">
@@ -246,10 +245,10 @@
       </div>
     </div>
     <div class="sidebar-section-header">Run</div>
-    <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none">
+    <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none" role="progressbar" aria-label="BirdNET progress">
       <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
     </div>
-    <span id="birdnetStatus" class="meta" style="padding:0 14px"></span>
+    <span id="birdnetStatus" class="meta birdnet-status" aria-live="polite"></span>
     <div class="panel-actions">
       <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
     </div>
@@ -1824,6 +1823,13 @@
     });
 
     // ── BirdNET panel ─────────────────────────────────────────────────
+    const birdnetBackendToggle = document.getElementById('birdnetBackendToggle');
+    birdnetBackendToggle?.addEventListener('click', () => {
+      const wrap = document.getElementById('birdnetBackendWrap');
+      if (!wrap) return;
+      wrap.hidden = !wrap.hidden;
+      birdnetBackendToggle.setAttribute('aria-expanded', String(!wrap.hidden));
+    });
     const birdnetPanel = new BirdNETPanel({
       modelUrlInput:      document.getElementById('birdnetModelUrl'),
       confidenceInput:    document.getElementById('birdnetConfidence'),
@@ -2209,9 +2215,15 @@
 
     // XC export modal is provided by demo/xc-export-modal.js (instantiated later)
 
+    let _xcNokeyShownThisSession = false;
     function showXcNokeyModal() {
+      if (xcPanel.apiKey) return false;
       const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
-      if (dismissed || xcPanel.apiKey) return false;
+      if (dismissed || _xcNokeyShownThisSession) {
+        selectionMeta.textContent = 'No XC API key — add one in the Xeno Canto tab to load and upload annotations.';
+        return false;
+      }
+      _xcNokeyShownThisSession = true;
       xcNokeyKeyInput.value = '';
       xcNokeySetKeyBtn.disabled = true;
       xcNokeyModalManager.open();
@@ -2335,74 +2347,37 @@
     const xcExportSetBtn = document.getElementById('xcExportSetBtn');
     const xcUploadBtn = document.getElementById('xcUploadBtn');
 
+    /**
+     * Labels of one annotation set across all recordings of the session, each tagged with
+     * the recording's xc_nr / sound_file. Without a set (or without recording entries)
+     * the labels of the current recording are used. Shared by export, upload and the upload button.
+     */
+    function collectSetLabels(setId = state.activeSetId || xcPanel._activeSetId) {
+      // Persist in-memory labels first so per-entry `annotations` include the active recording.
+      saveCurrentAnnotationsIfNeeded();
+      const entries = recordingManager.getAll();
+      const tag = (l, entry) => {
+        const copy = { ...l };
+        if (entry?.xcId && !copy.xc_nr) copy.xc_nr = entry.xcId;
+        if (entry?.filename && !copy.sound_file) copy.sound_file = entry.filename;
+        return copy;
+      };
+      if (setId && entries.length) {
+        const out = [];
+        for (const entry of entries) {
+          for (const a of entry.annotations || []) {
+            if (a.setId === setId) out.push(tag(a, entry));
+          }
+        }
+        return dedupeLabels(out);
+      }
+      return dedupeLabels((state.labels || []).map((l) => tag(l, recordingManager.getActive())));
+    }
+
     // Initialize extracted export modal and wire it to xcPanel
     window.xcExportModalApi = createXcExportModal({
-      buildPayload: () => {
-        // Prefer the global active set from the demo state; fall back to xcPanel internal.
-        try {
-            // Ensure any in-memory active labels are persisted to their RecordingEntry
-            // so aggregation can rely on per-entry `annotations` and avoid double-including
-            // the active recording's labels.
-            saveCurrentAnnotationsIfNeeded();
-            const activeSetId = state.activeSetId || xcPanel._activeSetId;
-            if (state.mode === 'multifile' && activeSetId) {
-            const all = recordingManager.getAll();
-            const aggregated = [];
-            for (const entry of all) {
-              const anns = entry.annotations || [];
-              for (const a of anns) {
-                if (a.setId === activeSetId) {
-                  const copy = { ...a };
-                  if (entry.xcId) copy.xc_nr = entry.xcId;
-                  aggregated.push(copy);
-                }
-              }
-            }
-              // At this point the active recording's labels (if any) have been
-              // saved into the corresponding entry by
-              // `saveCurrentAnnotationsIfNeeded()`, so iterating `entry.annotations`
-              // above is sufficient and avoids adding `state.labels` again.
-              console.debug('[XC export] buildPayload aggregated (from entries)', { count: aggregated.length, activeSetId, recordingIds: all.map(r => r.id) });
-            const deduped = dedupeLabels(aggregated);
-            console.debug('[XC export] buildPayload deduped', { before: aggregated.length, after: deduped.length, activeSetId });
-            return xcPanel.buildAnnotationSetPayload(deduped, state.labelSets, state.recordingEditMeta);
-          }
-        } catch (e) { /* fallback to single-recording export on error */ }
-        console.debug('[XC export] buildPayload single-recording', { count: (state.labels || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
-        const singleDedup = dedupeLabels(state.labels || []);
-        console.debug('[XC export] buildPayload single-recording deduped', { before: (state.labels || []).length, after: singleDedup.length, activeSetId: state.activeSetId || xcPanel._activeSetId });
-        return xcPanel.buildAnnotationSetPayload(singleDedup, state.labelSets, state.recordingEditMeta);
-      },
-      upload: () => {
-          try {
-          // Ensure in-memory active labels are persisted before upload aggregation
-          saveCurrentAnnotationsIfNeeded();
-          const activeSetId = state.activeSetId || xcPanel._activeSetId;
-          if (state.mode === 'multifile' && activeSetId) {
-            const all = recordingManager.getAll();
-            const aggregated = [];
-            for (const entry of all) {
-              const anns = entry.annotations || [];
-              for (const a of anns) {
-                if (a.setId === activeSetId) {
-                  const copy = { ...a };
-                  if (entry.xcId) copy.xc_nr = entry.xcId;
-                  aggregated.push(copy);
-                }
-              }
-            }
-            // active labels already persisted; aggregated entries include them
-            console.debug('[XC export] upload aggregated (from entries)', { count: aggregated.length, activeSetId, recordingIds: all.map(r => r.id) });
-            const deduped = dedupeLabels(aggregated);
-            console.debug('[XC export] upload deduped', { before: aggregated.length, after: deduped.length, activeSetId });
-            return xcPanel.uploadToXenoCanto(deduped, state.labelSets, state.recordingEditMeta);
-          }
-        } catch (e) { /* fallthrough to default */ }
-        console.debug('[XC export] upload single-recording', { count: (state.labels || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
-        const singleDedupUp = dedupeLabels(state.labels || []);
-        console.debug('[XC export] upload single-recording deduped', { before: (state.labels || []).length, after: singleDedupUp.length, activeSetId: state.activeSetId || xcPanel._activeSetId });
-        return xcPanel.uploadToXenoCanto(singleDedupUp, state.labelSets, state.recordingEditMeta);
-      },
+      buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets, state.recordingEditMeta),
+      upload: () => xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets, state.recordingEditMeta),
       getApiKey: () => xcPanel.apiKey,
       getFilename: () => (xcPanel.xcId ? `XC${xcPanel.xcId}_annotation_set.json` : 'annotation_set.json'),
       defaultCollapseDepth: 1,
@@ -2416,33 +2391,7 @@
       xcUploadBtn.disabled = true;
       xcPanel._setStatus('Uploading…', 'info');
       try {
-        // If multifile + active set, aggregate labels across recordings
-        let labelsToUpload = state.labels;
-        try {
-          // Persist active in-memory labels first so we can aggregate from
-          // per-entry `annotations` without separately adding `state.labels`.
-          saveCurrentAnnotationsIfNeeded();
-          const activeSetId = state.activeSetId || xcPanel._activeSetId;
-          if (state.mode === 'multifile' && activeSetId) {
-            const all = recordingManager.getAll();
-            const aggregated = [];
-            for (const entry of all) {
-              const anns = entry.annotations || [];
-              for (const a of anns) {
-                if (a.setId === activeSetId) {
-                  const copy = { ...a };
-                  if (entry.xcId) copy.xc_nr = entry.xcId;
-                  aggregated.push(copy);
-                }
-              }
-            }
-            // Use annotations from entries (active entry already saved above).
-            labelsToUpload = dedupeLabels(aggregated);
-          }
-        } catch (e) { /* fallback */ }
-
-          console.debug('[XC uploadBtn] labelsToUpload', { count: (labelsToUpload || []).length, activeSetId: state.activeSetId || xcPanel._activeSetId });
-          const result = await xcPanel.uploadToXenoCanto(labelsToUpload, state.labelSets, state.recordingEditMeta);
+        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets, state.recordingEditMeta);
         if (result.ok) {
           xcPanel._setStatus(result.message, 'success');
         } else {
@@ -2620,6 +2569,9 @@
     });
 
     loadSampleBtn.addEventListener('click', async () => {
+      // Sample already in the session — just switch to it
+      const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/birdsong.wav');
+      if (_sampleExisting && state.mode !== 'standalone') { await activateRecordingEntry(_sampleExisting); return; }
       // Save then detach so syncToPlayer doesn't clobber the leaving entry
       saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
@@ -2637,6 +2589,13 @@
       syncToPlayer();
       fileLabel.textContent = 'birdsong.wav';
       await player.loadUrl('./samples/birdsong.wav');
+      const _sampleEntry = recordingManager.add({
+        filename: 'birdsong.wav',
+        audioUrl: './samples/birdsong.wav',
+        isBlobUrl: false,
+      });
+      recordingManager.setActive(_sampleEntry.id);
+      state._labelsEntryId = _sampleEntry.id;  // empty labels now belong to the new entry
       // Clear any previously saved original when loading the demo sample
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;

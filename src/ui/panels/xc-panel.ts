@@ -262,6 +262,7 @@ export class XenoCantoPanel {
     _getRecordingEditMeta: any;
     _modal: any;
     _onCreateSet: any;
+    _buildingSetSection = false;
     _onRecordingEditMetaChange: any;
     _onSetChange: any;
     _setFormEl: any;
@@ -590,18 +591,23 @@ export class XenoCantoPanel {
 
   // ── Set section: selector + form ────────────────────────────────────
 
-  _buildSetSection() {
+  _buildSetSection({ allowCreate = false } = {}) {
     const el = this.setContainerEl;
     if (!el) return;
     el.innerHTML = '';
 
-    // Auto-select the one session set (single-set model — no dropdown shown)
-    const sets = this._getLabelSets?.() || new Map();
-    if (sets.size > 0) {
-      const firstId = sets.keys().next().value;
-      if (!this._activeSetId || !sets.has(this._activeSetId)) {
-        this._activeSetId = firstId;
+    // Auto-select the session's own (editable) set — no dropdown shown.
+    // Imported XC/BirdNET sets are locked and never the upload target; without an own set, create one
+    // (not during construction: the host's set registry may not be wired up yet).
+    let sets = this._getLabelSets?.() || new Map();
+    if (!this._activeSetId || !sets.has(this._activeSetId)) {
+      let ownId = null;
+      for (const [id, s] of sets) { if (s.origin === 'manual' && !s.locked) { ownId = id; break; } }
+      if (!ownId && allowCreate && this._getLabelSets && this._onCreateSet) {
+        ownId = this._onCreateSet({ name: 'My Annotations', origin: 'manual' })?.id ?? null;
+        sets = this._getLabelSets() || sets;
       }
+      this._activeSetId = ownId ?? (sets.size > 0 ? sets.keys().next().value : null);
     }
 
     // ── Set form ──
@@ -612,7 +618,12 @@ export class XenoCantoPanel {
   }
 
   /** Rebuild set selector + form (call after external set registry changes). */
-  _rebuildSetSection() { this._buildSetSection(); }
+  _rebuildSetSection() {
+    // Creating the own set below re-enters via the host's createLabelSet → _rebuildSetSection.
+    if (this._buildingSetSection) return;
+    this._buildingSetSection = true;
+    try { this._buildSetSection({ allowCreate: true }); } finally { this._buildingSetSection = false; }
+  }
 
   // ── Author section: annotator profile form + onboarding banner ──────
 
@@ -679,7 +690,7 @@ export class XenoCantoPanel {
     }
 
     if (!setData) {
-      el.innerHTML = '<div class="props-empty">Select or create a set above.</div>';
+      el.innerHTML = '<div class="props-empty">No annotation set yet — load a recording or add a label.</div>';
       return;
     }
 
@@ -827,10 +838,20 @@ export class XenoCantoPanel {
     this.statusEl.style.display = msg ? '' : 'none';
   }
 
-  _updateUploadState() {
+  /** Why the upload is not possible right now ('' when it is). */
+  _uploadBlockReason() {
     const sets = this._getLabelSets?.() || new Map();
-    const hasSet = this._activeSetId ? sets.has(this._activeSetId) : true;
-    if (this.uploadBtn) this.uploadBtn.disabled = !this.apiKey || !this.xcId || !hasSet;
+    if (!this.apiKey) return 'Add your Xeno-canto API key first.';
+    if (!this.xcId) return 'Load a Xeno-canto recording (your own) — annotations are uploaded per XC number.';
+    if (this._activeSetId && !sets.has(this._activeSetId)) return 'No annotation set selected.';
+    return '';
+  }
+
+  _updateUploadState() {
+    if (!this.uploadBtn) return;
+    const reason = this._uploadBlockReason();
+    this.uploadBtn.disabled = !!reason;
+    this.uploadBtn.title = reason || 'Upload the annotation set to your Xeno-canto account for verification';
   }
 
   // ── Label pool ───────────────────────────────────────────────────────
