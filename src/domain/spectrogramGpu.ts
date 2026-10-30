@@ -9,11 +9,12 @@
 //
 // Data layout: row-major [frame][bin] values packed into an R32F texture of
 // PACK_W texels per row (texel index = frame · bins + bin), so long files are
-// not limited by MAX_TEXTURE_SIZE in the frame direction.
+// not limited by MAX_TEXTURE_SIZE in the frame direction. Several data sets
+// (pyramid tiles) stay on the GPU at once, evicted least recently used.
 // ═══════════════════════════════════════════════════════════════════════
 
 const PACK_W = 4096;
-/** Upper bound for uploaded values (R32F: 4 bytes each → 192 MiB). */
+/** Upper bound for values on the GPU, all data sets together (R32F: 4 bytes each → 192 MiB). */
 const MAX_VALUES = 48 * 1024 * 1024;
 /** Samples per pixel and axis; larger spans are strided. */
 const MAX_TAPS = 24;
@@ -103,13 +104,21 @@ export interface GpuViewParams {
     hi: number;
     /** Subtract the uploaded band floor. */
     useFloor: boolean;
+    /** Draw only pixel columns [x0, x1) and keep the rest of the image (tiles). */
+    x0?: number;
+    x1?: number;
 }
+
+interface DataTex { tex: WebGLTexture; frames: number; bins: number; values: number }
 
 export class GpuSpectrogramView {
     readonly canvas: HTMLCanvasElement;
     private gl: WebGL2RenderingContext | null;
     private prog: WebGLProgram | null = null;
     private u: Record<string, WebGLUniformLocation | null> = {};
+    /** Uploaded data sets in least → most recently used order. */
+    private cache = new Map<Float32Array, DataTex>();
+    private cachedValues = 0;
     private dataTex: WebGLTexture | null = null;
     private floorTex: WebGLTexture | null = null;
     private lutTex: WebGLTexture | null = null;
@@ -151,7 +160,6 @@ export class GpuSpectrogramView {
         const loc = gl.getAttribLocation(p, 'a_pos');
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-        this.dataTex = this.texture();
         this.floorTex = this.texture();
         this.lutTex = this.texture(gl.LINEAR);
     }
@@ -173,22 +181,59 @@ export class GpuSpectrogramView {
         return t;
     }
 
-    /** Uploads row-major [frame][bin] dB values. False if too large or unsupported. */
+    /**
+     * Makes row-major [frame][bin] dB values the current data, uploading them
+     * unless still cached. False if too large or unsupported.
+     */
     setData(data: Float32Array, frames: number, bins: number): boolean {
         const gl = this.gl;
         this.dataRef = null;
         if (!gl || bins <= 0 || frames <= 0 || frames * bins > MAX_VALUES) return false;
-        const rows = Math.ceil(frames * bins / PACK_W);
-        if (rows > gl.getParameter(gl.MAX_TEXTURE_SIZE)) return false;
-        const packed = new Float32Array(rows * PACK_W);
-        packed.set(data.subarray(0, frames * bins));
-        gl.bindTexture(gl.TEXTURE_2D, this.dataTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, PACK_W, rows, 0, gl.RED, gl.FLOAT, packed);
+        let entry = this.cache.get(data);
+        if (entry && (entry.frames !== frames || entry.bins !== bins)) { this.drop(data); entry = undefined; }
+        if (entry) {
+            this.cache.delete(data);
+        } else {
+            const values = frames * bins;
+            const rows = Math.ceil(values / PACK_W);
+            if (rows > gl.getParameter(gl.MAX_TEXTURE_SIZE)) return false;
+            for (const old of this.cache.keys()) {
+                if (this.cachedValues + values <= MAX_VALUES) break;
+                this.drop(old);
+            }
+            const packed = new Float32Array(rows * PACK_W);
+            packed.set(data.subarray(0, values));
+            const tex = this.texture()!;
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, PACK_W, rows, 0, gl.RED, gl.FLOAT, packed);
+            entry = { tex, frames, bins, values };
+            this.cachedValues += values;
+        }
+        this.cache.set(data, entry);
+        this.dataTex = entry.tex;
         this.frames = frames;
-        this.bins = bins;
+        if (this.bins !== bins) { this.bins = bins; this.setBandFloor(null); }
         this.dataRef = data;
-        this.setBandFloor(null);
         return true;
+    }
+
+    private drop(data: Float32Array): void {
+        const entry = this.cache.get(data);
+        if (!entry) return;
+        this.gl?.deleteTexture(entry.tex);
+        this.cachedValues -= entry.values;
+        this.cache.delete(data);
+        if (this.dataRef === data) { this.dataRef = null; this.dataTex = null; }
+    }
+
+    /** Clears the image to transparent at the given size (before drawing tiles). */
+    clear(width: number, height: number): void {
+        const gl = this.gl;
+        if (!gl || width <= 0 || height <= 0) return;
+        if (this.canvas.width !== width) this.canvas.width = width;
+        if (this.canvas.height !== height) this.canvas.height = height;
+        gl.disable(gl.SCISSOR_TEST);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
     }
 
     /** Per-band floor (dB) subtracted when `useFloor` is set; null → zeros. */
@@ -222,6 +267,12 @@ export class GpuSpectrogramView {
         if (this.canvas.width !== p.width) this.canvas.width = p.width;
         if (this.canvas.height !== p.height) this.canvas.height = p.height;
         gl.viewport(0, 0, p.width, p.height);
+        if (p.x0 !== undefined && p.x1 !== undefined) {
+            gl.enable(gl.SCISSOR_TEST);
+            gl.scissor(p.x0, 0, Math.max(0, p.x1 - p.x0), p.height);
+        } else {
+            gl.disable(gl.SCISSOR_TEST);
+        }
         gl.useProgram(this.prog);
         const tex = (unit: number, t: WebGLTexture | null, name: string) => {
             gl.activeTexture(gl.TEXTURE0 + unit);
@@ -248,7 +299,8 @@ export class GpuSpectrogramView {
     dispose(): void {
         const gl = this.gl;
         if (!gl) return;
-        for (const t of [this.dataTex, this.floorTex, this.lutTex]) if (t) gl.deleteTexture(t);
+        for (const data of [...this.cache.keys()]) this.drop(data);
+        for (const t of [this.floorTex, this.lutTex]) if (t) gl.deleteTexture(t);
         if (this.prog) gl.deleteProgram(this.prog);
         gl.getExtension('WEBGL_lose_context')?.loseContext();
         this.gl = null;
