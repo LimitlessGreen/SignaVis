@@ -219,6 +219,9 @@ export class WasmTileManager extends EventTarget {
     /** Black/white points come from the noise floor (median) and p99.9. */
     get noiseFloorContrast(): boolean { return this.v2; }
 
+    /** v2 values are dBFS (PCEN output is not), so the dB contrast window applies. */
+    get dbValues(): boolean { return this.v2 && !(this.meta.params as StftParamsV2).pcen; }
+
     /** Black/white point for tiles of `level` (max-pooled levels are brighter). */
     private contrastRange(level: number): [number, number] {
         const st = this.meta.levels[level]?.stats ?? this.meta.stats;
@@ -431,7 +434,7 @@ export class WasmTileManager extends EventTarget {
         const opts = this.colorOptions;
         // v2 + dB sliders: one window [noise + floor, noise + floor + range] in dB.
         // Each level uses its own noise floor (max pooling raises it).
-        const dbWindow = this.v2 && opts.floorDb !== undefined && opts.rangeDb !== undefined;
+        const dbWindow = this.dbValues && opts.floorDb !== undefined && opts.rangeDb !== undefined;
         let [lo, hi] = this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax];
         if (dbWindow) {
             lo = (opts.noiseReduction ? 0 : lo) + opts.floorDb!;

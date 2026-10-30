@@ -377,6 +377,17 @@ export class CoordinateSystem {
      * 0 = top (highest freq), 1 = bottom (0 Hz).
      * Used for computing source crop when rendering with vertical zoom.
      */
+    /**
+     * Fractional bin shown at a display Y fraction (0 = top, 1 = bottom): the
+     * inverse of the bin mapping in frequencyToPixelY, for renderers that
+     * sample the data directly. Linear in Y, so callers can interpolate.
+     */
+    yFractionToBinFractional(frac: number) {
+        if (this._hasFreqView) return this._viewMinBin + (1 - frac) * this._viewBinRange;
+        const h = this.spectrogramMels;
+        return ((h - 1) - frac * h) / Math.max(1, h - 1) * this._maxBin;
+    }
+
     frequencyToBaseYFraction(freq: number) {
         if (this.freqRange) {
             // For external images, normalize the external mapping

@@ -197,7 +197,7 @@ function sampleColorMap(stops: number[][], t: number) {
     };
 }
 
-function getSpectrogramColor(value: number, colorScheme: string) {
+export function getSpectrogramColor(value: number, colorScheme: string) {
     const x = clamp(value, 0, 1);
     if (colorScheme === 'grayscale') {
         const v = Math.round((1 - x) * 255);
@@ -762,15 +762,20 @@ export function spectralSubtract(spectrogramData: NumArray, nFrames: number, nMe
 /** Bands may be lifted at most this far above the typical (median) band floor. */
 const MAX_BAND_LIFT_DB = 20;
 
+/** Band floor with near-empty bands raised to median − MAX_BAND_LIFT_DB. */
+export function limitBandFloor(bandFloor: ArrayLike<number>): Float32Array {
+    const sorted = Float32Array.from(bandFloor).sort();
+    const minFloor = sorted[sorted.length >> 1] - MAX_BAND_LIFT_DB;
+    return Float32Array.from(bandFloor, (f) => Math.max(f, minFloor));
+}
+
 /**
  * Values minus the per-band floor (dB), as aw_dsp::display::subtract_band_floor.
  * Near-empty bands (e.g. above an MP3 low-pass) have a very low floor; without a
  * limit, subtracting it would lift their residue to full brightness.
  */
 function subtractBandFloor(data: NumArray, bins: number, bandFloor: ArrayLike<number>): Float32Array {
-    const sorted = Float32Array.from(bandFloor).sort();
-    const minFloor = sorted[sorted.length >> 1] - MAX_BAND_LIFT_DB;
-    const floor = Float32Array.from(bandFloor, (f) => Math.max(f, minFloor));
+    const floor = limitBandFloor(bandFloor);
     const out = Float32Array.from(data as ArrayLike<number>);
     for (let i = 0; i < out.length; i += bins) {
         for (let b = 0; b < bins; b++) out[i + b] -= floor[b];
