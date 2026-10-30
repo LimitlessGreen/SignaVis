@@ -331,40 +331,6 @@
 
   </div>
 
-  <!-- ── Sidebar panel: Audio ───────────────────────────────────── -->
-  <div id="panelAudio" class="scroll-panel" hidden>
-    <div class="panel-section">
-      <h3>Audio — Make ultrasonic frequencies audible</h3>
-      <p class="field-hint">Methods to shift ultrasonic frequencies into the audible range.</p>
-    </div>
-    <div class="panel-section">
-      <label class="field-label">Method</label>
-      <select id="audioMethodSelect" class="field-select">
-        <option value="heterodyne">Frequency mixer (Heterodyne)</option>
-        <option value="divider">Frequency divider (Resampling)</option>
-      </select>
-    </div>
-    <div id="heterodyneControls" class="panel-section">
-      <label class="field-label" for="heterodyneFreq">Carrier frequency (Hz)</label>
-      <input id="heterodyneFreq" class="input" type="number" value="20000" />
-      <label class="field-label" for="heterodyneLowpass">Lowpass (Hz)</label>
-      <input id="heterodyneLowpass" class="input" type="number" value="8000" />
-      <div class="panel-actions">
-        <button class="sidebar-action-btn" id="audioHeterodyneBtn" type="button">Process &amp; Load into Player</button>
-        <button class="sidebar-action-btn secondary" id="audioRestoreBtn" type="button">Restore Original</button>
-      </div>
-    </div>
-    <div id="dividerControls" class="panel-section" style="display:none">
-      <label class="field-label" for="dividerFactor">Divider (n)</label>
-      <input id="dividerFactor" class="input" type="number" min="1" value="8" />
-      <div class="panel-actions">
-        <button class="sidebar-action-btn" id="audioDividerBtn" type="button">Process &amp; Load into Player</button>
-        <button class="sidebar-action-btn secondary" id="audioRestoreBtnDivider" type="button">Restore Original</button>
-      </div>
-    </div>
-    <div id="audioStatus" class="panel-section meta" style="padding:12px;"></div>
-  </div>
-
   <!-- About panel moved to demo/lib/about-panel.js -->
 
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
@@ -600,7 +566,6 @@
     import { createProjectRepositoryRuntime } from '../src/infrastructure/tauri/project-repository-runtime.ts';
     import { getDesktopRuntimeInfo } from '../src/infrastructure/tauri/desktop-runtime-info.ts';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
-    import { heterodyneDownmix, resampleDivider, audioBufferToWav } from '../src/domain/audioTransforms.js';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -929,117 +894,96 @@
 
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Spectrogram', element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
+    rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
 
-    if (import.meta.env.DEV) {
-      rightBar.addPanel('audio', { icon: ICONS.audio, label: 'Audio', element: document.getElementById('panelAudio') });
+    // ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
+    function buildAudioPanel() {
+      const el = document.createElement('div');
+      el.className = 'scroll-panel';
+      el.innerHTML = `
+        <div class="panel-section">
+          <h3>Audio</h3>
+          <p class="field-hint">Make ultrasonic calls audible. Only playback changes — spectrogram, labels and times stay in the original recording.</p>
+        </div>
+        <div class="panel-section">
+          <label class="field-label" for="audioModeSelect">Method</label>
+          <select id="audioModeSelect" class="field-select">
+            <option value="expansion">Time expansion</option>
+            <option value="heterodyne" disabled>Heterodyne (coming)</option>
+            <option value="division" disabled>Frequency division (coming)</option>
+          </select>
+          <label class="field-label" for="audioExpansionSelect">Slowdown</label>
+          <select id="audioExpansionSelect" class="field-select">
+            ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
+          </select>
+          <p class="field-hint">Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10.</p>
+        </div>
+        <div class="panel-section">
+          <h3>Recording</h3>
+          <div id="audioDetectStatus" class="meta">No audio loaded.</div>
+          <div class="panel-actions">
+            <button class="sidebar-action-btn" id="audioApplySuggestionBtn" type="button" hidden></button>
+          </div>
+          <details id="audioGuanoDetails" hidden>
+            <summary class="field-label">GUANO metadata</summary>
+            <dl id="audioGuanoList" class="meta"></dl>
+          </details>
+        </div>`;
+
+      const expansionSel = el.querySelector('#audioExpansionSelect');
+      const statusEl = el.querySelector('#audioDetectStatus');
+      const applyBtn = el.querySelector('#audioApplySuggestionBtn');
+      const guanoDetails = el.querySelector('#audioGuanoDetails');
+      const guanoList = el.querySelector('#audioGuanoList');
+
+      expansionSel.addEventListener('change', () => player.setTimeExpansion(Number(expansionSel.value)));
+      applyBtn.addEventListener('click', () => {
+        const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
+        if (f > 1) player.setTimeExpansion(f);
+      });
+
+      const syncSuggestion = () => {
+        const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
+        applyBtn.hidden = !(f > 1 && player.timeExpansion !== f);
+        applyBtn.textContent = `Play ×${f} slower`;
+      };
+
+      player.on('timeexpansionchange', (e) => {
+        expansionSel.value = String(e.detail.factor);
+        syncSuggestion();
+      });
+
+      player.on('ultrasoundinfo', (e) => {
+        const info = e.detail;
+        expansionSel.value = String(player.timeExpansion);
+        if (!info) { statusEl.textContent = 'No audio loaded.'; syncSuggestion(); return; }
+        const parts = [];
+        if (info.storedExpansion > 1) {
+          parts.push(`Stored already time-expanded (×${info.storedExpansion}) — plays audibly as is.`);
+        } else if (info.isUltrasonic) {
+          const peak = info.peakHz != null ? ` — peak ≈ ${(info.peakHz / 1000).toFixed(1)} kHz` : '';
+          parts.push(`Ultrasound detected${peak} (${info.source === 'guano' ? 'from GUANO metadata' : 'from spectrum'}).`);
+        } else {
+          parts.push('No ultrasound detected.');
+        }
+        if (info.ultrasonicFraction > 0) parts.push(`Energy above 18 kHz: ${Math.round(info.ultrasonicFraction * 100)} %.`);
+        if (info.device) parts.push(`Device: ${info.device}.`);
+        statusEl.textContent = parts.join(' ');
+
+        guanoDetails.hidden = !info.guano;
+        guanoList.replaceChildren(...Object.entries(info.guano || {}).flatMap(([k, v]) => {
+          const dt = document.createElement('dt'); dt.textContent = k;
+          const dd = document.createElement('dd'); dd.textContent = v;
+          return [dt, dd];
+        }));
+        syncSuggestion();
+      });
+
+      return el;
     }
+
 
     rightBar.setActive('properties');
-
-    // Audio panel bindings
-    if (import.meta.env.DEV) {
-      (function setupAudioPanel() {
-        const methodSelect = document.getElementById('audioMethodSelect');
-        const heteroControls = document.getElementById('heterodyneControls');
-        const dividerControls = document.getElementById('dividerControls');
-        const statusEl = document.getElementById('audioStatus');
-
-        // Keep original audio on the player so processing always uses the original file
-        let lastProcessedUrl = null;
-
-        if (!methodSelect) return;
-
-        methodSelect.addEventListener('change', () => {
-          if (methodSelect.value === 'heterodyne') {
-            heteroControls.style.display = '';
-            dividerControls.style.display = 'none';
-          } else {
-            heteroControls.style.display = 'none';
-            dividerControls.style.display = '';
-          }
-        });
-
-        async function saveOriginalIfNeeded(buf) {
-          if (!buf || player.__originalAudioBuffer) return;
-          try {
-            player.__originalAudioBuffer = buf;
-            const blob = audioBufferToWav(buf);
-            player.__originalBlobUrl = URL.createObjectURL(blob);
-          } catch (e) {
-            player.__originalBlobUrl = null;
-          }
-        }
-
-        async function loadProcessedBuffer(rendered) {
-          if (lastProcessedUrl) try { URL.revokeObjectURL(lastProcessedUrl); } catch (e) {}
-          const blob = audioBufferToWav(rendered);
-          const url = URL.createObjectURL(blob);
-          lastProcessedUrl = url;
-          await player.loadUrl(url);
-          player.play();
-        }
-
-        document.getElementById('audioHeterodyneBtn')?.addEventListener('click', async () => {
-          const currentBuf = player._state?.audioBuffer;
-          if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
-          await saveOriginalIfNeeded(currentBuf);
-          const sourceBuf = player.__originalAudioBuffer || currentBuf;
-          const carrier = Number(document.getElementById('heterodyneFreq').value) || 20000;
-          const lowpass = Number(document.getElementById('heterodyneLowpass').value) || 8000;
-          statusEl.textContent = 'Processing...';
-          try {
-            const rendered = await heterodyneDownmix(sourceBuf, carrier, lowpass);
-            await loadProcessedBuffer(rendered);
-            statusEl.textContent = 'Done: audio loaded into player.';
-          } catch (err) {
-            console.error(err);
-            statusEl.textContent = 'Processing error: ' + (err.message || err);
-          }
-        });
-
-        document.getElementById('audioDividerBtn')?.addEventListener('click', async () => {
-          const currentBuf = player._state?.audioBuffer;
-          if (!currentBuf && !player.__originalAudioBuffer) { statusEl.textContent = 'No audio loaded.'; return; }
-          await saveOriginalIfNeeded(currentBuf);
-          const sourceBuf = player.__originalAudioBuffer || currentBuf;
-          const divisor = Math.max(1, parseInt(document.getElementById('dividerFactor').value, 10) || 8);
-          statusEl.textContent = 'Processing...';
-          try {
-            const rendered = await resampleDivider(sourceBuf, divisor);
-            await loadProcessedBuffer(rendered);
-            statusEl.textContent = 'Done: audio loaded into player.';
-          } catch (err) {
-            console.error(err);
-            statusEl.textContent = 'Processing error: ' + (err.message || err);
-          }
-        });
-
-        // Restore handlers (two buttons for convenience)
-        const restoreHandler = async () => {
-          if (!player.__originalAudioBuffer && !player.__originalBlobUrl) { statusEl.textContent = 'No original saved.'; return; }
-          statusEl.textContent = 'Restoring...';
-          try {
-            if (player.__originalBlobUrl) {
-              await player.loadUrl(player.__originalBlobUrl);
-              player.play();
-            } else if (player.__originalAudioBuffer) {
-              const blob = audioBufferToWav(player.__originalAudioBuffer);
-              const url = URL.createObjectURL(blob);
-              await player.loadUrl(url);
-              player.play();
-              player.__originalBlobUrl = url;
-            }
-            statusEl.textContent = 'Original restored.';
-          } catch (e) {
-            console.error(e);
-            statusEl.textContent = 'Error restoring original.';
-          }
-        };
-
-        document.getElementById('audioRestoreBtn')?.addEventListener('click', restoreHandler);
-        document.getElementById('audioRestoreBtnDivider')?.addEventListener('click', restoreHandler);
-      })();
-    }
 
     // ── App state ─────────────────────────────────────────────────────
     let getSuggestions = (q, n) => [];  // populated after taxonomy loads

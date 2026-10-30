@@ -127,6 +127,8 @@ export interface DomRefs {
     volumeIcon:              HTMLElement       | null;
     volumeWaves:             HTMLElement       | null;
     volumeSlider:            HTMLInputElement  | null;
+    slowdownSelect:          HTMLSelectElement | null;
+    ultrasoundChip:          HTMLButtonElement | null;
 
     // ── Gain controls ────────────────────────────────────────────────────
     gainModeSelect:          HTMLSelectElement | null;

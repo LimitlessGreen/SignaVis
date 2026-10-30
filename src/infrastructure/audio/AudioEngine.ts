@@ -20,7 +20,11 @@
 
 import { clamp, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
+import { parseGuano } from '../../domain/ultrasound.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
+
+/** Browsers reject playbackRate below 1/16. */
+export const MAX_TIME_EXPANSION = 16;
 
 /**
  * @typedef {Object} SegmentFilter
@@ -87,6 +91,8 @@ export class AudioEngine extends AudioEngineBase {
   _lastTimeupdateEmitAt: number;
   pixelsPerSecond: number;
   loopPlayback: boolean;
+  timeExpansion: number;
+  guano: Record<string, string> | null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -133,6 +139,10 @@ export class AudioEngine extends AudioEngineBase {
     this.pixelsPerSecond = 100;
     /** @type {boolean} */
     this.loopPlayback = false;
+    /** @type {number} Playback slowdown with pitch dropping along (×10 makes bat calls audible). */
+    this.timeExpansion = 1;
+    /** @type {Record<string,string>|null} GUANO metadata of the loaded WAV (bat detectors). */
+    this.guano = null;
   }
 
   // ── Derived state ────────────────────────────────────────────────────
@@ -150,6 +160,7 @@ export class AudioEngine extends AudioEngineBase {
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
   async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
+    this.guano = parseGuano(arrayBuffer);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
 
@@ -167,6 +178,7 @@ export class AudioEngine extends AudioEngineBase {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const arrayBuffer = await response.arrayBuffer();
+    this.guano = parseGuano(arrayBuffer);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
 
@@ -184,6 +196,7 @@ export class AudioEngine extends AudioEngineBase {
    */
   async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
+    this.guano = parseGuano(arrayBuffer);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
     this._setupWaveSurfer(file, file.name);
@@ -332,9 +345,6 @@ export class AudioEngine extends AudioEngineBase {
     const nyquist = Math.max(100, this.audioBuffer.sampleRate * 0.5 - 10);
     const fLo = Math.max(20, Math.min(freqMinHz, freqMaxHz, nyquist - 5));
     const fHi = clamp(Math.max(freqMinHz, freqMaxHz), fLo + 5, nyquist);
-    const center = Math.sqrt(fLo * fHi);
-    const bandwidth = Math.max(10, fHi - fLo);
-    const q = clamp(center / bandwidth, 0.25, 40);
 
     this._stopCustomSegmentPlayback('stopped', start);
     this._clearPlaybackFilter();
@@ -365,8 +375,9 @@ export class AudioEngine extends AudioEngineBase {
     const ctx = new Ctor();
     const bandpass = ctx.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.frequency.value = center;
-    bandpass.Q.value = q;
+    const bp = this._bandpassParams(fLo, fHi);
+    bandpass.frequency.value = bp.frequency;
+    bandpass.Q.value = bp.q;
 
     const gain = ctx.createGain();
     gain.gain.value = this.muted ? 0 : this.volume;
@@ -383,6 +394,9 @@ export class AudioEngine extends AudioEngineBase {
       gain,
       startSec: start,
       endSec: end,
+      freqMinHz: fLo,
+      freqMaxHz: fHi,
+      timeExpansion: this.timeExpansion,
       startAtCtx: 0,
       runStartSec: start,
       sourceGeneration: 0,
@@ -396,7 +410,7 @@ export class AudioEngine extends AudioEngineBase {
 
     const onFrame = () => {
       if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== token) return;
-      const elapsed = Math.max(0, ctx.currentTime - playback.startAtCtx);
+      const elapsed = Math.max(0, ctx.currentTime - playback.startAtCtx) / playback.timeExpansion;
       const t = Math.min(playback.endSec, playback.runStartSec + elapsed);
       playback.currentTimeSec = t;
       this._emit('uiupdate', { time: t, fromPlayback: true });
@@ -422,6 +436,42 @@ export class AudioEngine extends AudioEngineBase {
    */
   stopSegmentPlayback(reason = 'stopped', targetTimeSec = null) {
     this._stopCustomSegmentPlayback(reason, targetTimeSec);
+  }
+
+  /**
+   * Slows playback down by `factor` without preserving pitch, so ultrasonic
+   * content drops by the same factor. Only the output changes: times stay in
+   * recording time. Browsers cap playbackRate at 1/16.
+   * @param {number} factor
+   */
+  setTimeExpansion(factor: number) {
+    const f = clamp(Number(factor) || 1, 1, MAX_TIME_EXPANSION);
+    if (f === this.timeExpansion) return;
+    this.timeExpansion = f;
+    this._applyPlaybackRate();
+    const playback = this._customSegmentPlayback;
+    if (playback) {
+      // Restart so the bandpass is re-centred on the new output frequencies.
+      this._retargetCustomSegmentPlayback({
+        start: playback.startSec, end: playback.endSec,
+        freqMinHz: playback.freqMinHz, freqMaxHz: playback.freqMaxHz,
+      });
+    }
+  }
+
+  _applyPlaybackRate() {
+    if (!this.wavesurfer) return;
+    try { this.wavesurfer.setPlaybackRate(1 / this.timeExpansion, this.timeExpansion === 1); } catch { /**/ }
+  }
+
+  /**
+   * Bandpass centre and Q for [fLo, fHi] in recording frequencies. The filter
+   * sits behind the slowed-down source, so it is centred on output frequencies.
+   */
+  _bandpassParams(fLo: number, fHi: number) {
+    const center = Math.sqrt(fLo * fHi);
+    const bandwidth = Math.max(10, fHi - fLo);
+    return { frequency: center / this.timeExpansion, q: clamp(center / bandwidth, 0.25, 40) };
   }
 
   /**
@@ -552,6 +602,7 @@ export class AudioEngine extends AudioEngineBase {
     ws.on('ready', () => {
       ws.zoom(this.pixelsPerSecond);
       ws.setVolume(this.volume);
+      this._applyPlaybackRate();
       this.seekToTime(0, true);
       this._lastTimeupdateEmitAt = 0;
       this._emit('ready', {
@@ -628,6 +679,8 @@ export class AudioEngine extends AudioEngineBase {
     const generation = playback.sourceGeneration;
     const nextSource = source || playback.ctx.createBufferSource();
     nextSource.buffer = this.audioBuffer;
+    nextSource.playbackRate.value = 1 / this.timeExpansion;
+    playback.timeExpansion = this.timeExpansion;
     nextSource.connect(playback.bandpass);
     nextSource.onended = () => {
       if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
@@ -672,11 +725,11 @@ export class AudioEngine extends AudioEngineBase {
       const fMax = Number(freqMaxHz);
       const fLo = Math.max(20, Math.min(fMin, fMax, nyquist - 5));
       const fHi = clamp(Math.max(fMin, fMax), fLo + 5, nyquist);
-      const center = Math.sqrt(fLo * fHi);
-      const bandwidth = Math.max(10, fHi - fLo);
-      const q = clamp(center / bandwidth, 0.25, 40);
-      playback.bandpass.frequency.value = center;
-      playback.bandpass.Q.value = q;
+      const bp = this._bandpassParams(fLo, fHi);
+      playback.bandpass.frequency.value = bp.frequency;
+      playback.bandpass.Q.value = bp.q;
+      playback.freqMinHz = fLo;
+      playback.freqMaxHz = fHi;
       this._activeSegmentFilter = { type: 'bandpass', freqMinHz: fLo, freqMaxHz: fHi };
     }
 

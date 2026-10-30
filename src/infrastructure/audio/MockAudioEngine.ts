@@ -159,6 +159,9 @@ export class MockAudioEngine extends AudioEngineBase {
     // ── Volume ───────────────────────────────────────────────────────
 
     override setVolume(val: number): void { this.volume = clamp(val, 0, 1); }
+    timeExpansion = 1;
+    guano: Record<string, string> | null = null;
+    override setTimeExpansion(factor: number): void { this.timeExpansion = clamp(factor, 1, 16); }
 
     override toggleMute(): void {
         if (this.muted) {

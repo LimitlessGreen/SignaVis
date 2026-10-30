@@ -55,6 +55,7 @@ export abstract class AudioEngineBase extends EventTarget {
 
     setVolume(_val: number): void { this._ni('setVolume'); }
     toggleMute(): void            { this._ni('toggleMute'); }
+    setTimeExpansion(_factor: number): void { this._ni('setTimeExpansion'); }
 
     // ── Label sync ───────────────────────────────────────────────────
 
