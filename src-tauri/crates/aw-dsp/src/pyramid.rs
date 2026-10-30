@@ -22,10 +22,12 @@ pub const FACTOR: u64 = 4;
 const MIN_LEVEL_FRAMES: u64 = 2048;
 /// Upper bound on values kept for percentile estimation.
 const STATS_SAMPLES: u64 = 2_000_000;
+/// Frames per level sampled for the per-band noise floor.
+const BAND_FLOOR_FRAMES: u64 = 2000;
 const BLOCK_FRAMES: usize = 6000;
 pub const FORMAT_VERSION: u32 = 2;
 /// Store format for `v2::StftParams` (dBFS / PCEN, centred frames).
-pub const FORMAT_VERSION_V2: u32 = 3;
+pub const FORMAT_VERSION_V2: u32 = 4;
 
 /// What the pyramid needs to know about a parameter set.
 pub trait Layout: Clone + Serialize + DeserializeOwned {
@@ -63,6 +65,8 @@ pub struct Stats {
     /// Robust noise-floor estimate (sparse signals such as bird song).
     #[serde(default)] pub median: f32,
     #[serde(default)] pub p99_9: f32,
+    /// Median per output row (low → high): per-band noise floor.
+    #[serde(default)] pub band_floor: Vec<f32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,12 +116,20 @@ impl LevelSink for VecSink {
     }
 }
 
-/// Streaming min/max plus a strided sample for percentiles.
-struct StatsAcc { stride: u64, idx: u64, min: f32, max: f32, vals: Vec<f32> }
+/// Streaming min/max plus a strided sample for percentiles, and a strided
+/// set of whole frames for the per-band median.
+struct StatsAcc {
+    stride: u64, idx: u64, min: f32, max: f32, vals: Vec<f32>,
+    frame_stride: u64, frame_idx: u64, bands: Vec<Vec<f32>>,
+}
 
 impl StatsAcc {
-    fn new(n_values: u64) -> Self {
-        Self { stride: (n_values / STATS_SAMPLES).max(1), idx: 0, min: f32::INFINITY, max: f32::NEG_INFINITY, vals: Vec::new() }
+    fn new(n_frames: u64, bins: usize) -> Self {
+        let n_values = n_frames * bins as u64;
+        Self {
+            stride: (n_values / STATS_SAMPLES).max(1), idx: 0, min: f32::INFINITY, max: f32::NEG_INFINITY, vals: Vec::new(),
+            frame_stride: (n_frames / BAND_FLOOR_FRAMES).max(1), frame_idx: 0, bands: vec![Vec::new(); bins],
+        }
     }
     fn add(&mut self, frame: &[f32]) {
         for &v in frame {
@@ -126,12 +138,20 @@ impl StatsAcc {
             if self.idx % self.stride == 0 { self.vals.push(v); }
             self.idx += 1;
         }
+        if self.frame_idx % self.frame_stride == 0 {
+            for (band, &v) in self.bands.iter_mut().zip(frame) { band.push(v); }
+        }
+        self.frame_idx += 1;
     }
     fn finish(&mut self) -> Stats {
         let vals = &mut self.vals;
         vals.sort_unstable_by(f32::total_cmp);
         let pct = |p: f64| vals.get(((vals.len() as f64 - 1.0) * p) as usize).copied().unwrap_or(0.0);
-        Stats { min: self.min, max: self.max, p2: pct(0.02), p98: pct(0.98), median: pct(0.5), p99_9: pct(0.999) }
+        let band_floor = self.bands.iter_mut().map(|b| {
+            b.sort_unstable_by(f32::total_cmp);
+            b.get(b.len().saturating_sub(1) / 2).copied().unwrap_or(0.0)
+        }).collect();
+        Stats { min: self.min, max: self.max, p2: pct(0.02), p98: pct(0.98), median: pct(0.5), p99_9: pct(0.999), band_floor }
     }
 }
 
@@ -153,7 +173,7 @@ impl<P: Layout> PyramidBuilder<P> {
         let n_frames = params.n_frames(n_samples);
         let levels = (0..level_count(n_frames)).map(|k| LevelAcc {
             acc: vec![0.0; bins], count: 0, written: 0,
-            stats: StatsAcc::new(n_frames.div_ceil(FACTOR.pow(k as u32)) * bins as u64),
+            stats: StatsAcc::new(n_frames.div_ceil(FACTOR.pow(k as u32)), bins),
         }).collect();
         Self { params, n_samples, bins, levels, buf: Vec::new() }
     }

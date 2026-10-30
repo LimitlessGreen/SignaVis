@@ -5,6 +5,7 @@
 import { MAX_BASE_SPECTROGRAM_WIDTH } from '../shared/constants.ts';
 import { clamp, getTimeGridSteps, formatGridTime } from '../shared/utils.ts';
 import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.ts';
+import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.ts';
 import {
     computeSpectralFeatures as _computeSpectralFeaturesFn,
@@ -31,6 +32,9 @@ interface BuildSpectrogramOpts {
     colourScale?: string;
     noiseReduction?: boolean;
     clahe?: boolean;
+    /** Per-band noise floor (dB) from the engine; noise reduction subtracts it instead of
+     *  estimating its own (no half-wave rectification, values may go negative). */
+    bandFloor?: ArrayLike<number> | null;
     /** Keep values as they are (dB) instead of mapping [absLogMin, absLogMax] → [0, 1];
      *  the contrast window is applied later (shader / colorizeRaw). */
     raw?: boolean;
@@ -627,6 +631,7 @@ export function buildSpectrogramGrayscale({
     noiseReduction = false,
     clahe = false,
     raw = false,
+    bandFloor = null,
 }: BuildSpectrogramOpts) {
     if (!spectrogramData || spectrogramFrames <= 0 || spectrogramMels <= 0) return null;
 
@@ -665,7 +670,9 @@ export function buildSpectrogramGrayscale({
     // across all frames, then subtract it.
     let cleanData = spectrogramData;
     if (noiseReduction && colourScale !== 'phase') {
-        cleanData = spectralSubtract(spectrogramData, spectrogramFrames, spectrogramMels);
+        cleanData = bandFloor && bandFloor.length === spectrogramMels
+            ? subtractBandFloor(spectrogramData, spectrogramMels, bandFloor)
+            : spectralSubtract(spectrogramData, spectrogramFrames, spectrogramMels);
     }
 
     const dataRange = Math.max(1e-6, spectrogramAbsLogMax - spectrogramAbsLogMin);
@@ -715,7 +722,9 @@ export function buildSpectrogramGrayscale({
 
     // ── CLAHE (Contrast Limited Adaptive Histogram Equalization) ──
     if (clahe && !raw && colourScale !== 'phase') {
-        applyCLAHE(gray, width, height);
+        const wasm = wasmMain();
+        if (wasm) wasm.clahe(gray, width, height, 8, 4, 2.5);
+        else applyCLAHE(gray, width, height);
     }
 
     return { gray, width, height };
@@ -748,6 +757,25 @@ export function spectralSubtract(spectrogramData: NumArray, nFrames: number, nMe
         }
     }
     return result;
+}
+
+/** Bands may be lifted at most this far above the typical (median) band floor. */
+const MAX_BAND_LIFT_DB = 20;
+
+/**
+ * Values minus the per-band floor (dB), as aw_dsp::display::subtract_band_floor.
+ * Near-empty bands (e.g. above an MP3 low-pass) have a very low floor; without a
+ * limit, subtracting it would lift their residue to full brightness.
+ */
+function subtractBandFloor(data: NumArray, bins: number, bandFloor: ArrayLike<number>): Float32Array {
+    const sorted = Float32Array.from(bandFloor).sort();
+    const minFloor = sorted[sorted.length >> 1] - MAX_BAND_LIFT_DB;
+    const floor = Float32Array.from(bandFloor, (f) => Math.max(f, minFloor));
+    const out = Float32Array.from(data as ArrayLike<number>);
+    for (let i = 0; i < out.length; i += bins) {
+        for (let b = 0; b < bins; b++) out[i + b] -= floor[b];
+    }
+    return out;
 }
 
 // ─── CLAHE (Contrast Limited Adaptive Histogram Equalization) ───────

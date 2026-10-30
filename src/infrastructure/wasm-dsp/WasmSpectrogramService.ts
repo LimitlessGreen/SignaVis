@@ -11,6 +11,7 @@
 
 import WorkerCtor from './wasm-spectrogram.worker.ts?worker&inline';
 import wasmUrl from './pkg/aw_dsp_wasm_bg.wasm?url';
+import { initWasmMain } from './wasmMain.ts';
 
 /** Mirrors aw_dsp::SpecParams (camelCase serde). `sampleRate` comes from the file. */
 export interface WasmSpecParams {
@@ -44,6 +45,8 @@ export interface PyramidStats {
     min: number; max: number; p2: number; p98: number;
     /** Robust noise floor and near-peak level (v2 stores; 0 in older ones). */
     median?: number; p999?: number;
+    /** Per-band noise floor (median per row, low → high); v2 stores only. */
+    bandFloor?: number[];
 }
 
 export interface PyramidMeta {
@@ -87,7 +90,9 @@ export class WasmSpectrogramService {
         }
         modulePromise ??= WebAssembly.compileStreaming(fetch(wasmUrl))
             .catch(async () => WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer()));
-        return new WasmSpectrogramService(await modulePromise, nWorkers);
+        const module = await modulePromise;
+        initWasmMain(module);
+        return new WasmSpectrogramService(module, nWorkers);
     }
 
     private constructor(module: WebAssembly.Module | ArrayBuffer, nWorkers: number) {
@@ -152,7 +157,7 @@ export class WasmSpectrogramService {
     async compute(samples: Float32Array, sampleRate: number, params: StftParamsV2) {
         const copy = samples.slice();
         const requestId = this.nextId++;
-        return new Promise<{ data: Float32Array; nFrames: number; bins: number; hop: number; winLen: number }>((resolve, reject) => {
+        return new Promise<{ data: Float32Array; nFrames: number; bins: number; hop: number; winLen: number; bandFloor: Float32Array }>((resolve, reject) => {
             this.pending.set(requestId, { resolve, reject });
             this.coord.postMessage({ type: 'compute', requestId, samples: copy, sampleRate, params }, [copy.buffer]);
         });

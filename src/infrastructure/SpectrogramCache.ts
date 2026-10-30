@@ -12,6 +12,8 @@ export interface CacheEntry {
     hopSize?: number;
     winLength?: number;
     colourScale?: string;
+    /** v2: per-band noise floor (dB) for noise reduction. */
+    bandFloor?: number[];
     timestamp?: number;
     byteSize?: number;
 }

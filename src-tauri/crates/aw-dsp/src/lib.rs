@@ -10,6 +10,7 @@
 // and only the PCEN recursion runs sequentially.
 // ═══════════════════════════════════════════════════════════════════════
 
+pub mod display;
 pub mod mel;
 pub mod pyramid;
 pub mod source;
