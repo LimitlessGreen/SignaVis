@@ -1,2 +1,5 @@
+# Store text files with LF regardless of editor or core.autocrlf
+* text=auto eol=lf
+
 # Mark model weight shards as binary (no diff, no merge)
 models/**/*.bin binary
