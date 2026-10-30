@@ -41,10 +41,6 @@
         </div>
         <span class="tb-sep"></span>
         <span class="file-label" id="fileLabel">No file loaded</span>
-        <button class="tb-btn" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New</button>
-        <button class="tb-btn" id="browseBtn" type="button">Browse</button>
-        <button class="tb-btn" id="loadSampleBtn" type="button">Demo</button>
-        <input id="fileInput" type="file" accept="audio/*" hidden />
       </div>
 
       <!-- Centre: species search -->
@@ -63,6 +59,7 @@
         </button>
         <span class="tb-sep"></span>
         <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
+        <button class="tb-btn tb-help-btn" id="helpMenuBtn" type="button" title="Help, shortcuts &amp; about" aria-haspopup="menu">?</button>
       </div>
     </header>
 
@@ -71,7 +68,7 @@
       <div class="xc-nokey-dialog">
         <h3>No Xeno-canto API Key configured</h3>
         <p>Without an API key, labels from Xeno-canto cannot be loaded. The recording will play, but annotations will be missing.</p>
-        <p class="xc-nokey-hint">You can add your key at any time in the <strong>Xeno Canto</strong> tab in the sidebar. Get an API key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">https://xeno-canto.org/account</a>.</p>
+        <p class="xc-nokey-hint">You can add your key at any time via <strong>XC API Key</strong> in the top bar (Upload tab). Get an API key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">https://xeno-canto.org/account</a>.</p>
         <div class="xc-nokey-input-row">
           <input type="text" id="xcNokeyKeyInput" class="input" placeholder="Paste your API key here…" />
         </div>
@@ -134,25 +131,20 @@
       <span class="tb-spacer"></span>
       <button class="tb-btn" id="exportJsonBtn" type="button">Export</button>
       <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
-      <button class="tb-btn danger" id="clearAllBtn" type="button">Clear</button>
-    </div>
-    <!-- Recording explorer — populated by RecordingExplorer widget -->
-    <div class="lbl-section-header">Recordings</div>
-    <div id="recordingExplorerMount"></div>
-    <div class="panel-hint">
-      <kbd>⇧</kbd>+<kbd>Drag</kbd> draw · <kbd>Drag</kbd> move · dbl-click edit · <kbd>Ctrl</kbd>+click multi-select
     </div>
     <div class="label-list-scroll">
       <div class="lbl-section-header">Labels<span class="lbl-section-count" id="labelListCount">0</span></div>
       <div class="label-list" id="labelList"></div>
       <div class="labels-empty" id="labelsEmpty">
-        No labels — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.
+        No labels — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.<br>
+        <kbd>Drag</kbd> move · double-click edit · <kbd>Ctrl</kbd>+click multi-select
       </div>
     </div>
   </div>
 
   <!-- ── Sidebar panel: BirdNET ───────────────────────────────────── -->
   <div id="panelBirdnet" class="scroll-panel" hidden>
+    <!-- Analyse tab: BirdNET run first, expected species ("Explore") appended below at runtime -->
     <div class="sidebar-section-header" style="display:flex;align-items:center;justify-content:space-between;">
       <span>Detection</span>
       <button id="birdnetBackendToggle" class="birdnet-backend-toggle" type="button" title="Backend &amp; Model settings"
@@ -206,10 +198,6 @@
         <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
       </label>
     </div>
-    <div class="panel-section">
-      <label class="field-label" for="birdnetAuthor">Author</label>
-      <input id="birdnetAuthor" class="input" placeholder="(optional)" />
-    </div>
     <div class="sidebar-section-header">Location</div>
     <div class="panel-section">
       <label class="field-label">Coordinates <span class="meta" id="birdnetGeoStatus"></span></label>
@@ -251,54 +239,48 @@
     </div>
   </div>
 
-  <!-- ── Sidebar panel: Xeno-canto ────────────────────────────────── -->
-  <div id="panelXc" class="scroll-panel" hidden>
+  <!-- ── Sidebar panel: Project (own set + recordings) ───────────── -->
+  <div id="panelProject" class="scroll-panel" hidden>
+    <div class="sidebar-section-header">Annotation set</div>
+    <div id="xcSetContainer" class="xc-set-container project-set"></div>
 
-    <!-- ── 1. Load Recording ── -->
-    <div class="sidebar-section-header">Recording</div>
+    <div class="sidebar-section-header project-rec-header">
+      <span>Recordings</span>
+      <span class="project-rec-actions">
+        <button class="tb-btn" id="browseBtn" type="button" title="Add an audio file">+ File</button>
+        <button class="tb-btn" id="loadSampleBtn" type="button" title="Add the demo recording">+ Demo</button>
+        <button class="tb-btn" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
+      </span>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
+    </div>
     <div class="panel-section">
-      <label class="field-label" for="xcIdInput">Load XC Recording</label>
       <div class="xc-load-row">
-        <input id="xcIdInput" class="input" placeholder="XC ID (e.g. 12345)" />
-        <button class="tb-btn" id="xcLoadBtn" type="button">Load</button>
+        <input id="xcIdInput" class="input" placeholder="+ XC number or URL (e.g. 12345)" aria-label="Add Xeno-canto recording" />
+        <button class="tb-btn" id="xcLoadBtn" type="button">Add</button>
       </div>
     </div>
+    <!-- Recording explorer — populated by RecordingExplorer widget -->
+    <div id="recordingExplorerMount"></div>
 
-    <!-- ── 2. Recording Metadata (read-only from XC API) ── -->
     <div class="props-section">
-      <div class="props-section-title xc-section-hdr">
-        <span>Recording (from XC)</span>
-        <button class="xc-toggle-edit-btn" id="xcToggleRecordingEdit" type="button" title="Edit recording metadata for upload">Edit</button>
-      </div>
+      <div class="props-section-title xc-section-hdr"><span>Current recording (from XC)</span></div>
       <div id="xcRecordingMeta" class="props-section-body xc-recording-meta">
-        <div class="props-empty">No recording loaded.</div>
+        <div class="props-empty">No XC recording loaded.</div>
       </div>
-      <!-- Editable recording fields (collapsed by default) -->
       <div id="xcRecordingEdit" class="props-section-body xc-recording-edit" hidden></div>
     </div>
+  </div>
 
-    <!-- ── 3. Author / Set sub-tabs ── -->
+  <!-- ── Sidebar panel: Upload (Xeno-canto) ──────────────────────── -->
+  <div id="panelXc" class="scroll-panel" hidden>
+    <!-- ── Profile (set creator / annotator) ── -->
     <div class="sidebar-section-header">Profile</div>
-    <div class="xc-sub-tabs-wrap">
-      <nav class="xc-sub-tabs" role="tablist" aria-label="Xeno-canto sub-sections">
-        <button class="xc-sub-tab active" id="xcTabAuthorBtn" type="button" role="tab" aria-selected="true"  aria-controls="xcTabAuthor">Author</button>
-        <button class="xc-sub-tab"        id="xcTabSetBtn"    type="button" role="tab" aria-selected="false" aria-controls="xcTabSet">Set</button>
-      </nav>
-      <!-- Author tab: annotator profile + onboarding banner -->
-      <div id="xcTabAuthor" class="xc-sub-tab-content" role="tabpanel" aria-labelledby="xcTabAuthorBtn">
-        <div id="xcOnboardingBanner" class="xc-onboarding-banner" hidden>
-          <p>Fill in your <strong>name</strong> and <strong>XC username</strong> before uploading annotations to Xeno-canto.</p>
-          <button class="xc-onboarding-dismiss" id="xcOnboardingDismiss" type="button">Got it</button>
-        </div>
-        <div id="xcAuthorContainer" class="xc-author-container"></div>
-      </div>
-      <!-- Set tab: session set metadata -->
-      <div id="xcTabSet" class="xc-sub-tab-content" role="tabpanel" aria-labelledby="xcTabSetBtn" hidden>
-        <div id="xcSetContainer" class="xc-set-container"></div>
-      </div>
+    <div id="xcOnboardingBanner" class="xc-onboarding-banner" hidden>
+      <p>Fill in your <strong>name</strong> and <strong>XC username</strong> before uploading annotations to Xeno-canto.</p>
+      <button class="xc-onboarding-dismiss" id="xcOnboardingDismiss" type="button">Got it</button>
     </div>
-
-    <!-- ── 4. API Key ── -->
+    
+    <!-- ── API Key ── -->
     <div class="sidebar-section-header">Connection</div>
     <div class="panel-section">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
@@ -312,10 +294,10 @@
         </div>
         <button id="xcApiSaveBtn" class="sidebar-action-btn" type="button">Save</button>
       </div>
-      <p class="field-hint">Required for label import and upload. Stored locally.</p>
+      <p class="field-hint">Required for label import and upload. Stored locally. Get a key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">xeno-canto.org/account</a>.</p>
     </div>
 
-    <!-- ── 5. Actions ── -->
+    <!-- ── Actions ── -->
     <div class="sidebar-section-header">Actions</div>
     <div class="panel-actions xc-actions">
       <div class="xc-action-row">
@@ -555,6 +537,7 @@
     import { createAboutPanel } from '../src/ui/panels/about-panel.ts';
     import { ExplorePanel } from '../src/ui/panels/explore-panel.ts';
     import { showContextMenu } from '../src/ui/components/context-menu/context-menu.ts';
+    import { showUndoToast } from '../src/ui/components/toast/undo-toast.ts';
     import {
       loadAnalysisBackendConfig,
       normalizeAnalysisBackendConfig,
@@ -563,7 +546,7 @@
     } from '../src/app/analysis-backend-config.ts';
     import { createProjectRepositoryRuntime } from '../src/infrastructure/tauri/project-repository-runtime.ts';
     import { getDesktopRuntimeInfo } from '../src/infrastructure/tauri/desktop-runtime-info.ts';
-    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2 } from 'lucide-static';
+    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
 
     // ── Player ────────────────────────────────────────────────────────
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
@@ -718,7 +701,6 @@
     const fileInput       = document.getElementById('fileInput');
     const browseBtn       = document.getElementById('browseBtn');
     const loadSampleBtn   = document.getElementById('loadSampleBtn');
-    const clearAllBtn     = document.getElementById('clearAllBtn');
     const exportJsonBtn   = document.getElementById('exportJsonBtn');
     const copyJsonBtn     = document.getElementById('copyJsonBtn');
     const selectionMeta   = document.getElementById('selectionMeta');
@@ -818,6 +800,7 @@
       help:    CircleHelp,
       audio:   Volume2,
       // Binoculars / explore icon (inline SVG string — same format as lucide-static exports)
+      project: FolderOpen,
       explore: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><path d="M2 14h4M18 14h4M10 14a2 2 0 0 1 2-2 2 2 0 0 1 2 2"/><path d="M6 10V6l6-2 6 2v4"/></svg>`,
     };
 
@@ -825,13 +808,51 @@
       onResize: () => player?.resize?.(),
     });
 
-    sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',   element: document.getElementById('panelLabels') });
-    sidebar.addPanel('birdnet', { icon: ICONS.birdnet, label: 'BirdNET',  element: document.getElementById('panelBirdnet') });
-    sidebar.addPanel('xc',     { icon: ICONS.xc,      label: 'Xeno Canto', element: document.getElementById('panelXc') });
-    // About panel is created by module to keep markup modular
+    // Tabs follow the XC model: Project (set + recordings) → Labels → Analyse → Upload.
+    sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', element: document.getElementById('panelProject') });
+    sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  element: document.getElementById('panelLabels') });
+    sidebar.addPanel('analyse', {
+      icon: ICONS.birdnet, label: 'Analyse', element: document.getElementById('panelBirdnet'),
+      // Explore ("expected species here") lives below the BirdNET run; created further down.
+      onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
+    });
+    sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc') });
+
+    // ── "?" menu: help, about and tips open in a dialog instead of sidebar tabs ──
     const aboutPanelEl = createAboutPanel();
-    sidebar.addPanel('about',  { icon: ICONS.about,   label: 'About',    element: aboutPanelEl });
-    sidebar.addPanel('help',   { icon: ICONS.help,    label: 'Help',     element: document.getElementById('panelHelp') });
+    const helpPanelEl = document.getElementById('panelHelp');
+    function openInfoDialog(el, title) {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'xc-nokey-backdrop';
+      const dialog = document.createElement('div');
+      dialog.className = 'xc-nokey-dialog help-dialog';
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-label', title);
+      const placeholder = document.createComment('info-dialog');
+      el.replaceWith(placeholder);
+      el.hidden = false;
+      dialog.append(el);
+      backdrop.appendChild(dialog);
+      document.body.appendChild(backdrop);
+      // Put the panel back where it was so it can be shown again next time
+      const mm = new ModalManager({ backdrop, dialog, onClose: () => {
+        mm.close(); mm.dispose();
+        el.hidden = true; placeholder.replaceWith(el); backdrop.remove();
+      } });
+      mm.open();
+    }
+    document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      showContextMenu({
+        x: r.right - 200, y: r.bottom + 4,
+        items: [
+          { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
+          { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
+          { separator: true },
+          { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
+        ],
+      });
+    });
 
     // About panel simplified to a GitHub link (no extra runtime handlers)
 
@@ -1364,23 +1385,6 @@
       onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
     });
 
-    // ── XC sub-tab switching ──────────────────────────────────────────
-    (function initXcSubTabs() {
-      const tabs = [
-        { btn: document.getElementById('xcTabAuthorBtn'), panel: document.getElementById('xcTabAuthor') },
-        { btn: document.getElementById('xcTabSetBtn'),    panel: document.getElementById('xcTabSet')    },
-      ];
-      tabs.forEach(({ btn, panel }) => {
-        btn?.addEventListener('click', () => {
-          tabs.forEach(t => {
-            const active = t.btn === btn;
-            t.btn?.classList.toggle('active', active);
-            t.btn?.setAttribute('aria-selected', String(active));
-            if (t.panel) t.panel.hidden = !active;
-          });
-        });
-      });
-    })();
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
       try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
@@ -1534,6 +1538,30 @@
       }
     }
 
+    /**
+     * Snapshot of all labels + sets of the session; returns a function restoring it (for Undo).
+     */
+    function snapshotLabels() {
+      saveCurrentAnnotationsIfNeeded();
+      const sets = new Map([...state.labelSets].map(([id, s]) => [id, { ...s }]));
+      const perEntry = recordingManager.getAll().map((e) => [e.id, (e.annotations || []).map((a) => ({ ...a })), e.needsXcImport]);
+      const labels = state.labels.map((l) => ({ ...l }));
+      const labelsEntryId = state._labelsEntryId;
+      return () => {
+        state.labelSets = sets;
+        for (const [id, anns, needsXcImport] of perEntry) {
+          if (recordingManager.getById(id)) recordingManager.update(id, { annotations: anns, needsXcImport });
+        }
+        state.labels = labels;
+        state._labelsEntryId = labelsEntryId;
+        saveSessionSets(state);
+        syncToPlayer();
+        labelList.render(state.labels);
+        recordingExplorer.render();
+        xcPanel._rebuildSetSection?.();
+      };
+    }
+
     const recordingExplorer = new RecordingExplorer({
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
@@ -1542,12 +1570,19 @@
       getOwnSetId: () => state.ownSetId,
       onRenameSet: (name) => renameLabelSet(state.ownSetId, name),
       onActivate: (entry) => activateRecordingEntry(entry),
-      onAddXc: async (xcId) => {
-        const input = document.getElementById('xcIdInput');
-        if (input) input.value = xcId;
-        document.getElementById('xcLoadBtn')?.click();
+      onRemoveRecording: (entry) => {
+        saveCurrentAnnotationsIfNeeded();
+        const wasActive = entry.id === recordingManager.activeId;
+        const snapshot = { ...recordingManager.getById(entry.id) };
+        recordingManager.remove(entry.id);
+        showUndoToast(`Removed ${entry.xcId ? 'XC' + entry.xcId : entry.filename} from the session`, () => {
+          recordingManager.add(snapshot);
+          if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
+        });
       },
       onResetRecording: async (entry) => {
+        const undo = snapshotLabels();
+        showUndoToast(`Cleared labels of ${entry.xcId ? 'XC' + entry.xcId : entry.filename}`, undo);
         // Remove XC fallback sets tied to this recording (named XC sets stay — re-import matches by uri/name)
         for (const [id, s] of [...state.labelSets]) {
           if (s.origin === 'xeno-canto' && s.xcFallbackId === entry.xcId) state.labelSets.delete(id);
@@ -1578,6 +1613,8 @@
         }
       },
       onResetSet: async () => {
+        const undo = snapshotLabels();
+        showUndoToast('Cleared all labels in this session', undo);
         // Remove all XC fallback sets (named sets stay — re-import will match them by uri/name)
         for (const [id, s] of [...state.labelSets]) {
           if (s.origin === 'xeno-canto') state.labelSets.delete(id);
@@ -1873,7 +1910,7 @@
       confidenceVal:      document.getElementById('birdnetConfidenceVal'),
       overlapSelect:      document.getElementById('birdnetOverlap'),
       mergeCheckbox:      document.getElementById('birdnetMerge'),
-      authorInput:        document.getElementById('birdnetAuthor'),
+      getAuthor:          () => annotatorProfile.name || '',
       progressWrap:       document.getElementById('birdnetProgressWrap'),
       progressBar:        document.getElementById('birdnetProgressBar'),
       statusEl:           document.getElementById('birdnetStatus'),
@@ -1929,14 +1966,10 @@
       },
       onOpenRefCalls: (item) => openRefCalls({ scientificName: item.scientificName, label: item.name }),
     });
-    sidebar.addPanel('explore', {
-      icon:    ICONS.explore,
-      label:   'Explore',
-      element: explorePanel.el,
-      onActivate: () => explorePanel.activate(),
-    });
-    // Ensure Labels is the default active panel on initial load
-    sidebar.setActive('labels');
+    explorePanel.el.classList.add('analyse-explore');
+    document.getElementById('panelBirdnet').appendChild(explorePanel.el);
+    // Project is the starting point: set + recordings
+    sidebar.setActive('project');
 
     // ── Sync & export ─────────────────────────────────────────────────
     let _skipPropsRefresh = false;
@@ -2221,7 +2254,7 @@
     function handleInvalidKeyError(err) {
       if (!isInvalidKeyError(err)) return false;
       selectionMeta.textContent = 'API key invalid — please update your key.';
-      sidebar.setActive('xc');
+      sidebar.setActive('upload');
       setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
       return true;
     }
@@ -2237,7 +2270,7 @@
     }
     updateXcKeyIndicator();
     xcKeyIndicator.addEventListener('click', () => {
-      sidebar.setActive('xc');
+      sidebar.setActive('upload');
       setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
     });
 
@@ -2453,20 +2486,6 @@
       }
     });
 
-    // ── Toggle editable recording metadata section ────────────────────
-    const xcToggleRecordingEdit = document.getElementById('xcToggleRecordingEdit');
-    const xcRecordingEditEl = document.getElementById('xcRecordingEdit');
-    let _xcRecordingEditBuilt = false;
-    xcToggleRecordingEdit?.addEventListener('click', () => {
-      const nowVisible = xcRecordingEditEl.hidden;
-      if (nowVisible && !_xcRecordingEditBuilt) {
-        _xcRecordingEditBuilt = true;
-        xcPanel._buildRecordingEditSection();
-      }
-      xcRecordingEditEl.hidden = !nowVisible;
-      xcToggleRecordingEdit.classList.toggle('active', nowVisible);
-      xcToggleRecordingEdit.textContent = nowVisible ? 'Hide' : 'Edit';
-    });
 
     // ── Taxonomy ──────────────────────────────────────────────────────
     const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
@@ -2697,18 +2716,6 @@
       if (end > start) selectionMeta.textContent = `${fmt(start)} – ${fmt(end)}`;
     });
 
-    clearAllBtn.addEventListener('click', () => {
-      state.labels = [];
-      state.labelSets.clear();
-      state.activeSetId = null;
-      state.selected = null;
-      selectionMeta.textContent = '';
-      player.clearSpectrogramLabels();
-      labelList.render(state.labels);
-      sidebar.setBadge('labels', '');
-      // Persist the cleared state into the active RecordingEntry
-      if (recordingManager?.activeId) recordingManager.saveAnnotations([]);
-    });
 
     exportJsonBtn.addEventListener('click', () => {
       const data = JSON.stringify(toLabelExport(), null, 2);

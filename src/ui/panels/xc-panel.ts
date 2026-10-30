@@ -94,31 +94,26 @@ const SET_LICENSES = [
 
 const SET_FIELD_GROUPS = [
   {
-    label: null, // top-level, no group header
+    label: null, // top-level: what XC checks first (name, license, scope)
     fields: [
-      { key: 'name',      label: 'Set Name',     type: 'text',   required: true,  placeholder: 'My annotation set' },
-      { key: 'license',   label: 'License',      type: 'select', options: SET_LICENSES },
-      { key: 'creator',   label: 'Creator',      type: 'text',   placeholder: 'Your name' },
-      { key: 'creatorId', label: 'Creator ID',   type: 'text',   placeholder: 'XC contributor ID or URI' },
-      { key: 'owner',     label: 'Owner',        type: 'text',   placeholder: 'Organisations / persons, comma-separated' },
-      { key: 'source',    label: 'Set Source',   type: 'text',   placeholder: 'Origin description' },
-      { key: 'uri',       label: 'Set URI',      type: 'text',   placeholder: 'https://…' },
-      { key: 'remarks',   label: 'Remarks',      type: 'text',   placeholder: '(optional)' },
+      { key: 'name',          label: 'Set Name',     type: 'text',   required: true,  placeholder: 'My annotation set' },
+      { key: 'license',       label: 'License',      type: 'select', options: SET_LICENSES },
+      { key: 'taxonCoverage', label: 'Focal taxon',  type: 'text',   placeholder: 'e.g. Aves, Turdus merula' },
+      { key: 'completeness',  label: 'Completeness', type: 'select', options: ['', 'all', 'part'] },
     ],
   },
   {
-    label: 'Project',
+    label: 'More…', // optional fields, collapsed
     fields: [
+      { key: 'creator',     label: 'Creator',      type: 'text', placeholder: 'Your name (default: profile)' },
+      { key: 'creatorId',   label: 'Creator ID',   type: 'text', placeholder: 'XC contributor ID or URI' },
+      { key: 'owner',       label: 'Owner',        type: 'text', placeholder: 'Organisations / persons, comma-separated' },
+      { key: 'source',      label: 'Set Source',   type: 'text', placeholder: 'Origin description' },
+      { key: 'uri',         label: 'Set URI',      type: 'text', placeholder: 'https://…' },
+      { key: 'remarks',     label: 'Remarks',      type: 'text', placeholder: '(optional)' },
       { key: 'projectName', label: 'Project Name', type: 'text', placeholder: '(optional)' },
       { key: 'projectUri',  label: 'Project URI',  type: 'text', placeholder: 'https://…' },
       { key: 'funding',     label: 'Funding',      type: 'text', placeholder: 'Grant / organisation' },
-    ],
-  },
-  {
-    label: 'Scope',
-    fields: [
-      { key: 'taxonCoverage', label: 'Focal taxon', type: 'text', placeholder: 'e.g. Aves, Turdus merula' },
-      { key: 'completeness', label: 'Completeness', type: 'select', options: ['', 'all', 'part'] },
     ],
   },
 ];

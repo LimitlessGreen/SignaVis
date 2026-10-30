@@ -11,7 +11,7 @@
  *     confidenceVal:   document.getElementById('birdnetConfidenceVal'),
  *     overlapSelect:   document.getElementById('birdnetOverlap'),
  *     mergeCheckbox:   document.getElementById('birdnetMerge'),
- *     authorInput:     document.getElementById('birdnetAuthor'),
+ *     getAuthor:       () => profile.name,   // labels' author (from the annotator profile)
  *     progressWrap:    document.getElementById('birdnetProgressWrap'),
  *     progressBar:     document.getElementById('birdnetProgressBar'),
  *     statusEl:        document.getElementById('birdnetStatus'),
@@ -71,6 +71,7 @@ export class BirdNETPanel {
     _loadedModelUrl: any;
     _modal: any;
     authorInput: any;
+    getAuthor: any;
     backdrop: any;
     birdnet: any;
     cancelBtn: any;
@@ -105,7 +106,8 @@ export class BirdNETPanel {
    * @param {HTMLElement} opts.confidenceVal
    * @param {HTMLSelectElement} opts.overlapSelect
    * @param {HTMLInputElement} opts.mergeCheckbox
-   * @param {HTMLInputElement} opts.authorInput
+   * @param {() => string} [opts.getAuthor]  author for new labels (falls back to opts.authorInput)
+   * @param {HTMLInputElement} [opts.authorInput]
    * @param {HTMLElement} opts.progressWrap
    * @param {HTMLElement} opts.progressBar
    * @param {HTMLElement} opts.statusEl
@@ -439,7 +441,7 @@ export class BirdNETPanel {
         onProgress: (pct: any) => { this.progressBar.style.width = pct + '%'; },
       });
 
-      const author = this.authorInput.value.trim();
+      const author = String(this.getAuthor?.() ?? this.authorInput?.value ?? '').trim();
       const mergeOverlapping = this.mergeCheckbox.checked;
       const modelVersion = this._getModelVersion();
       const newLabels = detections.map((det: any) => ({
