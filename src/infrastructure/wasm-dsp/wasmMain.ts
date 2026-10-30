@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════
 // wasmMain.ts — aw-dsp WASM instance on the main thread
 //
-// For small synchronous display operations (CLAHE on the stage-1 image).
+// For small synchronous operations (CLAHE on the stage-1 image, the
+// STFT patch behind "Snap to call").
 // Initialised from the module WasmSpectrogramService compiles anyway, so
 // nothing is fetched twice; until then wasmMain() returns null and callers
 // fall back to their JS path.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { initSync, clahe, bandFloor } from './pkg/aw_dsp_wasm.js';
+import { initSync, clahe, bandFloor, WasmStft } from './pkg/aw_dsp_wasm.js';
 
-const api = { clahe, bandFloor };
+const api = { clahe, bandFloor, WasmStft };
 let ready = false;
 const listeners: Array<() => void> = [];
 
