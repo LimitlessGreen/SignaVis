@@ -40,3 +40,7 @@
 .daw-shell.stamp-mode-active .spectrogram-canvas-wrapper {
     cursor: copy;
 }
+
+.daw-shell.snap-mode-active .spectrogram-canvas-wrapper {
+    cursor: cell;
+}

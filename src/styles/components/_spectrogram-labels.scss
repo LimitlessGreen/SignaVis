@@ -269,6 +269,40 @@
     box-shadow: 0 0 0 1px rgba(255,255,255,0.55), 0 0 0 2px rgba(0,0,0,0.42);
 }
 
+/* ── Snap to call preview ── */
+.spectrogram-label-draft.snap-preview {
+    border-color: rgba(250, 204, 21, 0.98);
+    z-index: 30;
+}
+.snap-caption,
+.snap-hint {
+    position: absolute;
+    font-size: 0.65rem;
+    white-space: nowrap;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(250, 204, 21, 0.95);
+    color: #111;
+    pointer-events: none;
+}
+.snap-caption {
+    left: -2px;
+    bottom: calc(100% + 3px);
+}
+.snap-caption.below {
+    bottom: auto;
+    top: calc(100% + 3px);
+}
+.snap-caption.inside {
+    bottom: auto;
+    top: 3px;
+    left: 3px;
+}
+.snap-hint {
+    transform: translate(8px, -50%);
+    z-index: 30;
+}
+
 /* ── Ghost stamp preview ── */
 .spectrogram-label-ghost {
     position: absolute;

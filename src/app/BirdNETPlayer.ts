@@ -15,6 +15,8 @@ import { clamp } from '../shared/utils.ts';
 import { PlayerState } from './PlayerState.ts';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb } from '../domain/annotations.ts';
 import { UndoStack } from '../domain/undoStack.ts';
+import { computeSnapPatch } from './snapPatch.ts';
+import type { SnapPatch } from '../domain/snapToCall.ts';
 import '../styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
@@ -41,7 +43,7 @@ export type PlayerEventName =
     | 'labelfocus' | 'labelsync' | 'undochange' | 'labeltaxonomyapply'
     | 'annotationcreate' | 'annotationupdate' | 'annotationremove' | 'annotationpreview'
     | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview'
-    | 'stampmodechange' | 'speciesbarchange' | 'viewresize' | 'viewportchange'
+    | 'stampmodechange' | 'snapmodechange' | 'speciesbarchange' | 'viewresize' | 'viewportchange'
     | string;
 
 export type AnnotationInput = Partial<AnnotationEntry> & { start: number; end: number };
@@ -115,6 +117,7 @@ export class BirdNETPlayer {
     _tagPresets: any;
     map: any;
     _stampBtn: any;
+    _snapBtn: HTMLButtonElement | null = null;
     target: any;
     _drawBtn: any;
     trim: any;
@@ -352,6 +355,12 @@ export class BirdNETPlayer {
     /** @returns {string} Tab-separated Raven selection table */
     exportAnnotationsRaven() {
         return this.annotations.exportRavenFormat(this._toAnnotationList());
+    }
+
+    /** Linear dB patch of the loaded audio around `time` (± halfWidth s) for Snap to call. */
+    computeSnapPatch(time: number, halfWidth: number): SnapPatch | null {
+        const audio = this._state?.audioBuffer;
+        return audio ? computeSnapPatch(audio, time, halfWidth) : null;
     }
 
     /**
@@ -701,6 +710,12 @@ export class BirdNETPlayer {
             if (!on) this.spectrogramLabels._stampAxisLock = false;
             this._emit('stampmodechange', ce.detail);
         });
+        this.spectrogramLabels.addEventListener('snapmodechange', (e: Event) => {
+            const on = (e as CustomEvent).detail?.active ?? false;
+            this._snapBtn?.classList.toggle('active', on);
+            this.root?.classList.toggle('snap-mode-active', on);
+            this._emit('snapmodechange', (e as CustomEvent).detail);
+        });
 
         // Tag events forwarded from LabelEditorModal via the layer
         const fwdTag = (layer: EventTarget) => {
@@ -759,7 +774,8 @@ export class BirdNETPlayer {
                         if (this._activeLabelId) {
                             this.spectrogramLabels._stampRefLabelId = this._activeLabelId;
                         }
-                        // mutual exclusion with draw mode
+                        // mutual exclusion with draw and snap mode
+                        this.spectrogramLabels.exitSnapMode();
                         this.spectrogramLabels.drawMode = false;
                         this.root?.classList.remove('draw-mode-active');
                         if (this._drawBtn) this._drawBtn.classList.remove('active');
@@ -849,6 +865,7 @@ export class BirdNETPlayer {
             // disable stamp mode when entering draw mode
             if (on && this.spectrogramLabels) {
                 this.spectrogramLabels.exitStampMode();
+                this.spectrogramLabels.exitSnapMode();
             }
             drawBtn.classList.toggle('active', on);
             this.root?.classList.toggle('draw-mode-active', on);
@@ -870,7 +887,8 @@ export class BirdNETPlayer {
                 if (this._activeLabelId) {
                     this.spectrogramLabels._stampRefLabelId = this._activeLabelId;
                 }
-                // disable draw mode when entering stamp mode
+                // disable draw and snap mode when entering stamp mode
+                this.spectrogramLabels.exitSnapMode();
                 this.spectrogramLabels.drawMode = false;
                 if (this._drawBtn) this._drawBtn.classList.remove('active');
                 this.root?.classList.remove('draw-mode-active');
@@ -879,6 +897,25 @@ export class BirdNETPlayer {
             }
         });
         secondary.appendChild(stampBtn);
+
+        // Snap to call — click a call to box it automatically
+        const snapBtn = document.createElement('button');
+        snapBtn.className = 'toolbar-btn toggle-btn';
+        snapBtn.title = 'Snap to call: click a call to box it (Shift+wheel = sensitivity, click/Enter = add, Esc = cancel)';
+        snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 15c2-6 4-6 5-3s3 3 5-3"/></svg> Snap`;
+        this._snapBtn = snapBtn;
+        snapBtn.addEventListener('click', () => {
+            const layer = this.spectrogramLabels;
+            if (layer.snapMode) { layer.exitSnapMode(); return; }
+            layer.exitStampMode();
+            layer.drawMode = false;
+            this._drawBtn?.classList.remove('active');
+            this.root?.classList.remove('draw-mode-active');
+            layer.snapMode = true;
+            snapBtn.classList.add('active');
+            this.root?.classList.add('snap-mode-active');
+        });
+        secondary.appendChild(snapBtn);
     }
 
     /** Public getter for current species bar selection. */

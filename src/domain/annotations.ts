@@ -7,6 +7,7 @@ import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
+import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, type SnapPatch, type SnapResult } from './snapToCall.ts';
 
 
 const _colorCtx = (() => {
@@ -867,6 +868,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _stampGhostEl: any = null;
     _stampAxisLock: any = false;
     _stampRefLabelId: any = null;
+    /** Snap to call: click a call → preview box, Shift+wheel = sensitivity, click/Enter = commit. */
+    snapMode: boolean = false;
+    _snapSensitivity: number = SNAP_DEFAULT_SENSITIVITY;
+    _snap: { time: number; freq: number; result: SnapResult } | null = null;
+    _snapEl: HTMLElement | null = null;
     _axisConstraint: any = null;
     _draftEl: any = null;
     _drawing: any = null;
@@ -951,6 +957,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._drawing = null;
         this._stampGhostEl = null;
         this._stampAxisLock = false;
+        this._snap = null;
+        this._snapEl = null;
     }
 
     /** Accept a suggestion label — change its origin to 'manual'. */
@@ -1067,6 +1075,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
+        if (this._snap) { this._snapEl = null; this._renderSnapPreview(); }
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
@@ -1411,8 +1420,94 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this.dispatchEvent(new CustomEvent('stampmodechange', { detail: { active: false } }));
     }
 
+    // ── Snap to call ─────────────────────────────────────────────────
+
+    /** Box the call at (time, freq); widens the analysed span while the call reaches its edge. */
+    _runSnap(time: number, freq: number) {
+        let result: SnapResult | null = null;
+        for (let half = 1.5; half <= 12; half *= 2) {
+            const patch: SnapPatch | null = this.player?.computeSnapPatch?.(time, half) ?? null;
+            if (!patch) break;
+            result = snapToCall(patch, time, freq, this._snapSensitivity, bandMedians(patch));
+            if (!result.ok || !result.touchesEdge) break;
+        }
+        this._snap = result ? { time, freq, result } : null;
+        this._renderSnapPreview();
+    }
+
+    _renderSnapPreview() {
+        if (!this._snap || !this.overlay) { this._clearSnap(); return; }
+        if (!this._snapEl) {
+            this._snapEl = document.createElement('div');
+            this.overlay.appendChild(this._snapEl);
+        }
+        const el = this._snapEl;
+        const width = parseFloat(this.overlay.style.width) || 1;
+        const height = parseFloat(this.overlay.style.height) || 1;
+        const { result, time, freq } = this._snap;
+        const pct = Math.round(this._snapSensitivity * 100);
+        if (result.ok) {
+            const g = this._toGeometry(this._normalize({ ...result.box, label: '' }), width, height);
+            el.className = 'spectrogram-label-draft snap-preview';
+            Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
+            const cap = document.createElement('span');
+            cap.className = 'snap-caption';
+            cap.textContent = `Sensitivity ${pct} % · Shift+wheel · click or Enter to add`;
+            el.replaceChildren(cap);
+            // Above the box; below it at the top edge; inside when it spans the full height
+            const roomBelow = g.top + g.height < height - 24;
+            cap.classList.toggle('below', g.top < 24 && roomBelow);
+            cap.classList.toggle('inside', g.top < 24 && !roomBelow);
+        } else {
+            const g = this._toGeometry(this._normalize({ start: time, end: time, freqMin: freq, freqMax: freq, label: '' }), width, height);
+            el.className = 'snap-hint';
+            Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: '', height: '' });
+            el.textContent = result.reason === 'noise'
+                ? 'No call here — click on a brighter trace'
+                : `Trace merges with the background (sensitivity ${pct} %) — Shift+wheel to lower it`;
+        }
+    }
+
+    _clearSnap() {
+        this._snap = null;
+        if (this._snapEl?.parentNode) this._snapEl.parentNode.removeChild(this._snapEl);
+        this._snapEl = null;
+    }
+
+    _snapContains(clientX: number, clientY: number) {
+        const r = this._snap?.result;
+        if (!r?.ok) return false;
+        const t = this._clientXToTime(clientX), f = this._clientYToFreq(clientY);
+        return t >= r.box.start && t <= r.box.end && f >= r.box.freqMin && f <= r.box.freqMax;
+    }
+
+    _commitSnap() {
+        const r = this._snap?.result;
+        if (!r?.ok) return;
+        const region = this._normalize({ ...r.box, label: `Label ${this._counter++}` });
+        this._clearSnap();
+        this._openNewLabelPicker(region);
+    }
+
+    exitSnapMode() {
+        if (!this.snapMode) return;
+        this.snapMode = false;
+        this._clearSnap();
+        this.dispatchEvent(new CustomEvent('snapmodechange', { detail: { active: false } }));
+    }
+
     _bindDrawingInteractions(wrapper: any) {
         const onPointerDown = (e: PointerEvent) => {
+            if (this.snapMode && e.button === 0) {
+                if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
+                if (!this.player?._state?.audioBuffer) return;
+                this.player?._state?._blockSeekClicks?.(400);
+                if (this._snapContains(e.clientX, e.clientY)) this._commitSnap();
+                else this._runSnap(this._clientXToTime(e.clientX), this._clientYToFreq(e.clientY));
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             // Stamp mode: left-click places label, right-click exits mode
             if (this.stampMode) {
                 if (e.button === 2) {
@@ -1514,6 +1609,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const tag = ((e.target as HTMLElement)?.tagName || '').toLowerCase();
             if (tag === 'input' || tag === 'textarea' || (e.target as any)?.isContentEditable) return;
 
+            if (this.snapMode && (e.key === 'Escape' || e.key === 'Enter')) {
+                e.preventDefault();
+                if (e.key === 'Enter') this._commitSnap();
+                else if (this._snap) this._clearSnap();
+                else this.exitSnapMode();
+                return;
+            }
+
             // Escape exits stamp mode
             if (this.stampMode && e.key === 'Escape') {
                 e.preventDefault();
@@ -1554,6 +1657,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         document.addEventListener('pointercancel', onPointerUp, true);
         wrapper.addEventListener('contextmenu', onContextMenu, true);
         document.addEventListener('keydown', onKeyDown, true);
+
+        // Shift+wheel tunes the snap sensitivity while a preview is shown
+        const onWheel = (e: WheelEvent) => {
+            if (!this.snapMode || !this._snap || !e.shiftKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const step = (e.deltaY || e.deltaX) < 0 ? 0.02 : -0.02;
+            this._snapSensitivity = Math.min(0.99, Math.max(0.01, this._snapSensitivity + step));
+            this._runSnap(this._snap.time, this._snap.freq);
+        };
+        wrapper.addEventListener('wheel', onWheel, { capture: true, passive: false });
+        this._domCleanups.push(() => wrapper.removeEventListener('wheel', onWheel, true));
 
         this._domCleanups.push(() => wrapper.removeEventListener('pointerdown', onPointerDown, true));
         this._domCleanups.push(() => document.removeEventListener('pointermove', onPointerMove, true));
