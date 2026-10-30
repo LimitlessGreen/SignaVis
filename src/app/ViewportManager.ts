@@ -73,6 +73,8 @@ export class ViewportManager extends EventTarget {
     _followLastPosition = 0;
     /** Smooth-mode follower: fractional scroll, playhead velocity estimate. */
     _smoothFollow: { scroll: number; vel: number; pos: number; at: number } | null = null;
+    /** Playhead clock smoother: extrapolated position and velocity (px/ms). */
+    _playheadClock: { pos: number; vel: number; raw: number; rawAt: number; at: number } | null = null;
     _zoomRedrawRafId: any;
     _overviewViewportRafId: any;
     _overviewNeedsFinalRedraw: any;
@@ -198,6 +200,39 @@ export class ViewportManager extends EventTarget {
                 );
             }
         }
+    }
+
+    /**
+     * De-jitter the playhead position during playback. The media clock advances
+     * in uneven steps; extrapolate with a low-passed velocity and pull gently
+     * toward the reported position. Seeks and pauses snap to the raw value.
+     * @param {number}  position - raw playhead x in pixels
+     * @param {boolean} playing  - true for a playback-driven update
+     */
+    smoothPlaybackPosition(position: number, playing: boolean) {
+        const now = performance.now();
+        const c   = this._playheadClock;
+        if (!playing || !c || now - c.at > 120
+            || Math.abs(position - (c.pos + c.vel * (now - c.at))) > this._getViewportWidth() * 0.1) {
+            this._playheadClock = playing ? { pos: position, vel: c && now - c.at <= 120 ? c.vel : 0, raw: position, rawAt: now, at: now } : null;
+            return position;
+        }
+        const dt = Math.max(1, now - c.at);
+        // Velocity from raw steps only when the clock actually advanced.
+        if (position !== c.raw) {
+            const span   = Math.max(1, now - c.rawAt);
+            const rawVel = (position - c.raw) / span;
+            c.vel += (rawVel - c.vel) * (1 - Math.exp(-span / 250));
+            c.raw   = position;
+            c.rawAt = now;
+        }
+        let next = c.pos + c.vel * dt;
+        next += (position - next) * (1 - Math.exp(-dt / 100));
+        // Never step backwards during forward playback (visible as a shiver).
+        if (c.vel >= 0 && next < c.pos) next = c.pos;
+        c.pos = next;
+        c.at  = now;
+        return next;
     }
 
     /**

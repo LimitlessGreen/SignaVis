@@ -901,13 +901,16 @@ export class PlayerState {
     _updatePlayhead(currentTime: number, fromPlayback: boolean) {
         if (!this.audioBuffer) return;
 
-        const position = this.coords.timeToScrollX(currentTime);
+        const playing  = fromPlayback && !!this.wavesurfer?.isPlaying();
+        // Playback positions come from a coarse media clock; smooth them so the
+        // playhead (and the follow scroll derived from it) moves evenly.
+        const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing);
 
         if (this.d.playhead) this.d.playhead.style.transform = `translateX(${position}px)`;
         if (this.d.waveformPlayhead) this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
 
         // Follow-mode scroll — delegated to ViewportManager
-        if (fromPlayback && this.followPlayback && this.wavesurfer?.isPlaying()) {
+        if (playing && this.followPlayback) {
             this._viewport.applyFollowScroll(position);
         }
 
