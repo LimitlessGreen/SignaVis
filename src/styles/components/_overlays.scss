@@ -232,16 +232,19 @@
 /* species-search-* rules live in _species-search.scss */
 /* Editable Select styles → co-located in src/ui/components/editable-select/editable-select.scss */
 
-/* XC no-key modal (migrated from demo/labeling-app.legacy.css) */
+/* Shared app modal (.app-modal-*; .xc-nokey-* kept as alias for older callers) */
+.app-modal-backdrop,
 .xc-nokey-backdrop {
   position: fixed; inset: 0; z-index: 200;
   display: none; align-items: center; justify-content: center;
   background: var(--color-overlay-bg);
   animation: fadeIn 0.15s ease;
 }
+.app-modal-backdrop:not([hidden]),
 .xc-nokey-backdrop:not([hidden]) {
   display: flex;
 }
+.app-modal,
 .xc-nokey-dialog {
   position: relative; /* needed so .modal-close--injected positions inside the dialog */
   max-width: 420px; width: 92%;
@@ -252,11 +255,14 @@
   box-shadow: 0 16px 48px var(--shadow-strong);
   color: var(--color-text-primary); font-size: 13px; line-height: 1.5;
 }
+.app-modal h3,
 .xc-nokey-dialog h3 {
   margin: 0 0 10px; font-size: 15px; font-weight: 600;
   color: var(--color-text-primary);
 }
+.app-modal p,
 .xc-nokey-dialog p { margin: 0 0 8px; color: var(--color-text-secondary); }
+.app-modal-hint,
 .xc-nokey-hint { font-size: 11.5px; }
 .xc-nokey-input-row {
   margin: 10px 0 4px;
@@ -271,9 +277,11 @@
   font-size: 11.5px; color: var(--color-text-secondary);
   margin: 12px 0 14px; cursor: pointer;
 }
+.app-modal-actions,
 .xc-nokey-actions {
   display: flex; gap: 8px; justify-content: flex-end;
 }
+.app-modal-actions .tb-btn:first-child,
 .xc-nokey-actions .tb-btn:first-child {
   color: var(--color-success); border-color: var(--color-success-soft);
 }

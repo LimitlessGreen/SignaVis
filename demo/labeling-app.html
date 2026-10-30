@@ -61,18 +61,18 @@
     </header>
 
     <!-- API key missing modal -->
-    <div class="xc-nokey-backdrop" id="xcNokeyModal" hidden>
-      <div class="xc-nokey-dialog">
+    <div class="app-modal-backdrop" id="xcNokeyModal" hidden>
+      <div class="app-modal">
         <h3>No Xeno-canto API Key configured</h3>
         <p>Without an API key, labels from Xeno-canto cannot be loaded. The recording will play, but annotations will be missing.</p>
-        <p class="xc-nokey-hint">You can add your key at any time via <strong>XC API Key</strong> in the top bar (Upload tab). Get an API key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">https://xeno-canto.org/account</a>.</p>
+        <p class="app-modal-hint">You can add your key at any time via <strong>XC API Key</strong> in the top bar (Upload tab). Get an API key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">https://xeno-canto.org/account</a>.</p>
         <div class="xc-nokey-input-row">
           <input type="text" id="xcNokeyKeyInput" class="input" placeholder="Paste your API key here…" />
         </div>
         <label class="xc-nokey-dismiss-label">
           <input type="checkbox" id="xcNokeyDismiss" /> Don't show again
         </label>
-        <div class="xc-nokey-actions">
+        <div class="app-modal-actions">
           <button class="tb-btn" id="xcNokeySetKeyBtn" type="button" disabled>Save key</button>
           <button class="tb-btn" id="xcNokeyCloseBtn" type="button">Continue without key</button>
         </div>
@@ -80,30 +80,30 @@
     </div>
 
     <!-- Long-recording warning modal -->
-    <div class="xc-nokey-backdrop" id="longRecordingModal" hidden>
-      <div class="xc-nokey-dialog">
+    <div class="app-modal-backdrop" id="longRecordingModal" hidden>
+      <div class="app-modal">
         <h3>Recording too long</h3>
         <p id="longRecordingMsg"></p>
-        <p class="xc-nokey-hint">
+        <p class="app-modal-hint">
           Support for long recordings is planned. For now, please use recordings
           under 10 minutes for best results.
         </p>
-        <div class="xc-nokey-actions">
+        <div class="app-modal-actions">
           <button class="tb-btn" id="longRecordingCloseBtn" type="button">OK, continue anyway</button>
         </div>
       </div>
     </div>
 
     <!-- XC not-found modal -->
-    <div class="xc-nokey-backdrop" id="xcNotFoundModal" hidden>
-      <div class="xc-nokey-dialog">
+    <div class="app-modal-backdrop" id="xcNotFoundModal" hidden>
+      <div class="app-modal">
         <h3>Recording not found</h3>
         <p id="xcNotFoundMsg">This Xeno-Canto recording could not be downloaded.</p>
-        <p class="xc-nokey-hint">
+        <p class="app-modal-hint">
           Double-check the XC number. The recording may not exist, may have been removed,
           or may not have a publicly downloadable audio file.
         </p>
-        <div class="xc-nokey-actions">
+        <div class="app-modal-actions">
           <button class="tb-btn" id="xcNotFoundCloseBtn" type="button">OK</button>
         </div>
       </div>
@@ -553,10 +553,14 @@
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
 
     // ── Player ────────────────────────────────────────────────────────
+    // Waveform above the spectrogram is optional (the overview below always shows one); applied on load
+    const SHOW_WAVEFORM_KEY = 'signavis.labeling.show-waveform.v1';
+    const showMainWaveform = (() => { try { return localStorage.getItem(SHOW_WAVEFORM_KEY) !== '0'; } catch { return true; } })();
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
       showFileOpen: false,
       enableProgressiveSpectrogram: true,
       showOverview: true,
+      viewMode: showMainWaveform ? 'both' : 'spectrogram',
       showTransport: true,
     });
     await player.ready;
@@ -613,7 +617,7 @@
     const longRecordingCloseBtn  = document.getElementById('longRecordingCloseBtn');
     const longRecordingManager   = new ModalManager({
       backdrop: longRecordingModal,
-      dialog:   longRecordingModal?.querySelector('.xc-nokey-dialog'),
+      dialog:   longRecordingModal?.querySelector('.app-modal'),
     });
     longRecordingCloseBtn?.addEventListener('click', () => longRecordingManager.close());
 
@@ -623,7 +627,7 @@
     const xcNotFoundCloseBtn   = document.getElementById('xcNotFoundCloseBtn');
     const xcNotFoundManager    = new ModalManager({
       backdrop: xcNotFoundModal,
-      dialog:   xcNotFoundModal?.querySelector('.xc-nokey-dialog'),
+      dialog:   xcNotFoundModal?.querySelector('.app-modal'),
     });
     xcNotFoundCloseBtn?.addEventListener('click', () => xcNotFoundManager.close());
 
@@ -826,9 +830,9 @@
     const helpPanelEl = document.getElementById('panelHelp');
     function openInfoDialog(el, title) {
       const backdrop = document.createElement('div');
-      backdrop.className = 'xc-nokey-backdrop';
+      backdrop.className = 'app-modal-backdrop';
       const dialog = document.createElement('div');
-      dialog.className = 'xc-nokey-dialog help-dialog';
+      dialog.className = 'app-modal help-dialog';
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-label', title);
       const placeholder = document.createComment('info-dialog');
@@ -962,6 +966,20 @@
       });
       sec.appendChild(btn);
       specPanel.el.appendChild(sec);
+
+      const wf = document.createElement('div');
+      wf.className = 'settings-section';
+      wf.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+      wf.innerHTML = `
+        <label class="field-check"><input type="checkbox" /> Show waveform above spectrogram</label>
+        <p class="field-hint" hidden>Takes effect after reloading the page.</p>`;
+      const check = wf.querySelector('input');
+      check.checked = showMainWaveform;
+      check.addEventListener('change', () => {
+        try { localStorage.setItem(SHOW_WAVEFORM_KEY, check.checked ? '1' : '0'); } catch { /* ignore */ }
+        wf.querySelector('.field-hint').hidden = check.checked === showMainWaveform;
+      });
+      specPanel.el.insertBefore(wf, sec);
     })();
 
     const propsPanel = new PropertiesPanel({
@@ -988,11 +1006,9 @@
       const el = document.createElement('div');
       el.className = 'scroll-panel';
       el.innerHTML = `
+        <div class="sidebar-section-header">Playback</div>
         <div class="panel-section">
-          <h3>Audio</h3>
           <p class="field-hint">Make ultrasonic calls audible. Only playback changes — spectrogram, labels and times stay in the original recording.</p>
-        </div>
-        <div class="panel-section">
           <label class="field-label" for="audioModeSelect">Method</label>
           <select id="audioModeSelect" class="field-select">
             <option value="expansion">Time expansion</option>
@@ -1017,7 +1033,7 @@
             <select id="audioDivisorSelect" class="field-select">
               ${[5, 8, 10, 16, 20].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
             </select>
-            <label class="field-label"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
+            <label class="field-check"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
             <p class="field-hint">Real time, like a frequency-division detector: every call at once, all frequencies divided. Sounds rough by nature; quiet background stays silent.</p>
           </div>
           <div data-mode="pitch" hidden>
@@ -1028,8 +1044,8 @@
             <p class="field-hint">Real time with every frequency divided — keeps the rhythm of a pass (pulse rate, feeding buzz) at its natural pace. Single calls come out short; for their shape use time expansion.</p>
           </div>
         </div>
+        <div class="sidebar-section-header">Recording</div>
         <div class="panel-section">
-          <h3>Recording</h3>
           <div id="audioDetectStatus" class="meta">No audio loaded.</div>
           <div class="panel-actions">
             <button class="sidebar-action-btn" id="audioApplySuggestionBtn" type="button" hidden></button>
@@ -2410,7 +2426,7 @@
     const xcNokeyCloseBtn = document.getElementById('xcNokeyCloseBtn');
     const xcNokeySetKeyBtn = document.getElementById('xcNokeySetKeyBtn');
     const xcNokeyKeyInput = document.getElementById('xcNokeyKeyInput');
-    const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: xcNokeyModal?.querySelector('.xc-nokey-dialog') });
+    const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: xcNokeyModal?.querySelector('.app-modal') });
 
     // XC export modal is provided by demo/xc-export-modal.js (instantiated later)
 

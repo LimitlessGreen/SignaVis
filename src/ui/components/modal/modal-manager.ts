@@ -37,7 +37,7 @@ export default class ModalManager {
     /** @type {HTMLElement|null} */
     this.backdrop = backdrop || null;
     /** @type {HTMLElement|null} */
-    const candidateDialog = dialog ?? (backdrop ? (backdrop as HTMLElement).querySelector('.modal, .xc-nokey-dialog, [role="dialog"], dialog') : null);
+    const candidateDialog = dialog ?? (backdrop ? (backdrop as HTMLElement).querySelector('.modal, .app-modal, .xc-nokey-dialog, [role="dialog"], dialog') : null);
     this.dialog = candidateDialog as HTMLElement | null;
     /** @type {(() => void)|null} Called instead of close() for user-initiated dismiss (Escape, backdrop, ×) */
     this._onClose = onClose || null;
