@@ -266,20 +266,18 @@ fn pcen_start_matches_steady_state() {
 
 #[test]
 fn v2_pyramid_roundtrip() {
-    use aw_dsp::pyramid::{build_pyramid_v2, Pyramid, FORMAT_VERSION_V2};
+    use aw_dsp::pyramid::{build_pyramid, Pyramid, FORMAT_VERSION};
     let audio = chirpy(30.0);
     let p = params(512, 128, 1024, WindowKind::Hann, FreqScale::Linear);
     let dir = tempfile::tempdir().unwrap();
-    let meta = build_pyramid_v2(&mut aw_dsp::MemSource(&audio), p.clone(), dir.path(), |_| true).unwrap();
-    assert_eq!(meta.version, FORMAT_VERSION_V2);
+    let meta = build_pyramid(&mut aw_dsp::MemSource(&audio), p.clone(), dir.path(), |_| true).unwrap();
+    assert_eq!(meta.version, FORMAT_VERSION);
     assert_eq!(meta.levels[0].n_frames, p.n_frames(audio.len() as u64));
     assert!(meta.stats.median < meta.stats.p99_9);
     let pyr = Pyramid::<StftParams>::open_as(dir.path()).unwrap().unwrap();
     let direct = Stft::new(p).unwrap().compute(&audio);
     let l0 = pyr.read(0, 0, meta.levels[0].n_frames).unwrap();
     for (a, b) in l0.iter().zip(&direct) { assert!((a - b).abs() <= 0.1 + 1e-3 * b.abs(), "{a} vs {b}"); }
-    // A v1 reader must not accept a v2 store.
-    assert!(Pyramid::<aw_dsp::SpecParams>::open_as(dir.path()).unwrap().is_none());
 }
 
 /// Params exactly as the desktop frontend sends them (TauriSpectrogramService):

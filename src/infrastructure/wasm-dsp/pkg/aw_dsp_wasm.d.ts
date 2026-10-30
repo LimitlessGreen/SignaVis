@@ -1,46 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export class WasmEngine {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Band energies for `n_frames` frames; `samples[0]` is the first
-     * sample of the first frame. Independent per block → parallelisable.
-     */
-    bandEnergies(samples: Float32Array, n_frames: number): Float32Array;
-    /**
-     * Finalized values for one block, independent of other blocks
-     * (PCEN warm-up, see aw_dsp::SpecEngine::block_values).
-     */
-    blockValues(samples: Float32Array, warmup: number, n_frames: number): Float32Array;
-    /**
-     * PCEN / dB in place. Must be called on consecutive blocks in order.
-     */
-    finalize(data: Float32Array): void;
-    nFrames(n_samples: number): number;
-    constructor(params_json: string);
-    outBins(): number;
-    pcenWarmup(): number;
-    samplesForFrames(n: number): number;
-}
-
-export class WasmPyramidBuilder {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Flush partial groups; returns meta JSON. Drain levels afterwards.
-     */
-    finish(): string;
-    nLevels(): number;
-    constructor(params_json: string, n_samples: number);
-    pushBlock(block: Float32Array): void;
-    /**
-     * Drain encoded bytes produced so far for `level` (append to its file).
-     */
-    takeLevel(level: number): Uint8Array;
-}
-
 export class WasmPyramidBuilderV2 {
     free(): void;
     [Symbol.dispose](): void;
@@ -103,26 +63,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmengine_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpyramidbuilder_free: (a: number, b: number) => void;
     readonly __wbg_wasmpyramidbuilderv2_free: (a: number, b: number) => void;
     readonly __wbg_wasmstft_free: (a: number, b: number) => void;
     readonly bandFloor: (a: number, b: number, c: number) => [number, number];
     readonly clahe: (a: number, b: number, c: any, d: number, e: number, f: number, g: number, h: number) => void;
     readonly decodeF16: (a: number, b: number) => [number, number];
-    readonly wasmengine_bandEnergies: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly wasmengine_blockValues: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmengine_finalize: (a: number, b: number, c: number, d: any) => void;
-    readonly wasmengine_nFrames: (a: number, b: number) => number;
-    readonly wasmengine_new: (a: number, b: number) => [number, number, number];
-    readonly wasmengine_outBins: (a: number) => number;
-    readonly wasmengine_pcenWarmup: (a: number) => number;
-    readonly wasmengine_samplesForFrames: (a: number, b: number) => number;
-    readonly wasmpyramidbuilder_finish: (a: number) => [number, number, number, number];
-    readonly wasmpyramidbuilder_nLevels: (a: number) => number;
-    readonly wasmpyramidbuilder_new: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmpyramidbuilder_pushBlock: (a: number, b: number, c: number) => [number, number];
-    readonly wasmpyramidbuilder_takeLevel: (a: number, b: number) => [number, number];
     readonly wasmpyramidbuilderv2_finish: (a: number) => [number, number, number, number];
     readonly wasmpyramidbuilderv2_nLevels: (a: number) => number;
     readonly wasmpyramidbuilderv2_new: (a: number, b: number, c: number) => [number, number, number];
@@ -140,8 +85,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_start: () => void;
 }
 

@@ -142,7 +142,6 @@ pub fn run() {
             xc_download_recording,
             // ── Native spectrogram (long recordings) ─────────────────
             spectrogram_open,
-            spectrogram_open_v2,
             spectrogram_tile,
             spectrogram_cancel,
         ])

@@ -4,17 +4,15 @@
 // spectrogram_open   compute (or reuse cached) multi-level pyramid for a file
 // spectrogram_tile   raw f32 LE bytes for frames [f0, f1) of one level
 // spectrogram_cancel abort a running build
-// spectrogram_open_v2 same as open for aw_dsp::v2 params (dBFS / PCEN)
 //
 // Stores live in <app_cache>/spectrograms/<key>, key = hash of file
 // identity (path, size, mtime) + DSP params, so results survive restarts.
 // Progress: event "spectrogram:progress" { id, fraction }.
 // ═══════════════════════════════════════════════════════════════════════
 
-use aw_dsp::pyramid::{build_pyramid_v2, Layout};
+use aw_dsp::pyramid::Layout;
 use aw_dsp::v2::StftParams;
-use aw_dsp::{build_pyramid, Pyramid, PyramidMeta, SpecParams, WavSource};
-use serde::de::DeserializeOwned;
+use aw_dsp::{build_pyramid, Pyramid, PyramidMeta, WavSource};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -25,44 +23,10 @@ use tauri::{Emitter, Manager, State};
 
 #[derive(Default)]
 pub struct SpectrogramState {
-    stores: Mutex<HashMap<String, Arc<Store>>>,
+    stores: Mutex<HashMap<String, Arc<Pyramid>>>,
     builds: Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Serialises builds of the same key.
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-}
-
-/// An opened store of either engine; tiles are read the same way.
-enum Store { V1(Pyramid), V2(Pyramid<StftParams>) }
-
-impl Store {
-    fn read(&self, level: usize, f0: u64, f1: u64) -> std::io::Result<Vec<f32>> {
-        match self { Store::V1(p) => p.read(level, f0, f1), Store::V2(p) => p.read(level, f0, f1) }
-    }
-}
-
-trait StoreKind: Layout + Send + 'static {
-    fn set_sample_rate(&mut self, sr: u32);
-    fn wrap(p: Pyramid<Self>) -> Store;
-    fn meta(s: &Store) -> Option<&PyramidMeta<Self>>;
-    fn build(src: &mut WavSource, p: Self, dir: &std::path::Path, progress: impl FnMut(f64) -> bool) -> std::io::Result<()>;
-}
-
-impl StoreKind for SpecParams {
-    fn set_sample_rate(&mut self, sr: u32) { self.sample_rate = sr; }
-    fn wrap(p: Pyramid<Self>) -> Store { Store::V1(p) }
-    fn meta(s: &Store) -> Option<&PyramidMeta<Self>> { if let Store::V1(p) = s { Some(&p.meta) } else { None } }
-    fn build(src: &mut WavSource, p: Self, dir: &std::path::Path, progress: impl FnMut(f64) -> bool) -> std::io::Result<()> {
-        build_pyramid(src, p, dir, progress).map(|_| ())
-    }
-}
-
-impl StoreKind for StftParams {
-    fn set_sample_rate(&mut self, sr: u32) { self.resolve_sample_rate(sr); }
-    fn wrap(p: Pyramid<Self>) -> Store { Store::V2(p) }
-    fn meta(s: &Store) -> Option<&PyramidMeta<Self>> { if let Store::V2(p) = s { Some(&p.meta) } else { None } }
-    fn build(src: &mut WavSource, p: Self, dir: &std::path::Path, progress: impl FnMut(f64) -> bool) -> std::io::Result<()> {
-        build_pyramid_v2(src, p, dir, progress).map(|_| ())
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,15 +34,15 @@ impl StoreKind for StftParams {
 pub struct SpectrogramOpenArgs {
     pub path: String,
     /// `sampleRate` is ignored and taken from the file.
-    pub params: SpecParams,
+    pub params: StftParams,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SpectrogramOpenResult<P: Layout = SpecParams> {
+pub struct SpectrogramOpenResult {
     pub id: String,
     pub from_cache: bool,
-    pub meta: PyramidMeta<P>,
+    pub meta: PyramidMeta,
 }
 
 #[derive(Clone, Serialize)]
@@ -105,51 +69,26 @@ pub async fn spectrogram_open(
     state: State<'_, SpectrogramState>,
     args: SpectrogramOpenArgs,
 ) -> Result<SpectrogramOpenResult, String> {
-    open_store(app, state, args.path, args.params).await
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpectrogramOpenV2Args {
-    pub path: String,
-    /// `sampleRate` is ignored and taken from the file.
-    pub params: StftParams,
-}
-
-#[tauri::command]
-pub async fn spectrogram_open_v2(
-    app: tauri::AppHandle,
-    state: State<'_, SpectrogramState>,
-    args: SpectrogramOpenV2Args,
-) -> Result<SpectrogramOpenResult<StftParams>, String> {
-    open_store(app, state, args.path, args.params).await
-}
-
-async fn open_store<P: StoreKind + DeserializeOwned>(
-    app: tauri::AppHandle,
-    state: State<'_, SpectrogramState>,
-    path: String,
-    mut params: P,
-) -> Result<SpectrogramOpenResult<P>, String> {
+    let SpectrogramOpenArgs { path, mut params } = args;
     if !path.to_ascii_lowercase().ends_with(".wav") {
         return Err("native spectrogram supports WAV only".into());
     }
     let src = WavSource::open(&path).map_err(|e| format!("{path}: {e}"))?;
-    params.set_sample_rate(src.sample_rate());
-    let id = store_key(&path, &params, P::VERSION)?;
+    params.resolve_sample_rate(src.sample_rate());
+    let id = store_key(&path, &params, StftParams::VERSION)?;
 
     let lock = state.locks.lock().unwrap().entry(id.clone()).or_default().clone();
     let _guard = lock.lock().await;
 
     let cached = |state: &SpectrogramState, id: &str| state.stores.lock().unwrap().get(id)
-        .and_then(|s| P::meta(s).cloned());
+        .map(|p| p.meta.clone());
     if let Some(meta) = cached(&state, &id) {
         return Ok(SpectrogramOpenResult { id, from_cache: true, meta });
     }
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("spectrograms").join(&id);
-    if let Some(p) = Pyramid::<P>::open_as(&dir).map_err(|e| e.to_string())? {
+    if let Some(p) = Pyramid::open_as(&dir).map_err(|e| e.to_string())? {
         let meta = p.meta.clone();
-        state.stores.lock().unwrap().insert(id.clone(), Arc::new(P::wrap(p)));
+        state.stores.lock().unwrap().insert(id.clone(), Arc::new(p));
         return Ok(SpectrogramOpenResult { id, from_cache: true, meta });
     }
 
@@ -159,13 +98,13 @@ async fn open_store<P: StoreKind + DeserializeOwned>(
     let built = tauri::async_runtime::spawn_blocking(move || {
         let mut src = src;
         let mut last = -1.0;
-        P::build(&mut src, params, &dir2, |fraction| {
+        build_pyramid(&mut src, params, &dir2, |fraction| {
             if fraction - last >= 0.01 || fraction >= 1.0 {
                 last = fraction;
                 let _ = app2.emit("spectrogram:progress", ProgressPayload { id: &id2, fraction });
             }
             !cancel.load(Ordering::Relaxed)
-        })
+        }).map(|_| ())
     }).await;
     state.builds.lock().unwrap().remove(&id);
 
@@ -173,9 +112,9 @@ async fn open_store<P: StoreKind + DeserializeOwned>(
         let _ = std::fs::remove_dir_all(&dir);
         return Err(if e.kind() == std::io::ErrorKind::Interrupted { "cancelled".into() } else { e.to_string() });
     }
-    let p = Pyramid::<P>::open_as(&dir).map_err(|e| e.to_string())?.ok_or("store incomplete after build")?;
+    let p = Pyramid::open_as(&dir).map_err(|e| e.to_string())?.ok_or("store incomplete after build")?;
     let meta = p.meta.clone();
-    state.stores.lock().unwrap().insert(id.clone(), Arc::new(P::wrap(p)));
+    state.stores.lock().unwrap().insert(id.clone(), Arc::new(p));
     Ok(SpectrogramOpenResult { id, from_cache: false, meta })
 }
 

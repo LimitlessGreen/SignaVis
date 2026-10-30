@@ -9,7 +9,8 @@
 // (display precision is 8 bit anyway) and served as f32, so the frontend
 // keeps its existing float-based contrast pipeline.
 
-use crate::{SampleSource, SpecEngine, SpecParams};
+use crate::SampleSource;
+use crate::v2::{Stft, StftParams};
 use serde::de::DeserializeOwned;
 use half::f16;
 use serde::{Deserialize, Serialize};
@@ -25,9 +26,8 @@ const STATS_SAMPLES: u64 = 2_000_000;
 /// Frames per level sampled for the per-band noise floor.
 const BAND_FLOOR_FRAMES: u64 = 2000;
 const BLOCK_FRAMES: usize = 6000;
-pub const FORMAT_VERSION: u32 = 2;
-/// Store format for `v2::StftParams` (dBFS / PCEN, centred frames).
-pub const FORMAT_VERSION_V2: u32 = 4;
+/// Store format (dBFS / PCEN, centred frames). 1–3 were the retired v1 engine.
+pub const FORMAT_VERSION: u32 = 4;
 
 /// What the pyramid needs to know about a parameter set.
 pub trait Layout: Clone + Serialize + DeserializeOwned {
@@ -36,16 +36,10 @@ pub trait Layout: Clone + Serialize + DeserializeOwned {
     fn n_frames(&self, n_samples: u64) -> u64;
 }
 
-impl Layout for SpecParams {
+impl Layout for StftParams {
     const VERSION: u32 = FORMAT_VERSION;
-    fn out_bins(&self) -> usize { SpecParams::out_bins(self) }
-    fn n_frames(&self, n: u64) -> u64 { SpecParams::n_frames(self, n) }
-}
-
-impl Layout for crate::v2::StftParams {
-    const VERSION: u32 = FORMAT_VERSION_V2;
-    fn out_bins(&self) -> usize { crate::v2::StftParams::out_bins(self) }
-    fn n_frames(&self, n: u64) -> u64 { crate::v2::StftParams::n_frames(self, n) }
+    fn out_bins(&self) -> usize { StftParams::out_bins(self) }
+    fn n_frames(&self, n: u64) -> u64 { StftParams::n_frames(self, n) }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,7 +65,7 @@ pub struct Stats {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", bound = "P: Layout")]
-pub struct PyramidMeta<P = SpecParams> {
+pub struct PyramidMeta<P = StftParams> {
     pub version: u32,
     pub params: P,
     pub n_samples: u64,
@@ -159,7 +153,7 @@ struct LevelAcc { acc: Vec<f32>, count: u64, written: u64, stats: StatsAcc }
 
 /// Incremental pyramid construction from finalized frames (in order).
 /// Storage-agnostic: encoded bytes go to a `LevelSink`.
-pub struct PyramidBuilder<P: Layout = SpecParams> {
+pub struct PyramidBuilder<P: Layout = StftParams> {
     params: P,
     n_samples: u64,
     bins: usize,
@@ -233,17 +227,9 @@ impl<P: Layout> PyramidBuilder<P> {
 /// Compute the spectrogram of `src` into `dir`. `progress(fraction)`
 /// returning false cancels the build (io::ErrorKind::Interrupted).
 pub fn build_pyramid<S: SampleSource>(
-    src: &mut S, params: SpecParams, dir: &Path, progress: impl FnMut(f64) -> bool,
+    src: &mut S, params: StftParams, dir: &Path, progress: impl FnMut(f64) -> bool,
 ) -> io::Result<PyramidMeta> {
-    let engine = SpecEngine::new(params.clone());
-    build_with(src, params, dir, progress, |src, sink| engine.run(src, BLOCK_FRAMES, sink).map(|_| ()))
-}
-
-/// Same as `build_pyramid` for the v2 engine (dBFS / PCEN, centred frames).
-pub fn build_pyramid_v2<S: SampleSource>(
-    src: &mut S, params: crate::v2::StftParams, dir: &Path, progress: impl FnMut(f64) -> bool,
-) -> io::Result<PyramidMeta<crate::v2::StftParams>> {
-    let engine = crate::v2::Stft::new(params.clone()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let engine = Stft::new(params.clone()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     build_with(src, params, dir, progress, |src, sink| engine.run(src, BLOCK_FRAMES, sink).map(|_| ()))
 }
 
@@ -277,12 +263,7 @@ fn build_with<S: SampleSource, P: Layout>(
     Ok(meta)
 }
 
-pub struct Pyramid<P: Layout = SpecParams> { pub dir: PathBuf, pub meta: PyramidMeta<P> }
-
-impl Pyramid {
-    /// Open a complete v1 store; Ok(None) if missing, incomplete or outdated.
-    pub fn open(dir: &Path) -> io::Result<Option<Self>> { Self::open_as(dir) }
-}
+pub struct Pyramid<P: Layout = StftParams> { pub dir: PathBuf, pub meta: PyramidMeta<P> }
 
 impl<P: Layout> Pyramid<P> {
     /// Open a complete store of layout `P`; Ok(None) if missing, incomplete,
@@ -324,20 +305,28 @@ pub fn decode_f16(raw: &[u8]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MemSource, Scale};
+    use crate::MemSource;
+    use crate::v2::{FreqScale, WindowKind};
 
     fn signal(n: usize) -> Vec<f32> {
         (0..n).map(|i| if (i / 32000) % 2 == 0 { 0.5 * (i as f32 * 0.3).sin() } else { 0.001 }).collect()
     }
 
+    fn params() -> StftParams {
+        StftParams {
+            sample_rate: 32000, win_len: 1024, hop: 320, n_fft: 1024, window: WindowKind::Hann,
+            scale: FreqScale::Mel { bands: 128, f_min: 60.0, f_max: 16000.0 },
+            pcen: None, reassign: false, output: Default::default(),
+        }
+    }
+
     #[test]
     fn levels_match_direct_compute_and_max_pool() {
         let audio = signal(32000 * 90);
-        let mut p = SpecParams::perch(32000);
-        p.scale = Scale::Mel;
+        let p = params();
         let dir = tempfile::tempdir().unwrap();
         let meta = build_pyramid(&mut MemSource(&audio), p.clone(), dir.path(), |_| true).unwrap();
-        let pyr = Pyramid::open(dir.path()).unwrap().unwrap();
+        let pyr = Pyramid::<StftParams>::open_as(dir.path()).unwrap().unwrap();
 
         let n0 = p.n_frames(audio.len() as u64);
         assert_eq!(meta.levels[0].n_frames, n0);
@@ -347,10 +336,9 @@ mod tests {
         }
 
         // Level 0 equals a direct computation (within f16 precision).
-        let mut direct = Vec::new();
-        SpecEngine::new(p).run(&mut MemSource(&audio), 999, |_, v| { direct.extend_from_slice(v); Ok(()) }).unwrap();
+        let direct = Stft::new(p).unwrap().compute(&audio);
         let l0 = pyr.read(0, 0, n0).unwrap();
-        for (a, b) in l0.iter().zip(&direct) { assert!((a - b).abs() <= 1e-3 * b.abs().max(1.0)); }
+        for (a, b) in l0.iter().zip(&direct) { assert!((a - b).abs() <= 0.1 + 1e-3 * b.abs(), "{a} vs {b}"); }
 
         // Level 1 frame j == max over level 0 frames 4j..4j+4 (f16 of max == max of f16).
         let bins = meta.bins;
@@ -372,8 +360,8 @@ mod tests {
     fn cancel_leaves_no_meta() {
         let audio = signal(32000 * 200);
         let dir = tempfile::tempdir().unwrap();
-        let r = build_pyramid(&mut MemSource(&audio), SpecParams::perch(32000), dir.path(), |f| f < 0.3);
+        let r = build_pyramid(&mut MemSource(&audio), params(), dir.path(), |f| f < 0.3);
         assert_eq!(r.unwrap_err().kind(), io::ErrorKind::Interrupted);
-        assert!(Pyramid::open(dir.path()).unwrap().is_none());
+        assert!(Pyramid::<StftParams>::open_as(dir.path()).unwrap().is_none());
     }
 }

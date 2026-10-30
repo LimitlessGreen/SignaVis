@@ -1,26 +1,11 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const __wbg_wasmengine_free: (a: number, b: number) => void;
-export const __wbg_wasmpyramidbuilder_free: (a: number, b: number) => void;
 export const __wbg_wasmpyramidbuilderv2_free: (a: number, b: number) => void;
 export const __wbg_wasmstft_free: (a: number, b: number) => void;
 export const bandFloor: (a: number, b: number, c: number) => [number, number];
 export const clahe: (a: number, b: number, c: any, d: number, e: number, f: number, g: number, h: number) => void;
 export const decodeF16: (a: number, b: number) => [number, number];
-export const wasmengine_bandEnergies: (a: number, b: number, c: number, d: number) => [number, number];
-export const wasmengine_blockValues: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-export const wasmengine_finalize: (a: number, b: number, c: number, d: any) => void;
-export const wasmengine_nFrames: (a: number, b: number) => number;
-export const wasmengine_new: (a: number, b: number) => [number, number, number];
-export const wasmengine_outBins: (a: number) => number;
-export const wasmengine_pcenWarmup: (a: number) => number;
-export const wasmengine_samplesForFrames: (a: number, b: number) => number;
-export const wasmpyramidbuilder_finish: (a: number) => [number, number, number, number];
-export const wasmpyramidbuilder_nLevels: (a: number) => number;
-export const wasmpyramidbuilder_new: (a: number, b: number, c: number) => [number, number, number];
-export const wasmpyramidbuilder_pushBlock: (a: number, b: number, c: number) => [number, number];
-export const wasmpyramidbuilder_takeLevel: (a: number, b: number) => [number, number];
 export const wasmpyramidbuilderv2_finish: (a: number) => [number, number, number, number];
 export const wasmpyramidbuilderv2_nLevels: (a: number) => number;
 export const wasmpyramidbuilderv2_new: (a: number, b: number, c: number) => [number, number, number];
@@ -38,6 +23,6 @@ export const wavInfo: (a: number, b: number) => [number, number, number, number]
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
-export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_start: () => void;

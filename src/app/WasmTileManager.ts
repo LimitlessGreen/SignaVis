@@ -23,10 +23,8 @@ import type { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily in create().
 import type {
     WasmSpectrogramService,
-    WasmSpecParams,
     StftParamsV2,
     V2Output,
-    AnySpecParams,
     PyramidMeta,
 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 import { isTauriSpectrogramSource } from '../infrastructure/tauri/TauriSpectrogramService.ts';
@@ -133,8 +131,6 @@ export function v2BinFrequencies(p: StftParamsV2, sampleRate: number): Float64Ar
     return Float64Array.from({ length: s.bands }, (_, i) => inv(a + (b - a) * (i + 1) / (s.bands + 1)));
 }
 
-const isV2 = (p: AnySpecParams): p is StftParamsV2 => typeof (p as StftParamsV2).winLen === 'number';
-
 /** Any source qualifies: WAV files are read directly, everything else via pcmWavBlob(). */
 export function isWasmTileSource(file: File | null): file is File {
     return !!file && typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
@@ -195,7 +191,7 @@ export class WasmTileManager extends EventTarget {
         source?: Blob;
         /** Local file path (desktop app). */
         nativePath?: string | null;
-        wasmParams: AnySpecParams;
+        wasmParams: StftParamsV2;
         duration: number;
         colorOptions: TileColorOptions;
         onProgress?: (fraction: number) => void;
@@ -231,53 +227,42 @@ export class WasmTileManager extends EventTarget {
         this.fromCache = fromCache;
         this.nMels = meta.bins;
         this.duration = duration;
-        this.v2 = isV2(meta.params);
         this.frameSec = this.hopSize / meta.params.sampleRate;
         this.colorOptions = colorOptions;
         // Level-0 range of the whole file: stable, so tiles never need re-colorizing.
-        // v2 (dBFS / PCEN): black point at the median — the noise floor of sparse
-        // recordings such as bird song — instead of the minimum, which leaves
-        // the background mid-grey.
+        // Black point at the median — the noise floor of sparse recordings
+        // such as bird song — instead of the minimum, which leaves the
+        // background mid-grey.
         [this.globalMin, this.globalMax] = this.contrastRange(0);
     }
 
-    /** v2 stores use centred frames (frame i at i·hop) and noise-floor contrast. */
-    private readonly v2: boolean;
-
     /** Black/white points come from the noise floor (median) and p99.9. */
-    get noiseFloorContrast(): boolean { return this.v2; }
+    get noiseFloorContrast(): boolean { return true; }
 
     /** v2 values are dBFS (PCEN, magnitude and phase are not), so the dB contrast window applies. */
     get dbValues(): boolean {
-        const p = this.meta.params as StftParamsV2;
-        return this.v2 && !p.pcen && (p.output ?? 'db') === 'db';
+        const p = this.meta.params;
+        return !p.pcen && (p.output ?? 'db') === 'db';
     }
 
     /** Black/white point for tiles of `level` (max-pooled levels are brighter). */
     private contrastRange(level: number): [number, number] {
         const st = this.meta.levels[level]?.stats ?? this.meta.stats;
-        if (this.v2 && st.median !== undefined && st.p999 !== undefined && st.p999 > st.median) {
+        if (st.p999 > st.median) {
             return [st.median, st.p999];
         }
         return [this.meta.stats.min, this.meta.stats.max];
     }
 
     get hasTiles(): boolean { return this.tilesComputed > 0; }
-    /** Row centre frequencies for v2 pyramids, null for v1 (legacy axis formulas). */
-    get binFreqs(): Float64Array | null {
+    /** Row centre frequencies, low → high. */
+    get binFreqs(): Float64Array {
         const p = this.meta.params;
-        if (this._binFreqs === undefined) this._binFreqs = isV2(p) ? v2BinFrequencies(p, p.sampleRate) : null;
-        return this._binFreqs;
+        return this._binFreqs ??= v2BinFrequencies(p, p.sampleRate);
     }
-    private _binFreqs: Float64Array | null | undefined;
-    get hopSize(): number {
-        const p = this.meta.params;
-        return isV2(p) ? p.hop : (p as WasmSpecParams).hopSize;
-    }
-    get winLength(): number {
-        const p = this.meta.params;
-        return isV2(p) ? p.winLen : (p as WasmSpecParams).winLength;
-    }
+    private _binFreqs: Float64Array | undefined;
+    get hopSize(): number { return this.meta.params.hop; }
+    get winLength(): number { return this.meta.params.winLen; }
 
     firstReadyTileData(): Float32Array | null {
         for (const tile of this.tiles.values()) {
@@ -453,7 +438,7 @@ export class WasmTileManager extends EventTarget {
             for (const tile of this.tiles.values()) {
                 if (tile.level !== level || tile.state !== 'ready') continue;
                 // Centred frames: level-0 frame i covers [(i − ½)·hop, (i + ½)·hop).
-                const t0 = tile.idx * TILE_FRAMES * frameSec - (this.v2 ? this.frameSec / 2 : 0);
+                const t0 = tile.idx * TILE_FRAMES * frameSec - this.frameSec / 2;
                 const x0 = t0 * pps - scrollLeft;
                 const x1 = (t0 + tile.nFrames * frameSec) * pps - scrollLeft;
                 if (x1 <= 0 || x0 >= viewportWidth) continue;
@@ -539,10 +524,10 @@ export class WasmTileManager extends EventTarget {
     private _colorize(tile: Tile): void {
         if (!tile.data || tile.nFrames <= 0) return;
         const opts = this.colorOptions;
-        // v2 + dB sliders: one window [noise + floor, noise + floor + range] in dB.
+        // dB sliders: one window [noise + floor, noise + floor + range] in dB.
         const dbWindow = this.dbWindow(tile.level);
         const [lo, hi] = dbWindow
-            ?? (this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax]);
+            ?? this.contrastRange(tile.level);
         const grayInfo = buildSpectrogramGrayscale({
             spectrogramData:      tile.data,
             spectrogramFrames:    tile.nFrames,

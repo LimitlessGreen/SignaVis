@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // Type-only: the WASM service module pulls in Vite worker imports.
-import type { AnySpecParams, PyramidMeta } from '../wasm-dsp/WasmSpectrogramService.ts';
+import type { StftParamsV2, PyramidMeta } from '../wasm-dsp/WasmSpectrogramService.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -27,7 +27,7 @@ export class TauriSpectrogramService {
         return new TauriSpectrogramService(invoke as Invoke);
     }
 
-    async open(path: string, params: AnySpecParams, onProgress?: (fraction: number) => void) {
+    async open(path: string, params: StftParamsV2, onProgress?: (fraction: number) => void) {
         const { listen } = await import('@tauri-apps/api/event');
         // Only one build runs per player; the id is not known before open returns.
         const unlisten = await listen<{ id: string; fraction: number }>('spectrogram:progress',
@@ -35,9 +35,7 @@ export class TauriSpectrogramService {
         try {
             // sampleRate is taken from the file by the backend.
             const args = { path, params: { ...params, sampleRate: 0 } };
-            const r = await this.invoke<{ id: string; fromCache: boolean; meta: PyramidMeta }>(
-                typeof (params as { winLen?: unknown }).winLen === 'number' ? 'spectrogram_open_v2' : 'spectrogram_open',
-                { args });
+            const r = await this.invoke<{ id: string; fromCache: boolean; meta: PyramidMeta }>('spectrogram_open', { args });
             this.id = r.id;
             return { meta: r.meta, fromCache: r.fromCache };
         } finally {
