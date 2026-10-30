@@ -4,7 +4,7 @@
  * and XC-format JSON export.
  */
 
-import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording, invalidateXenoCantoRecordingCache } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
@@ -505,6 +505,17 @@ export class XenoCantoPanel {
     }
   }
 
+  /**
+   * Start fetching recording metadata + labels in the background (no-op without API key).
+   * importLabels() / fetchRecordingDurationSec() for the same ID then reuse the in-flight request.
+   */
+  prefetchRecording(xcId: any) {
+    if (!this.apiKey) return;
+    const clean = normalizeXcId(xcId);
+    if (!clean) return;
+    fetchXenoCantoRecording(clean, this.getAuthOptions()).catch(() => {});
+  }
+
   // ── Label import ────────────────────────────────────────────────────
 
   async importLabels(xcId: any, sampleRate: any) {
@@ -834,6 +845,7 @@ export class XenoCantoPanel {
         errors: body?.errors || [body?.error || `Upload failed (HTTP ${res.status})`],
       };
     }
+    invalidateXenoCantoRecordingCache(this.xcId);
     return { ok: true, message: body?.message || 'Upload successful', warnings: body?.warnings || [], errors: body?.errors || [] };
   }
 

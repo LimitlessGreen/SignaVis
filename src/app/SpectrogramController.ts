@@ -46,6 +46,7 @@ import {
 import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
+import { setOverlayContent } from '../ui/loadingOverlay.ts';
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -226,7 +227,10 @@ export class SpectrogramController extends EventTarget {
         if (this._externalMode) return;
 
         const d = this._d;
-        if (d.recomputingOverlay) d.recomputingOverlay.hidden = false;
+        if (d.recomputingOverlay) {
+            setOverlayContent(d.recomputingOverlay, 'Computing spectrogram…', { progress: null });
+            d.recomputingOverlay.hidden = false;
+        }
         this._emit('transportstatechange', { state: 'rendering', reason: 'spectrogram-generate' });
 
         // Yield so the "Computing…" overlay is painted before heavy DSP blocks the thread.
@@ -429,7 +433,10 @@ export class SpectrogramController extends EventTarget {
         createManager: () => Promise<WasmTileManager>,
     ): Promise<void> {
         const d = this._d;
-        if (d.recomputingOverlay) d.recomputingOverlay.hidden = false;
+        if (d.recomputingOverlay) {
+            setOverlayContent(d.recomputingOverlay, 'Computing spectrogram…', { progress: null });
+            d.recomputingOverlay.hidden = false;
+        }
         this._emit('transportstatechange', { state: 'rendering', reason: 'spectrogram-generate' });
 
         // Dispose any previous tile manager.

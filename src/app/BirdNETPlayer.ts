@@ -23,6 +23,7 @@ import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts
 import { EventBus } from '../shared/EventBus.ts';
 import type { LinkedLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
+import { setOverlayContent } from '../ui/loadingOverlay.ts';
 
 export type { LinkedLabel };
 
@@ -237,14 +238,16 @@ export class BirdNETPlayer {
     /**
      * Show the spectrogram loading overlay with a custom message.
      * Useful for displaying feedback during network fetches before DSP starts.
-     * Pass no argument (or call hideLoadingOverlay) to dismiss it.
+     * Call hideLoadingOverlay() to dismiss it.
      * @param {string} [text]
+     * @param {{ detail?: string, progress?: number | null }} [opts]
+     *   detail: secondary line (e.g. "2.1 / 6.4 MB · 1.2 MB/s");
+     *   progress: 0..1 for a determinate bar, null for an indeterminate bar, omitted for no bar.
      */
-    showLoadingOverlay(text = 'Loading…') {
+    showLoadingOverlay(text = 'Loading…', opts: { detail?: string; progress?: number | null } = {}) {
         const overlay = this._state?.d?.recomputingOverlay;
         if (!overlay) return;
-        const textEl = overlay.querySelector('span:last-child');
-        if (textEl) textEl.textContent = text;
+        setOverlayContent(overlay, text, opts);
         overlay.hidden = false;
     }
 

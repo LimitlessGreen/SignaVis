@@ -26,7 +26,33 @@ export function getRecordingScientificName(rec: any) {
     return (gen && sp) ? `${gen} ${sp}` : '';
 }
 
+// Short-lived cache of in-flight/settled metadata requests, so the duration check,
+// the prefetch started alongside the audio download and the label import share one API call.
+const RECORDING_CACHE_TTL_MS = 60_000;
+const recordingCache = new Map<string, { at: number; promise: Promise<any> }>();
+
+/** Drop cached metadata (e.g. after uploading labels), for one ID or all. */
+export function invalidateXenoCantoRecordingCache(xcId?: any) {
+    if (xcId == null) { recordingCache.clear(); return; }
+    const clean = normalizeXcId(xcId);
+    for (const key of recordingCache.keys()) {
+        if (key.startsWith(`${clean}|`)) recordingCache.delete(key);
+    }
+}
+
 export async function fetchXenoCantoRecording(xcId: any, options: any = {}) {
+    // Injected fetch implementations (tests, custom transports) bypass the cache.
+    if (options.fetchImpl) return fetchXenoCantoRecordingUncached(xcId, options);
+    const key = `${normalizeXcId(xcId)}|${String(options.endpoint || '').trim()}|${String(options.apiKey || '').trim()}`;
+    const hit = recordingCache.get(key);
+    if (hit && Date.now() - hit.at < RECORDING_CACHE_TTL_MS) return hit.promise;
+    const promise = fetchXenoCantoRecordingUncached(xcId, options);
+    recordingCache.set(key, { at: Date.now(), promise });
+    promise.catch(() => { if (recordingCache.get(key)?.promise === promise) recordingCache.delete(key); });
+    return promise;
+}
+
+async function fetchXenoCantoRecordingUncached(xcId: any, options: any = {}) {
     const clean = normalizeXcId(xcId);
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
 

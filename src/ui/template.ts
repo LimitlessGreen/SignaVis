@@ -444,7 +444,11 @@ export function createPlayerHTML(opts = {}) {
             </div>
             <div class="recomputing-overlay" data-aw="recomputingOverlay" aria-live="polite" hidden>
                 <span class="recomputing-spinner"></span>
-                <span>Computing…</span>
+                <div class="recomputing-body">
+                    <span class="recomputing-text">Computing…</span>
+                    <span class="recomputing-detail" hidden></span>
+                    <div class="recomputing-progress" hidden><div class="recomputing-progress-fill"></div></div>
+                </div>
             </div>
             <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Adjust spectrogram height"></div>
         </div>
