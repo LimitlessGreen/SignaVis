@@ -292,6 +292,15 @@ export class BirdNETPlayer {
     togglePlayPause() { this._state?._togglePlayPause(); }
 
     /**
+     * Slow playback down by `factor` (1–16) with the pitch dropping along, e.g. ×10
+     * for bat recordings. Spectrogram, labels and playhead stay in recording time.
+     */
+    setTimeExpansion(factor: number) { this._state?._setTimeExpansion(factor); }
+    get timeExpansion(): number { return this._state?._engine?.timeExpansion ?? 1; }
+    /** Ultrasound verdict for the loaded recording (also emitted as 'ultrasoundinfo'). */
+    get ultrasoundInfo() { return this._state?.ultrasoundInfo ?? null; }
+
+    /**
      * Play a time-bounded segment, optionally looping.
      * @param {number} startSec
      * @param {number} endSec

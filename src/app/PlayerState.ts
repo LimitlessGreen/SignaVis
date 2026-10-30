@@ -32,6 +32,7 @@ import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
 import { WaveformRenderer } from './player/WaveformRenderer.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
 import type { DomRefs } from './domRefs.ts';
+import { analyzeUltrasound, type UltrasoundInfo } from '../domain/ultrasound.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -136,6 +137,7 @@ export class PlayerState {
     _showWaveformTimeline: any;
     _playbackViewportConfig: any;
     sampleRateHz: any;
+    ultrasoundInfo: UltrasoundInfo | null = null;
     amplitudePeakAbs: number;
     transportState: any;
     _lastTimeReadoutText: any;
@@ -666,6 +668,8 @@ export class PlayerState {
             volumeIcon:             q('volumeIcon'),
             volumeWaves:            q('volumeWaves'),
             volumeSlider:           q('volumeSlider'),
+            slowdownSelect:         q('slowdownSelect'),
+            ultrasoundChip:         q('ultrasoundChip'),
             gainModeSelect:         q('gainModeSelect'),
             floorSlider:            q('floorSlider'),
             ceilSlider:             q('ceilSlider'),
@@ -760,6 +764,12 @@ export class PlayerState {
 
     async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null, sourcePath: string | null = null) {
         this.sampleRateHz = sampleRate;
+        this._setTimeExpansion(1);
+        this.ultrasoundInfo = this._engine.audioBuffer
+            ? analyzeUltrasound(this._engine.audioBuffer.getChannelData(0), sampleRate, this._engine.guano)
+            : null;
+        this._updateUltrasoundChip();
+        this._emit('ultrasoundinfo', this.ultrasoundInfo);
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {
@@ -971,6 +981,34 @@ export class PlayerState {
     _setVolume(val: unknown) {
         this._engine.setVolume(val);
         this._updateVolumeIcon();
+    }
+
+    _setTimeExpansion(factor: number) {
+        const before = this._engine.timeExpansion;
+        this._engine.setTimeExpansion(factor);
+        const now = this._engine.timeExpansion;
+        if (this.d.slowdownSelect) this.d.slowdownSelect.value = String(now);
+        this._updateUltrasoundChip();
+        if (now !== before) this._emit('timeexpansionchange', { factor: now });
+    }
+
+    _applyUltrasoundSuggestion() {
+        const f = this.ultrasoundInfo?.suggestedExpansion ?? 1;
+        if (f > 1) this._setTimeExpansion(f);
+    }
+
+    /** Offers the suggested slowdown while the recording is ultrasonic and still played at ×1. */
+    _updateUltrasoundChip() {
+        const chip = this.d.ultrasoundChip;
+        if (!chip) return;
+        const info = this.ultrasoundInfo;
+        const show = !!info && info.suggestedExpansion > 1 && this._engine.timeExpansion === 1;
+        chip.hidden = !show;
+        if (!show) return;
+        const peak = info!.peakHz != null ? ` ≈ ${(info!.peakHz / 1000).toFixed(0)} kHz` : '';
+        chip.textContent = `Ultrasound${peak} → ×${info!.suggestedExpansion}`;
+        chip.title = `Ultrasonic recording detected (${info!.source === 'guano' ? 'GUANO metadata' : 'spectrum'}). `
+            + `Click to slow playback down ×${info!.suggestedExpansion} so the calls become audible.`;
     }
 
     _toggleMute() {

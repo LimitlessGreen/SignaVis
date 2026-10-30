@@ -65,6 +65,16 @@
   flex-shrink: 0;
 }
 
+.ultrasound-chip {
+  border: 1px solid var(--color-accent, #0ea5e9);
+  border-radius: 13px;
+  color: var(--color-accent, #0ea5e9);
+  font-size: 0.75rem;
+  padding: 0 10px;
+  white-space: nowrap;
+  &[hidden] { display: none; }
+}
+
 // The compact-more-btn is unused (wrap strategy replaces dropdown strategy)
 .compact-more-btn { display: none; }
 
