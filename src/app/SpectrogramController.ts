@@ -22,14 +22,18 @@ import {
     fftSizeFromOversampling,
     TILE_MODE_MIN_DURATION_SEC,
     WASM_TILE_MIN_DURATION_SEC,
+    SPECTROGRAM_ENGINE,
 } from '../shared/constants.ts';
 
 import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
-import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions } from './WasmTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions, wasmV2ParamsFromDspOptions } from './WasmTileManager.ts';
+// Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily.
+import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 
 import {
     updateSpectrogramStats as computeSpectrogramStats,
     autoContrastStats,
+    noiseFloorStats,
     detectMaxFrequency,
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
@@ -64,6 +68,10 @@ export class SpectrogramController extends EventTarget {
     _colourScale: string;
     _absLogMin: number;
     _absLogMax: number;
+    /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
+    _engineV2 = false;
+    /** Lazily created WASM service for whole-file v2 computation. */
+    _wasmSvc: Promise<WasmSpectrogramService> | null = null;
     _baseCanvas: HTMLCanvasElement | null;
     _grayInfo: { gray: Float32Array; width: number; height: number } | null;
     _gpuReady: boolean;
@@ -237,10 +245,16 @@ export class SpectrogramController extends EventTarget {
 
         this._activeScale = scale;
 
+        const v2Params = SPECTROGRAM_ENGINE === 'v2'
+            ? wasmV2ParamsFromDspOptions({ ...options, reassigned: useReassigned })
+            : null;
+        // Part of the cache key, so results of the two engines never mix.
+        (options as Record<string, unknown>).engine = v2Params ? 'v2' : 'v1';
+
         // ── Tile mode for long audio ─────────────────────────────────────
         // WASM pyramid for long local files (WAV read directly, other formats from
         // the decoded PCM); falls back to the full JS path on failure.
-        const wasmParams = useReassigned ? null : wasmParamsFromDspOptions(options);
+        const wasmParams = v2Params ?? (useReassigned ? null : wasmParamsFromDspOptions(options));
         if (wasmParams && isWasmTileSource(this._sourceFile)
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
@@ -283,6 +297,7 @@ export class SpectrogramController extends EventTarget {
                 this._hopSize     = cached.hopSize;
                 this._winLength   = cached.winLength;
                 this._colourScale = cached.colourScale || colourScale;
+                this._engineV2    = !!v2Params;
                 this._updateStats();
                 // Invalidate stage-1/2 so draw() recomputes grayscale and
                 // colorization with the new scale/colourScale settings.
@@ -320,7 +335,16 @@ export class SpectrogramController extends EventTarget {
 
             let result;
 
-            if (useReassigned) {
+            if (v2Params) {
+                result = await this._computeV2(channelData, v2Params, colourScale).catch((err) => {
+                    console.warn('v2 spectrogram failed, falling back to JS:', err);
+                    return null;
+                });
+            }
+            this._engineV2 = !!result;
+            if (result) {
+                // computed by the v2 engine above
+            } else if (useReassigned) {
                 result = computeReassignedSpectrogram({ channelData, ...options });
             } else {
                 const shouldUseProgressive = this._enableProgressive
@@ -353,8 +377,9 @@ export class SpectrogramController extends EventTarget {
             this._winLength = result.winLength || 4 * this._hopSize;
             this._colourScale = result.colourScale || colourScale;
 
-            // Persist to cache (non-blocking)
-            spectrogramCache.set(cacheKey, {
+            // Persist to cache (non-blocking). A JS fallback after a v2 failure
+            // must not be stored under the v2 key.
+            if (!v2Params || this._engineV2) spectrogramCache.set(cacheKey, {
                 dataBuffer: new Uint8Array(((this._data as Float32Array)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,
@@ -992,6 +1017,13 @@ export class SpectrogramController extends EventTarget {
      * @param {boolean} [redraw=false]
      */
     autoContrast(redraw = false) {
+        if (this._isNoiseFloorContrast()) {
+            // v2: the black/white points already are the noise floor / p99.9.
+            if (this._d.floorSlider) this._d.floorSlider.value = 0;
+            if (this._d.ceilSlider)  this._d.ceilSlider.value  = 100;
+            if (redraw) this._emit('needsredraw');
+            return;
+        }
         const data = this._tileManager ? this._tileManager.firstReadyTileData() : this._data;
         if (!data) return;
         const absMin = this._tileManager ? this._tileManager.globalMin : this._absLogMin;
@@ -1119,13 +1151,31 @@ export class SpectrogramController extends EventTarget {
         this.processor.dispose();
         this._sfProcessor.dispose();
         this.colorizer.dispose();
+        this._wasmSvc?.then((svc) => svc.dispose(), () => {});
+        this._wasmSvc = null;
     }
 
     // ── Private helpers ──────────────────────────────────────────────
 
+    _isNoiseFloorContrast(): boolean {
+        const tm = this._tileManager;
+        return tm ? tm instanceof WasmTileManager && tm.noiseFloorContrast : this._engineV2;
+    }
+
+    /** Whole file with the v2 engine in the WASM worker pool. */
+    private async _computeV2(channelData: Float32Array, params: StftParamsV2, colourScale: string) {
+        this._wasmSvc ??= import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts')
+            .then(({ WasmSpectrogramService }) => WasmSpectrogramService.create());
+        const svc = await this._wasmSvc.catch((err) => { this._wasmSvc = null; throw err; });
+        const r = await svc.compute(channelData, this._audioBuffer!.sampleRate, params);
+        return { data: r.data, nFrames: r.nFrames, nMels: r.bins, hopSize: r.hop, winLength: r.winLen, colourScale };
+    }
+
     _updateStats() {
         if (!this._data) return;
-        const stats = computeSpectrogramStats(this._data as Float32Array);
+        const stats = this._engineV2
+            ? noiseFloorStats(this._data as Float32Array)
+            : computeSpectrogramStats(this._data as Float32Array);
         this._absLogMin = stats.logMin;
         this._absLogMax = stats.logMax;
     }

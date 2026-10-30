@@ -23,11 +23,32 @@ export interface WasmSpecParams {
     pcen: { gain: number; bias: number; root: number; smoothing: number } | null;
 }
 
-export interface PyramidStats { min: number; max: number; p2: number; p98: number }
+/** Mirrors aw_dsp::v2::StftParams. `sampleRate` comes from the file; band
+ *  `fMax` 0 → Nyquist and PCEN `smoothing` (per frame) → time constant are
+ *  resolved in the worker once the sample rate is known. */
+export interface StftParamsV2 {
+    winLen: number;
+    hop: number;
+    nFft: number;
+    window: { kind: 'hann' | 'hamming' | 'blackman' | 'blackmanHarris' } | { kind: 'kaiser'; beta: number };
+    scale: { kind: 'linear' } | { kind: 'mel' | 'log'; bands: number; fMin: number; fMax: number };
+    pcen: { gain: number; bias: number; power: number; eps: number; timeConstant?: number; smoothing?: number } | null;
+    reassign: boolean;
+}
+
+export type AnySpecParams = WasmSpecParams | StftParamsV2;
+
+export const isV2Params = (p: AnySpecParams): p is StftParamsV2 => typeof (p as StftParamsV2).winLen === 'number';
+
+export interface PyramidStats {
+    min: number; max: number; p2: number; p98: number;
+    /** Robust noise floor and near-peak level (v2 stores; 0 in older ones). */
+    median?: number; p999?: number;
+}
 
 export interface PyramidMeta {
     version: number;
-    params: WasmSpecParams & { sampleRate: number };
+    params: AnySpecParams & { sampleRate: number };
     nSamples: number;
     bins: number;
     /** `stats` per level: max-pooled levels need their own contrast range. */
@@ -114,7 +135,7 @@ export class WasmSpectrogramService {
     }
 
     /** `source` (a WAV blob) is what gets read; `file` only identifies the cache entry. */
-    async open(file: File, params: WasmSpecParams, onProgress?: (fraction: number, elapsedMs: number) => void,
+    async open(file: File, params: AnySpecParams, onProgress?: (fraction: number, elapsedMs: number) => void,
                source: Blob = file) {
         this.onProgress = onProgress ?? null;
         const key = await storeKey(file, params, source === file ? '' : `pcm:${source.size}`);
@@ -122,6 +143,19 @@ export class WasmSpectrogramService {
             { type: 'open', file: source, params, key });
         this.onProgress = null;
         return { meta: r.meta, fromCache: r.fromCache, persistent: r.persistent, key };
+    }
+
+    /**
+     * Whole spectrogram of in-memory samples with the v2 engine, computed in
+     * parallel blocks (no pyramid, no cache). Row-major [frame][bin].
+     */
+    async compute(samples: Float32Array, sampleRate: number, params: StftParamsV2) {
+        const copy = samples.slice();
+        const requestId = this.nextId++;
+        return new Promise<{ data: Float32Array; nFrames: number; bins: number; hop: number; winLen: number }>((resolve, reject) => {
+            this.pending.set(requestId, { resolve, reject });
+            this.coord.postMessage({ type: 'compute', requestId, samples: copy, sampleRate, params }, [copy.buffer]);
+        });
     }
 
     /** Frames [f0, f1) of `level`, row-major [frame][bin]. */
@@ -139,7 +173,7 @@ export class WasmSpectrogramService {
     }
 }
 
-async function storeKey(file: File, params: WasmSpecParams, variant = ''): Promise<string> {
+async function storeKey(file: File, params: AnySpecParams, variant = ''): Promise<string> {
     const id = `${file.name}|${file.size}|${file.lastModified}|${JSON.stringify(params)}|${variant}|v2`;
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id));
     return Array.from(new Uint8Array(hash).slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');

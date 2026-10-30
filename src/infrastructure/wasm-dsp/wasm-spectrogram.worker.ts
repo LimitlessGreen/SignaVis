@@ -12,7 +12,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    initSync, WasmEngine, WasmPyramidBuilder, decodeF16, wavInfo, wavChannel0,
+    initSync, WasmEngine, WasmPyramidBuilder, WasmStft, WasmPyramidBuilderV2,
+    decodeF16, wavInfo, wavChannel0,
 } from './pkg/aw_dsp_wasm.js';
 
 // OPFS sync access handles are worker-only and missing from the DOM lib.
@@ -28,7 +29,11 @@ declare global {
 }
 
 const STORE_ROOT = 'aw-spectrograms';
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 2;     // aw_dsp::pyramid::FORMAT_VERSION (v1 engine)
+const FORMAT_VERSION_V2 = 3;  // aw_dsp::pyramid::FORMAT_VERSION_V2
+
+/** v2 params (aw_dsp::v2::StftParams) are recognised by `winLen`. */
+const isV2 = (p: any) => p && typeof p.winLen === 'number';
 
 type Ctx = { postMessage(msg: any, transfer?: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null };
 const ctx = self as unknown as Ctx;
@@ -44,16 +49,19 @@ ctx.onmessage = (e: MessageEvent) => {
 // ── compute role ─────────────────────────────────────────────────────
 
 function startCompute(port: MessagePort) {
-    let engine: WasmEngine | null = null;
+    let engine: WasmEngine | WasmStft | null = null;
     let engineKey = '';
     port.onmessage = (e: MessageEvent) => {
-        const { id, paramsJson, samples, warmup, nFrames } = e.data;
+        const { id, paramsJson, samples } = e.data;
+        const v2 = e.data.v2 === true;
         if (paramsJson !== engineKey) {
             engine?.free();
-            engine = new WasmEngine(paramsJson);
+            engine = v2 ? new WasmStft(paramsJson) : new WasmEngine(paramsJson);
             engineKey = paramsJson;
         }
-        const data = engine!.blockValues(samples as Float32Array, warmup, nFrames);
+        const data = v2
+            ? (engine as WasmStft).blockValues(samples as Float32Array, e.data.first, e.data.f0, e.data.n, e.data.total)
+            : (engine as WasmEngine).blockValues(samples as Float32Array, e.data.warmup, e.data.nFrames);
         port.postMessage({ id, data }, [data.buffer]);
     };
 }
@@ -112,11 +120,12 @@ function startCoordinator(ports: MessagePort[]) {
             cb?.(e.data.data);
         };
     }
-    const computeBlock = (paramsJson: string, samples: Float32Array, warmup: number, nFrames: number) =>
+    /** `args` is engine-specific (see startCompute). */
+    const computeBlock = (paramsJson: string, samples: Float32Array, args: Record<string, unknown>) =>
         new Promise<Float32Array>((resolve) => {
             const id = nextId++;
             pending.set(id, resolve);
-            ports[rr++ % ports.length].postMessage({ id, paramsJson, samples, warmup, nFrames }, [samples.buffer]);
+            ports[rr++ % ports.length].postMessage({ id, paramsJson, samples, ...args }, [samples.buffer]);
         });
 
     let store: Store | null = null;
@@ -136,6 +145,10 @@ function startCoordinator(ports: MessagePort[]) {
                 closeStore();
                 const r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000);
                 ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: r.meta, fromCache: r.fromCache, persistent: r.persistent });
+            } else if (msg.type === 'compute') {
+                const r = computeAll(msg.samples as Float32Array, msg.sampleRate, msg.params);
+                const done = await r;
+                ctx.postMessage({ type: 'computed', requestId: msg.requestId, ...done }, [done.data.buffer]);
             } else if (msg.type === 'tile') {
                 const data = readTile(msg.level, msg.f0, msg.f1);
                 ctx.postMessage({ type: 'tile', requestId: msg.requestId, data }, [data.buffer]);
@@ -164,12 +177,12 @@ function startCoordinator(ports: MessagePort[]) {
         return handles;
     }
 
-    async function tryOpenCached(key: string): Promise<Store | null> {
+    async function tryOpenCached(key: string, version: number): Promise<Store | null> {
         if (!opfsAvailable()) return null;
         try {
             const dir = await storeDir(key, false);
             const meta = JSON.parse(await (await (await dir.getFileHandle('meta.json')).getFile()).text());
-            if (meta.version !== FORMAT_VERSION) return null;
+            if (meta.version !== version) return null;
             return { key, meta, bins: meta.bins, handles: await openHandles(dir, meta.levels.length, false) };
         } catch {
             return null;
@@ -177,14 +190,15 @@ function startCoordinator(ports: MessagePort[]) {
     }
 
     async function open(file: File, params: any, key: string, blockFrames: number) {
-        const cached = await tryOpenCached(key);
+        const v2 = isV2(params);
+        const cached = await tryOpenCached(key, v2 ? FORMAT_VERSION_V2 : FORMAT_VERSION);
         if (cached) { store = cached; return { meta: cached.meta, fromCache: true, persistent: true }; }
 
         const wav: WavMeta = JSON.parse(wavInfo(new Uint8Array(await file.slice(0, 1 << 16).arrayBuffer())));
-        const p = { ...params, sampleRate: wav.sampleRate };
+        const p = v2 ? v2ForSampleRate(params, wav.sampleRate) : { ...params, sampleRate: wav.sampleRate };
         const paramsJson = JSON.stringify(p);
-        const engine = new WasmEngine(paramsJson);
-        const builder = new WasmPyramidBuilder(paramsJson, wav.nSamples);
+        const engine = v2 ? new WasmStft(paramsJson) : new WasmEngine(paramsJson);
+        const builder = v2 ? new WasmPyramidBuilderV2(paramsJson, wav.nSamples) : new WasmPyramidBuilder(paramsJson, wav.nSamples);
         const nLevels = builder.nLevels();
         const bins = engine.outBins();
         const total = engine.nFrames(wav.nSamples);
@@ -204,14 +218,29 @@ function startCoordinator(ports: MessagePort[]) {
         }
         const offsets = new Array(nLevels).fill(0);
 
-        const warmupFrames = engine.pcenWarmup();
-        // Samples for frames [f0, f0 + n); the caller includes warm-up in f0/n.
-        const readBlock = async (f0: number, n: number) => {
-            const s0 = f0 * p.hopSize;
-            const ns = Math.min(engine.samplesForFrames(n), Math.max(0, wav.nSamples - s0));
-            const start = wav.dataOffset + s0 * blockAlign;
-            const bytes = new Uint8Array(await file.slice(start, start + ns * blockAlign).arrayBuffer());
+        // Samples [s0, s0 + ns), clamped to the file.
+        const readSamples = async (s0: number, ns: number) => {
+            const a = Math.max(0, Math.min(s0, wav.nSamples));
+            const b = Math.max(a, Math.min(s0 + ns, wav.nSamples));
+            const start = wav.dataOffset + a * blockAlign;
+            const bytes = new Uint8Array(await file.slice(start, start + (b - a) * blockAlign).arrayBuffer());
             return wavChannel0(bytes, wav.channels, wav.bitsPerSample, wav.float);
+        };
+        // Reads the samples for output frames [f0, f0 + n) and hands them to a
+        // compute worker; wrapped so awaiting the read does not await the result.
+        const startBlock = async (f0: number, n: number): Promise<{ result: Promise<Float32Array> }> => {
+            if (v2) {
+                const stft = engine as WasmStft;
+                const [lo, hi] = stft.blockFrameRange(f0, n, total);
+                const [start, len] = stft.sampleRange(lo, hi - lo);
+                const first = Math.max(0, start);
+                const samples = await readSamples(first, start + len - first);
+                return { result: computeBlock(paramsJson, samples, { v2: true, first, f0, n, total }) };
+            }
+            const v1 = engine as WasmEngine;
+            const w = Math.min(v1.pcenWarmup(), f0);
+            const samples = await readSamples((f0 - w) * p.hopSize, v1.samplesForFrames(w + n));
+            return { result: computeBlock(paramsJson, samples, { warmup: w, nFrames: n }) };
         };
         const drain = () => {
             for (let k = 0; k < nLevels; k++) {
@@ -232,11 +261,9 @@ function startCoordinator(ports: MessagePort[]) {
             while (done < total) {
                 while (nextF0 < total && inFlight.length < maxInFlight) {
                     const n = Math.min(blockFrames, total - nextF0);
-                    const w = Math.min(warmupFrames, nextF0);
                     tm = performance.now();
-                    const samples = await readBlock(nextF0 - w, w + n);
+                    inFlight.push((await startBlock(nextF0, n)).result);
                     timing.read += performance.now() - tm;
-                    inFlight.push(computeBlock(paramsJson, samples, w, n));
                     nextF0 += n;
                 }
                 tm = performance.now();
@@ -276,6 +303,34 @@ function startCoordinator(ports: MessagePort[]) {
         }
     }
 
+    /** Whole in-memory signal with the v2 engine, blocks spread over all
+     *  compute workers (no pyramid, no cache). */
+    async function computeAll(samples: Float32Array, sampleRate: number, params: any) {
+        const p = v2ForSampleRate(params, sampleRate);
+        const paramsJson = JSON.stringify(p);
+        const stft = new WasmStft(paramsJson);
+        try {
+            const bins = stft.outBins();
+            const total = stft.nFrames(samples.length);
+            const data = new Float32Array(total * bins);
+            const per = Math.max(256, Math.ceil(total / (ports.length * 2)));
+            const jobs: Promise<void>[] = [];
+            for (let f0 = 0; f0 < total; f0 += per) {
+                const n = Math.min(per, total - f0);
+                const [lo, hi] = stft.blockFrameRange(f0, n, total);
+                const [start, len] = stft.sampleRange(lo, hi - lo);
+                const first = Math.max(0, start);
+                const slice = samples.slice(first, Math.max(first, Math.min(samples.length, start + len)));
+                jobs.push(computeBlock(paramsJson, slice, { v2: true, first, f0, n, total })
+                    .then((d) => data.set(d, f0 * bins)));
+            }
+            await Promise.all(jobs);
+            return { data, nFrames: total, bins, hop: p.hop as number, winLen: p.winLen as number };
+        } finally {
+            stft.free();
+        }
+    }
+
     function readTile(level: number, f0: number, f1: number): Float32Array {
         if (!store) throw new Error('no spectrogram open');
         const lm = store.meta.levels[level];
@@ -286,4 +341,17 @@ function startCoordinator(ports: MessagePort[]) {
         store.handles[level].read(bytes, { at: a * store.bins * 2 });
         return decodeF16(bytes);
     }
+}
+
+/** Fills sample-rate dependent fields of v2 params (band f_max 0 → Nyquist,
+ *  PCEN given as per-frame smoothing → time constant). */
+function v2ForSampleRate(params: any, sampleRate: number) {
+    const p = { ...params, sampleRate };
+    if (p.scale?.kind !== 'linear' && !(p.scale.fMax > 0)) p.scale = { ...p.scale, fMax: sampleRate / 2 };
+    if (p.pcen && p.pcen.smoothing > 0 && !(p.pcen.timeConstant > 0)) {
+        // One-pole smoother with coefficient s has time constant ≈ hop / (sr · s).
+        const { smoothing, ...rest } = p.pcen;
+        p.pcen = { ...rest, timeConstant: p.hop / (sampleRate * smoothing) };
+    }
+    return p;
 }

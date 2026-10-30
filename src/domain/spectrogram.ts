@@ -442,6 +442,15 @@ export function autoContrastStats(spectrogramData: NumArray, loPercentile = 2, h
     return { logMin, logMax };
 }
 
+/**
+ * Contrast range for dBFS / PCEN data (v2 engine): black point at the median
+ * — the noise floor of sparse recordings such as bird song — and white point
+ * at the 99.9th percentile. Matches the pyramid stats (median / p999).
+ */
+export function noiseFloorStats(spectrogramData: NumArray) {
+    return autoContrastStats(spectrogramData, 50, 99.9);
+}
+
 // ─── Auto-Frequency Detection ───────────────────────────────────────
 
 /**
