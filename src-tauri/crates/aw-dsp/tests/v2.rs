@@ -281,3 +281,24 @@ fn v2_pyramid_roundtrip() {
     // A v1 reader must not accept a v2 store.
     assert!(Pyramid::<aw_dsp::SpecParams>::open_as(dir.path()).unwrap().is_none());
 }
+
+/// Params exactly as the desktop frontend sends them (TauriSpectrogramService):
+/// sampleRate 0 and band fMax 0 are resolved from the file before validation.
+#[test]
+fn frontend_params_resolve_and_validate() {
+    for scale in [
+        r#"{"kind":"linear"}"#,
+        r#"{"kind":"mel","bands":160,"fMin":0,"fMax":0}"#,
+        r#"{"kind":"log","bands":225,"fMin":31.8,"fMax":21094.1}"#,
+    ] {
+        let json = format!(
+            r#"{{"winLen":1024,"hop":256,"nFft":2048,"window":{{"kind":"hann"}},"scale":{scale},
+                "pcen":{{"gain":0.8,"bias":0.01,"power":0.25,"eps":1e-6,"timeConstant":0.4}},
+                "reassign":false,"sampleRate":0}}"#);
+        let mut p: StftParams = serde_json::from_str(&json).expect(scale);
+        assert!(p.validate().is_err(), "unresolved params must not validate");
+        p.resolve_sample_rate(44100);
+        p.validate().unwrap_or_else(|e| panic!("{scale}: {e}"));
+        if let FreqScale::Mel { f_max, .. } = p.scale { assert_eq!(f_max, 22050.0); }
+    }
+}

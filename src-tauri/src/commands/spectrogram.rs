@@ -57,7 +57,7 @@ impl StoreKind for SpecParams {
 }
 
 impl StoreKind for StftParams {
-    fn set_sample_rate(&mut self, sr: u32) { self.sample_rate = sr; }
+    fn set_sample_rate(&mut self, sr: u32) { self.resolve_sample_rate(sr); }
     fn wrap(p: Pyramid<Self>) -> Store { Store::V2(p) }
     fn meta(s: &Store) -> Option<&PyramidMeta<Self>> { if let Store::V2(p) = s { Some(&p.meta) } else { None } }
     fn build(src: &mut WavSource, p: Self, dir: &std::path::Path, progress: impl FnMut(f64) -> bool) -> std::io::Result<()> {
@@ -200,3 +200,4 @@ pub async fn spectrogram_tile(
     for v in values { bytes.extend_from_slice(&v.to_le_bytes()); }
     Ok(tauri::ipc::Response::new(bytes))
 }
+

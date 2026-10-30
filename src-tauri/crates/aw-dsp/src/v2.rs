@@ -94,6 +94,15 @@ impl StftParams {
         Self { sample_rate, win_len, hop, n_fft, window, scale, pcen: None, reassign: false }
     }
 
+    /// Sets the sample rate taken from the audio and resolves a band `f_max`
+    /// of 0 to Nyquist (frontends send 0 before the file is opened).
+    pub fn resolve_sample_rate(&mut self, sr: u32) {
+        self.sample_rate = sr;
+        if let FreqScale::Mel { f_max, .. } | FreqScale::Log { f_max, .. } = &mut self.scale {
+            if *f_max <= 0.0 { *f_max = sr as f64 / 2.0; }
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.sample_rate == 0 { return Err("sample_rate must be > 0".into()); }
         if self.win_len < 2 { return Err("win_len must be ≥ 2".into()); }

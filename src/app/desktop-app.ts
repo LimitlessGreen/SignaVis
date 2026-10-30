@@ -582,7 +582,7 @@ async function loadAudioFile(filePath: string): Promise<void> {
     try {
         const { convertFileSrc } = await import('@tauri-apps/api/core') as { convertFileSrc?: (p: string) => string };
         const url = convertFileSrc ? convertFileSrc(filePath) : filePath;
-        await p.loadUrl(url);
+        await p.loadUrl(url, filePath);
     } catch (e) {
         setStatus(`Could not load audio: ${e}`);
     }
