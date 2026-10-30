@@ -87,6 +87,7 @@ export class LabelList {
     _onSeek: any;
     _onSync: any;
     _onToggleLockSet: any;
+    _onAdoptSet: any;
     _onToggleSetVisibility: any;
     _onToggleSpeciesVisibility: any;
     _hiddenSetIds: any;
@@ -121,6 +122,7 @@ export class LabelList {
    * @param {(id: string) => void}      [opts.onDeleteSet]
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
+   * @param {(setId: string) => void}   [opts.onAdoptSet]  copy an imported set's labels into the own set
    * @param {(setId: string) => boolean} [opts.canDeleteSet]  Return false to hide the delete button for a specific set
    * @param {import('../../infrastructure/taxonomyResolver.ts').TaxonomyResolver} [opts.taxonomy]
    * @param {((anchor: HTMLElement, onSelect: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
@@ -151,6 +153,7 @@ export class LabelList {
     this._onAssignSpecies = opts.onAssignSpecies || null;
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
     this._onToggleLockSet = opts.onToggleLockSet || null;
+    this._onAdoptSet = opts.onAdoptSet || null;
     this._canDeleteSet = opts.canDeleteSet || null;
     /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
@@ -618,6 +621,15 @@ export class LabelList {
       convBtn.textContent = '⇄';
       convBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onConvertSetToManual(setKey); });
       setActions.appendChild(convBtn);
+    }
+    // Imported sets (XC, BirdNET, file) are read-only — offer copying their labels into the own set
+    if (this._onAdoptSet && setInfo && (setInfo.origin || 'manual') !== 'manual') {
+      const adoptBtn = document.createElement('button');
+      adoptBtn.className = 'act-btn label-set-action-btn label-set-adopt-btn';
+      adoptBtn.title = 'Copy all labels into my set';
+      adoptBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>';
+      adoptBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onAdoptSet(setKey); });
+      setActions.appendChild(adoptBtn);
     }
     if (this._onToggleSetVisibility) {
       const visBtn = document.createElement('button');

@@ -1,5 +1,7 @@
 // session-sets.js — persist and restore session label sets
 
+import { normalizeSet, ensureOwnSet } from './annotation-sets.ts';
+
 const SESSION_SETS_KEY = 'signavis.session-sets.v1';
 
 /** Persist session sets from `state` into localStorage. */
@@ -16,6 +18,7 @@ export function saveSessionSets(state: any) {
 
 /**
  * Restore session sets into `state` from localStorage.
+ * Sets are normalized to the set model; the own (editable) set becomes `state.ownSetId`.
  * Returns true when restoration occurred, false otherwise.
  */
 export function restoreSessionSets(state: any, { rebuild = null as ((() => void) | null) } = {}) {
@@ -24,18 +27,11 @@ export function restoreSessionSets(state: any, { rebuild = null as ((() => void)
     if (!raw) return false;
     const { sets, activeSetId } = JSON.parse(raw);
     if (!Array.isArray(sets) || !sets.length) return false;
-    state.labelSets = new Map(sets);
-    // Prefer explicit activeSetId when valid
-    if (activeSetId && state.labelSets.has(activeSetId)) {
-      state.activeSetId = activeSetId;
-      state._sessionSetId = activeSetId;
-    } else {
-      // Fallback: use first restored set id as the session set id
-      const first = (sets && sets.length && sets[0] && sets[0][0]) ? sets[0][0] : null;
-      if (first && state.labelSets.has(first)) {
-        if (!state.activeSetId) state.activeSetId = first;
-        state._sessionSetId = first;
-      }
+    state.labelSets = new Map(sets.map(([id, s]: any) => [id, normalizeSet(s)]));
+    const ownId = ensureOwnSet(state.labelSets, activeSetId, () => null);
+    if (ownId) {
+      state.ownSetId = ownId;
+      state.activeSetId = ownId;
     }
     if (typeof rebuild === 'function') rebuild();
     return true;

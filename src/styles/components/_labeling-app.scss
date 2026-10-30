@@ -432,7 +432,7 @@ html[data-theme="light"] { @include sponsor-light; }
 }
 
 /* Set header (hierarchy parent node) */
-.rec-set-header {
+.rec-session-header {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -462,16 +462,16 @@ html[data-theme="light"] { @include sponsor-light; }
     pointer-events: none;
   }
 }
-.rec-set-header:hover {
+.rec-session-header:hover {
   background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
               var(--color-bg-surface);
 }
-.rec-set-header:focus-visible {
+.rec-session-header:focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
 }
 /* Chevron — bigger and easier to read */
-.rec-set-chevron {
+.rec-session-chevron {
   font-size: 11px;
   width: 13px;
   flex-shrink: 0;
@@ -479,11 +479,11 @@ html[data-theme="light"] { @include sponsor-light; }
   line-height: 1;
   transition: color 0.1s, transform 0.18s ease;
 }
-.rec-set-header:hover .rec-set-chevron { color: var(--color-text-primary); }
-.rec-set-header[aria-expanded="true"] .rec-set-chevron,
-.rec-set-header.expanded .rec-set-chevron { transform: rotate(90deg); }
+.rec-session-header:hover .rec-session-chevron { color: var(--color-text-primary); }
+.rec-session-header[aria-expanded="true"] .rec-session-chevron,
+.rec-session-header.expanded .rec-session-chevron { transform: rotate(90deg); }
 /* Set name — larger than the child recording rows */
-.rec-set-name {
+.rec-session-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -492,7 +492,7 @@ html[data-theme="light"] { @include sponsor-light; }
 }
 
 /* Body — flat, with vertical indent guide aligned to the chevron */
-.rec-set-body {
+.rec-session-body {
   margin: 0 6px;
   padding: 4px 0 6px;
   background: rgba(0,0,0,0.18);
@@ -502,9 +502,9 @@ html[data-theme="light"] { @include sponsor-light; }
   position: relative;
   z-index: 1;
 }
-.rec-set-body[hidden] { display: none; }
+.rec-session-body[hidden] { display: none; }
 // Indent-guide line — aligns with chevron at ~22px from the section's left edge
-.rec-set-body::before {
+.rec-session-body::before {
   content: '';
   position: absolute;
   left: 24px;
@@ -540,7 +540,7 @@ html[data-theme="light"] { @include sponsor-light; }
   border-radius: 0;
 }
 // Connector tick from the indent-guide line to each row
-.rec-set-body .recording-explorer-row::before {
+.rec-session-body .recording-explorer-row::before {
   content: '';
   position: absolute;
   left: 24px;
@@ -613,7 +613,7 @@ html[data-theme="light"] { @include sponsor-light; }
   transition: opacity 0.1s, color 0.1s;
   padding: 0 2px;
 }
-.rec-set-header:hover .recording-explorer-reset-set { opacity: 1; }
+.rec-session-header:hover .recording-explorer-reset-set { opacity: 1; }
 .recording-explorer-reset-set:hover { color: var(--color-accent); }
 
 .recording-explorer-add-row {
@@ -709,4 +709,28 @@ html[data-theme="light"] { @include sponsor-light; }
 .geo-filter-toggle.is-disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* ── Recording explorer: set status + per-recording label count ── */
+.rec-session-status {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  background: var(--color-border, rgba(127, 127, 127, 0.2));
+  color: var(--color-text-muted, #9CA3AF);
+
+  &--ready    { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+  &--uploaded { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+}
+
+.recording-explorer-meta {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  color: var(--color-text-muted, #9CA3AF);
+  white-space: nowrap;
+
+  &--warn { color: var(--color-warning, #f59e0b); }
 }

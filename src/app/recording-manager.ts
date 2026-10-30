@@ -192,6 +192,21 @@ export class RecordingManager extends EventTarget {
     }
 
     /**
+     * Link a recording (e.g. a local copy of an own XC upload) to its XC number,
+     * so its labels can be uploaded. Accepts 'XC12345', '12345' or '' to unlink.
+     */
+    assignXcId(id: any, xcId: any) {
+        const clean = String(xcId ?? '').trim().replace(/^xc\s*/i, '');
+        if (clean && !/^\d+$/.test(clean)) return false;
+        const entry = this._entries.get(id);
+        if (!entry) return false;
+        entry.xcId = clean || null;
+        this._save();
+        this._fire('change');
+        return true;
+    }
+
+    /**
      * Clear all entries and reset active to null.
      */
     clear() {
