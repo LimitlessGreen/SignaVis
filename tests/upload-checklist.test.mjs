@@ -74,3 +74,10 @@ test('sameName ignores case, accents and punctuation', () => {
     assert.equal(sameName('José  Müller', 'jose muller'), true);
     assert.equal(sameName('A', ''), false);
 });
+
+test('profile step: missing XC user ID is only a warning', () => {
+    const r = run([full('l1')], { profile: { name: 'Jo Tester', xcUsername: '' } });
+    const issues = r.steps.find((s) => s.id === 'profile').issues;
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].level, 'warning');
+});
