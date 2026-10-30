@@ -41,13 +41,15 @@ function toValues(v: any): string[] {
 }
 
 /**
- * Read the value lists from an XC response. The exact shape isn't documented; accepted:
- * `{group_properties: {sound_type: [...], ...}}`, the lists at the top level, under a
+ * Read the value lists from an XC response. XC v3 returns them as
+ * `{"group-sound-properties": {sound_type: [...], sex: [...], life_stage: [...], recording_method: [...]}}`
+ * next to the recording fields; also accepted: `{group_properties: {...}}`, the lists at the top level, under a
  * `properties` key or in the first recording, values as strings or `{value|name|label}` objects.
  * Returns only the keys found, or null when nothing was found.
  */
 export function parseGroupProperties(json: any): Partial<Vocabulary> | null {
     const candidates = [
+        json?.['group-sound-properties'],  // actual XC API v3 response (verified 2026-10-30)
         json?.group_properties, json?.groupProperties, json?.properties,
         json?.recording?.group_properties, json?.recordings?.[0]?.group_properties, json,
     ].filter((c) => c && typeof c === 'object');
