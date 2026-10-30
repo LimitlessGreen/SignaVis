@@ -72,7 +72,7 @@ export class ViewportManager extends EventTarget {
     /** Last playhead x seen by applyFollowScroll (follow catch-up tracks it). */
     _followLastPosition = 0;
     /** Smooth-mode follower: fractional scroll, playhead velocity estimate. */
-    _smoothFollow: { scroll: number; vel: number; pos: number; at: number } | null = null;
+    _smoothFollow: { scroll: number; vel: number; pos: number; at: number; locked: boolean } | null = null;
     /** Playhead clock smoother: extrapolated position and velocity (px/ms). */
     _playheadClock: { pos: number; vel: number; raw: number; rawAt: number; at: number } | null = null;
     _zoomRedrawRafId: any;
@@ -759,7 +759,7 @@ export class ViewportManager extends EventTarget {
         let st = this._smoothFollow;
         // (Re)start after a pause/seek gap or when something else moved the view.
         if (!st || now - st.at > 120 || Math.abs(actual - st.scroll) > 2) {
-            st = this._smoothFollow = { scroll: actual, vel: 0, pos: position, at: now };
+            st = this._smoothFollow = { scroll: actual, vel: 0, pos: position, at: now, locked: false };
             return;
         }
         const dt = Math.max(1, now - st.at);
@@ -771,8 +771,20 @@ export class ViewportManager extends EventTarget {
         const lerp = now < this._smoothSeekFocusUntil ? this._cfg.smoothSeekLerp : this._cfg.smoothLerp;
         const tau  = -16.67 / Math.log(1 - clamp(lerp, 0.01, 0.95));
 
-        let next = st.scroll + st.vel * dt;
-        next += (target - next) * (1 - Math.exp(-dt / tau));
+        // Pinned: the view carries the playhead exactly. Released by a seek
+        // (target jumps away) or at the track edges (view can't scroll further).
+        const free = position - vw * this._cfg.followTargetRatio;
+        if (st.locked && (Math.abs(target - st.scroll) > vw * 0.05 || target !== free)) st.locked = false;
+
+        let next: number;
+        if (st.locked) {
+            next = target;
+        } else {
+            next = st.scroll + st.vel * dt;
+            next += (target - next) * (1 - Math.exp(-dt / tau));
+            // Settled: pin the playhead at its screen position from now on.
+            if (Math.abs(target - next) < 0.5 && target === free) { next = target; st.locked = true; }
+        }
         st.scroll = next;
         st.pos    = position;
         st.at     = now;
@@ -780,6 +792,18 @@ export class ViewportManager extends EventTarget {
         // Keep in sync with what the browser actually applied (clamping at the edges).
         const applied = this._getPrimaryScrollLeft();
         if (Math.abs(applied - next) > 2) st.scroll = applied;
+    }
+
+    /**
+     * Playhead x while smooth follow has it pinned: a fixed screen spot on
+     * top of the scroll the browser actually applied, so playhead and
+     * spectrogram can't drift against each other. null when not pinned.
+     */
+    pinnedPlayheadX(playing: boolean): number | null {
+        const st = this._smoothFollow;
+        if (!playing || this.followMode !== 'smooth' || !st?.locked) return null;
+        if (performance.now() - st.at > 120) return null;
+        return this._getPrimaryScrollLeft() + this._getViewportWidth() * this._cfg.followTargetRatio;
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
