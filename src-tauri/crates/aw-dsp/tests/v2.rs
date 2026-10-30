@@ -10,7 +10,7 @@ fn sine(freq: f64, amp: f64, secs: f64) -> Vec<f32> {
 }
 
 fn params(win: usize, hop: usize, nfft: usize, window: WindowKind, scale: FreqScale) -> StftParams {
-    StftParams { sample_rate: SR, win_len: win, hop, n_fft: nfft, window, scale, pcen: None, reassign: false }
+    StftParams { sample_rate: SR, win_len: win, hop, n_fft: nfft, window, scale, pcen: None, reassign: false, output: Output::Db }
 }
 
 /// Peak value and its row in a middle frame.
@@ -301,4 +301,51 @@ fn frontend_params_resolve_and_validate() {
         p.validate().unwrap_or_else(|e| panic!("{scale}: {e}"));
         if let FreqScale::Mel { f_max, .. } = p.scale { assert_eq!(f_max, 22050.0); }
     }
+}
+
+#[test]
+fn magnitude_output_reads_sine_amplitude() {
+    for scale in [FreqScale::Linear, FreqScale::Mel { bands: 128, f_min: 0.0, f_max: SR as f64 / 2.0 }] {
+        let mut p = params(1024, 256, 2048, WindowKind::Hann, scale);
+        p.output = Output::Magnitude;
+        // Bin / band centre, so there is no scalloping loss.
+        let f = p.bin_frequencies()[100];
+        let (peak, _) = peak(&p, &sine(f, 0.25, 1.0));
+        assert!((peak - 0.25).abs() < 0.25 * 0.06, "{scale:?}: peak {peak}");
+    }
+}
+
+#[test]
+fn phase_output_matches_cosine_phase_at_window_start() {
+    // Bin-centred cosine: bin 64 of a 1024-point FFT. Frame f starts at
+    // f·256 − 512, a multiple of the period (16 samples), so its phase is φ.
+    let (n, k0, phi) = (1024usize, 64usize, 0.7f64);
+    let audio: Vec<f32> = (0..SR as usize)
+        .map(|i| (2.0 * PI * k0 as f64 * i as f64 / n as f64 + phi).cos() as f32).collect();
+    let mut p = params(n, 256, n, WindowKind::Hann, FreqScale::Linear);
+    p.output = Output::Phase;
+    let v = Stft::new(p.clone()).unwrap().compute(&audio);
+    let bins = p.out_bins();
+    for f in [10usize, 50, 100] {
+        let ph = v[f * bins + k0] as f64;
+        assert!((ph - phi).abs() < 1e-3, "frame {f}: phase {ph}");
+    }
+    let mut p = params(n, 256, n, WindowKind::Hann, FreqScale::Mel { bands: 64, f_min: 0.0, f_max: SR as f64 / 2.0 });
+    p.output = Output::Phase;
+    assert!(Stft::new(p).unwrap().compute(&audio).iter().all(|x| x.abs() <= PI as f32 + 1e-6));
+}
+
+#[test]
+fn non_db_output_rejects_pcen_and_phase_rejects_reassignment() {
+    let mut p = params(1024, 256, 1024, WindowKind::Hann, FreqScale::Linear);
+    p.output = Output::Magnitude;
+    p.pcen = Some(Pcen::default());
+    assert!(p.validate().is_err());
+    p.pcen = None;
+    p.output = Output::Phase;
+    p.reassign = true;
+    assert!(p.validate().is_err());
+    // Older stored params without `output` still parse (dB).
+    let json = r#"{"sampleRate":44100,"winLen":1024,"hop":256,"nFft":1024,"window":{"kind":"hann"},"scale":{"kind":"linear"},"pcen":null,"reassign":false}"#;
+    assert_eq!(serde_json::from_str::<StftParams>(json).unwrap().output, Output::Db);
 }

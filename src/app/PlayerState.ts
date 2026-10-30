@@ -52,7 +52,7 @@ import type { DomRefs } from './domRefs.ts';
  * @property {number}  [smoothMinStepRatio]
  * @property {number}  [smoothSeekMinStepRatio]
  * @property {number}  [smoothSeekFocusMs]
- * @property {boolean} [enableProgressiveSpectrogram]
+ * @property {boolean} [enableProgressiveSpectrogram]  ignored (the Rust engine computes whole files)
  * @property {import('../infrastructure/storage/IStorage.ts').IStorage} [storage]
  *   Storage adapter — defaults to LocalStorageAdapter.
  *   Pass InMemoryStorageAdapter for tests or headless environments.
@@ -225,9 +225,7 @@ export class PlayerState {
         this._playbackViewportConfig = this._sanitizePlaybackViewportConfig(this.options || {});
 
         // ── Spectrogram pipeline (data + rendering) ──
-        this._spectro = new SpectrogramController(this.d, {
-            enableProgressive: this.options.enableProgressiveSpectrogram === true,
-        });
+        this._spectro = new SpectrogramController(this.d);
         this._spectro.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
             const { state, reason } = e.detail;
             this._setTransportState(state, reason);

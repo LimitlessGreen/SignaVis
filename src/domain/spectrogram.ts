@@ -4,7 +4,7 @@
 
 import { MAX_BASE_SPECTROGRAM_WIDTH } from '../shared/constants.ts';
 import { clamp, getTimeGridSteps, formatGridTime } from '../shared/utils.ts';
-import { buildMelFrequencies, computeSpectrogram, iecDbToFader } from './dsp.ts';
+import { buildMelFrequencies } from './dsp.ts';
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { CoordinateSystem, computeMaxBin } from './coordinateSystem.ts';
 import {
@@ -48,7 +48,7 @@ async function getWorkerCtor() {
     if (_workerCtorResolved) return _WorkerCtor;
     _workerCtorResolved = true;
     try {
-        const mod = await import('../infrastructure/spectrogram.worker.js?worker&inline');
+        const mod = await import('../infrastructure/spectralFeatures.worker.js?worker&inline');
         _WorkerCtor = mod.default;
     } catch {
         _WorkerCtor = null;
@@ -618,7 +618,6 @@ export function drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, sc
  * The `colourScale` parameter controls how raw values map to pixel brightness:
  *   - 'dbSquared' / 'db' / PCEN: linear range mapping (existing behavior)
  *   - 'linear': proportional magnitude mapping
- *   - 'meter': IEC 60268-18 perceptual meter curve
  *   - 'phase': −π…+π → 0…255
  */
 export function buildSpectrogramGrayscale({
@@ -679,9 +678,6 @@ export function buildSpectrogramGrayscale({
     // ── Float32 grayscale (0.0 – 1.0) for full precision ──
     const gray = new Float32Array(width * height);
 
-    // Precompute IEC meter mapping factor
-    const IEC_MAX = colourScale === 'meter' ? iecDbToFader(0) : 0;
-
     for (let x = 0; x < width; x++) {
         const frameStart = Math.round(x * framesPerPixel);
         const frameEnd   = Math.max(frameStart + 1, Math.round((x + 1) * framesPerPixel));
@@ -707,11 +703,6 @@ export function buildSpectrogramGrayscale({
                 continue;
             } else if (colourScale === 'phase') {
                 pixel = (value + Math.PI) / (2 * Math.PI);
-            } else if (colourScale === 'meter') {
-                const normalized = (value - spectrogramAbsLogMin) / dataRange;
-                const raw = clamp(normalized, 0, 1);
-                const db = raw <= 0 ? -80 : 20 * Math.log10(raw);
-                pixel = iecDbToFader(Math.max(-70, db)) / IEC_MAX;
             } else {
                 pixel = (value - spectrogramAbsLogMin) / dataRange;
             }
@@ -1013,188 +1004,10 @@ export function renderSpectrogram({
     drawTimeGrid({ ctx, width, height, duration, pixelsPerSecond, scrollLeft: sl });
 }
 
-// ─── Worker-based Spectrogram Processor ─────────────────────────────
-
-export function createSpectrogramProcessor() {
-    type WorkerPending = { resolve: (v: any) => void; reject: (e: any) => void };
-    type SpectrogramResult = { data: Float32Array; nFrames: number; nMels: number; hopSize: number; winLength: number; colourScale: string; smoothState?: Float32Array };
-
-    let worker: Worker | null = null;
-    let workerFailed = false;
-    let requestCounter = 0;
-    const pendingRequests = new Map<number, WorkerPending>();
-
-    // ── Main-thread fallback - delegates directly to dsp.js ────────
-    const computeMainThread = (channelData: Float32Array, options: Record<string, any>): Promise<SpectrogramResult> => {
-        const res = computeSpectrogram({
-            channelData: channelData as any,
-            ...(options as any),
-        } as any);
-        return Promise.resolve(res as SpectrogramResult);
-    };
-
-    // ── Worker setup - uses Vite-inlined module Worker ──────────────
-    const ensureWorker = async () => {
-        if (worker || workerFailed) return;
-        try {
-            const Ctor = await getWorkerCtor();
-            if (!Ctor) throw new Error('Worker constructor unavailable');
-            worker = new Ctor();
-
-            (worker as Worker).onmessage = (event: MessageEvent) => {
-                const payload = event.data as any;
-                const { requestId, data: bufferData, nFrames, nMels, smoothState, hopSize, winLength, colourScale } = payload;
-                const pending = pendingRequests.get(requestId as number);
-                if (!pending) return;
-                pendingRequests.delete(requestId as number);
-                const result: SpectrogramResult = { data: new Float32Array(bufferData), nFrames, nMels, hopSize, winLength, colourScale } as any;
-                if (smoothState) result.smoothState = new Float32Array(smoothState);
-                pending.resolve(result);
-            };
-
-            (worker as Worker).onerror = (error: any) => {
-                console.warn('Spectrogram Worker failed, using main-thread fallback:', error);
-                workerFailed = true;
-                (worker as Worker)?.terminate();
-                worker = null;
-                pendingRequests.forEach(({ reject }) => reject(error));
-                pendingRequests.clear();
-            };
-        } catch (e) {
-            console.warn('Cannot create Worker, using main-thread fallback:', e);
-            workerFailed = true;
-            worker = null;
-        }
-    };
-
-    // ── Public compute ──────────────────────────────────────────────
-    const compute = async (channelData: Float32Array, options: Record<string, any>): Promise<SpectrogramResult> => {
-        // If Workers don't work in this context, run synchronously
-        if (workerFailed) {
-            return computeMainThread(channelData, options);
-        }
-
-        await ensureWorker();
-
-        // Worker might have failed during creation
-        if (workerFailed) {
-            return computeMainThread(channelData, options);
-        }
-
-        const requestId = ++requestCounter;
-        const audioCopy = new Float32Array(channelData as any);
-
-        const workerPromise = new Promise<SpectrogramResult>((resolve, reject) => {
-            pendingRequests.set(requestId, { resolve, reject });
-        });
-
-        (worker as Worker).postMessage(
-            { requestId, channelData: audioCopy.buffer, ...options },
-            [audioCopy.buffer],
-        );
-
-        // Timeout scales with audio length: 5s base + 2s per 10s of audio.
-        // Progressive mode sends 10s chunks, so each chunk gets at least 7s.
-        // Full-file compute for short clips: 60s → 17s timeout, plenty of headroom.
-        const durationSec = (channelData as any).length / Math.max(1, (options as any).sampleRate || 44100);
-        const timeoutMs = Math.max(5000, 5000 + Math.ceil(durationSec / 10) * 2000);
-
-        try {
-            const result = await Promise.race([
-                workerPromise,
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Worker timeout')), timeoutMs)
-                ),
-            ]);
-            return result as SpectrogramResult;
-        } catch (e: any) {
-            // Worker timed out or errored → fall back to main thread
-            console.warn('Worker failed/timed out, computing on main thread:', (e as any)?.message || e);
-            pendingRequests.delete(requestId);
-            workerFailed = true;
-            worker?.terminate();
-            worker = null;
-            return computeMainThread(channelData, options);
-        }
-    };
-
-    // ── Progressive compute for long recordings ────────────────────
-    // Yields per-chunk results and progress metadata.
-    // Each chunk (after the first) is extended backwards by overlapSamples
-    // so the FFT windows at chunk boundaries have proper audio context.
-    // The overlap frames are trimmed from the result before yielding.
-    const computeProgressive = async function* (channelData: Float32Array, options: Record<string, any>) {
-        const sampleRate = Math.max(1, (options as any).sampleRate || 0);
-        const chunkSeconds = Math.max(1, (options as any).chunkSeconds || 10);
-        const samplesPerChunk = Math.max(1, Math.floor(chunkSeconds * sampleRate));
-        const totalChunks = Math.max(1, Math.ceil(channelData.length / samplesPerChunk));
-
-        // Overlap = one FFT window worth of samples — enough for windowing context.
-        const overlapSamples = (options as any).windowSize || (options as any).fftSize || 2048;
-
-        let smoothState: Float32Array | null = null; // carry-over PCEN smooth state between chunks
-
-        for (let chunk = 0; chunk < totalChunks; chunk++) {
-            const startSample = chunk * samplesPerChunk;
-            const endSample = Math.min(channelData.length, startSample + samplesPerChunk);
-
-            // For chunks after the first, prepend overlap samples for FFT context.
-            const actualStart = chunk === 0
-                ? startSample
-                : Math.max(0, startSample - overlapSamples);
-            const prependedSamples = startSample - actualStart;
-
-            const chunkData = channelData.subarray(actualStart, endSample);
-            const chunkOptions = smoothState
-                ? { ...(options as any), initialSmooth: smoothState }
-                : options;
-            const result: SpectrogramResult = await compute(chunkData, chunkOptions as any);
-
-            if (result.smoothState) smoothState = result.smoothState;
-
-            // Trim overlap frames from the beginning of non-first chunks.
-            let trimmedResult: SpectrogramResult = result;
-            if (prependedSamples > 0 && result.nFrames > 0) {
-                const hop = result.hopSize || 1;
-                const overlapFrames = Math.min(
-                    result.nFrames - 1,
-                    Math.ceil(prependedSamples / hop),
-                );
-                if (overlapFrames > 0) {
-                    const nMels = result.nMels;
-                    trimmedResult = {
-                        data: result.data.slice(overlapFrames * nMels),
-                        nFrames: result.nFrames - overlapFrames,
-                        nMels: result.nMels,
-                        hopSize: result.hopSize,
-                        winLength: result.winLength,
-                        colourScale: result.colourScale,
-                        smoothState: result.smoothState,
-                    };
-                }
-            }
-
-            yield {
-                chunk,
-                totalChunks,
-                percent: ((chunk + 1) / totalChunks) * 100,
-                result: trimmedResult,
-            };
-        }
-    };
-
-    const dispose = () => {
-        if (worker) { worker.terminate(); worker = null; }
-        pendingRequests.clear();
-    };
-
-    return { compute, computeProgressive, dispose };
-}
-
 // ─── Worker-based Spectral Features Processor ───────────────────────
 //
-// Offloads computeSpectralFeatures + computeRidges to the same worker
-// as the spectrogram pipeline so neither blocks the main thread.
+// Offloads computeSpectralFeatures + computeRidges to a worker so they
+// do not block the main thread.
 
 export function createSpectralFeaturesProcessor() {
     type Pending<T> = { resolve: (v: T) => void; reject: (e: any) => void };

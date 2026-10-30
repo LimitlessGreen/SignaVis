@@ -35,7 +35,11 @@ export interface StftParamsV2 {
     scale: { kind: 'linear' } | { kind: 'mel' | 'log'; bands: number; fMin: number; fMax: number };
     pcen: { gain: number; bias: number; power: number; eps: number; timeConstant?: number; smoothing?: number } | null;
     reassign: boolean;
+    /** Cell values (aw_dsp::v2::Output); absent → 'db'. */
+    output?: V2Output;
 }
+
+export type V2Output = 'db' | 'magnitude' | 'phase';
 
 export type AnySpecParams = WasmSpecParams | StftParamsV2;
 
