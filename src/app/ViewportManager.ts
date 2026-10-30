@@ -217,7 +217,9 @@ export class ViewportManager extends EventTarget {
             this._playheadClock = playing ? { pos: position, vel: c && now - c.at <= 120 ? c.vel : 0, raw: position, rawAt: now, at: now } : null;
             return position;
         }
-        const dt = Math.max(1, now - c.at);
+        const dt = now - c.at;
+        // Same-frame repeat (e.g. a follow scroll's own update): same answer.
+        if (dt <= 0.5 && position === c.raw) return c.pos;
         // Velocity from raw steps only when the clock actually advanced.
         if (position !== c.raw) {
             const span   = Math.max(1, now - c.rawAt);

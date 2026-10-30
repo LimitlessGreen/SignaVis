@@ -543,7 +543,8 @@ export class PlayerState {
             emitSeek: false,
         };
         this._uiPending.time = time;
-        this._uiPending.fromPlayback = fromPlayback;
+        // A scroll-triggered update in the same frame must not drop the playback flag.
+        this._uiPending.fromPlayback = this._uiPending.fromPlayback || fromPlayback;
         this._uiPending.centerView = this._uiPending.centerView || centerView;
         this._uiPending.emitSeek = this._uiPending.emitSeek || emitSeek;
 
@@ -901,7 +902,9 @@ export class PlayerState {
     _updatePlayhead(currentTime: number, fromPlayback: boolean) {
         if (!this.audioBuffer) return;
 
-        const playing  = fromPlayback && !!this.wavesurfer?.isPlaying();
+        // Smooth on every update while playing (follow scrolls also trigger
+        // updates); resetting on those made the playhead flip raw/smoothed.
+        const playing  = !!this.wavesurfer?.isPlaying();
         // Playback positions come from a coarse media clock; smooth them so the
         // playhead (and the follow scroll derived from it) moves evenly.
         const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing);
@@ -910,7 +913,7 @@ export class PlayerState {
         if (this.d.waveformPlayhead) this.d.waveformPlayhead.style.transform = `translateX(${position}px)`;
 
         // Follow-mode scroll — delegated to ViewportManager
-        if (playing && this.followPlayback) {
+        if (fromPlayback && playing && this.followPlayback) {
             this._viewport.applyFollowScroll(position);
         }
 
