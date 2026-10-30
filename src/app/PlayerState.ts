@@ -31,6 +31,7 @@ import { ViewResizeController } from './player/ViewResizeController.ts';
 import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
 import { WaveformRenderer } from './player/WaveformRenderer.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
+import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, type UltrasoundInfo } from '../domain/ultrasound.ts';
 
@@ -120,6 +121,7 @@ export class PlayerState {
     _viewport: any;
     _perf: PerfOverlay;
     _crosshair: CrosshairController;
+    _carrierLine: CarrierLineController;
     _viewResize: ViewResizeController;
     _freqZoom: FrequencyZoomController;
     _waveformRenderer: WaveformRenderer;
@@ -331,6 +333,14 @@ export class PlayerState {
             getAudioBuffer: () => this.audioBuffer,
             getSpectro: () => this._spectro,
             getCoords: () => this.coords,
+        });
+
+        // ── Heterodyne tuning line ──
+        this._carrierLine = new CarrierLineController({
+            d: this.d,
+            getCoords: () => this.coords,
+            getListenMode: () => this._engine.listenMode,
+            setCarrier: (carrierHz) => this._setListenMode({ kind: 'heterodyne', carrierHz }),
         });
 
         // ── View layout (persistent, not interaction-mode) ──
@@ -700,6 +710,7 @@ export class PlayerState {
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
         this._crosshair.dispose();
+        this._carrierLine.dispose();
         this._viewResize.dispose();
         this._freqZoom.dispose();
         this._toolbar.dispose();
@@ -945,6 +956,7 @@ export class PlayerState {
         this._updateCoords();
         this._spectro.draw(this._getSpectrogramDrawParams());
         this._updateCoords();
+        this._carrierLine.update();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
     }
 
@@ -1019,6 +1031,7 @@ export class PlayerState {
             this.d.slowdownSelect.value = mode.kind === 'expansion' ? String(mode.factor) : mode.kind;
         }
         this._updateUltrasoundChip();
+        this._carrierLine.update();
         this._emit('listenmodechange', { mode });
     }
 

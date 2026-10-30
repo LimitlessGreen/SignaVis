@@ -53,7 +53,8 @@ Hüllkurve. Abweichung vom Plan: Heterodyn als echte Mischung (Seitenbänder fal
 Gerät), nicht analytisch. Rauschschwelle des Teilers über die ganze Aufnahme geschätzt, sonst
 bleibt ein reiner Ruf-Ausschnitt stumm.
 
-**3b offen:** Trägerlinie im Spektrogramm, per Klick/Ziehen abstimmen.
+**3b erledigt:** `CarrierLineController` — gestrichelte Linie bei der Trägerfrequenz,
+ziehen oder Alt+Klick ins Spektrogramm stimmt ab (Raster 0,5 kHz, wirkt beim Loslassen).
 
 **Heterodyn**
 - Komplexe Mischung (analytisches Signal) ohne Spiegelfrequenz, Ausgabe 48 kHz.
