@@ -73,6 +73,11 @@ export function frequencyDivision(samples: Float32Array, sample_rate: number, di
 export function heterodyne(samples: Float32Array, sample_rate: number, first_sample: number, carrier_hz: number, bandwidth_hz: number): Float32Array;
 
 /**
+ * Phase-vocoder pitch shift ÷ factor, tempo kept (see aw_dsp::detector::pitch_shift).
+ */
+export function pitchShift(samples: Float32Array, sample_rate: number, factor: number): Float32Array;
+
+/**
  * Convert interleaved PCM bytes to mono f32, channel 0 only
  * (matches AudioBuffer.getChannelData(0) in the JS path).
  */
@@ -98,6 +103,7 @@ export interface InitOutput {
     readonly divisionNoiseLevel: (a: number, b: number, c: number, d: number) => number;
     readonly frequencyDivision: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly heterodyne: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly pitchShift: (a: number, b: number, c: number, d: number) => [number, number];
     readonly wasmpyramidbuilderv2_finish: (a: number) => [number, number, number, number];
     readonly wasmpyramidbuilderv2_nLevels: (a: number) => number;
     readonly wasmpyramidbuilderv2_new: (a: number, b: number, c: number) => [number, number, number];

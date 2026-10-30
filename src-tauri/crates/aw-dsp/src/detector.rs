@@ -6,12 +6,16 @@
 //                        together, as on a real heterodyne detector)
 //   frequency_division:  count zero crossings of the high-passed signal and
 //                        toggle a square wave every `divisor` crossings → f/n
+//   pitch_shift:         phase vocoder, every frequency ÷ factor, tempo kept
 //
 // Both run in real time (output duration = input duration) and return mono
 // audio at `output_rate(sample_rate)`, ≈ 48 kHz by integer decimation.
 // ═══════════════════════════════════════════════════════════════════════
 
 use std::f32::consts::PI;
+
+use realfft::RealFftPlanner;
+use realfft::num_complex::Complex;
 
 const TARGET_RATE: f32 = 48_000.0;
 /// Audible band kept after frequency division (square-wave harmonics above alias).
@@ -106,6 +110,114 @@ pub fn frequency_division(
     }
     let out_rate = output_rate(sample_rate);
     decimate(&out, sample_rate, DIVISION_CUTOFF_HZ.min(0.45 * out_rate), decimation(sample_rate))
+}
+
+/// Output frame length of the pitch shifter at `output_rate`; the input frame
+/// is `decimation` times longer, so input and output bins are equally wide
+/// and input bin k lands on output bin k / factor.
+const PITCH_OUT_FRAME: usize = 256;
+/// Frames overlap 4×: hop = frame / 4.
+const PITCH_OVERLAP: usize = 4;
+
+/// Phase-vocoder pitch shift down by `factor` with the tempo kept: sound at
+/// f plays at f / factor in real time. Synthesises straight at
+/// `output_rate(sample_rate)`, so a ÷10 shift of a 384 kHz recording costs a
+/// 2048-point FFT in and a 256-point FFT out per hop. Calls shorter than a
+/// frame (~5 ms) are smeared a little in time; time expansion keeps them exact.
+pub fn pitch_shift(samples: &[f32], sample_rate: f32, factor: f32) -> Vec<f32> {
+    let dec = decimation(sample_rate);
+    let n_out = PITCH_OUT_FRAME;
+    let n_in = n_out * dec;
+    let hop_out = n_out / PITCH_OVERLAP;
+    let hop_in = hop_out * dec;
+    let factor = factor.max(1.0);
+
+    let mut planner = RealFftPlanner::<f32>::new();
+    let fwd = planner.plan_fft_forward(n_in);
+    let inv = planner.plan_fft_inverse(n_out);
+    let win_in = hann(n_in);
+    let win_out = hann(n_out);
+
+    let bins_in = n_in / 2 + 1;
+    let bins_out = n_out / 2 + 1;
+    let expected = 2.0 * std::f64::consts::PI * hop_in as f64 / n_in as f64; // phase advance per bin and hop
+    let mut last_phase = vec![0.0f32; bins_in];
+    let mut sum_phase = vec![0.0f64; bins_out];
+    let mut out_mag = vec![0.0f32; bins_out];
+    let mut out_freq = vec![0.0f32; bins_out];
+
+    let mut frame = fwd.make_input_vec();
+    let mut spec = fwd.make_output_vec();
+    let mut out_spec = inv.make_input_vec();
+    let mut out_frame = inv.make_output_vec();
+
+    let len_out = samples.len().div_ceil(dec);
+    let mut y = vec![0.0f32; len_out + n_out];
+    // Hann analysis peak = A·n_in/4; real inverse FFT doubles a bin; Hann OLA at 4× sums to 2.
+    let scale = 1.0 / (n_in as f32 / 4.0) / 2.0 / 2.0;
+
+    // Frames centred on output samples: frame m covers input [m·hop_in − n_in/2, +n_in).
+    let n_frames = len_out.div_ceil(hop_out) + 1;
+    for m in 0..n_frames {
+        let start = (m * hop_in) as isize - (n_in / 2) as isize;
+        for (i, v) in frame.iter_mut().enumerate() {
+            let idx = start + i as isize;
+            let x = if idx >= 0 && (idx as usize) < samples.len() { samples[idx as usize] } else { 0.0 };
+            *v = x * win_in[i];
+        }
+        if fwd.process(&mut frame, &mut spec).is_err() {
+            continue;
+        }
+
+        out_mag.iter_mut().for_each(|v| *v = 0.0);
+        for (k, c) in spec.iter().enumerate() {
+            let mag = c.norm();
+            let phase = c.arg();
+            let mut delta = (phase - last_phase[k]) as f64 - k as f64 * expected;
+            last_phase[k] = phase;
+            delta -= 2.0 * std::f64::consts::PI * (delta / (2.0 * std::f64::consts::PI)).round();
+            // True frequency in bins (input and output bins are equally wide).
+            let true_bin = k as f64 + delta / expected;
+            let target = true_bin / factor as f64;
+            let j = target.round();
+            if j < 0.0 || j as usize >= bins_out - 1 {
+                continue;
+            }
+            let j = j as usize;
+            // Strongest contributor wins: keeps a tone's level, quiets folded noise.
+            if mag > out_mag[j] {
+                out_mag[j] = mag;
+                out_freq[j] = target as f32;
+            }
+        }
+
+        let advance = 2.0 * std::f64::consts::PI * hop_out as f64 / n_out as f64;
+        for j in 0..bins_out {
+            sum_phase[j] += out_freq[j] as f64 * advance;
+            sum_phase[j] %= 2.0 * std::f64::consts::PI;
+            out_spec[j] = if out_mag[j] > 0.0 && j > 0 && j < bins_out - 1 {
+                Complex::from_polar(out_mag[j] * scale, sum_phase[j] as f32)
+            } else {
+                Complex::new(0.0, 0.0)
+            };
+        }
+        if inv.process(&mut out_spec, &mut out_frame).is_err() {
+            continue;
+        }
+        let at = (m * hop_out) as isize - (n_out / 2) as isize;
+        for (i, &v) in out_frame.iter().enumerate() {
+            let idx = at + i as isize;
+            if idx >= 0 && (idx as usize) < y.len() {
+                y[idx as usize] += v * win_out[i];
+            }
+        }
+    }
+    y.truncate(len_out);
+    y
+}
+
+fn hann(n: usize) -> Vec<f32> {
+    (0..n).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / n as f32).cos()).collect()
 }
 
 // ── Filters ──────────────────────────────────────────────────────────
@@ -241,6 +353,31 @@ mod tests {
                 amp * ((seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0)
             })
             .collect()
+    }
+
+    #[test]
+    fn pitch_shift_divides_frequency_and_keeps_level_and_time() {
+        let y = pitch_shift(&tone(45_000.0, 0.3, 0.5), SR, 10.0);
+        assert_eq!(y.len(), (0.3 * 48_000.0) as usize);
+        let f = zc_freq(&y, 48_000.0);
+        assert!((f - 4_500.0).abs() < 50.0, "got {f}");
+        let mid = &y[y.len() / 4..3 * y.len() / 4];
+        let level = rms(mid) * std::f32::consts::SQRT_2;
+        assert!((level - 0.5).abs() < 0.1, "amplitude {level}");
+    }
+
+    #[test]
+    fn pitch_shift_keeps_a_short_call_in_place() {
+        // 4 ms call at 100–104 ms in silence: output energy stays around there.
+        let mut x = vec![0.0f32; (SR * 0.2) as usize];
+        for i in (SR * 0.1) as usize..(SR * 0.104) as usize {
+            x[i] = 0.5 * (2.0 * PI * 45_000.0 * i as f32 / SR).sin();
+        }
+        let y = pitch_shift(&x, SR, 10.0);
+        let energy = |a: f32, b: f32| y[(a * 48_000.0) as usize..(b * 48_000.0) as usize].iter().map(|v| v * v).sum::<f32>();
+        let near = energy(0.094, 0.110);
+        let total = energy(0.0, 0.2);
+        assert!(near > 0.9 * total, "call smeared: {near} of {total}");
     }
 
     #[test]

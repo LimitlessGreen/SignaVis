@@ -288,6 +288,22 @@ export function heterodyne(samples, sample_rate, first_sample, carrier_hz, bandw
 }
 
 /**
+ * Phase-vocoder pitch shift ÷ factor, tempo kept (see aw_dsp::detector::pitch_shift).
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @param {number} factor
+ * @returns {Float32Array}
+ */
+export function pitchShift(samples, sample_rate, factor) {
+    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.pitchShift(ptr0, len0, sample_rate, factor);
+    var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
  * Convert interleaved PCM bytes to mono f32, channel 0 only
  * (matches AudioBuffer.getChannelData(0) in the JS path).
  * @param {Uint8Array} bytes

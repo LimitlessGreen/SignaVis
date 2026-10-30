@@ -51,7 +51,8 @@ export interface PyramidMeta {
 
 let modulePromise: Promise<WebAssembly.Module> | null = null;
 
-function compileModule(): Promise<WebAssembly.Module> {
+/** The compiled aw-dsp module, shared by every worker and the main-thread instance. */
+export function compileWasmModule(): Promise<WebAssembly.Module> {
     modulePromise ??= WebAssembly.compileStreaming(fetch(wasmUrl))
         .catch(async () => WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer()));
     return modulePromise;
@@ -59,7 +60,7 @@ function compileModule(): Promise<WebAssembly.Module> {
 
 /** Initialises the main-thread instance (wasmMain) without starting workers. */
 export async function loadWasmMain(): Promise<void> {
-    initWasmMain(await compileModule());
+    initWasmMain(await compileWasmModule());
 }
 
 export class WasmSpectrogramService {
@@ -88,7 +89,7 @@ export class WasmSpectrogramService {
             const bytes = await (await fetch(wasmUrl)).arrayBuffer();
             return new WasmSpectrogramService(bytes, nWorkers);
         }
-        const module = await compileModule();
+        const module = await compileWasmModule();
         initWasmMain(module);
         return new WasmSpectrogramService(module, nWorkers);
     }

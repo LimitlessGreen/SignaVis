@@ -21,14 +21,19 @@
 import { clamp, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
-import { wasmMain } from '../wasm-dsp/wasmMain.ts';
-import { renderDetectorChunk, listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
+import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
+import type { DetectorRenderer } from './detectorWorkerClient.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
 
 /** Browsers reject playbackRate below 1/16. */
 export const MAX_TIME_EXPANSION = 16;
-/** Detector output is rendered this far ahead per step. */
-const DETECTOR_CHUNK_SEC = 15;
+/** Detector output: a short first chunk starts playback fast, then longer ones. */
+const DETECTOR_FIRST_CHUNK_SEC = 1;
+const DETECTOR_CHUNK_SEC = 5;
+/** Request the next chunk this long before the current one runs out (render takes < 1 s). */
+const DETECTOR_LOOKAHEAD_SEC = 2;
+/** Rendered chunks kept per playback (label loops replay the same ones). */
+const DETECTOR_CACHE_CHUNKS = 8;
 
 export type { ListenMode };
 
@@ -38,16 +43,14 @@ function normalizeListenMode(mode: ListenMode): ListenMode {
       return { kind: 'heterodyne', carrierHz: Math.max(1000, Number(mode.carrierHz) || 40000), ...(mode.bandwidthHz ? { bandwidthHz: mode.bandwidthHz } : {}) };
     case 'division':
       return { kind: 'division', divisor: clamp(Math.round(Number(mode.divisor) || 10), 2, 64), envelope: !!mode.envelope };
+    case 'pitch':
+      return { kind: 'pitch', factor: clamp(Number(mode.factor) || 10, 1, 32) };
     default:
       return { kind: 'expansion', factor: clamp(Number((mode as any)?.factor) || 1, 1, MAX_TIME_EXPANSION) };
   }
 }
 
-/** Loads the main-thread WASM instance the detector modes run on. */
-function loadDetectorDsp(): Promise<void> {
-  if (wasmMain()) return Promise.resolve();
-  return import('../wasm-dsp/WasmSpectrogramService.ts').then((m) => m.loadWasmMain());
-}
+
 
 /**
  * @typedef {Object} SegmentFilter
@@ -116,6 +119,8 @@ export class AudioEngine extends AudioEngineBase {
   loopPlayback: boolean;
   timeExpansion: number;
   listenMode: ListenMode;
+  _detector: DetectorRenderer | null;
+  _detectorLoading: Promise<DetectorRenderer> | null;
   _peakFor: AudioBuffer | null;
   _peak: number;
   guano: Record<string, string> | null;
@@ -169,6 +174,8 @@ export class AudioEngine extends AudioEngineBase {
     this.timeExpansion = 1;
     /** @type {ListenMode} How playback makes ultrasound audible (time expansion ×1 = plain). */
     this.listenMode = { kind: 'expansion', factor: 1 };
+    this._detector = null;
+    this._detectorLoading = null;
     this._peakFor = null;
     this._peak = 1;
     /** @type {Record<string,string>|null} GUANO metadata of the loaded WAV (bat detectors). */
@@ -458,7 +465,8 @@ export class AudioEngine extends AudioEngineBase {
       freqMaxHz,
       filtered,
       full,
-      chunk: null as DetectorChunk | null,
+      detectorSources: [] as AudioBufferSourceNode[],
+      chunkCache: new Map<string, Promise<DetectorChunk>>(),
       timeExpansion: this.timeExpansion,
       startAtCtx: 0,
       runStartSec: startAt,
@@ -510,18 +518,87 @@ export class AudioEngine extends AudioEngineBase {
     return this.listenMode.kind !== 'expansion';
   }
 
-  /** Detector output covering `atSec`, rendered on demand and reused while it fits. */
-  _detectorChunk(playback: any, atSec: number): DetectorChunk | null {
-    const mode = this.listenMode;
-    if (mode.kind === 'expansion' || !this.audioBuffer) return null;
-    const c: DetectorChunk | null = playback.chunk;
-    if (c && c.key === listenModeKey(mode) && atSec >= c.startSec && atSec < c.endSec - 0.01) return c;
-    const end = Math.min(playback.endSec, atSec + DETECTOR_CHUNK_SEC);
-    playback.chunk = renderDetectorChunk(this.audioBuffer, mode, atSec, end, this._heterodyneGain());
-    return playback.chunk;
+  /** Worker that renders the detector modes, loaded on first use. */
+  _loadDetector(): Promise<DetectorRenderer> {
+    this._detectorLoading ??= import('./detectorWorkerClient.ts')
+      .then((m) => m.DetectorRenderer.create())
+      .then((r) => (this._detector = r));
+    this._detectorLoading.catch(() => { this._detectorLoading = null; });
+    return this._detectorLoading;
   }
 
-  /** Make-up gain so the loudest call reaches about -2 dBFS after heterodyning. */
+  /** Detector output for [atSec, endSec), from the playback's cache or the worker. */
+  _detectorRender(playback: any, atSec: number, endSec: number): Promise<DetectorChunk> {
+    const mode = this.listenMode;
+    if (mode.kind === 'expansion' || !this.audioBuffer || !this._detector) {
+      return Promise.reject(new Error('detector not ready'));
+    }
+    const cache: Map<string, Promise<DetectorChunk>> = playback.chunkCache;
+    const key = `${listenModeKey(mode)}|${atSec.toFixed(6)}|${endSec.toFixed(6)}`;
+    let chunk = cache.get(key);
+    if (!chunk) {
+      chunk = this._detector.render(this.audioBuffer, mode, atSec, endSec, this._heterodyneGain());
+      chunk.catch(() => cache.delete(key));
+      cache.set(key, chunk);
+      if (cache.size > DETECTOR_CACHE_CHUNKS) cache.delete(cache.keys().next().value!);
+    }
+    return chunk;
+  }
+
+  /**
+   * Detector playback from `runStart`: chunks render in the worker and play back
+   * to back on the AudioContext clock, each requested DETECTOR_LOOKAHEAD_SEC
+   * before the previous one runs out. The playhead (runStartSec + elapsed)
+   * waits for the first chunk; a late chunk shifts it by the gap.
+   */
+  _startDetectorChain(playback: any, runStart: number, generation: number) {
+    const ctx = playback.ctx;
+    this._stopDetectorSources(playback);
+    playback.bandpass.type = 'allpass'; // the detector selects the band itself
+    playback.timeExpansion = 1;
+    playback.runStartSec = runStart;
+    playback.startAtCtx = Infinity;
+    const live = () => this._customSegmentPlayback === playback && playback.sourceGeneration === generation;
+
+    const schedule = (atSec: number, whenCtx: number | null, lenSec: number) => {
+      this._detectorRender(playback, atSec, Math.min(playback.endSec, atSec + lenSec)).then((chunk) => {
+        if (!live()) return;
+        let when = whenCtx ?? ctx.currentTime + 0.01;
+        const late = ctx.currentTime + 0.005 - when;
+        if (late > 0) {
+          when += late;
+          if (Number.isFinite(playback.startAtCtx)) playback.startAtCtx += late;
+        }
+        if (!Number.isFinite(playback.startAtCtx)) playback.startAtCtx = when;
+        const until = Math.min(playback.endSec, chunk.endSec);
+        const src = ctx.createBufferSource();
+        src.buffer = chunk.buffer;
+        src.connect(playback.bandpass);
+        src.start(when, atSec - chunk.startSec, Math.max(0.001, until - atSec));
+        playback.detectorSources.push(src);
+        if (playback.detectorSources.length > 3) playback.detectorSources.shift(); // long finished
+        if (until >= playback.endSec - 0.001) return; // the frame loop ends or loops
+        const endsAt = when + (until - atSec);
+        const delayMs = Math.max(0, (endsAt - ctx.currentTime - DETECTOR_LOOKAHEAD_SEC) * 1000);
+        setTimeout(() => { if (live()) schedule(until, endsAt, DETECTOR_CHUNK_SEC); }, delayMs);
+      }).catch((err) => {
+        if (!live()) return;
+        this._stopCustomSegmentPlayback('paused', playback.currentTimeSec);
+        this._emit('error', { message: `Detector playback failed: ${err?.message || err}` });
+      });
+    };
+    schedule(runStart, null, DETECTOR_FIRST_CHUNK_SEC);
+  }
+
+  _stopDetectorSources(playback: any) {
+    for (const src of playback.detectorSources || []) {
+      try { src.stop(); } catch { /**/ }
+      try { src.disconnect(); } catch { /**/ }
+    }
+    playback.detectorSources = [];
+  }
+
+  /** Make-up gain so the loudest call reaches about -2 dBFS after heterodyning / pitch shifting. */
   _heterodyneGain() {
     if (!this.audioBuffer) return 1;
     if (this._peakFor !== this.audioBuffer) {
@@ -557,15 +634,15 @@ export class AudioEngine extends AudioEngineBase {
   }
 
   /**
-   * How playback makes ultrasound audible: time expansion, or a heterodyne /
-   * frequency-division detector as in field work. Spectrogram, labels and
+   * How playback makes ultrasound audible: time expansion, a heterodyne /
+   * frequency-division detector as in field work, or real-time pitch shift. Spectrogram, labels and
    * playhead stay in recording time. Playing audio continues at the same spot.
    */
   setListenMode(mode: ListenMode) {
     const next = normalizeListenMode(mode);
     if (listenModeKey(next) === listenModeKey(this.listenMode)) return;
-    if (next.kind !== 'expansion' && !wasmMain()) {
-      loadDetectorDsp().then(() => this.setListenMode(next)).catch((err) => {
+    if (next.kind !== 'expansion' && !this._detector) {
+      this._loadDetector().then(() => this.setListenMode(next)).catch((err) => {
         this._emit('error', { message: `Detector DSP failed to load: ${err?.message || err}` });
       });
       return;
@@ -822,38 +899,27 @@ export class AudioEngine extends AudioEngineBase {
     playback.sourceGeneration = (playback.sourceGeneration || 0) + 1;
     const generation = playback.sourceGeneration;
     const runStart = startAtSec == null ? playback.startSec : clamp(startAtSec, playback.startSec, playback.endSec - 0.001);
-    const nextSource = source || playback.ctx.createBufferSource();
-    let offset = runStart;
-    let until = playback.endSec;
     if (this._isDetectorMode()) {
-      const chunk = this._detectorChunk(playback, runStart);
-      if (!chunk) {
+      if (!this._detector) {
         this._stopCustomSegmentPlayback('paused', runStart);
         this._emit('error', { message: 'Detector DSP is still loading, try again in a moment.' });
-        void loadDetectorDsp();
+        void this._loadDetector();
         return;
       }
-      nextSource.buffer = chunk.buffer;
-      nextSource.playbackRate.value = 1;
-      playback.timeExpansion = 1;
-      offset = runStart - chunk.startSec;
-      until = Math.min(playback.endSec, chunk.endSec);
-      // The detector already selects the band; a bandpass on its output would be meaningless.
-      playback.bandpass.type = 'allpass';
-    } else {
-      nextSource.buffer = this.audioBuffer;
-      nextSource.playbackRate.value = 1 / this.timeExpansion;
-      playback.timeExpansion = this.timeExpansion;
-      playback.bandpass.type = playback.filtered ? 'bandpass' : 'allpass';
+      playback.source = null;
+      this._startDetectorChain(playback, runStart, generation);
+      return;
     }
+    this._stopDetectorSources(playback);
+    const nextSource = source || playback.ctx.createBufferSource();
+    nextSource.buffer = this.audioBuffer;
+    nextSource.playbackRate.value = 1 / this.timeExpansion;
+    playback.timeExpansion = this.timeExpansion;
+    playback.bandpass.type = playback.filtered ? 'bandpass' : 'allpass';
     nextSource.connect(playback.bandpass);
     nextSource.onended = () => {
       if (!this._customSegmentPlayback || this._customSegmentPlayback.token !== playback.token) return;
       if (playback.sourceGeneration !== generation) return;
-      if (until < playback.endSec - 0.001) {
-        this._restartCustomSegmentSource(playback, until); // next detector chunk
-        return;
-      }
       if (this.loopPlayback) {
         this._loopCustomSegmentPlayback(playback);
         return;
@@ -863,7 +929,7 @@ export class AudioEngine extends AudioEngineBase {
     playback.source = nextSource;
     playback.runStartSec = runStart;
     playback.startAtCtx = playback.ctx.currentTime + 0.005;
-    nextSource.start(playback.startAtCtx, offset, Math.max(0.001, until - runStart));
+    nextSource.start(playback.startAtCtx, runStart, playback.endSec - runStart);
   }
 
   /**
@@ -919,6 +985,7 @@ export class AudioEngine extends AudioEngineBase {
       try { playback.source.disconnect(); } catch { /**/ }
       playback.source = null;
     }
+    this._stopDetectorSources(playback);
     playback.currentTimeSec = atSec;
     this._emit('uiupdate', { time: atSec, fromPlayback: false, immediate: true });
     this._startCustomSegmentSource(playback, null, atSec);
@@ -940,6 +1007,7 @@ export class AudioEngine extends AudioEngineBase {
       try { active.source.stop(); } catch { /**/ }
       try { active.source.disconnect(); } catch { /**/ }
     }
+    this._stopDetectorSources(active);
     try { active.bandpass?.disconnect(); } catch { /**/ }
     try { active.gain.disconnect(); } catch { /**/ }
     try { active.ctx.close(); } catch { /**/ }
