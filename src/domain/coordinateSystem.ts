@@ -54,6 +54,8 @@ export interface CoordinateSystemParams {
     freqViewportMin?: number | null;
     freqViewportMax?: number | null;
     axisWidth?: number;
+    /** Row centre frequencies (Hz, low → high) reported by the engine; replaces the formula-based axis. */
+    binFreqs?: ArrayLike<number> | null;
 }
 
 export class CoordinateSystem {
@@ -98,6 +100,7 @@ export class CoordinateSystem {
      * @param {string | null} [params.freqScale]    Frequency axis mapping: 'mel' | 'linear' | 'log' (for external images)
      * @param {number | null} [params.freqViewMin]  Frequency viewport bottom (Hz) for vertical zoom (null = 0)
      * @param {number | null} [params.freqViewMax]  Frequency viewport top (Hz) for vertical zoom (null = boundedMaxFreq)
+     * @param {ArrayLike<number> | null} [params.binFreqs] Row centre frequencies from the engine (length = spectrogramMels)
      */
     constructor({
         duration = 0,
@@ -114,7 +117,8 @@ export class CoordinateSystem {
         freqScale = null as string | null,
         freqViewMin = null as number | null,
         freqViewMax = null as number | null,
-    } = {}) {
+        binFreqs = null as ArrayLike<number> | null,
+    }: CoordinateSystemParams & { freqRange?: number[] | null; freqScale?: string | null; freqViewMin?: number | null; freqViewMax?: number | null } = {}) {
         this.duration = Math.max(0, duration);
         this.sampleRate = Math.max(1, sampleRate);
         this.pixelsPerSecond = Math.max(0.01, pixelsPerSecond);
@@ -141,9 +145,14 @@ export class CoordinateSystem {
             : this.scale === 'linear';
         this.hopSize = (hopSize && hopSize > 0) ? hopSize : Math.max(1, Math.floor(this.sampleRate / this.frameRate));
 
-        // Mel / linear bin setup
+        // Mel / linear bin setup. An engine-supplied table is exact for every
+        // scale, so the uniform-bin linear formula (isLinear) is bypassed.
         /** @type {Float32Array | null} */
         this._melFreqs = null;
+        if (binFreqs && !this.freqRange && binFreqs.length === this.spectrogramMels) {
+            this._melFreqs = Float32Array.from(binFreqs);
+            this.isLinear = false;
+        }
         this._maxBin = this._computeMaxBin();
 
         // ── Frequency viewport (vertical zoom) ──

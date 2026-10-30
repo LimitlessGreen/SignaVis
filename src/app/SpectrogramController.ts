@@ -26,7 +26,7 @@ import {
 } from '../shared/constants.ts';
 
 import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
-import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions, wasmV2ParamsFromDspOptions } from './WasmTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmParamsFromDspOptions, wasmV2ParamsFromDspOptions, v2BinFrequencies } from './WasmTileManager.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily.
 import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 
@@ -70,6 +70,8 @@ export class SpectrogramController extends EventTarget {
     _absLogMax: number;
     /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
     _engineV2 = false;
+    _v2Params: StftParamsV2 | null = null;
+    _binFreqsMemo: { params: StftParamsV2; sampleRate: number; freqs: Float64Array } | null = null;
     /** Lazily created WASM service for whole-file v2 computation. */
     _wasmSvc: Promise<WasmSpectrogramService> | null = null;
     _baseCanvas: HTMLCanvasElement | null;
@@ -146,6 +148,16 @@ export class SpectrogramController extends EventTarget {
     get data()                { return this._data; }
     get nFrames()             { return this._nFrames; }
     get nMels()               { return this._nMels; }
+    /** Exact row frequencies when the v2 engine produced the data, else null (legacy axis formulas). */
+    get binFreqs(): Float64Array | null {
+        if (this._tileManager) return this._tileManager instanceof WasmTileManager ? this._tileManager.binFreqs : null;
+        const params = this._v2Params, sampleRate = this._audioBuffer?.sampleRate;
+        if (!this._engineV2 || !params || !sampleRate) return null;
+        const m = this._binFreqsMemo;
+        if (m?.params === params && m.sampleRate === sampleRate) return m.freqs;
+        this._binFreqsMemo = { params, sampleRate, freqs: v2BinFrequencies(params, sampleRate) };
+        return this._binFreqsMemo.freqs;
+    }
     get hopSize()             { return this._hopSize; }
     get winLength()           { return this._winLength; }
     get baseCanvas()          { return this._baseCanvas; }
@@ -253,6 +265,7 @@ export class SpectrogramController extends EventTarget {
         const v2Params = SPECTROGRAM_ENGINE === 'v2'
             ? wasmV2ParamsFromDspOptions({ ...options, reassigned: useReassigned })
             : null;
+        this._v2Params = v2Params;
         // Part of the cache key, so results of the two engines never mix.
         (options as Record<string, unknown>).engine = v2Params ? 'v2' : 'v1';
 
@@ -744,6 +757,7 @@ export class SpectrogramController extends EventTarget {
         this._data    = floats;
         this._nFrames = nFrames;
         this._nMels   = nMels;
+        this._engineV2 = false;   // external data uses the legacy axis formulas
 
         if (options.sampleRate) {
             this._sampleRateHz = options.sampleRate;
@@ -860,6 +874,7 @@ export class SpectrogramController extends EventTarget {
             spectrogramAbsLogMin: this._absLogMin,
             spectrogramAbsLogMax: this._absLogMax,
             scale:       this._activeScale || d.scaleSelect?.value || 'mel',
+            binFreqs:    this.binFreqs,
             colourScale: this._colourScale || d.colourScaleSelect?.value || 'dbSquared',
             noiseReduction: d.noiseReductionCheck?.checked ?? false,
             clahe:          d.claheCheck?.checked ?? false,
@@ -1063,6 +1078,8 @@ export class SpectrogramController extends EventTarget {
             nMels,
             this._sampleRateHz,
             this._d.scaleSelect?.value || 'mel',
+            undefined,
+            this.binFreqs,
         );
         const opts = Array.from((this._d.maxFreqSelect?.options || []) as any) as HTMLOptionElement[];
         let best = opts[opts.length - 1] as HTMLOptionElement | undefined;

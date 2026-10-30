@@ -102,6 +102,26 @@ function logBandsForCqtAxis(bands: number): StftParamsV2['scale'] {
     return { kind: 'log', bands, fMin, fMax: fMin * Math.pow(step, bands + 1) };
 }
 
+/**
+ * Centre frequency (Hz) of each v2 output row, low → high. Same formulas as
+ * aw_dsp::v2 `StftParams::bin_frequencies` (checked against WASM in tests), so the
+ * axis can be built without a worker round trip. fMax 0 → Nyquist, as in the worker.
+ */
+export function v2BinFrequencies(p: StftParamsV2, sampleRate: number): Float64Array {
+    const s = p.scale;
+    if (s.kind === 'linear') {
+        const n = (p.nFft >> 1) + 1;
+        return Float64Array.from({ length: n }, (_, k) => k * sampleRate / p.nFft);
+    }
+    const fMax = s.fMax > 0 ? s.fMax : sampleRate / 2;
+    const [fwd, inv] = s.kind === 'mel'
+        ? [(hz: number) => 2595 * Math.log10(1 + hz / 700), (m: number) => 700 * (Math.pow(10, m / 2595) - 1)]
+        : [Math.log, Math.exp];
+    const a = fwd(s.fMin), b = fwd(fMax);
+    // Edges at i / (bands + 1), i = 0 … bands + 1; centres are edges 1 … bands.
+    return Float64Array.from({ length: s.bands }, (_, i) => inv(a + (b - a) * (i + 1) / (s.bands + 1)));
+}
+
 const isV2 = (p: AnySpecParams): p is StftParamsV2 => typeof (p as StftParamsV2).winLen === 'number';
 
 /** Any source qualifies: WAV files are read directly, everything else via pcmWavBlob(). */
@@ -209,6 +229,13 @@ export class WasmTileManager extends EventTarget {
     }
 
     get hasTiles(): boolean { return this.tilesComputed > 0; }
+    /** Row centre frequencies for v2 pyramids, null for v1 (legacy axis formulas). */
+    get binFreqs(): Float64Array | null {
+        const p = this.meta.params;
+        if (this._binFreqs === undefined) this._binFreqs = isV2(p) ? v2BinFrequencies(p, p.sampleRate) : null;
+        return this._binFreqs;
+    }
+    private _binFreqs: Float64Array | null | undefined;
     get hopSize(): number {
         const p = this.meta.params;
         return isV2(p) ? p.hop : (p as WasmSpecParams).hopSize;
@@ -412,6 +439,7 @@ export class WasmTileManager extends EventTarget {
             spectrogramAbsLogMin: lo,
             spectrogramAbsLogMax: hi,
             scale:                opts.scale,
+            binFreqs:             this.binFreqs,
             colourScale:          opts.colourScale,
             noiseReduction:       opts.noiseReduction,
             clahe:                opts.clahe,
