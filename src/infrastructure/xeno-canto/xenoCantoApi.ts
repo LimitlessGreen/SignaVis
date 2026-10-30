@@ -6,6 +6,7 @@ import {
     sleep, safeArray, safeString, safeField,
     parseJsonSafe, resolveFetch,
 } from './xcHelpers.ts';
+import { normalizeCompleteness } from './annotaPayload.ts';
 
 export const DEFAULT_XC_ENDPOINT = 'https://xeno-canto.org/api/3/upload/annotation-set';
 
@@ -87,7 +88,8 @@ function normalizeMetadata(metadata: any) {
         projectName: safeString(m.project ?? m.Project ?? m['meta-project'] ?? m.project_name),
         annotatorName: safeString(m.annname ?? m['Name of the Annotator'] ?? m['meta-annname'] ?? m.annotator),
         taxonCoverage: safeString(m.taxon_coverage ?? m.taxonCoverage),
-        completeness: safeString(m.completeness ?? m.set_completeness),
+        completeness: normalizeCompleteness(m.completeness ?? m.set_completeness),
+        remarks: safeString(m.set_remarks ?? m.remarks),
         setName: safeString(m.setname),
         setCreator: safeString(m.setcreator),
         setLicense: safeString(m.set_license),
@@ -386,6 +388,7 @@ export function buildXenoCantoAnnotationSet(params: any = {}) {
         project_uri: '',
         project_name: meta.projectName,
         funding: '',
+        set_remarks: meta.remarks,
         scope: [
             {
                 taxon_coverage: meta.taxonCoverage,

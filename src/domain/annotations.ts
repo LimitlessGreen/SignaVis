@@ -2155,6 +2155,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             readonly: label?.readonly === true,
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
+            createdAt: label?.createdAt || new Date().toISOString(),
+            ...(label?.updatedAt ? { updatedAt: label.updatedAt } : {}),
         };
     }
 }

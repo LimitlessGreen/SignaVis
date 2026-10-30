@@ -39,36 +39,66 @@
 }
 ```
 
-## 2. Export Payload
+## 2. Export Payload (Annota-JSON Fv0)
+
+Built by `buildAnnotaPayload()` in `src/infrastructure/xeno-canto/annotaPayload.ts`
+(the XC panel resolves the active set + annotator profile and calls it).
+Recording metadata (location, date, device) is **not** part of the payload — XC takes it from `xc_nr`.
 
 ```json
 {
+  "set_source": "",
+  "set_uri": "",
   "set_name": "My annotation set",
+  "annotation_software_name_and_version": "SignaVis 1.2.3",
   "set_creator": "Annotator Name",
+  "set_creator_id": "https://xeno-canto.org/contributor/ABCDEFGHIJ",
+  "set_owner": "Org A, Org B",
   "set_license": "CC-BY-NC",
-  "recording_context": {
-    "latitude": "51.5",
-    "longitude": "-0.1",
-    "recording_date": "2026-04-22",
-    "recording_time": "12:34"
-  },
+  "project_uri": "",
+  "project_name": "",
+  "funding": "",
+  "set_remarks": "",
+  "scope": [{ "taxon_coverage": "Aves", "completeness": "part" }],
   "annotations": [{
-    "annotation_source_id": "1",
-    "xc_nr": "XC123456",
+    "annotation_source_id": "slabel_k3j9x0aa",
+    "xc_nr": "123456",
+    "sound_file": "",
     "annotator": "Annotator Name",
-    "annotator_xc_id": "xcuser",
+    "annotator_xc_id": "ABCDEFGHIJ",
     "start_time": "12.340000",
     "end_time": "13.570000",
     "frequency_low": "1000.0",
     "frequency_high": "5000.0",
     "scientific_name": "Abroscopus albogularis",
     "sound_type": "song",
+    "date_identified": "2026-10-29",
     "sex": "male",
     "life_stage": "adult",
-    "annotation_remarks": "short remark"
+    "animal_seen": "y",
+    "playback_used": "n",
+    "collection_date": "",
+    "collection_specimen": "",
+    "temperature": "",
+    "annotation_remarks": "short remark",
+    "overlap": ""
   }]
 }
 ```
+
+- `annotation_source_id` = stable label ID; `date_identified` = label `updatedAt`/`createdAt` (date).
+- `frequency_low/high` are omitted when the label has no frequency range.
+- `animal_seen`, `playback_used`, `overlap`: `y` / `n` / empty.
+- `scope.completeness`: `all` | `part` (legacy `complete`/`partial` are mapped).
+- `set_owner`: comma-separated list (exact XC format still to be confirmed with a real upload).
+
+**Validation** (`validateAnnotaPayload`, mirrors XC "Verify"):
+errors block the upload — `xc_nr`, `start_time`, `end_time`, `scientific_name`;
+warnings — `set_name`, `set_creator`, `set_owner`, `set_license`, `annotator`, `frequency_low/high`,
+`sound_type`, `sex`, `life_stage`, `annotation_remarks`.
+
+**Import:** `original_set_metadata` is read as an array (Fv0) or a single object (older exports);
+labels are grouped into one locked set per original set.
 
 **Target:** `POST /api/3/upload/annotation-set`
 

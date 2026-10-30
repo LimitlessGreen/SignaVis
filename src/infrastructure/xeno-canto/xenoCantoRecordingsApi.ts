@@ -6,6 +6,7 @@ import {
     firstNonEmpty, toFiniteNumber, normalizeXcId, resolveFetch,
 } from './xcHelpers.ts';
 import { DEFAULT_SAMPLE_RATE } from '../../shared/constants.ts';
+import { readOriginalSetMetadata } from './annotaPayload.ts';
 
 export { normalizeXcId } from './xcHelpers.ts';
 
@@ -132,7 +133,8 @@ function _buildXcLabel(src: any, index: number, meta: any) {
     if (playbackUsed) tags.playbackUsed = playbackUsed;
     if (remarks) tags.remarks = remarks;
 
-    const setMeta = src.original_set_metadata || {};
+    // Fv0: array of original sets (combined XC exports); older payloads: single object
+    const setMeta = readOriginalSetMetadata(src)[0] || {};
     const setLicense = firstNonEmpty([setMeta.set_license, setMeta.license]) || '';
     const setName = firstNonEmpty([setMeta.set_name, setMeta.name]) || '';
     const setCreator = firstNonEmpty([setMeta.set_creator, setMeta.creator]) || '';
