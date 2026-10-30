@@ -172,7 +172,8 @@ export class PlayerState {
             storage: this._storage,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
-            getSampleRate: () => this.audioBuffer?.sampleRate,
+            // Called during construction, before _engine exists.
+            getSampleRate: () => this._engine?.audioBuffer?.sampleRate,
         });
         this._presets.populatePresetDropdown();
         this._presets.applyFavouritePresetControls();

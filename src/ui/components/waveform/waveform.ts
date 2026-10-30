@@ -2,6 +2,7 @@
 // Waveform — canvas rendering for waveform, timeline, overview and frequency labels
 // ═══════════════════════════════════════════════════════════════════════
 
+import { CQT_FMIN } from '../../../shared/constants.ts';
 import { clamp, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
@@ -287,23 +288,46 @@ export function renderFrequencyLabels({ labelsElement, coords }: { labelsElement
     const minFreq = coords.freqViewMin ?? ((coords.freqRange && coords.freqRange[0]) || 0);
     const range = boundedMaxFreq - minFreq;
 
-    const niceSteps = [100, 200, 500, 1000, 2000, 2500, 5000, 10000, 20000];
-    const targetTicks = 6;
-    const rawStep = range / targetTicks;
-    const step = niceSteps.reduce((best, s) =>
-        Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best
-    );
-
-    const frequencies = [];
-    const startFreq = Math.ceil(minFreq / step) * step;
-    for (let f = startFreq; f <= boundedMaxFreq + 1; f += step) {
-        frequencies.push(f);
+    const frequencies: number[] = [];
+    const isLog = coords.scale === 'cqt' || coords.freqScale === 'log';
+    if (isLog) {
+        // 1-2-5 per decade; log axes have no 0 Hz, start at the lowest band.
+        const lo = Math.max(minFreq, CQT_FMIN);
+        for (let dec = 10; dec <= boundedMaxFreq; dec *= 10) {
+            for (const m of [1, 2, 5]) {
+                const f = dec * m;
+                if (f >= lo && f <= boundedMaxFreq + 1) frequencies.push(f);
+            }
+        }
+    } else {
+        const niceSteps = [100, 200, 500, 1000, 2000, 2500, 5000, 10000, 20000];
+        const targetTicks = 6;
+        const rawStep = range / targetTicks;
+        const step = niceSteps.reduce((best, s) =>
+            Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best
+        );
+        const startFreq = Math.ceil(minFreq / step) * step;
+        for (let f = startFreq; f <= boundedMaxFreq + 1; f += step) {
+            frequencies.push(f);
+        }
+        if (minFreq === 0 && (frequencies.length === 0 || frequencies[0] !== 0)) {
+            frequencies.unshift(0);
+        }
     }
-    if (minFreq === 0 && (frequencies.length === 0 || frequencies[0] !== 0)) {
-        frequencies.unshift(0);
-    }
 
-    frequencies.forEach((freq) => {
+    // Drop labels that would overlap on non-linear axes (mel/log crowd the top or bottom).
+    const MIN_GAP = 0.05;
+    let lastY = Infinity;
+    const visible = frequencies
+        .sort((a, b) => a - b)
+        .filter((f) => {
+            const y = coords.frequencyToYFraction(f);
+            if (Math.abs(lastY - y) < MIN_GAP) return false;
+            lastY = y;
+            return true;
+        });
+
+    visible.forEach((freq) => {
         const span = document.createElement('span');
         span.textContent = freq >= 1000
             ? `${(freq / 1000).toFixed(freq % 1000 === 0 ? 0 : 1)} kHz`
