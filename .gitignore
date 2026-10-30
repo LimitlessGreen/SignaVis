@@ -66,3 +66,6 @@ demo/data/species_images/
 demo/data/birdnet-taxonomy.v2.4.json
 
 schema_cornel.json
+
+# Local test audio (licensed recordings, not redistributed)
+tests/fixtures/local/
