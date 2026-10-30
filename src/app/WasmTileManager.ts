@@ -449,6 +449,7 @@ export class WasmTileManager extends EventTarget {
             binFreqs:             this.binFreqs,
             colourScale:          opts.colourScale,
             noiseReduction:       opts.noiseReduction,
+            bandFloor:            this.meta.levels[tile.level]?.stats.bandFloor ?? null,
             clahe:                opts.clahe,
         });
         if (!grayInfo) return;

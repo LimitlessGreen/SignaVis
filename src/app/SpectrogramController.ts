@@ -72,6 +72,8 @@ export class SpectrogramController extends EventTarget {
     _absLogMax: number;
     /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
     _engineV2 = false;
+    /** v2: per-band noise floor (dB) of _data, for noise reduction. */
+    _bandFloor: ArrayLike<number> | null = null;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
     _gainDbMode: boolean | null = null;
     /** Stage-1 image holds raw dB values (window applied in stage 2). */
@@ -324,6 +326,7 @@ export class SpectrogramController extends EventTarget {
                 this._winLength   = cached.winLength;
                 this._colourScale = cached.colourScale || colourScale;
                 this._engineV2    = !!v2Params;
+                this._bandFloor   = cached.bandFloor ?? null;
                 this._updateStats();
                 // Invalidate stage-1/2 so draw() recomputes grayscale and
                 // colorization with the new scale/colourScale settings.
@@ -402,6 +405,7 @@ export class SpectrogramController extends EventTarget {
             this._hopSize   = result.hopSize || Math.max(1, Math.floor(this._sampleRateHz / PERCH_FRAME_RATE));
             this._winLength = result.winLength || 4 * this._hopSize;
             this._colourScale = result.colourScale || colourScale;
+            this._bandFloor   = this._engineV2 ? (result as { bandFloor?: ArrayLike<number> }).bandFloor ?? null : null;
 
             // Persist to cache (non-blocking). A JS fallback after a v2 failure
             // must not be stored under the v2 key.
@@ -412,6 +416,7 @@ export class SpectrogramController extends EventTarget {
                 hopSize:    this._hopSize,
                 winLength:  this._winLength,
                 colourScale: this._colourScale,
+                bandFloor:   this._bandFloor ? Array.from(this._bandFloor) : undefined,
             }).catch(() => {/* ignore storage errors */});
 
             this._updateStats();
@@ -902,6 +907,7 @@ export class SpectrogramController extends EventTarget {
             noiseReduction: d.noiseReductionCheck?.checked ?? false,
             clahe,
             raw:         this._grayRaw,
+            bandFloor:   this._bandFloor,
         }) as { gray: Float32Array; width: number; height: number } | null;
         if (this._grayInfo && this.colorizer.ok) {
             const { gray, width, height } = this._grayInfo;
@@ -1273,7 +1279,7 @@ export class SpectrogramController extends EventTarget {
             .then(({ WasmSpectrogramService }) => WasmSpectrogramService.create());
         const svc = await this._wasmSvc.catch((err) => { this._wasmSvc = null; throw err; });
         const r = await svc.compute(channelData, this._audioBuffer!.sampleRate, params);
-        return { data: r.data, nFrames: r.nFrames, nMels: r.bins, hopSize: r.hop, winLength: r.winLen, colourScale };
+        return { data: r.data, nFrames: r.nFrames, nMels: r.bins, hopSize: r.hop, winLength: r.winLen, colourScale, bandFloor: r.bandFloor };
     }
 
     _updateStats() {

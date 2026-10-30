@@ -352,6 +352,36 @@ export class WasmStft {
 if (Symbol.dispose) WasmStft.prototype[Symbol.dispose] = WasmStft.prototype.free;
 
 /**
+ * Per-band noise floor (median per row) of row-major [frame][bin] values.
+ * @param {Float32Array} values
+ * @param {number} bins
+ * @returns {Float32Array}
+ */
+export function bandFloor(values, bins) {
+    const ptr0 = passArrayF32ToWasm0(values, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.bandFloor(ptr0, len0, bins);
+    var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
+
+/**
+ * CLAHE in place on a [0, 1] image (see aw_dsp::display::clahe).
+ * @param {Float32Array} gray
+ * @param {number} width
+ * @param {number} height
+ * @param {number} tiles_x
+ * @param {number} tiles_y
+ * @param {number} clip_limit
+ */
+export function clahe(gray, width, height, tiles_x, tiles_y, clip_limit) {
+    var ptr0 = passArrayF32ToWasm0(gray, wasm.__wbindgen_malloc);
+    var len0 = WASM_VECTOR_LEN;
+    wasm.clahe(ptr0, len0, gray, width, height, tiles_x, tiles_y, clip_limit);
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {Float32Array}
  */

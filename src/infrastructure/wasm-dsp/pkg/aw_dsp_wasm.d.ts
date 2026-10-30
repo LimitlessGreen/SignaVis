@@ -75,6 +75,16 @@ export class WasmStft {
     sampleRange(lo: number, n: number): Float64Array;
 }
 
+/**
+ * Per-band noise floor (median per row) of row-major [frame][bin] values.
+ */
+export function bandFloor(values: Float32Array, bins: number): Float32Array;
+
+/**
+ * CLAHE in place on a [0, 1] image (see aw_dsp::display::clahe).
+ */
+export function clahe(gray: Float32Array, width: number, height: number, tiles_x: number, tiles_y: number, clip_limit: number): void;
+
 export function decodeF16(bytes: Uint8Array): Float32Array;
 
 /**
@@ -97,6 +107,8 @@ export interface InitOutput {
     readonly __wbg_wasmpyramidbuilder_free: (a: number, b: number) => void;
     readonly __wbg_wasmpyramidbuilderv2_free: (a: number, b: number) => void;
     readonly __wbg_wasmstft_free: (a: number, b: number) => void;
+    readonly bandFloor: (a: number, b: number, c: number) => [number, number];
+    readonly clahe: (a: number, b: number, c: any, d: number, e: number, f: number, g: number, h: number) => void;
     readonly decodeF16: (a: number, b: number) => [number, number];
     readonly wasmengine_bandEnergies: (a: number, b: number, c: number, d: number) => [number, number];
     readonly wasmengine_blockValues: (a: number, b: number, c: number, d: number, e: number) => [number, number];

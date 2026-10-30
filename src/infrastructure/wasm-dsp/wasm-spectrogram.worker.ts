@@ -13,7 +13,7 @@
 
 import {
     initSync, WasmEngine, WasmPyramidBuilder, WasmStft, WasmPyramidBuilderV2,
-    decodeF16, wavInfo, wavChannel0,
+    decodeF16, wavInfo, wavChannel0, bandFloor,
 } from './pkg/aw_dsp_wasm.js';
 
 // OPFS sync access handles are worker-only and missing from the DOM lib.
@@ -30,7 +30,7 @@ declare global {
 
 const STORE_ROOT = 'aw-spectrograms';
 const FORMAT_VERSION = 2;     // aw_dsp::pyramid::FORMAT_VERSION (v1 engine)
-const FORMAT_VERSION_V2 = 3;  // aw_dsp::pyramid::FORMAT_VERSION_V2
+const FORMAT_VERSION_V2 = 4;  // aw_dsp::pyramid::FORMAT_VERSION_V2
 
 /** v2 params (aw_dsp::v2::StftParams) are recognised by `winLen`. */
 const isV2 = (p: any) => p && typeof p.winLen === 'number';
@@ -325,7 +325,8 @@ function startCoordinator(ports: MessagePort[]) {
                     .then((d) => data.set(d, f0 * bins)));
             }
             await Promise.all(jobs);
-            return { data, nFrames: total, bins, hop: p.hop as number, winLen: p.winLen as number };
+            return { data, nFrames: total, bins, hop: p.hop as number, winLen: p.winLen as number,
+                bandFloor: bandFloor(data, bins) };
         } finally {
             stft.free();
         }

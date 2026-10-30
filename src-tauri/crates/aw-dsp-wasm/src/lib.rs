@@ -184,6 +184,18 @@ impl WasmPyramidBuilderV2 {
     }
 }
 
+/// CLAHE in place on a [0, 1] image (see aw_dsp::display::clahe).
+#[wasm_bindgen]
+pub fn clahe(gray: &mut [f32], width: usize, height: usize, tiles_x: usize, tiles_y: usize, clip_limit: f32) {
+    aw_dsp::display::clahe(gray, width, height, tiles_x, tiles_y, clip_limit);
+}
+
+/// Per-band noise floor (median per row) of row-major [frame][bin] values.
+#[wasm_bindgen(js_name = bandFloor)]
+pub fn band_floor(values: &[f32], bins: usize) -> Vec<f32> {
+    aw_dsp::v2::display_stats(values, bins).band_floor
+}
+
 #[wasm_bindgen(js_name = decodeF16)]
 pub fn decode_f16(bytes: &[u8]) -> Vec<f32> { aw_dsp::pyramid::decode_f16(bytes) }
 
