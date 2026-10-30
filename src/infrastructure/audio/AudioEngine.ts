@@ -929,7 +929,11 @@ export class AudioEngine extends AudioEngineBase {
     playback.source = nextSource;
     playback.runStartSec = runStart;
     playback.startAtCtx = playback.ctx.currentTime + 0.005;
-    nextSource.start(playback.startAtCtx, runStart, playback.endSec - runStart);
+    // start()'s duration is measured in output time by some browsers (Chrome)
+    // and in buffer time by others; with a playbackRate below 1 that ends
+    // time-expanded segments early. Stop at the expanded end explicitly.
+    nextSource.start(playback.startAtCtx, runStart);
+    nextSource.stop(playback.startAtCtx + (playback.endSec - runStart) * this.timeExpansion);
   }
 
   /**
