@@ -286,7 +286,7 @@ export function createPlayerHTML(opts = {}) {
                 <select data-aw="scaleSelect" class="settings-select">
                     <option value="mel" selected>Mel</option>
                     <option value="linear">Linear</option>
-                    <option value="cqt">CQT</option>
+                    <option value="cqt">Log frequency</option>
                 </select>
             </div>
             <div class="settings-row">
@@ -295,7 +295,6 @@ export function createPlayerHTML(opts = {}) {
                     <option value="dbSquared" selected>dB²</option>
                     <option value="db">dB</option>
                     <option value="linear">Linear</option>
-                    <option value="meter">Meter</option>
                     <option value="phase">Phase</option>
                 </select>
             </div>
@@ -372,8 +371,8 @@ export function createPlayerHTML(opts = {}) {
                 <input type="number" data-aw="pcenRootInput" class="settings-number" value="4.0" min="1" max="10" step="0.5">
             </div>
             <div class="settings-row">
-                <label class="settings-label">Smoothing</label>
-                <input type="number" data-aw="pcenSmoothingInput" class="settings-number" value="0.025" min="0" max="0.5" step="0.005">
+                <label class="settings-label" title="Smoother time constant in seconds (independent of hop size)">Time constant (s)</label>
+                <input type="number" data-aw="pcenTimeConstantInput" class="settings-number" value="0.4" min="0.01" max="5" step="0.05">
             </div>
         </div>
     </div>

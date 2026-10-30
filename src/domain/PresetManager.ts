@@ -26,6 +26,8 @@ export interface PresetManagerCallbacks {
     onStage1Rebuild: () => void;
     storage: IStorage;
     onDspCommand?: ((cmd: UndoCommand) => void) | null;
+    /** Sample rate of the loaded audio, for the window length in ms. */
+    getSampleRate?: () => number | undefined;
 }
 
 const LS_USER_PRESETS  = 'aw-user-presets';
@@ -54,6 +56,7 @@ export class PresetManager {
      * @type {((cmd: import('./undoStack.ts').UndoCommand) => void) | null}
      */
     #onDspCommand: ((cmd: UndoCommand) => void) | null = null;
+    #getSampleRate: () => number | undefined;
     /** Snapshot captured before a DSP change starts (for undo). */
     #dspBeforeSnapshot: any = null;
 
@@ -69,12 +72,13 @@ export class PresetManager {
      *   Called after each DSP parameter change with an undo/redo command object.
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
      */
-    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand }: PresetManagerCallbacks) {
+    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate }: PresetManagerCallbacks) {
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
         this.#onStage1   = onStage1Rebuild;
         this.#storage    = storage;
         this.#onDspCommand = onDspCommand ?? null;
+        this.#getSampleRate = getSampleRate ?? (() => undefined);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -153,7 +157,7 @@ export class PresetManager {
             { el: 'pcenGainInput',       syncQuality: false, desc: 'PCEN gain change'       },
             { el: 'pcenBiasInput',       syncQuality: false, desc: 'PCEN bias change'       },
             { el: 'pcenRootInput',       syncQuality: false, desc: 'PCEN root change'       },
-            { el: 'pcenSmoothingInput',  syncQuality: false, desc: 'PCEN smoothing change'  },
+            { el: 'pcenTimeConstantInput', syncQuality: false, desc: 'PCEN time constant change' },
         ];
         for (const { el, syncQuality, desc } of DSP_CONTROLS) {
             if (!d[el]) continue;
@@ -305,7 +309,7 @@ export class PresetManager {
         if (d.overlapSelect)       d.overlapSelect.value       = String(level.overlapLevel);
         if (d.oversamplingSelect)  d.oversamplingSelect.value  = String(level.oversamplingLevel);
         if (d.nMelsInput && level.nMels != null) d.nMelsInput.value = String(level.nMels);
-        if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(level);
+        if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(level, this.#getSampleRate());
         this.clearPresetHighlight();
         this.#onRegen();
     }
@@ -323,7 +327,7 @@ export class PresetManager {
         );
         if (idx >= 0) {
             d.qualitySlider.value = String(idx);
-            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(QUALITY_LEVELS[idx]);
+            if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = qualityLabel(QUALITY_LEVELS[idx], this.#getSampleRate());
         } else {
             if (d.qualityLevelDisplay) d.qualityLevelDisplay.textContent = 'Custom';
         }
@@ -336,7 +340,7 @@ export class PresetManager {
         if (!d.pcenSection) return;
         const enabled = d.pcenEnabledCheck?.checked ?? true;
         d.pcenSection.style.opacity = enabled ? '' : '0.45';
-        for (const el of [d.pcenGainInput, d.pcenBiasInput, d.pcenRootInput, d.pcenSmoothingInput]) {
+        for (const el of [d.pcenGainInput, d.pcenBiasInput, d.pcenRootInput, d.pcenTimeConstantInput]) {
             if (el) el.disabled = !enabled;
         }
     }
@@ -747,7 +751,8 @@ export class PresetManager {
     }
 }
 
-/** e.g. "Balanced · 1024 samples (23 ms @ 44.1 kHz)". */
-function qualityLabel(level: { label: string; windowSize: number }): string {
-    return `${level.label} · ${level.windowSize} samples (${(level.windowSize / 44.1).toFixed(1)} ms @ 44.1 kHz)`;
+/** e.g. "Balanced · 1024 samples (21.3 ms @ 48 kHz)"; 44.1 kHz until audio is loaded. */
+function qualityLabel(level: { label: string; windowSize: number }, sampleRate = 44100): string {
+    const sr = sampleRate > 0 ? sampleRate : 44100;
+    return `${level.label} · ${level.windowSize} samples (${(level.windowSize * 1000 / sr).toFixed(1)} ms @ ${+(sr / 1000).toFixed(2)} kHz)`;
 }

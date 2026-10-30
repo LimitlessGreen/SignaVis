@@ -30,7 +30,7 @@ export const PERCH_N_MELS = 160;
 export const PERCH_PCEN_GAIN = 0.8;
 export const PERCH_PCEN_BIAS = 0.01;
 export const PERCH_PCEN_ROOT = 4.0;
-export const PERCH_PCEN_SMOOTHING = 0.025;
+export const PERCH_PCEN_TIME_CONSTANT = 0.4;  // s (≈ 0.025 per frame at 100 fps)
 
 // Classic (Xeno-Canto-style) spectrogram defaults
 export const CLASSIC_FRAME_RATE = 100;
@@ -69,7 +69,7 @@ export interface DspProfile {
     pcenGain: number;
     pcenBias: number;
     pcenRoot: number;
-    pcenSmoothing: number;
+    pcenTimeConstant: number;
     windowFunction: string;
     colorScheme: string;
     colourScale?: string;
@@ -107,7 +107,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenGain: PERCH_PCEN_GAIN,
         pcenBias: PERCH_PCEN_BIAS,
         pcenRoot: PERCH_PCEN_ROOT,
-        pcenSmoothing: PERCH_PCEN_SMOOTHING,
+        pcenTimeConstant: PERCH_PCEN_TIME_CONSTANT,
         windowFunction: 'hann',
         colorScheme: 'grayscale',
         reassigned: false,
@@ -127,7 +127,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenGain: PERCH_PCEN_GAIN,
         pcenBias: PERCH_PCEN_BIAS,
         pcenRoot: PERCH_PCEN_ROOT,
-        pcenSmoothing: PERCH_PCEN_SMOOTHING,
+        pcenTimeConstant: PERCH_PCEN_TIME_CONSTANT,
         windowFunction: 'hann',
         colorScheme: 'grayscale',
         reassigned: false,
@@ -149,7 +149,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenGain: 0,
         pcenBias: 0,
         pcenRoot: 1,
-        pcenSmoothing: 0,
+        pcenTimeConstant: 0.4,
         windowFunction: 'hann',
         colorScheme: 'xenocanto',
         reassigned: false,
@@ -169,7 +169,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenGain: 0.8,
         pcenBias: 0.01,
         pcenRoot: 4,
-        pcenSmoothing: 0.025,
+        pcenTimeConstant: 0.4,
         windowFunction: 'blackmanHarris',
         colorScheme: 'inferno',
         reassigned: false,
@@ -214,7 +214,6 @@ export const QUALITY_LEVELS: QualityLevel[] = [
 
 export const COLOUR_SCALES = {
     linear:  { label: 'Linear',  description: 'Raw magnitude (|X|), proportional pixel mapping' },
-    meter:   { label: 'Meter',   description: 'IEC 60268-18 meter law (perceptual loudness)' },
     dbSquared: { label: 'dB²',   description: '10·log₁₀(|X|²) — power spectrum in dB' },
     db:      { label: 'dB',      description: '20·log₁₀(|X|) — voltage/amplitude in dB' },
     phase:   { label: 'Phase',   description: 'atan2(imag, real) — phase angle (−π … +π)' },

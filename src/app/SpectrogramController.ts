@@ -222,8 +222,11 @@ export class SpectrogramController extends EventTarget {
         const nMels          = Math.max(16, Math.min(512, parseInt(d.nMelsInput?.value || '160', 10) || 160));
         const useReassigned  = d.reassignedCheck?.checked ?? false;
 
+        const pcenTimeConstant = Math.max(0.01, parseFloat(d.pcenTimeConstantInput?.value || '0.4') || 0.4);
+
         const effectiveNMels = scale === 'cqt'
-            ? Math.ceil(Math.log2((this._audioBuffer.sampleRate / 2) / CQT_FMIN) * CQT_BINS_PER_OCTAVE)
+            // floor: the top band edge (one step above the last centre) must stay ≤ Nyquist for v2.
+            ? Math.floor(Math.log2((this._audioBuffer.sampleRate / 2) / CQT_FMIN) * CQT_BINS_PER_OCTAVE - 1e-9)
             : nMels;
 
         const options = {
@@ -238,7 +241,9 @@ export class SpectrogramController extends EventTarget {
             pcenGain:       parseFloat(d.pcenGainInput?.value    || '0.8'),
             pcenBias:       parseFloat(d.pcenBiasInput?.value    || '0.01'),
             pcenRoot:       parseFloat(d.pcenRootInput?.value    || '4.0'),
-            pcenSmoothing:  parseFloat(d.pcenSmoothingInput?.value || '0.025'),
+            pcenTimeConstant,
+            // Legacy JS/v1 engines take a per-frame smoother coefficient.
+            pcenSmoothing:  Math.min(1, hopSize / (this._audioBuffer.sampleRate * pcenTimeConstant)),
             windowSize,
             hopSize,
         };

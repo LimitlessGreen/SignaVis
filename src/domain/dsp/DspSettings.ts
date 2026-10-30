@@ -20,7 +20,7 @@ export interface DspSettings {
     pcenGain:          number;
     pcenBias:          number;
     pcenRoot:          number;
-    pcenSmoothing:     number;
+    pcenTimeConstant:  number;
     colorScheme:       string;
     reassigned:        boolean;
     noiseReduction:    boolean;
@@ -44,7 +44,7 @@ export const DSP_SETTINGS_DEFAULTS: Required<DspSettings> = {
     pcenGain:          0.8,
     pcenBias:          0.01,
     pcenRoot:          4.0,
-    pcenSmoothing:     0.025,
+    pcenTimeConstant:  0.4,
     colorScheme:       'grayscale',
     reassigned:        false,
     noiseReduction:    false,
@@ -74,7 +74,7 @@ export function readDspSettings(d: DomRefs): DspSettings {
         pcenGain:          parseFloat(d.pcenGainInput?.value     ?? String(D.pcenGain)),
         pcenBias:          parseFloat(d.pcenBiasInput?.value     ?? String(D.pcenBias)),
         pcenRoot:          parseFloat(d.pcenRootInput?.value     ?? String(D.pcenRoot)),
-        pcenSmoothing:     parseFloat(d.pcenSmoothingInput?.value ?? String(D.pcenSmoothing)),
+        pcenTimeConstant:  parseFloat(d.pcenTimeConstantInput?.value ?? String(D.pcenTimeConstant)),
         colorScheme:       d.colorSchemeSelect?.value        || D.colorScheme,
         reassigned:        d.reassignedCheck?.checked            ?? D.reassigned,
         noiseReduction:    d.noiseReductionCheck?.checked        ?? D.noiseReduction,
@@ -106,7 +106,7 @@ export function applyDspSettings(d: DomRefs, p: DspSettings): void {
     if (d.pcenGainInput)        d.pcenGainInput.value        = String(p.pcenGain      ?? DSP_SETTINGS_DEFAULTS.pcenGain);
     if (d.pcenBiasInput)        d.pcenBiasInput.value        = String(p.pcenBias      ?? DSP_SETTINGS_DEFAULTS.pcenBias);
     if (d.pcenRootInput)        d.pcenRootInput.value        = String(p.pcenRoot      ?? DSP_SETTINGS_DEFAULTS.pcenRoot);
-    if (d.pcenSmoothingInput)   d.pcenSmoothingInput.value   = String(p.pcenSmoothing ?? DSP_SETTINGS_DEFAULTS.pcenSmoothing);
+    if (d.pcenTimeConstantInput) d.pcenTimeConstantInput.value = String(p.pcenTimeConstant ?? DSP_SETTINGS_DEFAULTS.pcenTimeConstant);
     if (p.colorScheme && d.colorSchemeSelect) d.colorSchemeSelect.value = p.colorScheme;
     if (d.reassignedCheck)      d.reassignedCheck.checked    = !!p.reassigned;
     if (p.colourScale    != null && d.colourScaleSelect)   d.colourScaleSelect.value     = p.colourScale;
