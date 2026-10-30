@@ -10,6 +10,7 @@ export interface DisplayGainHost {
         autoContrast(rebuild: boolean): void;
         autoFrequency(rebuild: boolean): void;
         setMaxFreqToNyquist(): void;
+        updateGainReadout(): void;
         generate(): void;
     };
     _presets: { currentColorScheme: any; persistCurrentSettings(): void };
@@ -52,8 +53,8 @@ export class DisplayGainController implements UiController {
             if (mode === 'auto') h._spectro.autoFrequency(true);
             else if (mode === 'nyquist') { h._spectro.setMaxFreqToNyquist(); h._spectro.generate(); }
         });
-        on(this.d.floorSlider, 'input', () => { h._presets.persistCurrentSettings(); scheduleRebuild(); });
-        on(this.d.ceilSlider,  'input', () => { h._presets.persistCurrentSettings(); scheduleRebuild(); });
+        on(this.d.floorSlider, 'input', () => { h._spectro.updateGainReadout(); h._presets.persistCurrentSettings(); scheduleRebuild(); });
+        on(this.d.ceilSlider,  'input', () => { h._spectro.updateGainReadout(); h._presets.persistCurrentSettings(); scheduleRebuild(); });
         on(this.d.autoContrastBtn, 'click', () => h._spectro.autoContrast(true));
         on(this.d.autoFreqBtn,     'click', () => h._spectro.autoFrequency(true));
     }

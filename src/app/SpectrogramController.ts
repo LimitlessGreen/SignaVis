@@ -23,6 +23,7 @@ import {
     TILE_MODE_MIN_DURATION_SEC,
     WASM_TILE_MIN_DURATION_SEC,
     SPECTROGRAM_ENGINE,
+    DB_CONTRAST,
 } from '../shared/constants.ts';
 
 import { SpectrogramTileManager, type TileColorOptions } from './SpectrogramTileManager.ts';
@@ -37,6 +38,7 @@ import {
     detectMaxFrequency,
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
+    windowGrayscale,
     GpuColorizer,
     renderSpectrogram,
     createSpectrogramProcessor,
@@ -70,6 +72,12 @@ export class SpectrogramController extends EventTarget {
     _absLogMax: number;
     /** Current data comes from the v2 engine (dBFS / PCEN, noise-floor contrast). */
     _engineV2 = false;
+    /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
+    _gainDbMode: boolean | null = null;
+    /** Stage-1 image holds raw dB values (window applied in stage 2). */
+    _grayRaw = false;
+    /** dB window baked into a normalised stage-1 image (CLAHE), to detect slider changes. */
+    _grayWindowKey: string | null = null;
     _v2Params: StftParamsV2 | null = null;
     _binFreqsMemo: { params: StftParamsV2; sampleRate: number; freqs: Float64Array } | null = null;
     /** Lazily created WASM service for whole-file v2 computation. */
@@ -536,7 +544,13 @@ export class SpectrogramController extends EventTarget {
 
     private _getCurrentColorOptions(): TileColorOptions {
         const d = this._d;
+        this._syncGainSliders();
+        const db = this._gainDbMode;
         return {
+            ...(db ? {
+                floorDb: parseFloat(d.floorSlider?.value || String(DB_CONTRAST.floor.def)),
+                rangeDb: parseFloat(d.ceilSlider?.value  || String(DB_CONTRAST.range.def)),
+            } : {}),
             colorScheme:    d.colorSchemeSelect?.value    || 'grayscale',
             maxFreq:        parseFloat(d.maxFreqSelect?.value || '10000'),
             floor01:        parseFloat(d.floorSlider?.value   || '0')   / 100,
@@ -865,19 +879,29 @@ export class SpectrogramController extends EventTarget {
         }
         if (!this._data) return;
         const d = this._d;
+        this._syncGainSliders();
+        const colourScale = this._colourScale || d.colourScaleSelect?.value || 'dbSquared';
+        const clahe = d.claheCheck?.checked ?? false;
+        const win = this._dbWindow();
+        // Without CLAHE the dB window is a pure stage-2 operation (shader); CLAHE
+        // equalises a normalised image, so the window has to be applied first.
+        this._grayRaw = !!win && !clahe && colourScale !== 'phase';
+        this._grayWindowKey = win && !this._grayRaw ? win.join() : null;
+        const [absMin, absMax] = win && !this._grayRaw ? win : [this._absLogMin, this._absLogMax];
         this._grayInfo = buildSpectrogramGrayscale({
             spectrogramData:    this._data,
             spectrogramFrames:  this._nFrames,
             spectrogramMels:    this._nMels,
             sampleRateHz:       this._sampleRateHz,
             maxFreq:            parseFloat(d.maxFreqSelect?.value || '10000'),
-            spectrogramAbsLogMin: this._absLogMin,
-            spectrogramAbsLogMax: this._absLogMax,
+            spectrogramAbsLogMin: absMin,
+            spectrogramAbsLogMax: absMax,
             scale:       this._activeScale || d.scaleSelect?.value || 'mel',
             binFreqs:    this.binFreqs,
-            colourScale: this._colourScale || d.colourScaleSelect?.value || 'dbSquared',
+            colourScale,
             noiseReduction: d.noiseReductionCheck?.checked ?? false,
-            clahe:          d.claheCheck?.checked ?? false,
+            clahe,
+            raw:         this._grayRaw,
         }) as { gray: Float32Array; width: number; height: number } | null;
         if (this._grayInfo && this.colorizer.ok) {
             const { gray, width, height } = this._grayInfo;
@@ -898,17 +922,24 @@ export class SpectrogramController extends EventTarget {
             this._tileManager.updateColorOptions(this._getCurrentColorOptions());
             return null;
         }
-        if (!this._grayInfo) this.buildGrayscale();
+        this._syncGainSliders();
+        const win = this._dbWindow();
+        if (!this._grayInfo || (win && !this._grayRaw && win.join() !== this._grayWindowKey)) this.buildGrayscale();
         const d = this._d;
-        const floor01 = parseFloat(d.floorSlider?.value || '0')  / 100;
-        const ceil01  = parseFloat(d.ceilSlider?.value  || '100') / 100;
+        // Raw dB image: the window is the dB range itself. Normalised image: % sliders,
+        // or [0, 1] when the dB window was already applied in stage 1.
+        const [lo, hi] = this._grayRaw && win ? win
+            : win ? [0, 1]
+            : [parseFloat(d.floorSlider?.value || '0') / 100, parseFloat(d.ceilSlider?.value || '100') / 100];
 
         if (this._gpuReady && this._grayInfo) {
             this.colorizer.uploadColorLut(colorScheme);
-            this.colorizer.render(floor01, ceil01);
+            this.colorizer.render(lo, hi);
             this._baseCanvas = this.colorizer.canvas;
+        } else if (this._grayRaw && this._grayInfo) {
+            this._baseCanvas = colorizeSpectrogram(windowGrayscale(this._grayInfo, lo, hi), 0, 1, colorScheme);
         } else {
-            this._baseCanvas = colorizeSpectrogram(this._grayInfo, floor01, ceil01, colorScheme);
+            this._baseCanvas = colorizeSpectrogram(this._grayInfo, lo, hi, colorScheme);
         }
         return this._baseCanvas;
     }
@@ -1037,10 +1068,12 @@ export class SpectrogramController extends EventTarget {
      * @param {boolean} [redraw=false]
      */
     autoContrast(redraw = false) {
-        if (this._isNoiseFloorContrast()) {
-            // v2: the black/white points already are the noise floor / p99.9.
-            if (this._d.floorSlider) this._d.floorSlider.value = 0;
-            if (this._d.ceilSlider)  this._d.ceilSlider.value  = 100;
+        this._syncGainSliders();
+        if (this._gainDbMode) {
+            // v2: black at the noise floor, fixed dynamic range above it.
+            if (this._d.floorSlider) this._d.floorSlider.value = String(DB_CONTRAST.floor.def);
+            if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(DB_CONTRAST.range.def);
+            this.updateGainReadout();
             if (redraw) this._emit('needsredraw');
             return;
         }
@@ -1178,6 +1211,56 @@ export class SpectrogramController extends EventTarget {
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    /** v2 dB window [black, white] for the in-memory spectrogram, null in % mode. */
+    _dbWindow(): [number, number] | null {
+        if (!this._gainDbMode) return null;
+        const d = this._d;
+        // Spectral subtraction leaves the noise floor at 0 dB.
+        const noise = d.noiseReductionCheck?.checked ? 0 : this._absLogMin;
+        const lo = noise + parseFloat(d.floorSlider?.value || String(DB_CONTRAST.floor.def));
+        return [lo, lo + parseFloat(d.ceilSlider?.value || String(DB_CONTRAST.range.def))];
+    }
+
+    /**
+     * Switch the floor/ceil sliders between dB (v2: floor above the noise floor +
+     * dynamic range) and % (legacy engines) when the active engine changes.
+     * Values carry over only in fixed gain mode and only when they fit the new range.
+     */
+    _syncGainSliders(): void {
+        const db = this._isNoiseFloorContrast();
+        if (db === this._gainDbMode) return;
+        this._gainDbMode = db;
+        const d = this._d;
+        const fixed = d.gainModeSelect?.value === 'fixed';
+        const setup = (el: HTMLInputElement | null, label: HTMLElement | null, text: string, title: string,
+                       min: number, max: number, def: number) => {
+            if (label) label.textContent = text;
+            if (!el) return;
+            const v = parseFloat(el.value);
+            el.min = String(min); el.max = String(max); el.step = '1'; el.title = title;
+            el.value = String(fixed && v >= min && v <= max ? v : def);
+        };
+        if (db) {
+            setup(d.floorSlider, d.floorLabel, 'Floor', 'Black level in dB above the noise floor',
+                DB_CONTRAST.floor.min, DB_CONTRAST.floor.max, DB_CONTRAST.floor.def);
+            setup(d.ceilSlider, d.ceilLabel, 'Range', 'Dynamic range in dB from black to white',
+                DB_CONTRAST.range.min, DB_CONTRAST.range.max, DB_CONTRAST.range.def);
+        } else {
+            setup(d.floorSlider, d.floorLabel, 'Floor', 'Spectrogram floor', 0, 100, 0);
+            setup(d.ceilSlider, d.ceilLabel, 'Ceiling', 'Spectrogram ceiling', 0, 100, 100);
+        }
+        this.updateGainReadout();
+    }
+
+    /** Show slider values in dB; the % sliders have no readout. */
+    updateGainReadout(): void {
+        const d = this._d;
+        const db = !!this._gainDbMode;
+        const f = parseFloat(d.floorSlider?.value || '0');
+        if (d.floorValue) d.floorValue.textContent = db ? `${f > 0 ? '+' : ''}${f} dB` : '';
+        if (d.ceilValue)  d.ceilValue.textContent  = db ? `${d.ceilSlider?.value} dB` : '';
+    }
 
     _isNoiseFloorContrast(): boolean {
         const tm = this._tileManager;

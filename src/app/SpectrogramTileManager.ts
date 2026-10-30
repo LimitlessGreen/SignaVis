@@ -43,6 +43,9 @@ export interface TileColorOptions {
     maxFreq: number;
     floor01: number;
     ceil01: number;
+    /** v2 dB window (see DB_CONTRAST); when set, floor01/ceil01 are ignored by v2 tiles. */
+    floorDb?: number;
+    rangeDb?: number;
     noiseReduction: boolean;
     clahe: boolean;
     scale: string;

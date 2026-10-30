@@ -210,12 +210,14 @@ export function createPlayerHTML(opts = {}) {
                 </select>
             </div>
             <div class="settings-row">
-                <label class="settings-label">Floor</label>
+                <label class="settings-label" data-aw="floorLabel">Floor</label>
                 <input type="range" data-aw="floorSlider" class="settings-range" min="0" max="100" value="0" title="Spectrogram floor">
+                <span class="settings-value" data-aw="floorValue"></span>
             </div>
             <div class="settings-row">
-                <label class="settings-label">Ceiling</label>
+                <label class="settings-label" data-aw="ceilLabel">Ceiling</label>
                 <input type="range" data-aw="ceilSlider" class="settings-range" min="0" max="100" value="100" title="Spectrogram ceiling">
+                <span class="settings-value" data-aw="ceilValue"></span>
             </div>
             <div class="settings-row">
                 <button class="toolbar-btn mini-btn" data-aw="autoContrastBtn" disabled title="Auto optimize contrast">Auto Contrast</button>

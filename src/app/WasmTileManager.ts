@@ -429,7 +429,14 @@ export class WasmTileManager extends EventTarget {
     private _colorize(tile: Tile): void {
         if (!tile.data || tile.nFrames <= 0) return;
         const opts = this.colorOptions;
-        const [lo, hi] = this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax];
+        // v2 + dB sliders: one window [noise + floor, noise + floor + range] in dB.
+        // Each level uses its own noise floor (max pooling raises it).
+        const dbWindow = this.v2 && opts.floorDb !== undefined && opts.rangeDb !== undefined;
+        let [lo, hi] = this.v2 ? this.contrastRange(tile.level) : [this.globalMin, this.globalMax];
+        if (dbWindow) {
+            lo = (opts.noiseReduction ? 0 : lo) + opts.floorDb!;
+            hi = lo + opts.rangeDb!;
+        }
         const grayInfo = buildSpectrogramGrayscale({
             spectrogramData:      tile.data,
             spectrogramFrames:    tile.nFrames,
@@ -445,7 +452,9 @@ export class WasmTileManager extends EventTarget {
             clahe:                opts.clahe,
         });
         if (!grayInfo) return;
-        const canvas = colorizeSpectrogram(grayInfo, opts.floor01, opts.ceil01, opts.colorScheme);
+        const canvas = dbWindow
+            ? colorizeSpectrogram(grayInfo, 0, 1, opts.colorScheme)
+            : colorizeSpectrogram(grayInfo, opts.floor01, opts.ceil01, opts.colorScheme);
         if (canvas) tile.canvas = canvas as HTMLCanvasElement;
     }
 
