@@ -53,9 +53,10 @@ und „Annota-JSON FINAL Fv0“ (März 2026).
 | 2 | b58b6d9 | `src/app/annotation-sets.ts`, `state.ownSetId`, Modus entfernt, „New…“, XC-Nr. zuordnen |
 | 3 | e3a966f | Tabs Project/Labels/Analyse/Upload, „?“-Menü, ⋯-Menüs + Undo-Toast |
 | 4 | 2ac8883 | `src/app/upload-checklist.ts` + `src/ui/panels/upload-assistant.ts`: Live-Checkliste mit Sprüngen, Vorschau, Export-Menü |
-| 5–7 | — | offen; nächster Schritt Phase 5 |
+| 5 | 67dc9c4 | `src/app/recording-context.ts` + `src/ui/panels/recording-context-block.ts`: Kontext je Aufnahme, eine Koordinatenquelle für BirdNET/Explore |
+| 6–7 | — | offen; nächster Schritt Phase 6 |
 
-Noch offen aus 0–4: Export „SignaVis-Projekt (vollständig)“ fehlt (kein Re-Import vorhanden) — Menü bietet Annota-JSON, Labels-JSON der Aufnahme, Zwischenablage;
+Noch offen aus 0–5: Kontext nur im Projekt-Tab (nicht in Properties), Explorer-Zeile ohne 📍; Ortsname nicht per Reverse-Geocoding; Export „SignaVis-Projekt (vollständig)“ fehlt (kein Re-Import vorhanden) — Menü bietet Annota-JSON, Labels-JSON der Aufnahme, Zwischenablage;
 Eigentumsprüfung vergleicht nur Recordist-Name mit Profilname (Warnung, kein Fehler); `invalidateXenoCantoRecordingCache` nach Upload nur für `xcPanel.xcId`;
 BirdNET-Labels exportieren 0–Nyquist als Frequenz → Phase 6; „New…“/XC-Nr.-Zuordnung noch mit `confirm`/`prompt`;
 `shots.py` nutzt alte Tab-Namen → vor dem Abschlusstest anpassen. Gesamttest (Screenshots, echter Upload) erst nach Phase 7.
