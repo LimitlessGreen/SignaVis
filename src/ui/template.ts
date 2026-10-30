@@ -134,7 +134,7 @@ export function createPlayerHTML(opts = {}) {
         <!-- Zoom -->
         <span${hide(o.showZoom)} class="zoom-controls-row">
             <label class="toolbar-label">H</label>
-            <input type="range" data-aw="zoomSlider" class="toolbar-range toolbar-range-zoom" min="20" max="450" value="100" step="5">
+            <input type="range" data-aw="zoomSlider" class="toolbar-range toolbar-range-zoom" min="20" max="2000" value="100" step="5">
             <span class="toolbar-value toolbar-value-sm" data-aw="zoomValue">100 px/s</span>
             <label class="toolbar-label freq-zoom-label">V</label>
             <input type="range" data-aw="freqZoomSlider" class="toolbar-range toolbar-range-zoom" min="0" max="100" value="0" step="1" title="Vertical frequency zoom">
