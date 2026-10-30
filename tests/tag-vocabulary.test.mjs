@@ -16,6 +16,25 @@ test('parseGroupProperties accepts several list shapes', () => {
     assert.equal(parseGroupProperties(null), null);
 });
 
+test('parseGroupProperties reads the real XC v3 response (group-sound-properties)', () => {
+    // Shape of /api/3/recording/928094?group_properties (a bat recording), trimmed
+    const json = {
+        id: '928094', grp: 'bats', type: 'echolocation', sex: 'uncertain', stage: 'adult',
+        'group-sound-properties': {
+            life_stage: ['adult', 'juvenile', 'subadult', 'uncertain'],
+            recording_method: ['field recording', 'in the hand'],
+            sex: ['female', 'male', 'uncertain'],
+            sound_type: ['distress call', 'echolocation', 'feeding buzz', 'social call', 'song', 'uncertain'],
+        },
+    };
+    assert.deepEqual(parseGroupProperties(json), {
+        soundType: ['distress call', 'echolocation', 'feeding buzz', 'social call', 'song', 'uncertain'],
+        sex: ['female', 'male', 'uncertain'],
+        lifeStage: ['adult', 'juvenile', 'subadult', 'uncertain'],
+    });
+    assert.equal(recordingGroup(json), 'bats');
+});
+
 test('recordingGroup reads grp', () => {
     assert.equal(recordingGroup({ grp: 'Birds' }), 'birds');
     assert.equal(recordingGroup(null), '');
