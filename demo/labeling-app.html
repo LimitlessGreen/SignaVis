@@ -129,8 +129,7 @@
   <div id="panelLabels" hidden>
     <div class="panel-toolbar">
       <span class="tb-spacer"></span>
-      <button class="tb-btn" id="exportJsonBtn" type="button">Export</button>
-      <button class="tb-btn" id="copyJsonBtn" type="button">Copy</button>
+      <button class="tb-btn" id="exportMenuBtn" type="button" aria-haspopup="menu" title="Export labels">Export ▾</button>
     </div>
     <div class="label-list-scroll">
       <div class="lbl-section-header">Labels<span class="lbl-section-count" id="labelListCount">0</span></div>
@@ -273,16 +272,13 @@
 
   <!-- ── Sidebar panel: Upload (Xeno-canto) ──────────────────────── -->
   <div id="panelXc" class="scroll-panel" hidden>
-    <!-- ── Profile (set creator / annotator) ── -->
-    <div class="sidebar-section-header">Profile</div>
-    <div id="xcOnboardingBanner" class="xc-onboarding-banner" hidden>
-      <p>Fill in your <strong>name</strong> and <strong>XC username</strong> before uploading annotations to Xeno-canto.</p>
-      <button class="xc-onboarding-dismiss" id="xcOnboardingDismiss" type="button">Got it</button>
-    </div>
+    <!-- ── Upload assistant: live checklist (key · profile · set · recordings · labels) ── -->
+    <div class="sidebar-section-header">Upload check</div>
+    <div id="xcChecklist" class="ua-checklist"></div>
     
-    <!-- ── API Key ── -->
-    <div class="sidebar-section-header">Connection</div>
-    <div class="panel-section">
+    <!-- ── API key + profile form (mounted into checklist steps) ── -->
+    <div id="xcAuthorContainer" class="ua-host"></div>
+    <div id="xcKeySection" class="ua-host">
       <label class="field-label" for="xcApiKeyInput">API Key</label>
       <div class="xc-key-input-row">
         <div class="xc-key-input-wrap">
@@ -297,13 +293,16 @@
       <p class="field-hint">Required for label import and upload. Stored locally. Get a key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">xeno-canto.org/account</a>.</p>
     </div>
 
-    <!-- ── Actions ── -->
-    <div class="sidebar-section-header">Actions</div>
+    <!-- ── Preview & send ── -->
+    <div class="sidebar-section-header">Preview</div>
     <div class="panel-actions xc-actions">
+      <div id="xcUploadSummary" class="ua-summary-line"></div>
       <div class="xc-action-row">
-        <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button">Export JSON</button>
-        <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Upload to XC</button>
+        <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button" title="View the Annota-JSON (XC) payload">View JSON</button>
+        <button class="sidebar-action-btn secondary" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download</button>
       </div>
+      <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Send to Xeno-canto</button>
+      <p class="field-hint">The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.</p>
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
 
@@ -538,6 +537,8 @@
     import { ExplorePanel } from '../src/ui/panels/explore-panel.ts';
     import { showContextMenu } from '../src/ui/components/context-menu/context-menu.ts';
     import { showUndoToast } from '../src/ui/components/toast/undo-toast.ts';
+    import { buildUploadChecklist } from '../src/app/upload-checklist.ts';
+    import { UploadAssistant } from '../src/ui/panels/upload-assistant.ts';
     import {
       loadAnalysisBackendConfig,
       normalizeAnalysisBackendConfig,
@@ -701,8 +702,7 @@
     const fileInput       = document.getElementById('fileInput');
     const browseBtn       = document.getElementById('browseBtn');
     const loadSampleBtn   = document.getElementById('loadSampleBtn');
-    const exportJsonBtn   = document.getElementById('exportJsonBtn');
-    const copyJsonBtn     = document.getElementById('copyJsonBtn');
+    const exportMenuBtn   = document.getElementById('exportMenuBtn');
     const selectionMeta   = document.getElementById('selectionMeta');
     const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
     const taxonomyMeta    = document.getElementById('taxonomyMeta');
@@ -816,7 +816,7 @@
       // Explore ("expected species here") lives below the BirdNET run; created further down.
       onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
     });
-    sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc') });
+    sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'), onActivate: () => refreshUploadChecklist() });
 
     // ── "?" menu: help, about and tips open in a dialog instead of sidebar tabs ──
     const aboutPanelEl = createAboutPanel();
@@ -1287,6 +1287,7 @@
         } catch (e) { /* keep previous status */ }
         try { saveSessionSets(state); } catch (e) { /* ignore */ }
         try { recordingExplorer.render(); } catch (e) { /* not ready yet */ }
+        refreshUploadChecklist();
       }, 400);
     }
 
@@ -1383,10 +1384,12 @@
       onCreateSet:           (partial) => createLabelSet(partial),
       getRecordingEditMeta:  () => state.recordingEditMeta,
       onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
+      getUploadBlockReason:  () => uploadBlockReason(),
     });
 
     xcPanel.onKeyChange = () => {
       updateXcKeyIndicator();
+      refreshUploadChecklist();
       try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
     };
 
@@ -1660,6 +1663,7 @@
       }
       recordingExplorer.render();
       xcPanel._rebuildSetSection?.();
+      scheduleOwnSetStatus();
     });
 
     // ── XC key visibility toggle (eye button inside input) ────────────
@@ -2482,9 +2486,76 @@
       } catch (err) {
         xcPanel._setStatus(err?.message || 'Upload failed', 'error');
       } finally {
-        xcPanel._updateUploadState();
+        refreshUploadChecklist();
       }
     });
+
+    document.getElementById('xcDownloadSetBtn').addEventListener('click', () => {
+      xcPanel.exportAnnotationSetJSON(collectSetLabels(state.ownSetId), state.labelSets, null);
+    });
+
+    // ── Upload assistant (live checklist, XC "Verify" done locally) ──
+    const uploadAssistant = new UploadAssistant({
+      el: document.getElementById('xcChecklist'),
+      keyEl: document.getElementById('xcKeySection'),
+      profileEl: document.getElementById('xcAuthorContainer'),
+      onJump: (target) => jumpToChecklistTarget(target),
+    });
+    let _lastChecklist = null;
+
+    function uploadBlockReason() {
+      if (!_lastChecklist || _lastChecklist.ready) return '';
+      const first = _lastChecklist.steps.flatMap((st) => st.issues).find((i) => i.level === 'error');
+      return first ? `Fix first: ${first.message}` : '';
+    }
+
+    /** Re-run the local "Verify" for the own set and redraw checklist, summary and buttons. */
+    function refreshUploadChecklist() {
+      if (!state.ownSetId) return;
+      try {
+        const set = state.labelSets.get(state.ownSetId);
+        const labels = collectSetLabels(state.ownSetId);
+        const payload = xcPanel.buildAnnotationSetPayload(labels, state.labelSets, null);
+        const recordings = recordingManager.getAll()
+          .map((entry) => ({
+            id: entry.id,
+            name: entry.filename,
+            xcNr: entry.xcId || '',
+            recordist: entry.xcRecordingMeta?.rec || '',
+            labelCount: (entry.annotations || []).filter((a) => a.setId === state.ownSetId).length,
+          }))
+          .filter((r) => r.labelCount > 0);
+        _lastChecklist = buildUploadChecklist({
+          apiKey: xcPanel.apiKey,
+          profile: { name: annotatorProfile.name, xcUsername: annotatorProfile.xcUsername },
+          set, recordings, payload, validation: validateAnnotaPayload(payload),
+        });
+        uploadAssistant.render(_lastChecklist);
+        const c = _lastChecklist;
+        const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+        document.getElementById('xcUploadSummary').textContent = [
+          `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
+          c.errorCount ? plural(c.errorCount, 'error') : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+        ].filter(Boolean).join(' · ');
+      } catch (e) { /* app still initializing */ }
+      xcPanel._updateUploadState();
+    }
+
+    async function jumpToChecklistTarget(target) {
+      if (target.kind === 'set') { sidebar.setActive('project'); return; }
+      if (target.kind === 'recording') {
+        const entry = recordingManager.getById(target.id);
+        if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+        sidebar.setActive('project');
+        return;
+      }
+      if (target.kind === 'label') {
+        saveCurrentAnnotationsIfNeeded();
+        const entry = recordingManager.getAll().find((e) => (e.annotations || []).some((a) => a.id === target.id));
+        if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+        selectLabel(target.id, { seekMode: 'start' });
+      }
+    }
 
 
     // ── Taxonomy ──────────────────────────────────────────────────────
@@ -2717,7 +2788,7 @@
     });
 
 
-    exportJsonBtn.addEventListener('click', () => {
+    function downloadLabelsJson() {
       const data = JSON.stringify(toLabelExport(), null, 2);
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -2728,18 +2799,31 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-    });
+    }
 
-    copyJsonBtn.addEventListener('click', async () => {
+    async function copyLabelsJson() {
       const data = JSON.stringify(toLabelExport(), null, 2);
       try {
         await navigator.clipboard.writeText(data);
-        copyJsonBtn.textContent = 'Copied';
-        setTimeout(() => { copyJsonBtn.textContent = 'Copy'; }, 900);
+        selectionMeta.textContent = `Copied ${state.labels.length} labels to the clipboard`;
       } catch {
-        copyJsonBtn.textContent = 'Copy failed';
-        setTimeout(() => { copyJsonBtn.textContent = 'Copy'; }, 1200);
+        selectionMeta.textContent = 'Copy to clipboard failed';
       }
+    }
+
+    // One export menu, each entry named by format and showing its scope
+    exportMenuBtn.addEventListener('click', () => {
+      const r = exportMenuBtn.getBoundingClientRect();
+      const setLabels = state.ownSetId ? collectSetLabels(state.ownSetId).length : 0;
+      const n = state.labels.length;
+      showContextMenu({
+        x: r.left, y: r.bottom + 2,
+        items: [
+          { label: `Annota-JSON (XC) — own set, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
+          { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
+          { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
+        ],
+      });
     });
 
     function upsertLabel(label) {

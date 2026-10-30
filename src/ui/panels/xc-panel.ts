@@ -23,7 +23,7 @@ function parseXcLen(len: any) {
 
 const AUTHOR_FIELDS = [
   { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },
-  { key: 'xcUsername', label: 'XC Username',   type: 'text', placeholder: 'xeno-canto login', required: true },
+  { key: 'xcUsername', label: 'XC user ID',    type: 'text', placeholder: 'xeno-canto contributor ID', required: true },
   { key: 'license',    label: 'Default License', type: 'select', options: ['', 'CC-BY-NC-SA', 'CC-BY-NC-ND', 'CC-BY-SA', 'CC-BY-NC', 'CC-BY', 'CC0'] },
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];
@@ -255,6 +255,7 @@ export class XenoCantoPanel {
     _annotatorProfile: any;
     _getLabelSets: any;
     _getRecordingEditMeta: any;
+    _getUploadBlockReason: any;
     _modal: any;
     _onCreateSet: any;
     _buildingSetSection = false;
@@ -306,6 +307,7 @@ export class XenoCantoPanel {
    * @param {(partial:object) => object}    [opts.onCreateSet]
    * @param {() => object}                  [opts.getRecordingEditMeta]
    * @param {(updates:object) => void}      [opts.onRecordingEditMetaChange]
+   * @param {() => string}                  [opts.getUploadBlockReason]  Extra reason from the upload checklist ('' = ok)
    */
   constructor(opts: any) {
     this.backdrop         = opts.backdrop || null;
@@ -330,6 +332,7 @@ export class XenoCantoPanel {
     this._onSetChange              = opts.onSetChange || null;
     this._onCreateSet              = opts.onCreateSet || null;
     this._getRecordingEditMeta     = opts.getRecordingEditMeta || null;
+    this._getUploadBlockReason     = opts.getUploadBlockReason || null;
     this._onRecordingEditMetaChange = opts.onRecordingEditMetaChange || null;
 
     this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
@@ -786,7 +789,6 @@ export class XenoCantoPanel {
 
   async uploadToXenoCanto(labels: any, labelSets: any, recordingEditMeta: any, onStatus: any) {
     if (!this.apiKey) throw new Error('API key required. Save your key first.');
-    if (!this.xcId) throw new Error('No XC recording loaded.');
     if (!labels?.length) throw new Error('No labels to upload.');
 
     const payload = this.buildAnnotationSetPayload(labels, labelSets, recordingEditMeta);
@@ -837,9 +839,9 @@ export class XenoCantoPanel {
   _uploadBlockReason() {
     const sets = this._getLabelSets?.() || new Map();
     if (!this.apiKey) return 'Add your Xeno-canto API key first.';
-    if (!this.xcId) return 'Load a Xeno-canto recording (your own) — annotations are uploaded per XC number.';
     if (this._activeSetId && !sets.has(this._activeSetId)) return 'No annotation set selected.';
-    return '';
+    // Per-recording XC numbers, ownership and label checks come from the host's upload checklist
+    return this._getUploadBlockReason?.() || '';
   }
 
   _updateUploadState() {
