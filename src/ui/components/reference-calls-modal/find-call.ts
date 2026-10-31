@@ -40,6 +40,6 @@ export async function findCall(buffer: AudioBuffer, fMin: number, fMax: number, 
     if (i >= w) sum -= energy[i - w];
     if (i >= w - 1 && sum > best) { best = sum; bestAt = i - w + 1; }
   }
-  const start = Math.max(0, bestAt * 0.01 - 0.1);
-  return { start, end: Math.min(total, start + win + 0.2) };
+  const start = Math.max(0, Math.min(bestAt * 0.01, total - win));
+  return { start, end: Math.min(total, start + win) };
 }
