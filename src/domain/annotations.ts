@@ -2065,7 +2065,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const sx = src.width / Math.max(1, r.width), sy = src.height / Math.max(1, r.height);
         const el = editing.element as HTMLElement | null;
         const b = el?.getBoundingClientRect();
-        // Resize: magnify around the dragged edge (cursor). Move: show the whole box,
+        // Corner resize: magnify around the cursor. Move: show the whole box,
         // centred, zoomed as far as it still fits (max ZOOM).
         const isMove = editing.mode === 'move' && !!b;
         let zoom = ZOOM, cx = clientX, cy = clientY;
@@ -2073,6 +2073,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             cx = b.left + b.width / 2;
             cy = b.top + b.height / 2;
             zoom = Math.max(1, Math.min(ZOOM, (W - 40) / Math.max(1, b.width), (H - 40) / Math.max(1, b.height)));
+        }
+        // Edge resize: centre on the dragged edge and fit its full length
+        const m = editing.mode;
+        if (b && (m === 'resize-l' || m === 'resize-r')) {
+            cx = m === 'resize-l' ? b.left : b.right;
+            cy = b.top + b.height / 2;
+            zoom = Math.max(1, Math.min(ZOOM, (H - 40) / Math.max(1, b.height)));
+        } else if (b && (m === 'resize-t' || m === 'resize-b')) {
+            cx = b.left + b.width / 2;
+            cy = m === 'resize-t' ? b.top : b.bottom;
+            zoom = Math.max(1, Math.min(ZOOM, (W - 40) / Math.max(1, b.width)));
         }
         const halfW = W / zoom / 2, halfH = H / zoom / 2; // in CSS px around the centre
         ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
