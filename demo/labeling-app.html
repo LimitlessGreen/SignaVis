@@ -521,7 +521,10 @@
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
-    import { saveSessionSets, restoreSessionSets } from '../src/app/session-sets.ts';
+    import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
+    import { OpfsProjectStore } from '../src/infrastructure/project/OpfsProjectStore.ts';
+    import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
+    import { serializeProject, deserializeProject } from '../src/domain/project/workspaceProject.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
@@ -1349,7 +1352,77 @@
       }
     }
 
+    // ── Browser project (OPFS): recordings, sets and labels survive closing the tab.
+    // Replaces sessionStorage (RecordingManager), localStorage sets and the autosave
+    // above; those only serve as a one-time migration source (plans/project-folder-plan.md).
+    let projectAutosaver = null;
+    let browserProjectMeta = { id: 'browser-default', name: 'Browser project', createdAt: '' };
+
+    function buildWorkspaceProject() {
+      saveCurrentAnnotationsIfNeeded();
+      return serializeProject({
+        ...recordingManager.snapshot(),
+        labelSets: state.labelSets,
+        ownSetId: state.ownSetId,
+        activeSetId: state.activeSetId,
+        settings: { taxonomyLang: state.taxonomyLang },
+      }, browserProjectMeta);
+    }
+
+    function saveSessionSets(st) {
+      saveSessionSetsLegacy(st);
+      projectAutosaver?.schedule();
+    }
+
+    /** Open the browser project. Returns true when session state was restored from it. */
+    async function openBrowserProject() {
+      const store = await OpfsProjectStore.open();
+      if (!store) return false;  // no OPFS → legacy storage only
+      const owner = await acquireTabLock('signavis-browser-project');
+      projectAutosaver = new ProjectAutosaver({
+        store,
+        build: buildWorkspaceProject,
+        onStatus: (status, err) => { if (status === 'error') console.warn('[project] save failed', err); },
+      });
+      recordingManager.addEventListener('change', () => projectAutosaver.schedule());
+      recordingManager.addEventListener('activechange', () => projectAutosaver.schedule());
+      if (!owner) {
+        projectAutosaver.setReadOnly(true);
+        const banner = document.createElement('div');
+        banner.className = 'project-readonly-banner';
+        banner.setAttribute('role', 'status');
+        banner.textContent = 'This project is open in another tab — changes made here are not saved.';
+        banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;'
+          + 'padding:6px 12px;border-radius:6px;font-size:13px;background:#b45309;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+        document.body.appendChild(banner);
+      }
+      let project = null;
+      try { project = await store.loadProject(); }
+      catch (e) { console.warn('[project] cannot read browser project', e); }
+      if (!project) {
+        projectAutosaver.schedule();  // first save = migration of the legacy session state
+        return false;
+      }
+      browserProjectMeta = { id: project.id || browserProjectMeta.id, name: project.name || browserProjectMeta.name, createdAt: project.createdAt };
+      const snap = deserializeProject(project);
+      recordingManager.replaceAll(snap.entries, snap.activeId);
+      if (snap.labelSets.size) {
+        state.labelSets.clear();
+        for (const [id, set] of snap.labelSets) state.labelSets.set(id, normalizeSet(set));
+      }
+      state.ownSetId = ensureOwnSet(state.labelSets, snap.ownSetId, () => createOwnSet({ silent: true }));
+      setActiveSet(state.ownSetId);
+      if (snap.settings?.taxonomyLang && taxonomyLangSelect) {
+        state.taxonomyLang = snap.settings.taxonomyLang;
+        taxonomyLangSelect.value = state.taxonomyLang;
+      }
+      state.labels = [];
+      state._labelsEntryId = null;
+      return true;
+    }
+
     function scheduleProjectAutosave() {
+      projectAutosaver?.schedule();
       clearTimeout(_projectAutosaveTimer);
       _projectAutosaveTimer = setTimeout(() => {
         saveProjectSnapshotNow();
@@ -2980,6 +3053,7 @@
       saveSessionSets(state);
       clearTimeout(_projectAutosaveTimer);
       await saveProjectSnapshotNow();
+      await projectAutosaver?.flush({ force: true });
       // Reload without ?xc= so player, panels and caches start from the empty session.
       window.location.replace(window.location.pathname);
     });
@@ -2988,6 +3062,15 @@
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      // Re-picked session-only file from a restored project: reattach audio, keep its labels.
+      const _orphan = recordingManager.getAll().find((e) =>
+        e.source === 'file' && !e.audioUrl && e.filename === file.name);
+      if (_orphan) {
+        recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+        fileInput.value = '';
+        await activateRecordingEntry(_orphan);
+        return;
+      }
       // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
       saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
@@ -3367,8 +3450,12 @@
       syncToPlayer();
     });
 
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') projectAutosaver?.flush();
+    });
     window.addEventListener('beforeunload', () => {
       saveProjectSnapshotNow();
+      projectAutosaver?.flush();
       if (state.activeObjectUrl) {
         try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
         state.activeObjectUrl = null;
@@ -3514,17 +3601,27 @@
     }
 
     // ── Startup ───────────────────────────────────────────────────────
-    await restoreProjectSnapshotIfPossible();
-
-    // Restore sets from last session (only if no URL params will load a recording)
-    if (!new URLSearchParams(window.location.search).has('xc') &&
-        !new URLSearchParams(window.location.search).has('XC')) {
-      // Pass `state` so the module can restore into the current runtime state
-      // and allow a UI rebuild callback to re-render set sections.
-      restoreSessionSets(state, { rebuild: () => xcPanel._rebuildSetSection?.() });
+    const _startParams = new URLSearchParams(window.location.search);
+    const _hasXcParam = ['xc', 'XC', 'xcid', 'XCID'].some((k) => _startParams.has(k));
+    const _restoredFromProject = await openBrowserProject();
+    if (!_restoredFromProject) {
+      await restoreProjectSnapshotIfPossible();
+      // Restore sets from last session (only if no URL params will load a recording)
+      if (!_startParams.has('xc') && !_startParams.has('XC')) {
+        // Pass `state` so the module can restore into the current runtime state
+        // and allow a UI rebuild callback to re-render set sections.
+        restoreSessionSets(state, { rebuild: () => xcPanel._rebuildSetSection?.() });
+      }
     }
     xcPanel._rebuildSetSection?.();  // the own set was created silently before the panel existed
     labelList.render(state.labels);
+    // Reopen the last recording of the browser project (XC audio comes from the cache).
+    // Session-only local files have no audio after a restart — they stay listed until re-picked.
+    if (_restoredFromProject && !_hasXcParam) {
+      const _last = recordingManager.getActive();
+      if (_last && (_last.xcId || _last.audioUrl)) activateRecordingEntry(_last);
+      else recordingManager.setActive(null);
+    }
     // Start the XC download right away — the 7 MB taxonomy loads in parallel and
     // re-localizes any labels imported before it finished.
     autoLoadFromParams();
