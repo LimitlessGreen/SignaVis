@@ -133,6 +133,7 @@ export class PlayerState {
     _showSpectrogram: any;
     _showOverview: any;
     _transportOverlay: any;
+    _keyboardEnabled = true;
     _compactToolbarMode: any;
     _compactToolbarOpen: any;
     _settingsPanelOpen: any;
@@ -228,6 +229,7 @@ export class PlayerState {
         this._showSpectrogram = this._viewMode !== 'waveform';
         this._showOverview = this.options.showOverview !== false;
         this._transportOverlay = this.options.transportOverlay === true;
+        this._keyboardEnabled = this.options.keyboardShortcuts !== false;
         this._compactToolbarMode = this.options.compactToolbar && ['auto', 'on', 'off'].includes(this.options.compactToolbar)
             ? this.options.compactToolbar
             : 'auto';
@@ -1411,7 +1413,7 @@ export class PlayerState {
             this._setCompactToolbarOpen(false);
             return;
         }
-        if (!this.audioBuffer || isTypingContext(event.target)) return;
+        if (!this._keyboardEnabled || !this.audioBuffer || isTypingContext(event.target)) return;
 
         switch (event.code) {
             case 'Space':

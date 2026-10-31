@@ -141,6 +141,7 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.showOverview]    - show overview navigator (default: true)
      * @param {'both'|'waveform'|'spectrogram'} [options.viewMode] - visible analysis view(s) (default: both)
      * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
+     * @param {boolean}     [options.keyboardShortcuts] - react to document-level keyboard shortcuts (default: true)
      * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
      * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)
      * @param {'auto'|'on'|'off'} [options.compactToolbar] - responsive toolbar compaction mode (default: auto)
@@ -296,6 +297,11 @@ export class BirdNETPlayer {
     pause()           { this._state?.wavesurfer?.pause(); }
     stop()            { this._state?._stopPlayback(); }
     togglePlayPause() { this._state?._togglePlayPause(); }
+    get isPlaying()   { return !!this._state?.wavesurfer?.isPlaying?.(); }
+
+    /** Enable/disable the document-level keyboard shortcuts (Space, labels, …). */
+    get keyboardEnabled() { return this._state?._keyboardEnabled !== false; }
+    set keyboardEnabled(v: boolean) { if (this._state) this._state._keyboardEnabled = !!v; }
 
     /**
      * Slow playback down by `factor` (1–16) with the pitch dropping along, e.g. ×10
@@ -760,6 +766,7 @@ export class BirdNETPlayer {
 
     _bindGlobalHotkeys() {
         this._globalKeyHandler = (event: KeyboardEvent) => {
+            if (this._state?._keyboardEnabled === false) return;
             const targetEl = event.target as Element | null;
             const tag = targetEl?.tagName?.toLowerCase?.() || '';
             const typing = tag === 'input' || tag === 'textarea' || (targetEl as HTMLElement)?.isContentEditable;
