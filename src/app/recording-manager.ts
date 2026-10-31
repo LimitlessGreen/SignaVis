@@ -24,8 +24,12 @@
  *   xcRecordingMeta: object | null,       // raw XC API recording object
  *   annotations:     object[],           // per-recording annotation list
  *   sampleRate:      number | null,       // set after first load
+ *   source:          'xc'|'file'|'sample'|'url', // inferred when missing
+ *   path:            string | null,       // relative path inside the project store, if stored there
  * }
  */
+
+import { inferSource } from '../domain/project/workspaceProject.ts';
 
 const SESSION_KEY = 'aw:recording-manager.v1';
 
@@ -49,6 +53,7 @@ export function defaultRecordingEntry(partial = {}) {
         sampleRate: null,
         /** When true, activateRecordingEntry will re-import XC labels on next switch */
         needsXcImport: false,
+        path: null,
         ...partial,
     };
 }
@@ -88,8 +93,9 @@ export class RecordingManager extends EventTarget {
      * @param {Partial<ReturnType<typeof defaultRecordingEntry>>} partial
      * @returns {ReturnType<typeof defaultRecordingEntry>}
      */
-    add(partial = {}) {
-        const entry = defaultRecordingEntry(partial);
+    add(partial: any = {}) {
+        const entry: any = defaultRecordingEntry(partial);
+        entry.source = inferSource(entry);
         this._entries.set(entry.id, entry);
         this._save();
         this._fire('change');
@@ -222,6 +228,34 @@ export class RecordingManager extends EventTarget {
         this._fire('change');
     }
 
+    /** Plain copies of all entries + active id (for project serialisation). */
+    snapshot() {
+        return {
+            entries: [...this._entries.values()].map((e) => ({ ...e, annotations: [...(e.annotations || [])] })),
+            activeId: this._activeId,
+        };
+    }
+
+    /**
+     * Replace the whole list (opening a project). Entries keep their ids.
+     * Fires 'change' and 'activechange'; the caller loads the active audio.
+     */
+    replaceAll(entries: any[], activeId: string | null = null) {
+        for (const e of this._entries.values()) {
+            if (e.isBlobUrl && e.audioUrl) { try { URL.revokeObjectURL(e.audioUrl); } catch {} }
+        }
+        this._entries.clear();
+        for (const partial of entries || []) {
+            const entry: any = defaultRecordingEntry(partial);
+            entry.source = inferSource(entry);
+            this._entries.set(entry.id, entry);
+        }
+        this._activeId = activeId && this._entries.has(activeId) ? activeId : null;
+        this._save();
+        this._fire('change');
+        this._fire('activechange');
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────
 
     _save() {
@@ -245,7 +279,8 @@ export class RecordingManager extends EventTarget {
             const { entries, activeId } = JSON.parse(raw);
             if (!Array.isArray(entries)) return;
             for (const e of entries) {
-                const entry = defaultRecordingEntry(e);
+                const entry: any = defaultRecordingEntry(e);
+                entry.source = inferSource({ ...e, isBlobUrl: e.isBlobUrl || (e.source === 'file') });
                 this._entries.set(entry.id, entry);
             }
             if (activeId && this._entries.has(activeId)) {
