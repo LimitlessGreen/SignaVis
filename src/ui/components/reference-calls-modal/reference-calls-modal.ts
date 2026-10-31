@@ -601,14 +601,14 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const widths = players().map(p => p._state?._getViewportWidth?.() || 0).filter(w => w > 0);
     return widths.length ? Math.min(...widths) / viewLen() : 0;
   }
-  function applyView(p: any, anchor: number, dur: number, pps: number) {
+  function applyView(p: any, anchor: number, dur: number, pps: number, zoomFreq = true) {
     const st = p?._state;
     if (!st?.audioBuffer || !pps) return;
     const total = st.audioBuffer.duration;
     const W = viewLen();
     // Centre the call; the onset sits at the same x in both players.
     const start = Math.max(0, Math.min(anchor - (W - dur) / 2, Math.max(0, total - W)));
-    const b = band(st);
+    const b = zoomFreq ? band(st) : null;
     try {
       if (b) st._freqZoom.set(b.lo, b.hi); else st._freqZoom.reset();
       st._setPixelsPerSecond(pps, true, start, 0);
@@ -618,11 +618,12 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const pps = sharedPps();
     const seg = segment();
     if (_ownPlayer && seg) applyView(_ownPlayer, seg.start, seg.end - seg.start, pps);
-    if (_refPlayer && _refCall) applyView(_refPlayer, _refCall.start, _refCall.end - _refCall.start, pps);
+    // Reference: same time scale, but the full frequency range (no zoom-in).
+    if (_refPlayer && _refCall) applyView(_refPlayer, _refCall.start, _refCall.end - _refCall.start, pps, false);
     const b = band(_ownPlayer?._state || _refPlayer?._state);
     viewInfo.textContent = `Window ${viewLen().toFixed(1)} s`
       + (b ? ` · ${(b.lo / 1000).toFixed(1)}–${(b.hi / 1000).toFixed(1)} kHz` : '')
-      + ' · same scale in both views';
+      + ' (yours) · same time scale in both views';
   }
   // Players finish their own initial layout asynchronously; apply again shortly after.
   let _viewTimer = 0;
