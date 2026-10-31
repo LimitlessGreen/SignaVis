@@ -43,7 +43,8 @@ export class DisplayGainController implements UiController {
         on(this.d.gainModeSelect, 'change', () => {
             h._presets.persistCurrentSettings();
             if (this.d.gainModeSelect!.value === 'auto' && h._spectro.data) {
-                h._spectro.autoContrast(true);
+                h._spectro.autoContrast(false);
+                rebuildDisplay();
             }
         });
         on(this.d.maxFreqModeSelect, 'change', () => {
@@ -55,7 +56,8 @@ export class DisplayGainController implements UiController {
         });
         on(this.d.floorSlider, 'input', () => { h._spectro.updateGainReadout(); h._presets.persistCurrentSettings(); scheduleRebuild(); });
         on(this.d.ceilSlider,  'input', () => { h._spectro.updateGainReadout(); h._presets.persistCurrentSettings(); scheduleRebuild(); });
-        on(this.d.autoContrastBtn, 'click', () => h._spectro.autoContrast(true));
+        // Like the sliders: new contrast → rebuild colours (tiles / base image), then draw.
+        on(this.d.autoContrastBtn, 'click', () => { h._spectro.autoContrast(false); rebuildDisplay(); });
         on(this.d.autoFreqBtn,     'click', () => h._spectro.autoFrequency(true));
     }
 }
