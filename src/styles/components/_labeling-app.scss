@@ -658,6 +658,11 @@ html[data-theme="light"] { @include sponsor-light; }
 .rec-multi-start-title { font-size: 13px; font-weight: 600; }
 .rec-multi-start-sub { font-size: 10px; color: var(--color-text-secondary); }
 
+/* Back to single-recording view; the disabled state keeps its tooltip */
+.rec-single-btn { margin-left: auto; font-size: 10px; padding: 1px 6px; }
+.rec-session-status + .rec-single-btn { margin-left: 4px; }
+.rec-single-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: auto; }
+
 /* ── Add recording popover ── */
 .recording-explorer-popover {
   background: var(--color-bg-surface);
