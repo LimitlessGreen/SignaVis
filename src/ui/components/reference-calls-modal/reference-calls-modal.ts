@@ -23,6 +23,10 @@
  * R own recording · F reference · A play own segment then reference ·
  * V confirm · S use species · T use sound type · N next unconfirmed label.
  *
+ * Docked mode (⇥ in the header): the view becomes a right-hand drawer without
+ * backdrop, follows the label selection of the main app and only takes keys
+ * after the user clicked into it.
+ *
  * The reference player jumps to the loudest section inside the label's
  * frequency band ("call"), marks it and clips playback to it.
  * Only one player ever plays at a time.
@@ -168,6 +172,21 @@ function injectCss() {
 .rc-page-info { font-size: 12px; color: var(--color-text-secondary); min-width: 60px; text-align: center; }
 .rc-status { padding: 24px 16px; text-align: center; color: var(--color-text-secondary); font-size: 13px; }
 .rc-status-error { color: var(--color-error, #ef4444); }
+.rc-dock {
+  background: none; border: 1px solid var(--color-border); cursor: pointer; padding: 3px 8px;
+  color: var(--color-text-secondary); font-size: 12px; border-radius: 4px; white-space: nowrap;
+}
+.rc-dock:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
+.rc-backdrop.rc-docked {
+  left: auto; width: min(760px, 55vw); background: none;
+  border-left: 1px solid var(--color-border); box-shadow: -8px 0 24px rgba(0,0,0,0.35);
+}
+.rc-docked .rc-main { flex-direction: column; }
+.rc-docked .rc-compare { flex: none; overflow: visible; }
+.rc-docked .rc-list { width: auto; flex: 1; min-height: 220px; border-left: none; border-top: 1px solid var(--color-border); }
+.rc-docked .rc-keys { display: none; }
+.rc-docked .rc-dialog { overflow-y: auto; }
+.rc-docked.rc-kbd-idle .rc-header { opacity: 0.85; }
 @media (max-width: 820px) {
   .rc-main { flex-direction: column; }
   .rc-list { width: auto; border-left: none; border-top: 1px solid var(--color-border); max-height: 45vh; }
@@ -314,9 +333,13 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   const searchWrap = el('div', 'rc-search');
   const keys = el('div', 'rc-keys');
   keys.innerHTML = '<kbd>Space</kbd> play · <kbd>↑</kbd><kbd>↓</kbd> candidate · <kbd>R</kbd>/<kbd>F</kbd> own/reference · <kbd>A</kbd> A/B';
-  const closeBtn = el('button', 'rc-close', '×') as HTMLButtonElement;
+  const dockBtn = el('button', 'rc-dock') as HTMLButtonElement;
+  dockBtn.type = 'button';
+  // 'modal-close' + bound flag: ModalManager neither injects a second × nor binds it twice.
+  const closeBtn = el('button', 'rc-close modal-close', '×') as HTMLButtonElement;
   closeBtn.title = 'Close (Esc)';
-  header.append(speciesEl, searchWrap, keys, closeBtn);
+  closeBtn.dataset.modalHandlerBound = '1';
+  header.append(speciesEl, searchWrap, keys, dockBtn, closeBtn);
   dialog.appendChild(header);
 
   const main = el('div', 'rc-main');
@@ -360,9 +383,39 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   list.append(filtersEl, listBody, pagination);
   main.appendChild(list);
 
-  const requestClose = () => { cleanup(); manager.close(); };
+  const DOCK_KEY = 'rc-docked';
+  let _docked = false;
+  try { _docked = localStorage.getItem(DOCK_KEY) === '1'; } catch {}
+  let _kbdInside = false;      // docked: keys only after clicking into the drawer
+
+  const isOpen = () => !backdrop.hidden;
+  const requestClose = () => {
+    cleanup();
+    if (_docked) backdrop.hidden = true; else manager.close();
+  };
   const manager = new ModalManager({ backdrop: backdrop as any, dialog: dialog as any, onClose: requestClose } as any);
   closeBtn.addEventListener('click', requestClose);
+
+  function show() {
+    backdrop.classList.toggle('rc-docked', _docked);
+    dockBtn.textContent = _docked ? '⤢ Full view' : '⇥ Dock';
+    dockBtn.title = _docked ? 'Back to the full-screen view' : 'Dock to the side; follows the label selection';
+    if (_docked) { backdrop.hidden = false; _kbdInside = true; }
+    else manager.open();
+    backdrop.classList.toggle('rc-kbd-idle', _docked && !_kbdInside);
+  }
+  dockBtn.addEventListener('click', () => {
+    if (!_docked) manager.close();   // drop focus trap + backdrop handlers
+    _docked = !_docked;
+    try { localStorage.setItem(DOCK_KEY, _docked ? '1' : '0'); } catch {}
+    show();
+  });
+  // Docked: clicking outside hands the keyboard back to the main app.
+  document.addEventListener('pointerdown', (e) => {
+    if (!_docked || backdrop.hidden) return;
+    _kbdInside = dialog.contains(e.target as Node);
+    backdrop.classList.toggle('rc-kbd-idle', !_kbdInside);
+  }, true);
 
   // ── State ────────────────────────────────────────────────────────
   let _label: any = null;
@@ -390,6 +443,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _refClip = false;        // stop reference playback at the call end
 
   const _audioCache = new Map<string, ArrayBuffer>();
+  const _queryCache = new Map<string, any>();
 
   // ── Playback coordination ─────────────────────────────────────────
   const players = () => [_ownPlayer, _refPlayer].filter(Boolean);
@@ -399,6 +453,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   function watchPlayer(p: any) {
     p.on?.('play', () => {
       for (const other of players()) if (other !== p && other.isPlaying) other.pause();
+      try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
     });
   }
 
@@ -460,7 +515,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   // ── Keyboard (window capture: runs before every document listener) ─
   function onKeyDown(e: KeyboardEvent) {
-    if (backdrop.hidden || e.key === 'Escape' || e.key === 'Tab') return;
+    if (backdrop.hidden || e.key === 'Tab') return;
+    if (_docked && !_kbdInside) return;
+    if (e.key === 'Escape') { if (_docked) { e.preventDefault(); requestClose(); } return; }
     if (isTyping(e.target)) return;
     let handled = true;
     switch (e.code) {
@@ -477,8 +534,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       default: handled = false;
     }
     if (handled) e.preventDefault();
-    // Swallow everything so the main player underneath stays quiet.
-    e.stopImmediatePropagation();
+    // Full view: swallow everything so the main player underneath stays quiet.
+    if (handled || !_docked) e.stopImmediatePropagation();
   }
   window.addEventListener('keydown', onKeyDown, true);
   ownSide.addEventListener('pointerdown', () => setFocus('own'));
@@ -774,10 +831,16 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   async function _fetchPage(baseQuery: string, quality: string, page: number, apiKey: string) {
     const q = [baseQuery, ...filterTags(quality)].join('+');
-    const url = `${XC_API}?query=${q}&page=${page}&key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`XC API error: HTTP ${res.status}`);
-    const data = await res.json();
+    const cacheKey = `${q}&page=${page}`;
+    let data = _queryCache.get(cacheKey);
+    if (!data) {
+      const url = `${XC_API}?query=${q}&page=${page}&key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`XC API error: HTTP ${res.status}`);
+      data = await res.json();
+      _queryCache.set(cacheKey, data);
+      while (_queryCache.size > 60) _queryCache.delete(_queryCache.keys().next().value!);
+    }
     return {
       recordings:    Array.isArray(data.recordings) ? data.recordings : [],
       numPages:      parseInt(data.numPages      || '1', 10) || 1,
@@ -924,10 +987,10 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     renderFilters();
     renderDecision();
 
-    try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
+    if (!_docked) { try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {} }
     renderSpecies(sci, displayName);
     mountSearchWidget(sci, displayName);
-    if (backdrop.hidden) manager.open();
+    if (backdrop.hidden) show();
     else { stopAll(); _abPending = false; }
     setFocus('own');
     mountOwnPlayer(audioUrl, label);
@@ -955,5 +1018,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     if (_searchWidget) { try { _searchWidget.destroy?.(); } catch {} _searchWidget = null; }
   }
 
-  return { open, close: requestClose };
+  /** Docked view: show another label when the selection in the app changes. */
+  function follow(label: any, audioUrl: any) {
+    if (!_docked || !isOpen() || !label?.id || label.id === _label?.id) return;
+    open(label, audioUrl);
+  }
+
+  return {
+    open, follow, close: requestClose, isOpen,
+    isDocked: () => _docked,
+    pauseAll: () => stopAll(),
+  };
 }
