@@ -2063,34 +2063,44 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!ctx) return;
         const r = src.getBoundingClientRect();
         const sx = src.width / Math.max(1, r.width), sy = src.height / Math.max(1, r.height);
-        const halfW = W / ZOOM / 2, halfH = H / ZOOM / 2; // in CSS px around the cursor
+        const el = editing.element as HTMLElement | null;
+        const b = el?.getBoundingClientRect();
+        // Resize: magnify around the dragged edge (cursor). Move: show the whole box,
+        // centred, zoomed as far as it still fits (max ZOOM).
+        const isMove = editing.mode === 'move' && !!b;
+        let zoom = ZOOM, cx = clientX, cy = clientY;
+        if (isMove && b) {
+            cx = b.left + b.width / 2;
+            cy = b.top + b.height / 2;
+            zoom = Math.max(1, Math.min(ZOOM, (W - 40) / Math.max(1, b.width), (H - 40) / Math.max(1, b.height)));
+        }
+        const halfW = W / zoom / 2, halfH = H / zoom / 2; // in CSS px around the centre
         ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
         ctx.imageSmoothingEnabled = false;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
         try {
             ctx.drawImage(src,
-                (clientX - halfW - r.left) * sx, (clientY - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
+                (cx - halfW - r.left) * sx, (cy - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
                 0, 0, W, H);
         } catch { /* canvas not ready */ }
-        // Map a client point into loupe space
-        const mx = (x: number) => (x - (clientX - halfW)) * ZOOM;
-        const my = (y: number) => (y - (clientY - halfH)) * ZOOM;
-        const el = editing.element as HTMLElement | null;
-        if (el) {
-            const b = el.getBoundingClientRect();
+        const mx = (x: number) => (x - (cx - halfW)) * zoom;
+        const my = (y: number) => (y - (cy - halfH)) * zoom;
+        if (b) {
             ctx.strokeStyle = 'rgba(255, 220, 80, 0.95)';
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(mx(b.left), my(b.top), b.width * ZOOM, b.height * ZOOM);
+            ctx.strokeRect(mx(b.left), my(b.top), b.width * zoom, b.height * zoom);
         }
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
-        ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        if (!isMove) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+            ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
     }
 
     _hideEditLoupe() {
