@@ -19,7 +19,7 @@ export interface RecordingContextBlockOptions {
 }
 
 /** Static OSM tiles around a point, the point centred in a fixed-height strip. */
-function buildMiniMap(c: Coords, onClick: () => void) {
+export function buildMiniMap(c: Coords, onClick: () => void) {
     const wrap = document.createElement('button');
     wrap.type = 'button';
     wrap.className = 'rc-minimap';
