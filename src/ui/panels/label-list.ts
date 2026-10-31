@@ -1,14 +1,16 @@
 /**
- * Hierarchical label list for sidebar display.
+ * Label list for the sidebar — a three-level tree.
  *
- * Labels are grouped in up to three levels:
- *   1. Origin (manual / BirdNET / xeno-canto)
- *   2. Annotation Set (XC labels from an annotation set get a collapsible set header)
- *   3. Species/label name (collapsible, inline-editable, shows all instances)
- *      └─ Instance cards (time · freq · tag pills · actions)
+ *   1. Source block: one per annotation set (own sets first, then BirdNET, then XC / imported sets).
+ *      Header: badge (ME / BN / XC) · name · "n · k species" · eye; adopt + ⋯ menu on hover;
+ *      info line with creator · license · link for imported sets.
+ *   2. Species row: bird image · common / scientific name · count.
+ *   3. Label row (one line): ▶ · start · duration · tags or BirdNET confidence · actions on hover.
+ *
+ * Imported (non-own) sources are drawn dimmed. A second view ("time") lists all labels flat by start time.
+ * plans/labels-tab-plan.md
  *
  * Usage:
- *   import { LabelList } from './lib/label-list.js';
  *   const list = new LabelList({ container, emptyEl, resolveName, onSync, ... });
  *   list.render(labels);
  */
@@ -20,16 +22,33 @@ const BIRD_IMG_BASE = './data/species_images/';
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
-// Tags that belong to the set header — never shown as per-instance badges
+// Tags that belong to the set header — never shown per label
 const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
+const HIDDEN_TAG_KEYS = new Set(['annotator', 'animalSeen', 'playbackUsed', 'remarks']);
+const VIEW_KEY = 'signavis.labels.view.v1';
 
-function fmt(sec: any) {
-  const s = Number(sec);
-  return s >= 60
-    ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.round((s % 1) * 10)).padStart(1, '0')}`
-    : s.toFixed(2) + 's';
+const ICON = {
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
+  eye: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>',
+  eyeOff: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4"/><path d="M2 2l12 12"/><circle cx="8" cy="8" r="2"/></svg>',
+  adopt: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8.5 6.5 12 13 4.5"/></svg>',
+  more: '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  ref: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5v9l7-4.5z"/></svg>',
+  stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/></svg>',
+};
+
+function fmtTime(sec: any) {
+  const s = Math.max(0, Number(sec) || 0);
+  const m = Math.floor(s / 60);
+  return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
 }
-
+function fmtDur(sec: any) {
+  const s = Math.max(0, Number(sec) || 0);
+  return s >= 10 ? `${s.toFixed(0)}s` : `${s.toFixed(1)}s`;
+}
 function fmtFreq(hz: any) {
   const n = Math.round(Number(hz));
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
@@ -39,30 +58,35 @@ function fmtFreq(hz: any) {
 function getAnnotationSet(lbl: any) {
   if (lbl.annotationSet) return lbl.annotationSet;
   if (lbl.tags?.setName || lbl.tags?.setLicense) {
-    return {
-      name: lbl.tags.setName || '',
-      license: lbl.tags.setLicense || '',
-      creator: lbl.tags.setCreator || '',
-      uri: '',
-      date: '',
-    };
+    return { name: lbl.tags.setName || '', license: lbl.tags.setLicense || '', creator: lbl.tags.setCreator || '', uri: '', date: '' };
   }
   return null;
 }
 
-const LICENSE_COLORS = {
-  'CC0': '#6366f1', 'CC-BY': '#10b981', 'CC-BY-NC': '#f59e0b',
-  'CC-BY-SA': '#3b82f6', 'CC-BY-NC-SA': '#ef4444',
-};
-function licenseColor(lic: any) {
-  for (const [k, v] of Object.entries(LICENSE_COLORS)) {
-    if ((lic || '').startsWith(k)) return v;
-  }
-  return '#6b7280';
+function originBadge(origin: string) {
+  if (origin === 'xeno-canto') return 'XC';
+  if (origin === 'BirdNET') return 'BN';
+  if (origin === 'manual') return 'ME';
+  return 'IM';
+}
+
+function el(tag: string, cls = '', text = ''): any {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+}
+function iconBtn(cls: string, icon: string, title: string, onClick: (e: MouseEvent) => void) {
+  const b = el('button', `act-btn lt-icon-btn ${cls}`);
+  b.type = 'button';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.innerHTML = icon;
+  b.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); onClick(e); });
+  return b;
 }
 
 export class LabelList {
-    // TypeScript property declarations (migrated from JS)
     _accordion: any;
     _badgeEl: any;
     _bulkToolbar: any;
@@ -71,7 +95,7 @@ export class LabelList {
     _container: any;
     _emptyEl: any;
     _expandedGroups: any;
-    _expandedSets: any;
+    _collapsedSets: any;
     _getSets: any;
     _labels: any;
     _onAssignSet: any;
@@ -88,6 +112,8 @@ export class LabelList {
     _onSync: any;
     _onToggleLockSet: any;
     _onAdoptSet: any;
+    _onAdoptLabel: any;
+    _onPlaySegment: any;
     _onToggleSetVisibility: any;
     _onToggleSpeciesVisibility: any;
     _hiddenSetIds: any;
@@ -95,7 +121,6 @@ export class LabelList {
     _resolveName: any;
     _taxonomy: any;
     _tagStore: any;
-    closest: any;
     _lockedIds: any;
     _multiSelectedIds: any;
     _onBulkEdit: any;
@@ -103,6 +128,9 @@ export class LabelList {
     _onRemove: any;
     _selectedId: any;
     _speciesSearchFactory: any;
+    _view: 'source' | 'time';
+    _filter: string;
+    _playingId: string | null;
   /**
    * @param {object} opts
    * @param {HTMLElement}  opts.container
@@ -117,15 +145,15 @@ export class LabelList {
    * @param {(id: string, on: boolean) => void}     [opts.onHover]
    * @param {(ids: string[]) => void} [opts.onMultiSelectionChange]
    * @param {() => Map<string,object>}  [opts.getSets]           Returns state.labelSets
-   * @param {(partial: object) => void} [opts.onCreateSet]       Create a new set
+   * @param {(partial: object) => void} [opts.onCreateSet]
    * @param {(id: string, name: string) => void} [opts.onRenameSet]
    * @param {(id: string) => void}      [opts.onDeleteSet]
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
-   * @param {(setId: string) => void}   [opts.onAdoptSet]  copy an imported set's labels into the own set
-   * @param {(setId: string) => boolean} [opts.canDeleteSet]  Return false to hide the delete button for a specific set
-   * @param {import('../../infrastructure/taxonomyResolver.ts').TaxonomyResolver} [opts.taxonomy]
-   * @param {((anchor: HTMLElement, onSelect: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
+   * @param {(setId: string) => void}   [opts.onAdoptSet]   copy an imported set's labels into the own set
+   * @param {(labelId: string) => void} [opts.onAdoptLabel] copy one imported label into the own set
+   * @param {(lbl: any) => void}        [opts.onPlaySegment] play start–end of a label (toggle)
+   * @param {(setId: string) => boolean} [opts.canDeleteSet]
    */
   constructor(opts: any) {
     this._container = opts.container;
@@ -142,9 +170,7 @@ export class LabelList {
     this._onMultiSelectionChange = opts.onMultiSelectionChange || null;
     this._onRemove = null;
     this._tagStore = opts.tagStore || null;
-    /** If true, ensure only one label group is expanded at once (accordion) */
     this._accordion = !!opts.accordion;
-    // Set management callbacks
     this._getSets = opts.getSets || null;
     this._onCreateSet = opts.onCreateSet || null;
     this._onRenameSet = opts.onRenameSet || null;
@@ -154,29 +180,53 @@ export class LabelList {
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
     this._onToggleLockSet = opts.onToggleLockSet || null;
     this._onAdoptSet = opts.onAdoptSet || null;
+    this._onAdoptLabel = opts.onAdoptLabel || null;
+    this._onPlaySegment = opts.onPlaySegment || null;
     this._canDeleteSet = opts.canDeleteSet || null;
-    /** @type {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._onOpenRefCalls = opts.onOpenRefCalls || null;
     this._cardMap = new Map();
     this._selectedId = null;
-    /** @type {Set<string>} */
     this._multiSelectedIds = new Set();
     this._labels = [];
-    /** @type {Set<string>} group keys that are expanded */
+    /** group keys (`${setKey}::${label}`) that are expanded */
     this._expandedGroups = new Set();
-    /** @type {Set<string>} annotation set keys that are expanded */
-    this._expandedSets = new Set();
-    /** @type {HTMLElement|null} */
+    /** set keys the user collapsed (sets are open by default) */
+    this._collapsedSets = new Set();
     this._bulkToolbar = null;
-    /** @type {Set<string>} ids that must not be edited */
     this._lockedIds = new Set();
-    /** @type {Set<string>} setKeys whose labels are hidden from the spectrogram */
     this._hiddenSetIds = new Set();
-    /** @type {Set<string>} `${setKey}|${speciesName}` keys whose labels are hidden */
     this._hiddenSpeciesKeys = new Set();
     this._onToggleSetVisibility = opts.onToggleSetVisibility || null;
     this._onToggleSpeciesVisibility = opts.onToggleSpeciesVisibility || null;
+    this._view = 'source';
+    try { if (localStorage.getItem(VIEW_KEY) === 'time') this._view = 'time'; } catch { /* ignore */ }
+    this._filter = '';
+    this._playingId = null;
+    this._container.addEventListener('keydown', (e: KeyboardEvent) => this._onKey(e));
+  }
+
+  /** ↑/↓ moves the selection through the visible rows, Enter/Space plays the selected segment. */
+  _onKey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement;
+    if (t.closest('input, select, textarea, .lt-src-head, button')) return;
+    const rows = [...this._container.querySelectorAll('.lt-row')].filter((r: any) => r.offsetParent !== null) as any[];
+    if (!rows.length) return;
+    const cur = rows.findIndex((r) => r.dataset.labelId === this._selectedId);
+    const pick = (i: number) => {
+      const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
+      const lbl = this._labels.find((l: any) => String(l.id) === row.dataset.labelId);
+      if (!lbl) return;
+      this._activate(lbl);
+      row.focus({ preventScroll: true });
+    };
+    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); pick(cur + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); pick(cur < 0 ? 0 : cur - 1); }
+    else if ((e.key === 'Enter' || e.key === ' ') && cur >= 0 && this._onPlaySegment) {
+      e.preventDefault(); e.stopPropagation();
+      const lbl = this._labels.find((l: any) => String(l.id) === rows[cur].dataset.labelId);
+      if (lbl) this._onPlaySegment(lbl);
+    }
   }
 
   setHiddenSets(ids: any = []) { this._hiddenSetIds = new Set(ids); }
@@ -185,136 +235,619 @@ export class LabelList {
   set onRemove(fn: any) { this._onRemove = fn; }
   set onBulkEdit(fn: any) { this._onBulkEdit = fn; }
   set onMultiSelectionChange(fn: any) { this._onMultiSelectionChange = fn; }
-  /** Provide or update the species search factory after construction. */
   setSpeciesSearchFactory(fn: any) { this._speciesSearchFactory = fn || null; }
 
-  /** Mark label ids as locked so they are excluded from bulk-edit actions. */
   setLockedIds(ids = []) { this._lockedIds = new Set(ids); }
   get selectedId() { return this._selectedId; }
   get multiSelectedIds() { return this._multiSelectedIds; }
+  get view() { return this._view; }
 
-  /** Update only tag-badges of a specific label instance (no full re-render). */
-  updateBadges(labelId: any, lbl: any) {
-    const inst = this._cardMap.get(labelId);
-    if (!inst) return;
-    const oldBadges = inst.querySelector('.label-instance-tags');
-    if (oldBadges) {
-      const newBadges = this._buildTagPills(lbl);
-      oldBadges.replaceWith(newBadges);
+  /** 'source' (tree by set) or 'time' (flat, by start time). */
+  setView(view: 'source' | 'time') {
+    this._view = view === 'time' ? 'time' : 'source';
+    try { localStorage.setItem(VIEW_KEY, this._view); } catch { /* ignore */ }
+    this.render(this._labels);
+  }
+
+  /** Filter by species name, scientific name or tag text (case-insensitive). */
+  setFilter(text: string) {
+    this._filter = String(text || '').trim().toLowerCase();
+    this.render(this._labels);
+  }
+
+  /** Mark the label whose segment is currently playing (null = none). */
+  setPlaying(labelId: string | null) {
+    if (this._playingId === labelId) return;
+    const prev = this._playingId ? this._cardMap.get(this._playingId) : null;
+    if (prev) this._setPlayVisual(prev, false);
+    this._playingId = labelId;
+    const cur = labelId ? this._cardMap.get(labelId) : null;
+    if (cur) this._setPlayVisual(cur, true);
+  }
+
+  /** Progress 0..1 of the playing segment (thin bar under the row). */
+  setPlayProgress(fraction: number) {
+    const row = this._playingId ? this._cardMap.get(this._playingId) : null;
+    const bar = row?.querySelector('.lt-prog');
+    if (bar) bar.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+  }
+
+  _setPlayVisual(row: any, on: boolean) {
+    row.classList.toggle('lt-row--playing', on);
+    const btn = row.querySelector('.lt-play');
+    if (btn) {
+      btn.innerHTML = on ? ICON.stop : ICON.play;
+      btn.title = on ? 'Stop' : 'Play this segment';
+      btn.setAttribute('aria-label', btn.title);
     }
+    const bar = row.querySelector('.lt-prog');
+    if (bar && !on) bar.style.width = '0';
+  }
+
+  /** Update only the tag text of a label row (no full re-render). */
+  updateBadges(labelId: any, lbl: any) {
+    const row = this._cardMap.get(labelId);
+    const old = row?.querySelector('.lt-tags');
+    if (old) old.replaceWith(this._buildTagText(lbl, this._view === 'time'));
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────
+
+  _matches(lbl: any) {
+    if (!this._filter) return true;
+    const { display, scientific } = this._resolveName(lbl);
+    const hay = [display, scientific, lbl.label, lbl.scientificName,
+      ...Object.values(lbl.tags || {}).filter((v) => typeof v === 'string')].join(' ').toLowerCase();
+    return hay.includes(this._filter);
   }
 
   /** Full re-render. */
   render(labels: any) {
     this._labels = labels;
     const idSet = new Set(labels.map((l: any) => l.id));
-    for (const id of this._multiSelectedIds) {
-      if (!idSet.has(id)) this._multiSelectedIds.delete(id);
-    }
+    for (const id of this._multiSelectedIds) if (!idSet.has(id)) this._multiSelectedIds.delete(id);
     this._container.innerHTML = '';
+    this._container.classList.toggle('lt-view-time', this._view === 'time');
     this._cardMap = new Map();
     if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
     const hasSets = this._getSets ? this._getSets().size > 0 : false;
     this._emptyEl.style.display = (labels.length || hasSets) ? 'none' : '';
 
-    const ORIGIN_ORDER = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
-    const setsRegistry = this._getSets ? this._getSets() : new Map();
+    const visible = labels.filter((l: any) => this._matches(l));
+    if (this._view === 'time') this._renderTime(visible);
+    else this._renderSources(visible, labels);
 
-    // 2-level: setKey → {setInfo, origin, nameMap}
-    // Labels with no set are grouped into a virtual '' key (rendered without a set header)
-    /** @type {Map<string, {setInfo: any, origin: string, nameMap: Map<string, any[]>}>} */
-    const setGroups = new Map();
-
-    // Pre-seed empty sets so they appear even with no labels
-    for (const [setId, setInfo] of setsRegistry) {
-      const origin = setInfo.origin || 'manual';
-      if (!setGroups.has(setId)) setGroups.set(setId, { setInfo, origin, nameMap: new Map() });
+    if (this._filter && !visible.length && labels.length) {
+      this._container.appendChild(el('div', 'lt-empty', `No labels match “${this._filter}”.`));
     }
-
-    for (const lbl of labels) {
-      const origin = lbl.origin || 'manual';
-      let setInfo = null;
-      let setKey = '';
-      if (lbl.setId && setsRegistry.has(lbl.setId)) {
-        setInfo = setsRegistry.get(lbl.setId);
-        setKey = lbl.setId;
-      } else {
-        const as = getAnnotationSet(lbl);
-        if (as) { setInfo = as; setKey = as?.uri || as?.name || ''; }
-      }
-      if (!setGroups.has(setKey)) setGroups.set(setKey, { setInfo, origin, nameMap: new Map() });
-      const { nameMap } = setGroups.get(setKey);
-      const nameKey = lbl.label || '(unlabeled)';
-      if (!nameMap.has(nameKey)) nameMap.set(nameKey, []);
-      nameMap.get(nameKey).push(lbl);
+    if (this._selectedId) this.highlightRow(this._selectedId, { scroll: false });
+    if (this._playingId) {
+      const row = this._cardMap.get(this._playingId);
+      if (row) this._setPlayVisual(row, true);
     }
-
-    // Sort set entries: '' (unassigned) first, then by origin order, then by name
-    const sortedKeys = [...setGroups.keys()].sort((a, b) => {
-      if (a === '' && b !== '') return -1;
-      if (b === '' && a !== '') return 1;
-      const ga = setGroups.get(a), gb = setGroups.get(b);
-      const oa = (ORIGIN_ORDER as any)[ga.origin] ?? 99, ob = (ORIGIN_ORDER as any)[gb.origin] ?? 99;
-      if (oa !== ob) return oa - ob;
-      return (ga.setInfo?.name || a).localeCompare(gb.setInfo?.name || b);
-    });
-
-    for (const setKey of sortedKeys) {
-      const { setInfo, nameMap } = setGroups.get(setKey);
-      const names = [...nameMap.keys()].sort((a, b) => a.localeCompare(b));
-      const totalInSet = names.reduce((n, k) => n + nameMap.get(k).length, 0);
-
-      if (setKey) {
-        // Hide XC-imported sets that have no labels in the current recording
-        if (totalInSet === 0 && setInfo?.origin === 'xeno-canto') continue;
-        const locked = !!(setInfo?.locked || setInfo?.origin === 'xeno-canto');
-        const setSection = this._buildSetSection(setInfo, setKey, totalInSet, () => {
-          const frag = document.createDocumentFragment();
-          for (const name of names) {
-            const instances = nameMap.get(name).slice().sort((a: any, b: any) => a.start - b.start);
-            frag.appendChild(this._buildGroup(instances, locked, setKey));
-          }
-          return frag;
-        }, locked);
-        this._container.appendChild(setSection);
-      } else {
-        for (const name of names) {
-          const instances = nameMap.get(name).slice().sort((a: any, b: any) => a.start - b.start);
-          this._container.appendChild(this._buildGroup(instances, false, ''));
-        }
-      }
-    }
-
-    if (this._selectedId) this.highlightRow(this._selectedId);
     this._updateMultiVisual();
     this._updateBulkToolbar();
   }
 
-  highlightRow(labelId: any) {
-    this._selectedId = labelId || null;
-    for (const c of this._container.querySelectorAll('.label-instance.selected')) {
-      c.classList.remove('selected');
+  _setKeyOf(lbl: any, setsRegistry: Map<string, any>) {
+    if (lbl.setId && setsRegistry.has(lbl.setId)) return { key: lbl.setId, info: setsRegistry.get(lbl.setId) };
+    const as = getAnnotationSet(lbl);
+    if (as) return { key: as?.uri || as?.name || '', info: { ...as, origin: lbl.origin || 'xeno-canto' } };
+    return { key: '', info: null };
+  }
+
+  _isLocked(setInfo: any) {
+    return !!(setInfo?.locked || setInfo?.origin === 'xeno-canto');
+  }
+
+  _renderSources(visible: any[], all: any[]) {
+    const ORIGIN_ORDER: Record<string, number> = { manual: 0, BirdNET: 1, 'xeno-canto': 2 };
+    const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
+    const groups = new Map<string, { setInfo: any, origin: string, labels: any[], total: number }>();
+
+    for (const [setId, setInfo] of setsRegistry) {
+      groups.set(setId, { setInfo, origin: setInfo.origin || 'manual', labels: [], total: 0 });
     }
+    for (const lbl of all) {
+      const { key, info } = this._setKeyOf(lbl, setsRegistry);
+      if (!groups.has(key)) groups.set(key, { setInfo: info, origin: info?.origin || lbl.origin || 'manual', labels: [], total: 0 });
+      groups.get(key)!.total++;
+    }
+    const visibleIds = new Set(visible.map((l) => l.id));
+    for (const lbl of all) {
+      if (!visibleIds.has(lbl.id)) continue;
+      groups.get(this._setKeyOf(lbl, setsRegistry).key)!.labels.push(lbl);
+    }
+
+    const keys = [...groups.keys()].sort((a, b) => {
+      const ga = groups.get(a)!, gb = groups.get(b)!;
+      const oa = ORIGIN_ORDER[ga.origin] ?? 3, ob = ORIGIN_ORDER[gb.origin] ?? 3;
+      if (oa !== ob) return oa - ob;
+      if (a === '') return 1;
+      if (b === '') return -1;
+      return (ga.setInfo?.name || a).localeCompare(gb.setInfo?.name || b);
+    });
+
+    for (const key of keys) {
+      const g = groups.get(key)!;
+      if (key === '' && g.total === 0) continue;
+      // Imported sets without labels in this recording are noise
+      if (g.total === 0 && g.origin !== 'manual') continue;
+      if (this._filter && g.labels.length === 0) continue;
+      this._container.appendChild(this._buildSource(key, g));
+    }
+  }
+
+  _renderTime(visible: any[]) {
+    const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
+    const list = el('div', 'lt-time-list');
+    for (const lbl of visible.slice().sort((a, b) => a.start - b.start)) {
+      const { key, info } = this._setKeyOf(lbl, setsRegistry);
+      const origin = info?.origin || lbl.origin || 'manual';
+      const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
+      if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
+      list.appendChild(row);
+    }
+    this._container.appendChild(list);
+  }
+
+  // ── Source block ──────────────────────────────────────────────────
+
+  _buildSource(setKey: string, g: { setInfo: any, origin: string, labels: any[], total: number }) {
+    const { setInfo, origin, labels } = g;
+    const locked = setKey ? this._isLocked(setInfo) : false;
+    const external = origin !== 'manual';
+    const hidden = this._hiddenSetIds.has(setKey);
+    const open = !this._collapsedSets.has(setKey);
+
+    const section = el('section', 'lt-src');
+    section.dataset.setKey = setKey;
+    if (external) section.classList.add('lt-src--ext');
+    if (hidden) section.classList.add('lt-src--hidden');
+    if (open) section.classList.add('lt-open');
+
+    // Group by species
+    const bySpecies = new Map<string, any[]>();
+    for (const lbl of labels) {
+      const k = lbl.label || '(unlabeled)';
+      if (!bySpecies.has(k)) bySpecies.set(k, []);
+      bySpecies.get(k)!.push(lbl);
+    }
+
+    // ── Header ──
+    const hdr = el('div', 'lt-src-head');
+    hdr.tabIndex = 0;
+    hdr.setAttribute('role', 'button');
+    hdr.setAttribute('aria-expanded', String(open));
+    const chev = el('span', 'lt-chev'); chev.innerHTML = ICON.chev; hdr.appendChild(chev);
+    const badge = el('span', `lt-badge lt-badge--${originBadge(origin).toLowerCase()}`, originBadge(origin));
+    badge.title = origin === 'manual' ? 'Own set' : origin;
+    hdr.appendChild(badge);
+    const name = el('span', 'lt-src-name', setInfo?.name || (setKey ? 'Annotation set' : 'Labels without set'));
+    name.title = setInfo?.name || '';
+    if (this._onRenameSet && setKey && !locked) {
+      name.title = `${setInfo?.name || ''} — double-click to rename`;
+      name.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); this._startSetRename(name, setKey, setInfo); });
+    }
+    hdr.appendChild(name);
+
+    const hover = el('span', 'lt-hover-acts');
+    if (this._onAdoptSet && setKey && external && g.total > 0) {
+      hover.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy all labels into my set', () => this._onAdoptSet(setKey)));
+    }
+    if (setKey) hover.appendChild(iconBtn('lt-more', ICON.more, 'More…', (e) => this._openSetMenu(e, setKey, setInfo, locked, external, g.total, name)));
+    hdr.appendChild(hover);
+
+    const n = labels.length, k = bySpecies.size;
+    const meta = el('span', 'lt-src-meta', n ? `${n} · ${k} ${k === 1 ? 'species' : 'species'}` : '0');
+    meta.title = `${n} label${n === 1 ? '' : 's'}, ${k} species`;
+    hdr.appendChild(meta);
+
+    if (this._onToggleSetVisibility && setKey) {
+      const eye = iconBtn(`lt-eye${hidden ? ' lt-eye--off' : ''}`, hidden ? ICON.eyeOff : ICON.eye,
+        hidden ? 'Show set on spectrogram' : 'Hide set on spectrogram',
+        () => this._onToggleSetVisibility(setKey, !hidden));
+      hdr.appendChild(eye);
+    }
+
+    const toggle = () => {
+      const nowOpen = !section.classList.contains('lt-open');
+      section.classList.toggle('lt-open', nowOpen);
+      hdr.setAttribute('aria-expanded', String(nowOpen));
+      if (nowOpen) this._collapsedSets.delete(setKey); else this._collapsedSets.add(setKey);
+    };
+    hdr.addEventListener('click', toggle);
+    hdr.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.target !== hdr) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+    hdr.addEventListener('contextmenu', (e: MouseEvent) => {
+      if (!setKey) return;
+      e.preventDefault();
+      this._openSetMenu(e, setKey, setInfo, locked, external, g.total, name);
+    });
+
+    // Drop a label on the header → move it into this set
+    if (this._onAssignSet && !locked) {
+      hdr.addEventListener('dragover', (e: DragEvent) => {
+        if (!e.dataTransfer!.types.includes('text/label-id')) return;
+        e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; hdr.classList.add('drag-over');
+      });
+      hdr.addEventListener('dragleave', (e: DragEvent) => { if (!hdr.contains(e.relatedTarget as Node | null)) hdr.classList.remove('drag-over'); });
+      hdr.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault(); hdr.classList.remove('drag-over');
+        const labelId = e.dataTransfer!.getData('text/label-id');
+        if (labelId) this._onAssignSet(labelId, setKey || null);
+      });
+    }
+    section.appendChild(hdr);
+
+    // ── Info line (imported sets): creator · license · link ──
+    const infoParts = [setInfo?.creator, setInfo?.license].filter(Boolean);
+    if (external && (infoParts.length || setInfo?.uri)) {
+      const info = el('div', 'lt-src-info');
+      if (infoParts.length) info.appendChild(el('span', '', infoParts.join(' · ')));
+      if (setInfo?.uri) {
+        if (infoParts.length) info.appendChild(el('span', '', ' · '));
+        const a = el('a', 'lt-src-link', origin === 'xeno-canto' ? 'xeno-canto ↗' : 'source ↗');
+        a.href = setInfo.uri; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.addEventListener('click', (e: MouseEvent) => e.stopPropagation());
+        info.appendChild(a);
+      }
+      section.appendChild(info);
+    }
+
+    // ── Body ──
+    const body = el('div', 'lt-src-body');
+    if (!labels.length) {
+      body.appendChild(el('div', 'lt-empty', origin === 'manual'
+        ? 'No labels yet. Shift+drag on the spectrogram, or ✓ on an imported label.'
+        : 'No labels.'));
+    }
+    const names = [...bySpecies.keys()].sort((a, b) => bySpecies.get(b)!.length - bySpecies.get(a)!.length || a.localeCompare(b));
+    for (const nm of names) {
+      const inst = bySpecies.get(nm)!.slice().sort((a: any, b: any) => a.start - b.start);
+      body.appendChild(this._buildGroup(inst, locked, setKey, external));
+    }
+    section.appendChild(body);
+    return section;
+  }
+
+  _openSetMenu(e: MouseEvent, setKey: string, setInfo: any, locked: boolean, external: boolean, total: number, nameEl: any) {
+    const items: any[] = [];
+    if (this._onRenameSet && !locked) items.push({ label: 'Rename set', action: () => this._startSetRename(nameEl, setKey, setInfo) });
+    if (this._onAdoptSet && external && total > 0) items.push({ label: 'Copy all labels into my set', action: () => this._onAdoptSet(setKey) });
+    if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') items.push({ label: 'Convert to manual set', action: () => this._onConvertSetToManual(setKey) });
+    if (this._onToggleLockSet && setInfo?.origin !== 'xeno-canto') {
+      items.push({ label: locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)', action: () => this._onToggleLockSet(setKey, !locked) });
+    }
+    if (setInfo?.uri) items.push({ label: 'Open source page ↗', action: () => window.open(setInfo.uri, '_blank', 'noopener') });
+    const deletable = this._onDeleteSet && (this._canDeleteSet ? this._canDeleteSet(setKey) : true);
+    if (deletable) {
+      if (items.length) items.push({ separator: true });
+      items.push({
+        label: 'Delete set…', danger: true,
+        action: () => {
+          const msg = total > 0
+            ? `Delete set "${setInfo?.name || setKey}" and its ${total} label${total === 1 ? '' : 's'}? This cannot be undone.`
+            : `Delete set "${setInfo?.name || setKey}"?`;
+          if (confirm(msg)) this._onDeleteSet(setKey);
+        },
+      });
+    }
+    if (!items.length) items.push({ label: 'No actions', disabled: true });
+    const t = (e.currentTarget || e.target) as HTMLElement;
+    const r = e.type === 'contextmenu' ? null : t?.getBoundingClientRect?.();
+    showContextMenu({ x: r ? r.left : e.clientX, y: r ? r.bottom + 2 : e.clientY, items });
+  }
+
+  _startSetRename(nameEl: any, setKey: string, setInfo: any) {
+    if (!this._onRenameSet || nameEl.querySelector('input')) return;
+    const oldName = setInfo?.name || '';
+    const inp = el('input', 'inline-name-input');
+    inp.value = oldName;
+    nameEl.textContent = '';
+    nameEl.appendChild(inp);
+    inp.focus(); inp.select();
+    let done = false;
+    const commit = (save: boolean) => {
+      if (done) return; done = true;
+      const val = inp.value.trim();
+      if (save && val && val !== oldName) this._onRenameSet(setKey, val);
+      nameEl.textContent = (save && val) || oldName;
+    };
+    inp.addEventListener('blur', () => commit(true));
+    inp.addEventListener('keydown', (ev: KeyboardEvent) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
+    });
+    inp.addEventListener('click', (ev: MouseEvent) => ev.stopPropagation());
+  }
+
+  // ── Species group ─────────────────────────────────────────────────
+
+  _buildThumb(lbl: any, scientific: string) {
+    const wrap = el('span', 'lt-thumb lbl-group-img-wrap');
+    const sciName = lbl.scientificName || scientific || '';
+    const record = sciName ? this._taxonomy?.resolve(sciName) : null;
+    const attribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
+    const src = sciName ? `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp` : BIRD_IMG_FALLBACK;
+    const img = el('img', 'lbl-group-img');
+    img.src = src; img.alt = ''; img.loading = 'lazy';
+    img.addEventListener('error', () => { img.src = BIRD_IMG_FALLBACK; }, { once: true });
+    wrap.appendChild(img);
+    if (sciName) {
+      const pop = el('div', 'lbl-img-popover');
+      const pImg = el('img'); pImg.src = src; pImg.alt = sciName;
+      pImg.addEventListener('error', () => { pImg.src = BIRD_IMG_FALLBACK; }, { once: true });
+      pop.appendChild(pImg);
+      pop.appendChild(el('span', 'lbl-img-popover-caption', attribution ? `${sciName}\n${attribution}` : sciName));
+      wrap.appendChild(pop);
+    }
+    return wrap;
+  }
+
+  _buildGroup(instances: any[], locked: boolean, setKey: string, external: boolean) {
+    const rep = instances[0];
+    const { display, scientific } = this._resolveName(rep);
+    const speciesName = rep.label || '(unlabeled)';
+    const groupKey = `${setKey}::${speciesName}`;
+    const hideKey = `${setKey}|${speciesName}`;
+    const spHidden = this._hiddenSpeciesKeys.has(hideKey);
+
+    const group = el('div', 'lt-grp');
+    group.dataset.groupKey = groupKey;
+    if (spHidden) group.classList.add('lt-grp--hidden');
+    if (this._expandedGroups.has(groupKey) || this._filter) group.classList.add('lt-open');
+
+    const row = el('div', 'lt-sp');
+    row.tabIndex = -1;
+    const chev = el('span', 'lt-chev'); chev.innerHTML = ICON.chev; row.appendChild(chev);
+    row.appendChild(this._buildThumb(rep, scientific));
+    const names = el('span', 'lt-names');
+    const nameEl = el('span', 'lt-name', display);
+    names.appendChild(nameEl);
+    if (scientific && scientific !== display) names.appendChild(el('span', 'lt-sci', scientific));
+    row.appendChild(names);
+
+    const acts = el('span', 'lt-hover-acts');
+    if (!locked) {
+      acts.appendChild(iconBtn('', ICON.edit,
+        instances.length > 1 ? `Change species for all ${instances.length} labels` : 'Change species',
+        () => this._startGroupInlineEdit(nameEl, instances, display)));
+    }
+    if (this._onToggleSpeciesVisibility) {
+      acts.appendChild(iconBtn(`lt-eye${spHidden ? ' lt-eye--off' : ''}`, spHidden ? ICON.eyeOff : ICON.eye,
+        spHidden ? 'Show species on spectrogram' : 'Hide species on spectrogram',
+        () => this._onToggleSpeciesVisibility(hideKey, !spHidden)));
+    }
+    row.appendChild(acts);
+    row.appendChild(el('span', 'lt-count', String(instances.length)));
+
+    if (!locked) {
+      nameEl.title = 'Click to change the species of all these labels';
+      nameEl.addEventListener('click', (e: MouseEvent) => {
+        if (!group.classList.contains('lt-open')) return;   // first click just opens
+        e.stopPropagation();
+        this._startGroupInlineEdit(nameEl, instances, display);
+      });
+    }
+
+    if (this._onAssignSpecies && !locked) {
+      row.addEventListener('dragover', (e: DragEvent) => {
+        if (!e.dataTransfer!.types.includes('text/label-id')) return;
+        e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', (e: DragEvent) => { if (!row.contains(e.relatedTarget as Node | null)) row.classList.remove('drag-over'); });
+      row.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault(); row.classList.remove('drag-over');
+        const labelId = e.dataTransfer!.getData('text/label-id');
+        if (labelId) this._onAssignSpecies(labelId, rep);
+      });
+    }
+
+    row.addEventListener('click', () => this._setGroupOpen(group, !group.classList.contains('lt-open')));
+    group.appendChild(row);
+
+    const rows = el('div', 'lt-rows');
+    for (const lbl of instances) rows.appendChild(this._buildRow(lbl, locked, { flat: false, origin: rep.origin, external }));
+    group.appendChild(rows);
+    return group;
+  }
+
+  _setGroupOpen(group: any, open: boolean) {
+    if (open && this._accordion && this._multiSelectedIds.size === 0) {
+      for (const og of this._container.querySelectorAll('.lt-grp.lt-open')) {
+        if (og !== group) { og.classList.remove('lt-open'); this._expandedGroups.delete(og.dataset.groupKey); }
+      }
+    }
+    group.classList.toggle('lt-open', open);
+    if (open) this._expandedGroups.add(group.dataset.groupKey);
+    else this._expandedGroups.delete(group.dataset.groupKey);
+  }
+
+  // ── Label row ─────────────────────────────────────────────────────
+
+  _buildTagText(lbl: any, flat: boolean) {
+    const span = el('span', 'lt-tags');
+    if (flat) {
+      const { display } = this._resolveName(lbl);
+      span.appendChild(el('b', 'lt-tags-name', display));
+    }
+    const tags = lbl.tags || {};
+    const parts: string[] = [];
+    const sex = String(tags.sex || '').toLowerCase();
+    if (sex === 'male') parts.push('♂');
+    else if (sex === 'female') parts.push('♀');
+    else if (tags.sex) parts.push(String(tags.sex));
+    if (tags.lifeStage) parts.push(String(tags.lifeStage));
+    if (tags.soundType) parts.push(String(tags.soundType));
+    for (const [k, v] of Object.entries(tags)) {
+      if (PRESET_KEYS.has(k) || SET_TAG_KEYS.has(k) || HIDDEN_TAG_KEYS.has(k)) continue;
+      if (v === '' || v == null) continue;
+      parts.push(`${k}: ${v}`);
+    }
+    if (parts.length) span.appendChild(document.createTextNode((flat ? ' ' : '') + parts.join(' · ')));
+    return span;
+  }
+
+  _buildRow(lbl: any, locked: boolean, o: { flat: boolean, origin: string, external: boolean }) {
+    const row = el('div', 'lt-row');
+    if (locked) row.classList.add('lt-row--locked');
+    if (o.external) row.classList.add('lt-row--ext');
+    row.dataset.labelId = lbl.id;
+    row.tabIndex = -1;
+    const { display } = this._resolveName(lbl);
+    row.title = `${display} · ${fmtTime(lbl.start)}–${fmtTime(lbl.end)} · ${fmtFreq(lbl.freqMin)}–${fmtFreq(lbl.freqMax)} Hz`
+      + (lbl.tags?.remarks ? `\n${lbl.tags.remarks}` : '');
+
+    if (this._onPlaySegment) {
+      const play = el('button', 'lt-play');
+      play.type = 'button';
+      play.innerHTML = ICON.play;
+      play.title = 'Play this segment';
+      play.setAttribute('aria-label', play.title);
+      play.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._onPlaySegment(lbl); });
+      row.appendChild(play);
+    } else {
+      row.appendChild(el('span'));
+    }
+    if (o.flat) {
+      const b = originBadge(o.origin);
+      row.appendChild(el('span', `lt-mini lt-badge--${b.toLowerCase()}`, b));
+    }
+    row.appendChild(el('span', 'lt-start', fmtTime(lbl.start)));
+    if (!o.flat) row.appendChild(el('span', 'lt-dur', fmtDur(lbl.end - lbl.start)));
+    row.appendChild(this._buildTagText(lbl, o.flat));
+
+    const right = el('span', 'lt-right');
+    if (lbl.confidence != null) {
+      const pct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
+      const c = el('span', `lt-conf${pct >= 60 ? ' lt-conf--hi' : ''}`, `${pct}%`);
+      c.title = `Confidence ${pct} %`;
+      right.appendChild(c);
+    }
+    const acts = el('span', 'lt-hover-acts');
+    if (!locked) {
+      acts.appendChild(iconBtn('species-edit-btn', ICON.edit, 'Change species / edit', () => this._onEdit?.(lbl.id)));
+    } else if (this._onAdoptLabel) {
+      acts.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy into my set', () => this._onAdoptLabel(lbl.id)));
+    }
+    if (this._onOpenRefCalls) acts.appendChild(iconBtn('', ICON.ref, 'Reference calls', () => this._onOpenRefCalls(lbl)));
+    if (!locked) acts.appendChild(iconBtn('danger', ICON.del, 'Delete', () => this._onRemove?.(lbl)));
+    right.appendChild(acts);
+    row.appendChild(right);
+    row.appendChild(el('span', 'lt-prog'));
+
+    if (this._onAssignSet && !locked) {
+      row.draggable = true;
+      row.addEventListener('dragstart', (e: DragEvent) => {
+        e.dataTransfer!.setData('text/label-id', lbl.id);
+        e.dataTransfer!.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    }
+
+    row.addEventListener('contextmenu', (e: MouseEvent) => {
+      e.preventDefault();
+      const items: any[] = [];
+      if (this._onPlaySegment) items.push({ label: 'Play segment', action: () => this._onPlaySegment(lbl) });
+      if (locked) {
+        if (this._onAdoptLabel) items.push({ label: 'Copy into my set', action: () => this._onAdoptLabel(lbl.id) });
+        items.push({ label: 'Read-only (imported set)', disabled: true });
+      } else {
+        items.push({ label: 'Rename', icon: '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>', action: () => this._onEdit?.(lbl.id) });
+        items.push({ separator: true });
+        items.push({ label: 'Delete', danger: true, icon: '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>', action: () => this._onRemove?.(lbl) });
+      }
+      showContextMenu({ x: e.clientX, y: e.clientY, items });
+    });
+
+    row.addEventListener('click', (e: MouseEvent) => {
+      if ((e.target as Element).closest('.act-btn, .lt-play, input, select, .esel')) return;
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        if (e.shiftKey) this._rangeSelect(lbl.id);
+        else this._toggleMulti(lbl.id);
+        return;
+      }
+      if (this._multiSelectedIds.size > 0) { this._multiSelectedIds.clear(); this._updateMultiVisual(); this._updateBulkToolbar(); }
+      this._activate(lbl);
+    });
+    row.addEventListener('dblclick', (e: MouseEvent) => {
+      if (locked || (e.target as Element).closest('.act-btn, .lt-play, input, select, .esel')) return;
+      e.stopPropagation();
+      this._onEdit?.(lbl.id);
+    });
+    row.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
+    row.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
+
+    this._cardMap.set(lbl.id, row);
+    return row;
+  }
+
+  _activate(lbl: any) {
+    this._onSeek?.(lbl);
+    this.highlightRow(lbl.id);
+    this._onFocus?.(lbl.id, 'list');
+  }
+
+  _toggleMulti(id: string) {
+    if (this._lockedIds.has(id)) return;
+    if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== id && !this._lockedIds.has(this._selectedId)) {
+      this._multiSelectedIds.add(this._selectedId);
+    }
+    if (this._multiSelectedIds.has(id)) this._multiSelectedIds.delete(id);
+    else this._multiSelectedIds.add(id);
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
+  }
+
+  /** Shift+click: select every visible, editable row between the anchor and this one. */
+  _rangeSelect(id: string) {
+    const order = [...this._container.querySelectorAll('.lt-row')].map((r: any) => r.dataset.labelId);
+    const anchor = this._selectedId && order.includes(this._selectedId) ? this._selectedId : id;
+    const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort((x, y) => x - y);
+    for (const rid of order.slice(a, b + 1)) if (!this._lockedIds.has(rid)) this._multiSelectedIds.add(rid);
+    this._updateMultiVisual();
+    this._updateBulkToolbar();
+  }
+
+  // ── Selection / highlighting ──────────────────────────────────────
+
+  _reveal(row: any) {
+    const section = row.closest('.lt-src');
+    if (section && !section.classList.contains('lt-open')) {
+      section.classList.add('lt-open');
+      this._collapsedSets.delete(section.dataset.setKey);
+    }
+    const group = row.closest('.lt-grp');
+    if (group && !group.classList.contains('lt-open')) this._setGroupOpen(group, true);
+  }
+
+  highlightRow(labelId: any, opts: { scroll?: boolean } = {}) {
+    this._selectedId = labelId || null;
+    for (const c of this._container.querySelectorAll('.lt-row.selected')) c.classList.remove('selected');
     if (labelId && this._multiSelectedIds.size === 0) {
-      const inst = this._cardMap.get(labelId);
-      if (inst) {
-        this._autoExpand(inst);
-        inst.classList.add('selected');
-        inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const row = this._cardMap.get(labelId);
+      if (row) {
+        this._reveal(row);
+        row.classList.add('selected');
+        if (opts.scroll !== false) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
   }
 
   highlightHover(labelId: any) {
-    for (const c of this._container.querySelectorAll('.label-instance.highlighted')) {
-      c.classList.remove('highlighted');
-    }
+    for (const c of this._container.querySelectorAll('.lt-row.highlighted')) c.classList.remove('highlighted');
     if (labelId) {
-      const inst = this._cardMap.get(labelId);
-      if (inst) {
-        this._autoExpand(inst);
-        inst.classList.add('highlighted');
-        inst.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const row = this._cardMap.get(labelId);
+      if (row) {
+        this._reveal(row);
+        row.classList.add('highlighted');
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
   }
@@ -325,142 +858,13 @@ export class LabelList {
     this._updateBulkToolbar();
   }
 
-  // ── Helpers for animated expand/collapse ──────────────────────────
-  _setGroupOpenState(group: any, open: any, animate = false) {
-    if (!group) return;
-    const list = group.querySelector('.label-group-instances');
-    if (!list) return;
-    if (!animate) {
-      // immediate (no transition)
-      list.style.transition = 'none';
-      list.style.overflow = 'hidden';
-      if (open) {
-        list.style.display = '';
-        // keep expanded state stable by using explicit 'none' so CSS doesn't revert to max-height:0
-        list.style.maxHeight = 'none';
-        list.style.opacity = '1';
-        group.classList.add('expanded');
-        const key = group.dataset.groupKey; if (key) this._expandedGroups.add(key);
-      } else {
-        list.style.maxHeight = '0px';
-        list.style.opacity = '0';
-        group.classList.remove('expanded');
-        const key = group.dataset.groupKey; if (key) this._expandedGroups.delete(key);
-      }
-      // clear the manual transition after a tick so future toggles use CSS transitions
-      requestAnimationFrame(() => { list.style.transition = ''; });
-      return;
-    }
-    if (open) this._expandGroupElement(group);
-    else this._collapseGroupElement(group);
-  }
-
-  _expandGroupElement(group: any) {
-    const list = group.querySelector('.label-group-instances');
-    if (!list) return;
-    // prepare
-    list.style.overflow = 'hidden';
-    // ensure it's visible to measure
-    list.style.display = '';
-    // measure
-    const height = list.scrollHeight;
-    // start from 0
-    list.style.maxHeight = '0px';
-    list.style.opacity = '0';
-    // trigger transition to measured height
-    requestAnimationFrame(() => {
-      list.style.transition = 'max-height 220ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease';
-      list.style.maxHeight = height + 'px';
-      list.style.opacity = '1';
-    });
-    const onEnd = (e: any) => {
-      if (e.target !== list) return;
-      if (e.propertyName === 'max-height') {
-        // keep the element open by setting maxHeight to 'none' so CSS doesn't collapse it
-        list.style.maxHeight = 'none';
-        list.style.transition = '';
-        list.removeEventListener('transitionend', onEnd);
-      }
-    };
-    list.addEventListener('transitionend', onEnd);
-    group.classList.add('expanded');
-    const key = group.dataset.groupKey; if (key) this._expandedGroups.add(key);
-  }
-
-  _collapseGroupElement(group: any) {
-    const list = group.querySelector('.label-group-instances');
-    if (!list) return;
-    // measure current height
-    const height = list.scrollHeight || list.offsetHeight || 0;
-    list.style.overflow = 'hidden';
-    // Ensure current height set as start point for transition
-    list.style.maxHeight = height + 'px';
-    list.style.opacity = '1';
-    requestAnimationFrame(() => {
-      list.style.transition = 'max-height 180ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease';
-      list.style.maxHeight = '0px';
-      list.style.opacity = '0';
-    });
-    const onEnd = (e: any) => {
-      if (e.target !== list) return;
-      if (e.propertyName === 'max-height') {
-        list.style.transition = '';
-        // keep maxHeight at 0 to remain collapsed
-        list.style.maxHeight = '0px';
-        group.classList.remove('expanded');
-        list.removeEventListener('transitionend', onEnd);
-      }
-    };
-    list.addEventListener('transitionend', onEnd);
-    const key = group.dataset.groupKey; if (key) this._expandedGroups.delete(key);
-  }
-
-  _autoExpand(inst: any) {
-    const group = inst.closest('.label-group');
-    if (group && !group.classList.contains('expanded')) {
-      // Ensure parent set body is visible so measurements work
-      const setBody = inst.closest('.label-set-body');
-      if (setBody && setBody.style.maxHeight === '0px') {
-        setBody.style.maxHeight = 'none';
-        setBody.style.opacity = '1';
-        setBody.style.overflow = 'visible';
-        const sec = setBody.closest('.label-set-section');
-        if (sec) sec.classList.add('expanded');
-      }
-      // If accordion enabled, close other expanded groups first — but
-      // suppress this behavior when there is an active multi-selection
-      // (user marked labels across groups) so their selections don't
-      // force-collapse unrelated groups.
-      if (this._accordion) {
-        if (this._multiSelectedIds.size === 0) {
-          const others = this._container.querySelectorAll('.label-group.expanded');
-          for (const og of others) {
-            if (og === group) continue;
-            this._collapseGroupElement(og);
-          }
-          this._expandedGroups.clear();
-        } else {
-          // keep existing expanded groups when multiple labels are selected
-        }
-      }
-      this._setGroupOpenState(group, true, true);
-    }
-    // Note: setBody visibility handled above
-  }
-
   _updateMultiVisual() {
-    const anySelected = this._multiSelectedIds.size > 0;
-    for (const [id, el] of this._cardMap) {
-      const multiSelected = this._multiSelectedIds.has(id);
-      el.classList.toggle('multi-selected', multiSelected);
-      el.classList.toggle('multi-active', anySelected);
-      if (anySelected) {
-        el.classList.remove('selected');
-      } else if (id === this._selectedId) {
-        el.classList.add('selected');
-      }
-      const cb = /** @type {HTMLInputElement|null} */ (el.querySelector('.label-instance-cb'));
-      if (cb) cb.checked = multiSelected;
+    const any = this._multiSelectedIds.size > 0;
+    for (const [id, row] of this._cardMap) {
+      row.classList.toggle('multi-selected', this._multiSelectedIds.has(id));
+      row.classList.toggle('multi-active', any);
+      if (any) row.classList.remove('selected');
+      else if (id === this._selectedId) row.classList.add('selected');
     }
   }
 
@@ -472,740 +876,26 @@ export class LabelList {
       return;
     }
     if (!this._bulkToolbar) {
-      const bar = document.createElement('div');
-      bar.className = 'label-multi-toolbar';
+      const bar = el('div', 'label-multi-toolbar');
       const scroll = this._container.closest('.label-list-scroll');
       const parent = scroll ? scroll.parentElement : this._container.parentElement;
-      if (scroll) parent.insertBefore(bar, scroll);
-      else parent.insertBefore(bar, this._container);
+      parent.insertBefore(bar, scroll || this._container);
       this._bulkToolbar = bar;
     }
     this._bulkToolbar.innerHTML = '';
-    const info = document.createElement('span');
-    info.className = 'label-multi-info';
-    info.textContent = `${count} selected`;
-    this._bulkToolbar.appendChild(info);
-    const editableIds = [...this._multiSelectedIds].filter(id => !this._lockedIds.has(id));
+    this._bulkToolbar.appendChild(el('span', 'label-multi-info', `${count} selected`));
+    const editableIds = [...this._multiSelectedIds].filter((id) => !this._lockedIds.has(id));
     if (this._onBulkEdit && editableIds.length > 0) {
-      const btn = document.createElement('button');
-      btn.className = 'tb-btn';
-      btn.textContent = editableIds.length < count
-        ? `Rename ${editableIds.length} editable`
-        : 'Rename selected';
+      const btn = el('button', 'tb-btn', editableIds.length < count ? `Rename ${editableIds.length} editable` : 'Rename selected');
       btn.addEventListener('click', () => this._onBulkEdit(editableIds));
       this._bulkToolbar.appendChild(btn);
     }
-    const clrBtn = document.createElement('button');
-    clrBtn.className = 'tb-btn';
-    clrBtn.textContent = 'Deselect all';
-    clrBtn.addEventListener('click', () => this.clearMultiSelection());
-    this._bulkToolbar.appendChild(clrBtn);
+    const clr = el('button', 'tb-btn', 'Deselect all');
+    clr.addEventListener('click', () => this.clearMultiSelection());
+    this._bulkToolbar.appendChild(clr);
   }
 
-  // ── Annotation set section ──────────────────────────────────────────
-
-  _buildSetSection(setInfo: any, setKey: any, totalCount: any, buildBody: any, locked = false) {
-    const section = document.createElement('div');
-    section.className = 'label-set-section';
-    if (locked) section.classList.add('label-set-section--locked');
-    const setHidden = this._hiddenSetIds.has(setKey);
-    if (setHidden) section.classList.add('label-set-section--hidden');
-
-    const isExpanded = this._expandedSets.has(setKey) !== false;  // expanded by default
-    if (!this._expandedSets.has(setKey + '__init')) {
-      this._expandedSets.add(setKey);
-      this._expandedSets.add(setKey + '__init');
-    }
-    const expanded = this._expandedSets.has(setKey);
-
-    // ── Set header ──
-    const hdr = document.createElement('div');
-    hdr.className = 'label-set-header';
-
-    const chevron = document.createElement('span');
-    chevron.className = 'label-set-chevron';
-    chevron.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
-    hdr.appendChild(chevron);
-
-    const nameWrap = document.createElement('div');
-    nameWrap.className = 'label-set-name-wrap';
-
-    // Name row: origin badge + name + optional link
-    const origin = setInfo?.origin || 'manual';
-    const nameRow = document.createElement('div');
-    nameRow.className = 'label-set-name-row';
-
-    const originBadge = document.createElement('span');
-    originBadge.className = `label-set-origin-badge label-set-origin--${origin.replace(/[^a-z]/gi, '-').toLowerCase()}`;
-    originBadge.textContent = origin === 'xeno-canto' ? 'XC' : origin === 'BirdNET' ? 'BN' : 'manual';
-    originBadge.title = origin;
-    nameRow.appendChild(originBadge);
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'label-set-name';
-    nameEl.textContent = setInfo?.name || 'Annotation set';
-    nameEl.title = 'Click to inline-edit name';
-    nameRow.appendChild(nameEl);
-
-    // Allow clicking the set name to inline-edit the set name (behaves like group-level edit)
-    nameEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!this._onRenameSet || locked) return;
-      if (nameEl.querySelector('input')) return;
-      const oldName = setInfo?.name || '';
-      const inp = document.createElement('input');
-      inp.className = 'inline-name-input';
-      inp.value = oldName;
-      inp.style.cssText = 'max-width:120px;font-size:11px;';
-      nameEl.textContent = '';
-      nameEl.appendChild(inp);
-      inp.focus(); inp.select();
-      const commit = () => {
-        const val = inp.value.trim();
-        if (val && val !== oldName) this._onRenameSet(setKey, val);
-        nameEl.textContent = val || oldName;
-      };
-      inp.addEventListener('blur', commit);
-      inp.addEventListener('keydown', (ev) => {
-        ev.stopPropagation();
-        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-        if (ev.key === 'Escape') { ev.preventDefault(); nameEl.textContent = oldName; }
-      });
-      inp.addEventListener('click', (ev) => ev.stopPropagation());
-    });
-
-    if (setInfo?.uri) {
-      const link = document.createElement('a');
-      link.href = setInfo.uri;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.className = 'label-set-link';
-      link.title = 'Open on Xeno-canto';
-      link.textContent = '↗';
-      nameRow.appendChild(link);
-    }
-    nameWrap.appendChild(nameRow);
-
-    const meta = document.createElement('div');
-    meta.className = 'label-set-meta';
-    if (setInfo?.creator) {
-      const cr = document.createElement('span');
-      cr.className = 'label-set-creator';
-      cr.textContent = setInfo.creator;
-      meta.appendChild(cr);
-    }
-    if (setInfo?.license) {
-      const lic = document.createElement('span');
-      lic.className = 'label-set-license';
-      lic.textContent = setInfo.license;
-      lic.style.background = licenseColor(setInfo.license) + '22';
-      lic.style.color = licenseColor(setInfo.license);
-      meta.appendChild(lic);
-    }
-    nameWrap.appendChild(meta);
-    hdr.appendChild(nameWrap);
-
-    const count = document.createElement('span');
-    count.className = 'label-set-count';
-    count.textContent = String(totalCount);
-    hdr.appendChild(count);
-
-    // ── Set action buttons (hover-visible) ──
-    const setActions = document.createElement('div');
-    setActions.className = 'label-set-actions';
-
-    if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') {
-      const convBtn = document.createElement('button');
-      convBtn.className = 'act-btn label-set-action-btn';
-      convBtn.title = 'Convert to manual set';
-      convBtn.textContent = '⇄';
-      convBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onConvertSetToManual(setKey); });
-      setActions.appendChild(convBtn);
-    }
-    // Imported sets (XC, BirdNET, file) are read-only — offer copying their labels into the own set
-    if (this._onAdoptSet && setInfo && (setInfo.origin || 'manual') !== 'manual') {
-      const adoptBtn = document.createElement('button');
-      adoptBtn.className = 'act-btn label-set-action-btn label-set-adopt-btn';
-      adoptBtn.title = 'Copy all labels into my set';
-      adoptBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>';
-      adoptBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onAdoptSet(setKey); });
-      setActions.appendChild(adoptBtn);
-    }
-    if (this._onToggleSetVisibility) {
-      const visBtn = document.createElement('button');
-      visBtn.className = 'act-btn label-set-action-btn label-set-vis-btn';
-      visBtn.title = setHidden ? 'Show set on spectrogram' : 'Hide set on spectrogram';
-      if (setHidden) visBtn.classList.add('label-set-vis-btn--hidden');
-      visBtn.innerHTML = setHidden
-        ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4"/><path d="M2 2l12 12"/><circle cx="8" cy="8" r="2"/></svg>'
-        : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>';
-      visBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetVisibility(setKey, !setHidden); });
-      setActions.appendChild(visBtn);
-    }
-    if (this._onToggleLockSet) {
-      const lockBtn = document.createElement('button');
-      lockBtn.className = 'act-btn label-set-action-btn label-set-lock-btn';
-      lockBtn.title = locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)';
-      lockBtn.innerHTML = locked
-        ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>'
-        : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0"/></svg>';
-      if (locked) lockBtn.classList.add('label-set-lock-btn--locked');
-      lockBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleLockSet(setKey, !locked); });
-      setActions.appendChild(lockBtn);
-    }
-    if (this._onRenameSet && !locked) {
-      const renBtn = document.createElement('button');
-      renBtn.className = 'act-btn label-set-action-btn';
-      renBtn.title = 'Rename set';
-      renBtn.textContent = '✎';
-      renBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const nameSpan = hdr.querySelector('.label-set-name');
-        if (!nameSpan || nameSpan.querySelector('input')) return;
-        const oldName = setInfo?.name || '';
-        const inp = document.createElement('input');
-        inp.className = 'inline-name-input';
-        inp.value = oldName;
-        inp.style.cssText = 'max-width:120px;font-size:11px;';
-        nameSpan.textContent = '';
-        nameSpan.appendChild(inp);
-        inp.focus(); inp.select();
-        const commit = () => {
-          const val = inp.value.trim();
-          if (val && val !== oldName) this._onRenameSet(setKey, val);
-          nameSpan.textContent = val || oldName;
-        };
-        inp.addEventListener('blur', commit);
-        inp.addEventListener('keydown', (ev) => {
-          ev.stopPropagation();
-          if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-          if (ev.key === 'Escape') { ev.preventDefault(); nameSpan.textContent = oldName; }
-        });
-        inp.addEventListener('click', (ev) => ev.stopPropagation());
-      });
-      setActions.appendChild(renBtn);
-    }
-    const _deletable = this._onDeleteSet && (this._canDeleteSet ? this._canDeleteSet(setKey) : true);
-    if (_deletable) {
-      const delBtn = document.createElement('button');
-      delBtn.className = 'act-btn label-set-action-btn danger';
-      delBtn.title = 'Delete set (labels remain without a set)';
-      delBtn.textContent = '×';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const n = totalCount;
-        const msg = n > 0
-          ? `Delete set "${setInfo?.name || setKey}" and its ${n} label${n === 1 ? '' : 's'}? This cannot be undone.`
-          : `Delete set "${setInfo?.name || setKey}"?`;
-        if (confirm(msg)) {
-          this._onDeleteSet(setKey);
-        }
-      });
-      setActions.appendChild(delBtn);
-    }
-    if (setActions.children.length) hdr.appendChild(setActions);
-
-    // Drag-over: accept label cards dropped onto this set header (not for locked sets)
-    if (this._onAssignSet && !locked) {
-      hdr.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; hdr.classList.add('drag-over'); });
-      hdr.addEventListener('dragleave', (e) => { if (!hdr.contains(e.relatedTarget as Node | null)) hdr.classList.remove('drag-over'); });
-      hdr.addEventListener('drop', (e) => {
-        e.preventDefault();
-        hdr.classList.remove('drag-over');
-        const labelId = e.dataTransfer!.getData('text/label-id');
-        if (labelId) this._onAssignSet(labelId, setKey);
-      });
-    }
-
-    section.appendChild(hdr);
-
-    // ── Collapsible body ──
-    const body = document.createElement('div');
-    body.className = 'label-set-body';
-    section.classList.toggle('expanded', expanded);
-
-    // Build group content lazily on first expand
-    let built = false;
-    const ensureBuilt = () => {
-      if (built) return;
-      built = true;
-      body.appendChild(buildBody());
-    };
-
-    // Set initial state without animation
-    if (expanded) {
-      ensureBuilt();
-      body.style.maxHeight = 'none';
-      body.style.opacity = '1';
-      body.style.overflow = 'visible';
-    } else {
-      body.style.maxHeight = '0px';
-      body.style.opacity = '0';
-      body.style.overflow = 'hidden';
-    }
-
-    const expandSet = () => {
-      ensureBuilt();
-      body.style.overflow = 'hidden';
-      body.style.display = '';
-      const height = body.scrollHeight;
-      body.style.maxHeight = '0px';
-      body.style.opacity = '0';
-      requestAnimationFrame(() => {
-        body.style.transition = 'max-height 260ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease';
-        body.style.maxHeight = height + 'px';
-        body.style.opacity = '1';
-      });
-      const onEnd = (e: any) => {
-        if (e.target !== body || e.propertyName !== 'max-height') return;
-        body.style.maxHeight = 'none';
-        body.style.overflow = 'visible';
-        body.style.transition = '';
-        body.removeEventListener('transitionend', onEnd);
-      };
-      body.addEventListener('transitionend', onEnd);
-      section.classList.add('expanded');
-      this._expandedSets.add(setKey);
-    };
-
-    const collapseSet = () => {
-      const height = body.scrollHeight || body.offsetHeight || 0;
-      body.style.overflow = 'hidden';
-      body.style.maxHeight = height + 'px';
-      body.style.opacity = '1';
-      requestAnimationFrame(() => {
-        body.style.transition = 'max-height 200ms cubic-bezier(.2,.8,.2,1), opacity 140ms ease';
-        body.style.maxHeight = '0px';
-        body.style.opacity = '0';
-      });
-      const onEnd = (e: any) => {
-        if (e.target !== body || e.propertyName !== 'max-height') return;
-        body.style.transition = '';
-        body.removeEventListener('transitionend', onEnd);
-      };
-      body.addEventListener('transitionend', onEnd);
-      section.classList.remove('expanded');
-      this._expandedSets.delete(setKey);
-    };
-
-    hdr.addEventListener('click', () => {
-      if (section.classList.contains('expanded')) collapseSet();
-      else expandSet();
-    });
-
-    section.appendChild(body);
-    return section;
-  }
-
-  // ── Species group builder ───────────────────────────────────────────
-
-  _buildGroup(instances: any, locked = false, setKey: string = '') {
-    const representative = instances[0];
-    const { display, scientific } = this._resolveName(representative);
-    const origin = representative.origin || 'manual';
-    const groupKey = `${origin}::${representative.label || '(unlabeled)'}`;
-    const speciesName = representative.label || '(unlabeled)';
-    const speciesHideKey = `${setKey}|${speciesName}`;
-    const speciesHidden = this._hiddenSpeciesKeys.has(speciesHideKey);
-
-    const group = document.createElement('div');
-    group.className = 'label-group';
-    if (speciesHidden) group.classList.add('label-group--hidden');
-    // expose group key so we can find/close groups later (used by accordion behaviour)
-    group.dataset.groupKey = groupKey;
-
-    const row = document.createElement('div');
-    row.className = 'label-group-row';
-
-    const chevron = document.createElement('span');
-    chevron.className = 'label-group-chevron';
-    chevron.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
-    row.appendChild(chevron);
-
-    // Bird thumbnail — shown once per species group, not per instance
-    const sciName = representative.scientificName || scientific || null;
-    if (sciName) {
-      const record = this._taxonomy?.resolve(sciName);
-      const imgAttribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
-
-      const imgWrap = document.createElement('div');
-      imgWrap.className = 'lbl-group-img-wrap';
-      if (imgAttribution) imgWrap.title = imgAttribution;
-      const img = document.createElement('img');
-      img.className = 'lbl-group-img';
-      const imgSrc = `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp`;
-      img.src = imgSrc;
-      img.alt = sciName;
-      img.loading = 'lazy';
-      let imgFailed = false;
-      img.addEventListener('error', () => { imgFailed = true; img.src = BIRD_IMG_FALLBACK; }, { once: true });
-      imgWrap.appendChild(img);
-
-      // Hover popover — larger preview
-      const popover = document.createElement('div');
-      popover.className = 'lbl-img-popover';
-      const popImg = document.createElement('img');
-      popImg.src = imgSrc;
-      popImg.alt = sciName;
-      popImg.addEventListener('error', () => { popImg.src = BIRD_IMG_FALLBACK; }, { once: true });
-      const popCaption = document.createElement('span');
-      popCaption.className = 'lbl-img-popover-caption';
-      popCaption.textContent = imgAttribution ? `${sciName}\n${imgAttribution}` : sciName;
-      popover.appendChild(popImg);
-      popover.appendChild(popCaption);
-      imgWrap.appendChild(popover);
-
-      row.appendChild(imgWrap);
-    } else if (representative.color) {
-      const dot = document.createElement('span');
-      dot.className = 'color-dot';
-      dot.style.background = representative.color;
-      row.appendChild(dot);
-    }
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'label-group-name';
-    nameEl.textContent = display;
-    if (!locked) {
-      nameEl.title = 'Click to inline-edit name';
-      nameEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._startGroupInlineEdit(nameEl, instances, display);
-      });
-    }
-    row.appendChild(nameEl);
-
-    if (instances.length > 1) {
-      const cnt = document.createElement('span');
-      cnt.className = 'label-group-count';
-      cnt.textContent = String(instances.length);
-      row.appendChild(cnt);
-    }
-
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    row.appendChild(spacer);
-
-    if (this._onToggleSpeciesVisibility) {
-      const visBtn = document.createElement('button');
-      visBtn.className = 'act-btn label-group-vis-btn';
-      visBtn.title = speciesHidden ? 'Show species on spectrogram' : 'Hide species on spectrogram';
-      if (speciesHidden) visBtn.classList.add('label-group-vis-btn--hidden');
-      visBtn.innerHTML = speciesHidden
-        ? '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4"/><path d="M2 2l12 12"/><circle cx="8" cy="8" r="2"/></svg>'
-        : '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>';
-      visBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSpeciesVisibility(speciesHideKey, !speciesHidden); });
-      row.appendChild(visBtn);
-    }
-    if (!locked) {
-      const editBtn = document.createElement('button');
-      editBtn.className = 'act-btn';
-      editBtn.textContent = '✎';
-      editBtn.title = instances.length > 1
-        ? `Edit species for all ${instances.length} instances`
-        : 'Edit species';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (instances.length > 1 && this._onBulkEdit) {
-          this._onBulkEdit(instances.map((l: any) => l.id));
-        } else {
-          this._onEdit?.(representative.id);
-        }
-      });
-      row.appendChild(editBtn);
-    }
-
-    // Drop a label instance onto a group row → rename to this species (not for locked sets)
-    if (this._onAssignSpecies && !locked) {
-      row.addEventListener('dragover', (e) => {
-        if (!e.dataTransfer!.types.includes('text/label-id')) return;
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = 'move';
-        row.classList.add('drag-over');
-      });
-      row.addEventListener('dragleave', (e) => {
-        if (!row.contains(e.relatedTarget as Node | null)) row.classList.remove('drag-over');
-      });
-      row.addEventListener('drop', (e) => {
-        e.preventDefault();
-        row.classList.remove('drag-over');
-        const labelId = e.dataTransfer!.getData('text/label-id');
-        if (labelId) this._onAssignSpecies(labelId, representative);
-      });
-    }
-
-    group.appendChild(row);
-
-    if (scientific && scientific !== display) {
-      const sciEl = document.createElement('div');
-      sciEl.className = 'label-group-sci';
-      sciEl.textContent = scientific;
-      group.appendChild(sciEl);
-    }
-
-    const instanceList = document.createElement('div');
-    instanceList.className = 'label-group-instances';
-
-    for (const lbl of instances) {
-      const inst = this._buildInstance(lbl, locked);
-      instanceList.appendChild(inst);
-      this._cardMap.set(lbl.id, inst);
-    }
-
-    const single = instances.length === 1;
-    const shouldExpand = this._expandedGroups.has(groupKey) || single;
-    group.appendChild(instanceList);
-    // set initial open state (no animation)
-    this._setGroupOpenState(group, shouldExpand, false);
-
-    row.addEventListener('click', () => {
-      const currentlyOpen = group.classList.contains('expanded');
-      if (!currentlyOpen) {
-        if (this._accordion) {
-          const others = this._container.querySelectorAll('.label-group.expanded');
-          for (const og of others) {
-            if (og === group) continue;
-            this._collapseGroupElement(og);
-          }
-          this._expandedGroups.clear();
-        }
-      }
-      this._setGroupOpenState(group, !currentlyOpen, true);
-    });
-
-    return group;
-  }
-
-  // ── Instance builder ────────────────────────────────────────────────
-
-  _buildInstance(lbl: any, locked = false) {
-    const inst = document.createElement('div');
-    inst.className = 'label-instance';
-    if (locked) inst.classList.add('label-instance--locked');
-    inst.dataset.labelId = lbl.id;
-    if (lbl.color) inst.style.setProperty('--lbl-color', lbl.color);
-
-    // ── Drag to set ──
-    if (this._onAssignSet && !locked) {
-      inst.draggable = true;
-      inst.addEventListener('dragstart', (e) => {
-        e.dataTransfer!.setData('text/label-id', lbl.id);
-        e.dataTransfer!.effectAllowed = 'move';
-        inst.classList.add('dragging');
-      });
-      inst.addEventListener('dragend', () => inst.classList.remove('dragging'));
-    }
-
-    // ── Content wrapper ──
-    const content = document.createElement('div');
-    content.className = 'lbl-content';
-
-    inst.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      const items = locked
-        ? [{ label: 'Locked — unlock set to edit', disabled: true }]
-        : [
-            {
-              label: 'Rename',
-              icon: '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>',
-              action: () => this._onEdit?.(lbl.id),
-            },
-            { separator: true },
-            {
-              label: 'Delete',
-              icon: '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>',
-              action: () => this._onRemove?.(lbl),
-              danger: true,
-            },
-          ];
-      showContextMenu({ x: e.clientX, y: e.clientY, items });
-    });
-
-    inst.addEventListener('click', (e) => {
-      if ((e.target as Element).closest('.act-btn') || (e.target as Element).closest('select') || (e.target as Element).closest('input') || (e.target as Element).closest('.esel')) return;
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        if (!this._lockedIds.has(lbl.id)) {
-          if (this._multiSelectedIds.size === 0 && this._selectedId && this._selectedId !== lbl.id) {
-            this._multiSelectedIds.add(this._selectedId);
-          }
-          if (this._multiSelectedIds.has(lbl.id)) this._multiSelectedIds.delete(lbl.id);
-          else this._multiSelectedIds.add(lbl.id);
-          this._updateMultiVisual();
-          this._updateBulkToolbar();
-        }
-        return;
-      }
-      if (this._multiSelectedIds.size > 0) {
-        this._multiSelectedIds.clear();
-        this._updateMultiVisual();
-        this._updateBulkToolbar();
-      }
-      this._onSeek?.(lbl);
-      this.highlightRow(lbl.id);
-      this._onFocus?.(lbl.id, 'list');
-    });
-    inst.addEventListener('pointerenter', () => this._onHover?.(lbl.id, true));
-    inst.addEventListener('pointerleave', () => this._onHover?.(lbl.id, false));
-
-    // ── Header row (inside content wrapper) ──
-    const header = document.createElement('div');
-    header.className = 'label-instance-header';
-
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.className = 'label-instance-cb';
-    cb.title = 'Ctrl+click or check to multi-select';
-    cb.checked = this._multiSelectedIds.has(lbl.id);
-    cb.addEventListener('change', (e) => {
-      e.stopPropagation();
-      if (cb.checked) {
-        this._multiSelectedIds.add(lbl.id);
-      } else {
-        this._multiSelectedIds.delete(lbl.id);
-      }
-      this._updateMultiVisual();
-      this._updateBulkToolbar();
-    });
-    cb.addEventListener('click', (e) => e.stopPropagation());
-    header.appendChild(cb);
-
-    // Time + freq meta
-    const meta = document.createElement('div');
-    meta.className = 'label-instance-meta';
-    const timeEl = document.createElement('span');
-    timeEl.className = 'lbl-time';
-    timeEl.textContent = `${fmt(lbl.start)} – ${fmt(lbl.end)}`;
-    const freqEl = document.createElement('span');
-    freqEl.className = 'lbl-freq';
-    freqEl.textContent = `${fmtFreq(lbl.freqMin)} – ${fmtFreq(lbl.freqMax)} Hz`;
-    meta.appendChild(timeEl);
-    meta.appendChild(freqEl);
-    header.appendChild(meta);
-
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    header.appendChild(spacer);
-
-    // Actions (hidden until hover; suppressed when set is locked)
-    const actions = document.createElement('div');
-    actions.className = 'label-instance-actions';
-
-    if (!locked) {
-      const speciesBtn = document.createElement('button');
-      speciesBtn.className = 'act-btn species-edit-btn';
-      speciesBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3 3 11l8 8 9.59-5.59z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
-      speciesBtn.title = 'Change species for this label';
-      speciesBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
-      actions.appendChild(speciesBtn);
-
-      const propsBtn = document.createElement('button');
-      propsBtn.className = 'act-btn props-btn';
-      propsBtn.title = 'Edit in Properties tab';
-      propsBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-      propsBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onEdit?.(lbl.id); });
-      actions.appendChild(propsBtn);
-
-      if (this._onOpenRefCalls) {
-        const refBtn = document.createElement('button');
-        refBtn.className = 'act-btn';
-        refBtn.title = 'Reference Calls';
-        refBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-        refBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onOpenRefCalls(lbl); });
-        actions.appendChild(refBtn);
-      }
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'act-btn danger';
-      delBtn.textContent = '×';
-      delBtn.title = 'Remove';
-      delBtn.addEventListener('click', (e) => { e.stopPropagation(); this._onRemove?.(lbl); });
-      actions.appendChild(delBtn);
-    }
-
-    header.appendChild(actions);
-    content.appendChild(header);
-
-    // ── Confidence bar (when available — replaces confidence pill) ──
-    if (lbl.confidence != null) {
-      const confPct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
-      const confRow = document.createElement('div');
-      confRow.className = 'lbl-conf-row';
-      confRow.innerHTML = `
-        <div class="lbl-conf-bar-track" role="progressbar"
-             aria-valuenow="${confPct}" aria-valuemin="0" aria-valuemax="100">
-          <div class="lbl-conf-bar-fill" style="width:${confPct}%"></div>
-        </div>
-        <span class="lbl-conf-pct">${confPct}%</span>`;
-      content.appendChild(confRow);
-    }
-
-    // ── Tag pills row (always visible) ──
-    const tagsEl = this._buildTagPills(lbl);
-    content.appendChild(tagsEl);
-
-    inst.appendChild(content);
-
-    inst.addEventListener('dblclick', (e) => {
-      if (locked) return;
-      if ((e.target as Element).closest('.act-btn') || (e.target as Element).closest('input') || (e.target as Element).closest('select') || (e.target as Element).closest('.esel')) return;
-      e.stopPropagation();
-      this._onEdit?.(lbl.id);
-    });
-
-    return inst;
-  }
-
-  // ── Tag pills (always-visible key tags) ────────────────────────────
-
-  _buildTagPills(lbl: any) {
-    const el = document.createElement('div');
-    el.className = 'label-instance-tags';
-    const tags = lbl.tags || {};
-
-    const SEX_ICONS = { male: '♂', female: '♀' };
-    const sex = tags.sex;
-    if (sex) {
-      const p = document.createElement('span');
-      p.className = `lbl-pill lbl-pill--sex lbl-pill--sex-${sex.toLowerCase().replace(/\s+/g, '-')}`;
-      p.textContent = ((SEX_ICONS as any)[sex.toLowerCase()] || '') + ' ' + sex;
-      el.appendChild(p);
-    }
-
-    const lifeStage = tags.lifeStage;
-    if (lifeStage) {
-      const p = document.createElement('span');
-      p.className = 'lbl-pill lbl-pill--stage';
-      p.textContent = lifeStage;
-      el.appendChild(p);
-    }
-
-    const soundType = tags.soundType;
-    if (soundType) {
-      const p = document.createElement('span');
-      p.className = 'lbl-pill lbl-pill--sound';
-      p.textContent = soundType;
-      el.appendChild(p);
-    }
-
-    // Custom tags (not preset, not set-level)
-    const custom = Object.entries(tags).filter(([k]) => !PRESET_KEYS.has(k) && !SET_TAG_KEYS.has(k)
-      && k !== 'annotator' && k !== 'animalSeen' && k !== 'playbackUsed' && k !== 'remarks');
-    for (const [k, v] of custom) {
-      const p = document.createElement('span');
-      p.className = 'lbl-pill lbl-pill--custom';
-      p.textContent = `${k}: ${v}`;
-      el.appendChild(p);
-    }
-
-    // confidence is shown as a bar in _buildInstance, not as a pill here
-
-    return el;
-  }
-
-  // ── Expandable detail section ───────────────────────────────────────
-
-  // ── Inline name editing (group-level) ──────────────────────────────
+  // ── Inline name editing (group-level) ─────────────────────────────
 
   _startGroupInlineEdit(nameEl: any, instances: any, displayName: any) {
     if (nameEl.querySelector('input') || nameEl.querySelector('.species-search-widget')) return;
@@ -1231,23 +921,18 @@ export class LabelList {
       nameEl.appendChild(widget.el);
       widget.input.focus();
       widget.input.select();
-      // Clicking away or pressing Escape restores display name
-      const onBlur = () => {
-        if (!nameEl.querySelector('.species-search-widget')) return;
-        setTimeout(() => {
-          if (nameEl.querySelector('.species-search-widget')) nameEl.textContent = displayName;
-        }, 200);
-      };
       widget.input.addEventListener('keydown', (e: any) => {
         e.stopPropagation();
         if (e.key === 'Escape') { e.preventDefault(); nameEl.textContent = displayName; }
       });
-      widget.input.addEventListener('blur', onBlur);
+      widget.input.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (nameEl.querySelector('.species-search-widget')) nameEl.textContent = displayName;
+        }, 200);
+      });
       widget.input.addEventListener('click', (e: any) => e.stopPropagation());
     } else {
-      // Fallback: plain text input
-      const input = document.createElement('input');
-      input.className = 'inline-name-input';
+      const input = el('input', 'inline-name-input');
       input.value = instances[0].label || displayName;
       nameEl.textContent = '';
       nameEl.appendChild(input);
@@ -1258,14 +943,13 @@ export class LabelList {
         if (val && val !== instances[0].label) applyName({ name: val, scientificName: '' });
         else nameEl.textContent = displayName;
       };
-      input.addEventListener('keydown', (e) => {
+      input.addEventListener('keydown', (e: KeyboardEvent) => {
         e.stopPropagation();
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
         if (e.key === 'Escape') { e.preventDefault(); nameEl.textContent = displayName; }
       });
       input.addEventListener('blur', commit);
-      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('click', (e: MouseEvent) => e.stopPropagation());
     }
   }
-
 }
