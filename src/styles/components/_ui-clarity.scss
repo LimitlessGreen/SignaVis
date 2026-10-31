@@ -151,3 +151,38 @@ html[data-theme="light"] { @include light-tokens; }
 }
 .audio-section--facts .panel-actions { padding: 0; }
 .audio-section--facts .panel-actions:has(> [hidden]:only-child) { display: none; }
+
+/* ── Phase 4: Upload cards, sticky primary actions, toolbar groups ── */
+// Upload checklist: each step is a card with a status stripe.
+.ua-checklist { gap: 4px; }
+.ua-step {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border-strong);
+  &.ua-ok    { border-left-color: var(--color-success); }
+  &.ua-warn  { border-left-color: var(--color-warning); }
+  &.ua-error { border-left-color: var(--color-danger); }
+  &.expanded { background: var(--color-card); }
+}
+.ua-step.ua-warn .ua-icon  { color: var(--color-warning); }
+
+// The one important action stays reachable at the bottom of long panels.
+#panelXc .xc-actions,
+#panelBirdnet > .panel-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border-strong);
+}
+
+// Player toolbar: related buttons sit in one visible group.
+.toolbar-group {
+  gap: 1px;
+  padding: 1px;
+  border-radius: 5px;
+  background: var(--input-bg);
+  border: 1px solid var(--color-border);
+  .toolbar-btn { border-color: transparent; }
+}
+.toolbar-sep, .tb-sep { background: var(--color-border-strong); margin: 0 4px; }
