@@ -530,6 +530,7 @@
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
     import { serializeProject, deserializeProject, filesNotInProject, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
     import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
+    import { buildRavenSelectionTable, ravenTablePath } from '../src/infrastructure/export/ravenSelectionTable.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
@@ -648,7 +649,10 @@
     async function ownRefAudioUrl(entry) {
       if (_ownRefAudio.has(entry.id)) return _ownRefAudio.get(entry.id);
       let url = null;
-      if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
+      const folderFile = entry.path && projectStore ? await projectStore.readAudio(entry.path) : null;
+      if (folderFile) {
+        url = URL.createObjectURL(folderFile);
+      } else if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
         const audio = await xcPanel.fetchAudio(entry.xcId);
         url = URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' }));
       } else if (entry.audioUrl) {
@@ -1350,6 +1354,7 @@
     }
 
     async function saveProjectSnapshotNow() {
+      if (projectAutosaver) return;   // the project store replaces the old autosave
       try {
         await projectRuntime.repo.save(buildProjectSnapshot());
       } catch (e) {
@@ -1390,8 +1395,8 @@
     }
 
     function saveSessionSets(st) {
-      saveSessionSetsLegacy(st);
-      projectAutosaver?.schedule();
+      if (projectAutosaver) projectAutosaver.schedule();
+      else saveSessionSetsLegacy(st);   // no OPFS: old localStorage sets
     }
 
     function renderProjectLocation() {
@@ -1468,7 +1473,11 @@
           lsSet(PROJECT_LOCATION_KEY, 'browser');
           window.location.reload();
         },
-        onToggleXcToFolder: (on) => { lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0'); renderProjectLocation(); },
+        onToggleXcToFolder: (on) => {
+          lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
+          renderProjectLocation();
+          if (on) copyAllXcToFolder();
+        },
         onAddFiles: (paths) => addFolderFiles(paths),
         onRescan: () => scanProjectFolder(),
       });
@@ -1501,6 +1510,7 @@
           renderProjectLocation();
         },
       });
+      recordingManager.disableSessionPersistence();   // sessionStorage was only the migration source
       recordingManager.addEventListener('change', () => { projectAutosaver.schedule(); renderProjectLocation(); });
       recordingManager.addEventListener('activechange', () => projectAutosaver.schedule());
       if (!owner) {
@@ -1590,6 +1600,52 @@
         return;
       }
       recordingManager.update(entry.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+    }
+
+    /** After switching "XC downloads in folder" on: copy the XC recordings already in the project. */
+    async function copyAllXcToFolder() {
+      const todo = recordingManager.getAll().filter((e) => e.source === 'xc' && e.xcId && !e.path);
+      for (const [i, entry] of todo.entries()) {
+        selectionMeta.textContent = `Copying XC${entry.xcId} to the project folder (${i + 1}/${todo.length})…`;
+        await persistXcToFolder(entry);
+      }
+      if (todo.length) selectionMeta.textContent = `${todo.length} XC recording${todo.length === 1 ? '' : 's'} copied to xc/`;
+      renderProjectLocation();
+    }
+
+    // ── Raven selection tables (one per audio file) ──────────────────
+    const ravenSetName = (id) => state.labelSets.get(id)?.name || id;
+    function entryLabels(entry) {
+      return entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
+    }
+    function downloadRavenTable() {
+      const entry = recordingManager.getActive();
+      const name = entry?.filename || fileLabel.textContent || 'labels';
+      const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName });
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = ravenTablePath(name.split('/').pop());
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    /** Folder project: write <audio>.Table.1.selections.txt next to every labeled recording. */
+    async function writeRavenTablesToFolder() {
+      saveCurrentAnnotationsIfNeeded();
+      let written = 0;
+      try {
+        for (const entry of recordingManager.getAll()) {
+          const labels = entryLabels(entry);
+          if (!labels.length) continue;
+          const target = entry.path ? ravenTablePath(entry.path) : `exports/raven/${ravenTablePath(entry.filename)}`;
+          await projectStore.writeText(target, buildRavenSelectionTable(labels, { sampleRate: entry.sampleRate, setName: ravenSetName }));
+          written++;
+        }
+        selectionMeta.textContent = written
+          ? `${written} Raven table${written === 1 ? '' : 's'} written to “${projectStore.label}”`
+          : 'No labels to export';
+      } catch (e) {
+        selectionMeta.textContent = `Raven export failed: ${e?.message || e}`;
+      }
     }
 
     /** Copy an XC download (from the audio cache) into the folder: xc/XC123.mp3 + .json metadata. */
@@ -3389,6 +3445,11 @@
         items: [
           { label: `Annota-JSON (XC) — own set, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
           { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
+          { label: `Raven table — this recording, ${n} labels`, action: downloadRavenTable },
+          ...(projectKind === 'folder' ? [{
+            label: `Raven tables — all recordings → folder “${projectStore.label}”`,
+            action: writeRavenTablesToFolder,
+          }] : []),
           { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
         ],
       });

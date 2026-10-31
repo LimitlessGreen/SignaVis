@@ -221,7 +221,15 @@ export class RecordingExplorer {
                 const sciName = (gen && entry.xcRecordingMeta?.sp)
                     ? `${gen} ${entry.xcRecordingMeta.sp}` : species;
                 label.textContent = xcTag + (sciName ? ' · ' + sciName : (!xcTag ? entry.filename : ''));
-                label.title = entry.filename;
+                label.title = entry.path || entry.filename;
+                // Recordings from a project folder: show their sub-folder in front of the name
+                const slash = typeof entry.path === 'string' ? entry.path.lastIndexOf('/') : -1;
+                if (slash > 0 && !xcTag) {
+                    const dir = document.createElement('span');
+                    dir.className = 'recording-explorer-dir';
+                    dir.textContent = entry.path.slice(0, slash + 1);
+                    label.prepend(dir);
+                }
 
                 // Own-set labels in this recording; recordings without XC number can't be uploaded
                 const ownSetId = this._getOwnSetId?.();

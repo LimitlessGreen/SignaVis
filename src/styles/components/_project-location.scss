@@ -28,3 +28,6 @@
     &:hover { border-color: var(--color-accent); color: var(--color-accent); }
   }
 }
+
+/* Recording explorer: sub-folder prefix of folder recordings */
+.recording-explorer-dir { color: var(--color-text-secondary); opacity: .8; }
