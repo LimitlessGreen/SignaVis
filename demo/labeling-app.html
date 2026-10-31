@@ -931,7 +931,9 @@
       // Explore ("expected species here") lives below the BirdNET run; created further down.
       onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
     });
-    sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'), onActivate: () => refreshUploadChecklist() });
+    sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'),
+      // May fire during startup (restored last tab) before `state` exists; refreshed later anyway.
+      onActivate: () => { try { refreshUploadChecklist(); } catch (e) { /* not initialised yet */ } } });
 
     // ── "?" menu: help, about and tips open in a dialog instead of sidebar tabs ──
     const aboutPanelEl = createAboutPanel();
