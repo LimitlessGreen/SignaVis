@@ -313,9 +313,8 @@ export class PropertiesPanel {
     this._recBody = document.createElement('div');
     this._recBody.className = 'props-section-body';
     this._recSection.appendChild(this._recBody);
-    this.el.appendChild(this._recSection);
 
-    // Set section (between Recording and Label)
+    // Set section (between Label and Recording)
     this._setSection = document.createElement('div');
     this._setSection.className = 'props-section props-section--set';
     this._setSection.hidden = true;
@@ -326,7 +325,6 @@ export class PropertiesPanel {
     this._setBody = document.createElement('div');
     this._setBody.className = 'props-section-body';
     this._setSection.appendChild(this._setBody);
-    this.el.appendChild(this._setSection);
 
     // Label section
     this._lblSection = document.createElement('div');
@@ -337,8 +335,9 @@ export class PropertiesPanel {
     this._lblBody = document.createElement('div');
     this._lblBody.className = 'props-section-body';
     this._lblSection.appendChild(this._lblBody);
-    this.el.appendChild(this._lblSection);
 
+    // Selected label first (what is being edited), its set, then the recording.
+    this.el.append(this._lblSection, this._setSection, this._recSection);
     this._renderRecording();
     this._renderLabel();
   }
