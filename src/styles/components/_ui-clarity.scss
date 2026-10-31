@@ -123,3 +123,31 @@ html[data-theme="light"] { @include light-tokens; }
   font-size: 10px; padding: 0 6px; border-radius: 8px;
   background: var(--input-bg-weak); color: var(--color-text-secondary);
 }
+
+/* ── Phase 3: compact Audio tab ────────────────────────────────────── */
+.audio-info { font-size: 11px; opacity: 0.6; cursor: help; text-transform: none; }
+.audio-section { gap: 8px; padding: 8px 14px 10px; }
+.audio-seg {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px; padding: 2px; border-radius: 6px;
+  background: var(--input-bg);
+}
+.audio-seg-btn {
+  align-items: center; padding: 4px 2px; border-radius: 4px;
+  .audio-seg-sub { display: none; }   // stays in the button's title
+  .audio-seg-title { font-size: 11px; }
+  &[aria-checked="true"] {
+    background: var(--color-accent); border-color: var(--color-accent);
+    .audio-seg-title { color: var(--color-on-accent); }
+  }
+}
+.audio-row { grid-template-columns: 80px 1fr; }
+.audio-row .field-select, .audio-row .input { height: 24px; }
+.audio-mode-opts .field-check { padding-left: 88px; }
+.audio-hint { padding-left: 88px !important; margin: 0 !important; color: var(--color-text-secondary); }
+.audio-section--facts .audio-facts {
+  grid-template-columns: 80px 1fr; padding: 0; border: 0; background: none; gap: 4px 8px;
+  dd { text-align: left; }
+}
+.audio-section--facts .panel-actions { padding: 0; }
+.audio-section--facts .panel-actions:has(> [hidden]:only-child) { display: none; }
