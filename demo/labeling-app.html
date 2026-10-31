@@ -635,6 +635,21 @@
     });
     xcNotFoundCloseBtn?.addEventListener('click', () => xcNotFoundManager.close());
 
+    // Audio URLs of other recordings for own references (one blob per recording).
+    const _ownRefAudio = new Map();
+    async function ownRefAudioUrl(entry) {
+      if (_ownRefAudio.has(entry.id)) return _ownRefAudio.get(entry.id);
+      let url = null;
+      if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
+        const audio = await xcPanel.fetchAudio(entry.xcId);
+        url = URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' }));
+      } else if (entry.audioUrl) {
+        url = entry.audioUrl;  // blob URLs of local files live for this session only
+      }
+      if (url) _ownRefAudio.set(entry.id, url);
+      return url;
+    }
+
     // ── Reference Calls modal (lazy init after xcPanel + taxonomy are ready) ─
     let _referenceCallsModal = null;
     function getRefCallsModal() {
@@ -653,6 +668,28 @@
             upsertLabel(patch);
             syncToPlayer();
             return state.labels.find((l) => l.id === patch.id) || null;
+          },
+          // Confirmed labels of the same species: current recording + other recordings.
+          getOwnReferences: (sci, excludeId) => {
+            if (!sci) return [];
+            const same = (l) => l && l.id !== excludeId && l.scientificName === sci && l.tags?.verified === 'yes'
+              && Number.isFinite(l.start) && Number.isFinite(l.end);
+            const active = recordingManager.getActive();
+            const refs = state.labels.filter(same).map((l) => ({
+              ...l, recordingName: active?.filename || 'This recording', soundType: l.tags?.soundType || '',
+              getAudioUrl: async () => _lastAudioUrl,
+            }));
+            for (const entry of recordingManager.getAll()) {
+              if (entry.id === recordingManager.activeId) continue;
+              for (const l of (entry.annotations || []).filter(same)) {
+                refs.push({
+                  ...l, recordingName: entry.filename || (entry.xcId ? `XC${entry.xcId}` : 'Recording'),
+                  soundType: l.tags?.soundType || '',
+                  getAudioUrl: () => ownRefAudioUrl(entry),
+                });
+              }
+            }
+            return refs;
           },
           // Next unconfirmed, editable label in time order (wraps around).
           getNextLabel: (currentId) => {

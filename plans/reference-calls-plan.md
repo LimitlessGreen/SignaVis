@@ -22,6 +22,6 @@ Sie werden NICHT an den Hauptplayer gekoppelt.
 4. **Entscheidung im Vergleich** ✅ (Tags: verified, referenceXc, soundType)
    - Bestätigen, Art übernehmen, Ruftyp übernehmen; XC-ID als Referenz am Label im Annota-JSON speichern
    - `N` springt zum nächsten unbestätigten Label
-5. **Integration**
+5. **Integration** ✅
    - Andockbares Seitenpanel statt Vollbild-Modal, folgt der Label-Auswahl
    - Merkliste und lokaler Cache pro Art; bestätigte Labels aus dem eigenen Korpus als Referenzen

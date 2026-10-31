@@ -23,6 +23,9 @@
  * R own recording · F reference · A play own segment then reference ·
  * V confirm · S use species · T use sound type · N next unconfirmed label.
  *
+ * Sources: Xeno-Canto search, ★ pinned XC recordings (audio kept offline in
+ * the Cache API) and own confirmed labels of the same species.
+ *
  * Docked mode (⇥ in the header): the view becomes a right-hand drawer without
  * backdrop, follows the label selection of the main app and only takes keys
  * after the user clicked into it.
@@ -158,6 +161,12 @@ function injectCss() {
 .rc-item-sono img { width: 100%; height: 100%; object-fit: cover; object-position: left center; display: block; }
 .rc-item-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--color-text-primary); }
 .rc-item-head .rc-len { margin-left: auto; font-weight: 400; color: var(--color-text-secondary); }
+.rc-pin {
+  margin-left: 4px; background: none; border: none; cursor: pointer; padding: 0 2px;
+  font-size: 14px; line-height: 1; color: var(--color-text-secondary);
+}
+.rc-pin:hover, .rc-pin.rc-on { color: #eab308; }
+.rc-item-own { height: 54px; border-radius: 4px; background: var(--color-bg-surface); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--color-text-secondary); }
 .rc-item-meta { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-pagination {
   display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -299,6 +308,38 @@ function matchTypeOpt(type: string) {
       ?? '';
 }
 
+// ─── Pinned references (per species, localStorage + Cache API audio) ──
+const PINS_KEY = 'rc-pins';
+const AUDIO_CACHE_NAME = 'rc-pinned-audio';
+const audioCacheUrl = (xcId: string) => `https://rc-cache.local/xc/${encodeURIComponent(xcId)}`;
+
+function readPins(): Record<string, any[]> {
+  try { return JSON.parse(localStorage.getItem(PINS_KEY) || '{}') || {}; } catch { return {}; }
+}
+function writePins(pins: Record<string, any[]>) {
+  try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {}
+}
+function trimRec(r: any) {
+  return { id: r.id, type: r.type, q: r.q, len: r.len, cnt: r.cnt, rec: r.rec, lic: r.lic,
+           sono: r.sono ? { small: r.sono.small, med: r.sono.med } : undefined };
+}
+async function cacheGet(xcId: string): Promise<ArrayBuffer | null> {
+  try {
+    if (typeof caches === 'undefined') return null;
+    const res = await (await caches.open(AUDIO_CACHE_NAME)).match(audioCacheUrl(xcId));
+    return res ? await res.arrayBuffer() : null;
+  } catch { return null; }
+}
+async function cachePut(xcId: string, buf: ArrayBuffer) {
+  try {
+    if (typeof caches === 'undefined') return;
+    await (await caches.open(AUDIO_CACHE_NAME)).put(audioCacheUrl(xcId), new Response(buf.slice(0)));
+  } catch {}
+}
+async function cacheDelete(xcId: string) {
+  try { if (typeof caches !== 'undefined') await (await caches.open(AUDIO_CACHE_NAME)).delete(audioCacheUrl(xcId)); } catch {}
+}
+
 // ─── Main export ────────────────────────────────────────────────────
 
 /**
@@ -314,8 +355,10 @@ function matchTypeOpt(type: string) {
  * @param {function} [opts.onUpdateLabel] (patch with id) → updated label, or null if not editable
  * @param {function} [opts.isLabelLocked] (id) → true when the label may not be edited
  * @param {function} [opts.getNextLabel]  (currentId) → next unconfirmed label or null
+ * @param {function} [opts.getOwnReferences] (sciName, excludeId) → own confirmed labels:
+ *        [{ id, start, end, freqMin?, freqMax?, recordingName, soundType?, getAudioUrl() }]
  */
-export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer, getCoords, onUpdateLabel, isLabelLocked, getNextLabel }: any) {
+export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer, getCoords, onUpdateLabel, isLabelLocked, getNextLabel, getOwnReferences }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -427,6 +470,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _loadToken = 0;          // invalidates stale page loads
   let _activeTier = 0;         // index into QUALITY_TIERS ('auto' quality)
   const _filters = { type: '', quality: 'auto', len: '2-7', region: 'any' };
+  let _source: 'xc' | 'pinned' | 'own' = 'xc';
   let _audioUrl: string | null = null;
 
   let _ownPlayer: any = null;
@@ -573,7 +617,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     speciesBtn.disabled = !canEdit;
     speciesBtn.innerHTML = `Use ${esc(speciesName(_sciName))}<kbd>S</kbd>`;
 
-    const recType = String(rec?.type || '').split(',')[0].trim().toLowerCase();
+    const recType = String((rec?.kind === 'own' ? rec.soundType : rec?.type) || '').split(',')[0].trim().toLowerCase();
     typeBtn.hidden = !recType || recType === labelType().toLowerCase();
     typeBtn.disabled = !canEdit;
     typeBtn.innerHTML = `Type “${esc(recType)}”<kbd>T</kbd>`;
@@ -598,7 +642,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     } else {
       tags.verified = 'yes';
       const rec = selectedRec();
-      if (rec?.id) tags.referenceXc = `XC${rec.id}`; else delete tags.referenceXc;
+      if (rec?.id && rec.kind !== 'own') tags.referenceXc = `XC${rec.id}`; else delete tags.referenceXc;
     }
     patchLabel({ tags });
   });
@@ -720,6 +764,11 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   function renderRefTitle(rec: any) {
     if (!rec) { refTitle.innerHTML = '<span>Reference</span>'; return; }
+    if (rec.kind === 'own') {
+      const meta = [rec.recordingName, `${Number(rec.start).toFixed(2)}–${Number(rec.end).toFixed(2)} s`, rec.soundType].filter(Boolean).map(esc).join(' · ');
+      refTitle.innerHTML = `<span>Own reference</span><span class="rc-side-meta">${meta}</span>`;
+      return;
+    }
     const lic = formatLicense(rec.lic);
     const meta = [rec.type, rec.q && `Q ${rec.q}`, fmtLen(rec.len), rec.cnt, rec.rec, lic].filter(Boolean).map(esc).join(' · ');
     refTitle.innerHTML = `<span>Reference — XC${esc(rec.id)}</span><span class="rc-side-meta">${meta}</span>`
@@ -729,8 +778,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   async function getAudio(xcId: string): Promise<ArrayBuffer> {
     const hit = _audioCache.get(xcId);
     if (hit) return hit;
-    const data = await xcPanel.fetchAudio(xcId);
-    const buf: ArrayBuffer = data.buffer;
+    const buf: ArrayBuffer = (await cacheGet(xcId)) ?? (await xcPanel.fetchAudio(xcId)).buffer;
     _audioCache.set(xcId, buf);
     while (_audioCache.size > AUDIO_CACHE_MAX) _audioCache.delete(_audioCache.keys().next().value!);
     return buf;
@@ -745,9 +793,17 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     refPlayerWrap.innerHTML = rec ? '<div class="rc-status">Loading…</div>' : '<div class="rc-status">Select a candidate on the right.</div>';
     if (!rec || !BirdNETPlayer) return;
     try {
-      const buf = await getAudio(String(rec.id));
-      if (token !== _refToken) return;
-      const blobUrl = URL.createObjectURL(new Blob([buf.slice(0)], { type: 'audio/mpeg' }));
+      const own = rec.kind === 'own';
+      let blobUrl: string;
+      if (own) {
+        blobUrl = await rec.getAudioUrl();
+        if (!blobUrl) throw new Error('Audio of this recording is not available');
+      } else {
+        const buf = await getAudio(String(rec.id));
+        if (token !== _refToken) return;
+        blobUrl = URL.createObjectURL(new Blob([buf.slice(0)], { type: 'audio/mpeg' }));
+      }
+      if (token !== _refToken) { if (!own) URL.revokeObjectURL(blobUrl); return; }
       refPlayerWrap.innerHTML = '';
       const inner = el('div');
       inner.style.height = '100%';
@@ -755,9 +811,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, height: PLAYER_HEIGHT });
       await p.ready;
       await p.loadUrl(blobUrl);
-      if (token !== _refToken) { try { p.destroy?.(); } catch {} URL.revokeObjectURL(blobUrl); return; }
+      if (token !== _refToken) { try { p.destroy?.(); } catch {} if (!own) URL.revokeObjectURL(blobUrl); return; }
       _refPlayer = p;
-      _refBlobUrl = blobUrl;
+      _refBlobUrl = own ? null : blobUrl;   // own URLs belong to the app
       watchPlayer(p);
       disableLabeling(p);
       p.on('play', () => {
@@ -768,8 +824,18 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         if (!_refClip || !_refCall || !p.isPlaying) return;
         if ((e.detail?.currentTime ?? p.currentTime) >= _refCall.end) { p.pause(); seek(p, _refCall.start); }
       });
-      prefetchNext();
-      locateCall(p, token);
+      if (own) {
+        // Own labels already know where the call is.
+        _refCall = { start: Number(rec.start), end: Number(rec.end) };
+        p.setSpectrogramLabels([{
+          start: _refCall.start, end: _refCall.end, freqMin: rec.freqMin, freqMax: rec.freqMax,
+          label: rec.label || 'reference', color: 'rgba(34,197,94,0.22)', readonly: true,
+        }]);
+        seek(p, _refCall.start);
+      } else {
+        prefetchNext();
+        locateCall(p, token);
+      }
     } catch (err) {
       if (token === _refToken) {
         refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || 'Load failed')}</div>`;
@@ -799,7 +865,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   /** Warm the cache for the next candidate so ↓ feels instant. */
   function prefetchNext() {
     const next = _items[_selected + 1]?.rec;
-    if (next && !_audioCache.has(String(next.id))) getAudio(String(next.id)).catch(() => {});
+    if (next && next.kind !== 'own' && !_audioCache.has(String(next.id))) getAudio(String(next.id)).catch(() => {});
   }
 
   function selectItem(idx: number) {
@@ -812,6 +878,27 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     setFocus('ref');
     renderDecision();
     showReference(_items[i].rec);
+  }
+
+  // ── Pins ──────────────────────────────────────────────────────────
+  const pinsFor = (sci: string) => readPins()[sci] || [];
+  const isPinned = (id: any) => pinsFor(_sciName).some(r => String(r.id) === String(id));
+
+  async function togglePin(rec: any) {
+    const pins = readPins();
+    const list = pins[_sciName] || [];
+    const id = String(rec.id);
+    if (list.some(r => String(r.id) === id)) {
+      pins[_sciName] = list.filter(r => String(r.id) !== id);
+      if (!pins[_sciName].length) delete pins[_sciName];
+      writePins(pins);
+      cacheDelete(id);
+    } else {
+      pins[_sciName] = [...list, trimRec(rec)];
+      writePins(pins);
+      getAudio(id).then(buf => cachePut(id, buf)).catch(() => {});
+    }
+    renderFilters();
   }
 
   // ── XC API search ────────────────────────────────────────────────
@@ -884,6 +971,11 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     } catch { return null; }
   }
 
+  function ownRefs(): any[] {
+    try { return (getOwnReferences?.(_sciName, _label?.id) || []).map((r: any) => ({ ...r, kind: 'own' })); }
+    catch { return []; }
+  }
+
   // ── Filter chips ──────────────────────────────────────────────────
   function renderFilters() {
     filtersEl.innerHTML = '';
@@ -905,6 +997,29 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       }
       filtersEl.appendChild(r);
     };
+    // Source row
+    const src = el('div', 'rc-filter-row');
+    src.appendChild(el('span', 'rc-filter-name', 'Source'));
+    const ownCount = _sciName ? (ownRefs().length) : 0;
+    for (const o of [
+      { v: 'xc', t: 'Xeno-Canto' },
+      { v: 'pinned', t: `★ Pinned (${_sciName ? pinsFor(_sciName).length : 0})` },
+      { v: 'own', t: `Own (${ownCount})` },
+    ] as const) {
+      const b = el('button', 'rc-chip', o.t) as HTMLButtonElement;
+      b.type = 'button';
+      b.classList.toggle('rc-on', _source === o.v);
+      if (o.v === 'own' && !getOwnReferences) b.disabled = true;
+      b.addEventListener('click', () => {
+        if (_source === o.v) return;
+        _source = o.v;
+        renderFilters();
+        if (_sciName) loadPage(1);
+      });
+      src.appendChild(b);
+    }
+    filtersEl.appendChild(src);
+    if (_source !== 'xc') return;
     row('Type', 'type', TYPE_OPTS);
     row('Quality', 'quality', QUALITY_OPTS);
     row('Length', 'len', LEN_OPTS);
@@ -913,6 +1028,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   // ── Candidate list ────────────────────────────────────────────────
   function renderItem(rec: any) {
+    if (rec.kind === 'own') return renderOwnItem(rec);
     const item = el('div', 'rc-item');
     const sono = absUrl(rec.sono?.med || rec.sono?.small);
     const meta = [rec.type, rec.cnt, rec.rec].filter(Boolean).map(esc).join(' · ');
@@ -922,11 +1038,48 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         <span>XC${esc(rec.id)}</span>
         ${rec.q ? `<span class="rc-badge">${esc(rec.q)}</span>` : ''}
         <span class="rc-len">${esc(fmtLen(rec.len))}</span>
+        <button class="rc-pin" type="button"></button>
       </div>
+      <div class="rc-item-meta" title="${meta}">${meta}</div>`;
+    const pin = item.querySelector('.rc-pin') as HTMLButtonElement;
+    const paintPin = () => {
+      const on = isPinned(rec.id);
+      pin.textContent = on ? '★' : '☆';
+      pin.classList.toggle('rc-on', on);
+      pin.title = on ? 'Unpin' : 'Pin as reference for this species (kept offline)';
+    };
+    paintPin();
+    pin.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await togglePin(rec);
+      paintPin();
+      if (_source === 'pinned' && !isPinned(rec.id)) loadPage(1);
+    });
+    const idx = _items.push({ el: item, rec }) - 1;
+    item.addEventListener('click', () => selectItem(idx));
+    return item;
+  }
+
+  function renderOwnItem(rec: any) {
+    const item = el('div', 'rc-item');
+    const meta = [rec.recordingName, rec.soundType].filter(Boolean).map(esc).join(' · ');
+    item.innerHTML = `
+      <div class="rc-item-own">${esc(rec.label || '')} · ${Number(rec.start).toFixed(2)}–${Number(rec.end).toFixed(2)} s</div>
+      <div class="rc-item-head"><span>Own label</span><span class="rc-badge">✓</span>
+        <span class="rc-len">${(Number(rec.end) - Number(rec.start)).toFixed(1)} s</span></div>
       <div class="rc-item-meta" title="${meta}">${meta}</div>`;
     const idx = _items.push({ el: item, rec }) - 1;
     item.addEventListener('click', () => selectItem(idx));
     return item;
+  }
+
+  function renderLocalList(recs: any[], emptyText: string) {
+    listBody.innerHTML = '';
+    pagination.hidden = true;
+    if (!recs.length) { listBody.innerHTML = `<div class="rc-status">${emptyText}</div>`; return; }
+    for (const rec of recs) listBody.appendChild(renderItem(rec));
+    selectItem(0);
+    setFocus('own');
   }
 
   async function loadPage(page: number) {
@@ -935,6 +1088,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     _items = [];
     _selected = -1;
     showReference(null);
+    if (_source === 'pinned') {
+      renderLocalList(pinsFor(_sciName), 'No pinned references for this species yet — pin XC recordings with ☆.');
+      return;
+    }
+    if (_source === 'own') {
+      renderLocalList(ownRefs(), 'No other confirmed labels of this species yet.');
+      return;
+    }
+    pagination.hidden = false;
     listBody.innerHTML = '<div class="rc-status">Loading XC recordings…</div>';
     prevBtn.disabled = nextBtn.disabled = true;
     pageInfo.textContent = '';
