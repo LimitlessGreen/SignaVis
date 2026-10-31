@@ -17,6 +17,7 @@ import { TAG_PRESETS } from './label-table.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { formatCoords } from '../../app/recording-context.ts';
+import { buildMiniMap } from './recording-context-block.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -358,6 +359,11 @@ export class PropertiesPanel {
     this._recBody.appendChild(
       this._buildReadonlyGrid(RECORDING_FIELDS, merged, (hasCoords ? { lat, lon } : null) as any)
     );
+    if (hasCoords) {
+      const map = buildMiniMap({ lat, lon }, () => openMapModal({ lat, lon, zoom: 10, readOnly: true }));
+      map.classList.add('props-minimap');
+      this._recBody.appendChild(map);
+    }
   }
 
   _renderSet() {
