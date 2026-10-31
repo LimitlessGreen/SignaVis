@@ -85,7 +85,7 @@ export const RECORDING_EDIT_FIELDS = [
   { key: 'lat',          label: 'Latitude',          type: 'text', placeholder: 'e.g. 51.5074' },
   { key: 'lng',          label: 'Longitude',         type: 'text', placeholder: 'e.g. -0.1278' },
   { key: 'dateTime',     label: 'Date & Time',       type: 'datetime-local' },
-  { key: 'rating',       label: 'Rating',            type: 'select', options: ['', 'A', 'B', 'C', 'D', 'E'] },
+  { key: 'rating',       label: 'Rating',            type: 'rating' },
   { key: 'type',         label: 'Type of recording', type: 'text', placeholder: 'e.g. song, call, alarm call' },
   { key: 'targetSpecies',label: 'Target species',    type: 'text', placeholder: 'Common name' },
   { key: 'recorder',     label: 'Recorder',          type: 'text', placeholder: 'Make / model / Smartphone' },
@@ -211,7 +211,44 @@ function buildField(f: any, value: any, onChange: any) {
   dd.classList.add('props-editable');
 
   let input;
-  if (f.type === 'select') {
+  if (f.type === 'rating') {
+    // Xeno-canto-style quality traffic light: A (best, green) … E (worst, red); click again to clear
+    const colors: Record<string, string> = { A: '#1e8e3e', B: '#7cb342', C: '#f9a825', D: '#ef6c00', E: '#d32f2f' };
+    const titles: Record<string, string> = { A: 'A – sehr gut', B: 'B – gut', C: 'C – mittel', D: 'D – schwach', E: 'E – schlecht' };
+    const wrap = document.createElement('div');
+    wrap.className = 'xc-rating';
+    wrap.style.cssText = 'display:flex;gap:4px';
+    let current = String(value ?? '');
+    const btns: HTMLButtonElement[] = [];
+    const paint = () => {
+      for (const b of btns) {
+        const on = b.dataset.v === current;
+        const c = colors[b.dataset.v!];
+        b.style.background = on ? c : 'transparent';
+        b.style.color = on ? '#fff' : c;
+        b.style.opacity = !current || on ? '1' : '0.55';
+        b.setAttribute('aria-pressed', String(on));
+      }
+    };
+    for (const opt of ['A', 'B', 'C', 'D', 'E']) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.v = opt;
+      b.textContent = opt;
+      b.title = titles[opt];
+      b.style.cssText = `width:26px;height:22px;border-radius:4px;border:2px solid ${colors[opt]};font-weight:700;font-size:12px;cursor:pointer;padding:0`;
+      b.addEventListener('click', () => {
+        current = current === opt ? '' : opt;
+        paint();
+        onChange(current);
+      });
+      btns.push(b);
+      wrap.appendChild(b);
+    }
+    paint();
+    dd.appendChild(wrap);
+    return { dt, dd, input: wrap as any as HTMLInputElement };
+  } else if (f.type === 'select') {
     input = document.createElement('select');
     input.className = 'props-select';
     for (const opt of (f.options || [])) {
