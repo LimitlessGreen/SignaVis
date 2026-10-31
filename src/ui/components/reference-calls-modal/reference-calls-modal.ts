@@ -38,6 +38,7 @@
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
 import ModalManager from '../modal/modal-manager.ts';
 import { findCall } from './find-call.ts';
+import { getXcAudioStore, xcAudioKey } from '../../../infrastructure/storage/audioBlobStore.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
 const BIRD_IMG_BASE = './data/species_images/';
@@ -343,20 +344,29 @@ function trimRec(r: any) {
   return { id: r.id, type: r.type, q: r.q, len: r.len, cnt: r.cnt, rec: r.rec, lic: r.lic,
            sono: r.sono ? { small: r.sono.small, med: r.sono.med } : undefined };
 }
+// Pinned audio lives in the shared XC audio store (pinned = never evicted).
+// Legacy entries from the old 'rc-pinned-audio' Cache API store are migrated on read.
 async function cacheGet(xcId: string): Promise<ArrayBuffer | null> {
   try {
+    const store = await getXcAudioStore();
+    const hit = await store?.get(xcAudioKey(xcId));
+    if (hit) return hit;
     if (typeof caches === 'undefined') return null;
-    const res = await (await caches.open(AUDIO_CACHE_NAME)).match(audioCacheUrl(xcId));
-    return res ? await res.arrayBuffer() : null;
+    const legacy = await caches.open(AUDIO_CACHE_NAME);
+    const res = await legacy.match(audioCacheUrl(xcId));
+    if (!res) return null;
+    const buf = await res.arrayBuffer();
+    await store?.put(xcAudioKey(xcId), buf, { pinned: true });
+    await legacy.delete(audioCacheUrl(xcId));
+    return buf;
   } catch { return null; }
 }
 async function cachePut(xcId: string, buf: ArrayBuffer) {
-  try {
-    if (typeof caches === 'undefined') return;
-    await (await caches.open(AUDIO_CACHE_NAME)).put(audioCacheUrl(xcId), new Response(buf.slice(0)));
-  } catch {}
+  try { await (await getXcAudioStore())?.put(xcAudioKey(xcId), buf, { pinned: true }); } catch {}
 }
+/** Unpin only — the audio stays in the LRU cache for the labeling view. */
 async function cacheDelete(xcId: string) {
+  try { await (await getXcAudioStore())?.setPinned(xcAudioKey(xcId), false); } catch {}
   try { if (typeof caches !== 'undefined') await (await caches.open(AUDIO_CACHE_NAME)).delete(audioCacheUrl(xcId)); } catch {}
 }
 
