@@ -43,7 +43,7 @@ with sync_playwright() as p:
         regs.first.click(); pg.wait_for_timeout(1000); openp(pg,"properties") if False else None
         pg.screenshot(path=OUT/"x4-label-props.png")
     # add demo, then N/P
-    openp(pg,"project"); pg.click("#loadSampleBtn"); pg.wait_for_timeout(6000)
+    openp(pg,"project"); pg.evaluate("document.getElementById('loadSampleBtn').click()"); pg.wait_for_timeout(6000)
     fl=lambda: pg.locator("#fileLabel").inner_text()
     print("after demo:", fl())
     pg.mouse.click(900,500); pg.keyboard.press("p"); pg.wait_for_timeout(8000); print("after P:", fl())
