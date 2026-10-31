@@ -43,7 +43,7 @@ const XC_API = 'https://xeno-canto.org/api/3/recordings';
 const BIRD_IMG_BASE = './data/species_images/';
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
-const PLAYER_HEIGHT = 230;
+const SPEC_HEIGHT = 300;     // spectrogram px; the player adds its own toolbar/axis
 const AUDIO_CACHE_MAX = 24;
 
 // Shared player options: spectrogram only, no chrome, own keyboard handling.
@@ -54,6 +54,7 @@ const PLAYER_OPTS = {
   showFFTControls: false, showDisplayGain: false, showStatusbar: false,
   transportStyle: 'hero', transportOverlay: false, viewMode: 'spectrogram',
   keyboardShortcuts: false,
+  spectrogramHeight: SPEC_HEIGHT,
 };
 
 // ─── CSS injected once ──────────────────────────────────────────────
@@ -107,9 +108,14 @@ function injectCss() {
 .rc-side-title .rc-side-meta { text-transform: none; letter-spacing: 0; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-side-title a { color: var(--color-accent); text-decoration: none; text-transform: none; }
 .rc-player {
-  height: ${PLAYER_HEIGHT}px; border-radius: 8px; overflow: hidden;
+  min-height: ${SPEC_HEIGHT}px; border-radius: 6px; overflow: hidden;
   background: var(--color-bg-surface); border: 2px solid transparent;
 }
+.rc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rc-pair > .rc-side { min-width: 0; }
+.rc-viewbar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-secondary); }
+.rc-viewbar .rc-view-info { margin-right: auto; }
+.rc-viewbar .rc-btn { padding: 2px 9px; }
 .rc-side.rc-focused .rc-player { border-color: var(--color-accent); }
 .rc-side.rc-focused .rc-side-title { color: var(--color-accent); }
 .rc-decide {
@@ -134,16 +140,18 @@ function injectCss() {
 .rc-filters { padding: 8px 10px; border-bottom: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
 .rc-filter-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .rc-filter-name { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); width: 54px; flex-shrink: 0; }
+.rc-seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden; }
 .rc-chip {
-  padding: 1px 8px; border-radius: 10px; border: 1px solid var(--color-border);
+  padding: 2px 8px; border: none; border-right: 1px solid var(--color-border); border-radius: 0;
   background: var(--color-bg-primary); color: var(--color-text-secondary); font-size: 11px; cursor: pointer;
 }
-.rc-chip:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-text-primary); }
-.rc-chip.rc-on { background: var(--color-accent-faint); border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.rc-chip:last-child { border-right: none; }
+.rc-chip:hover:not(:disabled) { color: var(--color-text-primary); background: var(--color-bg-surface); }
+.rc-chip.rc-on { background: var(--color-accent); color: #fff; font-weight: 600; }
 .rc-chip:disabled { opacity: 0.4; cursor: default; }
 .rc-list-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
 .rc-info { font-size: 11px; color: var(--color-text-secondary); margin: 2px 2px 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.rc-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-size: 10px; background: var(--color-accent-faint); color: var(--color-accent); }
+.rc-badge { display: inline-block; padding: 1px 6px; border-radius: 2px; font-weight: 600; font-size: 10px; background: var(--color-accent-faint); color: var(--color-accent); }
 .rc-badge.rc-warn { background: rgba(234,179,8,0.15); color: #b45309; }
 .rc-group-label {
   font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
@@ -194,6 +202,7 @@ function injectCss() {
 .rc-docked .rc-compare { flex: none; overflow: visible; }
 .rc-docked .rc-list { width: auto; flex: 1; min-height: 220px; border-left: none; border-top: 1px solid var(--color-border); }
 .rc-docked .rc-keys { display: none; }
+.rc-docked .rc-pair { grid-template-columns: 1fr; }
 .rc-docked .rc-dialog { overflow-y: auto; }
 .rc-docked.rc-kbd-idle .rc-header { opacity: 0.85; }
 @media (max-width: 820px) {
@@ -388,7 +397,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   const main = el('div', 'rc-main');
   dialog.appendChild(main);
 
-  // Compare column: own recording above, selected reference below
+  // Compare area: own recording and selected reference side by side, same time scale
   const compare = el('div', 'rc-compare');
   const ownSide = el('div', 'rc-side');
   const ownTitle = el('div', 'rc-side-title');
@@ -411,7 +420,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   const typeBtn    = mkBtn('Use type', 'T');
   const nextBtnL   = mkBtn('Next label →', 'N');
   decide.append(decideStatus, confirmBtn, speciesBtn, typeBtn, nextBtnL);
-  compare.append(ownSide, refSide, decide);
+  const viewbar = el('div', 'rc-viewbar');
+  const viewInfo = el('span', 'rc-view-info');
+  const zoomOutBtn = mkBtn('−', '-');
+  const zoomInBtn  = mkBtn('+', '+');
+  const fitBtn     = mkBtn('Fit', '0');
+  viewbar.append(viewInfo, zoomOutBtn, zoomInBtn, fitBtn);
+  const pair = el('div', 'rc-pair');
+  pair.append(ownSide, refSide);
+  compare.append(viewbar, pair, decide);
   main.appendChild(compare);
 
   // Candidate list
@@ -502,7 +519,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   }
 
   function seek(p: any, t: number) {
-    try { p._state?._seekToTime?.(t, true); } catch {}
+    try { p._state?._seekToTime?.(t, false); } catch {}
   }
 
   function segment() {
@@ -557,6 +574,72 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     refSide.classList.toggle('rc-focused', side === 'ref');
   }
 
+  // ── Shared view: same seconds-per-pixel and frequency band in both ──
+  let _winScale = 1;
+
+  function baseDur() {
+    const seg = segment();
+    return seg ? seg.end - seg.start : (_refCall ? _refCall.end - _refCall.start : 2);
+  }
+  /** Visible window in seconds: the call plus generous context, times zoom. */
+  function viewLen() {
+    const d = baseDur();
+    return Math.max(0.4, (d + 2 * Math.max(0.3, d * 0.6)) * _winScale);
+  }
+  function band(st: any) {
+    const max = st?.coords?.boundedMaxFreq || 0;
+    const lo0 = Number(_label?.freqMin), hi0 = Number(_label?.freqMax);
+    if (!max || !Number.isFinite(lo0) || !Number.isFinite(hi0) || hi0 <= lo0) return null;
+    const span = Math.max(1500, (hi0 - lo0) * 1.6);
+    const mid = (lo0 + hi0) / 2;
+    const lo = Math.max(0, mid - span / 2);
+    return { lo, hi: Math.min(max, lo + span) };
+  }
+  function sharedPps() {
+    const widths = players().map(p => p._state?._getViewportWidth?.() || 0).filter(w => w > 0);
+    return widths.length ? Math.min(...widths) / viewLen() : 0;
+  }
+  function applyView(p: any, anchor: number, dur: number, pps: number) {
+    const st = p?._state;
+    if (!st?.audioBuffer || !pps) return;
+    const total = st.audioBuffer.duration;
+    const W = viewLen();
+    // Centre the call; the onset sits at the same x in both players.
+    const start = Math.max(0, Math.min(anchor - (W - dur) / 2, Math.max(0, total - W)));
+    const b = band(st);
+    try {
+      if (b) st._freqZoom.set(b.lo, b.hi); else st._freqZoom.reset();
+      st._setPixelsPerSecond(pps, true, start, 0);
+    } catch {}
+  }
+  function syncView() {
+    const pps = sharedPps();
+    const seg = segment();
+    if (_ownPlayer && seg) applyView(_ownPlayer, seg.start, seg.end - seg.start, pps);
+    if (_refPlayer && _refCall) applyView(_refPlayer, _refCall.start, _refCall.end - _refCall.start, pps);
+    const b = band(_ownPlayer?._state || _refPlayer?._state);
+    viewInfo.textContent = `Window ${viewLen().toFixed(1)} s`
+      + (b ? ` · ${(b.lo / 1000).toFixed(1)}–${(b.hi / 1000).toFixed(1)} kHz` : '')
+      + ' · same scale in both views';
+  }
+  // Players finish their own initial layout asynchronously; apply again shortly after.
+  let _viewTimer = 0;
+  function scheduleView() {
+    syncView();
+    clearTimeout(_viewTimer);
+    _viewTimer = window.setTimeout(syncView, 250);
+  }
+  const zoom = (f: number) => { _winScale = Math.max(0.15, Math.min(8, _winScale * f)); syncView(); };
+  zoomOutBtn.addEventListener('click', () => zoom(1.5));
+  zoomInBtn.addEventListener('click', () => zoom(1 / 1.5));
+  fitBtn.addEventListener('click', () => { _winScale = 1; syncView(); });
+  let _resizeRaf = 0;
+  new ResizeObserver(() => {
+    if (backdrop.hidden) return;
+    cancelAnimationFrame(_resizeRaf);
+    _resizeRaf = requestAnimationFrame(() => scheduleView());
+  }).observe(pair);
+
   // ── Keyboard (window capture: runs before every document listener) ─
   function onKeyDown(e: KeyboardEvent) {
     if (backdrop.hidden || e.key === 'Tab') return;
@@ -575,6 +658,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       case 'KeyS': if (!speciesBtn.disabled) speciesBtn.click(); break;
       case 'KeyT': if (!typeBtn.disabled) typeBtn.click(); break;
       case 'KeyN': if (!nextBtnL.disabled) nextBtnL.click(); break;
+      case 'Minus': case 'NumpadSubtract': zoom(1.5); break;
+      case 'Equal': case 'NumpadAdd': zoom(1 / 1.5); break;
+      case 'Digit0': case 'Numpad0': _winScale = 1; syncView(); break;
       default: handled = false;
     }
     if (handled) e.preventDefault();
@@ -720,7 +806,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     inner.style.height = '100%';
     ownPlayerWrap.appendChild(inner);
     try {
-      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, height: PLAYER_HEIGHT });
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS });
       await p.ready;
       await p.loadUrl(audioUrl);
       if (!inner.isConnected) { p.destroy?.(); return; }
@@ -750,6 +836,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         }]);
         seek(p, seg.start);
       }
+      scheduleView();
     } catch (err) {
       ownPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">Could not load recording: ${esc((err as any)?.message || String(err))}</div>`;
     }
@@ -808,7 +895,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       const inner = el('div');
       inner.style.height = '100%';
       refPlayerWrap.appendChild(inner);
-      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, height: PLAYER_HEIGHT });
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS });
       await p.ready;
       await p.loadUrl(blobUrl);
       if (token !== _refToken) { try { p.destroy?.(); } catch {} if (!own) URL.revokeObjectURL(blobUrl); return; }
@@ -832,6 +919,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
           label: rec.label || 'reference', color: 'rgba(34,197,94,0.22)', readonly: true,
         }]);
         seek(p, _refCall.start);
+        scheduleView();
       } else {
         prefetchNext();
         locateCall(p, token);
@@ -859,6 +947,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         label: 'call', color: 'rgba(234,179,8,0.22)', readonly: true,
       }]);
       if (!p.isPlaying) seek(p, call.start);
+      scheduleView();
     } catch { /* keep the reference usable without a marked call */ }
   }
 
@@ -982,6 +1071,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const row = (name: string, key: keyof typeof _filters, opts: { v: string, t: string }[], disabled?: (v: string) => boolean) => {
       const r = el('div', 'rc-filter-row');
       r.appendChild(el('span', 'rc-filter-name', name));
+      const seg = el('div', 'rc-seg');
+      r.appendChild(seg);
       for (const o of opts) {
         const b = el('button', 'rc-chip', o.t) as HTMLButtonElement;
         b.type = 'button';
@@ -993,13 +1084,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
           renderFilters();
           if (_sciName) loadPage(1);
         });
-        r.appendChild(b);
+        seg.appendChild(b);
       }
       filtersEl.appendChild(r);
     };
     // Source row
     const src = el('div', 'rc-filter-row');
     src.appendChild(el('span', 'rc-filter-name', 'Source'));
+    const srcSeg = el('div', 'rc-seg');
+    src.appendChild(srcSeg);
     const ownCount = _sciName ? (ownRefs().length) : 0;
     for (const o of [
       { v: 'xc', t: 'Xeno-Canto' },
@@ -1016,7 +1109,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         renderFilters();
         if (_sciName) loadPage(1);
       });
-      src.appendChild(b);
+      srcSeg.appendChild(b);
     }
     filtersEl.appendChild(src);
     if (_source !== 'xc') return;
@@ -1140,6 +1233,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   function open(label: any, audioUrl: any) {
     _label = label;
     _audioUrl = audioUrl;
+    _winScale = 1;
     _preferredType = labelType();
     const sci = label?.scientificName || '';
     const displayName = label?.label || label?.commonName || sci;

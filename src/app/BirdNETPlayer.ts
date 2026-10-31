@@ -141,6 +141,7 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.showOverview]    - show overview navigator (default: true)
      * @param {'both'|'waveform'|'spectrogram'} [options.viewMode] - visible analysis view(s) (default: both)
      * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
+     * @param {number}      [options.spectrogramHeight] - initial spectrogram height in px (default: 2× waveform height)
      * @param {boolean}     [options.keyboardShortcuts] - react to document-level keyboard shortcuts (default: true)
      * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
      * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)

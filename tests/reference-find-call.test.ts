@@ -19,8 +19,8 @@ test('findCall locates the loudest window', async () => {
   for (let i = 0; i < x.length; i++) x[i] = 0.01 * Math.sin(i);           // quiet floor
   for (let i = sr * 3; i < sr * 4; i++) x[i] = 0.8 * Math.sin(i * 0.7);   // burst 3–4 s
   const call = await findCall(fakeBuffer(x, sr), NaN, NaN, 1);
-  assert.ok(Math.abs(call.start - 2.9) < 0.05, `start ${call.start}`);
-  assert.ok(call.end > 3.9 && call.end <= 4.25, `end ${call.end}`);
+  assert.ok(Math.abs(call.start - 3) < 0.03, `start ${call.start}`);
+  assert.ok(Math.abs(call.end - 4) < 0.03, `end ${call.end}`);
 });
 
 test('findCall clamps window to short recordings', async () => {

@@ -311,7 +311,8 @@ export class PlayerState {
             showSpectrogram: this._showSpectrogram,
             showWaveform:    this._showWaveform,
             showOverview:    this._showOverview,
-            spectrogramHeight: DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
+            spectrogramHeight: Number(this.options.spectrogramHeight) > 0
+                ? Number(this.options.spectrogramHeight) : DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
             waveformHeight: DEFAULT_WAVEFORM_HEIGHT,
         };
         this._viewport = new ViewportManager({
@@ -350,7 +351,8 @@ export class PlayerState {
             d: this.d,
             interaction: this.interaction,
             initialWaveformHeight:    DEFAULT_WAVEFORM_HEIGHT,
-            initialSpectrogramHeight: DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
+            initialSpectrogramHeight: Number(this.options.spectrogramHeight) > 0
+                ? Number(this.options.spectrogramHeight) : DEFAULT_SPECTROGRAM_DISPLAY_HEIGHT,
             getShowWaveform:     () => this._showWaveform,
             getShowSpectrogram:  () => this._showSpectrogram,
             getTransportOverlay: () => this._transportOverlay,
