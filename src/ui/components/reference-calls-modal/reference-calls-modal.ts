@@ -584,13 +584,14 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   /** Visible window in seconds: the call plus generous context, times zoom. */
   function viewLen() {
     const d = baseDur();
-    return Math.max(0.4, (d + 2 * Math.max(0.3, d * 0.6)) * _winScale);
+    // At least ~1.5 s context on each side and never under 3 s at Fit.
+    return Math.max(0.4, Math.max(3, d + 2 * Math.max(1.5, d)) * _winScale);
   }
   function band(st: any) {
     const max = st?.coords?.boundedMaxFreq || 0;
     const lo0 = Number(_label?.freqMin), hi0 = Number(_label?.freqMax);
     if (!max || !Number.isFinite(lo0) || !Number.isFinite(hi0) || hi0 <= lo0) return null;
-    const span = Math.max(1500, (hi0 - lo0) * 1.6);
+    const span = Math.max(4000, (hi0 - lo0) * 2.5);
     const mid = (lo0 + hi0) / 2;
     const lo = Math.max(0, mid - span / 2);
     return { lo, hi: Math.min(max, lo + span) };
