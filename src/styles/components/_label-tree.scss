@@ -1,0 +1,171 @@
+/* ── Labels tab: source → species → label tree (plans/labels-tab-plan.md) ── */
+// Classes are prefixed lt- so the old label-list rules do not apply.
+
+.lt-src { border-top: 1px solid var(--color-border); }
+.lt-src:first-child { border-top: 0; }
+
+/* Level 1: source header (sticky) */
+.lt-src-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 4px 8px 4px 6px;
+  background: var(--color-bg-tertiary);
+  cursor: pointer; user-select: none;
+  &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+  &.drag-over { box-shadow: inset 0 0 0 1px var(--color-accent); }
+}
+.lt-badge {
+  flex-shrink: 0;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 4px; border-radius: 3px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+.lt-src-name {
+  flex: 1; min-width: 0;
+  font-weight: 600; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .inline-name-input { width: 100%; font-size: 11px; }
+}
+.lt-src-meta { flex-shrink: 0; font-size: 10px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.lt-src-info {
+  padding: 0 10px 5px 28px;
+  font-size: 10px; color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lt-src-link { color: var(--color-accent); text-decoration: none; &:hover { text-decoration: underline; } }
+.lt-src-body { display: none; }
+.lt-src.lt-open > .lt-src-body { display: block; }
+.lt-src:not(.lt-open) > .lt-src-info { display: none; }
+.lt-src--hidden > .lt-src-head .lt-src-name { font-style: italic; opacity: 0.55; }
+.lt-src--hidden > .lt-src-body { opacity: 0.45; }
+
+.lt-empty { padding: 8px 10px 10px 28px; font-size: 11px; color: var(--color-text-secondary); }
+
+/* Chevrons */
+.lt-chev {
+  flex-shrink: 0; width: 12px; height: 12px; color: var(--color-text-secondary);
+  transition: transform 0.15s;
+  svg { width: 12px; height: 12px; display: block; }
+}
+.lt-src.lt-open > .lt-src-head > .lt-chev,
+.lt-grp.lt-open > .lt-sp > .lt-chev { transform: rotate(90deg); }
+
+/* Small icon buttons */
+.lt-icon-btn {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; padding: 0;
+  background: none; border: 0; border-radius: 3px;
+  color: var(--color-text-secondary); cursor: pointer;
+  svg { width: 12px; height: 12px; }
+  &:hover { color: var(--color-text-primary); background: var(--color-accent-faint); }
+  &:focus-visible { outline: 1px solid var(--color-accent); }
+  &.danger:hover { color: var(--color-danger); }
+}
+.lt-eye--off { color: var(--color-accent); }
+.lt-hover-acts { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0; opacity: 0; transition: opacity 0.12s; }
+.lt-src-head:hover .lt-hover-acts,
+.lt-src-head:focus-within .lt-hover-acts,
+.lt-sp:hover .lt-hover-acts,
+.lt-row:hover .lt-hover-acts,
+.lt-row.selected .lt-hover-acts,
+.lt-hover-acts:focus-within { opacity: 1; }
+// A hidden species keeps its eye visible so the state is obvious
+.lt-grp--hidden > .lt-sp .lt-hover-acts { opacity: 1; }
+
+/* Level 2: species */
+.lt-sp {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-top: 1px solid var(--color-border);
+  cursor: pointer;
+  &:hover { background: var(--color-accent-faint); }
+  &.drag-over { box-shadow: inset 0 0 0 1px var(--color-accent); }
+}
+.lt-thumb { width: 32px; height: 32px; }
+.lt-names { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.lt-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-sci { font-style: italic; font-size: 10px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-count { flex-shrink: 0; min-width: 16px; text-align: right; font-size: 11px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.lt-grp--hidden > .lt-sp .lt-names, .lt-grp--hidden > .lt-sp .lt-thumb { opacity: 0.45; }
+.lt-rows { display: none; padding-bottom: 2px; }
+.lt-grp.lt-open > .lt-rows { display: block; }
+
+/* Level 3: label row */
+.lt-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 46px 30px minmax(0, 1fr) auto;
+  align-items: center; gap: 6px;
+  height: 24px; padding: 0 8px 0 52px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  &:hover, &.highlighted { background: var(--color-accent-faint); }
+  &.selected { background: rgba(56, 189, 248, 0.15); box-shadow: inset 2px 0 0 var(--color-accent); }
+  &.multi-selected { background: rgba(56, 189, 248, 0.22); box-shadow: inset 2px 0 0 var(--color-accent); }
+  &.dragging { opacity: 0.35; }
+  &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+}
+.lt-view-time .lt-row { grid-template-columns: 18px 22px 46px minmax(0, 1fr) auto; padding-left: 8px; }
+.lt-view-time .lt-row--hidden { opacity: 0.4; }
+.lt-dur { color: var(--color-text-secondary); }
+.lt-tags {
+  font-family: inherit; font-family: system-ui, sans-serif;
+  color: var(--color-text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.lt-tags-name { font-weight: 500; color: var(--color-text-primary); }
+.lt-right { display: inline-flex; align-items: center; gap: 4px; }
+.lt-conf { color: var(--color-text-secondary); }
+.lt-conf--hi { color: var(--color-success, #22c55e); }
+.lt-mini {
+  font-family: system-ui, sans-serif; font-size: 8px; font-weight: 700; text-align: center;
+  border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text-secondary);
+}
+.lt-play {
+  display: grid; place-items: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 1px solid var(--color-border); border-radius: 50%;
+  background: none; color: var(--color-text-primary); cursor: pointer;
+  svg { width: 9px; height: 9px; }
+  &:hover, &:focus-visible { border-color: var(--color-accent); color: var(--color-accent); outline: none; }
+}
+.lt-row--playing .lt-play { border-color: var(--color-accent); color: var(--color-accent); }
+.lt-prog { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--color-accent); pointer-events: none; }
+
+/* Imported sources are drawn dimmed; full strength on hover, selection or when a species is open */
+.lt-src--ext {
+  > .lt-src-head .lt-src-name { font-weight: 500; color: var(--color-text-secondary); }
+  .lt-sp, .lt-row { opacity: 0.6; transition: opacity 0.12s; }
+  .lt-thumb img { filter: saturate(0.45); }
+  .lt-sp:hover, .lt-grp.lt-open > .lt-sp, .lt-row:hover, .lt-row.selected,
+  .lt-row.highlighted, .lt-row--playing, .lt-row.multi-selected { opacity: 1; }
+  .lt-sp:hover .lt-thumb img, .lt-grp.lt-open > .lt-sp .lt-thumb img { filter: none; }
+}
+.lt-view-time .lt-row--ext { opacity: 0.6; &:hover, &.selected, &.highlighted, &.lt-row--playing { opacity: 1; } }
+
+/* Labels tab toolbar: filter + view switch */
+.lt-filter {
+  flex: 1; min-width: 0;
+  padding: 3px 6px; font-size: 11px;
+  background: var(--color-bg-secondary); color: var(--color-text-primary);
+  border: 1px solid var(--color-border); border-radius: 4px;
+  &:focus { outline: none; border-color: var(--color-accent); }
+}
+.lt-viewseg {
+  display: inline-flex; flex-shrink: 0;
+  border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden;
+  button {
+    background: none; border: 0; padding: 2px 7px;
+    font-size: 10px; color: var(--color-text-secondary); cursor: pointer;
+    &[aria-pressed="true"] { background: var(--color-accent-faint); color: var(--color-text-primary); }
+    &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-chev, .lt-hover-acts, .lt-src--ext .lt-sp, .lt-src--ext .lt-row { transition: none; }
+}

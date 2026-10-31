@@ -131,7 +131,14 @@
       <button class="tb-btn" id="exportMenuBtn" type="button" aria-haspopup="menu" title="Export labels">Export ▾</button>
     </div>
     <div class="label-list-scroll">
-      <div class="lbl-section-header">Labels<span class="lbl-section-count" id="labelListCount">0</span></div>
+      <div class="panel-toolbar lt-toolbar">
+        <input class="lt-filter" id="labelFilterInput" type="search" placeholder="Filter: species, tag…" aria-label="Filter labels" autocomplete="off" />
+        <div class="lt-viewseg" role="group" aria-label="Label list view">
+          <button type="button" id="labelViewSourceBtn" aria-pressed="true" title="Group by source and species">Sources</button>
+          <button type="button" id="labelViewTimeBtn" aria-pressed="false" title="All labels by start time">Time</button>
+        </div>
+        <span class="lbl-section-count" id="labelListCount" title="Labels in this recording">0</span>
+      </div>
       <div class="label-list" id="labelList"></div>
       <div class="labels-empty" id="labelsEmpty">
         No labels — <kbd>Shift</kbd>+<kbd>Drag</kbd> on the spectrogram to create one.<br>
@@ -1809,6 +1816,19 @@
     }
 
     /** Copy all labels of an imported (locked) set into the own set. */
+    /** Copy a single imported label into the own set (✓ in the label list). */
+    function adoptOneLabel(labelId) {
+      const lbl = state.labels.find((l) => l.id === labelId);
+      if (!lbl || !state.ownSetId || lbl.setId === state.ownSetId) return;
+      const copies = adoptLabels([lbl], state.ownSetId);
+      if (!copies.length) return;
+      state.labels.push(...copies);
+      touchOwnSet(state.ownSetId);
+      syncToPlayer();
+      saveCurrentAnnotationsIfNeeded();
+      selectionMeta.textContent = `Copied 1 label into "${state.labelSets.get(state.ownSetId)?.name || 'my set'}"`;
+    }
+
     function adoptSetLabels(setId) {
       if (!state.ownSetId || setId === state.ownSetId) return;
       saveCurrentAnnotationsIfNeeded();
@@ -2411,6 +2431,8 @@
       },
       // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
       onAdoptSet: (setId) => adoptSetLabels(setId),
+      onAdoptLabel: (labelId) => adoptOneLabel(labelId),
+      onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
       onOpenRefCalls: (lbl) => openRefCalls(lbl),
       onToggleLockSet: (setId, lock) => {
         const s = state.labelSets.get(setId);
@@ -2433,6 +2455,52 @@
         syncToPlayer();
       },
     });
+    // ── Label list: play one segment (▶ in a row), filter, view switch ──
+    let _segPlay = null;   // { id, start, end, raf, t0, lastT, lastMove }
+    function stopSegmentTracking() {
+      if (_segPlay?.raf) cancelAnimationFrame(_segPlay.raf);
+      _segPlay = null;
+      labelList.setPlaying(null);
+    }
+    function toggleSegmentPlay(lbl) {
+      if (_segPlay?.id === lbl.id) { player.pause(); player.stop?.(); stopSegmentTracking(); return; }
+      stopSegmentTracking();
+      selectLabel(lbl.id, {});
+      labelList.highlightRow(lbl.id);
+      player.playSegment(lbl.start, lbl.end, { labelId: lbl.id });
+      const now = performance.now();
+      _segPlay = { id: lbl.id, start: lbl.start, end: lbl.end, raf: 0, t0: now, lastT: NaN, lastMove: now };
+      labelList.setPlaying(lbl.id);
+      const tick = () => {
+        if (!_segPlay || _segPlay.id !== lbl.id) return;
+        const t = Number(player.currentTime) || 0;
+        const ts = performance.now();
+        if (t !== _segPlay.lastT) { _segPlay.lastT = t; _segPlay.lastMove = ts; }
+        const span = Math.max(0.01, _segPlay.end - _segPlay.start);
+        labelList.setPlayProgress((t - _segPlay.start) / span);
+        const ended = t >= _segPlay.end - 0.02 || t < _segPlay.start - 0.05;
+        const stalled = ts - _segPlay.t0 > 600 && ts - _segPlay.lastMove > 500;
+        if (ended || stalled) { stopSegmentTracking(); return; }
+        _segPlay.raf = requestAnimationFrame(tick);
+      };
+      _segPlay.raf = requestAnimationFrame(tick);
+    }
+
+    const labelFilterInput = document.getElementById('labelFilterInput');
+    labelFilterInput?.addEventListener('input', () => labelList.setFilter(labelFilterInput.value));
+    labelFilterInput?.addEventListener('keydown', (e) => {
+      e.stopPropagation();   // typing must not trigger player shortcuts
+      if (e.key === 'Escape') { labelFilterInput.value = ''; labelList.setFilter(''); }
+    });
+    const labelViewBtns = { source: document.getElementById('labelViewSourceBtn'), time: document.getElementById('labelViewTimeBtn') };
+    function applyLabelView(view) {
+      for (const [k, b] of Object.entries(labelViewBtns)) b?.setAttribute('aria-pressed', String(k === view));
+    }
+    for (const [k, b] of Object.entries(labelViewBtns)) {
+      b?.addEventListener('click', () => { labelList.setView(k); applyLabelView(k); });
+    }
+    applyLabelView(labelList.view);
+
     labelList.onRemove = (lbl) => {
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
