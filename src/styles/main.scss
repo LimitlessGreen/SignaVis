@@ -65,6 +65,8 @@
 @use "components/cluster-browser";
 // Phase 7: Xeno-Canto import
 @use "components/xc-import";
+// Project folder / browser project location
+@use "components/project-location";
 
 // UI clarity layer — keep last
 @use "components/ui-clarity";

@@ -228,6 +228,8 @@
 
   <!-- ── Sidebar panel: Project (own set + recordings) ───────────── -->
   <div id="panelProject" class="scroll-panel" hidden>
+    <div class="sidebar-section-header">Storage</div>
+    <div id="projectLocationMount"></div>
     <div class="sidebar-section-header">Annotation set</div>
     <div id="xcSetContainer" class="xc-set-container project-set"></div>
 
@@ -523,8 +525,11 @@
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
     import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
     import { OpfsProjectStore } from '../src/infrastructure/project/OpfsProjectStore.ts';
+    import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
+    import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder } from '../src/infrastructure/project/FolderAccess.ts';
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
-    import { serializeProject, deserializeProject } from '../src/domain/project/workspaceProject.ts';
+    import { serializeProject, deserializeProject, filesNotInProject, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
+    import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
@@ -1352,11 +1357,26 @@
       }
     }
 
-    // ── Browser project (OPFS): recordings, sets and labels survive closing the tab.
-    // Replaces sessionStorage (RecordingManager), localStorage sets and the autosave
-    // above; those only serve as a one-time migration source (plans/project-folder-plan.md).
+    // ── Project storage: browser project (OPFS) or a project folder (File System Access).
+    // Recordings, sets and labels survive closing the tab. Replaces sessionStorage
+    // (RecordingManager), localStorage sets and the autosave above; those only serve
+    // as a one-time migration source (plans/project-folder-plan.md).
+    // Switching the location reloads the page, like "New…" does.
+    const PROJECT_LOCATION_KEY = 'signavis.project.location.v1';   // 'browser' | 'folder'
+    const XC_TO_FOLDER_KEY = 'signavis.project.xc-to-folder.v1';
     let projectAutosaver = null;
-    let browserProjectMeta = { id: 'browser-default', name: 'Browser project', createdAt: '' };
+    let projectStore = null;
+    let projectKind = 'none';            // 'browser' | 'folder' | 'none'
+    let projectStatus = '';
+    let projectMeta = { id: 'browser-default', name: 'Browser project', createdAt: '' };
+    let projectFolderFiles = [];         // audio files found in the folder
+    let projectScanning = false;
+    let recentFolderHandle = null;       // remembered folder that still needs a click
+    let projectLocationPanel = null;
+    let _projectConflictOpen = false;
+    const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+    const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+    const xcToFolder = () => lsGet(XC_TO_FOLDER_KEY) !== '0';
 
     function buildWorkspaceProject() {
       saveCurrentAnnotationsIfNeeded();
@@ -1366,7 +1386,7 @@
         ownSetId: state.ownSetId,
         activeSetId: state.activeSetId,
         settings: { taxonomyLang: state.taxonomyLang },
-      }, browserProjectMeta);
+      }, projectMeta);
     }
 
     function saveSessionSets(st) {
@@ -1374,36 +1394,44 @@
       projectAutosaver?.schedule();
     }
 
-    /** Open the browser project. Returns true when session state was restored from it. */
-    async function openBrowserProject() {
-      const store = await OpfsProjectStore.open();
-      if (!store) return false;  // no OPFS → legacy storage only
-      const owner = await acquireTabLock('signavis-browser-project');
-      projectAutosaver = new ProjectAutosaver({
-        store,
-        build: buildWorkspaceProject,
-        onStatus: (status, err) => { if (status === 'error') console.warn('[project] save failed', err); },
+    function renderProjectLocation() {
+      projectLocationPanel?.render({
+        kind: projectKind,
+        label: projectStore?.label || '',
+        status: projectStatus,
+        folderSupported: isFolderAccessSupported(),
+        recentFolder: recentFolderHandle?.name || null,
+        xcToFolder: xcToFolder(),
+        unadded: projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : [],
+        scanning: projectScanning,
       });
-      recordingManager.addEventListener('change', () => projectAutosaver.schedule());
-      recordingManager.addEventListener('activechange', () => projectAutosaver.schedule());
-      if (!owner) {
-        projectAutosaver.setReadOnly(true);
-        const banner = document.createElement('div');
-        banner.className = 'project-readonly-banner';
-        banner.setAttribute('role', 'status');
-        banner.textContent = 'This project is open in another tab — changes made here are not saved.';
-        banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;'
-          + 'padding:6px 12px;border-radius:6px;font-size:13px;background:#b45309;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)';
-        document.body.appendChild(banner);
-      }
-      let project = null;
-      try { project = await store.loadProject(); }
-      catch (e) { console.warn('[project] cannot read browser project', e); }
-      if (!project) {
-        projectAutosaver.schedule();  // first save = migration of the legacy session state
-        return false;
-      }
-      browserProjectMeta = { id: project.id || browserProjectMeta.id, name: project.name || browserProjectMeta.name, createdAt: project.createdAt };
+    }
+
+    async function scanProjectFolder() {
+      if (projectKind !== 'folder') return;
+      projectScanning = true; renderProjectLocation();
+      try { projectFolderFiles = await projectStore.listAudio(); }
+      catch (e) { console.warn('[project] folder scan failed', e); projectFolderFiles = []; }
+      projectScanning = false; renderProjectLocation();
+    }
+
+    async function handleProjectConflict() {
+      if (_projectConflictOpen) return;
+      _projectConflictOpen = true;
+      projectStatus = 'conflict'; renderProjectLocation();
+      const reload = confirm(
+        `project.signavis.json in “${projectStore.label}” was changed outside this tab (another program or device).\n\n` +
+        'OK — reload the project from the folder (changes made here since the last save are lost)\n' +
+        'Cancel — keep this version and overwrite the file');
+      if (reload) { window.location.reload(); return; }
+      await projectStore.acceptExternalChange();
+      _projectConflictOpen = false;
+      projectAutosaver.flush({ force: true });
+    }
+
+    /** Session state from a stored project (recordings, sets, language). */
+    function applyWorkspaceProject(project) {
+      projectMeta = { id: project.id || projectMeta.id, name: project.name || projectMeta.name, createdAt: project.createdAt };
       const snap = deserializeProject(project);
       recordingManager.replaceAll(snap.entries, snap.activeId);
       if (snap.labelSets.size) {
@@ -1418,7 +1446,173 @@
       }
       state.labels = [];
       state._labelsEntryId = null;
+    }
+
+    function showReadOnlyBanner() {
+      const banner = document.createElement('div');
+      banner.className = 'project-readonly-banner';
+      banner.setAttribute('role', 'status');
+      banner.textContent = 'This project is open in another tab — changes made here are not saved.';
+      banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;'
+        + 'padding:6px 12px;border-radius:6px;font-size:13px;background:#b45309;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+      document.body.appendChild(banner);
+    }
+
+    /** Open the stored project location. Returns true when session state was restored from it. */
+    async function openProject() {
+      projectLocationPanel = new ProjectLocationPanel(document.getElementById('projectLocationMount'), {
+        onOpenFolder: () => chooseProjectFolder(),
+        onReopenRecent: () => reopenRecentFolder(),
+        onUseBrowserProject: async () => {
+          await projectAutosaver?.flush();
+          lsSet(PROJECT_LOCATION_KEY, 'browser');
+          window.location.reload();
+        },
+        onToggleXcToFolder: (on) => { lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0'); renderProjectLocation(); },
+        onAddFiles: (paths) => addFolderFiles(paths),
+        onRescan: () => scanProjectFolder(),
+      });
+
+      if (isFolderAccessSupported()) {
+        const handle = await recentFolder();
+        if (handle && lsGet(PROJECT_LOCATION_KEY) === 'folder' && await ensurePermission(handle) === 'granted') {
+          projectStore = folderStore(handle);
+          projectKind = 'folder';
+          projectMeta = { id: projectMeta.id, name: handle.name, createdAt: '' };
+        } else {
+          recentFolderHandle = handle;
+        }
+      }
+      if (!projectStore) {
+        projectStore = await OpfsProjectStore.open();
+        projectKind = projectStore ? 'browser' : 'none';
+      }
+      if (!projectStore) { renderProjectLocation(); return false; }  // no OPFS → legacy storage only
+
+      const owner = await acquireTabLock(projectKind === 'folder' ? `signavis-folder:${projectStore.label}` : 'signavis-browser-project');
+      projectAutosaver = new ProjectAutosaver({
+        store: projectStore,
+        build: buildWorkspaceProject,
+        onStatus: (status, err) => {
+          if (status === 'error' && err instanceof ProjectConflictError) { handleProjectConflict(); return; }
+          if (status === 'error') console.warn('[project] save failed', err);
+          if (status === 'pending' && projectStatus === 'pending') return;
+          projectStatus = status;
+          renderProjectLocation();
+        },
+      });
+      recordingManager.addEventListener('change', () => { projectAutosaver.schedule(); renderProjectLocation(); });
+      recordingManager.addEventListener('activechange', () => projectAutosaver.schedule());
+      if (!owner) {
+        projectAutosaver.setReadOnly(true);
+        showReadOnlyBanner();
+      }
+      let project = null;
+      try { project = await projectStore.loadProject(); }
+      catch (e) {
+        console.warn('[project] cannot read project', e);
+        if (projectKind === 'folder') {
+          alert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\nSwitching back to the browser project.`);
+          lsSet(PROJECT_LOCATION_KEY, 'browser');
+          window.location.reload();
+          return false;
+        }
+      }
+      renderProjectLocation();
+      if (projectKind === 'folder') scanProjectFolder();
+      if (!project) {
+        projectAutosaver.schedule();  // first save = migration of the legacy session state
+        return false;
+      }
+      applyWorkspaceProject(project);
       return true;
+    }
+
+    /** Pick a folder; a folder without project gets one (current session or empty). Then reload into it. */
+    async function chooseProjectFolder() {
+      let handle;
+      try { handle = await pickProjectFolder(); }
+      catch (e) { alert(`Could not open the folder: ${e?.message || e}`); return; }
+      if (!handle) return;
+      if (await ensurePermission(handle, { request: true }) !== 'granted') return;
+      const store = folderStore(handle);
+      let existing = null;
+      try { existing = await store.loadProject(); }
+      catch (e) { alert(`“${handle.name}” contains a project.signavis.json that cannot be read: ${e?.message || e}`); return; }
+      await projectAutosaver?.flush();
+      if (!existing) {
+        saveCurrentAnnotationsIfNeeded();
+        const n = recordingManager.size;
+        const takeOver = n > 0 && confirm(
+          `“${handle.name}” has no project yet.\n\n` +
+          `OK — create it with the current ${n} recording${n === 1 ? '' : 's'} and their labels\n` +
+          'Cancel — start an empty project in this folder');
+        const meta = { id: `folder-${Date.now().toString(36)}`, name: handle.name };
+        const snap = takeOver
+          ? { ...recordingManager.snapshot(), labelSets: state.labelSets, ownSetId: state.ownSetId, activeSetId: state.activeSetId }
+          : { entries: [], activeId: null, labelSets: new Map(), ownSetId: null, activeSetId: null };
+        try { await store.saveProject(serializeProject({ ...snap, settings: { taxonomyLang: state.taxonomyLang } }, meta)); }
+        catch (e) { alert(`Could not write to “${handle.name}”: ${e?.message || e}`); return; }
+      }
+      await rememberFolder(handle);
+      lsSet(PROJECT_LOCATION_KEY, 'folder');
+      window.location.reload();
+    }
+
+    async function reopenRecentFolder() {
+      if (!recentFolderHandle) return;
+      const perm = await ensurePermission(recentFolderHandle, { request: true });
+      if (perm !== 'granted') return;
+      await projectAutosaver?.flush();
+      lsSet(PROJECT_LOCATION_KEY, 'folder');
+      window.location.reload();
+    }
+
+    async function addFolderFiles(paths) {
+      const added = [];
+      for (const path of paths) {
+        if (recordingManager.getAll().some((e) => e.path === path)) continue;
+        added.push(recordingManager.add({
+          source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false,
+        }));
+      }
+      renderProjectLocation();
+      if (added.length === 1) await activateRecordingEntry(added[0]);
+    }
+
+    /** Folder recordings: read the audio file from the project folder into a blob URL. */
+    async function resolveProjectAudio(entry) {
+      if (!projectStore || !entry?.path) return;
+      if (entry.audioUrl?.startsWith('blob:')) return;
+      const file = await projectStore.readAudio(entry.path);
+      if (!file) {
+        if (entry.source !== 'xc') selectionMeta.textContent = `File missing in project folder: ${entry.path}`;
+        return;
+      }
+      recordingManager.update(entry.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+    }
+
+    /** Copy an XC download (from the audio cache) into the folder: xc/XC123.mp3 + .json metadata. */
+    async function persistXcToFolder(entry) {
+      if (projectKind !== 'folder' || !xcToFolder() || projectAutosaver?.readOnly) return;
+      if (!entry?.xcId || entry.path || entry.source !== 'xc') return;
+      try {
+        const audio = await xcPanel.fetchAudio(entry.xcId);   // cache hit right after loading
+        const path = xcRecordingPath(entry.xcId);
+        await projectStore.writeAudio(path, audio.buffer);
+        const meta = entry.xcRecordingMeta || {
+          id: entry.xcId, url: `https://xeno-canto.org/${entry.xcId}`,
+          note: 'Full metadata (license, recordist) needs an XC API key; see the URL.',
+        };
+        await projectStore.writeText(xcMetaPath(entry.xcId), JSON.stringify(meta, null, 2) + '\n');
+        recordingManager.update(entry.id, { path });
+        if (!projectFolderFiles.some((f) => f.path === path)) {
+          projectFolderFiles = [...projectFolderFiles, { path, size: audio.buffer.byteLength, lastModified: Date.now() }];
+        }
+        projectAutosaver?.schedule();
+      } catch (e) {
+        console.warn('[project] could not save XC audio to folder', e);
+      }
     }
 
     function scheduleProjectAutosave() {
@@ -1713,6 +1907,7 @@
       recordingManager.setActive(entry.id);
 
       // 4. Load audio
+      await resolveProjectAudio(entry);
       if (entry.audioUrl || entry.xcId) {
         try {
           // Local files linked to an XC number keep playing their own audio
@@ -3453,6 +3648,7 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') projectAutosaver?.flush();
     });
+    player.on('ready', () => { persistXcToFolder(recordingManager.getActive()); });
     window.addEventListener('beforeunload', () => {
       saveProjectSnapshotNow();
       projectAutosaver?.flush();
@@ -3603,7 +3799,7 @@
     // ── Startup ───────────────────────────────────────────────────────
     const _startParams = new URLSearchParams(window.location.search);
     const _hasXcParam = ['xc', 'XC', 'xcid', 'XCID'].some((k) => _startParams.has(k));
-    const _restoredFromProject = await openBrowserProject();
+    const _restoredFromProject = await openProject();
     if (!_restoredFromProject) {
       await restoreProjectSnapshotIfPossible();
       // Restore sets from last session (only if no URL params will load a recording)
@@ -3619,7 +3815,7 @@
     // Session-only local files have no audio after a restart — they stay listed until re-picked.
     if (_restoredFromProject && !_hasXcParam) {
       const _last = recordingManager.getActive();
-      if (_last && (_last.xcId || _last.audioUrl)) activateRecordingEntry(_last);
+      if (_last && (_last.xcId || _last.audioUrl || _last.path)) activateRecordingEntry(_last);
       else recordingManager.setActive(null);
     }
     // Start the XC download right away — the 7 MB taxonomy loads in parallel and
