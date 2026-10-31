@@ -21,11 +21,15 @@
  * Keyboard (the modal owns the keyboard while open; no player listens to
  * document keys): Space play/pause focused side · ↑↓ / J K candidate ·
  * R own recording · F reference · A play own segment then reference.
+ *
+ * The reference player jumps to the loudest section inside the label's
+ * frequency band ("call"), marks it and clips playback to it.
  * Only one player ever plays at a time.
  */
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
 import ModalManager from '../modal/modal-manager.ts';
+import { findCall } from './find-call.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
 const BIRD_IMG_BASE = './data/species_images/';
@@ -104,6 +108,16 @@ function injectCss() {
   width: 380px; flex-shrink: 0; border-left: 1px solid var(--color-border);
   display: flex; flex-direction: column; min-height: 0; background: var(--color-bg-surface);
 }
+.rc-filters { padding: 8px 10px; border-bottom: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+.rc-filter-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rc-filter-name { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); width: 54px; flex-shrink: 0; }
+.rc-chip {
+  padding: 1px 8px; border-radius: 10px; border: 1px solid var(--color-border);
+  background: var(--color-bg-primary); color: var(--color-text-secondary); font-size: 11px; cursor: pointer;
+}
+.rc-chip:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-text-primary); }
+.rc-chip.rc-on { background: var(--color-accent-faint); border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.rc-chip:disabled { opacity: 0.4; cursor: default; }
 .rc-list-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
 .rc-info { font-size: 11px; color: var(--color-text-secondary); margin: 2px 2px 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rc-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-size: 10px; background: var(--color-accent-faint); color: var(--color-accent); }
@@ -224,6 +238,32 @@ const el = (tag: string, cls?: string, text?: string) => {
   return e;
 };
 
+// ─── Filters ────────────────────────────────────────────────────────
+const TYPE_OPTS = [
+  { v: '', t: 'All' }, { v: 'song', t: 'Song' }, { v: 'call', t: 'Call' },
+  { v: 'alarm call', t: 'Alarm' }, { v: 'flight call', t: 'Flight' }, { v: 'drumming', t: 'Drum' },
+];
+const QUALITY_OPTS = [{ v: 'auto', t: 'Best' }, { v: 'A', t: 'A' }, { v: 'AB', t: 'A–B' }, { v: 'any', t: 'Any' }];
+const LEN_OPTS = [{ v: '0-3', t: '<3 s' }, { v: '2-7', t: '2–7 s' }, { v: '5-20', t: '5–20 s' }, { v: '', t: 'Any' }];
+const REGION_OPTS = [{ v: 'any', t: 'World' }, { v: 'near', t: 'Nearby' }];
+
+// XC query tags. '>C' = better than C, i.e. A and B.
+const QUALITY_TAG: Record<string, string> = { A: 'q:A', AB: `q:${encodeURIComponent('">C"')}`, any: '' };
+// Quality ladder for 'auto': A only → A+B → any
+const QUALITY_TIERS = [
+  { label: 'Quality A',     q: 'A'   },
+  { label: 'Quality A & B', q: 'AB'  },
+  { label: 'Any quality',   q: 'any' },
+];
+
+function matchTypeOpt(type: string) {
+  const t = (type || '').toLowerCase().trim();
+  if (!t) return '';
+  return TYPE_OPTS.find(o => o.v && t === o.v)?.v
+      ?? TYPE_OPTS.find(o => o.v && t.includes(o.v))?.v
+      ?? '';
+}
+
 // ─── Main export ────────────────────────────────────────────────────
 
 /**
@@ -235,8 +275,9 @@ const el = (tag: string, cls?: string, text?: string) => {
  * @param {object}   opts.taxonomy       TaxonomyResolver instance
  * @param {function} opts.getLang        Function returning current language code
  * @param {function} [opts.getMainPlayer] Main app player (paused on open)
+ * @param {function} [opts.getCoords]    Recording location {lat, lon} for the 'Nearby' filter
  */
-export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer }: any) {
+export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer, getCoords }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -277,13 +318,14 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   // Candidate list
   const list = el('div', 'rc-list');
+  const filtersEl = el('div', 'rc-filters');
   const listBody = el('div', 'rc-list-body');
   const pagination = el('div', 'rc-pagination');
   const prevBtn = el('button', '', '← Prev') as HTMLButtonElement;
   const pageInfo = el('div', 'rc-page-info');
   const nextBtn = el('button', '', 'Next →') as HTMLButtonElement;
   pagination.append(prevBtn, pageInfo, nextBtn);
-  list.append(listBody, pagination);
+  list.append(filtersEl, listBody, pagination);
   main.appendChild(list);
 
   const requestClose = () => { cleanup(); manager.close(); };
@@ -298,7 +340,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _preferredType = '';
   let _searchWidget: any = null;
   let _loadToken = 0;          // invalidates stale page loads
-  let _activeTier = 0;         // index into QUALITY_TIERS
+  let _activeTier = 0;         // index into QUALITY_TIERS ('auto' quality)
+  const _filters = { type: '', quality: 'auto', len: '2-7', region: 'any' };
 
   let _ownPlayer: any = null;
   let _refPlayer: any = null;
@@ -310,6 +353,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _focus: 'own' | 'ref' = 'own';
   let _abPending = false;      // A/B: play reference once own segment ends
   let _ownClip = false;        // stop own playback at the label end
+  let _refCall: { start: number, end: number } | null = null; // found call in the reference
+  let _refClip = false;        // stop reference playback at the call end
 
   const _audioCache = new Map<string, ArrayBuffer>();
 
@@ -345,7 +390,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   function playRef() {
     if (!_refPlayer) return;
     stopAll();
-    if (_refPlayer.duration && _refPlayer.currentTime >= _refPlayer.duration - 0.05) seek(_refPlayer, 0);
+    const t = _refPlayer.currentTime || 0;
+    if (_refCall && (t < _refCall.start || t >= _refCall.end - 0.02)) seek(_refPlayer, _refCall.start);
+    else if (_refPlayer.duration && t >= _refPlayer.duration - 0.05) seek(_refPlayer, 0);
     _refPlayer.play();
   }
 
@@ -361,7 +408,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   /** A/B: own segment, then the selected reference from its start. */
   function playAB() {
     if (!_ownPlayer || !_refPlayer) return;
-    seek(_refPlayer, 0);
+    seek(_refPlayer, _refCall?.start ?? 0);
     playOwn();
     _abPending = true;
   }
@@ -517,6 +564,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   async function showReference(rec: any) {
     const token = ++_refToken;
     _abPending = false;
+    _refCall = null;
     destroyRefPlayer();
     renderRefTitle(rec);
     refPlayerWrap.innerHTML = rec ? '<div class="rc-status">Loading…</div>' : '<div class="rc-status">Select a candidate on the right.</div>';
@@ -537,12 +585,40 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       _refBlobUrl = blobUrl;
       watchPlayer(p);
       disableLabeling(p);
+      p.on('play', () => {
+        const t = p.currentTime || 0;
+        _refClip = !!_refCall && t >= _refCall.start - 0.05 && t < _refCall.end;
+      });
+      p.on('timeupdate', (e: any) => {
+        if (!_refClip || !_refCall || !p.isPlaying) return;
+        if ((e.detail?.currentTime ?? p.currentTime) >= _refCall.end) { p.pause(); seek(p, _refCall.start); }
+      });
       prefetchNext();
+      locateCall(p, token);
     } catch (err) {
       if (token === _refToken) {
         refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || 'Load failed')}</div>`;
       }
     }
+  }
+
+  /** Jump to the loudest section in the label's band and mark it. */
+  async function locateCall(p: any, token: number) {
+    const buffer: AudioBuffer | undefined = p._state?.audioBuffer;
+    if (!buffer) return;
+    const seg = segment();
+    const dur = seg ? seg.end - seg.start : 2;
+    try {
+      const call = await findCall(buffer, Number(_label?.freqMin), Number(_label?.freqMax), dur);
+      if (token !== _refToken || p !== _refPlayer) return;
+      _refCall = call;
+      p.setSpectrogramLabels([{
+        start: call.start, end: call.end,
+        freqMin: _label?.freqMin, freqMax: _label?.freqMax,
+        label: 'call', color: 'rgba(234,179,8,0.22)', readonly: true,
+      }]);
+      if (!p.isPlaying) seek(p, call.start);
+    } catch { /* keep the reference usable without a marked call */ }
   }
 
   /** Warm the cache for the next candidate so ↓ feels instant. */
@@ -562,16 +638,23 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     showReference(_items[i].rec);
   }
 
-  // ── XC API search (with quality fallback) ────────────────────────
-  // Quality ladder: A only → A+B → any quality (no filter)
-  const QUALITY_TIERS = [
-    { label: 'Quality A',     filter: 'q:A'   },
-    { label: 'Quality A & B', filter: 'q:A+q:B' },
-    { label: 'Any quality',   filter: ''        },
-  ];
+  // ── XC API search ────────────────────────────────────────────────
+  function filterTags(quality: string) {
+    const tags: string[] = [];
+    if (_filters.type) tags.push(`type:${encodeURIComponent(`"${_filters.type}"`)}`);
+    if (QUALITY_TAG[quality]) tags.push(QUALITY_TAG[quality]);
+    if (_filters.len) tags.push(`len:${_filters.len}`);
+    const c = _filters.region === 'near' ? coords() : null;
+    if (c) {
+      // ~300 km box around the recording location
+      const f = (v: number) => v.toFixed(2);
+      tags.push(`box:${f(c.lat - 3)},${f(c.lon - 4.5)},${f(c.lat + 3)},${f(c.lon + 4.5)}`);
+    }
+    return tags;
+  }
 
-  async function _fetchPage(baseQuery: string, qualityFilter: string, page: number, apiKey: string) {
-    const q = qualityFilter ? `${baseQuery}+${qualityFilter}+len:2-7` : `${baseQuery}+len:2-7`;
+  async function _fetchPage(baseQuery: string, quality: string, page: number, apiKey: string) {
+    const q = [baseQuery, ...filterTags(quality)].join('+');
     const url = `${XC_API}?query=${q}&page=${page}&key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`XC API error: HTTP ${res.status}`);
@@ -592,20 +675,58 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     let baseQuery = `gen:${encodeURIComponent(genus)}`;
     if (epithet) baseQuery += `+sp:${encodeURIComponent(epithet)}`;
 
-    // Page 1 decides the tier; later pages reuse it.
+    if (_filters.quality !== 'auto') {
+      const label = QUALITY_OPTS.find(o => o.v === _filters.quality)?.t || '';
+      return { ...(await _fetchPage(baseQuery, _filters.quality, page, apiKey)), qualityLabel: `Quality ${label}`, fallback: false };
+    }
+    // 'auto': page 1 decides the tier; later pages reuse it.
     if (page > 1) {
       const tier = QUALITY_TIERS[_activeTier];
-      return { ...(await _fetchPage(baseQuery, tier.filter, page, apiKey)), qualityLabel: tier.label };
+      return { ...(await _fetchPage(baseQuery, tier.q, page, apiKey)), qualityLabel: tier.label, fallback: _activeTier > 0 };
     }
     for (let i = 0; i < QUALITY_TIERS.length; i++) {
       const tier = QUALITY_TIERS[i];
-      const result = await _fetchPage(baseQuery, tier.filter, 1, apiKey);
+      const result = await _fetchPage(baseQuery, tier.q, 1, apiKey);
       if (result.recordings.length > 0 || i === QUALITY_TIERS.length - 1) {
         _activeTier = i;
-        return { ...result, qualityLabel: tier.label };
+        return { ...result, qualityLabel: tier.label, fallback: i > 0 };
       }
     }
-    return { recordings: [], numPages: 1, numRecordings: 0, qualityLabel: 'Any quality' };
+    return { recordings: [], numPages: 1, numRecordings: 0, qualityLabel: 'Any quality', fallback: true };
+  }
+
+  function coords(): { lat: number, lon: number } | null {
+    try {
+      const c = getCoords?.();
+      return c && Number.isFinite(c.lat) && Number.isFinite(c.lon) ? c : null;
+    } catch { return null; }
+  }
+
+  // ── Filter chips ──────────────────────────────────────────────────
+  function renderFilters() {
+    filtersEl.innerHTML = '';
+    const row = (name: string, key: keyof typeof _filters, opts: { v: string, t: string }[], disabled?: (v: string) => boolean) => {
+      const r = el('div', 'rc-filter-row');
+      r.appendChild(el('span', 'rc-filter-name', name));
+      for (const o of opts) {
+        const b = el('button', 'rc-chip', o.t) as HTMLButtonElement;
+        b.type = 'button';
+        b.classList.toggle('rc-on', _filters[key] === o.v);
+        if (disabled?.(o.v)) { b.disabled = true; b.title = 'No recording location set'; }
+        b.addEventListener('click', () => {
+          if (_filters[key] === o.v) return;
+          _filters[key] = o.v;
+          renderFilters();
+          if (_sciName) loadPage(1);
+        });
+        r.appendChild(b);
+      }
+      filtersEl.appendChild(r);
+    };
+    row('Type', 'type', TYPE_OPTS);
+    row('Quality', 'quality', QUALITY_OPTS);
+    row('Length', 'len', LEN_OPTS);
+    row('Region', 'region', REGION_OPTS, v => v === 'near' && !coords());
   }
 
   // ── Candidate list ────────────────────────────────────────────────
@@ -637,18 +758,18 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     pageInfo.textContent = '';
 
     try {
-      const { recordings, numPages, numRecordings, qualityLabel } = await fetchXcRecordings(_sciName, page);
+      const { recordings, numPages, numRecordings, qualityLabel, fallback } = await fetchXcRecordings(_sciName, page);
       if (token !== _loadToken) return;
       _totalPages = numPages;
       listBody.innerHTML = '';
 
       if (recordings.length === 0) {
-        listBody.innerHTML = `<div class="rc-status">No recordings found for <em>${esc(_sciName)}</em> between 2–7 seconds.</div>`;
+        listBody.innerHTML = `<div class="rc-status">No recordings found for <em>${esc(_sciName)}</em> with these filters.</div>`;
       } else {
         const info = el('div', 'rc-info');
-        info.innerHTML = `<span class="rc-badge ${_activeTier > 0 ? 'rc-warn' : ''}">${esc(qualityLabel)}</span>`
+        info.innerHTML = `<span class="rc-badge ${fallback ? 'rc-warn' : ''}">${esc(qualityLabel)}</span>`
           + `<span>${numRecordings} recordings</span>`
-          + (_activeTier > 0 ? '<span>· no quality-A recordings found</span>' : '');
+          + (fallback ? '<span>· no quality-A recordings found</span>' : '');
         listBody.appendChild(info);
 
         const groups = groupByType(recordings, _preferredType);
@@ -678,6 +799,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const sci = label?.scientificName || '';
     const displayName = label?.label || label?.commonName || sci;
     _sciName = sci;
+    _filters.type = matchTypeOpt(_preferredType);
+    if (_filters.region === 'near' && !coords()) _filters.region = 'any';
+    renderFilters();
 
     try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
     renderSpecies(sci, displayName);
@@ -701,6 +825,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     _loadToken++;
     _refToken++;
     _abPending = false;
+    _refCall = null;
     destroyRefPlayer();
     try { _ownPlayer?.destroy?.(); } catch {}
     _ownPlayer = null;
