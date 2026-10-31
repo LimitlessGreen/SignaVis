@@ -7,6 +7,7 @@ import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
+import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, type SnapPatch, type SnapResult } from './snapToCall.ts';
 
 
@@ -879,11 +880,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _zoomBox: { startTime: number; startFreq: number; endTime: number; endFreq: number; x0: number; y0: number } | null = null;
     _zoomBoxEl: HTMLElement | null = null;
     _editLoupeEl: HTMLCanvasElement | null = null;
+    _loupePatch: unknown = null;
+    _loupeLut: Uint8ClampedArray | null = null;
+    _loupeLutScheme = '';
+    _loupeOff: HTMLCanvasElement | null = null;
     _fineCursorEl: HTMLElement | null = null;
     _interactionRoot: HTMLElement | null = null;
     _fineLockRequested = false;
     _fineActive = false;
-    _editLoupeBound = false;
     _axisConstraint: any = null;
     _draftEl: any = null;
     _drawing: any = null;
@@ -946,7 +950,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }));
     }
 
-    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); }
+    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
@@ -2043,16 +2047,116 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     // ── Edit loupe: magnified view next to the cursor while moving/resizing ──
 
     _editLoupeEnabled(): boolean {
-        const box = this.player?.root?.querySelector?.('[data-aw="editLoupeCheck"]') as HTMLInputElement | null;
-        if (box && !this._editLoupeBound) {
-            // Default on; remember the user's choice
-            this._editLoupeBound = true;
-            try { if (localStorage.getItem('aw-edit-loupe') === '0') box.checked = false; } catch { /* storage blocked */ }
+        return this._loupeOption('editLoupeCheck', 'aw-edit-loupe');
+    }
+
+    /** Settings checkbox, default on, choice remembered in localStorage. */
+    _loupeOption(dataAw: string, storageKey: string): boolean {
+        const box = this.player?.root?.querySelector?.(`[data-aw="${dataAw}"]`) as HTMLInputElement | null;
+        if (!box) return true;
+        if (!box.dataset.awBound) {
+            box.dataset.awBound = '1';
+            try { if (localStorage.getItem(storageKey) === '0') box.checked = false; } catch { /* storage blocked */ }
             box.addEventListener('change', () => {
-                try { localStorage.setItem('aw-edit-loupe', box.checked ? '1' : '0'); } catch { /* storage blocked */ }
+                try { localStorage.setItem(storageKey, box.checked ? '1' : '0'); } catch { /* storage blocked */ }
             });
         }
-        return box ? box.checked : true;
+        return box.checked;
+    }
+
+    /**
+     * Detail mode: render the loupe area from its own fine linear-dB STFT
+     * (same analysis as Snap: Hann ~11.6 ms, 75 % overlap) instead of
+     * magnifying the display pixels. Frequency rows follow the display's
+     * y mapping, so boxes line up. Returns false to fall back to the display image.
+     */
+    _drawLoupeDetail(ctx: CanvasRenderingContext2D, W: number, H: number,
+                     cx: number, cy: number, halfW: number, halfH: number): boolean {
+        const audio = this.player?._state?.audioBuffer as AudioBuffer | undefined;
+        if (!audio || !this.player?.computeSnapPatch) return false;
+        const tA = this._clientXToTime(cx - halfW), tB = this._clientXToTime(cx + halfW);
+        // Keep it cheap: no detail for very wide spans (long horizontal edges)
+        if (!(tB > tA) || tB - tA > 8) return false;
+
+        let c = this._loupePatch as any;
+        if (!c || c.audio !== audio || tA < c.tLo || tB > c.tHi) {
+            const patch = this.player.computeSnapPatch((tA + tB) / 2, Math.max(0.5, tB - tA));
+            if (!patch) return false;
+            c = this._loupePatch = {
+                audio, patch,
+                tLo: patch.atStart ? -Infinity : patch.t0,
+                tHi: patch.atEnd ? Infinity : patch.t0 + (patch.frames - 1) * patch.dt,
+            };
+        }
+        const pt = c.patch;
+
+        // Column -> frame range, row -> bin range (max-pool when zoomed out)
+        const fA = new Int32Array(W), fB = new Int32Array(W);
+        for (let x = 0; x < W; x++) {
+            const t0 = tA + (x / W) * (tB - tA), t1 = tA + ((x + 1) / W) * (tB - tA);
+            const a = Math.round((t0 - pt.t0) / pt.dt), b = Math.round((t1 - pt.t0) / pt.dt);
+            fA[x] = a; fB[x] = Math.max(a, b - 1);
+        }
+        const bA = new Int32Array(H), bB = new Int32Array(H);
+        const yTop = cy - halfH, ySpan = 2 * halfH;
+        for (let y = 0; y < H; y++) {
+            const fHi = this._clientYToFreq(yTop + (y / H) * ySpan);
+            const fLo = this._clientYToFreq(yTop + ((y + 1) / H) * ySpan);
+            const a = Math.round((Math.min(fLo, fHi) - pt.f0) / pt.df), b = Math.round((Math.max(fLo, fHi) - pt.f0) / pt.df);
+            bA[y] = a; bB[y] = Math.max(a, b - 1);
+        }
+        const val = new Float32Array(W * H).fill(-Infinity);
+        let hi = -Infinity;
+        for (let y = 0; y < H; y++) {
+            const b0 = Math.max(0, bA[y]), b1 = Math.min(pt.bins - 1, bB[y]);
+            if (b1 < b0) continue;
+            for (let x = 0; x < W; x++) {
+                const f0 = Math.max(0, fA[x]), f1 = Math.min(pt.frames - 1, fB[x]);
+                let m = -Infinity;
+                for (let f = f0; f <= f1; f++) {
+                    const row = f * pt.bins;
+                    for (let k = b0; k <= b1; k++) { const v = pt.values[row + k]; if (v > m) m = v; }
+                }
+                val[y * W + x] = m;
+                if (m > hi) hi = m;
+            }
+        }
+        if (!Number.isFinite(hi)) return false;
+        const RANGE = 70;
+        const lo = hi - RANGE;
+
+        const scheme = (this.player?.root?.querySelector?.('[data-aw="colorSchemeSelect"]') as HTMLSelectElement | null)?.value || 'grayscale';
+        if (this._loupeLutScheme !== scheme) {
+            const lut = new Uint8ClampedArray(256 * 3);
+            for (let i = 0; i < 256; i++) {
+                const col = getSpectrogramColor(i / 255, scheme);
+                lut[i * 3] = col.r; lut[i * 3 + 1] = col.g; lut[i * 3 + 2] = col.b;
+            }
+            this._loupeLut = lut;
+            this._loupeLutScheme = scheme;
+        }
+        const lut = this._loupeLut as Uint8ClampedArray;
+        let off = this._loupeOff as HTMLCanvasElement | null;
+        if (!off || off.width !== W || off.height !== H) {
+            off = document.createElement('canvas');
+            off.width = W; off.height = H;
+            this._loupeOff = off;
+        }
+        const octx = off.getContext('2d');
+        if (!octx) return false;
+        const img = octx.createImageData(W, H);
+        const d = img.data;
+        for (let i = 0; i < W * H; i++) {
+            const v = val[i];
+            const o = i * 4;
+            if (v === -Infinity) { d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = 255; continue; }
+            const li = Math.max(0, Math.min(255, Math.round(((v - lo) / RANGE) * 255))) * 3;
+            d[o] = lut[li]; d[o + 1] = lut[li + 1]; d[o + 2] = lut[li + 2]; d[o + 3] = 255;
+        }
+        octx.putImageData(img, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(off, 0, 0, W, H);
+        return true;
     }
 
     /**
@@ -2118,11 +2222,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         ctx.imageSmoothingEnabled = zx < 1 || zy < 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
-        try {
-            ctx.drawImage(src,
-                (cx - halfW - r.left) * sx, (cy - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
-                0, 0, W, H);
-        } catch { /* canvas not ready */ }
+        const detail = this._loupeOption('loupeDetailCheck', 'aw-loupe-detail')
+            && this._drawLoupeDetail(ctx, W, H, cx, cy, halfW, halfH);
+        if (!detail) {
+            try {
+                ctx.drawImage(src,
+                    (cx - halfW - r.left) * sx, (cy - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
+                    0, 0, W, H);
+            } catch { /* canvas not ready */ }
+        }
         const mx = (x: number) => (x - (cx - halfW)) * zx;
         const my = (y: number) => (y - (cy - halfH)) * zy;
         // Neighbouring labels (thin, grey) for alignment
