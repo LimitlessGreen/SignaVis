@@ -2193,6 +2193,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             cy = mode === 'resize-t' ? b.top : b.bottom;
             zx = Math.max(0.15, Math.min(ZOOM, (W - MARGIN) / Math.max(1, b.width)));
         }
+        // Corner: centre on the box corner itself, not on the pointer (the grab
+        // point on the handle is a few px off the corner and that offset stays)
+        if (b && /^resize-[tb][lr]$/.test(mode)) {
+            cx = mode.endsWith('l') ? b.left : b.right;
+            cy = mode.includes('-t') ? b.top : b.bottom;
+        }
 
         let cv = this._editLoupeEl as HTMLCanvasElement | null;
         if (!cv) {
