@@ -1629,7 +1629,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 // Virtual pointer: Shift = fine mode (1/4 speed, pointer lock so it never hits the screen edge)
                 this._editPointerMove(e);
                 const ed = this._editing as any;
-                if (ed) this._updateEditLoupe(ed.vx, ed.vy);
+                if (ed) this._updateEditLoupe(ed.vx, ed.vy, { readout: this._editReadout() });
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -1646,6 +1646,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this._drawing.endTime = this._clientXToTime(e.clientX);
                 this._drawing.endFreq = this._clientYToFreq(e.clientY);
                 this._updateDraft();
+                const d = this._drawing;
+                this._updateEditLoupe(e.clientX, e.clientY, {
+                    el: this._draftEl, mode: 'draw', fine: false,
+                    readout: this._fmtRange(Math.min(d.startTime, d.endTime), Math.max(d.startTime, d.endTime),
+                        Math.min(d.startFreq, d.endFreq), Math.max(d.startFreq, d.endFreq)),
+                });
                 e.preventDefault();
                 e.stopPropagation();
             }
@@ -1675,6 +1681,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 return;
             }
             if (this._drawing) {
+                this._hideLoupeCanvas();
                 const region = this._finalizeDraft();
                 this._clearDraft();
                 if (region) {
@@ -2150,6 +2157,30 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
     }
 
+    _fmtRange(t0: number, t1: number, f0: number, f1: number) {
+        return `${t0.toFixed(3)}–${t1.toFixed(3)} s · ${Math.round(f0)}–${Math.round(f1)} Hz`;
+    }
+
+    /** Value(s) being changed by the current edit, for the loupe readout. */
+    _editReadout(): string {
+        const ed = this._editing as any;
+        const l = ed && this._items.find((i: any) => i.id === ed.id) as any;
+        if (!l) return '';
+        const start = `Start ${l.start.toFixed(3)} s`, end = `End ${l.end.toFixed(3)} s`;
+        const fmax = `fMax ${Math.round(l.freqMax ?? 0)} Hz`, fmin = `fMin ${Math.round(l.freqMin ?? 0)} Hz`;
+        switch (ed.mode) {
+            case 'resize-l': return start;
+            case 'resize-r': return end;
+            case 'resize-t': return fmax;
+            case 'resize-b': return fmin;
+            case 'resize-tl': return `${start} · ${fmax}`;
+            case 'resize-tr': return `${end} · ${fmax}`;
+            case 'resize-bl': return `${start} · ${fmin}`;
+            case 'resize-br': return `${end} · ${fmin}`;
+            default: return this._fmtRange(l.start, l.end, l.freqMin ?? 0, l.freqMax ?? 0);
+        }
+    }
+
     _hideLoupeCanvas() {
         if (this._editLoupeEl?.parentNode) this._editLoupeEl.parentNode.removeChild(this._editLoupeEl);
         this._editLoupeEl = null;
@@ -2255,9 +2286,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._grabbing = true;
         this._axisConstraint = null;
 
-        const onMove = (e: PointerEvent) => {
-            this._updateEditInteraction(e.clientX, e.clientY);
-        };
+        // Movement, Shift fine mode and the loupe come from the shared pointermove handler
         const confirm = (e: Event) => {
             e?.preventDefault?.();
             e?.stopPropagation?.();
@@ -2271,6 +2300,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             // Restore original position
             Object.assign(label, snapshot);
             el.classList.remove('editing');
+            this._hideEditLoupe();
             this._editing = null;
             this._suppressClickUntil = performance.now() + 250;
             this.render();
@@ -2291,12 +2321,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const cleanup = () => {
             this._grabbing = false;
             this._axisConstraint = null;
-            document.removeEventListener('pointermove', onMove, true);
             document.removeEventListener('pointerdown', confirm, true);
             document.removeEventListener('keydown', onKey, true);
         };
 
-        document.addEventListener('pointermove', onMove, true);
         document.addEventListener('pointerdown', confirm, true);
         document.addEventListener('keydown', onKey, true);
     }
