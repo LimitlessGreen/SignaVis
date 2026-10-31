@@ -1,0 +1,89 @@
+/* UI clarity layer (plans/ui-clarity-plan.md, Phase 1)
+   - Dark theme: neutral grey surfaces in three steps (app < panel < card);
+     blue is reserved for interaction/selection.
+   - Button tiers: primary (filled) / secondary (outline) / ghost.
+   - Section headers start a visible group; field labels muted, values bright.
+   Loaded last in main.scss so it wins over the older partials. */
+
+@mixin dark-tokens {
+  --color-bg-primary:     #17191d;   // app / main area
+  --color-bg-secondary:   #1d2025;   // panels, sidebars
+  --color-bg-tertiary:    #2a2f37;   // raised / selected
+  --color-bg-surface:     #1d2025;
+  --color-card:           #23272d;   // grouped block inside a panel
+  --color-toolbar:        #131518;
+  --color-statusbar:      #101215;
+  --color-text-primary:   #e7e9ec;
+  --color-text-secondary: #969ca6;
+  --color-border:         rgba(255, 255, 255, 0.07);
+  --color-border-strong:  rgba(255, 255, 255, 0.14);
+  --input-bg:             rgba(255, 255, 255, 0.045);
+  --input-bg-weak:        rgba(255, 255, 255, 0.07);
+  --color-on-accent:      #04131c;
+  --color-warning:        #fbbf24;
+}
+@mixin light-tokens {
+  --color-card:           #f6f6f9;
+  --color-border-strong:  rgba(0, 0, 0, 0.16);
+  --color-on-accent:      #ffffff;
+  --color-warning:        #b45309;
+}
+
+html[data-theme="dark"] { @include dark-tokens; }
+@media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { @include dark-tokens; } }
+html[data-theme="light"] { @include light-tokens; }
+@media (prefers-color-scheme: light) { html:not([data-theme="dark"]) { @include light-tokens; } }
+
+/* ── Panels: section header = start of a group ─────────────────────── */
+.sidebar-section-header,
+.props-section-title {
+  color: var(--color-text-primary);
+  opacity: 0.85;
+}
+.sidebar-section-header {
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border-strong);
+}
+.scroll-panel > .sidebar-section-header:first-child { margin-top: 0; }
+.field-label,
+.props-row-label,
+.rc-label { color: var(--color-text-secondary); }
+
+/* ── Button tiers ──────────────────────────────────────────────────── */
+// Primary: filled accent — the one important action per panel.
+.sidebar-action-btn:not(.secondary),
+.btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 650;
+  &:hover:not(:disabled) { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+  &:disabled {
+    background: var(--input-bg-weak);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    opacity: 1;
+  }
+}
+// Secondary: outline, readable text.
+.sidebar-action-btn.secondary {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+// Small toolbar buttons: subtle filled chips, so they read as buttons.
+.tb-btn {
+  background: var(--input-bg);
+  border-color: var(--color-border-strong);
+  &:hover:not(:disabled) { background: var(--input-bg-weak); border-color: var(--color-accent); }
+}
+// Ghost: text links / inline actions.
+.tb-btn.ghost,
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ── Status colours ────────────────────────────────────────────────── */
+.status-ok    { color: var(--color-success); }
+.status-warn  { color: var(--color-warning); }
+.status-err   { color: var(--color-danger); }
