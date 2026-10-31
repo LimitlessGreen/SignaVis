@@ -243,7 +243,7 @@
     <div class="panel-section">
       <div class="xc-load-row">
         <input id="xcIdInput" class="input" placeholder="+ XC number or URL (e.g. 12345)" aria-label="Add Xeno-canto recording" />
-        <button class="tb-btn" id="xcLoadBtn" type="button">Add</button>
+        <button class="tb-btn" id="xcLoadBtn" type="button">Load</button>
       </div>
     </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
@@ -1768,6 +1768,21 @@
       getOwnSetId: () => state.ownSetId,
       onRenameSet: (name) => renameLabelSet(state.ownSetId, name),
       onActivate: (entry) => activateRecordingEntry(entry),
+      getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
+      getSetInfo: (setId) => state.labelSets.get(setId),
+      isSetHidden: (setId) => state.hiddenSetIds.has(setId),
+      onToggleSetHidden: (setId) => {
+        if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
+        else state.hiddenSetIds.add(setId);
+        syncToPlayer();
+        recordingExplorer.render();
+      },
+      onAdoptSet: (setId) => {
+        const undo = snapshotLabels();
+        adoptSetLabels(setId);
+        recordingExplorer.render();
+        showUndoToast(`Copied labels into "${state.labelSets.get(state.ownSetId)?.name || 'my set'}"`, undo);
+      },
       onRemoveRecording: (entry) => {
         saveCurrentAnnotationsIfNeeded();
         const wasActive = entry.id === recordingManager.activeId;
@@ -2661,7 +2676,8 @@
             selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
           }
         }
-        sidebar.setActive('labels');
+        // Stay in the Project tab: the explorer now shows the XC set (read-only) under the recording.
+        recordingExplorer.render();
       } catch (err) {
         xcProgressDone();
         player.hideLoadingOverlay();
