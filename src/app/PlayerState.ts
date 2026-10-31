@@ -739,7 +739,7 @@ export class PlayerState {
         const input = e.target as HTMLInputElement | null;
         const file = input?.files?.[0] ?? null;
         if (!file) return;
-        await this.loadFile(file);
+        await this.loadFile(file).catch(() => {}); // error already shown in the status bar
     }
 
     async loadFile(file: File) {
@@ -754,6 +754,7 @@ export class PlayerState {
             await this._onAudioLoaded(result, file.name, 'file-loaded', file);
         } catch (error) {
             this._onAudioLoadError(error, 'file');
+            throw error;
         }
     }
 
@@ -826,7 +827,11 @@ export class PlayerState {
     _onAudioLoadError(error: any, source: string) {
         console.error(`Error loading audio (${source}):`, error);
         this._setTransportState('error', `${source}-load-failed`);
-        this.d.fileInfo?.classList.remove('loading');
+        if (this.d.fileInfo) {
+            this.d.fileInfo.classList.remove('loading');
+            const msg = error?.message || String(error);
+            this.d.fileInfo.innerHTML = `<span class="statusbar-label" title="${escapeHtml(msg)}">⚠ Could not load audio: ${escapeHtml(msg)}</span>`;
+        }
         if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
         this._emit('error', { message: error?.message || String(error), source });
     }

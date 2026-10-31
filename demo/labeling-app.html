@@ -747,8 +747,14 @@
         if (xcNotFoundMsg) xcNotFoundMsg.textContent = msg;
         xcNotFoundManager.open();
       } else {
-        fileLabel.innerHTML = `<span style="color:var(--color-error,#ef4444)" title="${msg}">&#9888; XC load failed</span>`;
+        showLoadError(msg, 'XC load failed');
       }
+    }
+
+    /** Header status for a failed load: short prefix + reason (full text in the tooltip). */
+    function showLoadError(msg, prefix = 'Could not load audio') {
+      const esc = String(msg).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      fileLabel.innerHTML = `<span style="color:var(--color-error,#ef4444)" title="${esc}">&#9888; ${prefix}: ${esc}</span>`;
     }
 
     /**
@@ -1984,6 +1990,7 @@
 
       // 4. Load audio
       await resolveProjectAudio(entry);
+      let _audioFailed = false;
       if (entry.audioUrl || entry.xcId) {
         try {
           // Local files linked to an XC number keep playing their own audio
@@ -2003,13 +2010,18 @@
             await player.loadUrl(entry.audioUrl);
           }
         } catch (e) {
+          _audioFailed = true;
           xcProgressDone();
           player.hideLoadingOverlay();
           if (e?.code === 'XC_NOT_FOUND') showXcError(e);
-          else selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
+          else {
+            selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
+            showLoadError(e?.message || e);
+          }
         }
       }
-      fileLabel.textContent = entry.filename;
+      // Keep the status bar's load error visible instead of the plain filename.
+      if (!_audioFailed) fileLabel.textContent = entry.filename;
 
       // 5. Restore annotations — mark state.labels as belonging to this entry
       state.labels = (entry.annotations || []).map(a => ({ ...a }));
@@ -2826,13 +2838,10 @@
       const blobUrl = URL.createObjectURL(blob);
       state.activeObjectUrl = blobUrl;
       _lastAudioUrl = blobUrl;
-      try {
-        // Fixed lastModified keeps the WASM spectrogram cache key stable across re-downloads.
-        const file = new File([blob], filename, { type: mimeType, lastModified: 0 });
-        await player.loadFile(file);
-      } catch {
-        await player.loadUrl(blobUrl);
-      }
+      // Fixed lastModified keeps the WASM spectrogram cache key stable across re-downloads.
+      // A decode error propagates to the caller (no loadUrl retry: it would decode the same bytes again).
+      const file = new File([blob], filename, { type: mimeType, lastModified: 0 });
+      await player.loadFile(file);
       fileLabel.textContent = filename;
     }
 
@@ -3469,7 +3478,14 @@
       syncToPlayer();
       // Set before loading: the 'ready' event reads it for the properties panel.
       fileLabel.textContent = file.name;
-      await player.loadFile(file);
+      try {
+        await player.loadFile(file);
+      } catch (err) {
+        fileInput.value = '';
+        selectionMeta.textContent = `Could not load audio: ${err?.message || err}`;
+        showLoadError(err?.message || err);
+        return;
+      }
       // Clear any saved original when a new file is explicitly loaded by the user
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;
