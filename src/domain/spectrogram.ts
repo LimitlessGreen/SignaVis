@@ -460,6 +460,48 @@ export function noiseFloorStats(spectrogramData: NumArray) {
     return autoContrastStats(spectrogramData, 50, 99.9);
 }
 
+/**
+ * Values of frames [f0, f1) and bins [0, bins) of row-major [frame][stride]
+ * data, minus the limited per-band floor when given (noise reduction), so
+ * auto contrast sees what is actually drawn. Sub-sampled to ~maxSamples.
+ */
+export function sampleFrameValues(
+    data: NumArray, stride: number, f0: number, f1: number, bins: number,
+    bandFloor: ArrayLike<number> | null, maxSamples = 200000,
+): Float32Array {
+    const nf = Math.max(0, f1 - f0);
+    const nb = Math.max(0, Math.min(bins, stride));
+    if (nf === 0 || nb === 0) return new Float32Array(0);
+    const step = Math.max(1, Math.floor((nf * nb) / maxSamples));
+    const floor = bandFloor ? limitBandFloor(bandFloor) : null;
+    const out = new Float32Array(Math.ceil((nf * nb) / step));
+    let n = 0;
+    for (let k = 0; k < nf * nb; k += step) {
+        const f = f0 + Math.floor(k / nb), b = k % nb;
+        const v = (data as any)[f * stride + b];
+        if (!Number.isFinite(v)) continue;
+        out[n++] = floor ? v - floor[b] : v;
+    }
+    return out.subarray(0, n);
+}
+
+/**
+ * Auto contrast from visible values: black point a little above the noise
+ * floor (median), white point at the 99.5th percentile, so calls fill the
+ * range while rare clicks may clip. Null when there is too little signal.
+ */
+export function visibleContrastPoints(values: Float32Array, blackMarginDb = 3): { black: number; white: number } | null {
+    if (values.length < 16) return null;
+    const s = Float32Array.from(values).sort();
+    const at = (p: number) => s[Math.min(s.length - 1, Math.floor(s.length * p / 100))];
+    const median = at(50);
+    const white = at(99.5);
+    if (!(white > median)) return null;
+    // Margin scaled down for value ranges much smaller than dB (e.g. PCEN).
+    const black = median + Math.min(blackMarginDb, (white - median) * 0.1);
+    return { black, white };
+}
+
 // ─── Auto-Frequency Detection ───────────────────────────────────────
 
 /**

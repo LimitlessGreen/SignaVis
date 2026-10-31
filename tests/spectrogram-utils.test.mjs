@@ -8,6 +8,8 @@ import {
     computeAmplitudePeak,
     updateSpectrogramStats,
     autoContrastStats,
+    sampleFrameValues,
+    visibleContrastPoints,
     detectMaxFrequency,
     buildSpectrogramGrayscale,
     pixelYToFrequency,
@@ -603,4 +605,21 @@ test('buildSpectrogramGrayscale with CLAHE option', () => {
         totalDiff += Math.abs(withCLAHE.gray[i] - withoutCLAHE.gray[i]);
     }
     assert.ok(totalDiff > 0, 'CLAHE should change the output');
+});
+
+test('sampleFrameValues takes only the requested frames and bins, minus band floor', () => {
+    // 4 frames × 3 bins, value = frame*10 + bin
+    const data = Float32Array.from({ length: 12 }, (_, i) => Math.floor(i / 3) * 10 + (i % 3));
+    assert.deepEqual([...sampleFrameValues(data, 3, 1, 3, 2, null)], [10, 11, 20, 21]);
+    assert.deepEqual([...sampleFrameValues(data, 3, 1, 2, 3, [1, 1, 1])], [9, 10, 11]);
+});
+
+test('visibleContrastPoints: black above the median, white at p99.5', () => {
+    // Noise at -80 dB, 5 % calls at -20 dB
+    const v = new Float32Array(1000).fill(-80);
+    for (let i = 0; i < 50; i++) v[i * 20] = -20;
+    const pts = visibleContrastPoints(v);
+    assert.equal(pts.black, -77);
+    assert.equal(pts.white, -20);
+    assert.equal(visibleContrastPoints(new Float32Array(100).fill(-50)), null);
 });
