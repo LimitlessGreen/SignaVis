@@ -185,3 +185,20 @@ export function deserializeProject(project: WorkspaceProject): SessionSnapshot {
 }
 
 export const stringifyProject = (p: WorkspaceProject) => JSON.stringify(p, null, 2) + '\n';
+
+/** Metadata file stored next to an XC download (license / recordist must travel with the audio). */
+export const xcMetaPath = (xcId: string) => `xc/XC${xcId}.json`;
+
+/**
+ * Audio files in the project folder that no recording refers to yet,
+ * excluding XC downloads that belong to an existing XC recording.
+ */
+export function filesNotInProject<T extends { path: string }>(files: T[], entries: any[]): T[] {
+    const used = new Set(entries.map((e) => e?.path).filter(Boolean));
+    const xcIds = new Set(entries.map((e) => e?.xcId).filter(Boolean).map(String));
+    return files.filter((f) => {
+        if (used.has(f.path)) return false;
+        const m = /^xc\/XC(\d+)\.mp3$/i.exec(f.path);
+        return !(m && xcIds.has(m[1]));
+    });
+}
