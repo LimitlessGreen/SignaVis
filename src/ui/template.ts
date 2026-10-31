@@ -268,7 +268,7 @@ export function createPlayerHTML(opts = {}) {
                 </label>
             </div>
             <div class="settings-row">
-                <label class="settings-label" title="Show a magnified view next to the cursor while moving or resizing a label">
+                <label class="settings-label" title="Show a magnified view next to the cursor while moving or resizing a label (hold Shift for fine 1/4-speed dragging)">
                     <input type="checkbox" data-aw="editLoupeCheck" checked> Edit Loupe
                 </label>
             </div>
