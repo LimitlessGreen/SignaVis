@@ -1,27 +1,27 @@
 /**
  * Reference Calls Modal
  *
- * Opens a full-screen modal that lets the user compare a labeled segment
- * against Xeno-Canto reference recordings of the same (or searched) species.
+ * Compares a labeled segment against Xeno-Canto reference recordings of the
+ * same (or a searched) species.
  *
  * Layout:
- *   ┌──────────────────────────────────────────────────────────────┐
- *   │  Reference Calls — Turdus merula                       [×]  │
- *   │  [Species search ─────────────────────────────────────────]  │
- *   ├──────────────────────────────────────────────────────────────┤
- *   │  Your recording (reference segment)                          │
- *   │  ┌────────────────────────────────────────────────────────┐  │
- *   │  │  compact BirdNETPlayer with the labeled segment        │  │
- *   │  └────────────────────────────────────────────────────────┘  │
- *   ├──────────────────────────────────────────────────────────────┤
- *   │  XC Recordings — Quality A       ← page 1 of N →           │
- *   │  [group: song] ─────────────────────────────────────────    │
- *   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
- *   │  │sono image│ │sono image│ │          │ │          │       │
- *   │  │ ▶ XC1234 │ │ ▶ XC2345│ │  player  │ │  image   │       │
- *   │  │ A · 0:05 │ │ A · 0:03│ │(on click)│ │          │       │
- *   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
- *   └──────────────────────────────────────────────────────────────┘
+ *   ┌───────────────────────────────────────────────────────────────────┐
+ *   │ [img] Common name / Sci name   [species search]   keys hint   [×]  │
+ *   ├─────────────────────────────────────────────┬─────────────────────┤
+ *   │ YOUR RECORDING                              │ Quality A · 312 rec │
+ *   │ ┌─────────────────────────────────────────┐ │ ── song ──────────  │
+ *   │ │ player (labeled segment)                │ │ [sono] XC1234 A 0:05│
+ *   │ └─────────────────────────────────────────┘ │ [sono] XC2345 B 0:03│
+ *   │ REFERENCE — XC1234 · song · A · DE · ↗      │ ── call ──────────  │
+ *   │ ┌─────────────────────────────────────────┐ │ [sono] …            │
+ *   │ │ player (selected candidate, lazy)       │ │                     │
+ *   │ └─────────────────────────────────────────┘ │  ← 1 / 12 →         │
+ *   └─────────────────────────────────────────────┴─────────────────────┘
+ *
+ * Keyboard (the modal owns the keyboard while open; no player listens to
+ * document keys): Space play/pause focused side · ↑↓ / J K candidate ·
+ * R own recording · F reference · A play own segment then reference.
+ * Only one player ever plays at a time.
  */
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
@@ -31,21 +31,17 @@ const XC_API = 'https://xeno-canto.org/api/3/recordings';
 const BIRD_IMG_BASE = './data/species_images/';
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
-// Compact player options (mirrors storybook compact-embed story)
-const COMPACT_PLAYER_OPTS = {
-  showOverview: false, showFileOpen: false, showTime: false,
+const PLAYER_HEIGHT = 230;
+const AUDIO_CACHE_MAX = 24;
+
+// Shared player options: spectrogram only, no chrome, own keyboard handling.
+// The reference players keep their own spectrogram settings on purpose.
+const PLAYER_OPTS = {
+  showOverview: false, showFileOpen: false, showTime: true,
   showVolume: false, showViewToggles: false, showZoom: false,
   showFFTControls: false, showDisplayGain: false, showStatusbar: false,
-  transportStyle: 'hero', transportOverlay: true, viewMode: 'spectrogram',
-  // The modal owns the keyboard: no player listens to document-level keys.
+  transportStyle: 'hero', transportOverlay: false, viewMode: 'spectrogram',
   keyboardShortcuts: false,
-};
-
-// Reference player — no overlay so the spectrogram is visible immediately
-const REF_PLAYER_OPTS = {
-  ...COMPACT_PLAYER_OPTS,
-  transportOverlay: false,
-  showTime: true,
 };
 
 // ─── CSS injected once ──────────────────────────────────────────────
@@ -59,127 +55,94 @@ function injectCss() {
   position: fixed; inset: 0; z-index: 9000;
   background: rgba(0,0,0,0.6);
   display: flex; align-items: stretch; justify-content: center;
-  padding: 0;
 }
 .rc-dialog {
-  display: flex; flex-direction: column;
-  width: 100%; max-width: 100%;
-  background: var(--color-bg-primary);
-  overflow: hidden;
+  display: flex; flex-direction: column; width: 100%;
+  background: var(--color-bg-primary); overflow: hidden;
 }
 .rc-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 20px; border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-surface); flex-shrink: 0; flex-wrap: wrap;
 }
-.rc-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-species { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rc-species-img {
+  width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
+  background: #111; border: 1px solid var(--color-border); flex-shrink: 0;
+}
+.rc-species-common { font-size: 16px; font-weight: 700; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-species-sci { font-size: 12px; font-style: italic; color: var(--color-text-secondary); }
+.rc-search { flex: 1; min-width: 220px; max-width: 420px; }
+.rc-search .species-search-widget { width: 100%; }
+.rc-keys { font-size: 11px; color: var(--color-text-secondary); margin-left: auto; white-space: nowrap; }
+.rc-keys kbd {
+  display: inline-block; padding: 0 4px; margin: 0 1px; border-radius: 3px;
+  border: 1px solid var(--color-border); background: var(--color-bg-primary);
+  font: 10px/16px ui-monospace, monospace;
+}
 .rc-close {
   background: none; border: none; cursor: pointer; padding: 4px 8px;
-  color: var(--color-text-secondary); font-size: 18px; line-height: 1;
-  border-radius: 4px;
+  color: var(--color-text-secondary); font-size: 20px; line-height: 1; border-radius: 4px;
 }
-.rc-close:hover { background: var(--color-bg-surface); color: var(--color-text-primary); }
-.rc-search-row {
-  padding: 10px 20px; border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-  background: var(--color-bg-surface);
+.rc-close:hover { background: var(--color-bg-primary); color: var(--color-text-primary); }
+.rc-main { flex: 1; min-height: 0; display: flex; }
+.rc-compare { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.rc-side { display: flex; flex-direction: column; gap: 6px; }
+.rc-side-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--color-text-secondary); display: flex; align-items: center; gap: 8px; min-height: 18px;
 }
-.rc-search-row .species-search-widget { flex: 1; max-width: 480px; }
-.rc-profile {
-  display: flex; gap: 20px; padding: 20px; border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-primary); align-items: flex-start;
+.rc-side-title .rc-side-meta { text-transform: none; letter-spacing: 0; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-side-title a { color: var(--color-accent); text-decoration: none; text-transform: none; }
+.rc-player {
+  height: ${PLAYER_HEIGHT}px; border-radius: 8px; overflow: hidden;
+  background: var(--color-bg-surface); border: 2px solid transparent;
 }
-.rc-profile-img-wrap {
-  width: 200px; height: 150px; border-radius: 8px; overflow: hidden;
-  background: #111; flex-shrink: 0; border: 1px solid var(--color-border);
+.rc-side.rc-focused .rc-player { border-color: var(--color-accent); }
+.rc-side.rc-focused .rc-side-title { color: var(--color-accent); }
+.rc-list {
+  width: 380px; flex-shrink: 0; border-left: 1px solid var(--color-border);
+  display: flex; flex-direction: column; min-height: 0; background: var(--color-bg-surface);
 }
-.rc-profile-img { width: 100%; height: 100%; object-fit: cover; }
-.rc-profile-info { flex: 1; min-width: 0; }
-.rc-profile-common { font-size: 24px; font-weight: 800; margin-bottom: 4px; color: var(--color-text-primary); }
-.rc-profile-sci { font-size: 16px; font-style: italic; color: var(--color-text-secondary); margin-bottom: 12px; }
-.rc-profile-meta { font-size: 12px; color: var(--color-text-secondary); opacity: 0.8; }
-.rc-body {
-  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
-}
-.rc-section {
-  padding: 14px 20px; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
-}
-.rc-section-title {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--color-text-secondary);
-  margin-bottom: 10px;
-}
-.rc-ref-player { border-radius: 8px; overflow: hidden; min-height: 280px; background: var(--color-bg-surface); }
-.rc-grid-section { flex: 1; padding: 14px 20px; min-height: 0; }
+.rc-list-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.rc-info { font-size: 11px; color: var(--color-text-secondary); margin: 2px 2px 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rc-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-size: 10px; background: var(--color-accent-faint); color: var(--color-accent); }
+.rc-badge.rc-warn { background: rgba(234,179,8,0.15); color: #b45309; }
 .rc-group-label {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--color-text-secondary);
-  margin: 12px 0 8px; display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--color-text-secondary); margin: 10px 2px 6px; display: flex; align-items: center; gap: 8px;
 }
 .rc-group-label::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
-.rc-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px; margin-bottom: 4px;
+.rc-item {
+  display: flex; flex-direction: column; gap: 4px; padding: 6px; margin-bottom: 6px;
+  border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer;
+  background: var(--color-bg-primary); transition: border-color 0.12s, box-shadow 0.12s;
 }
-.rc-card {
-  border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden;
-  background: var(--color-bg-surface); cursor: pointer; position: relative;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  display: flex; flex-direction: column;
-}
-.rc-card:hover { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-faint); }
-.rc-card.rc-selected, .rc-ref-player.rc-selected { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent); }
-.rc-ref-player { border: 1px solid transparent; }
-.rc-card-header {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; border-bottom: 1px solid var(--color-border);
-  font-size: 12px; font-weight: 700; color: var(--color-text-primary);
-  flex-shrink: 0;
-}
-.rc-card-img-wrap {
-  position: relative; background: #111; height: 120px; overflow: hidden; flex-shrink: 0;
-}
-.rc-card-img { width: 100%; height: 100%; object-fit: cover; object-position: left center; display: block; }
-.rc-card-img-placeholder {
-  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  color: var(--color-text-secondary); font-size: 11px;
-}
-.rc-card-player-wrap { height: 160px; overflow: hidden; flex-shrink: 0; }
-.rc-card-meta {
-  padding: 6px 10px; font-size: 11px; color: var(--color-text-secondary);
-  line-height: 1.5; flex: 1;
-}
-.rc-card-actions {
-  padding: 6px 10px; border-top: 1px solid var(--color-border); flex-shrink: 0;
-}
-.rc-card-play-btn {
-  display: flex; align-items: center; gap: 5px; width: 100%;
-  padding: 4px 8px; border-radius: 5px; border: 1px solid var(--color-border);
-  background: var(--color-bg-primary); color: var(--color-text-primary);
-  font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color 0.15s;
-}
-.rc-card-play-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
-.rc-card-badge {
-  display: inline-block; padding: 1px 5px; border-radius: 3px;
-  background: var(--color-accent-faint); color: var(--color-accent);
-  font-size: 10px; font-weight: 600;
-}
+.rc-item:hover { border-color: var(--color-accent); }
+.rc-item.rc-selected { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent); }
+.rc-item-sono { height: 54px; border-radius: 4px; overflow: hidden; background: #111; }
+.rc-item-sono img { width: 100%; height: 100%; object-fit: cover; object-position: left center; display: block; }
+.rc-item-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--color-text-primary); }
+.rc-item-head .rc-len { margin-left: auto; font-weight: 400; color: var(--color-text-secondary); }
+.rc-item-meta { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-pagination {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  padding: 14px 20px; border-top: 1px solid var(--color-border);
-  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 8px; border-top: 1px solid var(--color-border); flex-shrink: 0;
 }
 .rc-pagination button {
-  padding: 5px 14px; border-radius: 6px; border: 1px solid var(--color-border);
-  background: var(--color-bg-surface); color: var(--color-text-primary);
-  cursor: pointer; font-size: 13px;
+  padding: 4px 12px; border-radius: 6px; border: 1px solid var(--color-border);
+  background: var(--color-bg-primary); color: var(--color-text-primary); cursor: pointer; font-size: 12px;
 }
-.rc-pagination button:hover { border-color: var(--color-accent); }
+.rc-pagination button:hover:not(:disabled) { border-color: var(--color-accent); }
 .rc-pagination button:disabled { opacity: 0.4; cursor: default; }
-.rc-pagination-info { font-size: 13px; color: var(--color-text-secondary); min-width: 80px; text-align: center; }
-.rc-status { padding: 32px 20px; text-align: center; color: var(--color-text-secondary); font-size: 13px; }
+.rc-page-info { font-size: 12px; color: var(--color-text-secondary); min-width: 60px; text-align: center; }
+.rc-status { padding: 24px 16px; text-align: center; color: var(--color-text-secondary); font-size: 13px; }
 .rc-status-error { color: var(--color-error, #ef4444); }
+@media (max-width: 820px) {
+  .rc-main { flex-direction: column; }
+  .rc-list { width: auto; border-left: none; border-top: 1px solid var(--color-border); max-height: 45vh; }
+  .rc-keys { display: none; }
+}
 `;
   document.head.appendChild(s);
 }
@@ -213,14 +176,20 @@ function esc(s: any) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function groupByType(recordings: any, preferredType: any) {
-  const groups = new Map();
+function absUrl(u: any) {
+  if (!u) return '';
+  const s = String(u);
+  return s.startsWith('//') ? `https:${s}` : s;
+}
+
+function groupByType(recordings: any[], preferredType: string) {
+  const groups = new Map<string, any[]>();
   for (const rec of recordings) {
     const t = (rec.type || 'unknown').toLowerCase().trim() || 'unknown';
     if (!groups.has(t)) groups.set(t, []);
-    groups.get(t).push(rec);
+    groups.get(t)!.push(rec);
   }
-  // Sort groups: preferred type first, then alphabetical
+  // Preferred type first, then alphabetical
   return [...groups.entries()].sort(([a], [b]) => {
     if (preferredType) {
       const pa = a.includes(preferredType.toLowerCase());
@@ -232,245 +201,365 @@ function groupByType(recordings: any, preferredType: any) {
   });
 }
 
+function isTyping(t: EventTarget | null) {
+  const el = t as HTMLElement | null;
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
+// Fully disable labeling on a player: blocks both drawMode and Shift+drag.
+function disableLabeling(p: any) {
+  for (const layer of [p.spectrogramLabels, p.annotations]) {
+    if (!layer) continue;
+    layer.drawMode = false;
+    if (layer.overlay) layer.overlay.style.pointerEvents = 'none';
+  }
+  if (p._drawBtn)  p._drawBtn.hidden  = true;
+  if (p._stampBtn) p._stampBtn.hidden = true;
+}
+
+const el = (tag: string, cls?: string, text?: string) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
+
 // ─── Main export ────────────────────────────────────────────────────
 
 /**
  * @param {object} opts
- * @param {object}   opts.xcPanel       XenoCantoPanel instance (for apiKey + fetchAudio)
+ * @param {object}   opts.xcPanel        XenoCantoPanel instance (for apiKey + fetchAudio)
  * @param {function} opts.getSuggestions Species suggestion provider
  * @param {function} opts.BirdNETPlayer  BirdNETPlayer constructor
- * @param {object}   opts.taxonomy      TaxonomyResolver instance
- * @param {function} opts.getLang       Function returning current language code
+ * @param {function} [opts.resolveSci]   vernacular → scientific name
+ * @param {object}   opts.taxonomy       TaxonomyResolver instance
+ * @param {function} opts.getLang        Function returning current language code
+ * @param {function} [opts.getMainPlayer] Main app player (paused on open)
  */
 export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
-  const backdrop = document.createElement('div');
-  backdrop.className = 'rc-backdrop';
+  const backdrop = el('div', 'rc-backdrop');
   backdrop.hidden = true;
   backdrop.setAttribute('role', 'dialog');
   backdrop.setAttribute('aria-modal', 'true');
-
-  const dialog = document.createElement('div');
-  dialog.className = 'rc-dialog';
+  const dialog = el('div', 'rc-dialog');
   backdrop.appendChild(dialog);
   document.body.appendChild(backdrop);
 
-  // Header
-  const header = document.createElement('div');
-  header.className = 'rc-header';
-  const titleEl = document.createElement('div');
-  titleEl.className = 'rc-title';
-  titleEl.textContent = 'Reference Calls';
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'rc-close modal-close';
-  closeBtn.title = 'Close';
-  closeBtn.textContent = '×';
-  header.appendChild(titleEl);
-  header.appendChild(closeBtn);
+  // Header: species · search · key hints · close
+  const header = el('div', 'rc-header');
+  const speciesEl = el('div', 'rc-species');
+  const searchWrap = el('div', 'rc-search');
+  const keys = el('div', 'rc-keys');
+  keys.innerHTML = '<kbd>Space</kbd> play · <kbd>↑</kbd><kbd>↓</kbd> candidate · <kbd>R</kbd>/<kbd>F</kbd> own/reference · <kbd>A</kbd> A/B';
+  const closeBtn = el('button', 'rc-close', '×') as HTMLButtonElement;
+  closeBtn.title = 'Close (Esc)';
+  header.append(speciesEl, searchWrap, keys, closeBtn);
   dialog.appendChild(header);
 
-  // Body
-  const body = document.createElement('div');
-  body.className = 'rc-body';
-  dialog.appendChild(body);
+  const main = el('div', 'rc-main');
+  dialog.appendChild(main);
 
-  // Reference section (player for labeled segment)
-  const refSection = document.createElement('div');
-  refSection.className = 'rc-section';
-  const refTitle = document.createElement('div');
-  refTitle.className = 'rc-section-title';
-  refTitle.textContent = 'Your Recording — Reference Segment';
-  refSection.appendChild(refTitle);
-  const refPlayerWrap = document.createElement('div');
-  refPlayerWrap.className = 'rc-ref-player';
-  refSection.appendChild(refPlayerWrap);
-  body.appendChild(refSection);
+  // Compare column: own recording above, selected reference below
+  const compare = el('div', 'rc-compare');
+  const ownSide = el('div', 'rc-side');
+  const ownTitle = el('div', 'rc-side-title');
+  const ownPlayerWrap = el('div', 'rc-player');
+  ownSide.append(ownTitle, ownPlayerWrap);
+  const refSide = el('div', 'rc-side');
+  const refTitle = el('div', 'rc-side-title');
+  const refPlayerWrap = el('div', 'rc-player');
+  refSide.append(refTitle, refPlayerWrap);
+  compare.append(ownSide, refSide);
+  main.appendChild(compare);
 
-  // Profile section
-  const profileSection = document.createElement('div');
-  profileSection.className = 'rc-profile';
-  body.appendChild(profileSection);
+  // Candidate list
+  const list = el('div', 'rc-list');
+  const listBody = el('div', 'rc-list-body');
+  const pagination = el('div', 'rc-pagination');
+  const prevBtn = el('button', '', '← Prev') as HTMLButtonElement;
+  const pageInfo = el('div', 'rc-page-info');
+  const nextBtn = el('button', '', 'Next →') as HTMLButtonElement;
+  pagination.append(prevBtn, pageInfo, nextBtn);
+  list.append(listBody, pagination);
+  main.appendChild(list);
 
-  // Search row (moved into body)
-  const searchRow = document.createElement('div');
-  searchRow.className = 'rc-search-row';
-  const searchLabel = document.createElement('span');
-  searchLabel.style.cssText = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-text-secondary);white-space:nowrap';
-  searchLabel.textContent = 'Compare with:';
-  searchRow.appendChild(searchLabel);
-  body.appendChild(searchRow);
-
-  // Grid section
-  const gridSection = document.createElement('div');
-  gridSection.className = 'rc-grid-section';
-  body.appendChild(gridSection);
-
-  // Pagination
-  const pagination = document.createElement('div');
-  pagination.className = 'rc-pagination';
-  const prevBtn = document.createElement('button');
-  prevBtn.textContent = '← Prev';
-  const pageInfo = document.createElement('div');
-  pageInfo.className = 'rc-pagination-info';
-  const nextBtn = document.createElement('button');
-  nextBtn.textContent = 'Next →';
-  pagination.appendChild(prevBtn);
-  pagination.appendChild(pageInfo);
-  pagination.appendChild(nextBtn);
-  dialog.appendChild(pagination);
-
-  const manager = new ModalManager({ backdrop: backdrop as any, dialog: dialog as any });
-  closeBtn.addEventListener('click', () => manager.close());
+  const requestClose = () => { cleanup(); manager.close(); };
+  const manager = new ModalManager({ backdrop: backdrop as any, dialog: dialog as any, onClose: requestClose } as any);
+  closeBtn.addEventListener('click', requestClose);
 
   // ── State ────────────────────────────────────────────────────────
-  let _currentLabel = null;
-  let _currentAudioUrl = null;
-  let _currentSciName = '';
-  let _currentPage = 1;
+  let _label: any = null;
+  let _sciName = '';
+  let _page = 1;
   let _totalPages = 1;
   let _preferredType = '';
-  let _refPlayer: any = null;
-  let _activePlayers: any = [];
   let _searchWidget: any = null;
-  let _loading = false;
-  let _activeTier = 0; // index into QUALITY_TIERS
-  // Cards of the current page in display order; player is set once loaded.
-  let _cards: { el: HTMLElement, player: any }[] = [];
-  let _selected = -1; // -1 = own recording, otherwise index into _cards
+  let _loadToken = 0;          // invalidates stale page loads
+  let _activeTier = 0;         // index into QUALITY_TIERS
 
-  // ── Exclusive playback + selection ────────────────────────────────
-  function allPlayers(): any[] {
-    return [_refPlayer, ..._cards.map(c => c.player)].filter(Boolean);
-  }
-  /** Only one player may play: when one starts, pause all the others. */
+  let _ownPlayer: any = null;
+  let _refPlayer: any = null;
+  let _refBlobUrl: string | null = null;
+  let _refToken = 0;           // invalidates stale reference loads
+
+  let _items: { el: HTMLElement, rec: any }[] = [];
+  let _selected = -1;          // index into _items
+  let _focus: 'own' | 'ref' = 'own';
+  let _abPending = false;      // A/B: play reference once own segment ends
+  let _ownClip = false;        // stop own playback at the label end
+
+  const _audioCache = new Map<string, ArrayBuffer>();
+
+  // ── Playback coordination ─────────────────────────────────────────
+  const players = () => [_ownPlayer, _refPlayer].filter(Boolean);
+  function stopAll() { for (const p of players()) if (p.isPlaying) p.pause(); }
+
+  /** Only one player may play: when one starts, pause the other. */
   function watchPlayer(p: any) {
     p.on?.('play', () => {
-      for (const other of allPlayers()) if (other !== p && other.isPlaying) other.pause();
+      for (const other of players()) if (other !== p && other.isPlaying) other.pause();
     });
   }
-  function select(idx: number, { scroll = true } = {}) {
-    _selected = Math.max(-1, Math.min(idx, _cards.length - 1));
-    refPlayerWrap.classList.toggle('rc-selected', _selected === -1);
-    _cards.forEach((c, i) => c.el.classList.toggle('rc-selected', i === _selected));
-    if (scroll) (_selected === -1 ? refPlayerWrap : _cards[_selected]?.el)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-  function selectedPlayer() {
-    return _selected === -1 ? _refPlayer : _cards[_selected]?.player;
-  }
-  function stopAll() { for (const p of allPlayers()) if (p.isPlaying) p.pause(); }
 
-  // Window capture runs before every document listener, so the main player
-  // underneath (and its label hotkeys) never sees keys while the modal is open.
+  function seek(p: any, t: number) {
+    try { p._state?._seekToTime?.(t, true); } catch {}
+  }
+
+  function segment() {
+    const s = Number(_label?.start), e = Number(_label?.end);
+    return Number.isFinite(s) && Number.isFinite(e) && e > s ? { start: s, end: e } : null;
+  }
+
+  function playOwn() {
+    if (!_ownPlayer) return;
+    stopAll();
+    const seg = segment();
+    const t = _ownPlayer.currentTime || 0;
+    if (seg && (t < seg.start || t >= seg.end - 0.02)) seek(_ownPlayer, seg.start);
+    _ownPlayer.play();
+  }
+
+  function playRef() {
+    if (!_refPlayer) return;
+    stopAll();
+    if (_refPlayer.duration && _refPlayer.currentTime >= _refPlayer.duration - 0.05) seek(_refPlayer, 0);
+    _refPlayer.play();
+  }
+
+  function toggle(side: 'own' | 'ref') {
+    const p = side === 'own' ? _ownPlayer : _refPlayer;
+    if (!p) return;
+    _abPending = false;
+    if (p.isPlaying) p.pause();
+    else if (side === 'own') playOwn();
+    else playRef();
+  }
+
+  /** A/B: own segment, then the selected reference from its start. */
+  function playAB() {
+    if (!_ownPlayer || !_refPlayer) return;
+    seek(_refPlayer, 0);
+    playOwn();
+    _abPending = true;
+  }
+
+  function onOwnSegmentEnd() {
+    const seg = segment();
+    if (seg) seek(_ownPlayer, seg.start);
+    if (_abPending) { _abPending = false; playRef(); }
+  }
+
+  function setFocus(side: 'own' | 'ref') {
+    _focus = side;
+    ownSide.classList.toggle('rc-focused', side === 'own');
+    refSide.classList.toggle('rc-focused', side === 'ref');
+  }
+
+  // ── Keyboard (window capture: runs before every document listener) ─
   function onKeyDown(e: KeyboardEvent) {
-    if (backdrop.hidden || e.key === 'Escape') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (backdrop.hidden || e.key === 'Escape' || e.key === 'Tab') return;
+    if (isTyping(e.target)) return;
     let handled = true;
     switch (e.code) {
-      case 'Space': {
-        const p = selectedPlayer();
-        if (p) { if (p.isPlaying) p.pause(); else { stopAll(); p.play(); } }
-        break;
-      }
-      case 'ArrowDown': case 'ArrowRight': case 'KeyJ': select(_selected + 1); break;
-      case 'ArrowUp': case 'ArrowLeft': case 'KeyK': select(_selected - 1); break;
-      case 'KeyR': select(-1); break;
+      case 'Space': toggle(_focus); break;
+      case 'ArrowDown': case 'KeyJ': selectItem(_selected + 1); break;
+      case 'ArrowUp':   case 'KeyK': selectItem(_selected - 1); break;
+      case 'KeyR': setFocus('own'); break;
+      case 'KeyF': setFocus('ref'); break;
+      case 'KeyA': playAB(); break;
       default: handled = false;
     }
-    if (handled) { e.preventDefault(); }
-    // Swallow everything else too (except typing/Escape) so the main player stays quiet.
+    if (handled) e.preventDefault();
+    // Swallow everything so the main player underneath stays quiet.
     e.stopImmediatePropagation();
   }
   window.addEventListener('keydown', onKeyDown, true);
-  refPlayerWrap.addEventListener('pointerdown', () => select(-1, { scroll: false }));
+  ownSide.addEventListener('pointerdown', () => setFocus('own'));
+  refSide.addEventListener('pointerdown', () => setFocus('ref'));
 
-  // ── Species search widget ─────────────────────────────────────────
-  function mountSearchWidget(initialSciName: any, displayName: any) {
+  // ── Header: species + search ──────────────────────────────────────
+  function renderSpecies(sciName: string, fallbackName = '') {
+    const record = sciName ? taxonomy?.resolve(sciName) : null;
+    const lang = getLang?.() || 'en';
+    const common = (record && taxonomy.resolveCommonName(record, lang)) || fallbackName || sciName || 'Reference Calls';
+    const imgSrc = sciName ? `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp` : FALLBACK_SVG;
+    const attribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
+    speciesEl.innerHTML = `
+      <img class="rc-species-img" src="${esc(imgSrc)}" alt="" title="${esc(attribution)}" onerror="this.src='${FALLBACK_SVG}'" />
+      <div style="min-width:0">
+        <div class="rc-species-common">${esc(common)}</div>
+        ${sciName && sciName !== common ? `<div class="rc-species-sci">${esc(sciName)}</div>` : ''}
+      </div>`;
+  }
+
+  function mountSearchWidget(initialSciName: string, displayName: string) {
     if (_searchWidget) {
       try { _searchWidget.el?.remove(); } catch {}
       try { _searchWidget.destroy?.(); } catch {}
     }
     _searchWidget = createSpeciesSearchWidget({
       getSuggestions,
-      placeholder: 'Search species…',
+      placeholder: 'Compare with species…',
       initialValue: displayName || initialSciName,
       onSelect: (item: any) => {
-        // Prefer explicit scientific name; if missing, resolve via taxonomy
-        // so vernacular-language searches always query XC with the Latin name.
+        // Prefer the explicit scientific name; resolve vernacular names via taxonomy
         let sci = item?.scientificName || '';
         if (!sci && item?.name) sci = resolveSci(item.name) || '';
         if (!sci) sci = item?.name || '';
         if (!sci) return;
-        _currentSciName = sci;
-        titleEl.textContent = `Reference Calls — ${sci}`;
-        renderProfile(sci);
-        _currentPage = 1;
+        _sciName = sci;
+        renderSpecies(sci);
         loadPage(1);
       },
     });
-    searchRow.appendChild(_searchWidget.el);
+    searchWrap.appendChild(_searchWidget.el);
   }
 
-  function renderProfile(sciName: string) {
-    profileSection.innerHTML = '';
-    const record = taxonomy?.resolve(sciName);
-    const lang = getLang?.() || 'en';
-    const commonName = record ? (taxonomy.resolveCommonName(record, lang) || sciName) : sciName;
-
-    const imgSrc = sciName
-      ? `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp`
-      : FALLBACK_SVG;
-
-    const imgAttribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
-
-    profileSection.innerHTML = `
-      <div class="rc-profile-img-wrap">
-        <img class="rc-profile-img" src="${esc(imgSrc)}" alt="${esc(commonName)}" onerror="this.src='${FALLBACK_SVG}'" />
-      </div>
-      <div class="rc-profile-info">
-        <div class="rc-profile-common">${esc(commonName)}</div>
-        <div class="rc-profile-sci">${esc(sciName)}</div>
-        ${imgAttribution ? `<div class="rc-profile-meta">${esc(imgAttribution)}</div>` : ''}
-      </div>
-    `;
-  }
-
-  // ── Reference player (labeled segment) ───────────────────────────
-  async function mountRefPlayer(audioUrl: any, label: any) {
-    refPlayerWrap.innerHTML = '';
-    _refPlayer?.destroy?.();
-    _refPlayer = null;
-    if (!audioUrl || !BirdNETPlayer) return;
-
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'height:280px;border-radius:8px;overflow:hidden';
-    refPlayerWrap.appendChild(wrap);
-
+  // ── Own recording ─────────────────────────────────────────────────
+  async function mountOwnPlayer(audioUrl: string, label: any) {
+    ownPlayerWrap.innerHTML = '';
+    try { _ownPlayer?.destroy?.(); } catch {}
+    _ownPlayer = null;
+    const seg = segment();
+    ownTitle.innerHTML = `<span>Your recording</span>`
+      + (seg ? `<span class="rc-side-meta">${esc(label?.label || '')} · ${seg.start.toFixed(2)}–${seg.end.toFixed(2)} s</span>` : '');
+    if (!audioUrl || !BirdNETPlayer) {
+      ownPlayerWrap.innerHTML = '<div class="rc-status">No audio for this label.</div>';
+      return;
+    }
+    const inner = el('div');
+    inner.style.height = '100%';
+    ownPlayerWrap.appendChild(inner);
     try {
-      const p = new BirdNETPlayer(wrap, { ...REF_PLAYER_OPTS, height: 280 });
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, height: PLAYER_HEIGHT });
       await p.ready;
       await p.loadUrl(audioUrl);
-      _refPlayer = p;
+      if (!inner.isConnected) { p.destroy?.(); return; }
+      _ownPlayer = p;
       watchPlayer(p);
-
       disableLabeling(p);
-
-      // Highlight the labeled segment as readonly (no drag/resize/edit/delete).
-      if (label.start != null && label.end != null) {
+      p.on('timeupdate', (e: any) => {
+        const s = segment();
+        if (!_ownClip || !s || !p.isPlaying) return;
+        if ((e.detail?.currentTime ?? p.currentTime) >= s.end) { p.pause(); onOwnSegmentEnd(); }
+      });
+      // Clip to the label only when playback starts inside the segment
+      // (clicking elsewhere in the spectrogram plays freely).
+      p.on('play', () => {
+        const s = segment(), t = p.currentTime || 0;
+        _ownClip = !!s && t >= s.start - 0.05 && t < s.end;
+      });
+      p.on('finish', () => { _ownClip = false; if (_abPending) { _abPending = false; playRef(); } });
+      if (seg) {
+        // Highlight the labeled segment as readonly (no drag/resize/edit/delete).
         p.setSpectrogramLabels([{
-          start:    label.start,  end:    label.end,
-          freqMin:  label.freqMin, freqMax: label.freqMax,
-          label:    label.label || label.scientificName || '',
-          color:    'rgba(59,130,246,0.25)',
+          start: seg.start, end: seg.end,
+          freqMin: label.freqMin, freqMax: label.freqMax,
+          label: label.label || label.scientificName || '',
+          color: 'rgba(59,130,246,0.25)',
           readonly: true,
         }]);
-        try { p._state?.seekTo?.(label.start); } catch {}
+        seek(p, seg.start);
       }
     } catch (err) {
-      refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">Could not load reference: ${esc((err as any)?.message || String(err))}</div>`;
+      ownPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">Could not load recording: ${esc((err as any)?.message || String(err))}</div>`;
     }
+  }
+
+  // ── Selected reference (lazy) ─────────────────────────────────────
+  function destroyRefPlayer() {
+    try { _refPlayer?.destroy?.(); } catch {}
+    _refPlayer = null;
+    if (_refBlobUrl) { try { URL.revokeObjectURL(_refBlobUrl); } catch {} _refBlobUrl = null; }
+  }
+
+  function renderRefTitle(rec: any) {
+    if (!rec) { refTitle.innerHTML = '<span>Reference</span>'; return; }
+    const lic = formatLicense(rec.lic);
+    const meta = [rec.type, rec.q && `Q ${rec.q}`, fmtLen(rec.len), rec.cnt, rec.rec, lic].filter(Boolean).map(esc).join(' · ');
+    refTitle.innerHTML = `<span>Reference — XC${esc(rec.id)}</span><span class="rc-side-meta">${meta}</span>`
+      + `<a href="https://xeno-canto.org/${esc(rec.id)}" target="_blank" rel="noopener noreferrer" title="Open on xeno-canto">↗</a>`;
+  }
+
+  async function getAudio(xcId: string): Promise<ArrayBuffer> {
+    const hit = _audioCache.get(xcId);
+    if (hit) return hit;
+    const data = await xcPanel.fetchAudio(xcId);
+    const buf: ArrayBuffer = data.buffer;
+    _audioCache.set(xcId, buf);
+    while (_audioCache.size > AUDIO_CACHE_MAX) _audioCache.delete(_audioCache.keys().next().value!);
+    return buf;
+  }
+
+  async function showReference(rec: any) {
+    const token = ++_refToken;
+    _abPending = false;
+    destroyRefPlayer();
+    renderRefTitle(rec);
+    refPlayerWrap.innerHTML = rec ? '<div class="rc-status">Loading…</div>' : '<div class="rc-status">Select a candidate on the right.</div>';
+    if (!rec || !BirdNETPlayer) return;
+    try {
+      const buf = await getAudio(String(rec.id));
+      if (token !== _refToken) return;
+      const blobUrl = URL.createObjectURL(new Blob([buf.slice(0)], { type: 'audio/mpeg' }));
+      refPlayerWrap.innerHTML = '';
+      const inner = el('div');
+      inner.style.height = '100%';
+      refPlayerWrap.appendChild(inner);
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, height: PLAYER_HEIGHT });
+      await p.ready;
+      await p.loadUrl(blobUrl);
+      if (token !== _refToken) { try { p.destroy?.(); } catch {} URL.revokeObjectURL(blobUrl); return; }
+      _refPlayer = p;
+      _refBlobUrl = blobUrl;
+      watchPlayer(p);
+      disableLabeling(p);
+      prefetchNext();
+    } catch (err) {
+      if (token === _refToken) {
+        refPlayerWrap.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || 'Load failed')}</div>`;
+      }
+    }
+  }
+
+  /** Warm the cache for the next candidate so ↓ feels instant. */
+  function prefetchNext() {
+    const next = _items[_selected + 1]?.rec;
+    if (next && !_audioCache.has(String(next.id))) getAudio(String(next.id)).catch(() => {});
+  }
+
+  function selectItem(idx: number) {
+    if (!_items.length) return;
+    const i = Math.max(0, Math.min(idx, _items.length - 1));
+    if (i === _selected && _refPlayer) { setFocus('ref'); return; }
+    _selected = i;
+    _items.forEach((it, j) => it.el.classList.toggle('rc-selected', j === i));
+    _items[i].el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    setFocus('ref');
+    showReference(_items[i].rec);
   }
 
   // ── XC API search (with quality fallback) ────────────────────────
@@ -481,10 +570,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     { label: 'Any quality',   filter: ''        },
   ];
 
-  async function _fetchPage(baseQuery: any, qualityFilter: any, page: any, apiKey: any) {
-    const q = qualityFilter
-      ? `${baseQuery}+${qualityFilter}+len:2-7`
-      : `${baseQuery}+len:2-7`;
+  async function _fetchPage(baseQuery: string, qualityFilter: string, page: number, apiKey: string) {
+    const q = qualityFilter ? `${baseQuery}+${qualityFilter}+len:2-7` : `${baseQuery}+len:2-7`;
     const url = `${XC_API}?query=${q}&page=${page}&key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`XC API error: HTTP ${res.status}`);
@@ -496,29 +583,21 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     };
   }
 
-  async function fetchXcRecordings(sciName: any, page = 1) {
-    const parts = sciName.trim().split(/\s+/);
-    const genus   = parts[0] || '';
-    const epithet = parts[1] || '';
+  async function fetchXcRecordings(sciName: string, page = 1) {
+    const [genus = '', epithet = ''] = sciName.trim().split(/\s+/);
     if (!genus) throw new Error('Invalid scientific name');
-
     const apiKey = xcPanel.apiKey;
     if (!apiKey) throw new Error('XC API key required to browse reference calls. Add your key in the XC API panel.');
 
     let baseQuery = `gen:${encodeURIComponent(genus)}`;
     if (epithet) baseQuery += `+sp:${encodeURIComponent(epithet)}`;
 
-    // Try each quality tier; stop as soon as we get results (page 1 decides).
-    // For subsequent pages we remember which tier worked (_activeTier).
-    if (page === 1) _activeTier = 0; // reset on new search
-
-    // On page > 1 use the already-selected tier directly.
+    // Page 1 decides the tier; later pages reuse it.
     if (page > 1) {
       const tier = QUALITY_TIERS[_activeTier];
       return { ...(await _fetchPage(baseQuery, tier.filter, page, apiKey)), qualityLabel: tier.label };
     }
-
-    for (let i = _activeTier; i < QUALITY_TIERS.length; i++) {
+    for (let i = 0; i < QUALITY_TIERS.length; i++) {
       const tier = QUALITY_TIERS[i];
       const result = await _fetchPage(baseQuery, tier.filter, 1, apiKey);
       if (result.recordings.length > 0 || i === QUALITY_TIERS.length - 1) {
@@ -529,257 +608,105 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     return { recordings: [], numPages: 1, numRecordings: 0, qualityLabel: 'Any quality' };
   }
 
-  // Fully disable labeling on a player: blocks both drawMode and Shift+drag.
-  function disableLabeling(p: any) {
-    for (const layer of [p.spectrogramLabels, p.annotations]) {
-      if (!layer) continue;
-      layer.drawMode = false;
-      if (layer.overlay) layer.overlay.style.pointerEvents = 'none';
-    }
-    if (p._drawBtn)  p._drawBtn.hidden  = true;
-    if (p._stampBtn) p._stampBtn.hidden = true;
+  // ── Candidate list ────────────────────────────────────────────────
+  function renderItem(rec: any) {
+    const item = el('div', 'rc-item');
+    const sono = absUrl(rec.sono?.med || rec.sono?.small);
+    const meta = [rec.type, rec.cnt, rec.rec].filter(Boolean).map(esc).join(' · ');
+    item.innerHTML = `
+      <div class="rc-item-sono">${sono ? `<img src="${esc(sono)}" alt="" loading="lazy" />` : ''}</div>
+      <div class="rc-item-head">
+        <span>XC${esc(rec.id)}</span>
+        ${rec.q ? `<span class="rc-badge">${esc(rec.q)}</span>` : ''}
+        <span class="rc-len">${esc(fmtLen(rec.len))}</span>
+      </div>
+      <div class="rc-item-meta" title="${meta}">${meta}</div>`;
+    const idx = _items.push({ el: item, rec }) - 1;
+    item.addEventListener('click', () => selectItem(idx));
+    return item;
   }
 
-  // ── Card auto-loading ────────────────────────────────────────────
-  // Players are loaded strictly one at a time. buildGrayscale +
-  // colorizeSpectrogram run on the main thread; parallel loads cause jank.
-  // We yield via rAF between the fetch and the player creation so the browser
-  // can paint the loading state before the heavy canvas work begins.
-  const _loadQueue: any = [];
-  let _queueRunning = false;
-
-  function enqueueLoad(fn: any) {
-    _loadQueue.push(fn);
-    if (!_queueRunning) _drainQueue();
-  }
-  async function _drainQueue() {
-    if (_queueRunning) return;
-    _queueRunning = true;
-    while (_loadQueue.length) {
-      const next = _loadQueue.shift();
-      await next();
-      // Yield a frame between cards so the browser can paint progress.
-      await new Promise(r => requestAnimationFrame(r));
-    }
-    _queueRunning = false;
-  }
-
-  // ── Card rendering ────────────────────────────────────────────────
-  function renderCard(rec: any) {
-    const card = document.createElement('div');
-    card.className = 'rc-card';
-
-    const xcId      = rec.id || '';
-    const lenStr    = fmtLen(rec.len);
-    const country   = rec.cnt || '';
-    const recordist = rec.rec || '';
-    const type      = rec.type || '';
-    const quality   = rec.q || '';
-    const licLabel  = formatLicense(rec.lic);
-    const licUrl    = rec.lic || null;
-
-    // ── Header ─────────────────────────────────────────────────────
-    const header = document.createElement('div');
-    header.className = 'rc-card-header';
-    header.innerHTML = `<span>XC${esc(xcId)}</span>`
-      + (quality ? `<span class="rc-card-badge">${esc(quality)}</span>` : '')
-      + (lenStr  ? `<span style="margin-left:auto;color:var(--color-text-secondary)">${esc(lenStr)}</span>` : '');
-    card.appendChild(header);
-
-    // ── Player area (auto-loads) ────────────────────────────────────
-    const playerWrap = document.createElement('div');
-    playerWrap.className = 'rc-card-player-wrap';
-    playerWrap.innerHTML = '<div class="rc-status" style="padding:16px;font-size:11px">Loading…</div>';
-    card.appendChild(playerWrap);
-
-    // ── Metadata ────────────────────────────────────────────────────
-    const meta = document.createElement('div');
-    meta.className = 'rc-card-meta';
-    meta.innerHTML = [
-      type      && esc(type),
-      country   && esc(country),
-      recordist && `<span style="opacity:0.65">${esc(recordist)}</span>`,
-      licLabel  && (licUrl
-        ? `<a href="${esc(licUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--color-text-secondary);text-decoration:underline dotted">${esc(licLabel)}</a>`
-        : `<span style="opacity:0.65">${esc(licLabel)}</span>`),
-    ].filter(Boolean).join(' · ');
-    card.appendChild(meta);
-
-    const entry = { el: card, player: null as any };
-    const idx = _cards.push(entry) - 1;
-    card.addEventListener('pointerdown', () => select(idx, { scroll: false }));
-
-    // Auto-load the compact player
-    enqueueLoad(() => _loadCardPlayer(playerWrap, rec, entry));
-
-    return card;
-  }
-
-  async function _loadCardPlayer(playerWrap: any, rec: any, entry: { el: HTMLElement, player: any }) {
-    if (!BirdNETPlayer) return;
-    const xcId = rec.id;
-    try {
-      const audioData = await xcPanel.fetchAudio(xcId);
-      if (!playerWrap.isConnected) return; // card was removed (page change)
-
-      const blob    = new Blob([audioData.buffer], { type: 'audio/mpeg' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Yield before the heavy player init + spectrogram generation so the
-      // browser can paint the previous card's result first.
-      await new Promise(r => requestAnimationFrame(r));
-      if (!playerWrap.isConnected) { URL.revokeObjectURL(blobUrl); return; }
-
-      playerWrap.innerHTML = '';
-      const inner = document.createElement('div');
-      inner.style.height = '100%';
-      playerWrap.appendChild(inner);
-
-      const p = new BirdNETPlayer(inner, { ...COMPACT_PLAYER_OPTS, height: 160 });
-      _activePlayers.push({ player: p, blobUrl });
-      entry.player = p;
-      watchPlayer(p);
-      await p.ready;
-      await p.loadUrl(blobUrl);
-      disableLabeling(p);
-    } catch (err) {
-      if (playerWrap.isConnected) {
-        playerWrap.innerHTML = `<div class="rc-status rc-status-error" style="padding:8px;font-size:11px">${esc((err as any)?.message || 'Load failed')}</div>`;
-      }
-    }
-  }
-
-  // ── Page loading ──────────────────────────────────────────────────
-  async function loadPage(page: any) {
-    if (_loading) return;
-    _loading = true;
-    _currentPage = page;
-
-    gridSection.innerHTML = '<div class="rc-status">Loading XC recordings…</div>';
-    prevBtn.disabled = true;
-    nextBtn.disabled = true;
-
-    // Cancel pending loads and destroy card players from previous page
-    _loadQueue.length = 0;
-    for (const { player, blobUrl } of _activePlayers) {
-      try { player.destroy?.(); } catch {}
-      try { URL.revokeObjectURL(blobUrl); } catch {}
-    }
-    _activePlayers = [];
-    _cards = [];
+  async function loadPage(page: number) {
+    const token = ++_loadToken;
+    _page = page;
+    _items = [];
+    _selected = -1;
+    showReference(null);
+    listBody.innerHTML = '<div class="rc-status">Loading XC recordings…</div>';
+    prevBtn.disabled = nextBtn.disabled = true;
+    pageInfo.textContent = '';
 
     try {
-      const { recordings, numPages, numRecordings, qualityLabel } = await fetchXcRecordings(_currentSciName, page);
+      const { recordings, numPages, numRecordings, qualityLabel } = await fetchXcRecordings(_sciName, page);
+      if (token !== _loadToken) return;
       _totalPages = numPages;
+      listBody.innerHTML = '';
 
       if (recordings.length === 0) {
-        gridSection.innerHTML = `<div class="rc-status">No recordings found for <em>${esc(_currentSciName)}</em> between 2–7 seconds.</div>`;
+        listBody.innerHTML = `<div class="rc-status">No recordings found for <em>${esc(_sciName)}</em> between 2–7 seconds.</div>`;
       } else {
-        gridSection.innerHTML = '';
-
-        // Quality + count info bar
-        const infoBar = document.createElement('div');
-        infoBar.style.cssText = 'font-size:11px;color:var(--color-text-secondary);margin-bottom:10px;display:flex;align-items:center;gap:8px;';
-        const qualBadge = document.createElement('span');
-        qualBadge.style.cssText = `display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:10px;background:${_activeTier === 0 ? 'var(--color-accent-faint)' : 'rgba(234,179,8,0.15)'};color:${_activeTier === 0 ? 'var(--color-accent)' : '#b45309'};`;
-        qualBadge.textContent = qualityLabel;
-        infoBar.appendChild(qualBadge);
-        if (_activeTier > 0) {
-          const note = document.createElement('span');
-          note.textContent = 'No quality-A recordings found — showing lower qualities.';
-          infoBar.appendChild(note);
-        }
-        gridSection.appendChild(infoBar);
+        const info = el('div', 'rc-info');
+        info.innerHTML = `<span class="rc-badge ${_activeTier > 0 ? 'rc-warn' : ''}">${esc(qualityLabel)}</span>`
+          + `<span>${numRecordings} recordings</span>`
+          + (_activeTier > 0 ? '<span>· no quality-A recordings found</span>' : '');
+        listBody.appendChild(info);
 
         const groups = groupByType(recordings, _preferredType);
         for (const [type, recs] of groups) {
-          if (groups.length > 1) {
-            const gl = document.createElement('div');
-            gl.className = 'rc-group-label';
-            gl.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-            gridSection.appendChild(gl);
-          }
-          const grid = document.createElement('div');
-          grid.className = 'rc-grid';
-          for (const rec of recs.slice(0, 3)) grid.appendChild(renderCard(rec));
-          gridSection.appendChild(grid);
+          if (groups.length > 1) listBody.appendChild(el('div', 'rc-group-label', type.charAt(0).toUpperCase() + type.slice(1)));
+          for (const rec of recs) listBody.appendChild(renderItem(rec));
         }
+        selectItem(0);
+        setFocus('own');
       }
-
-      select(-1, { scroll: false });
       pageInfo.textContent = `${page} / ${numPages}`;
       prevBtn.disabled = page <= 1;
       nextBtn.disabled = page >= numPages;
     } catch (err) {
-      gridSection.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || String(err))}</div>`;
-      pageInfo.textContent = '';
-      prevBtn.disabled = true;
-      nextBtn.disabled = true;
+      if (token !== _loadToken) return;
+      listBody.innerHTML = `<div class="rc-status rc-status-error">${esc((err as any)?.message || String(err))}</div>`;
     }
-
-    _loading = false;
   }
 
-  prevBtn.addEventListener('click', () => { if (_currentPage > 1) loadPage(_currentPage - 1); });
-  nextBtn.addEventListener('click', () => { if (_currentPage < _totalPages) loadPage(_currentPage + 1); });
+  prevBtn.addEventListener('click', () => { if (_page > 1) loadPage(_page - 1); });
+  nextBtn.addEventListener('click', () => { if (_page < _totalPages) loadPage(_page + 1); });
 
   // ── Public API ────────────────────────────────────────────────────
   function open(label: any, audioUrl: any) {
-    _currentLabel   = label;
-    _currentAudioUrl = audioUrl;
-    _currentPage    = 1;
-    _preferredType  = label?.type || label?.callType || '';
-
-    // Resolve display name and scientific name
+    _label = label;
+    _preferredType = label?.type || label?.callType || '';
     const sci = label?.scientificName || '';
     const displayName = label?.label || label?.commonName || sci;
-    _currentSciName = sci;
-
-    titleEl.textContent = displayName
-      ? `Reference Calls — ${displayName}`
-      : 'Reference Calls';
-
-    // Mount search widget
-    mountSearchWidget(sci, displayName);
+    _sciName = sci;
 
     try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
+    renderSpecies(sci, displayName);
+    mountSearchWidget(sci, displayName);
     manager.open();
+    setFocus('own');
+    mountOwnPlayer(audioUrl, label);
 
-    // Mount reference player
-    mountRefPlayer(audioUrl, label);
-
-    // Render species profile
-    if (sci) {
-      renderProfile(sci);
-    } else {
-      profileSection.innerHTML = '';
-    }
-
-    // Load first page of XC recordings
     if (sci) {
       loadPage(1);
     } else {
-      gridSection.innerHTML = '<div class="rc-status">No species name found on this label. Use the search field above to look up a species.</div>';
+      _items = [];
+      showReference(null);
+      listBody.innerHTML = '<div class="rc-status">No species name on this label. Use the search field above to look up a species.</div>';
       pageInfo.textContent = '';
-      prevBtn.disabled = true;
-      nextBtn.disabled = true;
+      prevBtn.disabled = nextBtn.disabled = true;
     }
   }
 
-  (manager as any).on?.('close', cleanup);
-  backdrop.addEventListener('rc-close', cleanup);
-
   function cleanup() {
-    for (const { player, blobUrl } of _activePlayers) {
-      try { player.destroy?.(); } catch {}
-      try { URL.revokeObjectURL(blobUrl); } catch {}
-    }
-    _activePlayers = [];
-    _cards = [];
-    try { _refPlayer?.destroy?.(); } catch {}
-    _refPlayer = null;
+    _loadToken++;
+    _refToken++;
+    _abPending = false;
+    destroyRefPlayer();
+    try { _ownPlayer?.destroy?.(); } catch {}
+    _ownPlayer = null;
+    _items = [];
     if (_searchWidget) { try { _searchWidget.destroy?.(); } catch {} _searchWidget = null; }
   }
 
-  return { open, close: () => manager.close() };
+  return { open, close: requestClose };
 }
