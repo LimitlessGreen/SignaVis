@@ -134,7 +134,8 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
         collection_date: '',
         collection_specimen: '',
         temperature: '',
-        annotation_remarks: str(tags.remarks),
+        annotation_remarks: [str(tags.remarks), tags.referenceXc ? `compared with ${str(tags.referenceXc)}` : '']
+            .filter(Boolean).join('; '),
         overlap: toYesNo(tags.overlap),
     };
     if (ann.frequency_low === null) delete ann.frequency_low;

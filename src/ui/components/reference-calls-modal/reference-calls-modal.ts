@@ -20,7 +20,8 @@
  *
  * Keyboard (the modal owns the keyboard while open; no player listens to
  * document keys): Space play/pause focused side · ↑↓ / J K candidate ·
- * R own recording · F reference · A play own segment then reference.
+ * R own recording · F reference · A play own segment then reference ·
+ * V confirm · S use species · T use sound type · N next unconfirmed label.
  *
  * The reference player jumps to the loudest section inside the label's
  * frequency band ("call"), marks it and clips playback to it.
@@ -104,6 +105,21 @@ function injectCss() {
 }
 .rc-side.rc-focused .rc-player { border-color: var(--color-accent); }
 .rc-side.rc-focused .rc-side-title { color: var(--color-accent); }
+.rc-decide {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-surface);
+}
+.rc-decide-status { font-size: 12px; color: var(--color-text-secondary); margin-right: auto; }
+.rc-decide-status.rc-ok { color: var(--color-success, #16a34a); font-weight: 600; }
+.rc-btn {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--color-border);
+  background: var(--color-bg-primary); color: var(--color-text-primary); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.rc-btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
+.rc-btn:disabled { opacity: 0.4; cursor: default; }
+.rc-btn.rc-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.rc-btn.rc-primary:hover:not(:disabled) { color: #fff; filter: brightness(1.1); }
+.rc-btn kbd { font: 10px ui-monospace, monospace; opacity: 0.7; margin-left: 4px; }
 .rc-list {
   width: 380px; flex-shrink: 0; border-left: 1px solid var(--color-border);
   display: flex; flex-direction: column; min-height: 0; background: var(--color-bg-surface);
@@ -276,8 +292,11 @@ function matchTypeOpt(type: string) {
  * @param {function} opts.getLang        Function returning current language code
  * @param {function} [opts.getMainPlayer] Main app player (paused on open)
  * @param {function} [opts.getCoords]    Recording location {lat, lon} for the 'Nearby' filter
+ * @param {function} [opts.onUpdateLabel] (patch with id) → updated label, or null if not editable
+ * @param {function} [opts.isLabelLocked] (id) → true when the label may not be edited
+ * @param {function} [opts.getNextLabel]  (currentId) → next unconfirmed label or null
  */
-export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer, getCoords }: any) {
+export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer, getCoords, onUpdateLabel, isLabelLocked, getNextLabel }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -313,7 +332,20 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   const refTitle = el('div', 'rc-side-title');
   const refPlayerWrap = el('div', 'rc-player');
   refSide.append(refTitle, refPlayerWrap);
-  compare.append(ownSide, refSide);
+  const decide = el('div', 'rc-decide');
+  const decideStatus = el('span', 'rc-decide-status');
+  const mkBtn = (text: string, key: string, cls = '') => {
+    const b = el('button', `rc-btn ${cls}`) as HTMLButtonElement;
+    b.type = 'button';
+    b.innerHTML = `${esc(text)}<kbd>${key}</kbd>`;
+    return b;
+  };
+  const confirmBtn = mkBtn('✓ Confirm', 'V', 'rc-primary');
+  const speciesBtn = mkBtn('Use species', 'S');
+  const typeBtn    = mkBtn('Use type', 'T');
+  const nextBtnL   = mkBtn('Next label →', 'N');
+  decide.append(decideStatus, confirmBtn, speciesBtn, typeBtn, nextBtnL);
+  compare.append(ownSide, refSide, decide);
   main.appendChild(compare);
 
   // Candidate list
@@ -342,6 +374,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _loadToken = 0;          // invalidates stale page loads
   let _activeTier = 0;         // index into QUALITY_TIERS ('auto' quality)
   const _filters = { type: '', quality: 'auto', len: '2-7', region: 'any' };
+  let _audioUrl: string | null = null;
 
   let _ownPlayer: any = null;
   let _refPlayer: any = null;
@@ -437,6 +470,10 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       case 'KeyR': setFocus('own'); break;
       case 'KeyF': setFocus('ref'); break;
       case 'KeyA': playAB(); break;
+      case 'KeyV': if (!confirmBtn.disabled) confirmBtn.click(); break;
+      case 'KeyS': if (!speciesBtn.disabled) speciesBtn.click(); break;
+      case 'KeyT': if (!typeBtn.disabled) typeBtn.click(); break;
+      case 'KeyN': if (!nextBtnL.disabled) nextBtnL.click(); break;
       default: handled = false;
     }
     if (handled) e.preventDefault();
@@ -446,6 +483,86 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   window.addEventListener('keydown', onKeyDown, true);
   ownSide.addEventListener('pointerdown', () => setFocus('own'));
   refSide.addEventListener('pointerdown', () => setFocus('ref'));
+
+  // ── Decisions on the label ────────────────────────────────────────
+  const tagsOf = (l: any) => (l?.tags && typeof l.tags === 'object' ? l.tags : {}) as Record<string, string>;
+  const labelType = () => String(tagsOf(_label).soundType || _label?.type || _label?.callType || '');
+  const selectedRec = () => _items[_selected]?.rec ?? null;
+  const editable = () => !!_label?.id && !!onUpdateLabel && !isLabelLocked?.(_label.id);
+
+  function speciesName(sci: string) {
+    const record = sci ? taxonomy?.resolve(sci) : null;
+    return (record && taxonomy.resolveCommonName(record, getLang?.() || 'en')) || sci;
+  }
+
+  function renderDecision() {
+    const tags = tagsOf(_label);
+    const verified = tags.verified === 'yes';
+    const rec = selectedRec();
+    const canEdit = editable();
+    decide.hidden = !_label?.id;
+
+    decideStatus.className = `rc-decide-status${verified ? ' rc-ok' : ''}`;
+    decideStatus.textContent = !canEdit
+      ? 'Read-only label'
+      : verified ? `✓ Confirmed${tags.referenceXc ? ` with ${tags.referenceXc}` : ''}` : 'Not confirmed yet';
+
+    confirmBtn.disabled = !canEdit;
+    confirmBtn.innerHTML = `${verified ? 'Undo confirm' : '✓ Confirm'}<kbd>V</kbd>`;
+    confirmBtn.classList.toggle('rc-primary', !verified);
+
+    const otherSpecies = !!_sciName && _sciName !== (_label?.scientificName || '');
+    speciesBtn.hidden = !otherSpecies;
+    speciesBtn.disabled = !canEdit;
+    speciesBtn.innerHTML = `Use ${esc(speciesName(_sciName))}<kbd>S</kbd>`;
+
+    const recType = String(rec?.type || '').split(',')[0].trim().toLowerCase();
+    typeBtn.hidden = !recType || recType === labelType().toLowerCase();
+    typeBtn.disabled = !canEdit;
+    typeBtn.innerHTML = `Type “${esc(recType)}”<kbd>T</kbd>`;
+    typeBtn.dataset.type = recType;
+
+    nextBtnL.disabled = !getNextLabel;
+  }
+
+  function patchLabel(patch: Record<string, any>) {
+    if (!editable()) return;
+    const updated = onUpdateLabel({ id: _label.id, ...patch });
+    if (!updated) return;
+    _label = { ..._label, ...updated };
+    renderDecision();
+  }
+
+  confirmBtn.addEventListener('click', () => {
+    const tags = { ...tagsOf(_label) };
+    if (tags.verified === 'yes') {
+      delete tags.verified;
+      delete tags.referenceXc;
+    } else {
+      tags.verified = 'yes';
+      const rec = selectedRec();
+      if (rec?.id) tags.referenceXc = `XC${rec.id}`; else delete tags.referenceXc;
+    }
+    patchLabel({ tags });
+  });
+
+  speciesBtn.addEventListener('click', () => {
+    if (!_sciName) return;
+    const common = speciesName(_sciName);
+    patchLabel({ scientificName: _sciName, commonName: common, label: common });
+    renderSpecies(_sciName);
+  });
+
+  typeBtn.addEventListener('click', () => {
+    const t = typeBtn.dataset.type;
+    if (t) patchLabel({ tags: { ...tagsOf(_label), soundType: t } });
+  });
+
+  nextBtnL.addEventListener('click', () => {
+    const next = getNextLabel?.(_label?.id);
+    if (next) open(next, _audioUrl);
+    else { decideStatus.className = 'rc-decide-status rc-ok'; decideStatus.textContent = 'All labels confirmed 🎉'; }
+  });
 
   // ── Header: species + search ──────────────────────────────────────
   function renderSpecies(sciName: string, fallbackName = '') {
@@ -479,6 +596,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         if (!sci) return;
         _sciName = sci;
         renderSpecies(sci);
+        renderDecision();
         loadPage(1);
       },
     });
@@ -635,6 +753,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     _items.forEach((it, j) => it.el.classList.toggle('rc-selected', j === i));
     _items[i].el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     setFocus('ref');
+    renderDecision();
     showReference(_items[i].rec);
   }
 
@@ -795,18 +914,21 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   // ── Public API ────────────────────────────────────────────────────
   function open(label: any, audioUrl: any) {
     _label = label;
-    _preferredType = label?.type || label?.callType || '';
+    _audioUrl = audioUrl;
+    _preferredType = labelType();
     const sci = label?.scientificName || '';
     const displayName = label?.label || label?.commonName || sci;
     _sciName = sci;
     _filters.type = matchTypeOpt(_preferredType);
     if (_filters.region === 'near' && !coords()) _filters.region = 'any';
     renderFilters();
+    renderDecision();
 
     try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
     renderSpecies(sci, displayName);
     mountSearchWidget(sci, displayName);
-    manager.open();
+    if (backdrop.hidden) manager.open();
+    else { stopAll(); _abPending = false; }
     setFocus('own');
     mountOwnPlayer(audioUrl, label);
 
