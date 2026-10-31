@@ -267,6 +267,11 @@ export function createPlayerHTML(opts = {}) {
                     <input type="checkbox" data-aw="noiseReductionCheck"> Noise Reduction
                 </label>
             </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Show a magnified view next to the cursor while moving or resizing a label">
+                    <input type="checkbox" data-aw="editLoupeCheck" checked> Edit Loupe
+                </label>
+            </div>
             <div class="settings-row" data-expert>
                 <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
                     <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast

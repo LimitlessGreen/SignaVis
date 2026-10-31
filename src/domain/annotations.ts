@@ -356,6 +356,7 @@ class AnnotationLayerBase extends EventTarget {
         const editing = this._editing as any;
         const shouldSuppressClick = editing.forceSuppressClick || editing.moved;
         editing.element?.classList?.remove('editing');
+        (this as any)._hideEditLoupe?.();
         const item = this._items.find((i: any) => i.id === editing.id);
         if (item && editing.moved) this._emitUpdate(item);
         this._editing = null;
@@ -877,6 +878,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     zoomBoxMode: boolean = false;
     _zoomBox: { startTime: number; startFreq: number; endTime: number; endFreq: number; x0: number; y0: number } | null = null;
     _zoomBoxEl: HTMLElement | null = null;
+    _editLoupeEl: HTMLCanvasElement | null = null;
+    _editLoupeBound = false;
     _axisConstraint: any = null;
     _draftEl: any = null;
     _drawing: any = null;
@@ -939,7 +942,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }));
     }
 
-    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); }
+    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
@@ -1618,6 +1621,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             }
             if (this._editing) {
                 this._updateEditInteraction(e.clientX, e.clientY);
+                this._updateEditLoupe(e.clientX, e.clientY);
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -2002,6 +2006,85 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const meta = editing.element.querySelector('.spectrogram-label-meta');
             if (meta) meta.textContent = `${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
         }
+    }
+
+    // ── Edit loupe: magnified view next to the cursor while moving/resizing ──
+
+    _editLoupeEnabled(): boolean {
+        const box = this.player?.root?.querySelector?.('[data-aw="editLoupeCheck"]') as HTMLInputElement | null;
+        if (box && !this._editLoupeBound) {
+            // Default on; remember the user's choice
+            this._editLoupeBound = true;
+            try { if (localStorage.getItem('aw-edit-loupe') === '0') box.checked = false; } catch { /* storage blocked */ }
+            box.addEventListener('change', () => {
+                try { localStorage.setItem('aw-edit-loupe', box.checked ? '1' : '0'); } catch { /* storage blocked */ }
+            });
+        }
+        return box ? box.checked : true;
+    }
+
+    _updateEditLoupe(clientX: number, clientY: number) {
+        const editing = this._editing as any;
+        if (!editing || editing.pending || !this._editLoupeEnabled()) { this._hideEditLoupe(); return; }
+        const src = this.player?._state?.d?.spectrogramCanvas as HTMLCanvasElement | null;
+        if (!src || !src.width || !src.height) return;
+        const W = 260, H = 180, ZOOM = 4, PAD = 24;
+        let cv = this._editLoupeEl as HTMLCanvasElement | null;
+        if (!cv) {
+            cv = document.createElement('canvas');
+            cv.className = 'spectrogram-edit-loupe';
+            const dpr = window.devicePixelRatio || 1;
+            cv.width = Math.round(W * dpr);
+            cv.height = Math.round(H * dpr);
+            cv.style.width = `${W}px`;
+            cv.style.height = `${H}px`;
+            document.body.appendChild(cv);
+            this._editLoupeEl = cv;
+        }
+        // Place top-right of the cursor, flip when it would leave the window
+        let left = clientX + PAD, top = clientY - H - PAD;
+        if (left + W > window.innerWidth - 4) left = clientX - W - PAD;
+        if (top < 4) top = clientY + PAD;
+        cv.style.left = `${left}px`;
+        cv.style.top = `${top}px`;
+
+        const ctx = cv.getContext('2d');
+        if (!ctx) return;
+        const r = src.getBoundingClientRect();
+        const sx = src.width / Math.max(1, r.width), sy = src.height / Math.max(1, r.height);
+        const halfW = W / ZOOM / 2, halfH = H / ZOOM / 2; // in CSS px around the cursor
+        ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+        try {
+            ctx.drawImage(src,
+                (clientX - halfW - r.left) * sx, (clientY - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
+                0, 0, W, H);
+        } catch { /* canvas not ready */ }
+        // Map a client point into loupe space
+        const mx = (x: number) => (x - (clientX - halfW)) * ZOOM;
+        const my = (y: number) => (y - (clientY - halfH)) * ZOOM;
+        const el = editing.element as HTMLElement | null;
+        if (el) {
+            const b = el.getBoundingClientRect();
+            ctx.strokeStyle = 'rgba(255, 220, 80, 0.95)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(mx(b.left), my(b.top), b.width * ZOOM, b.height * ZOOM);
+        }
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+        ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    _hideEditLoupe() {
+        if (this._editLoupeEl?.parentNode) this._editLoupeEl.parentNode.removeChild(this._editLoupeEl);
+        this._editLoupeEl = null;
     }
 
     /**
