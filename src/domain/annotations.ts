@@ -1353,6 +1353,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.style.top = `${geometry.top}px`;
         el.style.width = `${geometry.width}px`;
         el.style.height = `${geometry.height}px`;
+        // Small boxes: name + buttons go outside, handles shrink to the edges
+        el.classList.toggle('label-compact', geometry.width < 70 || geometry.height < 44);
     }
 
     _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {

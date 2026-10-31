@@ -593,3 +593,68 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
     background: #000;
 }
+
+/* ═══ Hover grace: buttons stay briefly after the pointer leaves the label ═══ */
+.label-edit-btn,
+.label-delete-btn,
+.label-refcalls-btn {
+    pointer-events: auto;
+    visibility: hidden;
+    transition: opacity 0.12s 0.35s, visibility 0s 0.47s, background 0.12s;
+}
+.spectrogram-label-region:hover .label-edit-btn,
+.spectrogram-label-region:hover .label-delete-btn,
+.spectrogram-label-region:hover .label-refcalls-btn {
+    visibility: visible;
+    transition: opacity 0.12s, visibility 0s, background 0.12s;
+}
+
+/* ═══ Compact labels (small boxes) ═══ */
+/* Name sits above the box and never catches the pointer */
+.spectrogram-label-region.label-compact .spectrogram-label-text {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    max-width: none;
+    pointer-events: none;
+}
+.spectrogram-label-region.label-compact .spectrogram-label-meta {
+    display: none;
+}
+/* Buttons in a row directly below the box (touching it, so hover is kept) */
+.spectrogram-label-region.label-compact .label-edit-btn,
+.spectrogram-label-region.label-compact .label-delete-btn,
+.spectrogram-label-region.label-compact .label-refcalls-btn {
+    bottom: auto;
+    top: 100%;
+    margin-top: 0;
+    /* transparent bridge under the bottom edge handle keeps hover alive */
+    border-top-width: 9px;
+    border-top-color: transparent;
+    background-clip: padding-box;
+    height: 29px;
+}
+.spectrogram-label-region.label-compact .label-handle {
+    z-index: 6; /* edge handles win over the button bridge */
+}
+.spectrogram-label-region.label-compact .label-edit-btn { left: 0; right: auto; }
+.spectrogram-label-region.label-compact .label-delete-btn { left: 22px; right: auto; }
+.spectrogram-label-region.label-compact .label-refcalls-btn { left: 44px; right: auto; }
+/* No corner dots; edge strips span the full edge and lie mostly outside */
+.spectrogram-label-region.label-compact .label-handle.handle-tl,
+.spectrogram-label-region.label-compact .label-handle.handle-tr,
+.spectrogram-label-region.label-compact .label-handle.handle-bl,
+.spectrogram-label-region.label-compact .label-handle.handle-br {
+    display: none;
+}
+.spectrogram-label-region.label-compact .label-handle.handle-l { left: -7px; top: 0; bottom: 0; width: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-r { right: -7px; top: 0; bottom: 0; width: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-t { top: -7px; left: 0; right: 0; height: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-b { bottom: -7px; left: 0; right: 0; height: 8px; }
+/* While dragging, hide everything but the box itself */
+.spectrogram-label-region.label-compact.editing .spectrogram-label-text,
+.spectrogram-label-region.label-compact.editing button {
+    display: none;
+}
