@@ -37,6 +37,8 @@ const COMPACT_PLAYER_OPTS = {
   showVolume: false, showViewToggles: false, showZoom: false,
   showFFTControls: false, showDisplayGain: false, showStatusbar: false,
   transportStyle: 'hero', transportOverlay: true, viewMode: 'spectrogram',
+  // The modal owns the keyboard: no player listens to document-level keys.
+  keyboardShortcuts: false,
 };
 
 // Reference player — no overlay so the spectrogram is visible immediately
@@ -127,6 +129,8 @@ function injectCss() {
   display: flex; flex-direction: column;
 }
 .rc-card:hover { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-faint); }
+.rc-card.rc-selected, .rc-ref-player.rc-selected { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent); }
+.rc-ref-player { border: 1px solid transparent; }
 .rc-card-header {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 10px; border-bottom: 1px solid var(--color-border);
@@ -238,7 +242,7 @@ function groupByType(recordings: any, preferredType: any) {
  * @param {object}   opts.taxonomy      TaxonomyResolver instance
  * @param {function} opts.getLang       Function returning current language code
  */
-export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang }: any) {
+export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlayer, resolveSci = () => '', taxonomy, getLang, getMainPlayer }: any) {
   injectCss();
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -332,6 +336,55 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _searchWidget: any = null;
   let _loading = false;
   let _activeTier = 0; // index into QUALITY_TIERS
+  // Cards of the current page in display order; player is set once loaded.
+  let _cards: { el: HTMLElement, player: any }[] = [];
+  let _selected = -1; // -1 = own recording, otherwise index into _cards
+
+  // ── Exclusive playback + selection ────────────────────────────────
+  function allPlayers(): any[] {
+    return [_refPlayer, ..._cards.map(c => c.player)].filter(Boolean);
+  }
+  /** Only one player may play: when one starts, pause all the others. */
+  function watchPlayer(p: any) {
+    p.on?.('play', () => {
+      for (const other of allPlayers()) if (other !== p && other.isPlaying) other.pause();
+    });
+  }
+  function select(idx: number, { scroll = true } = {}) {
+    _selected = Math.max(-1, Math.min(idx, _cards.length - 1));
+    refPlayerWrap.classList.toggle('rc-selected', _selected === -1);
+    _cards.forEach((c, i) => c.el.classList.toggle('rc-selected', i === _selected));
+    if (scroll) (_selected === -1 ? refPlayerWrap : _cards[_selected]?.el)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function selectedPlayer() {
+    return _selected === -1 ? _refPlayer : _cards[_selected]?.player;
+  }
+  function stopAll() { for (const p of allPlayers()) if (p.isPlaying) p.pause(); }
+
+  // Window capture runs before every document listener, so the main player
+  // underneath (and its label hotkeys) never sees keys while the modal is open.
+  function onKeyDown(e: KeyboardEvent) {
+    if (backdrop.hidden || e.key === 'Escape') return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    let handled = true;
+    switch (e.code) {
+      case 'Space': {
+        const p = selectedPlayer();
+        if (p) { if (p.isPlaying) p.pause(); else { stopAll(); p.play(); } }
+        break;
+      }
+      case 'ArrowDown': case 'ArrowRight': case 'KeyJ': select(_selected + 1); break;
+      case 'ArrowUp': case 'ArrowLeft': case 'KeyK': select(_selected - 1); break;
+      case 'KeyR': select(-1); break;
+      default: handled = false;
+    }
+    if (handled) { e.preventDefault(); }
+    // Swallow everything else too (except typing/Escape) so the main player stays quiet.
+    e.stopImmediatePropagation();
+  }
+  window.addEventListener('keydown', onKeyDown, true);
+  refPlayerWrap.addEventListener('pointerdown', () => select(-1, { scroll: false }));
 
   // ── Species search widget ─────────────────────────────────────────
   function mountSearchWidget(initialSciName: any, displayName: any) {
@@ -400,6 +453,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       await p.ready;
       await p.loadUrl(audioUrl);
       _refPlayer = p;
+      watchPlayer(p);
 
       disableLabeling(p);
 
@@ -551,13 +605,17 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     ].filter(Boolean).join(' · ');
     card.appendChild(meta);
 
+    const entry = { el: card, player: null as any };
+    const idx = _cards.push(entry) - 1;
+    card.addEventListener('pointerdown', () => select(idx, { scroll: false }));
+
     // Auto-load the compact player
-    enqueueLoad(() => _loadCardPlayer(playerWrap, rec));
+    enqueueLoad(() => _loadCardPlayer(playerWrap, rec, entry));
 
     return card;
   }
 
-  async function _loadCardPlayer(playerWrap: any, rec: any) {
+  async function _loadCardPlayer(playerWrap: any, rec: any, entry: { el: HTMLElement, player: any }) {
     if (!BirdNETPlayer) return;
     const xcId = rec.id;
     try {
@@ -579,6 +637,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
       const p = new BirdNETPlayer(inner, { ...COMPACT_PLAYER_OPTS, height: 160 });
       _activePlayers.push({ player: p, blobUrl });
+      entry.player = p;
+      watchPlayer(p);
       await p.ready;
       await p.loadUrl(blobUrl);
       disableLabeling(p);
@@ -606,6 +666,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       try { URL.revokeObjectURL(blobUrl); } catch {}
     }
     _activePlayers = [];
+    _cards = [];
 
     try {
       const { recordings, numPages, numRecordings, qualityLabel } = await fetchXcRecordings(_currentSciName, page);
@@ -645,6 +706,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         }
       }
 
+      select(-1, { scroll: false });
       pageInfo.textContent = `${page} / ${numPages}`;
       prevBtn.disabled = page <= 1;
       nextBtn.disabled = page >= numPages;
@@ -680,6 +742,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     // Mount search widget
     mountSearchWidget(sci, displayName);
 
+    try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
     manager.open();
 
     // Mount reference player
@@ -712,6 +775,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       try { URL.revokeObjectURL(blobUrl); } catch {}
     }
     _activePlayers = [];
+    _cards = [];
     try { _refPlayer?.destroy?.(); } catch {}
     _refPlayer = null;
     if (_searchWidget) { try { _searchWidget.destroy?.(); } catch {} _searchWidget = null; }

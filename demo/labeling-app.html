@@ -645,6 +645,7 @@
           // avoids capturing the empty fallback if modal is opened before taxonomy loads.
           getSuggestions: (q, n) => getSuggestions(q, n),
           BirdNETPlayer,
+          getMainPlayer: () => player,
           taxonomy,
           getLang: () => state.taxonomyLang,
           // Resolve vernacular → scientific name by searching all taxonomy records.
