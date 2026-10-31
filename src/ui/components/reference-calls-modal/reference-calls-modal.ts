@@ -98,6 +98,15 @@ function injectCss() {
   color: var(--color-text-secondary); font-size: 20px; line-height: 1; border-radius: 4px;
 }
 .rc-close:hover { background: var(--color-bg-primary); color: var(--color-text-primary); }
+.rc-gbif {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex-shrink: 0;
+  padding: 5px 16px; border-bottom: 1px solid var(--color-border);
+  font-size: 12px; color: var(--color-text-secondary);
+}
+.rc-gbif:empty { display: none; }
+.rc-gbif b { color: var(--color-text-primary); font-weight: 600; }
+.rc-gbif a { color: var(--color-accent); text-decoration: none; margin-left: auto; }
+.rc-iucn { display: inline-block; padding: 0 5px; border-radius: 2px; font-weight: 700; font-size: 11px; color: #fff; }
 .rc-main { flex: 1; min-height: 0; display: flex; }
 .rc-compare { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 .rc-side { display: flex; flex-direction: column; gap: 6px; }
@@ -349,6 +358,47 @@ async function cacheDelete(xcId: string) {
   try { if (typeof caches !== 'undefined') await (await caches.open(AUDIO_CACHE_NAME)).delete(audioCacheUrl(xcId)); } catch {}
 }
 
+// ─── GBIF species info ──────────────────────────────────────────────
+const GBIF_API = 'https://api.gbif.org/v1';
+const IUCN_COLORS: Record<string, string> = {
+  LC: '#16a34a', NT: '#84cc16', VU: '#eab308', EN: '#f97316', CR: '#dc2626', EW: '#7c3aed', EX: '#111827', DD: '#6b7280', NE: '#9ca3af',
+};
+const _gbifCache = new Map<string, Promise<any>>();
+
+async function gbifJson(path: string) {
+  const res = await fetch(`${GBIF_API}${path}`);
+  if (!res.ok) throw new Error(`GBIF HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Taxonomy, IUCN category and occurrence counts (worldwide + ~300 km around coords). */
+function fetchGbifInfo(sciName: string, coords: { lat: number, lon: number } | null) {
+  const key = `${sciName}|${coords ? `${coords.lat.toFixed(1)},${coords.lon.toFixed(1)}` : ''}`;
+  if (_gbifCache.has(key)) return _gbifCache.get(key)!;
+  const p = (async () => {
+    const m = await gbifJson(`/species/match?name=${encodeURIComponent(sciName)}`);
+    const k = m?.usageKey;
+    if (!k || m.matchType === 'NONE') return null;
+    const near = coords
+      ? `&decimalLatitude=${(coords.lat - 3).toFixed(2)},${(coords.lat + 3).toFixed(2)}`
+        + `&decimalLongitude=${(coords.lon - 4.5).toFixed(2)},${(coords.lon + 4.5).toFixed(2)}`
+      : '';
+    const [iucn, total, local] = await Promise.all([
+      gbifJson(`/species/${k}/iucnRedListCategory`).catch(() => null),
+      gbifJson(`/occurrence/search?taxonKey=${k}&limit=0`).catch(() => null),
+      near ? gbifJson(`/occurrence/search?taxonKey=${k}&limit=0${near}`).catch(() => null) : Promise.resolve(null),
+    ]);
+    return {
+      key: k, order: m.order, family: m.family,
+      iucn: iucn?.code || '', iucnName: iucn?.category || '',
+      total: total?.count ?? null, near: local?.count ?? null,
+    };
+  })();
+  p.catch(() => _gbifCache.delete(key));
+  _gbifCache.set(key, p);
+  return p;
+}
+
 // ─── Main export ────────────────────────────────────────────────────
 
 /**
@@ -393,6 +443,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   closeBtn.dataset.modalHandlerBound = '1';
   header.append(speciesEl, searchWrap, keys, dockBtn, closeBtn);
   dialog.appendChild(header);
+  const gbifEl = el('div', 'rc-gbif');
+  dialog.appendChild(gbifEl);
 
   const main = el('div', 'rc-main');
   dialog.appendChild(main);
@@ -755,7 +807,31 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   });
 
   // ── Header: species + search ──────────────────────────────────────
+  let _gbifToken = 0;
+  async function renderGbif(sciName: string) {
+    const token = ++_gbifToken;
+    gbifEl.replaceChildren();
+    if (!sciName) return;
+    gbifEl.textContent = 'GBIF …';
+    try {
+      const info = await fetchGbifInfo(sciName, coords());
+      if (token !== _gbifToken) return;
+      if (!info) { gbifEl.textContent = 'Not found on GBIF'; return; }
+      const fmt = (n: number) => n.toLocaleString(getLang?.() || undefined);
+      const parts: string[] = [];
+      if (info.order || info.family) parts.push(`<span>${esc([info.order, info.family].filter(Boolean).join(' › '))}</span>`);
+      if (info.iucn) parts.push(`<span title="${esc(info.iucnName)}">IUCN <span class="rc-iucn" style="background:${IUCN_COLORS[info.iucn] || '#6b7280'}">${esc(info.iucn)}</span></span>`);
+      if (info.total != null) parts.push(`<span><b>${fmt(info.total)}</b> GBIF records</span>`);
+      if (info.near != null) parts.push(`<span><b>${fmt(info.near)}</b> within ~300 km</span>`);
+      parts.push(`<a href="https://www.gbif.org/species/${encodeURIComponent(info.key)}" target="_blank" rel="noopener noreferrer">GBIF ↗</a>`);
+      gbifEl.innerHTML = parts.join('');
+    } catch {
+      if (token === _gbifToken) gbifEl.textContent = 'GBIF not reachable';
+    }
+  }
+
   function renderSpecies(sciName: string, fallbackName = '') {
+    renderGbif(sciName);
     const record = sciName ? taxonomy?.resolve(sciName) : null;
     const lang = getLang?.() || 'en';
     const common = (record && taxonomy.resolveCommonName(record, lang)) || fallbackName || sciName || 'Reference Calls';
@@ -790,7 +866,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
         loadPage(1);
       },
     });
-    searchWrap.appendChild(_searchWidget.el);
+    searchWrap.replaceChildren(_searchWidget.el);
   }
 
   // ── Own recording ─────────────────────────────────────────────────
@@ -1274,6 +1350,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     _ownPlayer = null;
     _items = [];
     if (_searchWidget) { try { _searchWidget.destroy?.(); } catch {} _searchWidget = null; }
+    searchWrap.replaceChildren();
   }
 
   /** Docked view: show another label when the selection in the app changes. */
