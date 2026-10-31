@@ -34,6 +34,11 @@ export class RecordingExplorer {
     _onResetRecording: any;
     _onResetSet: any;
     _onRemoveRecording: any;
+    _getEntryLabels: any;
+    _getSetInfo: any;
+    _isSetHidden: any;
+    _onToggleSetHidden: any;
+    _onAdoptSet: any;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -57,6 +62,11 @@ export class RecordingExplorer {
         this._onResetRecording = opts.onResetRecording || null;
         this._onResetSet       = opts.onResetSet || null;
         this._onRemoveRecording = opts.onRemoveRecording || null;
+        this._getEntryLabels   = opts.getEntryLabels || null;
+        this._getSetInfo       = opts.getSetInfo || null;
+        this._isSetHidden      = opts.isSetHidden || null;
+        this._onToggleSetHidden = opts.onToggleSetHidden || null;
+        this._onAdoptSet       = opts.onAdoptSet || null;
         this._collapsed        = false;
 
         this._manager.addEventListener('change',       () => this.render());
@@ -215,7 +225,7 @@ export class RecordingExplorer {
 
                 // Own-set labels in this recording; recordings without XC number can't be uploaded
                 const ownSetId = this._getOwnSetId?.();
-                const anns = entry.annotations || [];
+                const anns = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
                 const nOwn = ownSetId ? anns.filter((a: any) => a.setId === ownSetId).length : anns.length;
                 const meta = document.createElement('span');
                 meta.className = 'recording-explorer-meta';
@@ -254,6 +264,8 @@ export class RecordingExplorer {
                 });
 
                 list.appendChild(li);
+                const setRows = this._buildSetRows(entry, ownSetId);
+                if (setRows) list.appendChild(setRows);
             }
 
             body.appendChild(list);
@@ -275,6 +287,62 @@ export class RecordingExplorer {
 
         wrap.appendChild(body);
         container.appendChild(wrap);
+    }
+
+    /**
+     * Sub-rows under a recording: one per imported (read-only) set with labels in it,
+     * e.g. the XC set of the recording. Shows that those labels are separate from the
+     * own set, with an eye toggle and an "Adopt" action.
+     */
+    _buildSetRows(entry: any, ownSetId: any) {
+        const labels: any[] = this._getEntryLabels ? this._getEntryLabels(entry) : (entry.annotations || []);
+        const counts = new Map<string, number>();
+        for (const l of labels) {
+            if (!l.setId || l.setId === ownSetId) continue;
+            counts.set(l.setId, (counts.get(l.setId) || 0) + 1);
+        }
+        if (!counts.size) return null;
+        const li = document.createElement('li');
+        li.className = 'recording-explorer-sets';
+        for (const [setId, n] of counts) {
+            const info = this._getSetInfo?.(setId) || {};
+            const row = document.createElement('div');
+            row.className = 'rec-set-row';
+            const origin = info.origin === 'xeno-canto' ? 'XC' : info.origin === 'birdnet' ? 'BirdNET' : (info.origin || 'import');
+            const hidden = !!this._isSetHidden?.(setId);
+            if (hidden) row.classList.add('rec-set-row--hidden');
+
+            const eye = document.createElement('button');
+            eye.type = 'button';
+            eye.className = 'rec-set-eye';
+            eye.title = hidden ? 'Show these labels' : 'Hide these labels';
+            eye.textContent = hidden ? '◌' : '●';
+            eye.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
+
+            const name = document.createElement('span');
+            name.className = 'rec-set-name';
+            name.innerHTML = `<span class="rec-set-origin">${origin}</span>`;
+            name.append(` ${info.name || 'Imported set'}`);
+            name.title = `${info.name || 'Imported set'}${info.creator ? ' — ' + info.creator : ''} · read-only, not part of your set`;
+
+            const count = document.createElement('span');
+            count.className = 'recording-explorer-meta';
+            count.textContent = `🔒 ${n}`;
+            count.title = `${n} read-only label${n === 1 ? '' : 's'}`;
+
+            row.append(eye, name, count);
+            if (this._onAdoptSet) {
+                const adopt = document.createElement('button');
+                adopt.type = 'button';
+                adopt.className = 'tb-btn rec-set-adopt';
+                adopt.textContent = 'Adopt';
+                adopt.title = `Copy these ${n} labels into your own set`;
+                adopt.addEventListener('click', (e) => { e.stopPropagation(); this._onAdoptSet(setId); });
+                row.appendChild(adopt);
+            }
+            li.appendChild(row);
+        }
+        return li;
     }
 
     // ── Add popover ──────────────────────────────────────────────────────
