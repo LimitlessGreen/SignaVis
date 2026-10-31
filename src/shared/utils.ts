@@ -2,6 +2,19 @@
 // utils.ts — Shared utility functions
 // ═══════════════════════════════════════════════════════════════════════
 
+const channelDataCache = new WeakMap<AudioBuffer, Float32Array[]>();
+
+/**
+ * `audioBuffer.getChannelData(ch)`, fetched once per buffer. Chrome can make getChannelData
+ * itself slow for very long buffers (seen: ~270 ms per call on a 2 h recording), which
+ * stalled every scroll frame; hot paths read the cached array instead. Read-only use.
+ */
+export function channelData(audioBuffer: AudioBuffer, ch = 0): Float32Array {
+    let arr = channelDataCache.get(audioBuffer);
+    if (!arr) { arr = []; channelDataCache.set(audioBuffer, arr); }
+    return arr[ch] ??= audioBuffer.getChannelData(ch);
+}
+
 export function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }

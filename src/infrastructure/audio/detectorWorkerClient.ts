@@ -9,6 +9,7 @@ import DetectorWorker from './detector.worker.ts?worker&inline';
 import { compileWasmModule, loadWasmMain } from '../wasm-dsp/WasmSpectrogramService.ts';
 import { wasmMain } from '../wasm-dsp/wasmMain.ts';
 import { divisionNoiseLevel, planChunk, toChunk, type DetectorChunk, type DetectorMode } from './detectorRender.ts';
+import { channelData } from '../../shared/utils.ts';
 
 export class DetectorRenderer {
     #worker: Worker;
@@ -39,7 +40,7 @@ export class DetectorRenderer {
     render(source: AudioBuffer, mode: DetectorMode, startSec: number, endSec: number, gain: number): Promise<DetectorChunk> {
         const dsp = wasmMain()!;
         const plan = planChunk(dsp, source.length, source.sampleRate, startSec, endSec);
-        const input = source.getChannelData(0).slice(plan.lo, plan.hi);
+        const input = channelData(source).slice(plan.lo, plan.hi);
         const noiseLevel = mode.kind === 'division' ? divisionNoiseLevel(dsp, source) : 0;
         const id = ++this.#nextId;
         return new Promise<Float32Array>((resolve, reject) => {
