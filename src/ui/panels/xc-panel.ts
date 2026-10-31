@@ -9,6 +9,7 @@ import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayloa
 import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
+import { buildQualityLight } from '../components/quality-light.ts';
 
 // Parse XC API "len" field ("m:ss" or "mm:ss" or "h:mm:ss") → seconds, or null.
 function parseXcLen(len: any) {
@@ -644,7 +645,8 @@ export class XenoCantoPanel {
       if (!val) continue;
       const dt = document.createElement('dt'); dt.textContent = label;
       const dd = document.createElement('dd');
-      dd.textContent = key === 'quality' ? `${val}/E` : val;
+      if (key === 'quality') dd.appendChild(buildQualityLight(val));
+      else dd.textContent = val;
       dl.appendChild(dt); dl.appendChild(dd);
     }
     el.appendChild(dl);
