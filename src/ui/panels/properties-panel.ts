@@ -18,6 +18,7 @@ import { createEditableSelect } from '../components/editable-select/editable-sel
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { formatCoords } from '../../app/recording-context.ts';
 import { buildMiniMap } from './recording-context-block.ts';
+import { buildQualityLight } from '../components/quality-light.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -520,6 +521,8 @@ export class PropertiesPanel {
           openMapModal({ lat: c.lat, lon: c.lon, zoom: 10, readOnly: true })
         );
         dd.appendChild(mapBtn);
+      } else if (f.key === 'quality') {
+        dd.appendChild(buildQualityLight(raw));
       } else {
         dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
       }
