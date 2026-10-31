@@ -20,6 +20,7 @@
 
 import { clamp, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
+import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
@@ -87,10 +88,34 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
   const nativeSr = parseNativeSampleRate(arrayBuffer);
   const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
   try {
-    return await ctx.decodeAudioData(arrayBuffer);
+    const mp3 = isMp3(arrayBuffer);
+    // Long MP3s exceed what one decodeAudioData call can allocate: decode block by block to mono.
+    if (mp3 && arrayBuffer.byteLength >= CHUNKED_DECODE_MIN_BYTES) return await decodeMp3Chunked(arrayBuffer, ctx);
+    try {
+      // decodeAudioData detaches its input; keep a copy for the chunked fallback.
+      return await ctx.decodeAudioData(mp3 ? arrayBuffer.slice(0) : arrayBuffer);
+    } catch (err) {
+      if (!mp3) throw err;
+      console.warn('[AudioEngine] decodeAudioData failed, retrying chunked MP3 decode', err);
+      return await decodeMp3Chunked(arrayBuffer, ctx);
+    }
   } finally {
     ctx.close?.().catch(() => {});
   }
+}
+
+/** Max-abs envelope with at most `n` points (WaveSurfer is invisible here; it only needs some peaks). */
+function coarsePeaks(data: Float32Array, n = 8192): Float32Array {
+  const len = Math.min(n, data.length) || 1;
+  const out = new Float32Array(len);
+  const step = data.length / len;
+  for (let i = 0; i < len; i++) {
+    const a = Math.floor(i * step), b = Math.min(data.length, Math.floor((i + 1) * step));
+    let m = 0;
+    for (let j = a; j < b; j += 16) { const v = Math.abs(data[j]); if (v > m) m = v; }
+    out[i] = m;
+  }
+  return out;
 }
 
 /**
@@ -812,12 +837,16 @@ export class AudioEngine extends AudioEngineBase {
       ? WaveSurferCtor.create(wsOptions)
       : new WaveSurferCtor(wsOptions);
 
-    // Accept both URL strings (data:, http:, blob:) and File/Blob objects
+    // Accept both URL strings (data:, http:, blob:) and File/Blob objects.
+    // Peaks + duration from our own decoded buffer stop WaveSurfer from decoding the file a
+    // second time (that fails for long recordings, which only decode in chunks).
+    const peaks = this.audioBuffer ? [coarsePeaks(this.audioBuffer.getChannelData(0))] : undefined;
+    const duration = this.audioBuffer?.duration;
     if (typeof source === 'string') {
-      ws.load(source);
+      ws.load(source, peaks, duration);
     } else if (source instanceof Blob) {
       // File extends Blob — works for both File and raw Blob
-      ws.loadBlob(source);
+      ws.loadBlob(source, peaks, duration);
     }
 
     ws.on('ready', () => {

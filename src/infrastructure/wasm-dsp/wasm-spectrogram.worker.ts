@@ -136,7 +136,15 @@ function startCoordinator(ports: MessagePort[]) {
             if (msg.type === 'open') {
                 cancelled = false;
                 closeStore();
-                const r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000);
+                let r;
+                try {
+                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000);
+                } catch (err: any) {
+                    // OPFS full (long recordings, small quota): build the pyramid in worker memory instead.
+                    if (err?.name !== 'QuotaExceededError' || cancelled) throw err;
+                    console.warn('[wasm-spectrogram] OPFS quota exceeded, keeping the pyramid in memory', err);
+                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000, true);
+                }
                 ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: r.meta, fromCache: r.fromCache, persistent: r.persistent });
             } else if (msg.type === 'compute') {
                 const r = computeAll(msg.samples as Float32Array, msg.sampleRate, msg.params);
@@ -182,8 +190,8 @@ function startCoordinator(ports: MessagePort[]) {
         }
     }
 
-    async function open(file: File, params: any, key: string, blockFrames: number) {
-        const cached = await tryOpenCached(key, FORMAT_VERSION);
+    async function open(file: File, params: any, key: string, blockFrames: number, memoryOnly = false) {
+        const cached = memoryOnly ? null : await tryOpenCached(key, FORMAT_VERSION);
         if (cached) { store = cached; return { meta: cached.meta, fromCache: true, persistent: true }; }
 
         const wav: WavMeta = JSON.parse(wavInfo(new Uint8Array(await file.slice(0, 1 << 16).arrayBuffer())));
@@ -195,7 +203,7 @@ function startCoordinator(ports: MessagePort[]) {
         const total = engine.nFrames(wav.nSamples);
         const blockAlign = wav.channels * wav.bitsPerSample / 8;
 
-        const persistent = opfsAvailable();
+        const persistent = !memoryOnly && opfsAvailable();
         let base: FileSystemDirectoryHandle | null = null;
         let dir: FileSystemDirectoryHandle | null = null;
         let handles: LevelFile[];
