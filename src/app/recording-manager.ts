@@ -62,6 +62,8 @@ export class RecordingManager extends EventTarget {
     // TypeScript property declarations (migrated from JS)
     _entries: any;
     _activeId: any;
+    /** False once a project store persists the session (sessionStorage is then only a migration source). */
+    persistToSession = true;
     constructor() {
         super();
         /** @type {Map<string, ReturnType<typeof defaultRecordingEntry>>} */
@@ -258,7 +260,14 @@ export class RecordingManager extends EventTarget {
 
     // ── Persistence ──────────────────────────────────────────────────────
 
+    /** Stop writing sessionStorage and drop the stale copy (a project store took over). */
+    disableSessionPersistence() {
+        this.persistToSession = false;
+        try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    }
+
     _save() {
+        if (!this.persistToSession) return;
         try {
             // Blob URLs are not persistent — clear them before saving
             const serialisable = [...this._entries.values()].map(e => ({
