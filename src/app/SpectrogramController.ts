@@ -30,6 +30,8 @@ import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/was
 import {
     updateSpectrogramStats as computeSpectrogramStats,
     autoContrastStats,
+    sampleFrameValues,
+    visibleContrastPoints,
     noiseFloorStats,
     detectMaxFrequency,
     buildSpectrogramGrayscale,
@@ -76,6 +78,8 @@ export class SpectrogramController extends EventTarget {
     _gpuFloorRef: unknown = null;
     /** v2: per-band noise floor (dB) of _data, for noise reduction. */
     _bandFloor: ArrayLike<number> | null = null;
+    /** Last drawn time span and zoom, for auto contrast on what is visible. */
+    _lastView: { t0: number; t1: number; pps: number } | null = null;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
     _gainDbMode: boolean | null = null;
     /** Stage-1 image holds raw dB values (window applied in stage 2). */
@@ -938,6 +942,7 @@ export class SpectrogramController extends EventTarget {
             const vw           = p.viewportWidth ?? 0;
             const width        = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
             const sl           = vw > 0 ? (p.scrollLeft ?? 0) : 0;
+            this._lastView = { t0: sl / p.pixelsPerSecond, t1: (sl + width) / p.pixelsPerSecond, pps: p.pixelsPerSecond };
 
             this._sizeViewCanvas(totalWidth, width, canvasHeight);
 
@@ -1021,6 +1026,9 @@ export class SpectrogramController extends EventTarget {
         }
 
         const totalWidth = Math.max(1, Math.floor(this._audioBuffer.duration * p.pixelsPerSecond));
+        const vwCpu = p.viewportWidth > 0 ? Math.min(p.viewportWidth, totalWidth) : totalWidth;
+        const slCpu = p.viewportWidth > 0 ? (p.scrollLeft ?? 0) : 0;
+        this._lastView = { t0: slCpu / p.pixelsPerSecond, t1: (slCpu + vwCpu) / p.pixelsPerSecond, pps: p.pixelsPerSecond };
 
         renderSpectrogram({
             duration:          this._audioBuffer.duration,
@@ -1085,6 +1093,7 @@ export class SpectrogramController extends EventTarget {
         const vw = p.viewportWidth ?? 0;
         const width = vw > 0 ? Math.min(vw, totalWidth) : totalWidth;
         const sl = vw > 0 ? (p.scrollLeft ?? 0) : 0;
+        this._lastView = { t0: sl / p.pixelsPerSecond, t1: (sl + width) / p.pixelsPerSecond, pps: p.pixelsPerSecond };
         const canvas = this._d.spectrogramCanvas;
         this._sizeViewCanvas(totalWidth, width, height);
 
@@ -1165,18 +1174,35 @@ export class SpectrogramController extends EventTarget {
      */
     autoContrast(redraw = false) {
         this._syncGainSliders();
-        if (this._gainDbMode) {
-            // v2: black at the noise floor, fixed dynamic range above it.
-            if (this._d.floorSlider) this._d.floorSlider.value = String(DB_CONTRAST.floor.def);
-            if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(DB_CONTRAST.range.def);
+        if (this._gainDbMode || this._isNoiseFloorContrast()) {
+            const vis = this._visibleValues();
+            const pts = vis && visibleContrastPoints(vis.values);
+            if (pts && vis) {
+                if (this._gainDbMode) {
+                    // Black a little above the visible noise floor, white at its p99.5.
+                    const floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
+                    const range = this._clamp(Math.round(pts.white - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    if (this._d.floorSlider) this._d.floorSlider.value = String(floor);
+                    if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(range);
+                } else {
+                    // PCEN: same points as % of the level's contrast range.
+                    const [a, b] = vis.range;
+                    if (b - a > 1e-8) {
+                        const lo = this._clamp(Math.round(((pts.black - a) / (b - a)) * 100), 0, 99);
+                        const hi = this._clamp(Math.round(((pts.white - a) / (b - a)) * 100), lo + 1, 100);
+                        if (this._d.floorSlider) this._d.floorSlider.value = String(lo);
+                        if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(hi);
+                    }
+                }
+            } else if (this._gainDbMode) {
+                // Nothing drawn yet: fall back to the defaults.
+                if (this._d.floorSlider) this._d.floorSlider.value = String(DB_CONTRAST.floor.def);
+                if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(DB_CONTRAST.range.def);
+            } else {
+                if (this._d.floorSlider) this._d.floorSlider.value = '0';
+                if (this._d.ceilSlider)  this._d.ceilSlider.value  = '100';
+            }
             this.updateGainReadout();
-            if (redraw) this._emit('needsredraw');
-            return;
-        }
-        if (this._isNoiseFloorContrast()) {
-            // v2 PCEN: the % range already spans noise floor (median) … p99.9.
-            if (this._d.floorSlider) this._d.floorSlider.value = '0';
-            if (this._d.ceilSlider)  this._d.ceilSlider.value  = '100';
             if (redraw) this._emit('needsredraw');
             return;
         }
@@ -1195,6 +1221,32 @@ export class SpectrogramController extends EventTarget {
         if (this._d.ceilSlider)  this._d.ceilSlider.value  = Math.round(ceilPct);
 
         if (redraw) this._emit('needsredraw');
+    }
+
+    /**
+     * v2 values in the last drawn time span (band floor removed with noise
+     * reduction in dB mode), with the noise reference of the dB window and
+     * the % contrast range. Whole file before the first draw.
+     */
+    _visibleValues(): { values: Float32Array; noise: number; range: [number, number] } | null {
+        const duration = this._audioBuffer?.duration ?? 0;
+        const view = this._lastView ?? { t0: 0, t1: duration, pps: 1 };
+        const tm = this._tileManager;
+        if (tm) return tm.visibleValues(view.t0, view.t1, view.pps);
+        if (!this._data || this._nFrames <= 0 || this._nMels <= 0 || duration <= 0) return null;
+        const f0 = this._clamp(Math.floor((view.t0 / duration) * this._nFrames), 0, this._nFrames);
+        const f1 = this._clamp(Math.ceil((view.t1 / duration) * this._nFrames), f0, this._nFrames);
+        const freqs = this.binFreqs;
+        const maxFreq = parseFloat(this._d.maxFreqSelect?.value || '0');
+        let bins = this._nMels;
+        if (freqs && maxFreq > 0) {
+            bins = 0;
+            while (bins < freqs.length && freqs[bins] <= maxFreq) bins++;
+            if (bins === 0) bins = this._nMels;
+        }
+        const nr = !!this._gainDbMode && !!this._d.noiseReductionCheck?.checked;
+        const values = sampleFrameValues(this._data, this._nMels, f0, f1, bins, nr ? this._bandFloor : null);
+        return { values, noise: nr ? 0 : this._absLogMin, range: [this._absLogMin, this._absLogMax] };
     }
 
     /**

@@ -18,6 +18,7 @@ import {
     colorizeSpectrogram,
     drawTimeGrid,
     limitBandFloor,
+    sampleFrameValues,
 } from '../domain/spectrogram.ts';
 import type { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily in create().
@@ -267,6 +268,44 @@ export class WasmTileManager extends EventTarget {
     firstReadyTileData(): Float32Array | null {
         for (const tile of this.tiles.values()) {
             if (tile.level === 0 && tile.state === 'ready' && tile.data) return tile.data;
+        }
+        return null;
+    }
+
+    /**
+     * Values drawn in [t0, t1] below maxFreq at the level for `pps` (band floor
+     * subtracted with noise reduction), plus that level's contrast range, for
+     * auto contrast. Falls back to any loaded level; null when nothing is ready.
+     */
+    visibleValues(t0: number, t1: number, pps: number): { values: Float32Array; range: [number, number]; noise: number } | null {
+        const target = this.levelFor(pps);
+        const levels = [...new Set([...this.tiles.values()].map(t => t.level))]
+            .sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+        const freqs = this.binFreqs;
+        let bins = 0;
+        while (bins < freqs.length && freqs[bins] <= this.colorOptions.maxFreq) bins++;
+        if (bins === 0) bins = this.nMels;
+        // The dB window is relative to the band floor with noise reduction (see dbWindow).
+        const nr = !!this.colorOptions.noiseReduction && this.dbValues;
+        for (const level of levels) {
+            const frameSec = this.meta.levels[level].factor * this.frameSec;
+            const floor = nr ? (this.meta.levels[level]?.stats.bandFloor ?? null) : null;
+            const parts: Float32Array[] = [];
+            for (const tile of this.tiles.values()) {
+                if (tile.level !== level || tile.state !== 'ready' || !tile.data) continue;
+                const start = tile.idx * TILE_FRAMES * frameSec;
+                const f0 = Math.max(0, Math.ceil((t0 - start) / frameSec));
+                const f1 = Math.min(tile.nFrames, Math.floor((t1 - start) / frameSec) + 1);
+                if (f1 <= f0) continue;
+                parts.push(sampleFrameValues(tile.data, this.nMels, f0, f1, bins, floor, 50000));
+            }
+            const total = parts.reduce((n, p) => n + p.length, 0);
+            if (total === 0) continue;
+            const values = new Float32Array(total);
+            let o = 0;
+            for (const p of parts) { values.set(p, o); o += p.length; }
+            const range = this.contrastRange(level);
+            return { values, range, noise: nr ? 0 : range[0] };
         }
         return null;
     }
