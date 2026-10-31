@@ -3220,6 +3220,16 @@
     function openRefCalls(label) {
       getRefCallsModal().open(label, _lastAudioUrl);
     }
+    // Docked reference view follows the label selection; only one player plays.
+    player.on('labelfocus', (e) => {
+      const m = _referenceCallsModal;
+      if (!m?.isDocked?.() || !m.isOpen?.()) return;
+      const interaction = e.detail?.interaction ?? (e.detail?.source === 'list' || e.detail?.source === 'table' ? 'click' : 'hover');
+      if (interaction !== 'click' || !e.detail?.id) return;
+      const lbl = state.labels.find((l) => l.id === e.detail.id);
+      if (lbl) m.follow(lbl, _lastAudioUrl);
+    });
+    player.on('play', () => { _referenceCallsModal?.pauseAll?.(); });
 
     /** Show rename/delete context menu for a spectrogram label id. */
     function showLabelContextMenu(e, id) {
