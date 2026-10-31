@@ -54,13 +54,19 @@ export function getTimeGridSteps(pixelsPerSecond: number): { majorStep: number; 
 
 const LONG_GRID_STEPS = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 
-/** Grid label: seconds below one-minute steps, otherwise h:mm:ss / m:ss. */
+/**
+ * Grid label. Below one minute plain seconds ("12.5s"); from one minute on
+ * m:ss / h:mm:ss, with as many decimals as the step needs ("2:05.5").
+ */
 export function formatGridTime(t: number, majorStep: number): string {
-    if (majorStep < 60) return `${t.toFixed(1)}s`;
-    const s = Math.round(t);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const ss = String(s % 60).padStart(2, '0');
+    const decimals = majorStep >= 1 ? 0 : majorStep >= 0.1 ? 1 : 2;
+    const factor = 10 ** decimals;
+    const total = Math.round(Math.max(0, t) * factor) / factor;
+    if (total < 60) return `${total.toFixed(decimals)}s`;
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const secNum = total - h * 3600 - m * 60;
+    const ss = secNum.toFixed(decimals).padStart(decimals ? 3 + decimals : 2, '0');
     return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
