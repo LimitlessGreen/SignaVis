@@ -21,6 +21,7 @@ import {
     fftSizeFromOversampling,
     WASM_TILE_MIN_DURATION_SEC,
     DB_CONTRAST,
+    AUTO_CONTRAST,
 } from '../shared/constants.ts';
 
 import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
@@ -1188,12 +1189,12 @@ export class SpectrogramController extends EventTarget {
         this._syncGainSliders();
         if (this._gainDbMode || this._isNoiseFloorContrast()) {
             const vis = this._visibleValues();
-            const pts = vis && visibleContrastPoints(vis.values);
+            const pts = vis && visibleContrastPoints(vis.values, AUTO_CONTRAST.blackMarginDb, AUTO_CONTRAST.whitePercentile);
             if (pts && vis) {
                 if (this._gainDbMode) {
-                    // Black a little above the visible noise floor, white at its p99.5.
+                    // Black a little above the visible noise floor, white above its p99.9.
                     const floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
-                    const range = this._clamp(Math.round(pts.white - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    const range = this._clamp(Math.round(pts.white + AUTO_CONTRAST.headroomDb - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
                     if (this._d.floorSlider) this._d.floorSlider.value = String(floor);
                     if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(range);
                 } else {
