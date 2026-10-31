@@ -2130,7 +2130,9 @@
       if (recordingExplorer.isMultiMode()) return { replace: null };
       const old = recordingManager.getAll()[0];
       if (!old) return { replace: null };
-      const anns = (old.id === recordingManager.activeId ? state.labels : old.annotations) || [];
+      // state.labels belong to the entry only once it is loaded (at startup it may be active but not loaded yet)
+      const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
+      const anns = (live ? state.labels : old.annotations) || [];
       const n = anns.filter((a) => a.setId === state.ownSetId).length;
       if (n === 0) return { replace: old };
       const v = await askReplaceOrKeep(old.xcId ? 'XC' + old.xcId : old.filename, n);
@@ -3299,6 +3301,15 @@
         await activateRecordingEntry(_autoExisting);
         return;
       }
+      // Restored session in single mode: the linked recording replaces the current one (ask if it has labels)
+      const _prep = await prepareRecordingLoad();
+      if (_prep.cancel) {
+        // Keep the current recording: open it (startup skipped that because of the URL) and point the URL at it
+        const _cur = recordingManager.getActive() || recordingManager.getAll()[0];
+        updateUrlXcId(_cur?.xcId || null);
+        if (_cur && (_cur.xcId || _cur.audioUrl || _cur.path)) await activateRecordingEntry(_cur);
+        return;
+      }
       try {
         if (!await checkXcDuration(xcid)) return;
         const _xcp3 = makeXcProgress(xcid);
@@ -3317,6 +3328,7 @@
         recordingManager.setActive(_autoEntry.id);
         state._labelsEntryId = _autoEntry.id;  // empty labels now belong to the new entry
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        finishRecordingLoad(_prep);
         showXcNokeyModal();
         try {
           const labelResult = await importXenoCantoLabels(audio.xcId);
