@@ -49,7 +49,7 @@ def run(b, theme, width, waveform=True):
     shot("00-start")
 
     open_panel(pg, "project")
-    pg.click("#loadSampleBtn")
+    pg.evaluate("document.getElementById('loadSampleBtn').click()")
     pg.wait_for_timeout(6000)
     pg.keyboard.press("Escape")
     shot("01-demo-loaded")

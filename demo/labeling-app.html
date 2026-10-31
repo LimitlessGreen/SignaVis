@@ -234,17 +234,17 @@
     <div class="sidebar-section-header project-rec-header">
       <span>Recordings</span>
       <span class="project-rec-actions">
-        <button class="tb-btn" id="browseBtn" type="button" title="Add an audio file">+ File</button>
-        <button class="tb-btn" id="loadSampleBtn" type="button" title="Add the demo recording">+ Demo</button>
-        <button class="tb-btn" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
+        <button class="tb-btn" id="loadSampleBtn" type="button" hidden>Demo</button>
+        <button class="tb-btn ghost" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
       </span>
       <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
     <div class="panel-section">
       <div class="xc-load-row">
-        <input id="xcIdInput" class="input" placeholder="+ XC number or URL (e.g. 12345)" aria-label="Add Xeno-canto recording" />
-        <button class="tb-btn" id="xcLoadBtn" type="button">Load</button>
+        <input id="xcIdInput" class="input" placeholder="XC number or URL (e.g. 12345)" aria-label="Add Xeno-canto recording" />
+        <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
       </div>
+      <button class="link-btn xc-load-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number before upload)">or open an audio file…</button>
     </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
     <div id="recordingExplorerMount"></div>
@@ -965,6 +965,7 @@
         items: [
           { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
           { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
+          { label: 'Load demo recording', action: () => document.getElementById('loadSampleBtn')?.click() },
           { separator: true },
           { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
           { label: '♥ Sponsor SignaVis', action: () => window.open('https://github.com/sponsors/LimitlessGreen', '_blank', 'noopener') },

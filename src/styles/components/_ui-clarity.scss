@@ -186,3 +186,11 @@ html[data-theme="light"] { @include light-tokens; }
   .toolbar-btn { border-color: transparent; }
 }
 .toolbar-sep, .tb-sep { background: var(--color-border-strong); margin: 0 4px; }
+
+/* ── Project tab: adding = XC first ────────────────────────────────── */
+.xc-load-row .xc-load-primary { width: auto; flex: 0 0 auto; padding: 5px 14px; }
+.link-btn.xc-load-file {
+  display: block; margin-top: 4px; padding: 0; border: 0; background: none;
+  font-size: 11px; color: var(--color-text-secondary); cursor: pointer;
+  &:hover { color: var(--color-accent); text-decoration: underline; }
+}
