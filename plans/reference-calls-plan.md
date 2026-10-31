@@ -12,7 +12,7 @@ Sie werden NICHT an den Hauptplayer gekoppelt.
    - Das Modal hat einen eigenen Key-Handler (Window-Capture) und schluckt Tasten, damit der Hauptplayer still bleibt
    - Leertaste spielt den ausgewählten Player; ↑↓/J/K wählt aus, R wählt die eigene Aufnahme
    - Startet ein Player, pausieren alle anderen; beim Öffnen pausiert der Hauptplayer
-2. **Layout mit Vergleich nebeneinander**
+2. **Layout mit Vergleich nebeneinander** ✅
    - Eigenes Segment fest oben, ausgewählter XC-Call groß darunter, Kandidatenliste mit XC-Sono-Vorschaubild
    - Ein echter Player wird erst beim Auswählen erzeugt (lazy)
    - Kompakte Kopfzeile (kleines Artbild, Name, Suche); `A` spielt abwechselnd eigenes Segment und Referenz
