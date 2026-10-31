@@ -80,6 +80,8 @@ export class SpectrogramController extends EventTarget {
     _bandFloor: ArrayLike<number> | null = null;
     /** Last drawn time span and zoom, for auto contrast on what is visible. */
     _lastView: { t0: number; t1: number; pps: number } | null = null;
+    /** Auto gain mode: redo auto contrast once the first drawn view has tiles. */
+    _autoContrastPending = false;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
     _gainDbMode: boolean | null = null;
     /** Stage-1 image holds raw dB values (window applied in stage 2). */
@@ -200,6 +202,7 @@ export class SpectrogramController extends EventTarget {
         this._spectralFeatures = null;
         this._ridges           = null;
         this._audioBuffer    = audioBuffer;
+        this._lastView       = null; // span of the previous file
         this._sourceFile     = sourceFile;
         this._sampleRateHz = sampleRateHz;
         this._externalMode = false;
@@ -468,6 +471,12 @@ export class SpectrogramController extends EventTarget {
             // Sync absLogMin/Max so autoContrast works correctly.
             this._absLogMin = tm.globalMin;
             this._absLogMax = tm.globalMax;
+            // Auto mode ran on the first tile only; redo it on what is actually drawn.
+            if (this._autoContrastPending && this._lastView && this._tileManager === tm) {
+                this._autoContrastPending = false;
+                this.autoContrast(false);
+                tm.updateColorOptions(this._getCurrentColorOptions()); // fires tileready again
+            }
             this._emit('needsredraw');
         });
 
@@ -485,7 +494,10 @@ export class SpectrogramController extends EventTarget {
 
         if (autoAdjust) {
             const gainMode = d.gainModeSelect?.value || 'auto';
-            if (gainMode === 'auto') this.autoContrast(false);
+            if (gainMode === 'auto') {
+                this.autoContrast(false);
+                this._autoContrastPending = true;
+            }
             const freqMode = d.maxFreqModeSelect?.value || 'auto';
             if (freqMode === 'auto') {
                 this.autoFrequency(false);
