@@ -18,7 +18,7 @@
 //   'error'                — { message }
 // ═══════════════════════════════════════════════════════════════════════
 
-import { clamp, parseNativeSampleRate } from '../../shared/utils.ts';
+import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
@@ -627,7 +627,7 @@ export class AudioEngine extends AudioEngineBase {
   _heterodyneGain() {
     if (!this.audioBuffer) return 1;
     if (this._peakFor !== this.audioBuffer) {
-      const ch = this.audioBuffer.getChannelData(0);
+      const ch = channelData(this.audioBuffer);
       let peak = 0;
       for (let i = 0; i < ch.length; i++) {
         const a = Math.abs(ch[i]);
@@ -840,7 +840,7 @@ export class AudioEngine extends AudioEngineBase {
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects.
     // Peaks + duration from our own decoded buffer stop WaveSurfer from decoding the file a
     // second time (that fails for long recordings, which only decode in chunks).
-    const peaks = this.audioBuffer ? [coarsePeaks(this.audioBuffer.getChannelData(0))] : undefined;
+    const peaks = this.audioBuffer ? [coarsePeaks(channelData(this.audioBuffer))] : undefined;
     const duration = this.audioBuffer?.duration;
     if (typeof source === 'string') {
       ws.load(source, peaks, duration);

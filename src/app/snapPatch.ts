@@ -9,6 +9,7 @@
 
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
+import { channelData } from '../shared/utils.ts';
 
 const WINDOW_SECONDS = 0.0116;
 
@@ -32,7 +33,7 @@ export function computeSnapPatch(audio: AudioBuffer, time: number, halfWidth: nu
         const first = Math.max(0, start), last = Math.min(audio.length, start + len);
         const mono = new Float32Array(Math.max(0, last - first));
         for (let c = 0; c < audio.numberOfChannels; c++) {
-            const ch = audio.getChannelData(c);
+            const ch = channelData(audio, c);
             for (let i = 0; i < mono.length; i++) mono[i] += ch[first + i] / audio.numberOfChannels;
         }
         const values = stft.blockValues(mono, first, f0, n, total);

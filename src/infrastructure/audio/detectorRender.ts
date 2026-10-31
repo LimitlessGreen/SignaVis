@@ -9,6 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { wasmMain } from '../wasm-dsp/wasmMain.ts';
+import { channelData } from '../../shared/utils.ts';
 
 export type ListenMode =
   | { kind: 'expansion'; factor: number }
@@ -54,7 +55,7 @@ export function listenModeKey(mode: ListenMode): string {
 export function divisionNoiseLevel(dsp: DetectorDsp, source: AudioBuffer): number {
   const cached = noiseLevels.get(source);
   if (cached != null) return cached;
-  const ch = source.getChannelData(0);
+  const ch = channelData(source);
   const windows = Math.min(NOISE_WINDOWS, Math.max(1, Math.floor(ch.length / NOISE_WINDOW_SAMPLES)));
   const len = Math.min(ch.length, NOISE_WINDOW_SAMPLES);
   const step = windows > 1 ? (ch.length - len) / (windows - 1) : 0;
@@ -138,7 +139,7 @@ export function renderDetectorChunk(
   const dsp = wasmMain();
   if (!dsp) return null;
   const plan = planChunk(dsp, source.length, source.sampleRate, startSec, endSec);
-  const input = source.getChannelData(0).subarray(plan.lo, plan.hi);
+  const input = channelData(source).subarray(plan.lo, plan.hi);
   const noise = mode.kind === 'division' ? divisionNoiseLevel(dsp, source) : 0;
   return toChunk(runDetector(dsp, input, source.sampleRate, plan.lo, mode, noise), plan, mode, gain);
 }

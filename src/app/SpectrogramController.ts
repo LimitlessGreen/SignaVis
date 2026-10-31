@@ -50,6 +50,7 @@ import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
+import { channelData as cachedChannelData } from '../shared/utils.ts';
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -315,7 +316,7 @@ export class SpectrogramController extends EventTarget {
         const t0 = performance.now();
 
         try {
-            const channelData = this._audioBuffer.getChannelData(0);
+            const channelData = cachedChannelData(this._audioBuffer);
 
             // ── Cache lookup ─────────────────────────────────────────────
             const cacheKey = await spectrogramCache.computeKey(
