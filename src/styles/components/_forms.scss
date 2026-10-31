@@ -184,3 +184,13 @@
 
   > div, > label { flex: 1; }
 }
+
+/* Collapsible Recording section in the Properties panel */
+.props-section-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.props-section-toggle:hover { color: var(--color-accent); }
+.props-toggle-caret { display: inline-block; width: 10px; transition: transform 0.15s; }
+.props-toggle-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-transform: none; letter-spacing: 0; font-weight: 400; opacity: 0.7; display: none; }
+.props-section--collapsed .props-toggle-caret { transform: rotate(-90deg); }
+.props-section--collapsed .props-toggle-summary { display: block; }
+.props-section--collapsed > .props-section-body { display: none; }

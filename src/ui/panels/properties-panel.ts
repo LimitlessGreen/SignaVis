@@ -16,6 +16,7 @@
 import { TAG_PRESETS } from './label-table.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
+import { formatCoords } from '../../app/recording-context.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -33,8 +34,7 @@ const RECORDING_FIELDS = [
   { key: 'time',        label: 'Time' },
   { key: 'quality',     label: 'Quality' },
   { key: 'license',     label: 'License' },
-  { key: 'lat',         label: 'Latitude' },
-  { key: 'lng',         label: 'Longitude' },
+  { key: 'coords',      label: 'Coordinates' },
   { key: 'alt',         label: 'Altitude' },
   { key: 'method',      label: 'Method' },
   { key: 'animalSeen',  label: 'Animal seen' },
@@ -81,6 +81,7 @@ export class PropertiesPanel {
     _lblSection: any;
     _recBody: any;
     _recSection: any;
+    _recSummary: any;
     _setBody: any;
     _setSection: any;
     _snrCache: any;
@@ -289,8 +290,25 @@ export class PropertiesPanel {
     this._recSection = document.createElement('div');
     this._recSection.className = 'props-section';
     const recHeader = document.createElement('div');
-    recHeader.className = 'props-section-title';
-    recHeader.textContent = 'Recording';
+    recHeader.className = 'props-section-title props-section-toggle';
+    recHeader.setAttribute('role', 'button');
+    recHeader.tabIndex = 0;
+    recHeader.title = 'Show / hide recording details';
+    recHeader.innerHTML = '<span class="props-toggle-caret" aria-hidden="true">▾</span><span>Recording</span><span class="props-toggle-summary"></span>';
+    this._recSummary = recHeader.querySelector('.props-toggle-summary');
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('aw.props.recCollapsed') === '1'; } catch {}
+    const applyCollapsed = (c: boolean) => {
+      this._recSection.classList.toggle('props-section--collapsed', c);
+      recHeader.setAttribute('aria-expanded', String(!c));
+      try { localStorage.setItem('aw.props.recCollapsed', c ? '1' : '0'); } catch {}
+    };
+    applyCollapsed(collapsed);
+    const toggle = () => applyCollapsed(!this._recSection.classList.contains('props-section--collapsed'));
+    recHeader.addEventListener('click', toggle);
+    recHeader.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
     this._recSection.appendChild(recHeader);
     this._recBody = document.createElement('div');
     this._recBody.className = 'props-section-body';
@@ -328,6 +346,7 @@ export class PropertiesPanel {
   _renderRecording() {
     this._recBody.innerHTML = '';
     const merged = { ...this._audioInfo, ...this._recordingMeta };
+    if (this._recSummary) this._recSummary.textContent = merged.filename || merged.species || '';
     if (!Object.keys(merged).length) {
       this._recBody.innerHTML = '<div class="props-empty">No recording loaded.</div>';
       return;
@@ -473,30 +492,29 @@ export class PropertiesPanel {
     const dl = document.createElement('dl');
     dl.className = 'props-grid';
     for (const f of fields) {
-      const raw = data[f.key];
+      const raw = f.key === 'coords' ? mapCoords : data[f.key];
       if (raw == null || raw === '') continue;
       const dt = document.createElement('dt');
       dt.textContent = f.label;
       const dd = document.createElement('dd');
 
-      if (mapCoords && (f.key === 'lat' || f.key === 'lng')) {
-        // Render as a clickable coordinate value
+      if (f.key === 'coords') {
+        if (!mapCoords) continue;
+        const c = mapCoords as any;
+        // One row "lat, lon" with a single map button
         dd.className = 'props-coord-cell';
         const span = document.createElement('span');
-        span.textContent = f.fmt ? f.fmt(raw) : String(raw);
+        span.textContent = formatCoords(c);
         dd.appendChild(span);
-        if (f.key === 'lat') {
-          // Map icon button — only on the lat row to avoid duplication
-          const mapBtn = document.createElement('button');
-          mapBtn.type = 'button';
-          mapBtn.className = 'props-coord-map-btn';
-          mapBtn.title = `Show on map (${(mapCoords as any).lat.toFixed(4)}, ${(mapCoords as any).lon.toFixed(4)})`;
-          mapBtn.innerHTML = GEO_ICONS.map;
-          mapBtn.addEventListener('click', () =>
-            openMapModal({ lat: (mapCoords as any).lat, lon: (mapCoords as any).lon, zoom: 10, readOnly: true })
-          );
-          dd.appendChild(mapBtn);
-        }
+        const mapBtn = document.createElement('button');
+        mapBtn.type = 'button';
+        mapBtn.className = 'props-coord-map-btn';
+        mapBtn.title = `Show on map (${formatCoords(c)})`;
+        mapBtn.innerHTML = GEO_ICONS.map;
+        mapBtn.addEventListener('click', () =>
+          openMapModal({ lat: c.lat, lon: c.lon, zoom: 10, readOnly: true })
+        );
+        dd.appendChild(mapBtn);
       } else {
         dd.textContent = f.fmt ? f.fmt(raw) : String(raw);
       }
