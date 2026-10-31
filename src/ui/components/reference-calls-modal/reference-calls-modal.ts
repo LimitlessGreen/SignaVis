@@ -44,6 +44,7 @@ const BIRD_IMG_BASE = './data/species_images/';
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
 const SPEC_HEIGHT = 300;     // spectrogram px; the player adds its own toolbar/axis
+const SPEC_HEIGHT_DOCKED = 170;
 const AUDIO_CACHE_MAX = 24;
 
 // Shared player options: spectrogram only, no chrome, own keyboard handling.
@@ -117,7 +118,7 @@ function injectCss() {
 .rc-side-title .rc-side-meta { text-transform: none; letter-spacing: 0; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-side-title a { color: var(--color-accent); text-decoration: none; text-transform: none; }
 .rc-player {
-  min-height: ${SPEC_HEIGHT}px; border-radius: 6px; overflow: hidden;
+  min-height: 120px; border-radius: 6px; overflow: hidden;
   background: var(--color-bg-surface); border: 2px solid transparent;
 }
 .rc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -207,12 +208,13 @@ function injectCss() {
   left: auto; width: min(760px, 55vw); background: none;
   border-left: 1px solid var(--color-border); box-shadow: -8px 0 24px rgba(0,0,0,0.35);
 }
-.rc-docked .rc-main { flex-direction: column; }
-.rc-docked .rc-compare { flex: none; overflow: visible; }
-.rc-docked .rc-list { width: auto; flex: 1; min-height: 220px; border-left: none; border-top: 1px solid var(--color-border); }
+.rc-docked .rc-main { flex-direction: column; overflow: hidden; }
+.rc-docked .rc-compare { flex: none; overflow: visible; padding: 10px 12px; gap: 8px; }
+.rc-docked .rc-list { width: auto; flex: 1; min-height: 0; border-left: none; border-top: 1px solid var(--color-border); }
+.rc-docked .rc-item { display: grid; grid-template-columns: 110px 1fr; column-gap: 8px; row-gap: 2px; padding: 4px; margin-bottom: 4px; }
+.rc-docked .rc-item-sono, .rc-docked .rc-item-own { grid-row: span 2; height: 36px; }
 .rc-docked .rc-keys { display: none; }
 .rc-docked .rc-pair { grid-template-columns: 1fr; }
-.rc-docked .rc-dialog { overflow-y: auto; }
 .rc-docked.rc-kbd-idle .rc-header { opacity: 0.85; }
 @media (max-width: 820px) {
   .rc-main { flex-direction: column; }
@@ -521,6 +523,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     _docked = !_docked;
     try { localStorage.setItem(DOCK_KEY, _docked ? '1' : '0'); } catch {}
     show();
+    // Player heights are fixed at creation: rebuild for the new layout.
+    if (_label) open(_label, _audioUrl);
   });
   // Docked: clicking outside hands the keyboard back to the main app.
   document.addEventListener('pointerdown', (e) => {
@@ -885,7 +889,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     inner.style.height = '100%';
     ownPlayerWrap.appendChild(inner);
     try {
-      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS });
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, spectrogramHeight: _docked ? SPEC_HEIGHT_DOCKED : SPEC_HEIGHT });
       await p.ready;
       await p.loadUrl(audioUrl);
       if (!inner.isConnected) { p.destroy?.(); return; }
@@ -975,7 +979,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       const inner = el('div');
       inner.style.height = '100%';
       refPlayerWrap.appendChild(inner);
-      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS });
+      const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, spectrogramHeight: _docked ? SPEC_HEIGHT_DOCKED : SPEC_HEIGHT });
       await p.ready;
       await p.loadUrl(blobUrl);
       if (token !== _refToken) { try { p.destroy?.(); } catch {} if (!own) URL.revokeObjectURL(blobUrl); return; }
