@@ -30,6 +30,17 @@ export const DB_CONTRAST = {
     range: { min: 20, max: 120, def: 70 },
 } as const;
 
+/**
+ * Auto contrast on the visible values: black = median + blackMarginDb,
+ * white = whitePercentile + headroomDb (dB mode), so loud calls keep detail
+ * instead of saturating.
+ */
+export const AUTO_CONTRAST = {
+    blackMarginDb: 3,
+    whitePercentile: 99.9,
+    headroomDb: 6,
+} as const;
+
 // Classic (Xeno-Canto-style) spectrogram defaults
 export const CLASSIC_FRAME_RATE = 100;
 export const CLASSIC_N_MELS = 160;
