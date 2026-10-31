@@ -16,7 +16,7 @@ Sie werden NICHT an den Hauptplayer gekoppelt.
    - Eigenes Segment fest oben, ausgewählter XC-Call groß darunter, Kandidatenliste mit XC-Sono-Vorschaubild
    - Ein echter Player wird erst beim Auswählen erzeugt (lazy)
    - Kompakte Kopfzeile (kleines Artbild, Name, Suche); `A` spielt abwechselnd eigenes Segment und Referenz
-3. **Filter und Sprung zum Call**
+3. **Filter und Sprung zum Call** ✅
    - Chips für Ruftyp, Qualität, Länge und Region/Entfernung (`getCoords`); kein `slice(0,3)` pro Gruppe mehr
    - Automatisch zum energiereichsten Abschnitt im Frequenzband des Labels springen
 4. **Entscheidung im Vergleich**

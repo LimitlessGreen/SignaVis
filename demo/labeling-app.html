@@ -646,6 +646,7 @@
           getSuggestions: (q, n) => getSuggestions(q, n),
           BirdNETPlayer,
           getMainPlayer: () => player,
+          getCoords: () => birdnetPanel?.getCoords?.() ?? null,
           taxonomy,
           getLang: () => state.taxonomyLang,
           // Resolve vernacular → scientific name by searching all taxonomy records.
