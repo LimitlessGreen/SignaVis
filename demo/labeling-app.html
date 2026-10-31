@@ -2086,7 +2086,7 @@
     }
 
     // ── Single- vs. multi-recording loading ──
-    // Single mode: a new recording replaces the current one. If that one has own labels, ask first;
+    // Single mode: a new recording replaces the current one — always ask first, never replace silently;
     // "keep both" switches multi-recording labeling on deliberately.
     function removeRecordingWithUndo(entry) {
       saveCurrentAnnotationsIfNeeded();
@@ -2111,8 +2111,9 @@
             <button class="tb-btn" type="button" data-v="keep">Keep both (label several recordings)</button>
             <button class="tb-btn ghost" type="button" data-v="cancel">Cancel</button>
           </div></div>`;
-        back.querySelector('p').textContent =
-          `${oldName} has ${nLabels} label${nLabels === 1 ? '' : 's'} of yours. Replace it (undo possible) or keep both?`;
+        back.querySelector('p').textContent = nLabels
+          ? `${oldName} has ${nLabels} label${nLabels === 1 ? '' : 's'} of yours. Replace it (undo possible) or keep both?`
+          : `Replace ${oldName} with the new recording (undo possible) or keep both?`;
         const done = (v) => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
         const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done('cancel'); } };
         back.addEventListener('click', (e) => {
@@ -2134,7 +2135,6 @@
       const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
       const anns = (live ? state.labels : old.annotations) || [];
       const n = anns.filter((a) => a.setId === state.ownSetId).length;
-      if (n === 0) return { replace: old };
       const v = await askReplaceOrKeep(old.xcId ? 'XC' + old.xcId : old.filename, n);
       if (v === 'cancel') return { cancel: true };
       if (v === 'keep') { recordingExplorer.setMultiMode(true); return { replace: null }; }
