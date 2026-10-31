@@ -636,6 +636,28 @@ html[data-theme="light"] { @include sponsor-light; }
 .recording-explorer-add-btn:hover { color: var(--color-accent); }
 .recording-explorer-add-btn span { font-size: 14px; line-height: 1; }
 
+/* ── Single-recording view: switch to multi-recording labeling ── */
+.recording-explorer--single { padding: 6px 10px 8px; }
+.rec-multi-start {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.1s, background 0.1s;
+}
+.rec-multi-start:hover,
+.rec-multi-start:focus-visible { border-color: var(--color-accent); background: var(--color-bg-surface); }
+.rec-multi-start-title { font-size: 13px; font-weight: 600; }
+.rec-multi-start-sub { font-size: 10px; color: var(--color-text-secondary); }
+
 /* ── Add recording popover ── */
 .recording-explorer-popover {
   background: var(--color-bg-surface);

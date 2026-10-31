@@ -20,6 +20,8 @@
 
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
+const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
+
 export class RecordingExplorer {
     // TypeScript property declarations (migrated from JS)
     _collapsed: any;
@@ -39,6 +41,7 @@ export class RecordingExplorer {
     _isSetHidden: any;
     _onToggleSetHidden: any;
     _onAdoptSet: any;
+    _multiMode: boolean;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -68,6 +71,7 @@ export class RecordingExplorer {
         this._onToggleSetHidden = opts.onToggleSetHidden || null;
         this._onAdoptSet       = opts.onAdoptSet || null;
         this._collapsed        = false;
+        try { this._multiMode = localStorage.getItem(MULTI_MODE_KEY) === '1'; } catch { this._multiMode = false; }
 
         this._manager.addEventListener('change',       () => this.render());
         this._manager.addEventListener('activechange', () => this.render());
@@ -95,10 +99,35 @@ export class RecordingExplorer {
         if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
     }
 
+    /** Multi-recording labeling: the tree and its controls show only once this is on. */
+    _setMultiMode(on: boolean) {
+        this._multiMode = on;
+        try { localStorage.setItem(MULTI_MODE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+        this.render();
+    }
+
+    /** Single-recording view: one big button that switches multi-recording labeling on. */
+    _renderSingleMode(container: HTMLElement) {
+        const wrap = document.createElement('div');
+        wrap.className = 'recording-explorer recording-explorer--single';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rec-multi-start';
+        btn.innerHTML = '<span class="rec-multi-start-title">＋ Label several XC recordings</span>'
+            + '<span class="rec-multi-start-sub">One annotation set across many recordings</span>';
+        btn.addEventListener('click', () => this._setMultiMode(true));
+        wrap.appendChild(btn);
+        container.appendChild(wrap);
+    }
+
     render() {
         const container = this._container;
         if (!container) return;
         container.innerHTML = '';
+
+        // Sessions that already hold several recordings always show the tree
+        const multi = this._multiMode || this._manager.getAll().length > 1;
+        if (!multi) { this._renderSingleMode(container); return; }
 
         const wrap = document.createElement('div');
         wrap.className = 'recording-explorer';
@@ -165,11 +194,13 @@ export class RecordingExplorer {
         }
 
         // ── Session menu (hover-visible) — deletions go through the host, which offers Undo ──
-        if (this._onResetSet) {
-            header.appendChild(this._menuButton('Session actions', () => [
-                { label: 'Clear all labels in this session', danger: true, action: () => this._onResetSet() },
-            ]));
-        }
+        header.appendChild(this._menuButton('Session actions', () => [
+            ...(this._onResetSet ? [{ label: 'Clear all labels in this session', danger: true, action: () => this._onResetSet() }] : []),
+            ...(this._manager.getAll().length <= 1 ? [
+                ...(this._onResetSet ? [{ separator: true }] : []),
+                { label: 'Back to single-recording view', action: () => this._setMultiMode(false) },
+            ] : []),
+        ]));
 
         const toggle = () => {
             this._collapsed = !this._collapsed;
