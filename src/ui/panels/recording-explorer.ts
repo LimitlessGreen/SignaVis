@@ -194,13 +194,22 @@ export class RecordingExplorer {
         }
 
         // ── Session menu (hover-visible) — deletions go through the host, which offers Undo ──
-        header.appendChild(this._menuButton('Session actions', () => [
-            ...(this._onResetSet ? [{ label: 'Clear all labels in this session', danger: true, action: () => this._onResetSet() }] : []),
-            ...(this._manager.getAll().length <= 1 ? [
-                ...(this._onResetSet ? [{ separator: true }] : []),
-                { label: 'Back to single-recording view', action: () => this._setMultiMode(false) },
-            ] : []),
-        ]));
+        // Back to the single-recording view — only while at most one recording is in the session
+        const single = document.createElement('button');
+        single.type = 'button';
+        single.className = 'tb-btn ghost rec-single-btn';
+        single.textContent = 'Single';
+        const canSingle = this._manager.getAll().length <= 1;
+        single.disabled = !canSingle;
+        single.title = canSingle ? 'Back to single-recording view' : 'Remove other recordings first';
+        single.addEventListener('click', (e) => { e.stopPropagation(); this._setMultiMode(false); });
+        header.appendChild(single);
+
+        if (this._onResetSet) {
+            header.appendChild(this._menuButton('Session actions', () => [
+                { label: 'Clear all labels in this session', danger: true, action: () => this._onResetSet() },
+            ]));
+        }
 
         const toggle = () => {
             this._collapsed = !this._collapsed;
