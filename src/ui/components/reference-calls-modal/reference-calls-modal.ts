@@ -30,8 +30,8 @@
  * backdrop, follows the label selection of the main app and only takes keys
  * after the user clicked into it.
  *
- * The reference player jumps to the loudest section inside the label's
- * frequency band ("call"), marks it and clips playback to it.
+ * The XC reference view is centred on the loudest section inside the label's
+ * frequency band (an estimate only: not drawn, playback is not clipped).
  * Only one player ever plays at a time.
  */
 
@@ -502,6 +502,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   let _ownClip = false;        // stop own playback at the label end
   let _refCall: { start: number, end: number } | null = null; // found call in the reference
   let _refClip = false;        // stop reference playback at the call end
+  let _refIsLabel = false;     // _refCall is a real (own) label, not an estimate
 
   const _audioCache = new Map<string, ArrayBuffer>();
   const _queryCache = new Map<string, any>();
@@ -540,7 +541,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     if (!_refPlayer) return;
     stopAll();
     const t = _refPlayer.currentTime || 0;
-    if (_refCall && (t < _refCall.start || t >= _refCall.end - 0.02)) seek(_refPlayer, _refCall.start);
+    if (_refCall && _refIsLabel && (t < _refCall.start || t >= _refCall.end - 0.02)) seek(_refPlayer, _refCall.start);
     else if (_refPlayer.duration && t >= _refPlayer.duration - 0.05) seek(_refPlayer, 0);
     _refPlayer.play();
   }
@@ -876,6 +877,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const token = ++_refToken;
     _abPending = false;
     _refCall = null;
+    _refIsLabel = false;
     destroyRefPlayer();
     renderRefTitle(rec);
     refPlayerWrap.innerHTML = rec ? '<div class="rc-status">Loading…</div>' : '<div class="rc-status">Select a candidate on the right.</div>';
@@ -906,7 +908,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       disableLabeling(p);
       p.on('play', () => {
         const t = p.currentTime || 0;
-        _refClip = !!_refCall && t >= _refCall.start - 0.05 && t < _refCall.end;
+        _refClip = own && !!_refCall && t >= _refCall.start - 0.05 && t < _refCall.end;
       });
       p.on('timeupdate', (e: any) => {
         if (!_refClip || !_refCall || !p.isPlaying) return;
@@ -915,6 +917,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       if (own) {
         // Own labels already know where the call is.
         _refCall = { start: Number(rec.start), end: Number(rec.end) };
+        _refIsLabel = true;
         p.setSpectrogramLabels([{
           start: _refCall.start, end: _refCall.end, freqMin: rec.freqMin, freqMax: rec.freqMax,
           label: rec.label || 'reference', color: 'rgba(34,197,94,0.22)', readonly: true,
@@ -932,7 +935,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     }
   }
 
-  /** Jump to the loudest section in the label's band and mark it. */
+  /** Jump to the loudest section in the label's band (estimate, not drawn). */
   async function locateCall(p: any, token: number) {
     const buffer: AudioBuffer | undefined = p._state?.audioBuffer;
     if (!buffer) return;
@@ -941,12 +944,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     try {
       const call = await findCall(buffer, Number(_label?.freqMin), Number(_label?.freqMax), dur);
       if (token !== _refToken || p !== _refPlayer) return;
+      // Only an estimate (XC recordings carry no drawn labels): used to align
+      // the view and as playback start, but neither drawn nor used to clip.
       _refCall = call;
-      p.setSpectrogramLabels([{
-        start: call.start, end: call.end,
-        freqMin: _label?.freqMin, freqMax: _label?.freqMax,
-        label: 'call', color: 'rgba(234,179,8,0.22)', readonly: true,
-      }]);
       if (!p.isPlaying) seek(p, call.start);
       scheduleView();
     } catch { /* keep the reference usable without a marked call */ }
