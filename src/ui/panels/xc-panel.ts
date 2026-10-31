@@ -6,6 +6,7 @@
 
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording, invalidateXenoCantoRecordingCache } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
+import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 
@@ -307,6 +308,7 @@ export class XenoCantoPanel {
     type: any;
     uploadBtn: any;
     useProxies: any;
+    _refreshCacheInfo: (() => void) | null = null;
     xcId: any;
   /**
    * @param {object} opts
@@ -388,7 +390,39 @@ export class XenoCantoPanel {
     this._updateButtonState();
     this._buildSetSection();
     this._buildAuthorSection();
+    this._buildCacheSection();
     // Recording edit section is built lazily (hidden by default)
+  }
+
+  /** Small "Audio cache: 120 MB · Clear" row below the API key section. */
+  _buildCacheSection() {
+    const host = this.keyInput?.closest?.('#xcKeySection');
+    if (!host || host.querySelector('.xc-cache-row')) return;
+    const row = document.createElement('p');
+    row.className = 'field-hint xc-cache-row';
+    const info = document.createElement('span');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sidebar-action-btn secondary';
+    btn.textContent = 'Clear';
+    btn.title = 'Delete cached Xeno-canto audio (pinned reference calls are kept)';
+    btn.style.marginLeft = '8px';
+    row.append(info, btn);
+    host.appendChild(row);
+    const fmt = (b: number) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`;
+    this._refreshCacheInfo = async () => {
+      const store = await getXcAudioStore().catch(() => null);
+      if (!store) { row.hidden = true; return; }
+      const u = await store.usage();
+      info.textContent = `Audio cache: ${u.count} recording${u.count === 1 ? '' : 's'}, ${fmt(u.bytes)} (downloaded recordings are kept for offline reuse).`;
+      btn.disabled = u.count === 0 || u.bytes === u.pinnedBytes;
+    };
+    btn.addEventListener('click', async () => {
+      const store = await getXcAudioStore().catch(() => null);
+      await store?.clear();
+      this._refreshCacheInfo?.();
+    });
+    this._refreshCacheInfo();
   }
 
   open() {
@@ -411,7 +445,33 @@ export class XenoCantoPanel {
 
   // ── Audio fetching ──────────────────────────────────────────────────
 
-  async fetchAudio(xcId: any, onStatus: any, onProgress: any) {
+  /**
+   * Fetch XC audio, served from the persistent audio cache when possible
+   * (OPFS / Cache API). Downloads are stored so switching recordings or
+   * reloading the page does not download the same file again.
+   */
+  async fetchAudio(xcId: any, onStatus?: any, onProgress?: any) {
+    const clean = normalizeXcId(xcId);
+    if (!clean) throw new Error('Invalid Xeno-canto ID.');
+    const store = await getXcAudioStore().catch(() => null);
+    if (store) {
+      const cached = await store.get(xcAudioKey(clean)).catch(() => null);
+      if (cached && cached.byteLength >= 10_000) {
+        onStatus?.(`Loading XC${clean} (cache)…`);
+        onProgress?.(1, cached.byteLength, cached.byteLength);
+        return { xcId: clean, buffer: cached, audioUrl: `https://xeno-canto.org/${clean}/download`, fromCache: true };
+      }
+    }
+    const result = await this._downloadAudio(clean, onStatus, onProgress);
+    if (store) {
+      store.put(xcAudioKey(clean), result.buffer)
+        .then(() => this._refreshCacheInfo?.())
+        .catch((e: any) => console.warn('[xc-panel] audio cache write failed', e));
+    }
+    return result;
+  }
+
+  async _downloadAudio(xcId: any, onStatus: any, onProgress: any) {
     const clean = normalizeXcId(xcId);
     if (!clean) throw new Error('Invalid Xeno-canto ID.');
     const directUrl = `https://xeno-canto.org/${clean}/download`;
