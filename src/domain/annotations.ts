@@ -1620,8 +1620,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this._updateStampGhost(e.clientX, e.clientY);
             }
             if (this._editing) {
-                this._updateEditInteraction(e.clientX, e.clientY);
-                this._updateEditLoupe(e.clientX, e.clientY);
+                // Fine mode: with Shift held the label follows the mouse at 1/4 speed.
+                // Track a virtual pointer so toggling Shift mid-drag never jumps.
+                const ed = this._editing as any;
+                if (ed.vx == null) { ed.vx = ed.startX; ed.vy = ed.startY; ed.lastX = ed.startX; ed.lastY = ed.startY; }
+                const k = e.shiftKey ? 0.25 : 1;
+                ed.vx += (e.clientX - ed.lastX) * k;
+                ed.vy += (e.clientY - ed.lastY) * k;
+                ed.lastX = e.clientX;
+                ed.lastY = e.clientY;
+                this._updateEditInteraction(ed.vx, ed.vy);
+                this._updateEditLoupe(ed.vx, ed.vy);
                 e.preventDefault();
                 e.stopPropagation();
                 return;
