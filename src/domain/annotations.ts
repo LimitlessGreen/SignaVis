@@ -2125,6 +2125,27 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         } catch { /* canvas not ready */ }
         const mx = (x: number) => (x - (cx - halfW)) * zx;
         const my = (y: number) => (y - (cy - halfH)) * zy;
+        // Neighbouring labels (thin, grey) for alignment
+        if (this.overlay) {
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.textBaseline = 'top';
+            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1;
+            for (const n of this.overlay.querySelectorAll('.spectrogram-label-region')) {
+                if (n === el) continue;
+                const nb = (n as HTMLElement).getBoundingClientRect();
+                const x0 = mx(nb.left), y0 = my(nb.top), w = nb.width * zx, h = nb.height * zy;
+                if (x0 > W || y0 > H || x0 + w < 0 || y0 + h < 0) continue;
+                ctx.strokeStyle = 'rgba(203, 213, 225, 0.75)';
+                ctx.strokeRect(x0, y0, w, h);
+                const name = (n.querySelector('.spectrogram-label-text')?.textContent || '').trim();
+                if (name) {
+                    ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+                    ctx.fillText(name, Math.max(2, x0 + 2), Math.max(2, y0 + 2), Math.max(20, w - 4));
+                }
+            }
+            ctx.setLineDash([]);
+        }
         if (b) {
             ctx.strokeStyle = 'rgba(255, 220, 80, 0.95)';
             ctx.lineWidth = 1.5;
