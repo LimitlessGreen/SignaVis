@@ -19,7 +19,7 @@ Sie werden NICHT an den Hauptplayer gekoppelt.
 3. **Filter und Sprung zum Call** ✅
    - Chips für Ruftyp, Qualität, Länge und Region/Entfernung (`getCoords`); kein `slice(0,3)` pro Gruppe mehr
    - Automatisch zum energiereichsten Abschnitt im Frequenzband des Labels springen
-4. **Entscheidung im Vergleich**
+4. **Entscheidung im Vergleich** ✅ (Tags: verified, referenceXc, soundType)
    - Bestätigen, Art übernehmen, Ruftyp übernehmen; XC-ID als Referenz am Label im Annota-JSON speichern
    - `N` springt zum nächsten unbestätigten Label
 5. **Integration**

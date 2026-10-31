@@ -102,3 +102,14 @@ test('original_set_metadata accepts array (Fv0) and object (legacy)', () => {
         assert.equal(labels[0].annotationSet.license, 'CC-BY');
     }
 });
+
+test('reference XC from the comparison view lands in annotation_remarks', () => {
+    const mk = (tags) => buildAnnotaPayload({
+        set: { name: 's' },
+        labels: [{ id: 'a', start: 1, end: 2, scientificName: 'Turdus merula', tags }],
+    }).annotations[0].annotation_remarks;
+    assert.equal(mk({ referenceXc: 'XC123', verified: 'yes' }), 'compared with XC123');
+    assert.equal(mk({ remarks: 'faint', referenceXc: 'XC9' }), 'faint; compared with XC9');
+    assert.equal(mk({ remarks: 'faint' }), 'faint');
+    assert.equal(mk({}), '');
+});

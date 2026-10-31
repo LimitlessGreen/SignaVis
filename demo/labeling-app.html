@@ -647,6 +647,24 @@
           BirdNETPlayer,
           getMainPlayer: () => player,
           getCoords: () => birdnetPanel?.getCoords?.() ?? null,
+          isLabelLocked: (id) => _computeLockedIds().includes(id),
+          onUpdateLabel: (patch) => {
+            if (!state.labels.some((l) => l.id === patch.id) || _computeLockedIds().includes(patch.id)) return null;
+            upsertLabel(patch);
+            syncToPlayer();
+            return state.labels.find((l) => l.id === patch.id) || null;
+          },
+          // Next unconfirmed, editable label in time order (wraps around).
+          getNextLabel: (currentId) => {
+            const locked = new Set(_computeLockedIds());
+            const open = state.labels
+              .filter((l) => !locked.has(l.id) && (l.scientificName || l.label) && l.tags?.verified !== 'yes')
+              .sort((a, b) => a.start - b.start);
+            if (!open.length) return null;
+            const cur = state.labels.find((l) => l.id === currentId);
+            return open.find((l) => l.id !== currentId && cur && l.start > cur.start)
+              || open.find((l) => l.id !== currentId) || null;
+          },
           taxonomy,
           getLang: () => state.taxonomyLang,
           // Resolve vernacular → scientific name by searching all taxonomy records.
