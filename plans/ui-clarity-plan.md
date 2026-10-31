@@ -16,4 +16,8 @@ Ziel: kompakt bleiben, aber Gruppen, Hierarchie und wichtige Buttons sofort erke
 4. **Feinschliff**: Upload (ein Primär-Button, Schritte als Karten), Analyse (Analyze-Button prominent), Toolbar-Gruppen mit Trennern, einheitliches Label/Feld-Raster rechts; Screenshot-Runde.
 
 ## Status
-(wird pro Phase ergänzt)
+- Phase 1 `8e545b7`: `src/styles/components/_ui-clarity.scss` (zuletzt in main.scss geladen) — neutrale Dark-Tokens, `--color-card`, `--color-border-strong`, `--color-on-accent`, Button-Stufen.
+- Phase 2 `2c3407a`: Explorer zeigt importierte Sets unter der Aufnahme (Schloss, Auge, „Adopt“ + Undo); XC-Laden bleibt im Project-Tab; gesperrte Labels gestrichelt; Button „Load“; Labels-Zähler.
+- Phase 3 `3da37e8`: Audio-Tab-CSS kompakt. **HTML-Teil (Titel kürzer, Hinweise → Tooltips, ⓘ) nicht committet**, weil das Audio-Panel-Markup selbst zu fremden uncommitteten Änderungen in labeling-app.html gehört — mit diesen zusammen committen.
+- Phase 4: Upload-Schritte als Karten mit Statusstreifen, Send/Analyze sticky unten, Toolbar-Gruppen als Segmente.
+- Offen: Set-Farben pro Herkunft (Nutzer-Wunsch abwarten), rechte Leiste einheitliches Label/Feld-Raster.
