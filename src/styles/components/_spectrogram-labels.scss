@@ -658,3 +658,17 @@
 .spectrogram-label-region.label-compact.editing button {
     display: none;
 }
+
+/* Stand-in cursor while the real pointer is locked (fine mode) */
+.spectrogram-fine-cursor {
+    position: fixed;
+    z-index: 10001;
+    width: 15px;
+    height: 15px;
+    margin: -7px 0 0 -7px;
+    pointer-events: none;
+    background:
+        linear-gradient(#38bdf8, #38bdf8) center / 1px 100% no-repeat,
+        linear-gradient(#38bdf8, #38bdf8) center / 100% 1px no-repeat;
+    filter: drop-shadow(0 0 1px #000);
+}

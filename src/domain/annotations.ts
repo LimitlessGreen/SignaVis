@@ -879,6 +879,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _zoomBox: { startTime: number; startFreq: number; endTime: number; endFreq: number; x0: number; y0: number } | null = null;
     _zoomBoxEl: HTMLElement | null = null;
     _editLoupeEl: HTMLCanvasElement | null = null;
+    _fineCursorEl: HTMLElement | null = null;
+    _interactionRoot: HTMLElement | null = null;
+    _fineLockRequested = false;
+    _fineActive = false;
     _editLoupeBound = false;
     _axisConstraint: any = null;
     _draftEl: any = null;
@@ -1622,17 +1626,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this._updateStampGhost(e.clientX, e.clientY);
             }
             if (this._editing) {
-                // Fine mode: with Shift held the label follows the mouse at 1/4 speed.
-                // Track a virtual pointer so toggling Shift mid-drag never jumps.
+                // Virtual pointer: Shift = fine mode (1/4 speed, pointer lock so it never hits the screen edge)
+                this._editPointerMove(e);
                 const ed = this._editing as any;
-                if (ed.vx == null) { ed.vx = ed.startX; ed.vy = ed.startY; ed.lastX = ed.startX; ed.lastY = ed.startY; }
-                const k = e.shiftKey ? 0.25 : 1;
-                ed.vx += (e.clientX - ed.lastX) * k;
-                ed.vy += (e.clientY - ed.lastY) * k;
-                ed.lastX = e.clientX;
-                ed.lastY = e.clientY;
-                this._updateEditInteraction(ed.vx, ed.vy);
-                this._updateEditLoupe(ed.vx, ed.vy);
+                if (ed) this._updateEditLoupe(ed.vx, ed.vy);
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -1735,6 +1732,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 }
             }
 
+            // Shift during a drag: fine mode (keydown counts as user activation for pointer lock)
+            if (e.key === 'Shift' && this._editing && !(this._editing as any).pending && !this._fineLockRequested) {
+                this._beginFineMode();
+            }
+
             // X/Y axis constraint during drag-edit (not grab — grab has its own handler)
             if (this._editing && !this._grabbing) {
                 if (e.key === 'x' || e.key === 'X') {
@@ -1750,6 +1752,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             }
         };
 
+        this._interactionRoot = wrapper;
+        // Leaving pointer lock puts the real cursor back where it was locked:
+        // resync so the label does not jump to it.
+        const onLockChange = () => {
+            if (document.pointerLockElement === wrapper) return;
+            const ed = this._editing as any;
+            if (ed) ed.resync = true;
+            this._fineLockRequested = false;
+            this._updateFineCursor(null, 0);
+        };
+        document.addEventListener('pointerlockchange', onLockChange);
+        this._domCleanups.push(() => document.removeEventListener('pointerlockchange', onLockChange));
         wrapper.addEventListener('pointerdown', onPointerDown, true);
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
@@ -2034,12 +2048,41 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return box ? box.checked : true;
     }
 
-    _updateEditLoupe(clientX: number, clientY: number) {
+    /**
+     * Loupe next to the pointer. Defaults to the current edit interaction;
+     * `opts` lets other interactions (drawing a new box) reuse it.
+     *  - move: whole box, uniformly fitted; hidden when the box is too large to gain anything
+     *  - edge: magnified across the edge, full edge length along it (non-uniform)
+     *  - corner / draw: magnified around the pointer
+     */
+    _updateEditLoupe(clientX: number, clientY: number, opts: { el?: HTMLElement | null; mode?: string; readout?: string; fine?: boolean } = {}) {
         const editing = this._editing as any;
-        if (!editing || editing.pending || !this._editLoupeEnabled()) { this._hideEditLoupe(); return; }
+        const el = opts.el !== undefined ? opts.el : (editing?.element as HTMLElement | null);
+        const mode = opts.mode ?? editing?.mode;
+        if (!mode || (editing && !opts.mode && editing.pending) || !this._editLoupeEnabled()) { this._hideEditLoupe(); return; }
         const src = this.player?._state?.d?.spectrogramCanvas as HTMLCanvasElement | null;
         if (!src || !src.width || !src.height) return;
-        const W = 260, H = 180, ZOOM = 4, PAD = 24;
+        const W = 260, H = 180, ZOOM = 4, PAD = 24, MARGIN = 40;
+        const b = el?.getBoundingClientRect();
+
+        let zx = ZOOM, zy = ZOOM, cx = clientX, cy = clientY;
+        if (b && mode === 'move') {
+            cx = b.left + b.width / 2;
+            cy = b.top + b.height / 2;
+            const z = Math.min(ZOOM, (W - MARGIN) / Math.max(1, b.width), (H - MARGIN) / Math.max(1, b.height));
+            // A large box barely gets magnified: the loupe would only cover the view
+            if (z < 1.5) { this._hideLoupeCanvas(); return; }
+            zx = zy = z;
+        } else if (b && (mode === 'resize-l' || mode === 'resize-r')) {
+            cx = mode === 'resize-l' ? b.left : b.right;
+            cy = b.top + b.height / 2;
+            zy = Math.max(0.15, Math.min(ZOOM, (H - MARGIN) / Math.max(1, b.height)));
+        } else if (b && (mode === 'resize-t' || mode === 'resize-b')) {
+            cx = b.left + b.width / 2;
+            cy = mode === 'resize-t' ? b.top : b.bottom;
+            zx = Math.max(0.15, Math.min(ZOOM, (W - MARGIN) / Math.max(1, b.width)));
+        }
+
         let cv = this._editLoupeEl as HTMLCanvasElement | null;
         if (!cv) {
             cv = document.createElement('canvas');
@@ -2052,42 +2095,20 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             document.body.appendChild(cv);
             this._editLoupeEl = cv;
         }
-        // Place top-right of the cursor, flip when it would leave the window
+        // Place top-right of the pointer, flip when it would leave the window
         let left = clientX + PAD, top = clientY - H - PAD;
         if (left + W > window.innerWidth - 4) left = clientX - W - PAD;
         if (top < 4) top = clientY + PAD;
-        cv.style.left = `${left}px`;
-        cv.style.top = `${top}px`;
+        cv.style.left = `${Math.max(4, left)}px`;
+        cv.style.top = `${Math.max(4, Math.min(window.innerHeight - H - 4, top))}px`;
 
         const ctx = cv.getContext('2d');
         if (!ctx) return;
         const r = src.getBoundingClientRect();
         const sx = src.width / Math.max(1, r.width), sy = src.height / Math.max(1, r.height);
-        const el = editing.element as HTMLElement | null;
-        const b = el?.getBoundingClientRect();
-        // Corner resize: magnify around the cursor. Move: show the whole box,
-        // centred, zoomed as far as it still fits (max ZOOM).
-        const isMove = editing.mode === 'move' && !!b;
-        let zoom = ZOOM, cx = clientX, cy = clientY;
-        if (isMove && b) {
-            cx = b.left + b.width / 2;
-            cy = b.top + b.height / 2;
-            zoom = Math.max(1, Math.min(ZOOM, (W - 40) / Math.max(1, b.width), (H - 40) / Math.max(1, b.height)));
-        }
-        // Edge resize: centre on the dragged edge and fit its full length
-        const m = editing.mode;
-        if (b && (m === 'resize-l' || m === 'resize-r')) {
-            cx = m === 'resize-l' ? b.left : b.right;
-            cy = b.top + b.height / 2;
-            zoom = Math.max(1, Math.min(ZOOM, (H - 40) / Math.max(1, b.height)));
-        } else if (b && (m === 'resize-t' || m === 'resize-b')) {
-            cx = b.left + b.width / 2;
-            cy = m === 'resize-t' ? b.top : b.bottom;
-            zoom = Math.max(1, Math.min(ZOOM, (W - 40) / Math.max(1, b.width)));
-        }
-        const halfW = W / zoom / 2, halfH = H / zoom / 2; // in CSS px around the centre
+        const halfW = W / zx / 2, halfH = H / zy / 2; // in CSS px around the centre
         ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
-        ctx.imageSmoothingEnabled = false;
+        ctx.imageSmoothingEnabled = zx < 1 || zy < 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
         try {
@@ -2095,14 +2116,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 (cx - halfW - r.left) * sx, (cy - halfH - r.top) * sy, 2 * halfW * sx, 2 * halfH * sy,
                 0, 0, W, H);
         } catch { /* canvas not ready */ }
-        const mx = (x: number) => (x - (cx - halfW)) * zoom;
-        const my = (y: number) => (y - (cy - halfH)) * zoom;
+        const mx = (x: number) => (x - (cx - halfW)) * zx;
+        const my = (y: number) => (y - (cy - halfH)) * zy;
         if (b) {
             ctx.strokeStyle = 'rgba(255, 220, 80, 0.95)';
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(mx(b.left), my(b.top), b.width * zoom, b.height * zoom);
+            ctx.strokeRect(mx(b.left), my(b.top), b.width * zx, b.height * zy);
         }
-        if (!isMove) {
+        if (mode !== 'move') {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
@@ -2112,11 +2133,93 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ctx.stroke();
             ctx.setLineDash([]);
         }
+        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        if (opts.readout) {
+            const tw = ctx.measureText(opts.readout).width;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+            ctx.fillRect(0, H - 20, Math.min(W, tw + 12), 20);
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText(opts.readout, 6, H - 10);
+        }
+        if (opts.fine ?? this._fineActive) {
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.9)';
+            ctx.fillRect(W - 42, 4, 38, 18);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText('FINE', W - 37, 13);
+        }
     }
 
-    _hideEditLoupe() {
+    _hideLoupeCanvas() {
         if (this._editLoupeEl?.parentNode) this._editLoupeEl.parentNode.removeChild(this._editLoupeEl);
         this._editLoupeEl = null;
+    }
+
+    /** End of an interaction: loupe away, leave fine mode / pointer lock. */
+    _hideEditLoupe() {
+        this._hideLoupeCanvas();
+        this._endFineMode();
+    }
+
+    // -- Fine mode (Shift): 1/4 speed, Blender-style endless drag via Pointer Lock --
+
+    /** Advance the virtual pointer for this move event (movementX/Y while locked, else client delta). */
+    _editPointerMove(e: PointerEvent) {
+        const ed = this._editing as any;
+        if (!ed) return;
+        if (ed.vx == null) { ed.vx = ed.startX; ed.vy = ed.startY; ed.lastX = ed.startX; ed.lastY = ed.startY; }
+        const locked = !!this._interactionRoot && document.pointerLockElement === this._interactionRoot;
+        let dx: number, dy: number;
+        if (locked) { dx = e.movementX || 0; dy = e.movementY || 0; }
+        else if (ed.resync) { dx = 0; dy = 0; ed.resync = false; }
+        else { dx = e.clientX - ed.lastX; dy = e.clientY - ed.lastY; }
+        if (!locked) { ed.lastX = e.clientX; ed.lastY = e.clientY; }
+
+        const fine = e.shiftKey && !ed.pending;
+        if (fine && !locked && !this._fineLockRequested) this._beginFineMode();
+        else if (!fine && locked) this._endFineMode();
+        this._fineActive = fine;
+
+        const k = fine ? 0.25 : 1;
+        ed.vx += dx * k;
+        ed.vy += dy * k;
+        this._updateEditInteraction(ed.vx, ed.vy);
+        this._updateFineCursor(locked ? ed.vx : null, ed.vy);
+    }
+
+    _beginFineMode() {
+        const root = this._interactionRoot as HTMLElement | null;
+        if (!root?.requestPointerLock) return;
+        this._fineLockRequested = true;
+        try {
+            const p: any = root.requestPointerLock();
+            p?.catch?.(() => { /* denied: fine mode still works, just without wrap */ });
+        } catch { /* unsupported */ }
+    }
+
+    _endFineMode() {
+        this._fineLockRequested = false;
+        this._fineActive = false;
+        this._updateFineCursor(null, 0);
+        if (this._interactionRoot && document.pointerLockElement === this._interactionRoot) {
+            try { document.exitPointerLock(); } catch { /* ignore */ }
+        }
+    }
+
+    /** While the real pointer is locked (hidden), draw a stand-in crosshair at the virtual position. */
+    _updateFineCursor(x: number | null, y: number) {
+        if (x == null) {
+            if (this._fineCursorEl?.parentNode) this._fineCursorEl.parentNode.removeChild(this._fineCursorEl);
+            this._fineCursorEl = null;
+            return;
+        }
+        if (!this._fineCursorEl) {
+            this._fineCursorEl = document.createElement('div');
+            this._fineCursorEl.className = 'spectrogram-fine-cursor';
+            document.body.appendChild(this._fineCursorEl);
+        }
+        this._fineCursorEl.style.left = `${x}px`;
+        this._fineCursorEl.style.top = `${y}px`;
     }
 
     /**
