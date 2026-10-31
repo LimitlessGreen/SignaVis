@@ -99,8 +99,11 @@ export class RecordingExplorer {
         if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
     }
 
+    /** True when new recordings are added to the session instead of replacing the current one. */
+    isMultiMode() { return this._multiMode || this._manager.getAll().length > 1; }
+
     /** Multi-recording labeling: the tree and its controls show only once this is on. */
-    _setMultiMode(on: boolean) {
+    setMultiMode(on: boolean) {
         this._multiMode = on;
         try { localStorage.setItem(MULTI_MODE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
         this.render();
@@ -115,7 +118,7 @@ export class RecordingExplorer {
         btn.className = 'rec-multi-start';
         btn.innerHTML = '<span class="rec-multi-start-title">＋ Label several XC recordings</span>'
             + '<span class="rec-multi-start-sub">One annotation set across many recordings</span>';
-        btn.addEventListener('click', () => this._setMultiMode(true));
+        btn.addEventListener('click', () => this.setMultiMode(true));
         wrap.appendChild(btn);
         container.appendChild(wrap);
     }
@@ -126,8 +129,7 @@ export class RecordingExplorer {
         container.innerHTML = '';
 
         // Sessions that already hold several recordings always show the tree
-        const multi = this._multiMode || this._manager.getAll().length > 1;
-        if (!multi) { this._renderSingleMode(container); return; }
+        if (!this.isMultiMode()) { this._renderSingleMode(container); return; }
 
         const wrap = document.createElement('div');
         wrap.className = 'recording-explorer';
@@ -202,7 +204,7 @@ export class RecordingExplorer {
         const canSingle = this._manager.getAll().length <= 1;
         single.disabled = !canSingle;
         single.title = canSingle ? 'Back to single-recording view' : 'Remove other recordings first';
-        single.addEventListener('click', (e) => { e.stopPropagation(); this._setMultiMode(false); });
+        single.addEventListener('click', (e) => { e.stopPropagation(); this.setMultiMode(false); });
         header.appendChild(single);
 
         if (this._onResetSet) {

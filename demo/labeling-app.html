@@ -2085,6 +2085,65 @@
       };
     }
 
+    // ── Single- vs. multi-recording loading ──
+    // Single mode: a new recording replaces the current one. If that one has own labels, ask first;
+    // "keep both" switches multi-recording labeling on deliberately.
+    function removeRecordingWithUndo(entry) {
+      saveCurrentAnnotationsIfNeeded();
+      const wasActive = entry.id === recordingManager.activeId;
+      const snapshot = { ...recordingManager.getById(entry.id) };
+      recordingManager.remove(entry.id);
+      showUndoToast(`Removed ${entry.xcId ? 'XC' + entry.xcId : entry.filename} from the session`, () => {
+        recordingManager.add(snapshot);
+        if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
+      });
+    }
+
+    function askReplaceOrKeep(oldName, nLabels) {
+      return new Promise((resolve) => {
+        const back = document.createElement('div');
+        back.className = 'app-modal-backdrop';
+        back.innerHTML = `<div class="app-modal" role="dialog" aria-modal="true">
+          <h3>Open another recording</h3>
+          <p></p>
+          <div class="app-modal-actions">
+            <button class="tb-btn" type="button" data-v="replace">Replace</button>
+            <button class="tb-btn" type="button" data-v="keep">Keep both (label several recordings)</button>
+            <button class="tb-btn ghost" type="button" data-v="cancel">Cancel</button>
+          </div></div>`;
+        back.querySelector('p').textContent =
+          `${oldName} has ${nLabels} label${nLabels === 1 ? '' : 's'} of yours. Replace it (undo possible) or keep both?`;
+        const done = (v) => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done('cancel'); } };
+        back.addEventListener('click', (e) => {
+          const v = e.target.closest?.('[data-v]')?.dataset.v;
+          if (v) done(v); else if (e.target === back) done('cancel');
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(back);
+        back.querySelector('[data-v="keep"]').focus();
+      });
+    }
+
+    /** Before loading a new recording: returns { cancel } or { replace: entry|null }. */
+    async function prepareRecordingLoad() {
+      if (recordingExplorer.isMultiMode()) return { replace: null };
+      const old = recordingManager.getAll()[0];
+      if (!old) return { replace: null };
+      const anns = (old.id === recordingManager.activeId ? state.labels : old.annotations) || [];
+      const n = anns.filter((a) => a.setId === state.ownSetId).length;
+      if (n === 0) return { replace: old };
+      const v = await askReplaceOrKeep(old.xcId ? 'XC' + old.xcId : old.filename, n);
+      if (v === 'cancel') return { cancel: true };
+      if (v === 'keep') { recordingExplorer.setMultiMode(true); return { replace: null }; }
+      return { replace: old };
+    }
+
+    /** After the new recording is active: drop the one it replaces. */
+    function finishRecordingLoad(prep) {
+      if (prep?.replace && recordingManager.getById(prep.replace.id)) removeRecordingWithUndo(prep.replace);
+    }
+
     const recordingExplorer = new RecordingExplorer({
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
@@ -2108,16 +2167,7 @@
         recordingExplorer.render();
         showUndoToast(`Copied labels into "${state.labelSets.get(state.ownSetId)?.name || 'my set'}"`, undo);
       },
-      onRemoveRecording: (entry) => {
-        saveCurrentAnnotationsIfNeeded();
-        const wasActive = entry.id === recordingManager.activeId;
-        const snapshot = { ...recordingManager.getById(entry.id) };
-        recordingManager.remove(entry.id);
-        showUndoToast(`Removed ${entry.xcId ? 'XC' + entry.xcId : entry.filename} from the session`, () => {
-          recordingManager.add(snapshot);
-          if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
-        });
-      },
+      onRemoveRecording: (entry) => removeRecordingWithUndo(entry),
       onResetRecording: async (entry) => {
         const undo = snapshotLabels();
         showUndoToast(`Cleared labels of ${entry.xcId ? 'XC' + entry.xcId : entry.filename}`, undo);
@@ -2969,6 +3019,8 @@
         sidebar.setActive('labels');
         return;
       }
+      const _prep = await prepareRecordingLoad();
+      if (_prep.cancel) return;
       xcLoadBtn.disabled = true;
       xcLoadBtn.textContent = '…';
       try {
@@ -2990,6 +3042,7 @@
         recordingManager.setActive(_xcEntry.id);
         state._labelsEntryId = _xcEntry.id;  // empty labels now belong to the new entry
         await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+        finishRecordingLoad(_prep);
         showXcNokeyModal();
         try {
           const labelResult = await importXenoCantoLabels(audio.xcId);
@@ -3322,6 +3375,8 @@
         await activateRecordingEntry(_orphan);
         return;
       }
+      const _prep = await prepareRecordingLoad();
+      if (_prep.cancel) { fileInput.value = ''; return; }
       // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
       saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
@@ -3348,12 +3403,15 @@
       recordingManager.setActive(_fileEntry.id);
       state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
       fileInput.value = '';
+      finishRecordingLoad(_prep);
     });
 
     loadSampleBtn.addEventListener('click', async () => {
       // Sample already in the session — just switch to it
       const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/birdsong.wav');
       if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
+      const _prep = await prepareRecordingLoad();
+      if (_prep.cancel) return;
       // Save then detach so syncToPlayer doesn't clobber the leaving entry
       saveCurrentAnnotationsIfNeeded();
       recordingManager.setActive(null);
@@ -3373,6 +3431,7 @@
       });
       recordingManager.setActive(_sampleEntry.id);
       state._labelsEntryId = _sampleEntry.id;  // empty labels now belong to the new entry
+      finishRecordingLoad(_prep);
       // Clear any previously saved original when loading the demo sample
       try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
       player.__originalAudioBuffer = null;
