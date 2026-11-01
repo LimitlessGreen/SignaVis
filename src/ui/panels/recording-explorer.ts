@@ -5,11 +5,13 @@
  *   ▾ Project name                 ← collapsible header
  *     ▾ 📁 garden/                 ← real sub-folders of the project folder
  *         a2.wav  XC5           3  ← linked to an XC recording
+ *     SETS                         ← label sets as layers (own + imported), colour = set
+ *     ■ My labels             12
+ *     ■ Dawn chorus  XC       42   ← quiet background: holds the active recording; click = focus
+ *       creator · 3 recordings
+ *     RECORDINGS
  *     ▾ 🌐 Xeno-canto              ← virtual folder for XC downloads
- *       ▾ 📦 Annotation sets       ← XC annotation sets, one row per set
- *         ▾ ● Dawn chorus · me  3 rec · 🔒 42   ← highlighted while one of its recordings is active
- *             ▶ XC12345            🔒 12
- *       ▶ XC12345 · Turdus merula  5 · 8🔒 (own · imported)
+ *       ▶ XC12345 · Turdus merula  ■■ 8   ← dots = sets with labels on it
  *     [+] Add XC recording…
  *
  * Usage:
@@ -24,15 +26,15 @@
  */
 
 import { toXcId } from '../../domain/xc/xcId.ts';
-import { XC_FOLDER_ID, buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
+import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { appAlert, appPrompt } from '../components/modal/dialogs.ts';
 import { labelsToAdopt } from '../../app/annotation-sets.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
 const OPEN_FOLDERS_KEY = 'signavis.explorer-open-folders.v1';
-const XC_SETS_FOLDER_ID = '@xc-sets';
-const xcSetNodeId = (setId: string) => `@xc-set:${setId}`;
+// Colours of imported sets (own set = accent); readable on light and dark backgrounds
+const SET_PALETTE = ['#f59e0b', '#a855f7', '#10b981', '#ef4444', '#ec4899', '#14b8a6', '#84cc16'];
 
 export class RecordingExplorer {
     // TypeScript property declarations (migrated from JS)
@@ -63,7 +65,9 @@ export class RecordingExplorer {
     _onFolderBirdnet: any;
     _getMissingContext: any;
     _onOpenContext: any;
-    _xcSets: Map<string, any> = new Map();
+    _sets: Map<string, any> = new Map();
+    /** Set clicked in the Sets block: recordings outside it are dimmed. */
+    _focusSetId: string | null = null;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -284,19 +288,14 @@ export class RecordingExplorer {
             list.className = 'recording-explorer-list';
 
             const tree = buildRecordingTree(entries, folderFiles, { localName: this._getProjectName?.() || 'Project folder' });
-            this._xcSets = this._collectXcSets(entries);
-            // XC sets may sit only on linked local files: the Xeno-canto folder must still exist
-            if (this._xcSets.size && !tree.some((n) => n.kind === 'folder' && n.virtual === 'xc')) {
-                const iSession = tree.findIndex((n) => n.kind === 'folder' && n.virtual === 'session');
-                tree.splice(iSession < 0 ? tree.length : iSession, 0, { kind: 'folder', id: XC_FOLDER_ID, name: 'Xeno-canto', virtual: 'xc', children: [] });
-            }
             for (const id of folderPathOf(tree, activeId)) this._openFolders.add(id);
-            // Set of the active recording: unfold down to it, so the active entry is visible there too
-            for (const [setId, set] of this._xcSets) {
-                if (set.recs.some((r: any) => r.entry.id === activeId)) {
-                    this._openFolders.add(XC_FOLDER_ID).add(XC_SETS_FOLDER_ID).add(xcSetNodeId(setId));
-                }
-            }
+            this._sets = this._collectSets(entries);
+            // Sets block only when there is more than the (empty) own set
+            const showSets = this._sets.size > 1 || [...this._sets.values()].some((x: any) => x.recs.length);
+            if (showSets) {
+                body.appendChild(this._renderSets(activeId));
+                body.appendChild(this._sectionHeading('Recordings'));
+            } else this._focusSetId = null;
             this._appendNodes(list, tree, activeId, 0);
 
             body.appendChild(list);
@@ -320,9 +319,8 @@ export class RecordingExplorer {
         container.appendChild(wrap);
     }
 
-    /** One recording row (+ rows of its imported sets). */
+    /** One recording row. */
     _buildRecordingRow(entry: any, activeId: any, depth: number) {
-        const ownSetId = this._getOwnSetId?.();
         const li = document.createElement('li');
         li.className = 'recording-explorer-row';
         if (entry.id === activeId) li.classList.add('active');
@@ -348,14 +346,15 @@ export class RecordingExplorer {
             label.append(' ', badge);
         }
 
-        // Label counts: own · imported (read-only)
+        // One label count (all sets); the colour dots say which sets, the tooltip how many each
         const anns = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
-        const nOwn = ownSetId ? anns.filter((a: any) => a.setId === ownSetId).length : anns.length;
-        const nImported = anns.length - nOwn;
         const meta = document.createElement('span');
         meta.className = 'recording-explorer-meta';
-        meta.textContent = nImported ? `${nOwn} · ${nImported}🔒` : String(nOwn);
-        meta.title = `${nOwn} own label${nOwn === 1 ? '' : 's'}` + (nImported ? ` · ${nImported} imported (read-only)` : '');
+        meta.textContent = String(anns.length);
+        meta.title = `${anns.length} label${anns.length === 1 ? '' : 's'}`;
+        if (this._focusSetId && !this._sets.get(this._focusSetId)?.recs.some((r: any) => r.entry.id === entry.id)) {
+            li.classList.add('recording-explorer-row--unfocused');
+        }
 
         const rowItems = () => [
             { label: entry.xcId ? `Change XC number (${toXcId(entry.xcId)})…` : 'Assign XC number…',
@@ -384,6 +383,8 @@ export class RecordingExplorer {
             warn.addEventListener('click', (e) => { e.stopPropagation(); this._onOpenContext?.(entry); });
             li.appendChild(warn);
         }
+        const dots = this._setDots(entry);
+        if (dots) li.appendChild(dots);
         li.appendChild(meta);
         // Opened but neither labeled nor kept: dimmed, "+" keeps it in the project
         if (entry.pinned === false && anns.length === 0) {
@@ -403,7 +404,7 @@ export class RecordingExplorer {
         });
 
         li.style.setProperty('--rec-depth', String(depth));
-        return [li, ...this._buildSetRows(entry, ownSetId, depth + 1)];
+        return [li];
     }
 
     /** Folders (collapsible, open state per folder) and recordings, depth-indented. */
@@ -453,7 +454,6 @@ export class RecordingExplorer {
             li.addEventListener('click', toggle);
             li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
             list.appendChild(li);
-            if (open && node.virtual === 'xc') this._appendXcSets(list, activeId, depth + 1);
             if (open) this._appendNodes(list, node.children, activeId, depth + 1);
         }
     }
@@ -504,241 +504,165 @@ export class RecordingExplorer {
     }
 
 
-    /**
-     * Child rows under a recording, one level deeper: one per imported (read-only) set with labels
-     * on it, e.g. the XC labels of the recording. Eye = show/hide; "Copy to mine" copies the labels
-     * not copied yet into the own labels, afterwards the row says "✓ in mine".
-     */
-    _buildSetRows(entry: any, ownSetId: any, depth: number): HTMLElement[] {
-        const labels: any[] = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
-        const bySet = new Map<string, any[]>();
-        for (const l of labels) {
-            if (!l.setId || l.setId === ownSetId) continue;
-            if (this._isXcSet(l.setId)) continue;   // shown in Xeno-canto › Annotation sets
-            if (!bySet.has(l.setId)) bySet.set(l.setId, []);
-            bySet.get(l.setId)!.push(l);
-        }
-        const rows: HTMLElement[] = [];
-        for (const [setId, inSet] of bySet) {
-            const n = inSet.length;
-            const info = this._getSetInfo?.(setId) || {};
-            const origin = info.origin === 'xeno-canto' ? 'XC' : info.origin === 'birdnet' ? 'BirdNET' : (info.origin || 'import');
-            const hidden = !!this._isSetHidden?.(setId);
-            const pending = ownSetId ? labelsToAdopt(inSet, labels, ownSetId).length : n;
-
-            const li = document.createElement('li');
-            li.className = 'recording-explorer-row recording-explorer-row--set';
-            if (hidden) li.classList.add('rec-set-row--hidden');
-            li.style.setProperty('--rec-depth', String(depth));
-
-            const eye = document.createElement('button');
-            eye.type = 'button';
-            eye.className = 'rec-set-eye';
-            eye.title = hidden ? 'Show these labels' : 'Hide these labels';
-            eye.setAttribute('aria-pressed', String(!hidden));
-            eye.textContent = hidden ? '◌' : '●';
-            eye.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
-
-            const name = document.createElement('span');
-            name.className = 'rec-set-name';
-            const badge = document.createElement('span');
-            badge.className = 'rec-set-origin';
-            badge.textContent = origin;
-            const setName = info.name || 'Imported labels';
-            name.append(badge, ` ${setName}`);
-            if (info.creator) {
-                const by = document.createElement('span');
-                by.className = 'rec-set-creator';
-                by.textContent = ` · ${info.creator}`;
-                name.append(by);
-            }
-            name.title = `${setName}${info.creator ? ' — ' + info.creator : ''} · read-only, separate from your labels`;
-
-            const count = document.createElement('span');
-            count.className = 'recording-explorer-meta';
-            count.textContent = `🔒 ${n}`;
-            count.title = `${n} read-only label${n === 1 ? '' : 's'}`;
-
-            li.append(eye, name, count);
-            if (this._onAdoptSet) {
-                if (pending) {
-                    const copy = document.createElement('button');
-                    copy.type = 'button';
-                    copy.className = 'link-btn rec-set-adopt';
-                    copy.textContent = pending < n ? `Copy ${pending} more` : 'Copy to mine';
-                    copy.title = `Copy ${pending} label${pending === 1 ? '' : 's'} into your own labels (editable, undo possible)`;
-                    copy.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        copy.disabled = true;   // no double copies from fast clicks; render() rebuilds the row
-                        this._onAdoptSet(setId);
-                    });
-                    li.appendChild(copy);
-                } else {
-                    const done = document.createElement('span');
-                    done.className = 'rec-set-adopted';
-                    done.textContent = '✓ in mine';
-                    done.title = 'All these labels are copied into your own labels';
-                    li.appendChild(done);
-                }
-            }
-            // Click on the row opens its recording, like the recording row itself
-            li.addEventListener('click', () => { if (entry.id !== this._manager.activeId) this._onActivate?.(entry); });
-            rows.push(li);
-        }
-        return rows;
+    /** Colour of a set: own set = accent, other sets from a fixed palette in order of appearance. */
+    _setColor(setId: string) {
+        if (setId === this._getOwnSetId?.()) return 'var(--color-accent)';
+        const ids = [...this._sets.keys()].filter((id) => id !== this._getOwnSetId?.());
+        return SET_PALETTE[Math.max(0, ids.indexOf(setId)) % SET_PALETTE.length];
     }
 
-    _isXcSet(setId: string) { return this._getSetInfo?.(setId)?.origin === 'xeno-canto'; }
-
-    /** XC annotation sets of the session: setId → { info, recs: [{ entry, labels, all }] }. */
-    _collectXcSets(entries: any[]) {
-        const out = new Map<string, any>();
+    /**
+     * All label sets of the session (own first, then imported by name):
+     * setId → { info, own, recs: [{ entry, labels, all }] }. The own set is always listed.
+     */
+    _collectSets(entries: any[]) {
         const ownSetId = this._getOwnSetId?.();
+        const out = new Map<string, any>();
+        if (ownSetId) out.set(ownSetId, { info: { name: this._getSetName() }, own: true, recs: [] });
         for (const entry of entries) {
             const all: any[] = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
             const bySet = new Map<string, any[]>();
             for (const l of all) {
-                if (!l?.setId || l.setId === ownSetId || !this._isXcSet(l.setId)) continue;
-                if (!bySet.has(l.setId)) bySet.set(l.setId, []);
-                bySet.get(l.setId)!.push(l);
+                const id = l?.setId || ownSetId;
+                if (!id) continue;
+                if (!bySet.has(id)) bySet.set(id, []);
+                bySet.get(id)!.push(l);
             }
             for (const [setId, labels] of bySet) {
-                if (!out.has(setId)) out.set(setId, { info: this._getSetInfo?.(setId) || {}, recs: [] });
+                if (!out.has(setId)) out.set(setId, { info: this._getSetInfo?.(setId) || {}, own: false, recs: [] });
                 out.get(setId).recs.push({ entry, labels, all });
             }
         }
-        for (const set of out.values()) {
-            set.recs.sort((a: any, b: any) => recordingName(a.entry).localeCompare(recordingName(b.entry), undefined, { numeric: true }));
-        }
-        return new Map([...out].sort((a, b) => String(a[1].info.name || '').localeCompare(String(b[1].info.name || ''))));
+        const [own, ...rest] = ownSetId ? [[ownSetId, out.get(ownSetId)], ...[...out].filter(([id]) => id !== ownSetId)] : [null, ...out];
+        rest.sort((a: any, b: any) => String(a[1].info.name || '').localeCompare(String(b[1].info.name || '')));
+        return new Map((own ? [own, ...rest] : rest) as any) as Map<string, any>;
     }
 
-    /** "📦 Annotation sets" sub-folder of Xeno-canto: one collapsible row per set, its recordings below. */
-    _appendXcSets(list: HTMLElement, activeId: any, depth: number) {
-        if (!this._xcSets.size) return;
-        const ownSetId = this._getOwnSetId?.();
-        const folderOpen = this._openFolders.has(XC_SETS_FOLDER_ID);
-        const toggleId = (id: string) => () => {
-            if (this._openFolders.has(id)) this._openFolders.delete(id); else this._openFolders.add(id);
-            this._saveOpenFolders();
-            this.render();
-        };
-        const folder = document.createElement('li');
-        folder.className = 'recording-explorer-folder';
-        folder.style.setProperty('--rec-depth', String(depth));
-        folder.setAttribute('role', 'button');
-        folder.setAttribute('aria-expanded', String(folderOpen));
-        folder.tabIndex = 0;
-        const chev = document.createElement('span');
-        chev.className = 'recording-explorer-chevron';
-        chev.setAttribute('aria-hidden', 'true');
-        chev.textContent = folderOpen ? '▾' : '▸';
-        const name = document.createElement('span');
-        name.className = 'recording-explorer-label';
-        name.textContent = '📦 Annotation sets';
-        name.title = 'Finished annotation sets imported from Xeno-canto (read-only)';
-        const meta = document.createElement('span');
-        meta.className = 'recording-explorer-meta';
-        meta.textContent = String(this._xcSets.size);
-        meta.title = 'Sets';
-        folder.append(chev, name, meta);
-        const t = toggleId(XC_SETS_FOLDER_ID);
-        folder.addEventListener('click', t);
-        folder.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t(); } });
-        list.appendChild(folder);
-        if (!folderOpen) return;
+    /** Small heading between the two blocks ("SETS", "RECORDINGS"). */
+    _sectionHeading(text: string, extra?: HTMLElement) {
+        const h = document.createElement('div');
+        h.className = 'rec-section-heading';
+        h.textContent = text;
+        if (extra) h.appendChild(extra);
+        return h;
+    }
 
-        for (const [setId, set] of this._xcSets) {
-            const nodeId = xcSetNodeId(setId);
-            const open = this._openFolders.has(nodeId);
-            const info = set.info;
+    /**
+     * "Sets" block: one row per label set (own + imported), colour square, name, count.
+     * Second line: origin · creator · number of recordings. The set holding the active recording gets
+     * a quiet background; click focuses the set (its recordings stay, others are dimmed in the tree).
+     * Eye / Copy to mine / menu show on hover.
+     */
+    _renderSets(activeId: any) {
+        const wrap = document.createElement('div');
+        wrap.className = 'rec-sets';
+        const ownSetId = this._getOwnSetId?.();
+        if (this._focusSetId && !this._sets.has(this._focusSetId)) this._focusSetId = null;
+        let clear: HTMLButtonElement | undefined;
+        if (this._focusSetId) {
+            clear = document.createElement('button');
+            clear.type = 'button';
+            clear.className = 'link-btn rec-section-clear';
+            clear.textContent = 'show all';
+            clear.addEventListener('click', () => { this._focusSetId = null; this.render(); });
+        }
+        wrap.appendChild(this._sectionHeading('Sets', clear));
+        const ul = document.createElement('ul');
+        ul.className = 'rec-sets-list';
+        for (const [setId, set] of this._sets) {
+            const info = set.info || {};
             const hidden = !!this._isSetHidden?.(setId);
             const nLabels = set.recs.reduce((s: number, r: any) => s + r.labels.length, 0);
-            const pending = set.recs.reduce((s: number, r: any) =>
-                s + (ownSetId ? labelsToAdopt(r.labels, r.all, ownSetId).length : r.labels.length), 0);
-            const isActive = set.recs.some((r: any) => r.entry.id === activeId);
+            const nRec = set.recs.length;
+            const readOnly = !set.own;
+            const pending = readOnly && ownSetId
+                ? set.recs.reduce((s: number, r: any) => s + labelsToAdopt(r.labels, r.all, ownSetId).length, 0) : 0;
 
             const li = document.createElement('li');
-            li.className = 'recording-explorer-row recording-explorer-row--set rec-xc-set';
-            if (isActive) li.classList.add('rec-xc-set--active');
-            if (hidden) li.classList.add('rec-set-row--hidden');
-            li.style.setProperty('--rec-depth', String(depth + 1));
-            li.setAttribute('aria-expanded', String(open));
-            li.title = isActive ? 'Contains the active recording' : '';
-            const c = document.createElement('span');
-            c.className = 'recording-explorer-chevron';
-            c.setAttribute('aria-hidden', 'true');
-            c.textContent = open ? '▾' : '▸';
-            const eye = document.createElement('button');
-            eye.type = 'button';
-            eye.className = 'rec-set-eye';
-            eye.title = hidden ? 'Show these labels' : 'Hide these labels';
-            eye.setAttribute('aria-pressed', String(!hidden));
-            eye.textContent = hidden ? '◌' : '●';
-            eye.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
-            const nm = document.createElement('span');
-            nm.className = 'rec-set-name';
-            const setName = info.name || 'XC annotation set';
-            nm.append(setName);
-            if (info.creator) {
-                const by = document.createElement('span');
-                by.className = 'rec-set-creator';
-                by.textContent = ` · ${info.creator}`;
-                nm.append(by);
+            li.className = 'rec-set';
+            if (set.recs.some((r: any) => r.entry.id === activeId)) li.classList.add('rec-set--current');
+            if (this._focusSetId === setId) li.classList.add('rec-set--focus');
+            if (hidden) li.classList.add('rec-set--hidden');
+            li.tabIndex = 0;
+            li.style.setProperty('--set-color', this._setColor(setId));
+
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.className = 'rec-set-swatch';
+            sw.title = hidden ? 'Show these labels' : 'Hide these labels';
+            sw.setAttribute('aria-pressed', String(!hidden));
+            sw.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
+
+            const text = document.createElement('div');
+            text.className = 'rec-set-text';
+            const nm = document.createElement('div');
+            nm.className = 'rec-set-title';
+            nm.textContent = info.name || (set.own ? 'My labels' : 'Imported labels');
+            const origin = info.origin === 'xeno-canto' ? 'XC' : info.origin === 'birdnet' ? 'BirdNET' : (readOnly ? (info.origin || 'import') : '');
+            if (origin) {
+                const b = document.createElement('span');
+                b.className = 'rec-set-origin';
+                b.textContent = origin;
+                b.title = 'Read-only — copy to your labels to edit';
+                nm.append(' ', b);
             }
-            nm.title = `${setName}${info.creator ? ' — ' + info.creator : ''} · read-only, separate from your labels`;
-            const nRec = set.recs.length;
+            const sub = document.createElement('div');
+            sub.className = 'rec-set-sub';
+            sub.textContent = [set.own ? 'editable' : info.creator, `${nRec} recording${nRec === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+            text.append(nm, sub);
+            text.title = `${nm.textContent} — ${sub.textContent}`;
+
             const cnt = document.createElement('span');
             cnt.className = 'recording-explorer-meta';
-            cnt.textContent = `${nRec} rec · 🔒 ${nLabels}`;
-            cnt.title = `${nRec} recording${nRec === 1 ? '' : 's'} · ${nLabels} read-only label${nLabels === 1 ? '' : 's'}`;
-            li.append(c, eye, nm, cnt);
-            if (this._onAdoptSet) {
+            cnt.textContent = String(nLabels);
+            cnt.title = `${nLabels} label${nLabels === 1 ? '' : 's'}`;
+
+            const actions = document.createElement('span');
+            actions.className = 'rec-set-actions';
+            if (readOnly && this._onAdoptSet && nLabels) {
                 if (pending) {
                     const copy = document.createElement('button');
                     copy.type = 'button';
                     copy.className = 'link-btn rec-set-adopt';
-                    copy.textContent = pending < nLabels ? `Copy ${pending} more` : 'Copy to mine';
+                    copy.textContent = pending < nLabels ? `Copy ${pending}` : 'Copy to mine';
                     copy.title = `Copy ${pending} label${pending === 1 ? '' : 's'} of all recordings of this set into your own labels (editable, undo possible)`;
                     copy.addEventListener('click', (e) => { e.stopPropagation(); copy.disabled = true; this._onAdoptSet(setId); });
-                    li.appendChild(copy);
+                    actions.appendChild(copy);
                 } else {
                     const done = document.createElement('span');
                     done.className = 'rec-set-adopted';
-                    done.textContent = '✓ in mine';
+                    done.textContent = '✓';
                     done.title = 'All labels of this set are copied into your own labels';
-                    li.appendChild(done);
+                    actions.appendChild(done);
                 }
             }
-            li.addEventListener('click', toggleId(nodeId));
-            list.appendChild(li);
-            if (!open) continue;
+            li.append(sw, text, actions, cnt);
 
-            for (const r of set.recs) {
-                const row = document.createElement('li');
-                row.className = 'recording-explorer-row rec-xc-set-rec';
-                if (r.entry.id === activeId) row.classList.add('active');
-                row.style.setProperty('--rec-depth', String(depth + 2));
-                const icon = document.createElement('span');
-                icon.className = 'recording-explorer-icon';
-                icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = r.entry.id === activeId ? '▶' : ' ';
-                const lab = document.createElement('span');
-                lab.className = 'recording-explorer-label';
-                const m = r.entry.xcRecordingMeta || {};
-                const sci = (m.gen && m.sp) ? `${m.gen} ${m.sp}` : (m.scientificName || '');
-                const recName = isXcDownload(r.entry) ? recordingName(r.entry) : (toXcId(r.entry.xcId) || recordingName(r.entry));
-                lab.textContent = recName + (sci ? ' · ' + sci : '');
-                lab.title = r.entry.path || r.entry.filename || '';
-                const mm = document.createElement('span');
-                mm.className = 'recording-explorer-meta';
-                mm.textContent = `🔒 ${r.labels.length}`;
-                mm.title = `${r.labels.length} label${r.labels.length === 1 ? '' : 's'} of this set on this recording`;
-                row.append(icon, lab, mm);
-                row.addEventListener('click', () => { if (r.entry.id !== this._manager.activeId) this._onActivate?.(r.entry); });
-                list.appendChild(row);
-            }
+            const focus = () => { this._focusSetId = this._focusSetId === setId ? null : setId; this.render(); };
+            li.addEventListener('click', focus);
+            li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focus(); } });
+            ul.appendChild(li);
         }
+        wrap.appendChild(ul);
+        return wrap;
+    }
+
+    /** Colour dots of the sets with labels on a recording (own first). */
+    _setDots(entry: any) {
+        const span = document.createElement('span');
+        span.className = 'rec-set-dots';
+        const names: string[] = [];
+        for (const [setId, set] of this._sets) {
+            const r = set.recs.find((x: any) => x.entry.id === entry.id);
+            if (!r) continue;
+            const d = document.createElement('i');
+            d.style.setProperty('--set-color', this._setColor(setId));
+            if (this._isSetHidden?.(setId)) d.className = 'is-hidden';
+            span.appendChild(d);
+            names.push(`${set.info?.name || (set.own ? 'My labels' : 'Imported')}: ${r.labels.length}`);
+        }
+        span.title = names.join('\n');
+        return names.length ? span : null;
     }
 
     // ── Add popover ──────────────────────────────────────────────────────
