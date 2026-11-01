@@ -48,7 +48,10 @@ try {
         const rel = path.relative(tmpDir, file);
         const target = path.join(generatedDir, rel);
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.copyFileSync(file, target);
+        // Drop side-effect style imports (import '../styles/x.scss') — they are bundled
+        // into dist/birdnet-player.css and would fail type checks in consumer projects.
+        const dts = fs.readFileSync(file, 'utf8').replace(/^import\s+['"][^'"]+\.(s?css)['"];?\r?\n/gm, '');
+        fs.writeFileSync(target, dts);
     }
 
     fs.writeFileSync(
