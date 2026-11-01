@@ -121,6 +121,19 @@ async function main() {
       if (err.code !== "ENOENT") throw err;
     }
 
+    // src-tauri/Cargo.lock — version of the signavis package entry
+    const cargoLockPath = path.join(ROOT_DIR, "src-tauri", "Cargo.lock");
+    try {
+      const lockText = await fs.readFile(cargoLockPath, "utf8");
+      const replaced = lockText.replace(
+        /(\[\[package\]\]\r?\nname = "signavis"\r?\nversion = ")[^"]*(")/,
+        `$1${version}$2`,
+      );
+      if (replaced !== lockText) await fs.writeFile(cargoLockPath, replaced, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
     console.log(`Synced package versions to ${version}`);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));

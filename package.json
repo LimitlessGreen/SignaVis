@@ -50,7 +50,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/LimitlessGreen/SignaVis"
+    "url": "git+https://github.com/LimitlessGreen/SignaVis.git"
   },
   "scripts": {
     "dev": "node ./scripts/ensure-assets.js && vite",
