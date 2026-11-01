@@ -51,6 +51,7 @@ export class RecordingExplorer {
     _openFolders: Set<string>;
     _getProjectName: any;
     _getFolderFiles: any;
+    _isProjectFolder: () => boolean;
     _onOpenFile: any;
     _onFolderKeepAll: any;
     _onFolderBirdnet: any;
@@ -86,6 +87,8 @@ export class RecordingExplorer {
         this._getProjectName   = opts.getProjectName || null;
         /** Audio files of the project folder without a recording entry yet ({ path, size }[]). */
         this._getFolderFiles   = opts.getFolderFiles || (() => []);
+        /** True while the project lives in a folder: the tree is always shown there. */
+        this._isProjectFolder  = opts.isProjectFolder || (() => false);
         /** Open such a file (host creates the entry and loads it). */
         this._onOpenFile       = opts.onOpenFile || null;
         /** Folder menu: keep all ({ entries, paths }) / run BirdNET on all recordings (entries + paths). */
@@ -122,7 +125,8 @@ export class RecordingExplorer {
 
     /** True when new recordings are added to the session instead of replacing the current one. */
     isMultiMode() {
-        return this._multiMode || this._manager.getAll().length > 1 || (this._getFolderFiles() || []).length > 0;
+        return this._multiMode || this._isProjectFolder() || this._manager.getAll().length > 1
+            || (this._getFolderFiles() || []).length > 0;
     }
 
     /** Multi-recording labeling: the tree and its controls show only once this is on. */
@@ -226,7 +230,7 @@ export class RecordingExplorer {
         single.textContent = 'Single';
         const canSingle = this._manager.getAll().length <= 1;
         // A project folder always shows its tree — no single-recording view
-        single.hidden = (this._getFolderFiles() || []).length > 0 || this._manager.getAll().some((e: any) => e.path);
+        single.hidden = this._isProjectFolder() || (this._getFolderFiles() || []).length > 0;
         single.disabled = !canSingle;
         single.title = canSingle ? 'Back to single-recording view' : 'Remove other recordings first';
         single.addEventListener('click', (e) => { e.stopPropagation(); this.setMultiMode(false); });
