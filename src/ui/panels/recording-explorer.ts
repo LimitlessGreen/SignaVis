@@ -200,9 +200,7 @@ export class RecordingExplorer {
             const badge = document.createElement('span');
             badge.className = `rec-session-status rec-session-status--${status}`;
             badge.textContent = status;
-            badge.title = status === 'uploaded'
-                ? 'Uploaded to Xeno-canto — further changes need delete + re-upload on XC'
-                : status === 'ready' ? 'No errors — ready to upload' : 'Draft';
+            badge.title = status === 'ready' ? 'No errors — ready to upload' : 'Draft';
             header.appendChild(badge);
         }
 
