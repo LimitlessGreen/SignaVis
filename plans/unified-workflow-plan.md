@@ -86,3 +86,12 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   Upload-Checkliste, xc-panel, labeling-app.html. API-Funktionen (`xenoCantoRecordingsApi`, `fetchAudio`)
   liefern weiter die nackte Zahl — Einträge normalisieren beim `add`. Annotation-Feld `xc_nr` bleibt
   Zahl (XC-Format). Im Browser noch ungetestet.
+- Phase 2 erledigt (2026-11-01, `96c656c`): `src/app/label-sources.ts`. Abweichung vom Plan: kein
+  gespeichertes `source`-Feld, sondern feste Registry-ID `own` (`setId: 'own'`), Quelle wird mit
+  `labelSource()` abgeleitet — so funktionieren Labels-Liste, Explorer und Upload unverändert weiter.
+  `layer` an eigenen Labels, Layer-Liste + `activeLayerId` am own-Eintrag. Migration (idempotent):
+  altes eigenes Set → `own` (`legacyIds`), weitere eigene Sets → Layer; läuft an allen Ladepunkten
+  (`ensureOwnSource` in labeling-app.html, `restoreSessionSets`). Upload-Metadaten + Status liegen
+  bis Phase 4 noch am own-Eintrag; `annotation-sets.ts` (Status-Funktionen) bleibt bis dahin.
+  `ownSetId` bleibt im Projektdatei-Format (immer `own`, alt: Hinweis für die Migration).
+  Im Browser noch ungetestet.
