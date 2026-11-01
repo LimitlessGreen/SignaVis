@@ -1707,10 +1707,27 @@
       await projectAutosaver?.flush();
       if (!existing) {
         saveCurrentAnnotationsIfNeeded();
+        let nFiles = 0;
+        try { nFiles = (await store.listAudio()).length; } catch { /* count is only informative */ }
+        const found = nFiles
+          ? `“${handle.name}” contains ${nFiles} audio file${nFiles === 1 ? '' : 's'}. They stay where they are — nothing is moved or renamed; they appear in the recordings tree.`
+          : `“${handle.name}” has no audio files yet.`;
+        const adds = 'The app only adds project.signavis.json (labels) and, for Xeno-canto downloads, an xc/ folder.';
         const n = recordingManager.size;
-        const takeOver = n > 0 && await appConfirm(
-          `“${handle.name}” has no project yet. Create it with the current ${n} recording${n === 1 ? '' : 's'} and their labels, or start an empty project in this folder?`,
-          { title: 'New project folder', okLabel: `Take over ${n} recording${n === 1 ? '' : 's'}`, cancelLabel: 'Start empty' });
+        let takeOver = false;
+        if (n > 0) {
+          takeOver = await appConfirm(
+            `${found}
+
+${adds}
+
+Take over the ${n} recording${n === 1 ? '' : 's'} open now (with labels; audio is copied into the folder), or start without them?`,
+            { title: 'Create project in this folder', okLabel: `Take over ${n} recording${n === 1 ? '' : 's'}`, cancelLabel: 'Start without them' });
+        } else if (!await appConfirm(`${found}
+
+${adds}`, { title: 'Create project in this folder', okLabel: 'Create project' })) {
+          return;
+        }
         const meta = { id: `folder-${Date.now().toString(36)}`, name: handle.name };
         const snap = takeOver
           ? { ...recordingManager.snapshot(), labelSets: state.labelSets, ownSetId: OWN_SOURCE_ID, activeSetId: state.activeSetId }
