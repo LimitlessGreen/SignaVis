@@ -89,13 +89,11 @@ html[data-theme="light"] { @include light-tokens; }
 .status-err   { color: var(--color-danger); }
 
 /* ── Phase 2: imported sets in the explorer + on the spectrogram ───── */
-.recording-explorer-sets { list-style: none; padding: 0 0 4px 22px; }
-.rec-set-row {
+.recording-explorer-row--set {
   display: flex; align-items: center; gap: 6px;
-  min-height: 24px; padding: 0 8px 0 4px;
+  min-height: 22px;
   font-size: 11px; color: var(--color-text-secondary);
-  border-left: 2px dashed var(--color-border-strong);
-  &--hidden .rec-set-name { opacity: 0.5; text-decoration: line-through; }
+  &.rec-set-row--hidden .rec-set-name { opacity: 0.5; text-decoration: line-through; }
 }
 .rec-set-eye {
   border: 0; background: none; padding: 0 2px; cursor: pointer;
@@ -103,12 +101,20 @@ html[data-theme="light"] { @include light-tokens; }
   &:hover { color: var(--color-accent); }
 }
 .rec-set-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-set-creator { opacity: 0.75; }
 .rec-set-origin {
   font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
   padding: 0 4px; border-radius: 3px;
   background: var(--input-bg-weak); color: var(--color-text-primary);
 }
-.rec-set-adopt { height: 20px; font-size: 10px; }
+.rec-set-adopt {
+  padding: 0 2px; border: 0; background: none; cursor: pointer;
+  font-size: 10px; white-space: nowrap; flex-shrink: 0;
+  color: var(--color-accent); text-decoration: underline dotted;
+  &:hover { text-decoration: underline; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+.rec-set-adopted { font-size: 10px; white-space: nowrap; flex-shrink: 0; color: var(--color-success, var(--color-text-secondary)); }
 
 // Read-only (imported / locked) labels: dashed + muted, own labels stay solid.
 .spectrogram-label-region--locked,

@@ -24,6 +24,7 @@ import { toXcId } from '../../domain/xc/xcId.ts';
 import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { appAlert, appPrompt } from '../components/modal/dialogs.ts';
+import { labelsToAdopt } from '../../app/annotation-sets.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
 const OPEN_FOLDERS_KEY = 'signavis.explorer-open-folders.v1';
@@ -369,9 +370,7 @@ export class RecordingExplorer {
         });
 
         li.style.setProperty('--rec-depth', String(depth));
-        const setRows = this._buildSetRows(entry, ownSetId);
-        if (setRows) setRows.style.setProperty('--rec-depth', String(depth));
-        return setRows ? [li, setRows] : [li];
+        return [li, ...this._buildSetRows(entry, ownSetId, depth + 1)];
     }
 
     /** Folders (collapsible, open state per folder) and recordings, depth-indented. */
@@ -472,59 +471,86 @@ export class RecordingExplorer {
 
 
     /**
-     * Sub-rows under a recording: one per imported (read-only) set with labels in it,
-     * e.g. the XC set of the recording. Shows that those labels are separate from the
-     * own set, with an eye toggle and an "Adopt" action.
+     * Child rows under a recording, one level deeper: one per imported (read-only) set with labels
+     * on it, e.g. the XC labels of the recording. Eye = show/hide; "Copy to mine" copies the labels
+     * not copied yet into the own labels, afterwards the row says "✓ in mine".
      */
-    _buildSetRows(entry: any, ownSetId: any) {
-        const labels: any[] = this._getEntryLabels ? this._getEntryLabels(entry) : (entry.annotations || []);
-        const counts = new Map<string, number>();
+    _buildSetRows(entry: any, ownSetId: any, depth: number): HTMLElement[] {
+        const labels: any[] = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
+        const bySet = new Map<string, any[]>();
         for (const l of labels) {
             if (!l.setId || l.setId === ownSetId) continue;
-            counts.set(l.setId, (counts.get(l.setId) || 0) + 1);
+            if (!bySet.has(l.setId)) bySet.set(l.setId, []);
+            bySet.get(l.setId)!.push(l);
         }
-        if (!counts.size) return null;
-        const li = document.createElement('li');
-        li.className = 'recording-explorer-sets';
-        for (const [setId, n] of counts) {
+        const rows: HTMLElement[] = [];
+        for (const [setId, inSet] of bySet) {
+            const n = inSet.length;
             const info = this._getSetInfo?.(setId) || {};
-            const row = document.createElement('div');
-            row.className = 'rec-set-row';
             const origin = info.origin === 'xeno-canto' ? 'XC' : info.origin === 'birdnet' ? 'BirdNET' : (info.origin || 'import');
             const hidden = !!this._isSetHidden?.(setId);
-            if (hidden) row.classList.add('rec-set-row--hidden');
+            const pending = ownSetId ? labelsToAdopt(inSet, labels, ownSetId).length : n;
+
+            const li = document.createElement('li');
+            li.className = 'recording-explorer-row recording-explorer-row--set';
+            if (hidden) li.classList.add('rec-set-row--hidden');
+            li.style.setProperty('--rec-depth', String(depth));
 
             const eye = document.createElement('button');
             eye.type = 'button';
             eye.className = 'rec-set-eye';
             eye.title = hidden ? 'Show these labels' : 'Hide these labels';
+            eye.setAttribute('aria-pressed', String(!hidden));
             eye.textContent = hidden ? '◌' : '●';
             eye.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
 
             const name = document.createElement('span');
             name.className = 'rec-set-name';
-            name.innerHTML = `<span class="rec-set-origin">${origin}</span>`;
-            name.append(` ${info.name || 'Imported set'}`);
-            name.title = `${info.name || 'Imported set'}${info.creator ? ' — ' + info.creator : ''} · read-only, not part of your labels`;
+            const badge = document.createElement('span');
+            badge.className = 'rec-set-origin';
+            badge.textContent = origin;
+            const setName = info.name || 'Imported labels';
+            name.append(badge, ` ${setName}`);
+            if (info.creator) {
+                const by = document.createElement('span');
+                by.className = 'rec-set-creator';
+                by.textContent = ` · ${info.creator}`;
+                name.append(by);
+            }
+            name.title = `${setName}${info.creator ? ' — ' + info.creator : ''} · read-only, separate from your labels`;
 
             const count = document.createElement('span');
             count.className = 'recording-explorer-meta';
             count.textContent = `🔒 ${n}`;
             count.title = `${n} read-only label${n === 1 ? '' : 's'}`;
 
-            row.append(eye, name, count);
+            li.append(eye, name, count);
             if (this._onAdoptSet) {
-                const adopt = document.createElement('button');
-                adopt.type = 'button';
-                adopt.className = 'tb-btn rec-set-adopt';
-                adopt.textContent = 'Adopt';
-                adopt.title = `Copy these ${n} labels into your own labels`;
-                adopt.addEventListener('click', (e) => { e.stopPropagation(); this._onAdoptSet(setId); });
-                row.appendChild(adopt);
+                if (pending) {
+                    const copy = document.createElement('button');
+                    copy.type = 'button';
+                    copy.className = 'link-btn rec-set-adopt';
+                    copy.textContent = pending < n ? `Copy ${pending} more` : 'Copy to mine';
+                    copy.title = `Copy ${pending} label${pending === 1 ? '' : 's'} into your own labels (editable, undo possible)`;
+                    copy.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        copy.disabled = true;   // no double copies from fast clicks; render() rebuilds the row
+                        this._onAdoptSet(setId);
+                    });
+                    li.appendChild(copy);
+                } else {
+                    const done = document.createElement('span');
+                    done.className = 'rec-set-adopted';
+                    done.textContent = '✓ in mine';
+                    done.title = 'All these labels are copied into your own labels';
+                    li.appendChild(done);
+                }
             }
-            li.appendChild(row);
+            // Click on the row opens its recording, like the recording row itself
+            li.addEventListener('click', () => { if (entry.id !== this._manager.activeId) this._onActivate?.(entry); });
+            rows.push(li);
         }
-        return li;
+        return rows;
     }
 
     // ── Add popover ──────────────────────────────────────────────────────
