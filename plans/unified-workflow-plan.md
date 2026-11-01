@@ -101,3 +101,8 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   Ohne Projektordner gibt es keinen eigenen „Dateien“-Ordner: Sitzungsdateien liegen direkt in der
   Wurzel. ⚠ für fehlende XC-Nr. entfällt (lokal normal); „XC-Nr. zuweisen“ bleibt im ⋯-Menü.
   Im Browser noch ungetestet. Nutzer: keine Datenmigrationen mehr (nicht in Produktion).
+- Phase 4 erledigt (2026-11-01): `src/app/upload-selection.ts` + `src/ui/panels/upload-selection-panel.ts`.
+  Auswahl wird als Ausschlusslisten gespeichert (`own.uploadSelection`: neue Aufnahmen/Arten sind
+  automatisch drin), Snapshots in `own.uploads`. Set-Metadaten (Name, Lizenz, Scope) bleiben am
+  own-Eintrag und werden weiter im Projekt-Tab bearbeitet (Checklisten-Sprung „Set“) — Umzug in den
+  Upload-Tab ggf. in Phase 5. Status nur noch draft/ready. Im Browser noch ungetestet.
