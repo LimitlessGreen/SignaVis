@@ -95,3 +95,9 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   bis Phase 4 noch am own-Eintrag; `annotation-sets.ts` (Status-Funktionen) bleibt bis dahin.
   `ownSetId` bleibt im Projektdatei-Format (immer `own`, alt: Hinweis für die Migration).
   Im Browser noch ungetestet.
+- Phase 3 erledigt (2026-11-01): `src/app/recording-tree.ts` + Explorer-Umbau. Kopf = Projektname
+  (Set-Name/Status/Umbenennen dort entfernt → Upload-Tab), Ordner-Auf/Zu in localStorage
+  `signavis.explorer-open-folders.v1`, Ordner des aktiven Eintrags klappt automatisch auf.
+  Ohne Projektordner gibt es keinen eigenen „Dateien“-Ordner: Sitzungsdateien liegen direkt in der
+  Wurzel. ⚠ für fehlende XC-Nr. entfällt (lokal normal); „XC-Nr. zuweisen“ bleibt im ⋯-Menü.
+  Im Browser noch ungetestet. Nutzer: keine Datenmigrationen mehr (nicht in Produktion).
