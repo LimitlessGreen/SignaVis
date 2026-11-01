@@ -31,3 +31,28 @@
 
 /* Recording explorer: sub-folder prefix of folder recordings */
 .recording-explorer-dir { color: var(--color-text-secondary); opacity: .8; }
+
+// ── Explorer folder tree (recording-tree.ts) — depth via --rec-depth ──
+.recording-explorer-row { padding-left: calc(36px + var(--rec-depth, 0) * 14px); }
+.rec-session-body .recording-explorer-row::before { left: calc(24px + var(--rec-depth, 0) * 14px); }
+.recording-explorer-list .recording-explorer-sets { padding-left: calc(22px + var(--rec-depth, 0) * 14px); }
+.recording-explorer-folder {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px calc(22px + var(--rec-depth, 0) * 14px);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  &:hover { background: var(--color-accent-faint); }
+  &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+}
+.recording-explorer-chevron { width: 10px; flex-shrink: 0; font-size: 9px; color: var(--color-text-secondary); }
+.recording-explorer-xc {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
