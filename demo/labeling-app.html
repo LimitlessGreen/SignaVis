@@ -233,12 +233,10 @@
     </div>
   </div>
 
-  <!-- ── Sidebar panel: Project (own set + recordings) ───────────── -->
+  <!-- ── Sidebar panel: Project (storage + recordings) ───────────── -->
   <div id="panelProject" class="scroll-panel" hidden>
     <div class="sidebar-section-header">Storage</div>
     <div id="projectLocationMount"></div>
-    <div class="sidebar-section-header">Annotation set</div>
-    <div id="xcSetContainer" class="xc-set-container project-set"></div>
 
     <div class="sidebar-section-header project-rec-header">
       <span>Recordings</span>
@@ -275,6 +273,9 @@
     <!-- ── Set contents: the XC set is built from this selection at upload time ── -->
     <div class="sidebar-section-header">Set contents</div>
     <div id="xcSelection" class="us-panel"></div>
+    <!-- ── Set details (name, license, scope) of the next upload ── -->
+    <div class="sidebar-section-header">Set details</div>
+    <div id="xcSetContainer" class="xc-set-container project-set"></div>
     <!-- ── Upload assistant: live checklist (key · profile · set · recordings · labels) ── -->
     <div class="sidebar-section-header">Upload check</div>
     <div id="xcChecklist" class="ua-checklist"></div>
@@ -546,7 +547,7 @@
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
     import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, migrateSessionState } from '../src/app/annotation-sets.ts';
-    import { OWN_SOURCE_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers } from '../src/app/label-sources.ts';
+    import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer } from '../src/app/label-sources.ts';
     import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../src/app/upload-selection.ts';
     import { UploadSelectionPanel } from '../src/ui/panels/upload-selection-panel.ts';
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
@@ -1128,7 +1129,7 @@
     })();
 
     const propsPanel = new PropertiesPanel({
-      getSetInfo: (setId) => state.labelSets?.get(setId) || null,
+      getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
     });
     propsPanel.setTagStore(tagStore);
 
@@ -1310,6 +1311,8 @@
       hiddenSetIds: new Set(),
       /** @type {Set<string>} `${setId}|${speciesName}` keys whose labels are hidden */
       hiddenSpeciesKeys: new Set(),
+      /** @type {Set<string>} own layers hidden on the spectrogram */
+      hiddenLayers: new Set(),
       /** Editable recording metadata for XC upload context */
       recordingEditMeta: defaultRecordingEditMeta(),
       xcLabelPool: [],
@@ -1827,8 +1830,7 @@
       }, 400);
     }
 
-    /** Copy all labels of an imported (locked) set into the own set. */
-    /** Copy a single imported label into the own set (✓ in the label list). */
+    /** Copy a single imported label into the own labels (✓ in the label list). */
     function adoptOneLabel(labelId) {
       const lbl = state.labels.find((l) => l.id === labelId);
       if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
@@ -1838,7 +1840,7 @@
       touchOwnSet(OWN_SOURCE_ID);
       syncToPlayer();
       saveCurrentAnnotationsIfNeeded();
-      selectionMeta.textContent = `Copied 1 label into "${state.labelSets.get(OWN_SOURCE_ID)?.name || 'my set'}"`;
+      selectionMeta.textContent = `Copied 1 label into my labels`;
     }
 
     function adoptSetLabels(setId) {
@@ -1862,7 +1864,7 @@
       touchOwnSet(OWN_SOURCE_ID);
       syncToPlayer();
       saveCurrentAnnotationsIfNeeded();
-      selectionMeta.textContent = `Copied ${total} label${total === 1 ? '' : 's'} into "${state.labelSets.get(OWN_SOURCE_ID)?.name || 'my set'}"`;
+      selectionMeta.textContent = `Copied ${total} label${total === 1 ? '' : 's'} into my labels`;
     }
 
     // ── Central set update — call whenever any set field changes ──────
@@ -2219,7 +2221,7 @@
         const undo = snapshotLabels();
         adoptSetLabels(setId);
         recordingExplorer.render();
-        showUndoToast(`Copied labels into "${state.labelSets.get(OWN_SOURCE_ID)?.name || 'my set'}"`, undo);
+        showUndoToast(`Copied labels into my labels`, undo);
       },
       onRemoveRecording: (entry) => removeRecordingWithUndo(entry),
       onResetRecording: async (entry) => {
@@ -2486,7 +2488,53 @@
         labelList.setHiddenSpecies(state.hiddenSpeciesKeys);
         syncToPlayer();
       },
+      layers: {
+        get: () => ({ layers: ownLayers(state.labelSets), active: activeLayerId(state.labelSets), hidden: state.hiddenLayers }),
+        onSetActive: (id) => { setActiveLayer(state.labelSets, id); afterLayerChange(); },
+        onAdd: () => {
+          const name = prompt('Name of the new layer (e.g. annotator or pass):', '');
+          if (name == null) return;
+          const l = addLayer(state.labelSets, name);
+          if (l) selectionMeta.textContent = `New labels now go to layer "${l.name}"`;
+          afterLayerChange();
+        },
+        onRename: (id) => {
+          const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+          const name = prompt('Layer name:', cur?.name || '');
+          if (name == null) return;
+          renameLayer(state.labelSets, id, name);
+          afterLayerChange();
+        },
+        onRemove: (id) => {
+          const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+          if (!confirm(`Remove layer "${cur?.name || id}"? Its labels move to "${ownLayers(state.labelSets)[0].name}".`)) return;
+          saveCurrentAnnotationsIfNeeded();
+          removeLayer(state.labelSets, id, [state.labels, ...recordingManager.getAll().map((e) => e.annotations || [])]);
+          for (const e of recordingManager.getAll()) recordingManager.update(e.id, {});
+          state.hiddenLayers.delete(id);
+          afterLayerChange();
+        },
+        onMove: (ids, layerId) => {
+          const set = new Set(ids);
+          for (const l of state.labels) if (set.has(l.id) && l.setId === OWN_SOURCE_ID) l.layer = layerId;
+          touchOwnSet(OWN_SOURCE_ID);
+          afterLayerChange();
+        },
+        onToggleHidden: (id) => {
+          if (state.hiddenLayers.has(id)) state.hiddenLayers.delete(id);
+          else state.hiddenLayers.add(id);
+          afterLayerChange();
+        },
+      },
     });
+
+    /** Redraw after a layer change (layer list lives on the own source entry → saved with the sets). */
+    function afterLayerChange() {
+      saveSessionSets(state);
+      syncToPlayer();
+      labelList.render(state.labels);
+      try { refreshUploadChecklist(); } catch (e) { /* not ready yet */ }
+    }
     // ── Label list: play one segment (▶ in a row), filter, view switch ──
     let _segPlay = null;   // { id, start, end, raf, t0, lastT, lastMove }
     function stopSegmentTracking() {
@@ -2771,10 +2819,12 @@
     function _visibleLabels() {
       const hSets = state.hiddenSetIds;
       const hSpecies = state.hiddenSpeciesKeys;
-      if (!hSets.size && !hSpecies.size) return state.labels;
+      const hLayers = state.hiddenLayers;
+      if (!hSets.size && !hSpecies.size && !hLayers.size) return state.labels;
       return state.labels.filter((l) => {
         const setKey = l.setId || '';
         if (setKey && hSets.has(setKey)) return false;
+        if (setKey === OWN_SOURCE_ID && hLayers.has(l.layer || DEFAULT_LAYER_ID)) return false;
         if (hSpecies.has(`${setKey}|${l.label || '(unlabeled)'}`)) return false;
         return true;
       });
@@ -3355,7 +3405,11 @@
     }
 
     async function jumpToChecklistTarget(target) {
-      if (target.kind === 'set') { sidebar.setActive('project'); return; }
+      if (target.kind === 'set') {
+        sidebar.setActive('upload');
+        document.getElementById('xcSetContainer')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+      }
       if (target.kind === 'recording') {
         const entry = recordingManager.getById(target.id);
         if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
@@ -3667,7 +3721,7 @@
       showContextMenu({
         x: r.left, y: r.bottom + 2,
         items: [
-          { label: `Annota-JSON (XC) — own set, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
+          { label: `Annota-JSON (XC) — upload selection, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
           { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
           { label: `Raven table — this recording, ${n} labels`, action: downloadRavenTable },
           ...(projectKind === 'folder' ? [{
