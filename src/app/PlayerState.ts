@@ -258,6 +258,7 @@ export class PlayerState {
             this._emit('spectrogramscalechange', e.detail);
             this._updateCoords();
             this._createFrequencyLabels();
+            this._freqZoom?.refresh();
         });
         this._spectro.addEventListener('needsredraw', () => {
             this._updateCoords();
@@ -279,6 +280,7 @@ export class PlayerState {
                 freqScrollbar:      this.d.freqScrollbar,
                 freqScrollbarThumb: this.d.freqScrollbarThumb,
                 freqZoomSlider:     this.d.freqZoomSlider,
+                freqZoomValue:      this.d.freqZoomValue,
             },
             getBoundedMaxFreq:  () => this.coords.boundedMaxFreq,
             onFreqViewChange:   () => {
@@ -678,6 +680,8 @@ export class PlayerState {
             qualityLevelDisplay:    q('qualityLevelDisplay'),
             zoomSlider:             q('zoomSlider'),
             zoomValue:              q('zoomValue'),
+            zoomInBtn:              q('zoomInBtn'),
+            zoomOutBtn:             q('zoomOutBtn'),
             maxFreqModeSelect:      q('maxFreqModeSelect'),
             maxFreqSelect:          q('maxFreqSelect'),
             colorSchemeSelect:      q('colorSchemeSelect'),
@@ -685,6 +689,10 @@ export class PlayerState {
             freqZoomResetBtn:       q('freqZoomResetBtn'),
             freqAxisSpacer:         q('freqAxisSpacer'),
             freqZoomSlider:         q('freqZoomSlider'),
+            freqZoomInBtn:          q('freqZoomInBtn'),
+            freqZoomOutBtn:         q('freqZoomOutBtn'),
+            freqZoomValue:          q('freqZoomValue'),
+            freqAutoBtn:            q('freqAutoBtn'),
             freqScrollbar:          q('freqScrollbar'),
             freqScrollbarThumb:     q('freqScrollbarThumb'),
             volumeToggleBtn:        q('volumeToggleBtn'),
@@ -837,6 +845,7 @@ export class PlayerState {
         const bounded = this.coords.boundedMaxFreq;
         if (top == null || !(bounded > 0) || top >= bounded * 0.85) {
             this._freqZoom.reset();
+            this._freqZoom.refresh();
             return false;
         }
         this._freqZoom.set(0, top);

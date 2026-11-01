@@ -11,6 +11,7 @@ export interface SettingsPanelHost {
     _createFrequencyLabels(): void;
     _drawSpectrogram(): void;
     _setPixelsPerSecond(pps: number, snap: boolean): void;
+    readonly pixelsPerSecond: number;
     _requestSpectrogramRedraw(): void;
 }
 
@@ -41,6 +42,12 @@ export class SettingsPanelController implements UiController {
             h._setPixelsPerSecond(parseFloat((e.target as HTMLInputElement).value), false);
             h._requestSpectrogramRedraw();
         });
+        for (const [btn, f] of [[this.d.zoomInBtn, 1.5], [this.d.zoomOutBtn, 1 / 1.5]] as const) {
+            on(btn, 'click', () => {
+                if (!h.audioBuffer) return;
+                h._setPixelsPerSecond(h.pixelsPerSecond * f, true);
+            });
+        }
         on(this.d.zoomSlider, 'change', () => {
             if (h._spectro.hasData) h._drawSpectrogram();
         });

@@ -12,6 +12,7 @@ export interface FreqViewportHost {
         setFromSlider(value: number): void;
         zoom(factor: number, centerHz: number): void;
     };
+    applyAutoFreqView(): boolean;
     coords: { boundedMaxFreq: number; pixelYToFrequency(y: number): number };
 }
 
@@ -79,6 +80,24 @@ export class FreqViewportController implements UiController {
         // Freq zoom slider
         on(this.d.freqZoomSlider, 'input', (e: Event) => {
             h._freqZoom.setFromSlider(parseInt((e.target as HTMLInputElement).value, 10));
+        });
+
+        // − / + step around the middle of the visible range; Auto fits to the calls
+        const step = (factor: number) => {
+            if (!h.audioBuffer) return;
+            const max = h.coords.boundedMaxFreq;
+            const lo = h._freqZoom.min ?? 0;
+            const hi = h._freqZoom.max ?? max;
+            // Anchored at the bottom while the view starts at 0 Hz (calls sit above it).
+            h._freqZoom.zoom(factor, lo <= 1 ? 0 : (lo + hi) / 2);
+        };
+        on(this.d.freqZoomInBtn, 'click', () => step(1.5));
+        on(this.d.freqZoomOutBtn, 'click', () => step(1 / 1.5));
+        on(this.d.freqAutoBtn, 'click', () => {
+            if (!h.audioBuffer || h.applyAutoFreqView()) return;
+            // Nothing to fit: the activity spans the whole range.
+            this.d.freqAutoBtn?.classList.add('zoom-auto-none');
+            setTimeout(() => this.d.freqAutoBtn?.classList.remove('zoom-auto-none'), 900);
         });
 
         // Freq scrollbar drag

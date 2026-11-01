@@ -505,10 +505,16 @@ export class ViewportManager extends EventTarget {
         const nextScroll = duration ? aTime * effectivePps - aPixel : 0;
         const bounded   = clamp(nextScroll, 0, maxScroll);
 
+        // The visible span says more than px/s; px/s stays in the tooltip.
+        if (d.zoomValue && vw > 0) {
+            const span = Math.min(vw / effectivePps, duration || Infinity);
+            d.zoomValue.textContent = span >= 100 ? `${Math.round(span / 60)} min` : span >= 10 ? `${Math.round(span)} s` : `${span.toFixed(1)} s`;
+            d.zoomValue.title = `Visible time span (${effectivePps < 10 ? effectivePps.toFixed(2) : Math.round(effectivePps)} px/s)`;
+        }
+
         if (changed) {
             this.pixelsPerSecond    = effectivePps;
             d.zoomSlider.value      = String(Math.round(effectivePps / sliderStep) * sliderStep);
-            d.zoomValue.textContent = `${effectivePps < 10 ? effectivePps.toFixed(2) : Math.round(effectivePps)} px/s`;
 
             // The hidden WaveSurfer instance only plays audio; zooming it would
             // re-render its own (invisible) waveform on every step.

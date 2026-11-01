@@ -110,6 +110,8 @@ export interface DomRefs {
     qualityLevelDisplay:     HTMLElement       | null;
     zoomSlider:              HTMLInputElement  | null;
     zoomValue:               HTMLElement       | null;
+    zoomInBtn:               HTMLButtonElement | null;
+    zoomOutBtn:              HTMLButtonElement | null;
 
     // ── Frequency controls ───────────────────────────────────────────────
     maxFreqModeSelect:       HTMLSelectElement | null;
@@ -119,6 +121,10 @@ export interface DomRefs {
     freqZoomResetBtn:        HTMLButtonElement | null;
     freqAxisSpacer:          HTMLElement       | null;
     freqZoomSlider:          HTMLInputElement  | null;
+    freqZoomInBtn:           HTMLButtonElement | null;
+    freqZoomOutBtn:          HTMLButtonElement | null;
+    freqZoomValue:           HTMLElement       | null;
+    freqAutoBtn:             HTMLButtonElement | null;
     freqScrollbar:           HTMLElement       | null;
     freqScrollbarThumb:      HTMLElement       | null;
 
