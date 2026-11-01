@@ -69,7 +69,13 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
 - `tools/labeling-snapshots/shots.py` anpassen; lokaler Ordner-Ablauf + acc-Upload
   (`acc_upload.py`, `?xcenv=acc`) + Set-Import (`imptest.py`). Alte Projektdatei laden (Migration).
 
+## Layer (Nutzer-Wunsch 2026-11-01: „zumindest die Möglichkeit sollte es geben“)
+- Eigene Labels tragen `layer` (Standard `'default'`, unsichtbar solange es nur einen gibt).
+  Im Datenmodell ab Phase 2 angelegt, damit keine zweite Migration nötig wird.
+- Layer-Registry im Projekt: `{ id, name, annotator?, color? }`. Ein aktiver Layer = Ziel neuer Labels.
+- UI (Phase 5): kleines Layer-Menü im Labels-Tab erst sichtbar, wenn man „Layer hinzufügen“ wählt;
+  Sichtbarkeit pro Layer; Labels zwischen Layern verschieben/kopieren.
+- Upload-Tab (Phase 4): Layer als zusätzlicher Auswahlfilter; `annotator` des Layers geht ins Set.
+
 ## Offen
-- Mehrere getrennte Label-Durchgänge pro Datei (Annotator A/B)? Vorerst nicht; falls nötig später
-  als „Layer“ über `source: 'own:<layer>'`.
 - Prüfen, ob irgendwo XC-Nummern als Zahl verglichen/sortiert werden (Sortierung nach `xcNumber`).
