@@ -1,32 +1,107 @@
-/* Project tab: storage location block (plans/project-folder-plan.md, Phase 4) */
+/* Project tab: one block — where the project lives · add recordings · recordings tree
+   (plans/project-folder-plan.md, Phase 4; project hub 2026-11-01) */
+.project-hub {
+  margin: 4px 10px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  overflow: hidden;
+
+  > * + * { border-top: 1px solid var(--color-border); }
+  .recording-explorer { border-bottom: 0; padding-bottom: 4px; }
+  .rec-session-header { margin: 0; border-radius: 0; }
+}
+
 .project-location {
-  padding: 6px 12px 8px;
-  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
   font-size: 12px;
 
-  .pl-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .pl-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pl-status { margin-left: auto; font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; }
-  .pl-status-error, .pl-status-conflict, .pl-status-readonly { color: var(--color-warning); }
+  .pl-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .pl-kind {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+    display: grid; place-items: center; font-size: 15px;
+    background: var(--color-accent-faint); border: 1px solid var(--color-border);
+  }
+  .pl-kind-none { color: var(--color-warning); }
+  .pl-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .pl-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-sub { font-size: 11px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-status {
+    flex: 0 0 auto; font-size: 10px; white-space: nowrap;
+    padding: 1px 7px; border-radius: 10px;
+    border: 1px solid var(--color-border); color: var(--color-text-secondary);
+  }
+  .pl-status-saved { color: var(--color-success, #22c55e); border-color: currentColor; }
+  .pl-status-error, .pl-status-conflict, .pl-status-readonly { color: var(--color-warning); border-color: currentColor; }
 
-  .pl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .pl-actions .sidebar-action-btn { width: auto; flex: 0 0 auto; padding: 4px 10px; }
+  .pl-note { margin: 0; font-size: 11px; color: var(--color-text-secondary); }
+  .pl-recommend {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--color-accent-faint);
+    border: 1px dashed var(--color-border-strong);
+  }
+  .pl-recommend-text { margin: 0; font-size: 11px; line-height: 1.4; color: var(--color-text-secondary); }
+
+  .pl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .pl-actions .sidebar-action-btn { width: auto; flex: 0 0 auto; padding: 4px 12px; }
   .link-btn { padding: 0; border: 0; background: none; font-size: 11px; color: var(--color-text-secondary); cursor: pointer;
     &:hover { color: var(--color-accent); text-decoration: underline; } }
 
+  .pl-folder-opts { display: flex; flex-direction: column; gap: 5px; }
   .pl-check { display: flex; align-items: center; gap: 4px; color: var(--color-text-secondary); cursor: pointer; }
   .pl-unadded-head { display: flex; gap: 10px; align-items: baseline; color: var(--color-text-secondary);
     span { margin-right: auto; } }
-  .pl-unadded { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; }
-  .pl-unadded li { display: flex; align-items: center; gap: 6px; padding: 2px 0; min-width: 0; }
-  .pl-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-  .pl-size { color: var(--color-text-secondary); font-size: 11px; }
-  .pl-add {
-    width: 18px; height: 18px; line-height: 16px; padding: 0; flex: 0 0 auto;
-    border: 1px solid var(--color-border-strong); border-radius: 4px; background: none;
-    color: var(--color-text-primary); cursor: pointer;
-    &:hover { border-color: var(--color-accent); color: var(--color-accent); }
+  .pl-switch { display: flex; gap: 12px; }
+}
+
+/* Add recordings: XC number or a local file — both land in the tree below */
+.project-add {
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+
+  .project-add-title {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--color-text-secondary);
   }
+  .xc-load-row { gap: 0; }
+  .project-add-src {
+    flex: 0 0 auto; align-self: stretch; display: grid; place-items: center;
+    padding: 0 7px; font-size: 10px; font-weight: 700;
+    border: 1px solid var(--color-border-strong); border-right: 0;
+    border-radius: 5px 0 0 5px; color: var(--color-text-secondary); background: var(--input-bg);
+  }
+  .xc-load-row .input { border-radius: 0; min-width: 0; }
+  .xc-load-row .xc-load-primary { border-radius: 0 5px 5px 0; }
+}
+.project-add-file {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 5px 8px;
+  border: 1px dashed var(--color-border-strong); border-radius: 6px;
+  background: none; color: var(--color-text-secondary);
+  font-size: 11px; cursor: pointer;
+  &:hover, &:focus-visible { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-faint); }
+}
+
+/* Project folder recommendation dialog */
+.project-folder-modal { max-width: 460px; }
+.pf-options { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; }
+.pf-option {
+  display: flex; align-items: flex-start; gap: 12px; text-align: left;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--color-border); background: none;
+  color: var(--color-text-primary); font: inherit; cursor: pointer;
+  &:hover, &:focus-visible { border-color: var(--color-accent); background: var(--color-accent-faint); outline: none; }
+}
+.pf-option--rec { border-color: var(--color-accent); }
+.pf-option-icon { font-size: 20px; line-height: 1.2; }
+.pf-option-body { display: flex; flex-direction: column; gap: 2px; }
+.pf-option-title { font-weight: 600; font-size: 13px; }
+.pf-option-text { font-size: 11.5px; color: var(--color-text-secondary); line-height: 1.4; }
+.pf-badge {
+  margin-left: 4px; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600;
+  color: var(--color-accent); border: 1px solid currentColor; vertical-align: 1px;
 }
 
 /* Recording explorer: sub-folder prefix of folder recordings */

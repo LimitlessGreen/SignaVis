@@ -54,66 +54,84 @@ export class ProjectLocationPanel {
     render(v: ProjectLocationView) {
         const r = this.root;
         r.innerHTML = '';
+        r.dataset.kind = v.kind;
 
-        const line = el('div', 'pl-line');
-        const icon = el('span', `pl-kind pl-kind-${v.kind}`, v.kind === 'folder' ? '📁' : '🌐');
+        // ── Identity: where the project lives + save status ──
+        const head = el('div', 'pl-head');
+        const icon = el('span', `pl-kind pl-kind-${v.kind}`, v.kind === 'folder' ? '📁' : v.kind === 'browser' ? '🌐' : '⚠');
         icon.setAttribute('aria-hidden', 'true');
+        const text = el('div', 'pl-text');
         const name = el('span', 'pl-name', v.kind === 'none' ? 'This session only' : v.label);
+        const sub = el('span', 'pl-sub', v.kind === 'folder' ? 'Folder · labels + audio as files'
+            : v.kind === 'browser' ? 'In this browser only'
+            : 'Not saved — browser storage unavailable');
         name.title = v.kind === 'folder'
             ? 'Project folder on your computer — project.signavis.json + audio'
             : v.kind === 'browser' ? 'Stored privately in this browser' : 'Not saved (browser storage unavailable)';
-        line.append(icon, name);
+        text.append(name, sub);
+        head.append(icon, text);
         if (v.status && STATUS_TEXT[v.status]) {
-            line.append(el('span', `pl-status pl-status-${v.status}`, STATUS_TEXT[v.status]));
+            const st = el('span', `pl-status pl-status-${v.status}`, STATUS_TEXT[v.status]);
+            st.setAttribute('aria-live', 'polite');
+            head.append(st);
         }
-        r.append(line);
+        r.append(head);
 
-        const actions = el('div', 'pl-actions');
-        if (v.folderSupported) {
-            const open = el('button', 'sidebar-action-btn secondary', v.kind === 'folder' ? 'Other folder…' : 'Open folder…');
-            open.type = 'button';
-            open.title = 'Use a folder on your computer as project: labels are saved there, audio files in it can be added';
-            open.addEventListener('click', () => this.#cb.onOpenFolder());
-            actions.append(open);
-            if (v.recentFolder && v.kind !== 'folder') {
-                const re = el('button', 'sidebar-action-btn', `Reopen “${v.recentFolder}”`);
-                re.type = 'button';
-                re.title = 'The browser asks once more for access to this folder';
-                re.addEventListener('click', () => this.#cb.onReopenRecent());
-                actions.prepend(re);
+        const button = (cls: string, label: string, title: string, on: () => void) => {
+            const b = el('button', cls, label);
+            b.type = 'button';
+            if (title) b.title = title;
+            b.addEventListener('click', on);
+            return b;
+        };
+
+        // ── Browser project: recommend a project folder (Chromium only) ──
+        if (v.kind !== 'folder') {
+            if (!v.folderSupported) {
+                r.append(el('p', 'pl-note', 'Project folders need Chrome or Edge on a desktop computer. Labels are kept in this browser.'));
+                return;
             }
-            if (v.kind === 'folder') {
-                const back = el('button', 'link-btn', 'Use browser project');
-                back.type = 'button';
-                back.addEventListener('click', () => this.#cb.onUseBrowserProject());
-                actions.append(back);
+            const tip = el('div', 'pl-recommend');
+            tip.append(el('p', 'pl-recommend-text',
+                'Recommended: keep the project in a folder — labels, XC downloads and your own audio stay together as files.'));
+            const acts = el('div', 'pl-actions');
+            if (v.recentFolder) {
+                acts.append(button('sidebar-action-btn', `Reopen “${v.recentFolder}”`,
+                    'The browser asks once more for access to this folder', () => this.#cb.onReopenRecent()));
+                acts.append(button('link-btn', 'Other folder…', '', () => this.#cb.onOpenFolder()));
+            } else {
+                acts.append(button('sidebar-action-btn', 'Choose project folder…',
+                    'Use a folder on your computer as project: labels are saved there, audio files in it can be added',
+                    () => this.#cb.onOpenFolder()));
             }
-        }
-        if (actions.childElementCount) r.append(actions);
-        if (!v.folderSupported) {
-            r.append(el('p', 'field-hint', 'Project folders need Chrome or Edge on a desktop computer. Labels are kept in this browser.'));
+            tip.append(acts);
+            r.append(tip);
+            return;
         }
 
-        if (v.kind !== 'folder') return;
-
+        // ── Project folder: options + folder scan ──
+        const opts = el('div', 'pl-folder-opts');
         const xc = el('label', 'pl-check');
         const box = el('input');
         box.type = 'checkbox';
         box.checked = v.xcToFolder;
         box.addEventListener('change', () => this.#cb.onToggleXcToFolder(box.checked));
         xc.append(box, document.createTextNode(' Save XC downloads in folder (xc/)'));
-        r.append(xc);
+        opts.append(xc);
 
         // The folder's audio files are listed in the recordings tree (click opens) — only count + rescan here
-        const head = el('div', 'pl-unadded-head');
+        const scan = el('div', 'pl-unadded-head');
         const txt = v.scanning ? 'Scanning folder…'
-            : v.unadded.length ? `${v.unadded.length} audio file${v.unadded.length === 1 ? '' : 's'} not opened yet — see Recordings`
-            : 'All audio files of the folder are open in the project.';
-        head.append(el('span', '', txt));
-        const rescan = el('button', 'link-btn', 'Rescan');
-        rescan.type = 'button';
-        rescan.addEventListener('click', () => this.#cb.onRescan());
-        head.append(rescan);
-        r.append(head);
+            : v.unadded.length ? `${v.unadded.length} audio file${v.unadded.length === 1 ? '' : 's'} not opened yet (dimmed below)`
+            : 'All audio files of the folder are open.';
+        scan.append(el('span', '', txt));
+        scan.append(button('link-btn', 'Rescan', 'Look for new audio files in the folder', () => this.#cb.onRescan()));
+        opts.append(scan);
+
+        const switches = el('div', 'pl-switch');
+        switches.append(button('link-btn', 'Other folder…', 'Open or create another project folder', () => this.#cb.onOpenFolder()));
+        switches.append(button('link-btn', 'Use browser storage', 'Switch to the project stored in this browser', () => this.#cb.onUseBrowserProject()));
+        opts.append(switches);
+        r.append(opts);
     }
 }
