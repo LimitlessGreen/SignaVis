@@ -69,3 +69,6 @@ schema_cornel.json
 
 # Local test audio (licensed recordings, not redistributed)
 tests/fixtures/local/
+
+# Demo GIF/MP4 output (attached to GitHub releases, not committed)
+tools/demo-gifs/out/

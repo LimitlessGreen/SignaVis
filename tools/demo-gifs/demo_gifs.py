@@ -5,7 +5,7 @@
 
 Options:
     --url URL         base URL of the dev server (default http://localhost:5173)
-    --out DIR         output folder (default docs/img/gifs); writes <scene>.gif and <scene>.mp4
+    --out DIR         output folder (default tools/demo-gifs/out); writes <scene>.gif and <scene>.mp4
     --audio FILE      recording used by the scenes (default tests/fixtures/local/XC204513.wav,
                       falls back to demo/samples/birdsong.wav)
     --keep-video      also keep the raw .webm recordings
@@ -263,7 +263,7 @@ def record(browser, mod, args):
 
 def main(argv):
     fixture = REPO / "tests" / "fixtures" / "local" / "XC204513.wav"
-    args = {"url": "http://localhost:5173", "out": REPO / "docs" / "img" / "gifs", "keep_video": False,
+    args = {"url": "http://localhost:5173", "out": REPO / "tools" / "demo-gifs" / "out", "keep_video": False,
             "audio": fixture if fixture.exists() else REPO / "demo" / "samples" / "birdsong.wav"}
     names, it = [], iter(argv)
     for a in it:

@@ -15,7 +15,7 @@ npm run demo:gifs -- --list               # list scenes
 Needs [uv](https://docs.astral.sh/uv/) (installs Playwright on the fly) and `ffmpeg` on `PATH`.
 First run: `uvx playwright install chromium`.
 
-Output (default `docs/img/gifs/`): `<scene>.gif` (README) and `<scene>.mp4`
+Output (default `tools/demo-gifs/out/`, gitignored — upload as GitHub release assets): `<scene>.gif` (README) and `<scene>.mp4`
 (H.264, ~5–10× smaller — for release notes, docs and articles).
 
 Options: `--url`, `--out DIR`, `--audio FILE`, `--keep-video` (keep the raw `.webm`).
