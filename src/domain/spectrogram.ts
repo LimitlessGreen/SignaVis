@@ -503,15 +503,15 @@ export function sampleFrameValues(
  * Auto contrast from visible values: black point a little above the noise
  * floor (median), white point at `whitePercentile`. Null when there is too little signal.
  */
-export function visibleContrastPoints(values: Float32Array, blackMarginDb = 3, whitePercentile = 99.5): { black: number; white: number } | null {
+export function visibleContrastPoints(values: Float32Array, blackMarginDb = 3, whitePercentile = 99.5, scaleMargin = true): { black: number; white: number } | null {
     if (values.length < 16) return null;
     const s = Float32Array.from(values).sort();
     const at = (p: number) => s[Math.min(s.length - 1, Math.floor(s.length * p / 100))];
     const median = at(50);
     const white = at(whitePercentile);
     if (!(white > median)) return null;
-    // Margin scaled down for value ranges much smaller than dB (e.g. PCEN).
-    const black = median + Math.min(blackMarginDb, (white - median) * 0.1);
+    // Margin scaled down for value ranges much smaller than dB (e.g. PCEN); dB data takes it as is.
+    const black = median + (scaleMargin ? Math.min(blackMarginDb, (white - median) * 0.1) : blackMarginDb);
     return { black, white };
 }
 
