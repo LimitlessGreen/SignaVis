@@ -728,8 +728,7 @@ tr.multi-selected {
 // (Labels: Recordings / Labels; BirdNET: Model / Detection / Location;
 // XC: Load / Recording / Profile / API / Actions). Provides clear
 // typographic hierarchy without nested cards.
-.sidebar-section-header,
-.lbl-section-header {     // legacy alias
+.lbl-section-header {     // legacy alias (.sidebar-section-header lives in _panels.scss)
   position: relative;
   position: sticky;
   top: 0;
