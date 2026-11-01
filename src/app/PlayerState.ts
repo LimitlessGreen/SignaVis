@@ -34,6 +34,7 @@ import { ToolbarController } from './player/ToolbarController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, type UltrasoundInfo } from '../domain/ultrasound.ts';
+import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -141,6 +142,10 @@ export class PlayerState {
     _playbackViewportConfig: any;
     sampleRateHz: any;
     ultrasoundInfo: UltrasoundInfo | null = null;
+    /** Per-frequency activity of the loaded recording (auto vertical zoom, heterodyne carrier). */
+    bandProfile: BandProfile | null = null;
+    /** Zoom the frequency axis to where something happens after loading. */
+    autoFreqView = true;
     /** Last detector settings, reused when the mode is picked from the transport bar. */
     detectorSettings = { carrierHz: 0, divisor: 10, envelope: false, pitchFactor: 10 };
     amplitudePeakAbs: number;
@@ -786,9 +791,10 @@ export class PlayerState {
         this.sampleRateHz = sampleRate;
         this._setTimeExpansion(1);
         this.detectorSettings.carrierHz = 0;
-        this.ultrasoundInfo = this._engine.audioBuffer
-            ? analyzeUltrasound(this._engine.audioBuffer.getChannelData(0), sampleRate, this._engine.guano)
-            : null;
+        const ch0 = this._engine.audioBuffer?.getChannelData(0) ?? null;
+        this.bandProfile = ch0 ? computeBandProfile(ch0, sampleRate) : null;
+        this.ultrasoundInfo = ch0 ? analyzeUltrasound(ch0, sampleRate, this._engine.guano, this.bandProfile) : null;
+        this._freqZoom.resetSilent();
         this._updateUltrasoundChip();
         this._emit('ultrasoundinfo', this.ultrasoundInfo);
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
@@ -818,10 +824,23 @@ export class PlayerState {
         this._syncOverviewWindowToViewport();
 
         await this._spectro.generate({ autoAdjust: true });
+        if (this.autoFreqView) this.applyAutoFreqView();
         this._drawMainWaveform();
         this._drawOverviewWaveform();
         this._createFrequencyLabels();
         this._seekToTime(0, true);
+    }
+
+    /** Zoom the frequency axis to 0 … top of the activity (no-op when it spans the whole range). */
+    applyAutoFreqView(): boolean {
+        const top = this.bandProfile ? autoViewMaxHz(this.bandProfile) : null;
+        const bounded = this.coords.boundedMaxFreq;
+        if (top == null || !(bounded > 0) || top >= bounded * 0.85) {
+            this._freqZoom.reset();
+            return false;
+        }
+        this._freqZoom.set(0, top);
+        return true;
     }
 
     _onAudioLoadError(error: any, source: string) {
