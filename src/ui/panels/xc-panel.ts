@@ -4,6 +4,7 @@
  * and XC-format JSON export.
  */
 
+import { toXcId } from '../../domain/xc/xcId.ts';
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording, invalidateXenoCantoRecordingCache } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
@@ -955,7 +956,7 @@ export class XenoCantoPanel {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = this.xcId ? `XC${this.xcId}_annotation_set.json` : 'annotation_set.json';
+    a.download = toXcId(this.xcId) ? `${toXcId(this.xcId)}_annotation_set.json` : 'annotation_set.json';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }

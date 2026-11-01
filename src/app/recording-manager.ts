@@ -17,7 +17,7 @@
  * RecordingEntry shape:
  * {
  *   id:              string,              // UUID, local only
- *   xcId:            string | null,       // '12345' for XC recordings, null for local files
+ *   xcId:            string | null,       // 'XC12345' for XC recordings (always prefixed), null for local files
  *   filename:        string,              // display name
  *   audioUrl:        string | null,       // blob URL or XC audio URL
  *   isBlobUrl:       boolean,             // true if audioUrl is a blob: URL (not persistent)
@@ -30,6 +30,7 @@
  */
 
 import { inferSource } from '../domain/project/workspaceProject.ts';
+import { toXcId } from '../domain/xc/xcId.ts';
 
 const SESSION_KEY = 'aw:recording-manager.v1';
 
@@ -97,6 +98,7 @@ export class RecordingManager extends EventTarget {
      */
     add(partial: any = {}) {
         const entry: any = defaultRecordingEntry(partial);
+        entry.xcId = toXcId(entry.xcId);
         entry.source = inferSource(entry);
         this._entries.set(entry.id, entry);
         this._save();
@@ -123,6 +125,7 @@ export class RecordingManager extends EventTarget {
         const entry = this._entries.get(id);
         if (!entry) return;
         Object.assign(entry, updates);
+        if ('xcId' in (updates || {})) entry.xcId = toXcId(entry.xcId);
         this._save();
     }
 
@@ -181,7 +184,8 @@ export class RecordingManager extends EventTarget {
      * @returns {ReturnType<typeof defaultRecordingEntry>|null}
      */
     findByXcId(xcId: any) {
-        const clean = String(xcId).replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
+        const clean = toXcId(xcId);
+        if (!clean) return null;
         for (const entry of this._entries.values()) {
             if (entry.xcId === clean) return entry;
         }
@@ -204,11 +208,12 @@ export class RecordingManager extends EventTarget {
      * so its labels can be uploaded. Accepts 'XC12345', '12345' or '' to unlink.
      */
     assignXcId(id: any, xcId: any) {
-        const clean = String(xcId ?? '').trim().replace(/^xc\s*/i, '');
-        if (clean && !/^\d+$/.test(clean)) return false;
+        const raw = String(xcId ?? '').trim();
+        const clean = toXcId(raw);
+        if (raw && !clean) return false;
         const entry = this._entries.get(id);
         if (!entry) return false;
-        entry.xcId = clean || null;
+        entry.xcId = clean;
         this._save();
         this._fire('change');
         return true;
@@ -249,6 +254,7 @@ export class RecordingManager extends EventTarget {
         this._entries.clear();
         for (const partial of entries || []) {
             const entry: any = defaultRecordingEntry(partial);
+            entry.xcId = toXcId(entry.xcId);
             entry.source = inferSource(entry);
             this._entries.set(entry.id, entry);
         }
@@ -289,6 +295,7 @@ export class RecordingManager extends EventTarget {
             if (!Array.isArray(entries)) return;
             for (const e of entries) {
                 const entry: any = defaultRecordingEntry(e);
+                entry.xcId = toXcId(entry.xcId);   // older sessions stored the bare number
                 entry.source = inferSource({ ...e, isBlobUrl: e.isBlobUrl || (e.source === 'file') });
                 this._entries.set(entry.id, entry);
             }

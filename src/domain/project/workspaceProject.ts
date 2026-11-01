@@ -11,6 +11,8 @@
 // Pure functions only — no storage, no DOM. See tests/workspace-project.test.mjs.
 // ═══════════════════════════════════════════════════════════════════════
 
+import { toXcId, xcNumber } from '../xc/xcId.ts';
+
 export const PROJECT_SCHEMA = 'signavis-project/1';
 export const PROJECT_FILE_NAME = 'project.signavis.json';
 
@@ -20,7 +22,7 @@ export interface ProjectRecording {
     id: string;
     source: RecordingSource;
     filename: string;
-    /** XC number without prefix (also set for local copies linked to XC). */
+    /** XC ID with prefix, 'XC123' (also set for local copies linked to XC). Older files: bare number, migrated on load. */
     xcId: string | null;
     /** Path relative to the project root ('xc/XC123.mp3', 'audio/a.wav'); null = not stored in the project. */
     path: string | null;
@@ -72,7 +74,7 @@ export function inferSource(entry: any): RecordingSource {
 }
 
 /** Default project path for an XC download. */
-export const xcRecordingPath = (xcId: string) => `xc/XC${xcId}.mp3`;
+export const xcRecordingPath = (xcId: string) => `xc/${toXcId(xcId)}.mp3`;
 
 export function toProjectRecording(entry: any): ProjectRecording {
     const source = inferSource(entry);
@@ -80,7 +82,7 @@ export function toProjectRecording(entry: any): ProjectRecording {
         id: String(entry.id),
         source,
         filename: entry.filename || 'Untitled',
-        xcId: entry.xcId ? String(entry.xcId) : null,
+        xcId: toXcId(entry.xcId),
         path: entry.path ?? null,
         url: (source === 'sample' || source === 'url') && !isBlobUrl(entry.audioUrl) ? entry.audioUrl ?? null : null,
         sampleRate: Number.isFinite(entry.sampleRate) ? entry.sampleRate : null,
@@ -99,13 +101,13 @@ export function toProjectRecording(entry: any): ProjectRecording {
  * (the user has to pick the file again); XC recordings get their download URL.
  */
 export function fromProjectRecording(rec: ProjectRecording): any {
-    const audioUrl = rec.source === 'xc' && rec.xcId ? `https://xeno-canto.org/${rec.xcId}/download`
+    const audioUrl = rec.source === 'xc' && rec.xcId ? `https://xeno-canto.org/${xcNumber(rec.xcId)}/download`
         : rec.url ?? null;
     const entry: any = {
         id: rec.id,
         source: rec.source,
         filename: rec.filename,
-        xcId: rec.xcId,
+        xcId: toXcId(rec.xcId),
         path: rec.path,
         audioUrl,
         isBlobUrl: false,
@@ -187,7 +189,7 @@ export function deserializeProject(project: WorkspaceProject): SessionSnapshot {
 export const stringifyProject = (p: WorkspaceProject) => JSON.stringify(p, null, 2) + '\n';
 
 /** Metadata file stored next to an XC download (license / recordist must travel with the audio). */
-export const xcMetaPath = (xcId: string) => `xc/XC${xcId}.json`;
+export const xcMetaPath = (xcId: string) => `xc/${toXcId(xcId)}.json`;
 
 /**
  * Audio files in the project folder that no recording refers to yet,
@@ -195,10 +197,10 @@ export const xcMetaPath = (xcId: string) => `xc/XC${xcId}.json`;
  */
 export function filesNotInProject<T extends { path: string }>(files: T[], entries: any[]): T[] {
     const used = new Set(entries.map((e) => e?.path).filter(Boolean));
-    const xcIds = new Set(entries.map((e) => e?.xcId).filter(Boolean).map(String));
+    const xcIds = new Set(entries.map((e) => toXcId(e?.xcId)).filter(Boolean));
     return files.filter((f) => {
         if (used.has(f.path)) return false;
-        const m = /^xc\/XC(\d+)\.mp3$/i.exec(f.path);
-        return !(m && xcIds.has(m[1]));
+        const m = /^xc\/(XC\d+)\.mp3$/i.exec(f.path);
+        return !(m && xcIds.has(toXcId(m[1])));
     });
 }

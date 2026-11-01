@@ -18,6 +18,7 @@
  *   explorer.render();
  */
 
+import { toXcId } from '../../domain/xc/xcId.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
@@ -255,7 +256,7 @@ export class RecordingExplorer {
                 // Label
                 const label = document.createElement('span');
                 label.className = 'recording-explorer-label';
-                const xcTag = entry.xcId ? `XC${entry.xcId}` : '';
+                const xcTag = toXcId(entry.xcId) || '';
                 const species = entry.xcRecordingMeta?.scientificName
                     || entry.xcRecordingMeta?.sp
                     || '';
@@ -290,7 +291,7 @@ export class RecordingExplorer {
                 }
 
                 const rowItems = () => [
-                    { label: entry.xcId ? `Change XC number (XC${entry.xcId})…` : 'Assign XC number…',
+                    { label: entry.xcId ? `Change XC number (${toXcId(entry.xcId)})…` : 'Assign XC number…',
                       action: () => this._promptXcId(entry) },
                     { separator: true },
                     ...(this._onResetRecording ? [{ label: 'Clear labels of this recording', danger: true,
@@ -430,7 +431,7 @@ export class RecordingExplorer {
             const existing = this._manager.findByXcId(norm);
             if (existing) {
                 // Already in session — switch to it instead of re-fetching
-                hint.textContent = `XC${norm} already in session`;
+                hint.textContent = `${toXcId(norm)} already in session`;
                 hint.hidden = false;
                 xcInput.style.outlineColor = 'var(--color-warning, #f59e0b)';
                 setTimeout(() => {

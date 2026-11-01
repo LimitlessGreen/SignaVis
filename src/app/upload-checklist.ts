@@ -6,6 +6,8 @@
  * issues that point at the place to fix them (set / recording / label).
  */
 
+import { toXcId } from '../domain/xc/xcId.ts';
+
 export type CheckStatus = 'ok' | 'warn' | 'error';
 export type CheckStepId = 'key' | 'profile' | 'set' | 'recordings' | 'labels';
 
@@ -147,7 +149,7 @@ export function buildUploadChecklist(input: ChecklistInput): ChecklistResult {
             for (const r of foreign) {
                 issues.push({
                     level: 'warning',
-                    message: `XC${r.xcNr} was recorded by ${r.recordist} — XC only accepts annotations of your own recordings.`,
+                    message: `${toXcId(r.xcNr)} was recorded by ${r.recordist} — XC only accepts annotations of your own recordings.`,
                     targets: [{ kind: 'recording', id: r.id }],
                 });
             }
@@ -155,7 +157,7 @@ export function buildUploadChecklist(input: ChecklistInput): ChecklistResult {
         if (!input.recordings.length) issues.push({ level: 'error', message: 'No recording has labels in this set.' });
         steps.push({
             id: 'recordings', title: 'Recordings', status: stepStatus(issues),
-            summary: input.recordings.map((r) => (str(r.xcNr) ? `XC${r.xcNr}` : r.name)).join(', ') || 'None',
+            summary: input.recordings.map((r) => (toXcId(r.xcNr) || r.name)).join(', ') || 'None',
             issues,
         });
     }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    PROJECT_SCHEMA, inferSource, serializeProject, parseProject, deserializeProject,
+    PROJECT_SCHEMA, inferSource, serializeProject, parseProject, deserializeProject, filesNotInProject,
     stringifyProject, ProjectFormatError, xcRecordingPath,
 } from '../src/domain/project/workspaceProject.ts';
 import { normalizeProjectPath, isAudioPath } from '../src/domain/project/IProjectStore.ts';
@@ -141,4 +141,31 @@ test('RecordingManager: source on add, snapshot and replaceAll', () => {
     assert.equal(rm.getAll().find((e) => e.filename === 'f.wav').source, 'file');
     rm.replaceAll([], 'missing');
     assert.equal(rm.activeId, null);
+});
+
+test('XC IDs are stored with prefix; bare numbers from older files are migrated', () => {
+    const p = parseProject({ schema: PROJECT_SCHEMA, recordings: [{ id: 'a', source: 'xc', xcId: '5' }, { id: 'b', xcId: 'XC6' }] });
+    assert.deepEqual(p.recordings.map((r) => r.xcId), ['XC5', 'XC6']);
+    const snap = deserializeProject(p);
+    assert.equal(snap.entries[0].audioUrl, 'https://xeno-canto.org/5/download');
+    assert.equal(serializeProject(sampleSnapshot(), { id: 'p', name: 'n' }, NOW).recordings[0].xcId, 'XC928094');
+    assert.equal(xcRecordingPath('XC12'), 'xc/XC12.mp3');
+    assert.deepEqual(filesNotInProject([{ path: 'xc/XC5.mp3' }, { path: 'xc/XC9.mp3' }], [{ xcId: 'XC5' }]).map((f) => f.path), ['xc/XC9.mp3']);
+});
+
+test('RecordingManager normalizes XC IDs on add, update, assign and lookup', () => {
+    const rm = new RecordingManager();
+    rm.clear();
+    const a = rm.add({ xcId: '0928094', audioUrl: 'https://xeno-canto.org/928094/download' });
+    assert.equal(a.xcId, 'XC928094');
+    assert.equal(rm.findByXcId('928094'), a);
+    assert.equal(rm.findByXcId('xc928094'), a);
+    const f = rm.add({ filename: 'f.wav', audioUrl: 'blob:x', isBlobUrl: true });
+    assert.equal(rm.assignXcId(f.id, '12'), true);
+    assert.equal(rm.getById(f.id).xcId, 'XC12');
+    assert.equal(rm.assignXcId(f.id, 'abc'), false);
+    assert.equal(rm.assignXcId(f.id, ''), true);
+    assert.equal(rm.getById(f.id).xcId, null);
+    rm.update(f.id, { xcId: 77 });
+    assert.equal(rm.getById(f.id).xcId, 'XC77');
 });
