@@ -233,10 +233,22 @@ jobs:
             RANGE="${TAG}"
           fi
 
+          # Prefer the matching "## [x.y.z]" section of CHANGELOG.md; fall back to git log.
+          VERSION="${TAG#v}"
+          SECTION="$(awk -v v="${VERSION}" '
+            /^## \[/ { if (found) exit; if (index($0, "## [" v "]") == 1) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md)"
+
           {
             echo 'NOTES<<EOF'
-            echo "## Changes"
-            git log --pretty=format:'- %s (%h)' "${RANGE}" -- . ':(exclude)VERSION' ':(exclude)package.json' ':(exclude)python-wrapper/pyproject.toml' || true
+            if [ -n "$(printf '%s' "${SECTION}" | tr -d '[:space:]')" ]; then
+              printf '%s
+' "${SECTION}"
+            else
+              echo "## Changes"
+              git log --pretty=format:'- %s (%h)' "${RANGE}" -- . ':(exclude)VERSION' ':(exclude)package.json' ':(exclude)python-wrapper/pyproject.toml' || true
+            fi
             echo
             echo
             echo "## Artifacts"
