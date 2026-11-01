@@ -11,7 +11,6 @@
   "files": [
     "dist/",
     "types/",
-    "docs/img/",
     "models/",
     "README.md",
     "LICENSE"
@@ -34,7 +33,6 @@
     }
   },
   "dependencies": {
-    "@tauri-apps/plugin-dialog": "^2.7.1",
     "jsoneditor": "^10.4.3"
   },
   "keywords": [
@@ -98,6 +96,7 @@
   "devDependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/cli": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "lucide-static": "^1.8.0",
     "sass": "^1.70.0",
     "sharp": "^0.35.5",

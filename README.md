@@ -6,7 +6,7 @@
 # SignaVis
 
 <p align="center">
-  <img src="docs/img/screenshot.png" alt="SignaVis Screenshot" width="900" />
+  <img src="https://raw.githubusercontent.com/LimitlessGreen/SignaVis/main/docs/img/screenshot.png" alt="SignaVis Screenshot" width="900" />
 </p>
 
 <div align="center">
