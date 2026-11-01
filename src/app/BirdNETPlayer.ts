@@ -892,7 +892,7 @@ export class BirdNETPlayer {
         // Draw mode toggle — enables click+drag label creation without Shift
         const drawBtn = document.createElement('button');
         drawBtn.className = 'toolbar-btn toggle-btn active';
-        drawBtn.title = 'Draw label (Shift+Drag)';
+        drawBtn.title = 'Draw mode: drag on the spectrogram to draw a label (Shift+Drag always draws)';
         drawBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.375 2.625a1 1 0 013 3l-9.013 9.014a2 2 0 01-.853.505l-2.873.84a.5.5 0 01-.62-.62l.84-2.873a2 2 0 01.506-.852z"/></svg> Draw`;
         // keep a reference so keyboard toggles update it
         this._drawBtn = drawBtn;

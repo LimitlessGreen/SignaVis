@@ -4,7 +4,7 @@ import ModalManager from '../modal/modal-manager.ts';
 const DEFAULT_TIPS = [
   {
     title: 'Quick labeling shortcuts',
-    text: 'Draw regions with Shift + Drag, move with Drag or press G, double‑click to edit; press Esc to close editors. Delete with X, Del, or Backspace.'
+    text: 'Draw regions by dragging on the spectrogram (Draw mode, on by default; Shift + Drag works always), move a label by dragging it or press G, double‑click to edit; press Esc to close editors. Delete with X, Del, or Backspace.'
   },
   {
     title: 'Playback & seeking',
