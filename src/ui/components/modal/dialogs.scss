@@ -1,0 +1,14 @@
+/* In-app alert/confirm/prompt (dialogs.ts) — builds on the shared .app-modal styles */
+.app-dialog-backdrop { z-index: 1000; }
+.app-dialog { padding-right: 40px; }
+.app-dialog-text { white-space: pre-line; }
+.app-dialog-input {
+  width: 100%; box-sizing: border-box;
+  margin: 6px 0 14px;
+  font-size: 12px; padding: 6px 8px;
+}
+.app-dialog .app-modal-actions { margin-top: 14px; }
+.app-dialog .app-modal-actions .tb-btn.app-dialog-ok--danger {
+  color: var(--color-danger, #e5484d);
+  border-color: currentColor;
+}

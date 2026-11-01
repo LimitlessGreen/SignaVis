@@ -13,6 +13,7 @@ import {
     type ClusteringRunSummary,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
+import { appPrompt } from '../components/modal/dialogs.ts';
 
 export interface ClusterBrowserOptions {
     container: HTMLElement;
@@ -310,7 +311,7 @@ export class ClusterBrowserPanel {
     private async onClickRunClustering(): Promise<void> {
         if (this.loading) return;
 
-        const embeddingField = prompt('Embedding-Feld:', 'embedding');
+        const embeddingField = await appPrompt('Embedding field:', 'embedding', { title: 'Run clustering', okLabel: 'Run' });
         if (!embeddingField) return;
 
         const args: DatasetRunClusteringArgs = {
@@ -339,7 +340,7 @@ export class ClusterBrowserPanel {
     private async onClickComputeHardness(): Promise<void> {
         if (this.loading) return;
 
-        const fieldName = prompt('BirdNET-Feld (SoundEvents):', 'birdnetV24');
+        const fieldName = await appPrompt('BirdNET field (SoundEvents):', 'birdnetV24', { title: 'Compute hardness', okLabel: 'Compute' });
         if (!fieldName) return;
 
         this.setLoading(true);
