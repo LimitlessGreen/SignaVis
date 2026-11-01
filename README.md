@@ -1,8 +1,4 @@
 
-> ⚠️ **Early development — Unstable**
->
-> This project is in active early development. APIs, features, and build artifacts may change or break without notice. You're encouraged to try it and provide feedback, but do not expect a stable release or backward compatibility yet. If you require stability, pin to a specific commit or wait for an official release. Contributions and bug reports are welcome.
-
 # SignaVis
 
 <p align="center">
@@ -34,36 +30,40 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 
 ## Table of contents
 
-- [signavis](#signavis)
-  - [Table of contents](#table-of-contents)
-  - [Features](#features)
-  - [Install](#install)
-  - [Quickstart](#quickstart)
-  - [Player Options](#player-options)
-  - [Usage Examples](#usage-examples)
-    - [ESM (Vite / Vanilla)](#esm-vite--vanilla)
-    - [Load from URL](#load-from-url)
-    - [File Input](#file-input)
-    - [React](#react)
-    - [Vue](#vue)
-    - [Svelte](#svelte)
-    - [CDN / IIFE](#cdn--iife)
-    - [Streamlit (Python)](#streamlit-python)
-    - [Jupyter Notebook](#jupyter-notebook)
-  - [Demos](#demos)
-  - [Python wrapper](#python-wrapper)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Highlights](#-highlights)
+- [Labeling app](#labeling-app)
+- [Install](#install)
+- [Quickstart](#quickstart)
+- [Player Options](#player-options)
+- [Usage Examples](#usage-examples)
+- [Demos](#demos)
+- [Python wrapper](#python-wrapper)
+- [Development & releases](#development--releases)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## ✨ Highlights
 
-- **Customizable spectrogram rendering** — adjust scale, contrast, gain, color mapping, and more
-- **Synced waveform + spectrogram** with zoom and scroll
-- **Label annotation** — draw, drag, resize, undo, redo
+- **Fast, accurate spectrograms** — computed in Rust/WebAssembly and rendered on the GPU; presets, colour schemes, auto contrast, PCEN, log frequency
+- **Synced waveform + spectrogram** with smooth zoom, scroll and playhead follow — also for long recordings
+- **Label annotation** — draw, move, resize, undo/redo; *snap to call* boxes a call from a single click; zoom box and edit loupe for precise edges
 - **BirdNET suggestions** — accept or discard detections in one click
-- **Xeno-canto integration** — search, import, and enrich recordings
-- **Bandpass playback** — listen to specific frequency regions
-- **Fast frequency zoom** — wheel, slider, and drag controls
+- **Xeno-canto integration** — import recordings and their annotation sets, compare with reference calls, upload your labels as Annota-JSON sets
+- **Projects** — stored in the browser or in a local folder (File System Access API), Raven export
+- **Bat recordings** — time expansion, heterodyne, frequency division and pitch shift
+- **Embeddable** — npm package (ESM / IIFE) and a Python wrapper for Jupyter, Streamlit and Gradio
+
+## Labeling app
+
+The [labeling app](https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html?xcid=1) runs entirely in the browser — no install, no server.
+
+| | |
+|---|---|
+| **Overview** — load a recording, zoom and play<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/overview.gif" alt="Overview" width="420"/> | **Labeling** — draw and name labels<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/labeling.gif" alt="Labeling" width="420"/> |
+| **Snap to call** — one click boxes the call<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/snap.gif" alt="Snap to call" width="420"/> | **Zoom box & loupe** — precise box edges<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/magnifier.gif" alt="Zoom box and loupe" width="420"/> |
+| **Display** — presets, colour schemes, contrast<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/display.gif" alt="Display settings" width="420"/> | |
+
+The same UI is available as a desktop app (Tauri, preview) — installers are attached to each [release](https://github.com/LimitlessGreen/SignaVis/releases).
 
 ## Install
 
@@ -99,43 +99,6 @@ import 'signavis/style'
 const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
-```bash
-npm ci
-npm run typecheck
-npm test
-npm run build
-npm run build:css
-# Inspect what would be published
-npm pack --dry-run
-```
-
-Publishing via CI:
-
-- The CI workflow runs on push and for tags; it publishes when a tag matching `v*` is pushed.
-- To enable automatic publishing to npm, add an `NPM_TOKEN` secret in GitHub repository settings (Settings → Secrets → Actions → `NPM_TOKEN`).
-- Create and push a semver tag to trigger a release:
-
-```bash
-git tag -a v0.3.1 -m "release v0.3.1"
-git push origin v0.3.1
-```
-
-
-The release job will build artifacts, publish to npm and PyPI, and create a GitHub Release including built files.
-
-How to create tokens & add GitHub secrets
-
-- NPM (automation token): create an automation token on https://www.npmjs.com/settings/<your-username>/tokens (Create New Token → Automation). Copy the token and add it to your repository secrets as `NPM_TOKEN` (Settings → Secrets → Actions → New repository secret). You can also set it via the GitHub CLI:
-
-```bash
-gh secret set NPM_TOKEN --body 'PASTE_TOKEN_HERE' -R owner/repo
-```
-
-- PyPI: create an API token on https://pypi.org/manage/account/#api-tokens and add it as `PYPI_API_TOKEN` in repository secrets. The CI uses this secret when uploading the Python package.
-
-Packaging notes:
-
-- The package includes model files under `models/` (e.g., `models/birdnet-v2.4/`) — verify with `npm pack --dry-run`.
 
 ## Player Options
 
@@ -288,6 +251,25 @@ pip install signavis
 ```
 
 Docs & PyPI: https://pypi.org/project/signavis
+
+## Development & releases
+
+```bash
+npm ci
+npm run dev          # Vite dev server, labeling app at /demo/labeling-app.html
+npm run typecheck
+npm test
+npm run build        # library + types into dist/ and types/
+npm pack --dry-run   # inspect what would be published
+```
+
+Releases are cut with `bash scripts/release.sh <version>` (e.g. `1.0.1` or `1.1.0-rc.1`): it syncs the version across
+`package.json`, `pyproject.toml` and the Tauri files, commits, tags and pushes. The tag triggers CI, which publishes
+to npm (trusted publishing; pre-releases under the `next` dist-tag) and PyPI and creates a GitHub release with the
+notes from [CHANGELOG.md](CHANGELOG.md) and the desktop installers.
+
+The npm package includes the BirdNET model under `models/` (~79 MB). Demo GIFs are recorded with
+`npm run demo:gifs` (see [tools/demo-gifs](tools/demo-gifs/README.md)) and attached to the `demo-media` release.
 
 ## Contributing
 
