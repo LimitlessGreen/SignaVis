@@ -548,7 +548,7 @@
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
     import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, migrateSessionState } from '../src/app/annotation-sets.ts';
-    import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer } from '../src/app/label-sources.ts';
+    import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../src/app/label-sources.ts';
     import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../src/app/upload-selection.ts';
     import { UploadSelectionPanel } from '../src/ui/panels/upload-selection-panel.ts';
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
@@ -2568,6 +2568,19 @@
           renameLayer(state.labelSets, id, name);
           afterLayerChange();
         },
+        onSetAnnotator: (id) => {
+          const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+          const name = prompt('Annotator of this layer (name as on Xeno-canto; empty = use your profile):', cur?.annotator || '');
+          if (name == null) return;
+          let xcId = '';
+          if (name.trim()) {
+            const v = prompt(`XC user ID of ${name.trim()} (optional):`, cur?.annotatorXcId || '');
+            if (v == null) return;
+            xcId = v;
+          }
+          setLayerAnnotator(state.labelSets, id, name, xcId);
+          afterLayerChange();
+        },
         onRemove: (id) => {
           const cur = ownLayers(state.labelSets).find((l) => l.id === id);
           if (!confirm(`Remove layer "${cur?.name || id}"? Its labels move to "${ownLayers(state.labelSets)[0].name}".`)) return;
@@ -3299,7 +3312,8 @@
       saveCurrentAnnotationsIfNeeded();
       const { items } = selectUploadLabels(recordingManager.getAll(), getUploadSelection(), state.labelSets);
       return dedupeLabels(items.map(({ label, entry }) => {
-        const copy = { ...label };
+        // Labels on a layer with its own annotator are uploaded under that name (else: profile)
+        const copy = { ...label, ...(layerAnnotatorFields(state.labelSets, label) || {}) };
         if (!copy.xc_nr) copy.xc_nr = xcNumber(entry.xcId);
         if (entry.filename && !copy.sound_file) copy.sound_file = entry.filename;
         return copy;

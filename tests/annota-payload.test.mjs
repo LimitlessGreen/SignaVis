@@ -113,3 +113,16 @@ test('reference XC from the comparison view lands in annotation_remarks', () => 
     assert.equal(mk({ remarks: 'faint' }), 'faint');
     assert.equal(mk({}), '');
 });
+
+test('label annotator (layer) overrides the set creator, incl. its XC id', async () => {
+    const { buildAnnotaPayload } = await import('../src/infrastructure/xeno-canto/annotaPayload.ts');
+    const p = buildAnnotaPayload({
+        set: { name: 'S', creator: 'Me', creatorId: 'MYID' },
+        labels: [
+            { id: 1, start: 0, end: 1, scientificName: 'A b' },
+            { id: 2, start: 0, end: 1, scientificName: 'A b', author: 'Jane', annotatorXcId: 'JANE' },
+            { id: 3, start: 0, end: 1, scientificName: 'A b', author: 'Max', annotatorXcId: '' },
+        ],
+    });
+    assert.deepEqual(p.annotations.map((a) => [a.annotator, a.annotator_xc_id]), [['Me', 'MYID'], ['Jane', 'JANE'], ['Max', '']]);
+});

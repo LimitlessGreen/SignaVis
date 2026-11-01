@@ -119,7 +119,8 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
         xc_nr: normalizeXcNr(l?.xc_nr ?? l?.xcId ?? ctx.defaultXcNr),
         sound_file: str(l?.sound_file ?? l?.soundFile),
         annotator: str(l?.author) || str(ctx.annotator),
-        annotator_xc_id: xcContributorId(ctx.annotatorXcId),
+        // A label may bring its own annotator (layer annotator); then its XC id applies, even when empty
+        annotator_xc_id: xcContributorId(l && 'annotatorXcId' in l ? l.annotatorXcId : ctx.annotatorXcId),
         start_time: Number(l.start).toFixed(6),
         end_time: Number(l.end).toFixed(6),
         frequency_low: low,
