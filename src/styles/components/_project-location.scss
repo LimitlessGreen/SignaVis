@@ -112,7 +112,6 @@
 // ── Explorer folder tree (recording-tree.ts) — depth via --rec-depth ──
 .recording-explorer-row { padding-left: calc(36px + var(--rec-depth, 0) * 14px); }
 .rec-session-body .recording-explorer-row::before { left: calc(24px + var(--rec-depth, 0) * 14px); }
-.recording-explorer-list .recording-explorer-sets { padding-left: calc(22px + var(--rec-depth, 0) * 14px); }
 .recording-explorer-folder {
   display: flex;
   align-items: center;
