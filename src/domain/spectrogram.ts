@@ -203,6 +203,20 @@ export function getSpectrogramColor(value: number, colorScheme: string) {
         const v = Math.round((1 - x) * 255);
         return { r: v, g: v, b: v };
     }
+    // Inverse of B/W: white signal on black background.
+    if (colorScheme === 'grayscaleInv') {
+        const v = Math.round(x * 255);
+        return { r: v, g: v, b: v };
+    }
+    // spectrolipi's default "SpectroFlare": black → purple → red → orange → white.
+    if (colorScheme === 'spectroflare') {
+        let u;
+        if (x < 0.3) { u = x / 0.3; return { r: Math.round(120 * u), g: 0, b: Math.round(150 * u) }; }
+        if (x < 0.6) { u = (x - 0.3) / 0.3; return { r: Math.round(120 + 100 * u), g: Math.round(50 * u), b: Math.round(150 - 100 * u) }; }
+        if (x < 0.8) { u = (x - 0.6) / 0.2; return { r: Math.round(220 + 35 * u), g: Math.round(50 + 150 * u), b: Math.round(50 - 50 * u) }; }
+        u = (x - 0.8) / 0.2;
+        return { r: 255, g: Math.round(200 + 55 * u), b: Math.round(255 * u) };
+    }
     if (colorScheme === 'viridis') {
         const palette = COLOR_MAPS.viridis;
         const idx = Math.min(palette.length - 1, Math.floor(x * (palette.length - 1)));
