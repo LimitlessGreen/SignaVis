@@ -2381,6 +2381,7 @@
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
       getProjectName: () => projectMeta?.name || 'Project',
+      isProjectFolder: () => projectKind === 'folder',
       getFolderFiles: () => (projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : []),
       onOpenFile: (path) => addFolderFiles([path]),
       onFolderKeepAll: ({ entries, paths }) => {
