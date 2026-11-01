@@ -167,7 +167,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
-    // spectrolipi default: FFT 1024, Hann, hop N/2 (50 %), no zero-padding, grayscale.
+    // spectrolipi default: FFT 1024, Hann, hop N/2 (50 %), no zero-padding, SpectroFlare.
     spectrolipi: {
         scale: 'linear',
         colourScale: 'dbSquared',
@@ -181,7 +181,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenRoot: 1,
         pcenTimeConstant: 0.4,
         windowFunction: 'hann',
-        colorScheme: 'grayscale',
+        colorScheme: 'spectroflare',
         reassigned: false,
         noiseReduction: false,
         clahe: false,

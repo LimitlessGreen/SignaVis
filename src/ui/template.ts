@@ -254,6 +254,8 @@ export function createPlayerHTML(opts = {}) {
                 <label class="settings-label">Color</label>
                 <select data-aw="colorSchemeSelect" class="settings-select">
                     <option value="grayscale" selected>B/W</option>
+                    <option value="grayscaleInv">W/B</option>
+                    <option value="spectroflare">SpectroFlare</option>
                     <option value="xenocanto">XC</option>
                     <option value="fire">Fire</option>
                     <option value="inferno">Inferno</option>
