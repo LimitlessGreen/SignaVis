@@ -2,6 +2,124 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - Unreleased
+
+First stable release. The static labeling app (GitHub Pages) and the `signavis`
+npm / PyPI packages are considered production-ready; the Tauri desktop app is
+still a preview.
+
+### Highlights
+- **New spectrogram engine** — all spectrograms are computed in Rust (`aw_dsp`,
+  WebAssembly in the browser) and rendered on the GPU straight from dB data,
+  including PCEN, magnitude and phase. Tiled pyramid for long recordings; the
+  old JS DSP engine and the v1 engine are gone.
+- **Labeling workflow for Xeno-canto** — labels are uploaded as Annota-JSON
+  sets: upload assistant with a live checklist, label metadata from the XC
+  value lists, recording context and map, selectable live / test server,
+  import of XC "Download set" files, uploads kept as snapshots.
+- **Project folders** — projects live in the browser (OPFS) or in a local
+  folder via the File System Access API (`signavis-project/1` format), with a
+  persistent XC audio cache and Raven export.
+- **Unified explorer** — local files and Xeno-canto recordings in one folder
+  tree; own labels in layers, imported sets shown as read-only layers that can
+  be copied to your own labels.
+- **Snap to call** — box a call from a single click.
+- **Zoom box and edit loupe** — drag a field to zoom time and frequency onto
+  it; a magnified view (with its own fine STFT) follows the cursor while moving
+  or resizing labels; Shift for fine 1/4-speed dragging.
+- **Reference calls** — dockable side-by-side comparison with XC references on
+  the same time scale, filter chips, pinned references, GBIF species info.
+- **Bat recordings** — time expansion, heterodyne (carrier tunable on the
+  spectrogram), frequency division and real-time pitch shift; bat recordings
+  are detected on load and a popup offers the modes with a preview.
+- **Labels tab** — source → species → label tree with playback per segment.
+
+### Added
+- Spectrogram presets with *Classic* as default plus a spectrolipi preset;
+  colour schemes W/B (inverse) and SpectroFlare; auto contrast from the visible
+  spectrogram; auto vertical zoom to the active frequency band on load.
+- Zoom widget with separate time / frequency halves, visible span and an Auto
+  button; maximum zoom raised from 450 to 2000 px/s.
+- Expert mode in the display panel hides advanced spectrogram settings.
+- Smooth playhead follow with look-ahead; de-jittered playback position.
+- Long MP3 recordings load via chunked decoding.
+- Recording quality shown as an A–E traffic light; mini map in Properties.
+- Time axis shows m:ss / h:mm:ss from one minute on.
+- In-app dialogs replace browser `alert` / `confirm` / `prompt`.
+- `tools/demo-gifs/` — scripted Playwright recordings of the demo GIFs.
+
+### Changed
+- Left sidebar reorganised into Project · Labels · Analysis · Upload; neutral
+  surfaces, button tiers and clearer section headers throughout.
+- Xeno-canto ids are always stored with prefix (`XC123`).
+- BirdNET detections can no longer be uploaded to Xeno-canto, only own labels.
+- Licence is sent with version (CC-BY-NC-SA-4.0).
+- npm package no longer ships `docs/img/`; demo GIFs are attached to the
+  GitHub release instead. `@tauri-apps/plugin-dialog` is now a dev dependency.
+- Release notes are taken from this changelog.
+
+### Fixed
+- Scrolling, zooming and overview dragging stay at frame rate (channel-data
+  cache, no per-frame `getChannelData`).
+- Time-expanded segment playback no longer ends early.
+- Stale view and overview window after container resize.
+- Spectrogram coordinate mapping offset by the scrollbar height.
+- Waveform label dragging no longer stops when the cursor leaves the area.
+- Desktop: local recordings load through the asset protocol.
+
+## [0.7.6] - 2026-05-11
+
+### Added
+- SNR computation in the Properties panel.
+- Tauri 2 desktop app with installers (AppImage, MSI, DMG) built in CI;
+  optional local gRPC analysis backend with HTTP passthrough (preview).
+- Multi-user platform scaffold (auth/RBAC, jobs API, worker queue) for
+  testing (preview).
+
+### Changed
+- Rebranded from Audio-Workbench to **SignaVis**.
+- Demo libraries migrated from `demo/lib/*.js` to TypeScript in `src/`;
+  PlayerState split into dedicated controllers.
+
+### Fixed
+- Release and version-sync scripts cover the Tauri files.
+
+## [0.6.0] - 2026-04-27
+
+### Added
+- Reference view and initial tiling support.
+- MkDocs documentation site.
+
+### Changed
+- Types are generated from TypeScript; tests run with Node's strip-types.
+
+### Fixed
+- Bulk rename applies tags to all selected labels; properties panel refreshes
+  after inline edits.
+
+## [0.5.0] - 2026-04-20
+
+### Added
+- IndexedDB-backed spectrogram cache.
+- Read-only / AI annotations, annotator profile, recording manager and explorer.
+- Geo map modal; BirdNET area-model infobox; context menu.
+- Demo footer with deployed version.
+
+### Fixed
+- Duplicate XC annotations on save and export.
+- Session set id restored on reload.
+
+## [0.4.0] - 2026-04-17
+
+### Added
+- Multi-select bulk actions for labels with spectrogram selection sync.
+- ModalManager and daily tips.
+- Accordion label list.
+
+### Changed
+- AudioEngine introduced; PlayerState migrated to it.
+- npm publishing via OIDC trusted publishing.
+
 ## [0.3.0] - 2026-04-09
 
 ### Added
