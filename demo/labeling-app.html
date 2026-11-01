@@ -1792,6 +1792,23 @@
       return out;
     }
 
+    /** Folder project: a picked local file is copied to audio/ (or matched in the folder) so it survives a reload. */
+    async function keepFileInProjectFolder(entry, file) {
+      if (projectKind !== 'folder' || projectAutosaver?.readOnly || !entry || entry.path) return;
+      try {
+        const path = await copyFileIntoFolder(projectStore, file, projectFolderFiles);
+        recordingManager.update(entry.id, { path, source: 'file' });
+        if (!projectFolderFiles.some((f) => f.path === path)) {
+          projectFolderFiles = [...projectFolderFiles, { path, size: file.size, lastModified: Date.now() }];
+        }
+        selectionMeta.textContent = `${file.name} is kept in the project folder (${path})`;
+        renderProjectLocation();
+      } catch (e) {
+        console.warn('[project] could not copy file into folder', e);
+        selectionMeta.textContent = `Could not copy ${file.name} into the project folder — it is kept for this session only`;
+      }
+    }
+
     async function reopenRecentFolder() {
       if (!recentFolderHandle) return;
       const perm = await ensurePermission(recentFolderHandle, { request: true });
@@ -3862,6 +3879,7 @@
         recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
         fileInput.value = '';
         await activateRecordingEntry(_orphan);
+        await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
         return;
       }
       const _prep = await prepareRecordingLoad();
@@ -3900,6 +3918,7 @@
       state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
       fileInput.value = '';
       finishRecordingLoad(_prep);
+      await keepFileInProjectFolder(_fileEntry, file);
     });
 
     loadSampleBtn.addEventListener('click', async () => {
