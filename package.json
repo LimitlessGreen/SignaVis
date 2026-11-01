@@ -56,6 +56,7 @@
   },
   "scripts": {
     "dev": "node ./scripts/ensure-assets.js && vite",
+    "demo:gifs": "uv run --with playwright python -I tools/demo-gifs/demo_gifs.py",
     "dev:analysis-mock": "node ./scripts/mock-analysis-server.mjs",
     "build": "npm run build:css && vite build && node ./scripts/generate-types.js",
     "build:desktop": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.demo.config.js",
