@@ -9,8 +9,6 @@ import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecordin
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
-import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
-import { buildQualityLight } from '../components/quality-light.ts';
 
 // Parse XC API "len" field ("m:ss" or "mm:ss" or "h:mm:ss") → seconds, or null.
 function parseXcLen(len: any) {
@@ -58,50 +56,6 @@ export function xcUploadTarget() {
     else env = localStorage.getItem(XC_ENV_STORAGE) || '';
   } catch { /* no window/storage */ }
   return XC_UPLOAD_TARGETS[env] || XC_UPLOAD_TARGETS.live;
-}
-
-// ── Read-only recording metadata (from XC API) ──────────────────────
-
-const RECORDING_FIELDS_READONLY = [
-  { key: 'recordist',          label: 'Recordist' },
-  { key: 'country',            label: 'Country' },
-  { key: 'locality',           label: 'Locality' },
-  { key: 'date',               label: 'Date' },
-  { key: 'time',               label: 'Time' },
-  { key: 'quality',            label: 'Quality' },
-  { key: 'license',            label: 'License' },
-  { key: 'lat',                label: 'Lat' },
-  { key: 'lng',                label: 'Lng' },
-  { key: 'alt',                label: 'Altitude' },
-  { key: 'method',             label: 'Method' },
-  { key: 'animalSeen',         label: 'Animal seen' },
-  { key: 'playbackUsed',       label: 'Playback used' },
-  { key: 'backgroundSpecies',  label: 'Background spp.' },
-  { key: 'remarks',            label: 'Remarks' },
-];
-
-// ── Editable recording metadata (user-supplied for upload context) ──
-
-/** @type {Array<{key:string, label:string, type?:string, placeholder?:string, hint?:string, options?:string[]}>} */
-export const RECORDING_EDIT_FIELDS = [
-  { key: 'lat',          label: 'Latitude',          type: 'text', placeholder: 'e.g. 51.5074' },
-  { key: 'lng',          label: 'Longitude',         type: 'text', placeholder: 'e.g. -0.1278' },
-  { key: 'dateTime',     label: 'Date & Time',       type: 'datetime-local' },
-  { key: 'rating',       label: 'Rating',            type: 'rating' },
-  { key: 'type',         label: 'Type of recording', type: 'text', placeholder: 'e.g. song, call, alarm call' },
-  { key: 'targetSpecies',label: 'Target species',    type: 'text', placeholder: 'Common name' },
-  { key: 'recorder',     label: 'Recorder',          type: 'text', placeholder: 'Make / model / Smartphone' },
-  { key: 'microphone',   label: 'Microphone',        type: 'text', placeholder: 'Make / model' },
-  { key: 'accessories',  label: 'Accessories',       type: 'text', placeholder: 'e.g. windscreen, preamp, parabola' },
-  { key: 'contributors', label: 'Contributors',      type: 'text', placeholder: 'Names, comma-separated' },
-  { key: 'comments',     label: 'Comments',          type: 'textarea', placeholder: 'Overall recording comments' },
-];
-
-/** Default shape of editable recording metadata. */
-export function defaultRecordingEditMeta() {
-  const m: any = {};
-  for (const f of RECORDING_EDIT_FIELDS) m[f.key] = '';
-  return m;
 }
 
 // ── Set license options ──────────────────────────────────────────────
@@ -316,12 +270,10 @@ export class XenoCantoPanel {
     _activeSetId: any;
     _annotatorProfile: any;
     _getLabelSets: any;
-    _getRecordingEditMeta: any;
     _getUploadBlockReason: any;
     _modal: any;
     _onCreateSet: any;
     _buildingSetSection = false;
-    _onRecordingEditMetaChange: any;
     _onSetChange: any;
     _setFormEl: any;
     apiKey: any;
@@ -337,9 +289,7 @@ export class XenoCantoPanel {
     onboardingBannerEl: any;
     openBtn: any;
     recorder: any;
-    recordingEditEl: any;
     recordingMeta: any;
-    recordingMetaEl: any;
     saveBtn: any;
     setContainerEl: any;
     setMeta: any;
@@ -356,8 +306,6 @@ export class XenoCantoPanel {
    * @param {HTMLElement}       [opts.backdrop]
    * @param {HTMLButtonElement} [opts.cancelBtn]
    * @param {HTMLButtonElement} [opts.openBtn]
-   * @param {HTMLElement}       [opts.recordingMetaEl]     Read-only recording metadata container
-   * @param {HTMLElement}       [opts.recordingEditEl]     Editable recording metadata container
    * @param {HTMLElement}       [opts.setContainerEl]      Container for set form
    * @param {HTMLElement}       [opts.authorContainerEl]   Container for annotator profile form
    * @param {HTMLElement}       [opts.onboardingBannerEl]  Onboarding banner element
@@ -368,8 +316,6 @@ export class XenoCantoPanel {
    * @param {() => Map<string,object>}       [opts.getLabelSets]
    * @param {(setId:string, updates:object) => void} [opts.onSetChange]
    * @param {(partial:object) => object}    [opts.onCreateSet]
-   * @param {() => object}                  [opts.getRecordingEditMeta]
-   * @param {(updates:object) => void}      [opts.onRecordingEditMetaChange]
    * @param {() => string}                  [opts.getUploadBlockReason]  Extra reason from the upload checklist ('' = ok)
    */
   constructor(opts: any) {
@@ -378,8 +324,6 @@ export class XenoCantoPanel {
     this.saveBtn          = opts.saveBtn;
     this.cancelBtn        = opts.cancelBtn || null;
     this.openBtn          = opts.openBtn || null;
-    this.recordingMetaEl  = opts.recordingMetaEl || null;
-    this.recordingEditEl  = opts.recordingEditEl || null;
     this.setContainerEl   = opts.setContainerEl || null;
     this.authorContainerEl  = opts.authorContainerEl || null;
     this.onboardingBannerEl = opts.onboardingBannerEl || null;
@@ -394,9 +338,7 @@ export class XenoCantoPanel {
     this._getLabelSets             = opts.getLabelSets || null;
     this._onSetChange              = opts.onSetChange || null;
     this._onCreateSet              = opts.onCreateSet || null;
-    this._getRecordingEditMeta     = opts.getRecordingEditMeta || null;
     this._getUploadBlockReason     = opts.getUploadBlockReason || null;
-    this._onRecordingEditMetaChange = opts.onRecordingEditMetaChange || null;
 
     this._modal = this.backdrop ? new ModalManager({ backdrop: this.backdrop }) : null;
 
@@ -621,103 +563,9 @@ export class XenoCantoPanel {
     const result = await importXenoCantoSpectrogramLabels(xcId, { sampleRate, ...this.getAuthOptions() });
     this.xcId = result.xcId;
     this.recordingMeta = result.recordingMeta || null;
-    this.renderRecordingMeta();
-    this._syncRecordingEditFromMeta();
     this._rebuildSetSection();
     this._updateUploadState();
     return result;
-  }
-
-  // ── Recording metadata display ──────────────────────────────────────
-
-  renderRecordingMeta(meta?: any) {
-    const el = this.recordingMetaEl;
-    if (!el) return;
-    const m = meta || this.recordingMeta;
-    el.innerHTML = '';
-    if (!m || !Object.keys(m).length) {
-      el.innerHTML = '<div class="field-hint" style="padding:4px 0">No recording loaded.</div>';
-      return;
-    }
-    const dl = document.createElement('dl');
-    dl.className = 'props-grid';
-    for (const { key, label } of RECORDING_FIELDS_READONLY) {
-      const val = m[key];
-      if (!val) continue;
-      const dt = document.createElement('dt'); dt.textContent = label;
-      const dd = document.createElement('dd');
-      if (key === 'quality') dd.appendChild(buildQualityLight(val));
-      else dd.textContent = val;
-      dl.appendChild(dt); dl.appendChild(dd);
-    }
-    el.appendChild(dl);
-  }
-
-  // Pre-fill editable recording meta from the XC API data (lat/lng/date/time/type)
-  _syncRecordingEditFromMeta() {
-    if (!this._onRecordingEditMetaChange || !this.recordingMeta) return;
-    const m = this.recordingMeta;
-    const updates: any = {};
-    if (m.lat)  updates.lat = String(m.lat);
-    if (m.lng)  updates.lng = String(m.lng);
-    if (m.date || m.time) {
-      const d = (m.date || '').replace(/\//g, '-');
-      const t = (m.time || '00:00').slice(0, 5);
-      if (d) updates.dateTime = `${d}T${t}`;
-    }
-    if (m.type)      updates.type = m.type;
-    if (m.recordist) updates.recorder = m.recordist;
-    if (Object.keys(updates).length) this._onRecordingEditMetaChange(updates);
-    this._buildRecordingEditSection();
-  }
-
-  // ── Editable recording metadata section ────────────────────────────
-
-  _buildRecordingEditSection() {
-    const el = this.recordingEditEl;
-    if (!el) return;
-    el.innerHTML = '';
-    const meta = this._getRecordingEditMeta?.() || {};
-    const dl = document.createElement('dl');
-    dl.className = 'props-grid';
-
-    // Keep references to lat/lng inputs for cross-field map interaction
-    let latInput = null, lngInput = null;
-
-    for (const f of RECORDING_EDIT_FIELDS) {
-      const { dt, dd, input } = buildField(f, meta[f.key] || '', (val: any) => {
-        this._onRecordingEditMetaChange?.({ [f.key]: val });
-      });
-      if (f.key === 'lat') latInput = input;
-      if (f.key === 'lng') lngInput = input;
-      dl.appendChild(dt);
-      dl.appendChild(dd);
-    }
-
-    // Map button row — opens map modal, writes both lat and lng on confirm
-    const mapRow = document.createElement('div');
-    mapRow.className = 'props-map-row';
-    const mapBtn = document.createElement('button');
-    mapBtn.type = 'button';
-    mapBtn.className = 'geo-action-btn';
-    mapBtn.innerHTML = `${GEO_ICONS.map}\u00a0Pick on Map`;
-    mapBtn.addEventListener('click', () => {
-      const lat = parseFloat(latInput?.value || '') || 51;
-      const lon = parseFloat(lngInput?.value || '') || 10;
-      openMapModal({
-        lat: isFinite(lat) ? lat : 51,
-        lon: isFinite(lon) ? lon : 10,
-        zoom: (isFinite(lat) && isFinite(lon)) ? 10 : 5,
-        onConfirm: ({ lat: lt, lon: ln }: any) => {
-          if (latInput) { latInput.value = lt.toFixed(5); latInput.dispatchEvent(new Event('change')); }
-          if (lngInput) { lngInput.value = ln.toFixed(5); lngInput.dispatchEvent(new Event('change')); }
-          this._onRecordingEditMetaChange?.({ lat: String(lt.toFixed(5)), lng: String(ln.toFixed(5)) });
-        },
-      });
-    });
-    mapRow.appendChild(mapBtn);
-    el.appendChild(dl);
-    el.appendChild(mapRow);
   }
 
   // ── Set section: selector + form ────────────────────────────────────
@@ -873,9 +721,8 @@ export class XenoCantoPanel {
    * Build XC annotation set JSON payload.
    * @param {any[]} labels
    * @param {Map<string,object>} [labelSets]
-   * @param {object} [_recordingEditMeta] unused — Annota-JSON Fv0 takes recording metadata from XC via xc_nr
    */
-  buildAnnotationSetPayload(labels: any, labelSets: any, _recordingEditMeta?: any) {
+  buildAnnotationSetPayload(labels: any, labelSets: any) {
     const sets = labelSets || this._getLabelSets?.() || new Map();
     const xcNr = this.xcId || '';
 
@@ -916,11 +763,11 @@ export class XenoCantoPanel {
 
   // ── Upload / Export ─────────────────────────────────────────────────
 
-  async uploadToXenoCanto(labels: any, labelSets: any, recordingEditMeta: any, onStatus: any) {
+  async uploadToXenoCanto(labels: any, labelSets: any, onStatus: any) {
     if (!this.apiKey) throw new Error('API key required. Save your key first.');
     if (!labels?.length) throw new Error('No labels to upload.');
 
-    const payload = this.buildAnnotationSetPayload(labels, labelSets, recordingEditMeta);
+    const payload = this.buildAnnotationSetPayload(labels, labelSets);
     onStatus?.('Uploading to Xeno-canto…');
 
     const target = xcUploadTarget();
@@ -945,8 +792,8 @@ export class XenoCantoPanel {
     return { ok: true, message: body?.message || 'Upload successful', warnings: body?.warnings || [], errors: body?.errors || [] };
   }
 
-  exportAnnotationSetJSON(labels: any, labelSets: any, recordingEditMeta: any) {
-    const payload = this.buildAnnotationSetPayload(labels, labelSets, recordingEditMeta);
+  exportAnnotationSetJSON(labels: any, labelSets: any) {
+    const payload = this.buildAnnotationSetPayload(labels, labelSets);
     const json = JSON.stringify(payload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

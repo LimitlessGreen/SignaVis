@@ -574,7 +574,7 @@
     import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../src/app/label-sources.ts';
     import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../src/app/upload-selection.ts';
     import { UploadSelectionPanel } from '../src/ui/panels/upload-selection-panel.ts';
-    import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
+    import { XenoCantoPanel, defaultSetInfo, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
     import { AnnotatorProfile } from '../src/app/annotator-profile.ts';
     import { RecordingManager, defaultRecordingEntry } from '../src/app/recording-manager.ts';
     import { toXcId, xcNumber, sameXcId } from '../src/domain/xc/xcId.ts';
@@ -1401,7 +1401,6 @@
       /** @type {Set<string>} own layers hidden on the spectrogram */
       hiddenLayers: new Set(),
       /** Editable recording metadata for XC upload context */
-      recordingEditMeta: defaultRecordingEditMeta(),
       xcLabelPool: [],
       recordingMeta: null,
       selected: null,
@@ -2072,7 +2071,7 @@
         const s = state.labelSets.get(OWN_SOURCE_ID);
         if (!s) return;
         try {
-          const payload = xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets, null);
+          const payload = xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets);
           setStatusFromValidation(s, validateAnnotaPayload(payload));
         } catch (e) { /* keep previous status */ }
         try { saveSessionSets(state); } catch (e) { /* ignore */ }
@@ -2182,8 +2181,6 @@
     const xcPanel = new XenoCantoPanel({
       keyInput:              document.getElementById('xcApiKeyInput'),
       saveBtn:               document.getElementById('xcApiSaveBtn'),
-      recordingMetaEl:       document.getElementById('xcRecordingMeta'),
-      recordingEditEl:       document.getElementById('xcRecordingEdit'),
       setContainerEl:        document.getElementById('xcSetContainer'),
       authorContainerEl:     document.getElementById('xcAuthorContainer'),
       onboardingBannerEl:    document.getElementById('xcOnboardingBanner'),
@@ -2194,8 +2191,6 @@
       getLabelSets:          () => state.labelSets,
       onSetChange:           (setId, updates) => updateSet(setId, updates),
       onCreateSet:           (partial) => createLabelSet(partial),
-      getRecordingEditMeta:  () => state.recordingEditMeta,
-      onRecordingEditMetaChange: (updates) => Object.assign(state.recordingEditMeta, updates),
       getUploadBlockReason:  () => uploadBlockReason(),
     });
 
@@ -2251,7 +2246,6 @@
       state.labels = [];
       state._labelsEntryId = null;
       state.xcLabelPool = [];
-      state.recordingEditMeta = defaultRecordingEditMeta();
       state.recordingMeta = entry.xcRecordingMeta || null;
       // Use the stored sample rate for this recording immediately so any UI reads
       // before player.on('ready') fires still see the correct value.
@@ -2314,7 +2308,6 @@
       if (entry.xcId) {
         xcPanel.xcId = entry.xcId;
         xcPanel.recordingMeta = entry.xcRecordingMeta || null;
-        xcPanel.renderRecordingMeta();
         xcPanel._updateUploadState?.();
         updateUrlXcId(entry.xcId);
 
@@ -3181,7 +3174,6 @@
       state.labels = [];
       state._labelsEntryId = null;  // labels no longer belong to any entry
       state.xcLabelPool = [];
-      state.recordingEditMeta = defaultRecordingEditMeta();
       xcPanel._activeSetId = OWN_SOURCE_ID;
       setActiveSet(OWN_SOURCE_ID);
 
@@ -3566,9 +3558,9 @@
 
     // Initialize extracted export modal and wire it to xcPanel
     window.xcExportModalApi = createXcExportModal({
-      buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets, state.recordingEditMeta),
+      buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets),
       upload: async () => {
-        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets, state.recordingEditMeta);
+        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets);
         if (result?.ok) onSetUploaded();
         return result;
       },
@@ -3596,7 +3588,7 @@
       xcUploadBtn.disabled = true;
       xcPanel._setStatus('Uploading…', 'info');
       try {
-        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets, state.recordingEditMeta);
+        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets);
         if (result.ok) {
           onSetUploaded();
           xcPanel._setStatus(result.message, 'success');
@@ -3612,7 +3604,7 @@
     });
 
     document.getElementById('xcDownloadSetBtn').addEventListener('click', () => {
-      xcPanel.exportAnnotationSetJSON(collectSetLabels(), state.labelSets, null);
+      xcPanel.exportAnnotationSetJSON(collectSetLabels(), state.labelSets);
     });
 
     // ── Set contents (selection) + uploaded sets ──
@@ -3661,7 +3653,7 @@
         const set = state.labelSets.get(OWN_SOURCE_ID);
         const sel = getUploadSelection();
         const labels = collectSetLabels();
-        const payload = xcPanel.buildAnnotationSetPayload(labels, state.labelSets, null);
+        const payload = xcPanel.buildAnnotationSetPayload(labels, state.labelSets);
         const picked = selectUploadLabels(recordingManager.getAll(), sel, state.labelSets).items;
         const recordings = recordingManager.getAll()
           .map((entry) => ({
