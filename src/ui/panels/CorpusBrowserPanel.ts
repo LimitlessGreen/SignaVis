@@ -10,6 +10,7 @@ import {
     datasetList,
     datasetDelete,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { appConfirm } from '../components/modal/dialogs.ts';
 
 export interface DatasetBrowserOptions {
     container: HTMLElement;
@@ -161,7 +162,7 @@ export class DatasetBrowserPanel {
                 const id = (btn as HTMLElement).dataset.deleteDataset!;
                 const dataset = this.datasets.find((c) => c.id === id);
                 if (!dataset) return;
-                if (!confirm(`Delete dataset "${dataset.name}" and all its recordings?`)) return;
+                if (!await appConfirm('All its recordings are deleted too.', { title: `Delete dataset "${dataset.name}"?`, okLabel: 'Delete', danger: true })) return;
                 try {
                     await datasetDelete(id);
                     this.onStatusMessage(`Dataset "${dataset.name}" deleted.`);

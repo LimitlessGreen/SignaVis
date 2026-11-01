@@ -561,6 +561,7 @@
     import { TaxonomyResolver } from '../src/infrastructure/taxonomyResolver.ts';
     import { AnalysisBackendProxy, resolveAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
     import ModalManager from '../src/ui/components/modal/modal-manager.ts';
+    import { appAlert, appConfirm, appPrompt } from '../src/ui/components/modal/dialogs.ts';
     import { createXcExportModal } from './xc-export-modal.js';
     import { createReferenceCallsModal } from '../src/ui/components/reference-calls-modal/reference-calls-modal.ts';
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
@@ -1546,10 +1547,11 @@
       if (_projectConflictOpen) return;
       _projectConflictOpen = true;
       projectStatus = 'conflict'; renderProjectLocation();
-      const reload = confirm(
+      const reload = await appConfirm(
         `project.signavis.json in “${projectStore.label}” was changed outside this tab (another program or device).\n\n` +
-        'OK — reload the project from the folder (changes made here since the last save are lost)\n' +
-        'Cancel — keep this version and overwrite the file');
+        'Reload from folder: changes made here since the last save are lost.\n' +
+        'Keep mine: keep this version and overwrite the file.',
+        { title: 'Project changed elsewhere', okLabel: 'Reload from folder', cancelLabel: 'Keep mine' });
       if (reload) { window.location.reload(); return; }
       await projectStore.acceptExternalChange();
       _projectConflictOpen = false;
@@ -1644,7 +1646,7 @@
       catch (e) {
         console.warn('[project] cannot read project', e);
         if (projectKind === 'folder') {
-          alert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\nSwitching back to the browser project.`);
+          await appAlert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\n\nSwitching back to the browser project.`, { title: 'Project could not be read' });
           lsSet(PROJECT_LOCATION_KEY, 'browser');
           window.location.reload();
           return false;
@@ -1695,27 +1697,26 @@
     async function chooseProjectFolder() {
       let handle;
       try { handle = await pickProjectFolder(); }
-      catch (e) { alert(`Could not open the folder: ${e?.message || e}`); return; }
+      catch (e) { await appAlert(`Could not open the folder: ${e?.message || e}`, { title: 'Folder error' }); return; }
       if (!handle) return;
       if (await ensurePermission(handle, { request: true }) !== 'granted') return;
       const store = folderStore(handle);
       let existing = null;
       try { existing = await store.loadProject(); }
-      catch (e) { alert(`“${handle.name}” contains a project.signavis.json that cannot be read: ${e?.message || e}`); return; }
+      catch (e) { await appAlert(`“${handle.name}” contains a project.signavis.json that cannot be read: ${e?.message || e}`, { title: 'Project could not be read' }); return; }
       await projectAutosaver?.flush();
       if (!existing) {
         saveCurrentAnnotationsIfNeeded();
         const n = recordingManager.size;
-        const takeOver = n > 0 && confirm(
-          `“${handle.name}” has no project yet.\n\n` +
-          `OK — create it with the current ${n} recording${n === 1 ? '' : 's'} and their labels\n` +
-          'Cancel — start an empty project in this folder');
+        const takeOver = n > 0 && await appConfirm(
+          `“${handle.name}” has no project yet. Create it with the current ${n} recording${n === 1 ? '' : 's'} and their labels, or start an empty project in this folder?`,
+          { title: 'New project folder', okLabel: `Take over ${n} recording${n === 1 ? '' : 's'}`, cancelLabel: 'Start empty' });
         const meta = { id: `folder-${Date.now().toString(36)}`, name: handle.name };
         const snap = takeOver
           ? { ...recordingManager.snapshot(), labelSets: state.labelSets, ownSetId: OWN_SOURCE_ID, activeSetId: state.activeSetId }
           : { entries: [], activeId: null, labelSets: new Map(), ownSetId: null, activeSetId: null };
         try { await store.saveProject(serializeProject({ ...snap, settings: { taxonomyLang: state.taxonomyLang } }, meta)); }
-        catch (e) { alert(`Could not write to “${handle.name}”: ${e?.message || e}`); return; }
+        catch (e) { await appAlert(`Could not write to “${handle.name}”: ${e?.message || e}`, { title: 'Folder error' }); return; }
       }
       await rememberFolder(handle);
       lsSet(PROJECT_LOCATION_KEY, 'folder');
@@ -1740,7 +1741,7 @@
     async function runBirdnetOnFolder({ entries, paths }) {
       if (_folderBirdnetStop) { _folderBirdnetStop(); return; }
       const total = entries.length + paths.length;
-      if (!total || !confirm(`Run BirdNET on ${total} recording${total === 1 ? '' : 's'}? Each one is opened and analyzed in turn with the settings of the BirdNET tab.`)) return;
+      if (!total || !await appConfirm(`Run BirdNET on ${total} recording${total === 1 ? '' : 's'}? Each one is opened and analyzed in turn with the settings of the BirdNET tab.`, { title: 'Run BirdNET', okLabel: 'Run' })) return;
       let stopped = false;
       _folderBirdnetStop = () => { stopped = true; };
       const todo = [...entries];
@@ -2681,36 +2682,36 @@
       layers: {
         get: () => ({ layers: ownLayers(state.labelSets), active: activeLayerId(state.labelSets), hidden: state.hiddenLayers }),
         onSetActive: (id) => { setActiveLayer(state.labelSets, id); afterLayerChange(); },
-        onAdd: () => {
-          const name = prompt('Name of the new layer (e.g. annotator or pass):', '');
+        onAdd: async () => {
+          const name = await appPrompt('Name of the new layer (e.g. annotator or pass):', '', { title: 'New layer', okLabel: 'Add' });
           if (name == null) return;
           const l = addLayer(state.labelSets, name);
           if (l) selectionMeta.textContent = `New labels now go to layer "${l.name}"`;
           afterLayerChange();
         },
-        onRename: (id) => {
+        onRename: async (id) => {
           const cur = ownLayers(state.labelSets).find((l) => l.id === id);
-          const name = prompt('Layer name:', cur?.name || '');
+          const name = await appPrompt('Layer name:', cur?.name || '', { title: 'Rename layer', okLabel: 'Rename' });
           if (name == null) return;
           renameLayer(state.labelSets, id, name);
           afterLayerChange();
         },
-        onSetAnnotator: (id) => {
+        onSetAnnotator: async (id) => {
           const cur = ownLayers(state.labelSets).find((l) => l.id === id);
-          const name = prompt('Annotator of this layer (name as on Xeno-canto; empty = use your profile):', cur?.annotator || '');
+          const name = await appPrompt('Annotator of this layer (name as on Xeno-canto; empty = use your profile):', cur?.annotator || '', { title: 'Layer annotator' });
           if (name == null) return;
           let xcId = '';
           if (name.trim()) {
-            const v = prompt(`XC user ID of ${name.trim()} (optional):`, cur?.annotatorXcId || '');
+            const v = await appPrompt(`XC user ID of ${name.trim()} (optional):`, cur?.annotatorXcId || '', { title: 'Layer annotator' });
             if (v == null) return;
             xcId = v;
           }
           setLayerAnnotator(state.labelSets, id, name, xcId);
           afterLayerChange();
         },
-        onRemove: (id) => {
+        onRemove: async (id) => {
           const cur = ownLayers(state.labelSets).find((l) => l.id === id);
-          if (!confirm(`Remove layer "${cur?.name || id}"? Its labels move to "${ownLayers(state.labelSets)[0].name}".`)) return;
+          if (!await appConfirm(`Its labels move to "${ownLayers(state.labelSets)[0].name}".`, { title: `Remove layer "${cur?.name || id}"?`, okLabel: 'Remove', danger: true })) return;
           saveCurrentAnnotationsIfNeeded();
           removeLayer(state.labelSets, id, [state.labels, ...recordingManager.getAll().map((e) => e.annotations || [])]);
           for (const e of recordingManager.getAll()) recordingManager.update(e.id, {});
@@ -3542,12 +3543,12 @@
         saveSessionSets(state);
         refreshUploadChecklist();
       },
-      onAssignXc: (id) => {
+      onAssignXc: async (id) => {
         const entry = recordingManager.getById(id);
         if (!entry) return;
-        const val = prompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '');
+        const val = await appPrompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '', { title: 'Assign XC number', placeholder: 'XC123456' });
         if (val == null) return;
-        if (!recordingManager.assignXcId(id, val)) alert('Not a valid XC number.');
+        if (!recordingManager.assignXcId(id, val)) await appAlert('Not a valid XC number.', { title: 'Assign XC number' });
         refreshUploadChecklist();
       },
       layerName: (id) => ownLayers(state.labelSets).find((l) => l.id === id)?.name || id,
@@ -3758,9 +3759,10 @@
       const nRec = recordingManager.getAll().length;
       saveCurrentAnnotationsIfNeeded();
       const nLabels = recordingManager.getAll().reduce((n, e) => n + (e.annotations?.length || 0), 0) || state.labels.length;
-      if ((nRec || nLabels) && !confirm(
-        `Start a new session? This removes ${nRec} recording${nRec === 1 ? '' : 's'} and ${nLabels} label${nLabels === 1 ? '' : 's'} from this browser. ` +
-        'Export first if you want to keep them.')) return;
+      if ((nRec || nLabels) && !await appConfirm(
+        `This removes ${nRec} recording${nRec === 1 ? '' : 's'} and ${nLabels} label${nLabels === 1 ? '' : 's'} from this browser. ` +
+        'Export first if you want to keep them.',
+        { title: 'Start a new session?', okLabel: 'Remove and start new', danger: true })) return;
       recordingManager.setActive(null);
       recordingManager.clear();
       state.labels = [];

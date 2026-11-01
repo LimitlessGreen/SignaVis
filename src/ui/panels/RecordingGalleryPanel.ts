@@ -19,6 +19,7 @@ import { TrainingSplitPanel } from './TrainingSplitPanel.ts';
 import { ExportPanel } from './ExportPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
 import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 
 export interface RecordingGalleryOptions {
     container: HTMLElement;
@@ -491,13 +492,13 @@ export class RecordingGalleryPanel {
         return stages;
     }
 
-    private promptSaveView(): void {
+    private async promptSaveView(): Promise<void> {
         const stages = this.currentViewStages();
         if (stages.length === 0) {
             this.onStatusMessage('No active filters to save as a view.');
             return;
         }
-        const name = window.prompt('Name for this view:')?.trim();
+        const name = (await appPrompt('Name for this view:', '', { title: 'Save view', okLabel: 'Save' }))?.trim();
         if (!name) return;
         this.saveView(name, stages);
     }
@@ -515,7 +516,7 @@ export class RecordingGalleryPanel {
     }
 
     private async deleteView(name: string): Promise<void> {
-        if (!confirm(`Delete saved view "${name}"?`)) return;
+        if (!await appConfirm('', { title: `Delete saved view "${name}"?`, okLabel: 'Delete', danger: true })) return;
         try {
             const updated = await datasetDeleteView(this.dataset.id, name);
             this.dataset = updated;

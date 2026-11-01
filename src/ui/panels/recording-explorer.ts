@@ -23,6 +23,7 @@
 import { toXcId } from '../../domain/xc/xcId.ts';
 import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { appAlert, appPrompt } from '../components/modal/dialogs.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
 const OPEN_FOLDERS_KEY = 'signavis.explorer-open-folders.v1';
@@ -113,10 +114,10 @@ export class RecordingExplorer {
         return btn;
     }
 
-    _promptXcId(entry: any) {
-        const val = prompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '');
+    async _promptXcId(entry: any) {
+        const val = await appPrompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '', { title: 'Assign XC number', placeholder: 'XC123456' });
         if (val == null) return;
-        if (!this._manager.assignXcId(entry.id, val)) alert('Not a valid XC number.');
+        if (!this._manager.assignXcId(entry.id, val)) await appAlert('Not a valid XC number.', { title: 'Assign XC number' });
     }
 
     /** True when new recordings are added to the session instead of replacing the current one. */

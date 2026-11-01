@@ -19,6 +19,7 @@ import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-mod
 import { formatCoords } from '../../app/recording-context.ts';
 import { buildMiniMap } from './recording-context-block.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
+import { appPrompt } from '../components/modal/dialogs.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -809,10 +810,11 @@ export class PropertiesPanel {
     const addBtn = document.createElement('button');
     addBtn.className = 'props-tag-add';
     addBtn.textContent = '+ Tag';
-    addBtn.addEventListener('click', () => {
-      const key = prompt('Tag key:');
+    addBtn.addEventListener('click', async () => {
+      const key = await appPrompt('Tag key:', '', { title: 'Add tag' });
       if (!key?.trim()) return;
-      const val = prompt('Tag value:') ?? '';
+      const val = await appPrompt(`Value for "${key.trim()}":`, '', { title: 'Add tag' });
+      if (val == null) return;
       const newTags = { ...lbl.tags, [key.trim()]: val };
       this._emitChange(lbl.id, { tags: newTags });
     });
