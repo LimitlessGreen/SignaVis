@@ -2471,6 +2471,17 @@
         scheduleProjectAutosave?.();
       },
       onFolderBirdnet: (what) => runBirdnetOnFolder(what),
+      getMissingContext: (entry) => {
+        const ctx = resolveRecordingContext({
+          manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, filename: entry.filename,
+        });
+        return [!ctx.coords.value && 'location', !ctx.date.value && 'date'].filter(Boolean);
+      },
+      onOpenContext: async (entry) => {
+        if (entry.id !== recordingManager.activeId) await activateRecordingEntry(entry);
+        rightBar.setActive('properties');
+        propsPanel.showRecordingContext();
+      },
       getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
       getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
       getOwnSetId: () => OWN_SOURCE_ID,
@@ -3008,7 +3019,7 @@
       }
     }
 
-    document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => rightBar.setActive('properties'));
+    document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => { rightBar.setActive('properties'); propsPanel.showRecordingContext(); });
     recordingManager.addEventListener('activechange', () => renderRecordingContext());
     recordingManager.addEventListener('change', () => renderRecordingContext());
     renderRecordingContext();
