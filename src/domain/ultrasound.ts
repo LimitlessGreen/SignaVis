@@ -2,6 +2,7 @@
 // Exports: parseGuano(arrayBuffer), analyzeUltrasound(channel, sampleRate, guano)
 
 import { iterativeFFT } from './dsp.ts';
+import { prominentPeakHz, type BandProfile } from './bandProfile.ts';
 
 /** Lower edge of "ultrasonic" for detection purposes. */
 export const ULTRASONIC_HZ = 18000;
@@ -17,7 +18,7 @@ export interface UltrasoundInfo {
     isUltrasonic: boolean;
     /** What the verdict rests on. */
     source: 'guano' | 'spectrum' | 'none';
-    /** Strongest frequency above ULTRASONIC_HZ in the loudest high-frequency blocks. */
+    /** Frequency above ULTRASONIC_HZ where the calls stand out most (heterodyne carrier). */
     peakHz: number | null;
     /** Share of spectral energy above ULTRASONIC_HZ in those blocks (0–1). */
     ultrasonicFraction: number;
@@ -71,12 +72,18 @@ export function analyzeUltrasound(
     channel: Float32Array,
     sampleRate: number,
     guano: Record<string, string> | null = null,
+    profile: BandProfile | null = null,
 ): UltrasoundInfo {
     const storedExpansion = Math.max(1, parseFloat(guano?.['TE'] ?? '') || 1);
     const device = guano ? [guano['Make'], guano['Model']].filter(Boolean).join(' ') || null : null;
-    const { peakHz, fraction } = sampleRate >= MIN_SAMPLE_RATE
+    const hf = sampleRate >= MIN_SAMPLE_RATE
         ? highFrequencySpectrum(channel, sampleRate)
         : { peakHz: null, fraction: 0 };
+    const fraction = hf.fraction;
+    // The band profile compares events with the background per frequency, so the
+    // pink noise tilt does not pull the peak down to the bottom of the band.
+    const prominent = profile && sampleRate >= MIN_SAMPLE_RATE ? prominentPeakHz(profile, ULTRASONIC_HZ) : null;
+    const peakHz = prominent && prominent.prominenceDb >= 6 ? prominent.hz : hf.peakHz;
 
     const fromSpectrum = fraction >= MIN_ULTRASONIC_FRACTION && peakHz != null;
     // GUANO is written by bat detectors; with a full-spectrum sample rate that is enough.
