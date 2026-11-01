@@ -22,6 +22,7 @@ export interface FrequencyZoomDeps {
         freqScrollbar:      HTMLElement | null;
         freqScrollbarThumb: HTMLElement | null;
         freqZoomSlider:     HTMLInputElement | null;
+        freqZoomValue?:     HTMLElement | null;
     };
     /** Returns the current coords.boundedMaxFreq (may change after audio load). */
     getBoundedMaxFreq: () => number;
@@ -54,6 +55,12 @@ export class FrequencyZoomController {
         this.#freqView.addEventListener('change', this.#changeListener);
         // Sync the reset button to the initial state (not zoomed)
         this.#syncResetBtn();
+    }
+
+    /** Re-label after the bounded range changed (new recording, max-frequency setting). */
+    refresh(): void {
+        this.#syncValue();
+        this.#syncSlider();
     }
 
     // ── Public state ─────────────────────────────────────────────────
@@ -92,6 +99,7 @@ export class FrequencyZoomController {
         this.#syncResetBtn();
         this.#updateScrollbar();
         this.#syncSlider();
+        this.#syncValue();
         this.#emitZoomChange(this.#getPixelsPerSecond());
     }
 
@@ -116,6 +124,20 @@ export class FrequencyZoomController {
         const topFrac    = 1 - (this.#freqView.max ?? boundedMax) / boundedMax;
         thumb.style.height = `${Math.max(8, thumbFrac * 100)}%`;
         thumb.style.top    = `${topFrac * 100}%`;
+    }
+
+    #syncValue(): void {
+        const el = this.#d.freqZoomValue;
+        if (!el) return;
+        const boundedMax = this.#getBoundedMaxFreq();
+        const lo = this.#freqView.min ?? 0;
+        const hi = this.#freqView.max ?? boundedMax;
+        const k = (hz: number) => {
+            const v = hz / 1000;
+            return v >= 10 || Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1);
+        };
+        el.textContent = `${k(lo)}–${k(hi)} kHz`;
+        el.title = this.#freqView.isZoomed ? 'Visible frequency range' : 'Full frequency range';
     }
 
     #syncSlider(): void {

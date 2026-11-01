@@ -132,12 +132,24 @@ export function createPlayerHTML(opts = {}) {
         <div class="toolbar-sep"${hide(o.showZoom)}></div>
 
         <!-- Zoom -->
-        <span${hide(o.showZoom)} class="zoom-controls-row">
-            <label class="toolbar-label">H</label>
-            <input type="range" data-aw="zoomSlider" class="toolbar-range toolbar-range-zoom" min="20" max="2000" value="100" step="5">
-            <span class="toolbar-value toolbar-value-sm" data-aw="zoomValue">100 px/s</span>
-            <label class="toolbar-label freq-zoom-label">V</label>
-            <input type="range" data-aw="freqZoomSlider" class="toolbar-range toolbar-range-zoom" min="0" max="100" value="0" step="1" title="Vertical frequency zoom">
+        <span${hide(o.showZoom)} class="zoom-widget" role="group" aria-label="Zoom">
+            <span class="zoom-axis" title="Time zoom (horizontal) — also Ctrl + scroll">
+                <svg class="zoom-axis-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>
+                <span class="zoom-axis-name">Time</span>
+                <button type="button" class="zoom-step" data-aw="zoomOutBtn" title="Show more time">−</button>
+                <input type="range" data-aw="zoomSlider" class="toolbar-range toolbar-range-zoom" min="20" max="2000" value="100" step="5" aria-label="Time zoom">
+                <button type="button" class="zoom-step" data-aw="zoomInBtn" title="Show less time (zoom in)">+</button>
+                <span class="zoom-value" data-aw="zoomValue">–</span>
+            </span>
+            <span class="zoom-axis" title="Frequency zoom (vertical) — also Shift + scroll, or scroll over the frequency axis">
+                <svg class="zoom-axis-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></svg>
+                <span class="zoom-axis-name">Freq</span>
+                <button type="button" class="zoom-step" data-aw="freqZoomOutBtn" title="Show a wider frequency range">−</button>
+                <input type="range" data-aw="freqZoomSlider" class="toolbar-range toolbar-range-zoom" min="0" max="100" value="0" step="1" aria-label="Frequency zoom">
+                <button type="button" class="zoom-step" data-aw="freqZoomInBtn" title="Show a narrower frequency range (zoom in)">+</button>
+                <span class="zoom-value zoom-value-freq" data-aw="freqZoomValue">full</span>
+                <button type="button" class="zoom-auto-btn" data-aw="freqAutoBtn" title="Fit the frequency range to where the calls are">Auto</button>
+            </span>
         </span>
 
         <div class="toolbar-sep"${hide(o.showFFTControls)}></div>

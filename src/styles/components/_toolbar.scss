@@ -99,13 +99,61 @@
   max-width: 80px;
 }
 
-.zoom-controls-row {
+/* Zoom: one framed group, one half per axis, each with icon + name so it is
+   clear which slider moves which axis. */
+.zoom-widget {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+  padding: 1px 3px;
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.3));
+  border-radius: 6px;
 }
-.zoom-controls-row .toolbar-label { min-width: unset; font-size: 0.62rem; opacity: 0.6; }
-.freq-zoom-label { margin-left: 4px; }
+.zoom-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px;
+}
+.zoom-axis + .zoom-axis { border-left: 1px solid var(--color-border, rgba(127, 127, 127, 0.3)); }
+.zoom-axis-icon { opacity: 0.7; flex-shrink: 0; }
+.zoom-axis-name { font-size: 0.66rem; opacity: 0.7; margin-right: 1px; }
+.zoom-step {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.zoom-step:hover { background: var(--color-hover, rgba(127, 127, 127, 0.15)); }
+.zoom-value {
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+  min-width: 34px;
+  text-align: right;
+}
+.zoom-value-freq { min-width: 58px; }
+.zoom-auto-btn {
+  margin-left: 2px;
+  padding: 1px 6px;
+  font-size: 0.66rem;
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.35));
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.zoom-auto-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.zoom-auto-btn.zoom-auto-none { opacity: 0.45; }
 
 .icon-btn {
   background: none;
