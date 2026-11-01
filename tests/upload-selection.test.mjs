@@ -19,13 +19,13 @@ const entries = () => [
 
 test('uploadSourceOf', () => {
     assert.equal(uploadSourceOf({ setId: 'own' }, sets), 'own');
-    assert.equal(uploadSourceOf({ setId: 'bn' }, sets), 'birdnet');
+    assert.equal(uploadSourceOf({ setId: 'bn' }, sets), null);
     assert.equal(uploadSourceOf({ setId: 'xcs', readonly: true }, sets), null);
 });
 
 test('uploadCandidates: counts, local-only recordings not included', () => {
     const c = uploadCandidates(entries(), defaultUploadSelection(), sets);
-    assert.deepEqual(c.recordings.map((r) => [r.id, r.own, r.birdnet, r.included]), [['r1', 2, 1, true], ['r2', 1, 0, false]]);
+    assert.deepEqual(c.recordings.map((r) => [r.id, r.own, r.included]), [['r1', 2, true], ['r2', 1, false]]);
     assert.deepEqual([...c.species], [['Turdus merula', 1], ['Parus major', 1]]);
     assert.deepEqual([...c.layers], [['default', 1], ['B', 1]]);
 });
@@ -36,11 +36,11 @@ test('selectUploadLabels: filters by recording, species, layer, source', () => {
     assert.deepEqual(r.items.map((x) => x.label.id), ['a', 'b']);
     assert.deepEqual(r.skipped.map((e) => e.id), ['r2']);
     r = selectUploadLabels(entries(), { ...sel, sources: ['own', 'birdnet'], excludedLayers: ['B'] }, sets);
-    assert.deepEqual(r.items.map((x) => x.label.id), ['a', 'c']);
+    assert.deepEqual(r.items.map((x) => x.label.id), ['a'], 'BirdNET detections are never uploaded');
     r = selectUploadLabels(entries(), { ...sel, excludedSpecies: ['Turdus merula'], excludedRecordings: ['r2'] }, sets);
     assert.deepEqual(r.items.map((x) => x.label.id), ['b']);
     assert.equal(r.skipped.length, 0);
-    assert.deepEqual(normalizeUploadSelection({ sources: ['x'] }).sources, ['own']);
+    assert.deepEqual(normalizeUploadSelection({ sources: ['birdnet'] }).sources, ['own']);
 });
 
 test('snapshots detect edits and deletions', () => {
