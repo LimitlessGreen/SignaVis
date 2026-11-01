@@ -2197,6 +2197,7 @@
     const recordingExplorer = new RecordingExplorer({
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
+      getProjectName: () => projectMeta?.name || 'Project',
       getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
       getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
       getOwnSetId: () => OWN_SOURCE_ID,
