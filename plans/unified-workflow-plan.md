@@ -79,3 +79,10 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
 
 ## Offen
 - Prüfen, ob irgendwo XC-Nummern als Zahl verglichen/sortiert werden (Sortierung nach `xcNumber`).
+
+## Status
+- Phase 1 erledigt (2026-11-01): `src/domain/xc/xcId.ts`; Speicherung `XC<n>` in RecordingManager
+  (add/update/assign/restore/replaceAll), Projektdatei (Migration in toProjectRecording), Explorer,
+  Upload-Checkliste, xc-panel, labeling-app.html. API-Funktionen (`xenoCantoRecordingsApi`, `fetchAudio`)
+  liefern weiter die nackte Zahl — Einträge normalisieren beim `add`. Annotation-Feld `xc_nr` bleibt
+  Zahl (XC-Format). Im Browser noch ungetestet.
