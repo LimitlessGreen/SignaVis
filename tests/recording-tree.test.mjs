@@ -33,3 +33,13 @@ test('folderPathOf / recordingName', () => {
     assert.equal(recordingName(entries[1]), 'a10.wav');
     assert.equal(recordingName(entries[4]), 'session.wav');
 });
+
+test('folder files without entry appear as file nodes, sorted with recordings', () => {
+    const tree = buildRecordingTree(
+        [{ id: 'f2', source: 'file', path: 'garden/a2.wav' }],
+        [{ path: 'garden/a10.wav', size: 5 }, { path: 'garden/a1.wav' }, { path: 'top.wav' }],
+    );
+    const shape = (nodes) => nodes.map((n) => (n.kind === 'folder' ? { [n.name]: shape(n.children) } : `${n.kind}:${n.kind === 'file' ? n.name : n.id}`));
+    assert.deepEqual(shape(tree), [{ garden: ['file:a1.wav', 'recording:f2', 'file:a10.wav'] }, 'file:top.wav']);
+    assert.equal(countRecordings(tree[0]), 3);
+});
