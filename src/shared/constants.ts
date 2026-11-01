@@ -167,6 +167,27 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
+    // spectrolipi default: FFT 1024, Hann, hop N/2 (50 %), no zero-padding, grayscale.
+    spectrolipi: {
+        scale: 'linear',
+        colourScale: 'dbSquared',
+        windowSize: 1024,
+        overlapLevel: 2,       // 50 %
+        oversamplingLevel: 0,  // 1× → fft 1024
+        nMels: CLASSIC_N_MELS,
+        usePcen: false,
+        pcenGain: 0,
+        pcenBias: 0,
+        pcenRoot: 1,
+        pcenTimeConstant: 0.4,
+        windowFunction: 'hann',
+        colorScheme: 'grayscale',
+        reassigned: false,
+        noiseReduction: false,
+        clahe: false,
+        gainMode: 'auto',
+        maxFreqMode: 'nyquist',
+    },
     birder: {
         scale: 'linear',
         colourScale: 'dbSquared',
