@@ -8,6 +8,7 @@
 
 import { toXcId } from '../domain/xc/xcId.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from './label-sources.ts';
+import { recordingFolder } from './recording-tree.ts';
 
 export type UploadSource = 'own' | 'birdnet';
 
@@ -51,6 +52,8 @@ export function uploadSourceOf(l: any, sets?: Map<string, any>): UploadSource | 
 export interface CandidateRecording {
     id: string; name: string; xcId: string | null;
     own: number; birdnet: number; included: boolean;
+    /** Folder for grouping (recording-tree ids: sub-folder path, '' = project folder root, '@xc', '@session'). */
+    folder: string;
 }
 export interface UploadCandidates {
     recordings: CandidateRecording[];
@@ -86,6 +89,7 @@ export function uploadCandidates(entries: any[], sel: UploadSelection, sets?: Ma
         recordings.push({
             id: e.id, name: e.filename || xcId || 'Untitled', xcId, own, birdnet,
             included: !!xcId && !sel.excludedRecordings.includes(e.id),
+            folder: recordingFolder(e),
         });
     }
     return { recordings, species, layers };

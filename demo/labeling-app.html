@@ -1603,6 +1603,53 @@
       window.location.reload();
     }
 
+    /**
+     * BirdNET over a folder: open each recording in turn and run the BirdNET panel on it
+     * (same settings, geo filter from each recording's context). Unopened files are kept (pinned)
+     * because they get labels. Stop = click the status toast.
+     */
+    let _folderBirdnetStop = null;
+    async function runBirdnetOnFolder({ entries, paths }) {
+      if (_folderBirdnetStop) { _folderBirdnetStop(); return; }
+      const total = entries.length + paths.length;
+      if (!total || !confirm(`Run BirdNET on ${total} recording${total === 1 ? '' : 's'}? Each one is opened and analyzed in turn with the settings of the BirdNET tab.`)) return;
+      let stopped = false;
+      _folderBirdnetStop = () => { stopped = true; };
+      const todo = [...entries];
+      for (const path of paths) {
+        const existing = recordingManager.getAll().find((e) => e.path === path);
+        todo.push(existing || recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false }));
+      }
+      let done = 0;
+      try {
+        for (const entry of todo) {
+          if (stopped) break;
+          selectionMeta.textContent = `BirdNET ${done + 1}/${todo.length}: ${entry.filename || toXcId(entry.xcId) || ''} — click "Run BirdNET" again to stop`;
+          const before = player._state?.audioBuffer || null;
+          const wasActive = recordingManager.activeId === entry.id;
+          if (!wasActive) await activateRecordingEntry(entry);
+          // Wait until the player has decoded this recording (the 'ready' event may come later)
+          const t0 = Date.now();
+          while (!stopped && Date.now() - t0 < 120000) {
+            const buf = player._state?.audioBuffer;
+            if (buf && (wasActive || buf !== before)) break;
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          if (stopped) break;
+          if (!player._state?.audioBuffer) continue;
+          await birdnetPanel.analyze();
+          recordingManager.update(entry.id, { pinned: true });
+          done++;
+        }
+      } finally {
+        _folderBirdnetStop = null;
+        selectionMeta.textContent = stopped
+          ? `BirdNET stopped after ${done} of ${todo.length} recordings`
+          : `BirdNET done for ${done} of ${todo.length} recordings`;
+        renderProjectLocation();
+      }
+    }
+
     async function addFolderFiles(paths) {
       const added = [];
       for (const path of paths) {
@@ -2207,6 +2254,17 @@
       getProjectName: () => projectMeta?.name || 'Project',
       getFolderFiles: () => (projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : []),
       onOpenFile: (path) => addFolderFiles([path]),
+      onFolderKeepAll: ({ entries, paths }) => {
+        for (const e of entries) recordingManager.update(e.id, { pinned: true });
+        for (const path of paths) {
+          if (recordingManager.getAll().some((e) => e.path === path)) continue;
+          recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false });
+        }
+        selectionMeta.textContent = `${entries.length + paths.length} file${entries.length + paths.length === 1 ? '' : 's'} kept in the project`;
+        renderProjectLocation();
+        scheduleProjectAutosave?.();
+      },
+      onFolderBirdnet: (what) => runBirdnetOnFolder(what),
       getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
       getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
       getOwnSetId: () => OWN_SOURCE_ID,
@@ -3351,6 +3409,7 @@
         refreshUploadChecklist();
       },
       layerName: (id) => ownLayers(state.labelSets).find((l) => l.id === id)?.name || id,
+      localName: () => projectMeta?.name || 'Project folder',
     });
 
     // ── Upload assistant (live checklist, XC "Verify" done locally) ──

@@ -104,3 +104,23 @@ export function folderPathOf(tree: TreeNode[], recordingId: string): string[] {
 export function countRecordings(node: TreeNode): number {
     return node.kind === 'folder' ? node.children.reduce((s, c) => s + countRecordings(c), 0) : 1;
 }
+
+/** Folder of a recording for grouping (same ids as the tree): sub-folder path, '' = project folder root. */
+export function recordingFolder(entry: any): string {
+    if (isXcDownload(entry)) return XC_FOLDER_ID;
+    if (typeof entry?.path !== 'string' || !entry.path) return SESSION_FOLDER_ID;
+    const i = entry.path.lastIndexOf('/');
+    return i > 0 ? entry.path.slice(0, i) : '';
+}
+
+/** All recordings and never-opened files below a folder node (any depth). */
+export function folderContents(node: TreeNode): { entries: any[]; files: TreeFile[] } {
+    const out = { entries: [] as any[], files: [] as TreeFile[] };
+    const walk = (n: TreeNode) => {
+        if (n.kind === 'recording') out.entries.push(n.entry);
+        else if (n.kind === 'file') out.files.push(n);
+        else n.children.forEach(walk);
+    };
+    walk(node);
+    return out;
+}

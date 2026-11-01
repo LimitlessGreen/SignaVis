@@ -382,6 +382,9 @@ export class BirdNETPanel {
     });
   }
 
+  /** Analyze the loaded recording (same as the button). Resolves when done; errors go to the status line. */
+  analyze() { return this._analyze(); }
+
   async _analyze() {
     const audioBuffer = this.getAudioBuffer();
     if (!audioBuffer) {
