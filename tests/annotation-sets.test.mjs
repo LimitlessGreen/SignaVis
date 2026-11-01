@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     isOwnSet, normalizeSet, markSetEdited, setStatusFromValidation, markSetUploaded,
-    adoptLabels, ensureOwnSet, migrateSessionState,
+    adoptLabels, migrateSessionState,
 } from '../src/app/annotation-sets.ts';
 import { RecordingManager } from '../src/app/recording-manager.ts';
 
@@ -47,17 +47,6 @@ test('adoptLabels: editable copies in the own set with new ids', () => {
     assert.equal(c.scientificName, 'Turdus merula');
     assert.deepEqual(c.adoptedFrom, { id: 'xc1_lbl_1', setId: 'xcset', origin: 'xeno-canto' });
     assert.equal(c.createdAt, '2026-10-30T00:00:00.000Z');
-});
-
-test('ensureOwnSet prefers preferred, then any own set, else creates', () => {
-    const sets = new Map([
-        ['xc', normalizeSet({ id: 'xc', origin: 'xeno-canto' })],
-        ['own', normalizeSet({ id: 'own' })],
-    ]);
-    assert.equal(ensureOwnSet(sets, 'xc', () => assert.fail('no create')), 'own');
-    assert.equal(ensureOwnSet(sets, 'own', () => assert.fail('no create')), 'own');
-    const only = new Map([['xc', sets.get('xc')]]);
-    assert.equal(ensureOwnSet(only, null, () => ({ id: 'new' })), 'new');
 });
 
 test('migrateSessionState drops the old mode and normalizes sets', () => {

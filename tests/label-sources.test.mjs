@@ -1,0 +1,61 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+    OWN_SOURCE_ID, DEFAULT_LAYER_ID, isOwnLabel, labelSource, labelLayer, ownLayers, activeLayerId,
+    asOwnLabel, migrateToOwnSource,
+} from '../src/app/label-sources.ts';
+
+const sets = () => new Map([
+    ['set_a', { id: 'set_a', name: 'Mine', origin: 'manual', status: 'uploaded', license: 'CC-BY-4.0' }],
+    ['set_b', { id: 'set_b', name: 'Second pass', origin: 'manual' }],
+    ['xc1', { id: 'xc1', name: 'XC set', origin: 'xeno-canto', locked: true }],
+    ['bn', { id: 'bn', name: 'BirdNET', origin: 'BirdNET', locked: true }],
+]);
+
+test('migrateToOwnSource: own set → own source, extra own sets → layers', () => {
+    const s = sets();
+    const recA = [{ id: 1, setId: 'set_a' }, { id: 2, setId: 'set_b' }, { id: 3, setId: 'xc1', readonly: true }];
+    const active = [{ id: 4, origin: 'manual' }, { id: 5, setId: 'bn', origin: 'BirdNET' }];
+    assert.equal(migrateToOwnSource(s, [recA, active], { preferredId: 'set_a' }), true);
+    assert.deepEqual([...s.keys()].sort(), ['bn', 'own', 'xc1']);
+    const own = s.get(OWN_SOURCE_ID);
+    assert.equal(own.id, 'own');
+    assert.equal(own.license, 'CC-BY-4.0', 'upload metadata kept');
+    assert.deepEqual(own.legacyIds, ['set_a']);
+    assert.deepEqual(ownLayers(s).map((x) => x.id), [DEFAULT_LAYER_ID, 'set_b']);
+    assert.deepEqual(recA.map((l) => [l.setId, l.layer]), [['own', 'default'], ['own', 'set_b'], ['xc1', undefined]]);
+    assert.deepEqual(active.map((l) => [l.setId, l.layer]), [['own', 'default'], ['bn', undefined]]);
+    assert.equal(migrateToOwnSource(s, [recA, active]), false, 'idempotent');
+    // labels restored later from old storage still find the own source
+    const late = [{ id: 9, setId: 'set_a' }];
+    migrateToOwnSource(s, [late]);
+    assert.equal(late[0].setId, 'own');
+});
+
+test('migrateToOwnSource creates the own entry when missing', () => {
+    const s = new Map([['xc1', { id: 'xc1', origin: 'xeno-canto', locked: true }]]);
+    migrateToOwnSource(s, [], { create: () => ({ id: 'set_new', name: 'My Annotations', origin: 'manual' }) });
+    assert.equal(s.get('own').name, 'My Annotations');
+    assert.equal(s.has('set_new'), false);
+});
+
+test('labelSource / isOwnLabel / labelLayer', () => {
+    const s = sets();
+    assert.equal(labelSource({ setId: 'own' }, s), 'own');
+    assert.equal(labelSource({ setId: 'xc1' }, s), 'xc-set:xc1');
+    assert.equal(labelSource({ setId: 'bn' }, s), 'birdnet');
+    assert.equal(labelSource({ setId: 'f1', origin: 'file' }, s), 'file:f1');
+    assert.ok(isOwnLabel({ origin: 'manual' }));
+    assert.ok(!isOwnLabel({ readonly: true }));
+    assert.equal(labelLayer({ setId: 'own' }), 'default');
+    assert.equal(labelLayer({ setId: 'xc1' }), null);
+});
+
+test('layers: active layer and asOwnLabel', () => {
+    const s = new Map([['own', { id: 'own', origin: 'manual', layers: [{ id: 'default', name: 'Default' }, { id: 'B', name: 'B' }], activeLayerId: 'B' }]]);
+    assert.equal(activeLayerId(s), 'B');
+    assert.deepEqual(asOwnLabel({ id: 1, setId: 'xc1' }, s), { id: 1, setId: 'own', layer: 'B' });
+    assert.equal(asOwnLabel({ id: 2, setId: 'own', layer: 'default' }, s).layer, 'default');
+    s.get('own').activeLayerId = 'gone';
+    assert.equal(activeLayerId(s), 'default');
+});
