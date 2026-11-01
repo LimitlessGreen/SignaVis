@@ -116,3 +116,6 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
 - Nachtrag 2 (2026-11-01, Nutzer: „Ordnerdateien direkt in der Ebene, XC im Unterordner“; „erst hinzufügen,
   wenn Label oder +“): Baum oben = Quellen-Ordner `@local` (Projektname), `@xc`, `@session`.
   Geöffnete Ordnerdateien `pinned: false` → nur gespeichert mit Labels / aktiv / nach „+“.
+- Nachtrag 3 (2026-11-01): Upload-Auswahl pro Ordner (Tri-State), Ordner-⋯-Menü „Keep all files“ +
+  „Run BirdNET on this folder“ (`runBirdnetOnFolder`: sequentiell über activateRecordingEntry +
+  `birdnetPanel.analyze()`, wartet auf decodierten Buffer, Stop = Menüpunkt erneut). Im Browser ungetestet.
