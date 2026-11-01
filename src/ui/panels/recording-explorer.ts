@@ -259,7 +259,7 @@ export class RecordingExplorer {
             const list = document.createElement('ul');
             list.className = 'recording-explorer-list';
 
-            const tree = buildRecordingTree(entries, folderFiles);
+            const tree = buildRecordingTree(entries, folderFiles, { localName: this._getProjectName?.() || 'Project folder' });
             for (const id of folderPathOf(tree, activeId)) this._openFolders.add(id);
             this._appendNodes(list, tree, activeId, 0);
 
@@ -339,6 +339,17 @@ export class RecordingExplorer {
         li.appendChild(icon);
         li.appendChild(label);
         li.appendChild(meta);
+        // Opened but neither labeled nor kept: dimmed, "+" keeps it in the project
+        if (entry.pinned === false && anns.length === 0) {
+            li.classList.add('recording-explorer-row--transient');
+            const keep = document.createElement('button');
+            keep.type = 'button';
+            keep.className = 'recording-explorer-keep';
+            keep.textContent = '+';
+            keep.title = 'Keep in project (otherwise it is kept only once it has a label)';
+            keep.addEventListener('click', (e) => { e.stopPropagation(); this._manager.update(entry.id, { pinned: true }); this.render(); });
+            li.appendChild(keep);
+        }
         li.appendChild(menuBtn);
 
         li.addEventListener('click', () => {
@@ -372,8 +383,10 @@ export class RecordingExplorer {
             chev.textContent = open ? '▾' : '▸';
             const name = document.createElement('span');
             name.className = 'recording-explorer-label';
-            name.textContent = (node.virtual ? '🌐 ' : '📁 ') + node.name;
-            name.title = node.virtual ? 'Xeno-canto recordings' : node.id;
+            name.textContent = (node.virtual === 'xc' ? '🌐 ' : node.virtual === 'session' ? '🗂 ' : '📁 ') + node.name;
+            name.title = node.virtual === 'xc' ? 'Xeno-canto recordings'
+                : node.virtual === 'local' ? 'Project folder'
+                : node.virtual === 'session' ? 'Files opened in this session (not stored in a project folder)' : node.id;
             const meta = document.createElement('span');
             meta.className = 'recording-explorer-meta';
             meta.textContent = String(countRecordings(node));
@@ -410,7 +423,7 @@ export class RecordingExplorer {
         meta.className = 'recording-explorer-meta';
         if (node.size) meta.textContent = node.size >= 1048576 ? `${(node.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(node.size / 1024))} kB`;
         li.append(icon, label, meta);
-        const open = () => this._onOpenFile?.(node.path);
+        const open = () => this._onOpenFile?.(node.path, { pin: false });
         li.addEventListener('click', open);
         li.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } });
         return li;

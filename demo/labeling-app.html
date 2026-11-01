@@ -1609,6 +1609,7 @@
         if (recordingManager.getAll().some((e) => e.path === path)) continue;
         added.push(recordingManager.add({
           source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false,
+          pinned: false,   // kept in the project once it has a label or "+" is clicked (workspaceProject.keepRecording)
         }));
       }
       renderProjectLocation();
