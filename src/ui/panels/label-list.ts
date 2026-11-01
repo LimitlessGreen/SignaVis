@@ -519,7 +519,7 @@ export class LabelList {
     const body = el('div', 'lt-src-body');
     if (!labels.length) {
       body.appendChild(el('div', 'lt-empty', origin === 'manual'
-        ? 'No labels yet. Shift+drag on the spectrogram, or ✓ on an imported label.'
+        ? 'No labels yet. Drag on the spectrogram to draw one, or ✓ on an imported label.'
         : 'No labels.'));
     }
     const names = [...bySpecies.keys()].sort((a, b) => bySpecies.get(b)!.length - bySpecies.get(a)!.length || a.localeCompare(b));
