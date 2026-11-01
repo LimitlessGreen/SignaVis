@@ -581,7 +581,7 @@
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
     import { readAnnotaSetFile } from '../src/infrastructure/xeno-canto/annotaSetFile.ts';
     import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
-    import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, migrateSessionState } from '../src/app/annotation-sets.ts';
+    import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../src/app/annotation-sets.ts';
     import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../src/app/label-sources.ts';
     import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../src/app/upload-selection.ts';
     import { UploadSelectionPanel } from '../src/ui/panels/upload-selection-panel.ts';
@@ -2096,8 +2096,9 @@
     function adoptOneLabel(labelId) {
       const lbl = state.labels.find((l) => l.id === labelId);
       if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
-      const copies = adoptLabels([lbl], OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
-      if (!copies.length) return;
+      const todo = labelsToAdopt([lbl], state.labels, OWN_SOURCE_ID);
+      if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+      const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
       state.labels.push(...copies);
       touchOwnSet(OWN_SOURCE_ID);
       syncToPlayer();
@@ -2108,9 +2109,12 @@
     function adoptSetLabels(setId) {
       if (!OWN_SOURCE_ID || setId === OWN_SOURCE_ID) return;
       saveCurrentAnnotationsIfNeeded();
-      let total = 0;
+      let total = 0, found = 0;
       for (const entry of recordingManager.getAll()) {
-        const src = (entry.annotations || []).filter((l) => l.setId === setId);
+        const all = entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
+        const inSet = all.filter((l) => l.setId === setId);
+        found += inSet.length;
+        const src = labelsToAdopt(inSet, all, OWN_SOURCE_ID);   // already copied ones are skipped
         if (!src.length) continue;
         const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
         total += copies.length;
@@ -2118,15 +2122,21 @@
         else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...copies] });
       }
       if (!recordingManager.activeId) {
-        const copies = adoptLabels(state.labels.filter((l) => l.setId === setId), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+        const inSet = state.labels.filter((l) => l.setId === setId);
+        found += inSet.length;
+        const copies = adoptLabels(labelsToAdopt(inSet, state.labels, OWN_SOURCE_ID), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
         total += copies.length;
         state.labels.push(...copies);
       }
-      if (!total) return;
+      if (!total) {
+        if (found) selectionMeta.textContent = 'These labels are already in my labels';
+        return 0;
+      }
       touchOwnSet(OWN_SOURCE_ID);
       syncToPlayer();
       saveCurrentAnnotationsIfNeeded();
       selectionMeta.textContent = `Copied ${total} label${total === 1 ? '' : 's'} into my labels`;
+      return total;
     }
 
     // ── Central set update — call whenever any set field changes ──────
@@ -2495,9 +2505,9 @@
       },
       onAdoptSet: (setId) => {
         const undo = snapshotLabels();
-        adoptSetLabels(setId);
+        const n = adoptSetLabels(setId);
         recordingExplorer.render();
-        showUndoToast(`Copied labels into my labels`, undo);
+        if (n) showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
       },
       onRemoveRecording: (entry) => removeRecordingWithUndo(entry),
       onResetRecording: async (entry) => {

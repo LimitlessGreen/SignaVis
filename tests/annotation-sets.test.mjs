@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     isOwnSet, normalizeSet, setStatusFromValidation,
-    adoptLabels, migrateSessionState,
+    adoptLabels, labelsToAdopt, migrateSessionState,
 } from '../src/app/annotation-sets.ts';
 import { RecordingManager } from '../src/app/recording-manager.ts';
 
@@ -58,4 +58,13 @@ test('RecordingManager.assignXcId links a recording to its XC number', () => {
     assert.equal(m.getById(e.id).xcId, 'XC12345');
     assert.equal(m.assignXcId(e.id, ''), true);
     assert.equal(m.getById(e.id).xcId, null);
+});
+
+test('labelsToAdopt: labels already copied into the target set are skipped', () => {
+    const src = [{ id: 'x1', setId: 'xc' }, { id: 'x2', setId: 'xc' }];
+    const copies = adoptLabels([src[0]], 'own');
+    assert.deepEqual(labelsToAdopt(src, [...src, ...copies], 'own').map((l) => l.id), ['x2']);
+    const all = [...src, ...adoptLabels(src, 'own')];
+    assert.equal(labelsToAdopt(src, all, 'own').length, 0);          // second click adds nothing
+    assert.equal(labelsToAdopt(src, all, 'other').length, 2);        // other target set: not adopted there
 });
