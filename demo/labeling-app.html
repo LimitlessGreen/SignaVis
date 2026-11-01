@@ -262,9 +262,6 @@
 
   <!-- ── Sidebar panel: Project (storage + adding + recordings as one block) ── -->
   <div id="panelProject" class="scroll-panel" hidden>
-    <div class="sidebar-section-header">Storage</div>
-    <div id="projectLocationMount"></div>
-
     <div class="sidebar-section-header project-rec-header">
       <span>Storage &amp; recordings</span>
       <span class="project-rec-actions">
@@ -287,12 +284,10 @@
         <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
           <span aria-hidden="true">＋</span> Local audio file…
         </button>
-    </section>
       </div>
-      <button class="link-btn xc-load-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number before upload)">or open an audio file…</button>
-    </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
     <div id="recordingExplorerMount"></div>
+    </section>
 
     <div class="sidebar-section-header">Recording context</div>
     <div id="recordingContextBlock" class="panel-section rc-block"></div>
@@ -1602,6 +1597,37 @@
       return true;
     }
 
+    // ── Project folder recommendation: once per session while the project lives in the browser.
+    // "Don't show this again" hides it for good; the Project tab keeps the same offer.
+    const PROJECT_FOLDER_HINT_KEY = 'signavis.project-folder-hint.dismissed.v1';
+    const projectFolderModal = document.getElementById('projectFolderModal');
+    const projectFolderDismiss = document.getElementById('projectFolderDismiss');
+    function closeProjectFolderModal() {
+      if (projectFolderDismiss.checked) lsSet(PROJECT_FOLDER_HINT_KEY, '1');
+      projectFolderModalManager.close();
+    }
+    const projectFolderModalManager = new ModalManager({
+      backdrop: projectFolderModal,
+      dialog: projectFolderModal?.querySelector('.app-modal'),
+      onClose: closeProjectFolderModal,
+    });
+    document.getElementById('projectFolderBrowserBtn').addEventListener('click', closeProjectFolderModal);
+    document.getElementById('projectFolderChooseBtn').addEventListener('click', () => {
+      closeProjectFolderModal();
+      if (recentFolderHandle) reopenRecentFolder(); else chooseProjectFolder();
+    });
+    function maybeShowProjectFolderModal() {
+      if (projectKind !== 'browser' || !isFolderAccessSupported()) return;
+      if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
+      try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
+      if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
+      const title = projectFolderModal.querySelector('.pf-option-title');
+      title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
+      projectFolderDismiss.checked = false;
+      projectFolderModalManager.open();
+      setTimeout(() => document.getElementById('projectFolderChooseBtn').focus(), 60);
+    }
+
     /** Pick a folder; a folder without project gets one (current session or empty). Then reload into it. */
     async function chooseProjectFolder() {
       let handle;
@@ -1660,37 +1686,6 @@
         todo.push(existing || recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false }));
       }
       let done = 0;
-    // ── Project folder recommendation: once per session while the project lives in the browser.
-    // "Don't show this again" hides it for good; the Project tab keeps the same offer.
-    const PROJECT_FOLDER_HINT_KEY = 'signavis.project-folder-hint.dismissed.v1';
-    const projectFolderModal = document.getElementById('projectFolderModal');
-    const projectFolderDismiss = document.getElementById('projectFolderDismiss');
-    function closeProjectFolderModal() {
-      if (projectFolderDismiss.checked) lsSet(PROJECT_FOLDER_HINT_KEY, '1');
-      projectFolderModalManager.close();
-    }
-    const projectFolderModalManager = new ModalManager({
-      backdrop: projectFolderModal,
-      dialog: projectFolderModal?.querySelector('.app-modal'),
-      onClose: closeProjectFolderModal,
-    });
-    document.getElementById('projectFolderBrowserBtn').addEventListener('click', closeProjectFolderModal);
-    document.getElementById('projectFolderChooseBtn').addEventListener('click', () => {
-      closeProjectFolderModal();
-      if (recentFolderHandle) reopenRecentFolder(); else chooseProjectFolder();
-    });
-    function maybeShowProjectFolderModal() {
-      if (projectKind !== 'browser' || !isFolderAccessSupported()) return;
-      if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
-      try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
-      if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
-      const title = projectFolderModal.querySelector('.pf-option-title');
-      title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
-      projectFolderDismiss.checked = false;
-      projectFolderModalManager.open();
-      setTimeout(() => document.getElementById('projectFolderChooseBtn').focus(), 60);
-    }
-
       try {
         for (const entry of todo) {
           if (stopped) break;
@@ -4307,6 +4302,7 @@
       if (_last && (_last.xcId || _last.audioUrl || _last.path)) activateRecordingEntry(_last);
       else recordingManager.setActive(null);
     }
+    setTimeout(maybeShowProjectFolderModal, 400);
     // Start the XC download right away — the 7 MB taxonomy loads in parallel and
     // re-localizes any labels imported before it finished.
     autoLoadFromParams();
@@ -4346,4 +4342,3 @@
   </script>
 </body>
 </html>
-    setTimeout(maybeShowProjectFolderModal, 400);
