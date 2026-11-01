@@ -358,6 +358,15 @@ export class PlayerState {
             getCoords: () => this.coords,
             getListenMode: () => this._engine.listenMode,
             setCarrier: (carrierHz) => this._setListenMode({ kind: 'heterodyne', carrierHz }),
+            reveal: (hz) => {
+                // Keep the zoom span, centre it on the carrier.
+                const max = this.coords.boundedMaxFreq;
+                const lo = this._freqZoom.min ?? 0;
+                const hi = this._freqZoom.max ?? max;
+                const span = hi - lo;
+                const nLo = Math.min(Math.max(0, hz - span / 2), Math.max(0, max - span));
+                this._freqZoom.set(nLo, Math.min(max, nLo + span));
+            },
         });
 
         // ── View layout (persistent, not interaction-mode) ──

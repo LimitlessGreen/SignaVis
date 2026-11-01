@@ -15,6 +15,8 @@ export interface CarrierLineDeps {
     getCoords: () => any;
     getListenMode: () => ListenMode;
     setCarrier: (hz: number) => void;
+    /** Bring the carrier into the visible frequency range. */
+    reveal?: (hz: number) => void;
 }
 
 /** Carriers snap to this step, as on a detector dial. */
@@ -27,6 +29,9 @@ export class CarrierLineController {
     #getCoords: CarrierLineDeps['getCoords'];
     #getListenMode: CarrierLineDeps['getListenMode'];
     #setCarrier: CarrierLineDeps['setCarrier'];
+    #reveal: CarrierLineDeps['reveal'];
+    /** Edge marker while the carrier lies outside the visible range. */
+    #edge: HTMLButtonElement | null = null;
     #el: HTMLDivElement | null = null;
     #label: HTMLSpanElement | null = null;
     /** Carrier shown while dragging, before it is applied. */
@@ -34,11 +39,13 @@ export class CarrierLineController {
     #lastTop = '';
     #onAltClick = (e: PointerEvent) => this.#altClick(e);
 
-    constructor({ d, getCoords, getListenMode, setCarrier }: CarrierLineDeps) {
+    constructor(deps: CarrierLineDeps) {
+        const { d, getCoords, getListenMode, setCarrier } = deps;
         this.#d = d;
         this.#getCoords = getCoords;
         this.#getListenMode = getListenMode;
         this.#setCarrier = setCarrier;
+        this.#reveal = deps.reveal;
         // Capture phase: an Alt+click must not also seek or start a label.
         d.canvasWrapper?.addEventListener('pointerdown', this.#onAltClick, true);
     }
@@ -50,6 +57,7 @@ export class CarrierLineController {
         const coords = this.#getCoords();
         if (mode?.kind !== 'heterodyne' || !wrapper || !coords) {
             if (this.#el) this.#el.hidden = true;
+            if (this.#edge) this.#edge.hidden = true;
             return;
         }
         const el = this.#ensureElement(wrapper);
@@ -57,6 +65,7 @@ export class CarrierLineController {
         const y = coords.frequencyToPixelY(hz);
         const visible = Number.isFinite(y) && y >= 0 && y <= coords.canvasHeight;
         el.hidden = !visible;
+        this.#updateEdge(wrapper, coords, hz, visible ? null : (y < 0 ? 'top' : 'bottom'));
         if (!visible) return;
         const top = `${wrapper.offsetTop + y - GRAB_PX / 2}px`;
         if (top !== this.#lastTop) {
@@ -70,6 +79,8 @@ export class CarrierLineController {
         this.#d.canvasWrapper?.removeEventListener('pointerdown', this.#onAltClick, true);
         this.#el?.remove();
         this.#el = null;
+        this.#edge?.remove();
+        this.#edge = null;
     }
 
     #ensureElement(wrapper: HTMLElement): HTMLDivElement {
@@ -87,13 +98,16 @@ export class CarrierLineController {
         const line = document.createElement('div');
         Object.assign(line.style, {
             position: 'absolute', left: '0', right: '0', top: `${GRAB_PX / 2 - 1}px`,
-            borderTop: '2px dashed var(--color-accent, #39b5ff)', pointerEvents: 'none',
+            height: '2px', background: '#ffd60a', pointerEvents: 'none',
+            // Dark outline so the line stands out on bright calls and on noise alike.
+            boxShadow: '0 0 0 1px rgba(0,0,0,0.75), 0 0 6px rgba(255,214,10,0.6)',
         });
         const label = document.createElement('span');
         Object.assign(label.style, {
-            position: 'absolute', right: '6px', bottom: `${GRAB_PX / 2 + 2}px`,
-            font: '600 11px/1.2 var(--font-mono, monospace)', color: 'var(--color-accent, #39b5ff)',
-            background: 'var(--color-bg-secondary, rgba(0,0,0,0.6))', padding: '1px 5px', borderRadius: '3px',
+            position: 'absolute', left: '6px', bottom: `${GRAB_PX / 2 + 3}px`,
+            font: '600 11px/1.2 var(--font-mono, monospace)', color: '#1a1400',
+            background: '#ffd60a', padding: '1px 6px', borderRadius: '3px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.6)',
             pointerEvents: 'none', whiteSpace: 'nowrap',
         });
         el.append(line, label);
@@ -124,6 +138,36 @@ export class CarrierLineController {
         this.#el = el;
         this.#label = label;
         return el;
+    }
+
+    /** Arrow at the top / bottom edge while the carrier is outside the view; click scrolls to it. */
+    #updateEdge(wrapper: HTMLElement, coords: any, hz: number, side: 'top' | 'bottom' | null) {
+        if (!side) { if (this.#edge) this.#edge.hidden = true; return; }
+        if (!this.#edge) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'carrier-edge';
+            Object.assign(b.style, {
+                position: 'absolute', left: '6px', zIndex: '12', cursor: 'pointer',
+                font: '600 11px/1.2 var(--font-mono, monospace)', color: '#1a1400',
+                background: '#ffd60a', border: '0', padding: '2px 7px', borderRadius: '3px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.6)',
+            });
+            b.addEventListener('pointerdown', (e) => e.stopPropagation());
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const m = this.#getListenMode();
+                if (m?.kind === 'heterodyne') this.#reveal?.(m.carrierHz);
+            });
+            (wrapper.parentElement as HTMLElement).appendChild(b);
+            this.#edge = b;
+        }
+        const b = this.#edge;
+        b.hidden = false;
+        b.textContent = `${side === 'top' ? '↑' : '↓'} Heterodyne ${(hz / 1000).toFixed(1)} kHz`;
+        b.title = 'The heterodyne carrier is outside the visible range — click to show it';
+        const h = coords.canvasHeight || wrapper.clientHeight;
+        b.style.top = side === 'top' ? `${wrapper.offsetTop + 4}px` : `${wrapper.offsetTop + h - 24}px`;
     }
 
     #hzAt(clientY: number): number {
