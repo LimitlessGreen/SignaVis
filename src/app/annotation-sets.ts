@@ -54,6 +54,18 @@ export function adoptLabels(labels: any[], targetSetId: string, now = new Date()
     });
 }
 
+/**
+ * Labels of `src` that have no copy in `targetSetId` yet (a copy carries adoptedFrom.id).
+ * Makes "copy into my labels" idempotent: pressing it twice adds nothing.
+ * A copy the user deleted again counts as not adopted, so it can be copied once more.
+ */
+export function labelsToAdopt(src: any[], existing: any[], targetSetId: string) {
+    const done = new Set((existing || [])
+        .filter((l) => l?.setId === targetSetId && l.adoptedFrom?.id != null)
+        .map((l) => l.adoptedFrom.id));
+    return (src || []).filter((l) => !done.has(l?.id));
+}
+
 const LEGACY_MODE_KEY = 'audio-workbench.mode.v1';
 
 /**
