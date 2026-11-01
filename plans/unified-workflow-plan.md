@@ -106,3 +106,8 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   automatisch drin), Snapshots in `own.uploads`. Set-Metadaten (Name, Lizenz, Scope) bleiben am
   own-Eintrag und werden weiter im Projekt-Tab bearbeitet (Checklisten-Sprung „Set“) — Umzug in den
   Upload-Tab ggf. in Phase 5. Status nur noch draft/ready. Im Browser noch ungetestet.
+- Phase 5 erledigt (2026-11-01): Layer-UI in `label-list.ts` (`opts.layers`), Layer-Funktionen in
+  `label-sources.ts`, `state.hiddenLayers` (nicht gespeichert, wie hiddenSetIds). Set-Details-Formular
+  (`#xcSetContainer`) im Upload-Tab, Checklisten-Sprung „Set“ dorthin. Exporte im Labels-Tab blieben
+  unverändert (arbeiteten schon pro Aufnahme bzw. Upload-Auswahl). Layer-`annotator` → Set noch nicht
+  umgesetzt (Annotator kommt weiter aus dem Profil). Im Browser noch ungetestet.
