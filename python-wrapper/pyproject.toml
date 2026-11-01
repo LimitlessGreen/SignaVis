@@ -35,17 +35,3 @@ include = ["signavis*"]
 
 [tool.setuptools.package-data]
 "signavis.assets" = ["*.js", "*.css"]
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -235,6 +235,7 @@ jobs:
 
           # Prefer the matching "## [x.y.z]" section of CHANGELOG.md; fall back to git log.
           VERSION="${TAG#v}"
+          VERSION="${VERSION%%-*}"   # 1.0.0-rc.1 -> 1.0.0 section
           SECTION="$(awk -v v="${VERSION}" '
             /^## \[/ { if (found) exit; if (index($0, "## [" v "]") == 1) { found = 1; next } }
             found { print }
@@ -262,6 +263,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ steps.notes.outputs.NOTES }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
           files: |
             release-assets/js/*.tgz
@@ -316,7 +318,14 @@ jobs:
         shell: bash
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: npm publish --access public --provenance
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "${VERSION}" == *-* ]]; then
+            npm publish --access public --provenance --tag next
+          else
+            npm publish --access public --provenance
+          fi
 
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')

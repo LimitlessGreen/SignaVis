@@ -46,7 +46,7 @@ async function main() {
       if (!updated) {
         throw new Error("Could not find project.version in python-wrapper/pyproject.toml");
       }
-      await fs.writeFile(pyprojectPath, lines.join("\n") + "\n", "utf8");
+      await fs.writeFile(pyprojectPath, lines.join("\n").replace(/\n+$/, "") + "\n", "utf8");
     } catch (err) {
       // If the file doesn't exist or another error occurs, surface a helpful message
       if (err.code === "ENOENT") {
@@ -79,6 +79,17 @@ async function main() {
       const tauriText = await fs.readFile(tauriConfPath, "utf8");
       const tauriConf = JSON.parse(tauriText);
       tauriConf.version = version;
+      // MSI (WiX) only accepts numeric versions: map 1.0.0-rc.2 -> 1.0.0.2.
+      const pre = version.match(/^(\d+\.\d+\.\d+)-[A-Za-z.]*?(\d+)$/);
+      tauriConf.bundle ??= {};
+      if (pre) {
+        tauriConf.bundle.windows ??= {};
+        tauriConf.bundle.windows.wix = { ...(tauriConf.bundle.windows.wix ?? {}), version: `${pre[1]}.${pre[2]}` };
+      } else if (tauriConf.bundle.windows?.wix) {
+        delete tauriConf.bundle.windows.wix.version;
+        if (!Object.keys(tauriConf.bundle.windows.wix).length) delete tauriConf.bundle.windows.wix;
+        if (!Object.keys(tauriConf.bundle.windows).length) delete tauriConf.bundle.windows;
+      }
       await fs.writeFile(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n", "utf8");
     } catch (err) {
       if (err.code !== "ENOENT") throw err;
@@ -104,7 +115,7 @@ async function main() {
         }
       }
       if (updated) {
-        await fs.writeFile(cargoTomlPath, lines.join("\n") + "\n", "utf8");
+        await fs.writeFile(cargoTomlPath, lines.join("\n").replace(/\n+$/, "") + "\n", "utf8");
       }
     } catch (err) {
       if (err.code !== "ENOENT") throw err;
