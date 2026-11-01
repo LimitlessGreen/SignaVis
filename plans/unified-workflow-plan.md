@@ -119,3 +119,9 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
 - Nachtrag 3 (2026-11-01): Upload-Auswahl pro Ordner (Tri-State), Ordner-⋯-Menü „Keep all files“ +
   „Run BirdNET on this folder“ (`runBirdnetOnFolder`: sequentiell über activateRecordingEntry +
   `birdnetPanel.analyze()`, wartet auf decodierten Buffer, Stop = Menüpunkt erneut). Im Browser ungetestet.
+- Phase 6 erledigt (2026-11-01): `tools/labeling-snapshots/workflow.py` (Ordner-Ablauf, 15 Prüfungen inkl.
+  BirdNET über 2 Aufnahmen, alle grün, keine Konsolenfehler) und `acc_upload.py --upload` gegen
+  acc.xeno-canto.org mit XC928094: Upload ok, Snapshot „up to date“ → nach Bearbeiten „changed“.
+  Befunde: Shift-Ziehen ist im Draw-Modus nicht nötig (normales Ziehen); vorgewählte Art in der
+  Suchleiste legt Labels ohne Dialog an; Tipp des Tages blockiert den ersten Klick (gewollt, modal).
+  Explorer-Fix: neutraler Hintergrund, kein „Single“ im Ordnerprojekt (793ef60).
