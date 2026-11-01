@@ -1479,7 +1479,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const g = this._toGeometry(this._normalize({ start: time, end: time, freqMin: freq, freqMax: freq, label: '' }), width, height);
             el.className = 'snap-hint';
             Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: '', height: '' });
-            el.textContent = result.reason === 'noise'
+            el.textContent = 'reason' in result && result.reason === 'noise'
                 ? 'No call here — click on a brighter trace'
                 : `Trace merges with the background (sensitivity ${pct} %) — Shift+wheel to lower it`;
         }
