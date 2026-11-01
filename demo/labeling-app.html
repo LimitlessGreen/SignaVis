@@ -575,7 +575,7 @@
     import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
     import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder } from '../src/infrastructure/project/FolderAccess.ts';
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
-    import { serializeProject, deserializeProject, filesNotInProject, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
+    import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
     import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
     import { buildRavenSelectionTable, ravenTablePath } from '../src/infrastructure/export/ravenSelectionTable.ts';
     import { validateAnnotaPayload } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
@@ -1833,7 +1833,7 @@
       const todo = [...entries];
       for (const path of paths) {
         const existing = recordingManager.getAll().find((e) => e.path === path);
-        todo.push(existing || recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false }));
+        todo.push(existing || recordingManager.add(folderFileEntry(path)));
       }
       let done = 0;
       try {
@@ -1869,10 +1869,8 @@
       const added = [];
       for (const path of paths) {
         if (recordingManager.getAll().some((e) => e.path === path)) continue;
-        added.push(recordingManager.add({
-          source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false,
-          pinned: false,   // kept in the project once it has a label or "+" is clicked (workspaceProject.keepRecording)
-        }));
+        // pinned false: kept in the project once it has a label or "+" is clicked (workspaceProject.keepRecording)
+        added.push(recordingManager.add(folderFileEntry(path, { pinned: false })));
       }
       renderProjectLocation();
       if (added.length === 1) await activateRecordingEntry(added[0]);
@@ -2474,7 +2472,7 @@
         for (const e of entries) recordingManager.update(e.id, { pinned: true });
         for (const path of paths) {
           if (recordingManager.getAll().some((e) => e.path === path)) continue;
-          recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false });
+          recordingManager.add(folderFileEntry(path));
         }
         selectionMeta.textContent = `${entries.length + paths.length} file${entries.length + paths.length === 1 ? '' : 's'} kept in the project`;
         renderProjectLocation();

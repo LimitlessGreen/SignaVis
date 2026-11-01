@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    PROJECT_SCHEMA, inferSource, serializeProject, parseProject, deserializeProject, filesNotInProject,
+    PROJECT_SCHEMA, inferSource, serializeProject, parseProject, deserializeProject, filesNotInProject, folderFileEntry,
     stringifyProject, ProjectFormatError, xcRecordingPath,
 } from '../src/domain/project/workspaceProject.ts';
 import { normalizeProjectPath, isAudioPath } from '../src/domain/project/IProjectStore.ts';
@@ -182,4 +182,15 @@ test('viewed-only folder files are not kept; labels, "+" or being active keep th
     }, { id: 'p', name: 'n' }, NOW);
     assert.deepEqual(p.recordings.map((r) => [r.id, r.pinned]), [['k', false]]);
     assert.equal(deserializeProject(p).entries[0].pinned, false);
+});
+
+test('folderFileEntry: xc/XC<n>.mp3 becomes an XC recording, other files stay local', () => {
+    const xc = folderFileEntry('xc/xc928094.mp3');
+    assert.equal(xc.source, 'xc');
+    assert.equal(xc.xcId, 'XC928094');
+    assert.equal(xc.needsXcImport, true);
+    assert.equal(xc.path, 'xc/xc928094.mp3');
+    const own = folderFileEntry('audio/2026/a.wav', { pinned: false });
+    assert.deepEqual([own.source, own.xcId, own.filename, own.pinned], ['file', undefined, 'a.wav', false]);
+    assert.equal(folderFileEntry('field/XC5.mp3').source, 'file');   // only the xc/ folder means XC
 });
