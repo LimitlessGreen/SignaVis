@@ -205,6 +205,20 @@ export const stringifyProject = (p: WorkspaceProject) => JSON.stringify(p, null,
 export const xcMetaPath = (xcId: string) => `xc/${toXcId(xcId)}.json`;
 
 /**
+ * New RecordingManager entry for an audio file of the project folder.
+ * 'xc/XC123.mp3' is an XC download (e.g. copied from another project): it keeps its XC number,
+ * shows under "Xeno-canto" and fetches the XC labels when opened.
+ */
+export function folderFileEntry(path: string, extra: Record<string, unknown> = {}): any {
+    const filename = path.split('/').pop() || path;
+    const m = /^xc\/(XC\d+)\.mp3$/i.exec(path);
+    const base = m
+        ? { source: 'xc', xcId: toXcId(m[1]), needsXcImport: true }
+        : { source: 'file' };
+    return { ...base, path, filename, audioUrl: null, isBlobUrl: false, ...extra };
+}
+
+/**
  * Audio files in the project folder that no recording refers to yet,
  * excluding XC downloads that belong to an existing XC recording.
  */
