@@ -60,6 +60,33 @@
       </div>
     </header>
 
+    <!-- Project folder recommendation (browser project) -->
+    <div class="app-modal-backdrop" id="projectFolderModal" hidden>
+      <div class="app-modal project-folder-modal" role="dialog" aria-modal="true" aria-labelledby="projectFolderModalTitle">
+        <h3 id="projectFolderModalTitle">Where should your project live?</h3>
+        <p>Whether you label Xeno-canto recordings or your own audio — a project folder keeps everything together.</p>
+        <div class="pf-options">
+          <button type="button" class="pf-option pf-option--rec" id="projectFolderChooseBtn">
+            <span class="pf-option-icon" aria-hidden="true">📁</span>
+            <span class="pf-option-body">
+              <span class="pf-option-title">Project folder <span class="pf-badge">Recommended</span></span>
+              <span class="pf-option-text" id="projectFolderChooseText">Labels in project.signavis.json, XC downloads in xc/, your audio files next to them. Safe from clearing browser data, easy to back up and share.</span>
+            </span>
+          </button>
+          <button type="button" class="pf-option" id="projectFolderBrowserBtn">
+            <span class="pf-option-icon" aria-hidden="true">🌐</span>
+            <span class="pf-option-body">
+              <span class="pf-option-title">Browser only</span>
+              <span class="pf-option-text">Stored privately in this browser. Fine for a quick look — lost when site data is cleared. You can switch later in the Project tab.</span>
+            </span>
+          </button>
+        </div>
+        <label class="xc-nokey-dismiss-label">
+          <input type="checkbox" id="projectFolderDismiss" /> Don't show this again
+        </label>
+      </div>
+    </div>
+
     <!-- API key missing modal -->
     <div class="app-modal-backdrop" id="xcNokeyModal" hidden>
       <div class="app-modal">
@@ -233,23 +260,34 @@
     </div>
   </div>
 
-  <!-- ── Sidebar panel: Project (storage + recordings) ───────────── -->
+  <!-- ── Sidebar panel: Project (storage + adding + recordings as one block) ── -->
   <div id="panelProject" class="scroll-panel" hidden>
     <div class="sidebar-section-header">Storage</div>
     <div id="projectLocationMount"></div>
 
     <div class="sidebar-section-header project-rec-header">
-      <span>Recordings</span>
+      <span>Storage &amp; recordings</span>
       <span class="project-rec-actions">
         <button class="tb-btn" id="loadSampleBtn" type="button" hidden>Demo</button>
         <button class="tb-btn ghost" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
       </span>
       <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
-    <div class="panel-section">
-      <div class="xc-load-row">
-        <input id="xcIdInput" class="input" placeholder="XC number or URL (e.g. 12345)" aria-label="Add Xeno-canto recording" />
-        <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
+    <section class="project-hub" aria-label="Project">
+      <!-- Where the project lives — populated by ProjectLocationPanel -->
+      <div id="projectLocationMount"></div>
+      <!-- Add recordings: Xeno-canto or a local file, both end up in the tree below -->
+      <div class="project-add">
+        <div class="project-add-title">Add recordings</div>
+        <div class="xc-load-row">
+          <span class="project-add-src" aria-hidden="true">XC</span>
+          <input id="xcIdInput" class="input" placeholder="Xeno-canto number or URL" aria-label="Add Xeno-canto recording" />
+          <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
+        </div>
+        <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
+          <span aria-hidden="true">＋</span> Local audio file…
+        </button>
+    </section>
       </div>
       <button class="link-btn xc-load-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number before upload)">or open an audio file…</button>
     </div>
@@ -1622,6 +1660,37 @@
         todo.push(existing || recordingManager.add({ source: 'file', path, filename: path.split('/').pop(), audioUrl: null, isBlobUrl: false }));
       }
       let done = 0;
+    // ── Project folder recommendation: once per session while the project lives in the browser.
+    // "Don't show this again" hides it for good; the Project tab keeps the same offer.
+    const PROJECT_FOLDER_HINT_KEY = 'signavis.project-folder-hint.dismissed.v1';
+    const projectFolderModal = document.getElementById('projectFolderModal');
+    const projectFolderDismiss = document.getElementById('projectFolderDismiss');
+    function closeProjectFolderModal() {
+      if (projectFolderDismiss.checked) lsSet(PROJECT_FOLDER_HINT_KEY, '1');
+      projectFolderModalManager.close();
+    }
+    const projectFolderModalManager = new ModalManager({
+      backdrop: projectFolderModal,
+      dialog: projectFolderModal?.querySelector('.app-modal'),
+      onClose: closeProjectFolderModal,
+    });
+    document.getElementById('projectFolderBrowserBtn').addEventListener('click', closeProjectFolderModal);
+    document.getElementById('projectFolderChooseBtn').addEventListener('click', () => {
+      closeProjectFolderModal();
+      if (recentFolderHandle) reopenRecentFolder(); else chooseProjectFolder();
+    });
+    function maybeShowProjectFolderModal() {
+      if (projectKind !== 'browser' || !isFolderAccessSupported()) return;
+      if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
+      try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
+      if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
+      const title = projectFolderModal.querySelector('.pf-option-title');
+      title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
+      projectFolderDismiss.checked = false;
+      projectFolderModalManager.open();
+      setTimeout(() => document.getElementById('projectFolderChooseBtn').focus(), 60);
+    }
+
       try {
         for (const entry of todo) {
           if (stopped) break;
@@ -4277,3 +4346,4 @@
   </script>
 </body>
 </html>
+    setTimeout(maybeShowProjectFolderModal, 400);
