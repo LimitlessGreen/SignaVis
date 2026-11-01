@@ -56,6 +56,8 @@ export class RecordingExplorer {
     _onOpenFile: any;
     _onFolderKeepAll: any;
     _onFolderBirdnet: any;
+    _getMissingContext: any;
+    _onOpenContext: any;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -95,6 +97,9 @@ export class RecordingExplorer {
         /** Folder menu: keep all ({ entries, paths }) / run BirdNET on all recordings (entries + paths). */
         this._onFolderKeepAll  = opts.onFolderKeepAll || null;
         this._onFolderBirdnet  = opts.onFolderBirdnet || null;
+        // (entry) => string[] of missing context fields, e.g. ['location', 'date']
+        this._getMissingContext = opts.getMissingContext || null;
+        this._onOpenContext    = opts.onOpenContext || null;
         try { this._openFolders = new Set(JSON.parse(localStorage.getItem(OPEN_FOLDERS_KEY) || '[]')); } catch { this._openFolders = new Set(); }
         try { this._multiMode = localStorage.getItem(MULTI_MODE_KEY) === '1'; } catch { this._multiMode = false; }
 
@@ -351,6 +356,16 @@ export class RecordingExplorer {
 
         li.appendChild(icon);
         li.appendChild(label);
+        const missing = this._getMissingContext?.(entry) || [];
+        if (missing.length) {
+            const warn = document.createElement('button');
+            warn.type = 'button';
+            warn.className = 'recording-explorer-ctx';
+            warn.textContent = '📍';
+            warn.title = `No ${missing.join(' / ')} — click to set it in Properties`;
+            warn.addEventListener('click', (e) => { e.stopPropagation(); this._onOpenContext?.(entry); });
+            li.appendChild(warn);
+        }
         li.appendChild(meta);
         // Opened but neither labeled nor kept: dimmed, "+" keeps it in the project
         if (entry.pinned === false && anns.length === 0) {

@@ -78,6 +78,7 @@ export class PropertiesPanel {
     _lblSection: any;
     _recBody: any;
     contextEl!: HTMLElement;
+    _setRecCollapsed: (c: boolean) => void = () => {};
     _recSection: any;
     _recSummary: any;
     _setBody: any;
@@ -281,6 +282,12 @@ export class PropertiesPanel {
     this._renderLabel();
   }
 
+  /** Expand the recording section and bring its context block into view. */
+  showRecordingContext() {
+    this._setRecCollapsed(false);
+    try { this._recSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+  }
+
   // ── DOM ───────────────────────────────────────────────────────────
 
   _build() {
@@ -302,6 +309,7 @@ export class PropertiesPanel {
       try { localStorage.setItem('aw.props.recCollapsed', c ? '1' : '0'); } catch {}
     };
     applyCollapsed(collapsed);
+    this._setRecCollapsed = applyCollapsed;
     const toggle = () => applyCollapsed(!this._recSection.classList.contains('props-section--collapsed'));
     recHeader.addEventListener('click', toggle);
     recHeader.addEventListener('keydown', (e: KeyboardEvent) => {
