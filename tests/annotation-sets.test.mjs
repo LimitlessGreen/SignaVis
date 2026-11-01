@@ -75,9 +75,9 @@ test('RecordingManager.assignXcId links a recording to its XC number', () => {
     const m = new RecordingManager();
     const e = m.add({ filename: 'rec_01.wav' });
     assert.equal(m.assignXcId(e.id, 'XC 12345'), true);
-    assert.equal(m.getById(e.id).xcId, '12345');
+    assert.equal(m.getById(e.id).xcId, 'XC12345');
     assert.equal(m.assignXcId(e.id, 'abc'), false);
-    assert.equal(m.getById(e.id).xcId, '12345');
+    assert.equal(m.getById(e.id).xcId, 'XC12345');
     assert.equal(m.assignXcId(e.id, ''), true);
     assert.equal(m.getById(e.id).xcId, null);
 });

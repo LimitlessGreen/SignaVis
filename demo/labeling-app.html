@@ -545,6 +545,7 @@
     import { XenoCantoPanel, defaultSetInfo, defaultRecordingEditMeta, xcUploadTarget } from '../src/ui/panels/xc-panel.ts';
     import { AnnotatorProfile } from '../src/app/annotator-profile.ts';
     import { RecordingManager, defaultRecordingEntry } from '../src/app/recording-manager.ts';
+    import { toXcId, xcNumber, sameXcId } from '../src/domain/xc/xcId.ts';
     import { RecordingExplorer } from '../src/ui/panels/recording-explorer.ts';
     import { SpectrogramSettingsPanel } from '../src/ui/panels/spectrogram-panel.ts';
     import { spectrogramCache } from '../src/infrastructure/SpectrogramCache.js';
@@ -702,7 +703,7 @@
               if (entry.id === recordingManager.activeId) continue;
               for (const l of (entry.annotations || []).filter(same)) {
                 refs.push({
-                  ...l, recordingName: entry.filename || (entry.xcId ? `XC${entry.xcId}` : 'Recording'),
+                  ...l, recordingName: entry.filename || toXcId(entry.xcId) || 'Recording',
                   soundType: l.tags?.soundType || '',
                   getAudioUrl: () => ownRefAudioUrl(entry),
                 });
@@ -768,7 +769,7 @@
       // block, so skip the API round-trip entirely and start the download right away.
       const wasmTiling = typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
       if (wasmTiling) return true;
-      if (xcPanel.apiKey) player.showLoadingOverlay(`Checking XC${xcId}…`, { detail: 'Fetching recording metadata', progress: null });
+      if (xcPanel.apiKey) player.showLoadingOverlay(`Checking ${toXcId(xcId)}…`, { detail: 'Fetching recording metadata', progress: null });
       const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
       if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
         player.hideLoadingOverlay();
@@ -1341,7 +1342,7 @@
     function serializeAudioSource() {
       const active = recordingManager?.getActive?.();
       if (active?.xcId) {
-        return { type: 'xeno-canto', xcId: String(active.xcId), name: active.filename || '' };
+        return { type: 'xeno-canto', xcId: toXcId(active.xcId), name: active.filename || '' };
       }
       if (active?.filename) {
         return { type: 'file', name: active.filename };
@@ -1619,7 +1620,7 @@
     async function copyAllXcToFolder() {
       const todo = recordingManager.getAll().filter((e) => e.source === 'xc' && e.xcId && !e.path);
       for (const [i, entry] of todo.entries()) {
-        selectionMeta.textContent = `Copying XC${entry.xcId} to the project folder (${i + 1}/${todo.length})…`;
+        selectionMeta.textContent = `Copying ${toXcId(entry.xcId)} to the project folder (${i + 1}/${todo.length})…`;
         await persistXcToFolder(entry);
       }
       if (todo.length) selectionMeta.textContent = `${todo.length} XC recording${todo.length === 1 ? '' : 's'} copied to xc/`;
@@ -1670,7 +1671,7 @@
         const path = xcRecordingPath(entry.xcId);
         await projectStore.writeAudio(path, audio.buffer);
         const meta = entry.xcRecordingMeta || {
-          id: entry.xcId, url: `https://xeno-canto.org/${entry.xcId}`,
+          id: toXcId(entry.xcId), url: `https://xeno-canto.org/${xcNumber(entry.xcId)}`,
           note: 'Full metadata (license, recordist) needs an XC API key; see the URL.',
         };
         await projectStore.writeText(xcMetaPath(entry.xcId), JSON.stringify(meta, null, 2) + '\n');
@@ -2066,7 +2067,7 @@
       const _entryEn   = _entryMeta?.en  || '';
       const _isSoundscape = _entryGen.toLowerCase() === 'sonus';
       propsPanel.setRecordingMeta(state.recordingMeta, {
-        source: entry.xcId ? `XC${entry.xcId}` : '',
+        source: toXcId(entry.xcId) || '',
         sampleRate: entry.sampleRate || state.sampleRate,
         duration: player.duration || 0,
         filename: entry.filename,
@@ -2125,7 +2126,7 @@
       const wasActive = entry.id === recordingManager.activeId;
       const snapshot = { ...recordingManager.getById(entry.id) };
       recordingManager.remove(entry.id);
-      showUndoToast(`Removed ${entry.xcId ? 'XC' + entry.xcId : entry.filename} from the session`, () => {
+      showUndoToast(`Removed ${toXcId(entry.xcId) || entry.filename} from the session`, () => {
         recordingManager.add(snapshot);
         if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
       });
@@ -2167,7 +2168,7 @@
       const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
       const anns = (live ? state.labels : old.annotations) || [];
       const n = anns.filter((a) => a.setId === state.ownSetId).length;
-      const v = await askReplaceOrKeep(old.xcId ? 'XC' + old.xcId : old.filename, n);
+      const v = await askReplaceOrKeep(toXcId(old.xcId) || old.filename, n);
       if (v === 'cancel') return { cancel: true };
       if (v === 'keep') { recordingExplorer.setMultiMode(true); return { replace: null }; }
       return { replace: old };
@@ -2204,10 +2205,10 @@
       onRemoveRecording: (entry) => removeRecordingWithUndo(entry),
       onResetRecording: async (entry) => {
         const undo = snapshotLabels();
-        showUndoToast(`Cleared labels of ${entry.xcId ? 'XC' + entry.xcId : entry.filename}`, undo);
+        showUndoToast(`Cleared labels of ${toXcId(entry.xcId) || entry.filename}`, undo);
         // Remove XC fallback sets tied to this recording (named XC sets stay — re-import matches by uri/name)
         for (const [id, s] of [...state.labelSets]) {
-          if (s.origin === 'xeno-canto' && s.xcFallbackId === entry.xcId) state.labelSets.delete(id);
+          if (s.origin === 'xeno-canto' && sameXcId(s.xcFallbackId, entry.xcId)) state.labelSets.delete(id);
         }
         if (entry.id === recordingManager.activeId) {
           // Active recording: clear live state, sync, then re-import from XC
@@ -3164,7 +3165,7 @@
       const tag = (l, entry) => {
         const copy = { ...l };
         // Recordings without XC number get an empty xc_nr (an upload error), not the loaded XC recording's
-        if (entry && !copy.xc_nr) copy.xc_nr = entry.xcId || '';
+        if (entry && !copy.xc_nr) copy.xc_nr = xcNumber(entry.xcId);
         if (entry?.filename && !copy.sound_file) copy.sound_file = entry.filename;
         return copy;
       };
@@ -3196,7 +3197,7 @@
         return result;
       },
       getApiKey: () => xcPanel.apiKey,
-      getFilename: () => (xcPanel.xcId ? `XC${xcPanel.xcId}_annotation_set.json` : 'annotation_set.json'),
+      getFilename: () => (toXcId(xcPanel.xcId) ? `${toXcId(xcPanel.xcId)}_annotation_set.json` : 'annotation_set.json'),
       defaultCollapseDepth: 1,
     });
 
