@@ -59,3 +59,22 @@ test('layers: active layer and asOwnLabel', () => {
     s.get('own').activeLayerId = 'gone';
     assert.equal(activeLayerId(s), 'default');
 });
+
+test('layer editing: add, rename, activate, remove (labels move to default)', async () => {
+    const { addLayer, renameLayer, setActiveLayer, removeLayer } = await import('../src/app/label-sources.ts');
+    const s = new Map([['own', { id: 'own', origin: 'manual' }]]);
+    const b = addLayer(s, ' Second pass ');
+    assert.equal(b.name, 'Second pass');
+    assert.equal(activeLayerId(s), b.id);
+    assert.ok(renameLayer(s, b.id, 'Annotator B'));
+    assert.equal(ownLayers(s)[1].name, 'Annotator B');
+    assert.ok(setActiveLayer(s, 'default'));
+    assert.ok(!setActiveLayer(s, 'nope'));
+    const labels = [{ setId: 'own', layer: b.id }, { setId: 'xc', layer: b.id }];
+    setActiveLayer(s, b.id);
+    assert.equal(removeLayer(s, b.id, [labels]), 1);
+    assert.deepEqual(labels.map((l) => l.layer), ['default', b.id]);
+    assert.equal(activeLayerId(s), 'default');
+    assert.equal(removeLayer(s, 'default', [labels]), -1);
+    assert.equal(addLayer(new Map(), 'x'), null);
+});

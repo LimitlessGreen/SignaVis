@@ -125,3 +125,55 @@ export function migrateToOwnSource(
     }
     return changed;
 }
+
+// ── Layer editing (own source) ─────────────────────────────────────────
+
+function ownEntry(sets: Map<string, any>) {
+    const own = sets.get(OWN_SOURCE_ID);
+    if (own) own.layers = ownLayers(sets);
+    return own;
+}
+
+/** Add a layer and make it the active one. Returns the new layer (null without own entry). */
+export function addLayer(sets: Map<string, any>, name: string): Layer | null {
+    const own = ownEntry(sets);
+    if (!own) return null;
+    const base = String(name || '').trim() || `Layer ${own.layers.length + 1}`;
+    let id = `layer_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    while (own.layers.some((l: Layer) => l.id === id)) id += 'x';
+    const layer = { id, name: base };
+    own.layers.push(layer);
+    own.activeLayerId = id;
+    return layer;
+}
+
+export function renameLayer(sets: Map<string, any>, id: string, name: string) {
+    const own = ownEntry(sets);
+    const l = own?.layers.find((x: Layer) => x.id === id);
+    if (!l || !String(name || '').trim()) return false;
+    l.name = String(name).trim();
+    return true;
+}
+
+export function setActiveLayer(sets: Map<string, any>, id: string) {
+    const own = ownEntry(sets);
+    if (!own || !own.layers.some((x: Layer) => x.id === id)) return false;
+    own.activeLayerId = id;
+    return true;
+}
+
+/**
+ * Remove a layer; its labels move to the default layer (labels are never deleted here).
+ * The default layer cannot be removed. Label lists are changed in place; returns moved count.
+ */
+export function removeLayer(sets: Map<string, any>, id: string, labelLists: any[][]) {
+    const own = ownEntry(sets);
+    if (!own || id === DEFAULT_LAYER_ID || !own.layers.some((x: Layer) => x.id === id)) return -1;
+    own.layers = own.layers.filter((x: Layer) => x.id !== id);
+    if (own.activeLayerId === id) own.activeLayerId = DEFAULT_LAYER_ID;
+    let moved = 0;
+    for (const list of labelLists) for (const l of list || []) {
+        if (l?.setId === OWN_SOURCE_ID && l.layer === id) { l.layer = DEFAULT_LAYER_ID; moved++; }
+    }
+    return moved;
+}

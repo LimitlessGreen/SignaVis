@@ -194,7 +194,7 @@ export class RecordingExplorer {
         header.appendChild(chevron);
         header.appendChild(nameEl);
 
-        // Status of the own set: draft → ready → uploaded
+        // Status of the own labels (local check): draft → ready — only without a project name
         const status = projectName ? null : this._getSetStatus?.();
         if (status) {
             const badge = document.createElement('span');
@@ -421,7 +421,7 @@ export class RecordingExplorer {
             name.className = 'rec-set-name';
             name.innerHTML = `<span class="rec-set-origin">${origin}</span>`;
             name.append(` ${info.name || 'Imported set'}`);
-            name.title = `${info.name || 'Imported set'}${info.creator ? ' — ' + info.creator : ''} · read-only, not part of your set`;
+            name.title = `${info.name || 'Imported set'}${info.creator ? ' — ' + info.creator : ''} · read-only, not part of your labels`;
 
             const count = document.createElement('span');
             count.className = 'recording-explorer-meta';
@@ -434,7 +434,7 @@ export class RecordingExplorer {
                 adopt.type = 'button';
                 adopt.className = 'tb-btn rec-set-adopt';
                 adopt.textContent = 'Adopt';
-                adopt.title = `Copy these ${n} labels into your own set`;
+                adopt.title = `Copy these ${n} labels into your own labels`;
                 adopt.addEventListener('click', (e) => { e.stopPropagation(); this._onAdoptSet(setId); });
                 row.appendChild(adopt);
             }

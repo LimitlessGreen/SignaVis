@@ -1,7 +1,9 @@
 /**
  * Label list for the sidebar — a three-level tree.
  *
- *   1. Source block: one per annotation set (own sets first, then BirdNET, then XC / imported sets).
+ *   1. Source block: "My labels" (own source) first, then BirdNET, then XC / imported sets.
+ *      Own labels may sit on several layers: a layer bar (active layer, visibility) shows once
+ *      there is more than the default layer.
  *      Header: badge (ME / BN / XC) · name · "n · k species" · eye; adopt + ⋯ menu on hover;
  *      info line with creator · license · link for imported sets.
  *   2. Species row: bird image · common / scientific name · count.
@@ -17,6 +19,7 @@
 
 import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
 
 const BIRD_IMG_BASE = './data/species_images/';
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
@@ -26,6 +29,16 @@ const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
 const HIDDEN_TAG_KEYS = new Set(['annotator', 'animalSeen', 'playbackUsed', 'remarks']);
 const VIEW_KEY = 'signavis.labels.view.v1';
+
+export interface LayerOptions {
+  get: () => { layers: { id: string; name: string }[]; active: string; hidden: Set<string> };
+  onSetActive: (id: string) => void;
+  onAdd: () => void;
+  onRename: (id: string) => void;
+  onRemove: (id: string) => void;
+  onMove: (labelIds: string[], layerId: string) => void;
+  onToggleHidden: (id: string) => void;
+}
 
 const ICON = {
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
@@ -91,6 +104,8 @@ export class LabelList {
     _badgeEl: any;
     _bulkToolbar: any;
     _canDeleteSet: any;
+    /** Layer callbacks of the own source (see LayerOptions). */
+    _layers: LayerOptions | null;
     _cardMap: any;
     _container: any;
     _emptyEl: any;
@@ -183,6 +198,7 @@ export class LabelList {
     this._onAdoptLabel = opts.onAdoptLabel || null;
     this._onPlaySegment = opts.onPlaySegment || null;
     this._canDeleteSet = opts.canDeleteSet || null;
+    this._layers = opts.layers || null;
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._onOpenRefCalls = opts.onOpenRefCalls || null;
     this._cardMap = new Map();
@@ -421,11 +437,12 @@ export class LabelList {
     hdr.setAttribute('aria-expanded', String(open));
     const chev = el('span', 'lt-chev'); chev.innerHTML = ICON.chev; hdr.appendChild(chev);
     const badge = el('span', `lt-badge lt-badge--${originBadge(origin).toLowerCase()}`, originBadge(origin));
-    badge.title = origin === 'manual' ? 'Own set' : origin;
+    const isOwn = setKey === OWN_SOURCE_ID;
+    badge.title = isOwn ? 'Your own labels' : origin === 'manual' ? 'Own set' : origin;
     hdr.appendChild(badge);
-    const name = el('span', 'lt-src-name', setInfo?.name || (setKey ? 'Annotation set' : 'Labels without set'));
-    name.title = setInfo?.name || '';
-    if (this._onRenameSet && setKey && !locked) {
+    const name = el('span', 'lt-src-name', isOwn ? 'My labels' : (setInfo?.name || (setKey ? 'Annotation set' : 'Labels without set')));
+    name.title = isOwn ? 'Your own labels — the XC set is built from them in the Upload tab' : (setInfo?.name || '');
+    if (this._onRenameSet && setKey && !locked && !isOwn) {
       name.title = `${setInfo?.name || ''} — double-click to rename`;
       name.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); this._startSetRename(name, setKey, setInfo); });
     }
@@ -433,7 +450,7 @@ export class LabelList {
 
     const hover = el('span', 'lt-hover-acts');
     if (this._onAdoptSet && setKey && external && g.total > 0) {
-      hover.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy all labels into my set', () => this._onAdoptSet(setKey)));
+      hover.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy all labels into my labels', () => this._onAdoptSet(setKey)));
     }
     if (setKey) hover.appendChild(iconBtn('lt-more', ICON.more, 'More…', (e) => this._openSetMenu(e, setKey, setInfo, locked, external, g.total, name)));
     hdr.appendChild(hover);
@@ -481,6 +498,7 @@ export class LabelList {
       });
     }
     section.appendChild(hdr);
+    if (isOwn) { const bar = this._buildLayerBar(); if (bar) section.appendChild(bar); }
 
     // ── Info line (imported sets): creator · license · link ──
     const infoParts = [setInfo?.creator, setInfo?.license].filter(Boolean);
@@ -513,10 +531,67 @@ export class LabelList {
     return section;
   }
 
+  // ── Layers (own source) ───────────────────────────────────────────
+
+  _layerInfo() {
+    if (!this._layers) return null;
+    const info = this._layers.get();
+    return { layers: info.layers || [], active: info.active || DEFAULT_LAYER_ID, hidden: info.hidden || new Set<string>() };
+  }
+
+  _ownMenuItems(items: any[]) {
+    const info = this._layerInfo();
+    if (!info) { items.push({ label: 'No actions', disabled: true }); return; }
+    items.push({ label: 'New layer…', action: () => this._layers!.onAdd() });
+    for (const ly of info.layers) {
+      if (ly.id === DEFAULT_LAYER_ID && info.layers.length === 1) continue;
+      items.push({ label: `Rename layer “${ly.name}”…`, action: () => this._layers!.onRename(ly.id) });
+    }
+    const removable = info.layers.filter((x) => x.id !== DEFAULT_LAYER_ID);
+    if (removable.length) items.push({ separator: true });
+    for (const ly of removable) {
+      items.push({ label: `Remove layer “${ly.name}” (labels move to “${info.layers[0].name}”)`, danger: true, action: () => this._layers!.onRemove(ly.id) });
+    }
+  }
+
+  /** Chips: click = draw new labels on this layer; eye = show/hide on the spectrogram. Only with >1 layer. */
+  _buildLayerBar() {
+    const info = this._layerInfo();
+    if (!info || info.layers.length < 2) return null;
+    const bar = el('div', 'lt-layers');
+    bar.appendChild(el('span', 'lt-layers-label', 'Layer'));
+    for (const ly of info.layers) {
+      const hidden = info.hidden.has(ly.id);
+      const chip = el('span', 'lt-layer-chip' + (ly.id === info.active ? ' lt-layer-chip--active' : '') + (hidden ? ' lt-layer-chip--hidden' : ''));
+      const b = el('button', 'lt-layer-name', ly.name);
+      b.type = 'button';
+      b.title = ly.id === info.active ? 'New labels go to this layer (double-click to rename)' : 'Draw new labels on this layer (double-click to rename)';
+      b.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onSetActive(ly.id); });
+      b.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onRename(ly.id); });
+      const eye = iconBtn(`lt-eye${hidden ? ' lt-eye--off' : ''}`, hidden ? ICON.eyeOff : ICON.eye,
+        hidden ? 'Show layer on spectrogram' : 'Hide layer on spectrogram', () => this._layers!.onToggleHidden(ly.id));
+      chip.append(b, eye);
+      bar.appendChild(chip);
+    }
+    const add = el('button', 'lt-layer-add', '+');
+    add.type = 'button';
+    add.title = 'New layer';
+    add.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onAdd(); });
+    bar.appendChild(add);
+    return bar;
+  }
+
   _openSetMenu(e: MouseEvent, setKey: string, setInfo: any, locked: boolean, external: boolean, total: number, nameEl: any) {
     const items: any[] = [];
+    if (setKey === OWN_SOURCE_ID) {
+      this._ownMenuItems(items);
+      const t0 = (e.currentTarget || e.target) as HTMLElement;
+      const r0 = e.type === 'contextmenu' ? null : t0?.getBoundingClientRect?.();
+      showContextMenu({ x: r0 ? r0.left : e.clientX, y: r0 ? r0.bottom + 2 : e.clientY, items });
+      return;
+    }
     if (this._onRenameSet && !locked) items.push({ label: 'Rename set', action: () => this._startSetRename(nameEl, setKey, setInfo) });
-    if (this._onAdoptSet && external && total > 0) items.push({ label: 'Copy all labels into my set', action: () => this._onAdoptSet(setKey) });
+    if (this._onAdoptSet && external && total > 0) items.push({ label: 'Copy all labels into my labels', action: () => this._onAdoptSet(setKey) });
     if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') items.push({ label: 'Convert to manual set', action: () => this._onConvertSetToManual(setKey) });
     if (this._onToggleLockSet && setInfo?.origin !== 'xeno-canto') {
       items.push({ label: locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)', action: () => this._onToggleLockSet(setKey, !locked) });
@@ -721,6 +796,15 @@ export class LabelList {
     if (!o.flat) row.appendChild(el('span', 'lt-dur', fmtDur(lbl.end - lbl.start)));
     row.appendChild(this._buildTagText(lbl, o.flat));
 
+    const layerInfo = this._layerInfo();
+    const isOwnLabel = lbl.setId === OWN_SOURCE_ID;
+    if (isOwnLabel && layerInfo && layerInfo.layers.length > 1) {
+      const lid = lbl.layer || DEFAULT_LAYER_ID;
+      const ln = layerInfo.layers.find((x) => x.id === lid)?.name || lid;
+      row.appendChild(el('span', 'lt-layer', ln));
+      if (layerInfo.hidden.has(lid)) row.classList.add('lt-row--hidden');
+    }
+
     const right = el('span', 'lt-right');
     if (lbl.confidence != null) {
       const pct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
@@ -732,7 +816,7 @@ export class LabelList {
     if (!locked) {
       acts.appendChild(iconBtn('species-edit-btn', ICON.edit, 'Change species / edit', () => this._onEdit?.(lbl.id)));
     } else if (this._onAdoptLabel) {
-      acts.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy into my set', () => this._onAdoptLabel(lbl.id)));
+      acts.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy into my labels', () => this._onAdoptLabel(lbl.id)));
     }
     if (this._onOpenRefCalls) acts.appendChild(iconBtn('', ICON.ref, 'Reference calls', () => this._onOpenRefCalls(lbl)));
     if (!locked) acts.appendChild(iconBtn('danger', ICON.del, 'Delete', () => this._onRemove?.(lbl)));
@@ -755,10 +839,18 @@ export class LabelList {
       const items: any[] = [];
       if (this._onPlaySegment) items.push({ label: 'Play segment', action: () => this._onPlaySegment(lbl) });
       if (locked) {
-        if (this._onAdoptLabel) items.push({ label: 'Copy into my set', action: () => this._onAdoptLabel(lbl.id) });
+        if (this._onAdoptLabel) items.push({ label: 'Copy into my labels', action: () => this._onAdoptLabel(lbl.id) });
         items.push({ label: 'Read-only (imported set)', disabled: true });
       } else {
         items.push({ label: 'Rename', icon: '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>', action: () => this._onEdit?.(lbl.id) });
+        if (isOwnLabel && layerInfo && layerInfo.layers.length > 1) {
+          const ids = this._multiSelectedIds.has(lbl.id) ? [...this._multiSelectedIds].filter((id) => !this._lockedIds.has(id)) : [lbl.id];
+          items.push({ separator: true });
+          for (const ly of layerInfo.layers) {
+            if (ly.id === (lbl.layer || DEFAULT_LAYER_ID) && ids.length === 1) continue;
+            items.push({ label: `Move ${ids.length > 1 ? ids.length + ' labels ' : ''}to layer “${ly.name}”`, action: () => this._layers!.onMove(ids, ly.id) });
+          }
+        }
         items.push({ separator: true });
         items.push({ label: 'Delete', danger: true, icon: '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>', action: () => this._onRemove?.(lbl) });
       }
