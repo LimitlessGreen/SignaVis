@@ -111,3 +111,5 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   (`#xcSetContainer`) im Upload-Tab, Checklisten-Sprung „Set“ dorthin. Exporte im Labels-Tab blieben
   unverändert (arbeiteten schon pro Aufnahme bzw. Upload-Auswahl). Layer-`annotator` → Set noch nicht
   umgesetzt (Annotator kommt weiter aus dem Profil). Im Browser noch ungetestet.
+- Nachtrag (2026-11-01, Nutzer-Feedback „seltsame +-Ansicht, Datei vorher nicht ansehbar“): Ordnerdateien
+  ohne Eintrag als blasse `file`-Knoten im Baum, Klick öffnet (legt Eintrag an); „+“-Liste entfernt.
