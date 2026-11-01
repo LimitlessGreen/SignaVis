@@ -68,7 +68,7 @@ def main():
     with sync_playwright() as p:
         b = p.chromium.launch()
         ctx = b.new_context(viewport={"width": 1600, "height": 950}, user_agent=UA)
-        ctx.add_init_script("localStorage.setItem('audio-workbench.xc-nokey-dismissed.v1','1');")
+        ctx.add_init_script("localStorage.setItem('audio-workbench.xc-nokey-dismissed.v1','1');localStorage.setItem('signavis.daily-tips.disabled','1');")
         pg = ctx.new_page()
         pg.on("console", lambda m: m.type == "error" and report.append(f"console: {m.text}"))
         pg.on("pageerror", lambda e: report.append(f"pageerror: {e}"))
