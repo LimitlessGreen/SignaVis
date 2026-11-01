@@ -1,12 +1,11 @@
 // annotation-sets.ts — data model for annotation sets in a labeling session
 //
-// A session holds 1…n recordings and several annotation sets:
-// - own set (origin 'manual', unlocked): editable, upload target, status draft → ready → uploaded;
-// - imported sets (xeno-canto, BirdNET, file): locked, labels can be copied into the own set.
-// XC sets cannot be edited after upload — changing an uploaded set returns it to 'draft'
-// and it has to be deleted on XC and uploaded again.
+// Registry entries of a session:
+// - the own source (label-sources.ts, origin 'manual', unlocked): own labels + upload metadata,
+//   status draft → ready from the local check; uploads are snapshots (upload-selection.ts);
+// - imported sets (xeno-canto, BirdNET, file): locked, labels can be copied into the own source.
 
-export type SetStatus = 'draft' | 'ready' | 'uploaded';
+export type SetStatus = 'draft' | 'ready';
 
 export function isOwnSet(set: any) {
     return !!set && (set.origin || 'manual') === 'manual' && !set.locked;
@@ -17,37 +16,15 @@ export function normalizeSet(set: any) {
     const s = { ...set };
     if (!s.origin) s.origin = 'manual';
     if (s.origin !== 'manual') s.locked = true;
-    if (!['draft', 'ready', 'uploaded'].includes(s.status)) s.status = 'draft';
-    if (s.uploadedAt === undefined) s.uploadedAt = null;
+    if (!['draft', 'ready'].includes(s.status)) s.status = 'draft';
     return s;
 }
 
-/**
- * Record a change to an own set (metadata or labels).
- * Returns true when the set had been uploaded — the caller should tell the user
- * to delete it on XC and upload it again.
- */
-export function markSetEdited(set: any) {
-    if (!set) return false;
-    const wasUploaded = set.status === 'uploaded';
-    set.status = 'draft';
-    if (wasUploaded) set.changedAfterUpload = true;
-    return wasUploaded;
-}
-
-/** Status after a local check: 'ready' without errors, else 'draft'. An unchanged uploaded set stays 'uploaded'. */
+/** Status after a local check: 'ready' without errors, else 'draft'. */
 export function setStatusFromValidation(set: any, validation: { ok: boolean }) {
     if (!set) return 'draft';
-    if (set.status === 'uploaded') return 'uploaded';
     set.status = validation?.ok ? 'ready' : 'draft';
     return set.status;
-}
-
-export function markSetUploaded(set: any, now = new Date()) {
-    if (!set) return;
-    set.status = 'uploaded';
-    set.uploadedAt = now.toISOString();
-    set.changedAfterUpload = false;
 }
 
 let _adoptCounter = 0;

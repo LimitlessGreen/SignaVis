@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    isOwnSet, normalizeSet, markSetEdited, setStatusFromValidation, markSetUploaded,
+    isOwnSet, normalizeSet, setStatusFromValidation,
     adoptLabels, migrateSessionState,
 } from '../src/app/annotation-sets.ts';
 import { RecordingManager } from '../src/app/recording-manager.ts';
@@ -11,7 +11,6 @@ test('normalizeSet: defaults and locks imported sets', () => {
     const own = normalizeSet({ id: 'a', name: 'Mine' });
     assert.equal(own.origin, 'manual');
     assert.equal(own.status, 'draft');
-    assert.equal(own.uploadedAt, null);
     assert.equal(isOwnSet(own), true);
 
     const xc = normalizeSet({ id: 'b', origin: 'xeno-canto', locked: false });
@@ -19,20 +18,10 @@ test('normalizeSet: defaults and locks imported sets', () => {
     assert.equal(isOwnSet(xc), false);
 });
 
-test('status: ready after clean check, draft + hint after change to uploaded set', () => {
+test('status: ready after clean check, else draft', () => {
     const s = normalizeSet({ id: 'a' });
     assert.equal(setStatusFromValidation(s, { ok: false }), 'draft');
     assert.equal(setStatusFromValidation(s, { ok: true }), 'ready');
-
-    markSetUploaded(s, new Date('2026-10-30T10:00:00Z'));
-    assert.equal(s.status, 'uploaded');
-    assert.equal(s.uploadedAt, '2026-10-30T10:00:00.000Z');
-    assert.equal(setStatusFromValidation(s, { ok: true }), 'uploaded');
-
-    assert.equal(markSetEdited(s), true);
-    assert.equal(s.status, 'draft');
-    assert.equal(s.changedAfterUpload, true);
-    assert.equal(markSetEdited(s), false);
 });
 
 test('adoptLabels: editable copies in the own set with new ids', () => {

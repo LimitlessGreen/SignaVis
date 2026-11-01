@@ -894,12 +894,8 @@ export class XenoCantoPanel {
     const prof = this._annotatorProfile;
     const effectiveLicense = normalizeLicenseValue(sm.license || (prof?.license ?? '')) || 'CC-BY-NC';
 
-    // Filter labels to the active set if one is selected
-    let targetLabels = labels || [];
-    if (this._activeSetId) {
-      const filtered = targetLabels.filter((l: any) => l.setId === this._activeSetId);
-      if (filtered.length) targetLabels = filtered;
-    }
+    // The host picks the labels (upload selection: recordings, species, layers, sources)
+    const targetLabels = labels || [];
 
     // Attach app version when available (injected by the demo page at runtime)
     const softwareVersion = (typeof window !== 'undefined' && (window as any).AUDIO_WORKBENCH_VERSION) ? ` ${(window as any).AUDIO_WORKBENCH_VERSION}` : '';

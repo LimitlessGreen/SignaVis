@@ -56,3 +56,47 @@
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
+
+// ── Upload tab: set contents + uploaded sets (upload-selection-panel.ts) ──
+.us-panel { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+.us-group {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0;
+  padding: 4px 8px 6px;
+  legend { font-size: 11px; font-weight: 600; padding: 0 4px; color: var(--color-text-primary); }
+  .field-hint { margin: 0 0 4px; }
+}
+.us-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 0;
+  cursor: pointer;
+  input { margin: 0; }
+  &.us-row--disabled { opacity: .6; cursor: default; }
+}
+.us-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us-note { font-size: 10px; color: var(--color-text-secondary); }
+.us-count { font-size: 10px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.us-uploads { padding: 0 0 8px; }
+.us-snap {
+  margin: 4px 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 11px;
+  .field-hint { margin: 4px 0 0; }
+}
+.us-snap-title { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.us-snap-meta { color: var(--color-text-secondary); font-size: 10px; margin-top: 2px; }
+.us-snap-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  color: var(--color-success, #22c55e);
+  .us-snap--changed & { color: var(--color-warning, #f59e0b); }
+}
