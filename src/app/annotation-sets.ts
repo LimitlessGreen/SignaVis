@@ -57,10 +57,11 @@ function newLabelId() {
 }
 
 /**
- * Copy labels (e.g. from an imported XC/BirdNET set) into the own set.
+ * Copy labels (e.g. from an imported XC/BirdNET set) into the own source.
  * Copies get new IDs and become editable manual labels; the source is kept in `adoptedFrom`.
+ * `layer`: own layer for the copies (see label-sources.ts).
  */
-export function adoptLabels(labels: any[], targetSetId: string, now = new Date()) {
+export function adoptLabels(labels: any[], targetSetId: string, now = new Date(), layer?: string) {
     return (labels || []).map((l) => {
         const { readonly, annotationSet, ...rest } = l || {};
         return {
@@ -71,15 +72,9 @@ export function adoptLabels(labels: any[], targetSetId: string, now = new Date()
             readonly: false,
             createdAt: now.toISOString(),
             adoptedFrom: { id: l?.id ?? null, setId: l?.setId ?? null, origin: l?.origin ?? null },
+            ...(layer ? { layer } : {}),
         };
     });
-}
-
-/** Ensure the session has an own set; returns its id. `create` builds and registers a new set. */
-export function ensureOwnSet(labelSets: Map<string, any>, preferredId: string | null, create: () => any) {
-    if (preferredId && isOwnSet(labelSets.get(preferredId))) return preferredId;
-    for (const [id, s] of labelSets) if (isOwnSet(s)) return id;
-    return create()?.id ?? null;
 }
 
 const LEGACY_MODE_KEY = 'audio-workbench.mode.v1';

@@ -12,30 +12,28 @@ function createLocalStorage() {
   };
 }
 
-test('restoreSessionSets restores explicit activeSetId and session id', () => {
+test('restoreSessionSets moves the own set to the own source', () => {
   globalThis.localStorage = createLocalStorage();
   const setId = 'set_test_1';
-  const state = { labelSets: new Map([[setId, { id: setId, name: 'S' }]]), activeSetId: setId, ownSetId: null };
+  const state = { labelSets: new Map([[setId, { id: setId, name: 'S' }]]), activeSetId: setId };
   saveSessionSets(state);
 
-  const s2 = { labelSets: new Map(), activeSetId: null, ownSetId: null };
-  const ok = restoreSessionSets(s2);
-  assert.equal(ok, true);
-  assert.equal(s2.labelSets.size, 1);
-  assert.equal(s2.activeSetId, setId);
-  assert.equal(s2.ownSetId, setId);
+  const s2 = { labelSets: new Map(), activeSetId: null };
+  assert.equal(restoreSessionSets(s2), true);
+  assert.deepEqual([...s2.labelSets.keys()], ['own']);
+  assert.equal(s2.labelSets.get('own').name, 'S');
+  assert.deepEqual(s2.labelSets.get('own').legacyIds, [setId]);
+  assert.equal(s2.activeSetId, 'own');
 });
 
-test('restoreSessionSets falls back to first set when no activeSetId', () => {
+test('restoreSessionSets: older data without activeSetId — first own set wins, others become layers', () => {
   globalThis.localStorage = createLocalStorage();
-  const setIdA = 'set_a';
-  const sets = [[setIdA, { id: setIdA, name: 'A' }], ['set_b', { id: 'set_b', name: 'B' }]];
-  // write raw directly to emulate older data without activeSetId
+  const sets = [['set_a', { id: 'set_a', name: 'A' }], ['set_b', { id: 'set_b', name: 'B' }]];
   localStorage.setItem('signavis.session-sets.v1', JSON.stringify({ sets, activeSetId: null }));
 
-  const s3 = { labelSets: new Map(), activeSetId: null, ownSetId: null };
-  const ok2 = restoreSessionSets(s3);
-  assert.equal(ok2, true);
-  assert.equal(s3.ownSetId, setIdA);
-  assert.equal(s3.activeSetId, setIdA);
+  const s3 = { labelSets: new Map(), activeSetId: null };
+  assert.equal(restoreSessionSets(s3), true);
+  assert.deepEqual(s3.labelSets.get('own').legacyIds, ['set_a']);
+  assert.deepEqual(s3.labelSets.get('own').layers.map((l) => l.id), ['default', 'set_b']);
+  assert.equal(s3.activeSetId, 'own');
 });
