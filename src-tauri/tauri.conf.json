@@ -27,7 +27,9 @@
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset:; media-src 'self' blob: asset: http://asset.localhost; connect-src 'self' asset: http://asset.localhost https://xeno-canto.org https://cdn.jsdelivr.net",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       }
     }
   },
