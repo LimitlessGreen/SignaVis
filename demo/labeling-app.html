@@ -1186,56 +1186,74 @@
       const el = document.createElement('div');
       el.className = 'scroll-panel';
       el.innerHTML = `
-        <div class="sidebar-section-header">Playback</div>
-        <div class="panel-section">
-          <p class="field-hint">Make ultrasonic calls audible. Only playback changes — spectrogram, labels and times stay in the original recording.</p>
-          <label class="field-label" for="audioModeSelect">Method</label>
-          <select id="audioModeSelect" class="field-select">
+        <div class="sidebar-section-header" title="Make ultrasonic calls audible. Only playback changes — spectrogram, labels and times stay in the original recording."><span>Playback</span><span class="audio-info" aria-hidden="true">ⓘ</span></div>
+        <div class="audio-section">
+          <select id="audioModeSelect" hidden aria-hidden="true" tabindex="-1">
             <option value="expansion">Time expansion</option>
-            <option value="heterodyne">Heterodyne detector</option>
-            <option value="division">Frequency-division detector</option>
-            <option value="pitch">Pitch shift (real time)</option>
+            <option value="heterodyne">Heterodyne</option>
+            <option value="division">Frequency division</option>
+            <option value="pitch">Pitch shift</option>
           </select>
-          <div data-mode="expansion">
-            <label class="field-label" for="audioExpansionSelect">Slowdown</label>
-            <select id="audioExpansionSelect" class="field-select">
-              ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
-            </select>
-            <p class="field-hint">Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10. Keeps every detail of the call.</p>
+          <div class="audio-seg" id="audioModeSeg" role="radiogroup" aria-label="Method">
+            <button type="button" class="audio-seg-btn" role="radio" data-value="expansion" title="Slow the recording down — keeps every detail of a call">
+              <span class="audio-seg-title">Expand</span><span class="audio-seg-sub">Slowed down</span></button>
+            <button type="button" class="audio-seg-btn" role="radio" data-value="heterodyne" title="Real-time detector tuned to one frequency">
+              <span class="audio-seg-title">Heterodyne</span><span class="audio-seg-sub">Tuned, real time</span></button>
+            <button type="button" class="audio-seg-btn" role="radio" data-value="division" title="Real-time detector, all calls at once">
+              <span class="audio-seg-title">Divide</span><span class="audio-seg-sub">All calls, real time</span></button>
+            <button type="button" class="audio-seg-btn" role="radio" data-value="pitch" title="Real-time pitch shift that keeps the rhythm">
+              <span class="audio-seg-title">Pitch</span><span class="audio-seg-sub">Rhythm preserved</span></button>
           </div>
-          <div data-mode="heterodyne" hidden>
-            <label class="field-label" for="audioCarrierInput">Tuning (kHz)</label>
-            <input id="audioCarrierInput" class="input" type="number" min="10" max="150" step="1" value="40" />
-            <p class="field-hint">Real time, like a hand-held detector: calls within about ±6 kHz of the tuning sound as the difference tone. Tune to the call's peak frequency — or drag the dashed line in the spectrogram, or Alt+click a call.</p>
-          </div>
-          <div data-mode="division" hidden>
-            <label class="field-label" for="audioDivisorSelect">Divide by</label>
-            <select id="audioDivisorSelect" class="field-select">
-              ${[5, 8, 10, 16, 20].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
-            </select>
-            <label class="field-check"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
-            <p class="field-hint">Real time, like a frequency-division detector: every call at once, all frequencies divided. Sounds rough by nature; quiet background stays silent.</p>
-          </div>
-          <div data-mode="pitch" hidden>
-            <label class="field-label" for="audioPitchSelect">Lower pitch by</label>
-            <select id="audioPitchSelect" class="field-select">
-              ${[4, 8, 10, 16, 20, 32].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
-            </select>
-            <p class="field-hint">Real time with every frequency divided — keeps the rhythm of a pass (pulse rate, feeding buzz) at its natural pace. Single calls come out short; for their shape use time expansion.</p>
+          <div class="audio-mode-opts">
+            <div data-mode="expansion">
+              <div class="audio-row" title="Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10.">
+                <label class="field-label" for="audioExpansionSelect">Slowdown</label>
+                <select id="audioExpansionSelect" class="field-select">
+                  ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
+                </select>
+              </div>
+              <p class="field-hint audio-hint">×10: 45 kHz → 4.5 kHz</p>
+            </div>
+            <div data-mode="heterodyne" hidden>
+              <div class="audio-row" title="Calls within about ±6 kHz of the tuning sound as the difference tone.">
+                <label class="field-label" for="audioCarrierInput">Tuning</label>
+                <span class="audio-suffix">
+                  <input id="audioCarrierInput" class="input" type="number" min="10" max="150" step="1" value="40" /> kHz
+                </span>
+              </div>
+              <p class="field-hint audio-hint">Drag the dashed line or Alt+click a call to tune</p>
+            </div>
+            <div data-mode="division" hidden>
+              <div class="audio-row" title="Like a frequency-division detector: every call at once, all frequencies divided. Sounds rough by nature; quiet background stays silent.">
+                <label class="field-label" for="audioDivisorSelect">Divide by</label>
+                <select id="audioDivisorSelect" class="field-select">
+                  ${[5, 8, 10, 16, 20].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
+                </select>
+              </div>
+              <label class="field-check"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
+            </div>
+            <div data-mode="pitch" hidden>
+              <div class="audio-row" title="Every frequency divided in real time — keeps the rhythm of a pass (pulse rate, feeding buzz). Single calls come out short; for their shape use time expansion.">
+                <label class="field-label" for="audioPitchSelect">Lower pitch by</label>
+                <select id="audioPitchSelect" class="field-select">
+                  ${[4, 8, 10, 16, 20, 32].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
         <div class="sidebar-section-header">Recording</div>
-        <div class="panel-section">
-          <div id="audioDetectStatus" class="meta">No audio loaded.</div>
+        <div class="audio-section audio-section--facts">
+          <div id="audioDetectStatus" class="audio-empty">No audio loaded.</div>
+          <dl id="audioFacts" class="audio-facts"></dl>
           <div class="panel-actions">
             <button class="sidebar-action-btn" id="audioApplySuggestionBtn" type="button" hidden></button>
           </div>
-          <details id="audioGuanoDetails" hidden>
-            <summary class="field-label">GUANO metadata</summary>
-            <dl id="audioGuanoList" class="meta"></dl>
+          <details id="audioGuanoDetails" class="audio-guano" hidden>
+            <summary>GUANO metadata</summary>
+            <dl id="audioGuanoList" class="audio-facts"></dl>
           </details>
         </div>`;
-
       const modeSel = el.querySelector('#audioModeSelect');
       const expansionSel = el.querySelector('#audioExpansionSelect');
       const carrierInput = el.querySelector('#audioCarrierInput');
@@ -1249,9 +1267,45 @@
       const guanoDetails = el.querySelector('#audioGuanoDetails');
       const guanoList = el.querySelector('#audioGuanoList');
 
+      const factsEl = el.querySelector('#audioFacts');
+      const segBtns = [...el.querySelectorAll('.audio-seg-btn')];
       const showModeFields = (kind) => {
         for (const box of el.querySelectorAll('[data-mode]')) box.hidden = box.dataset.mode !== kind;
+        for (const b of segBtns) {
+          const on = b.dataset.value === kind;
+          b.setAttribute('aria-checked', String(on));
+          b.tabIndex = on ? 0 : -1;
+        }
       };
+      for (const b of segBtns) {
+        b.addEventListener('click', () => {
+          if (modeSel.value === b.dataset.value) return;
+          modeSel.value = b.dataset.value;
+          modeSel.dispatchEvent(new Event('change'));
+        });
+      }
+      el.querySelector('#audioModeSeg').addEventListener('keydown', (e) => {
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        const i = segBtns.findIndex((b) => b.dataset.value === modeSel.value);
+        const next = segBtns[(i + step + segBtns.length) % segBtns.length];
+        next.click();
+        next.focus();
+      });
+      const addFact = (list, label, value) => {
+        const dt = document.createElement('dt'); dt.textContent = label;
+        const dd = document.createElement('dd');
+        if (value instanceof Node) dd.append(value); else dd.textContent = value;
+        list.append(dt, dd);
+      };
+      const badge = (text, active) => {
+        const s = document.createElement('span');
+        s.className = 'audio-badge' + (active ? ' is-active' : '');
+        s.textContent = text;
+        return s;
+      };
+      showModeFields(modeSel.value);
       const modeFromFields = () => {
         switch (modeSel.value) {
           case 'heterodyne': return { kind: 'heterodyne', carrierHz: (Number(carrierInput.value) || 40) * 1000 };
@@ -1305,19 +1359,28 @@
         const info = e.detail;
         if (info?.peakHz) carrierInput.value = String(Math.round(info.peakHz / 1000));
         syncFields(player.listenMode);
-        if (!info) { statusEl.textContent = 'No audio loaded.'; syncSuggestion(); return; }
-        const parts = [];
-        if (info.storedExpansion > 1) {
-          parts.push(`Stored already time-expanded (×${info.storedExpansion}) — plays audibly as is.`);
-        } else if (info.isUltrasonic) {
-          const peak = info.peakHz != null ? ` — peak ≈ ${(info.peakHz / 1000).toFixed(1)} kHz` : '';
-          parts.push(`Ultrasound detected${peak} (${info.source === 'guano' ? 'from GUANO metadata' : 'from spectrum'}).`);
-        } else {
-          parts.push('No ultrasound detected.');
+        factsEl.replaceChildren();
+        if (!info) {
+          statusEl.hidden = false;
+          statusEl.textContent = 'No audio loaded.';
+          guanoDetails.hidden = true;
+          syncSuggestion();
+          return;
         }
-        if (info.ultrasonicFraction > 0) parts.push(`Energy above 18 kHz: ${Math.round(info.ultrasonicFraction * 100)} %.`);
-        if (info.device) parts.push(`Device: ${info.device}.`);
-        statusEl.textContent = parts.join(' ');
+        statusEl.hidden = true;
+        if (info.storedExpansion > 1) {
+          addFact(factsEl, 'Ultrasound', badge(`Already expanded ×${info.storedExpansion}`, false));
+        } else if (info.isUltrasonic) {
+          addFact(factsEl, 'Ultrasound', badge('Detected', true));
+        } else {
+          addFact(factsEl, 'Ultrasound', badge('Not detected', false));
+        }
+        if (info.peakHz != null) {
+          addFact(factsEl, 'Peak frequency',
+            `${(info.peakHz / 1000).toFixed(1)} kHz (${info.source === 'guano' ? 'GUANO' : 'spectrum'})`);
+        }
+        if (info.ultrasonicFraction > 0) addFact(factsEl, 'Energy > 18 kHz', `${Math.round(info.ultrasonicFraction * 100)} %`);
+        if (info.device) addFact(factsEl, 'Device', info.device);
 
         guanoDetails.hidden = !info.guano;
         guanoList.replaceChildren(...Object.entries(info.guano || {}).flatMap(([k, v]) => {
