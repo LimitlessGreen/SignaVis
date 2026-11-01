@@ -169,3 +169,17 @@ test('RecordingManager normalizes XC IDs on add, update, assign and lookup', () 
     rm.update(f.id, { xcId: 77 });
     assert.equal(rm.getById(f.id).xcId, 'XC77');
 });
+
+test('viewed-only folder files are not kept; labels, "+" or being active keep them', async () => {
+    const { keepRecording } = await import('../src/domain/project/workspaceProject.ts');
+    assert.equal(keepRecording({ id: 'a', pinned: false, annotations: [] }), false);
+    assert.equal(keepRecording({ id: 'a', pinned: false, annotations: [{ id: 1 }] }), true);
+    assert.equal(keepRecording({ id: 'a', pinned: false, annotations: [] }, 'a'), true);
+    assert.equal(keepRecording({ id: 'a', annotations: [] }), true);
+    const p = serializeProject({
+        entries: [{ id: 'v', pinned: false, path: 'v.wav', annotations: [] }, { id: 'k', pinned: false, path: 'k.wav', annotations: [] }],
+        activeId: 'k', labelSets: new Map(), ownSetId: null, activeSetId: null,
+    }, { id: 'p', name: 'n' }, NOW);
+    assert.deepEqual(p.recordings.map((r) => [r.id, r.pinned]), [['k', false]]);
+    assert.equal(deserializeProject(p).entries[0].pinned, false);
+});

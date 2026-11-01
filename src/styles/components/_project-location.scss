@@ -104,3 +104,15 @@
 // Folder files not opened yet (recording-explorer _buildFileRow): dimmed until opened
 .recording-explorer-row--file { opacity: .65; font-style: italic; }
 .recording-explorer-row--file:hover, .recording-explorer-row--file:focus-visible { opacity: 1; }
+.recording-explorer-row--transient { opacity: .7; }
+.recording-explorer-keep {
+  border: 1px solid var(--color-border);
+  background: none;
+  border-radius: 4px;
+  width: 18px;
+  line-height: 14px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  &:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
+}

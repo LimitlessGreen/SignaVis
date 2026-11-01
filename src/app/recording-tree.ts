@@ -1,9 +1,10 @@
 // recording-tree.ts — folder tree of a project's recordings (pure, no DOM)
 //
-// - Recordings with a project path appear in their real sub-folders ('audio/2026/a.wav').
-// - XC downloads (source 'xc', no path or a path under 'xc/') go into the virtual folder
-//   "Xeno-canto" (id XC_FOLDER_ID), sorted by XC number.
-// - Everything else (session-only files, samples, URLs) sits at the root.
+// Top level = sources, all as folders on the same level:
+// - LOCAL_FOLDER_ID: the project folder (named after it); recordings with a project path in their
+//   real sub-folders ('audio/2026/a.wav');
+// - XC_FOLDER_ID "Xeno-canto": XC downloads (source 'xc', no path or a path under 'xc/'), by number;
+// - SESSION_FOLDER_ID "Session files": everything else (session-only files, samples, URLs).
 // - Audio files of the project folder that have no recording entry yet appear as 'file'
 //   nodes in their folders: opening one creates the entry (the project file stays small).
 // Folders come first, then recordings; names sort naturally ('a2' before 'a10').
@@ -12,8 +13,10 @@ import { inferSource } from '../domain/project/workspaceProject.ts';
 import { toXcId, xcNumber } from '../domain/xc/xcId.ts';
 
 export const XC_FOLDER_ID = '@xc';
+export const LOCAL_FOLDER_ID = '@local';
+export const SESSION_FOLDER_ID = '@session';
 
-export interface TreeFolder { kind: 'folder'; id: string; name: string; virtual?: 'xc'; children: TreeNode[] }
+export interface TreeFolder { kind: 'folder'; id: string; name: string; virtual?: 'xc' | 'local' | 'session'; children: TreeNode[] }
 export interface TreeRecording { kind: 'recording'; id: string; entry: any }
 export interface TreeFile { kind: 'file'; id: string; path: string; name: string; size?: number }
 export type TreeNode = TreeFolder | TreeRecording | TreeFile;
@@ -34,7 +37,8 @@ function sortNodes(nodes: TreeNode[]) {
     nodes.sort((a, b) => {
         if ((a.kind === 'folder') !== (b.kind === 'folder')) return a.kind === 'folder' ? -1 : 1;
         if (a.kind === 'folder' && b.kind === 'folder') {
-            if (!!a.virtual !== !!b.virtual) return a.virtual ? 1 : -1;   // real folders before Xeno-canto
+            const rank = (f: TreeFolder) => ({ local: 0, xc: 1, session: 2 } as any)[f.virtual || ''] ?? -1;
+            if (rank(a) !== rank(b)) return rank(a) - rank(b);   // sub-folders, then local, XC, session
             return collator.compare(a.name, b.name);
         }
         // Recordings and not-yet-opened files sort together by name, like a file browser
@@ -47,10 +51,14 @@ function sortNodes(nodes: TreeNode[]) {
     return nodes;
 }
 
-export function buildRecordingTree(entries: any[], folderFiles: { path: string; size?: number }[] = []): TreeNode[] {
+export function buildRecordingTree(
+    entries: any[],
+    folderFiles: { path: string; size?: number }[] = [],
+    { localName = 'Project folder' }: { localName?: string } = {},
+): TreeNode[] {
     const root: TreeNode[] = [];
     const folders = new Map<string, TreeFolder>();
-    const folder = (id: string, name: string, parent: TreeNode[], virtual?: 'xc') => {
+    const folder = (id: string, name: string, parent: TreeNode[], virtual?: TreeFolder['virtual']) => {
         let f = folders.get(id);
         if (!f) {
             f = { kind: 'folder', id, name, children: [], ...(virtual ? { virtual } : {}) };
@@ -63,8 +71,12 @@ export function buildRecordingTree(entries: any[], folderFiles: { path: string; 
         if (!entry) continue;
         const node: TreeRecording = { kind: 'recording', id: entry.id, entry };
         if (isXcDownload(entry)) { folder(XC_FOLDER_ID, 'Xeno-canto', root, 'xc').children.push(node); continue; }
-        const dirs = typeof entry.path === 'string' ? entry.path.split('/').slice(0, -1).filter(Boolean) : [];
-        let parent = root;
+        if (typeof entry.path !== 'string' || !entry.path) {
+            folder(SESSION_FOLDER_ID, 'Session files', root, 'session').children.push(node);
+            continue;
+        }
+        const dirs = entry.path.split('/').slice(0, -1).filter(Boolean);
+        let parent = folder(LOCAL_FOLDER_ID, localName, root, 'local').children;
         dirs.forEach((d: string, i: number) => { parent = folder(dirs.slice(0, i + 1).join('/'), d, parent).children; });
         parent.push(node);
     }
@@ -72,7 +84,7 @@ export function buildRecordingTree(entries: any[], folderFiles: { path: string; 
         if (!f?.path) continue;
         const parts = f.path.split('/').filter(Boolean);
         const dirs = parts.slice(0, -1);
-        let parent = root;
+        let parent = folder(LOCAL_FOLDER_ID, localName, root, 'local').children;
         dirs.forEach((d: string, i: number) => { parent = folder(dirs.slice(0, i + 1).join('/'), d, parent).children; });
         parent.push({ kind: 'file', id: `file:${f.path}`, path: f.path, name: parts[parts.length - 1] || f.path, size: f.size });
     }

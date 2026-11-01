@@ -33,6 +33,8 @@ export interface ProjectRecording {
     annotations: unknown[];
     needsXcImport: boolean;
     context?: unknown;
+    /** false: opened folder file not kept yet (see keepRecording). */
+    pinned?: boolean;
     guano?: unknown;
 }
 
@@ -91,6 +93,7 @@ export function toProjectRecording(entry: any): ProjectRecording {
         needsXcImport: !!entry.needsXcImport,
     };
     if (entry.context !== undefined) rec.context = entry.context;
+    if (entry.pinned === false) rec.pinned = false;
     if (entry.guano !== undefined) rec.guano = entry.guano;
     return rec;
 }
@@ -117,8 +120,18 @@ export function fromProjectRecording(rec: ProjectRecording): any {
         needsXcImport: rec.needsXcImport,
     };
     if (rec.context !== undefined) entry.context = rec.context;
+    if (rec.pinned === false) entry.pinned = false;
     if (rec.guano !== undefined) entry.guano = rec.guano;
     return entry;
+}
+
+/**
+ * Folder files that were only looked at (`pinned === false`, no labels, not active) are not kept:
+ * they reappear as unopened files of the folder. A label or the "+" in the explorer keeps them.
+ */
+export function keepRecording(entry: any, activeId: string | null = null) {
+    if (entry?.pinned !== false) return true;
+    return entry.id === activeId || (Array.isArray(entry.annotations) && entry.annotations.length > 0);
 }
 
 export function serializeProject(
@@ -132,7 +145,7 @@ export function serializeProject(
         name: meta.name,
         createdAt: meta.createdAt || now.toISOString(),
         updatedAt: now.toISOString(),
-        recordings: snap.entries.map(toProjectRecording),
+        recordings: snap.entries.filter((e) => keepRecording(e, snap.activeId)).map(toProjectRecording),
         activeRecordingId: snap.activeId,
         sets: [...snap.labelSets.values()].map((s) => ({ ...s })),
         ownSetId: snap.ownSetId,
