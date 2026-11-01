@@ -44,7 +44,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 export class ProjectLocationPanel {
     readonly root: HTMLElement;
     #cb: ProjectLocationCallbacks;
-    #showAll = false;
 
     constructor(mount: HTMLElement, callbacks: ProjectLocationCallbacks) {
         this.root = mount;
@@ -105,43 +104,16 @@ export class ProjectLocationPanel {
         xc.append(box, document.createTextNode(' Save XC downloads in folder (xc/)'));
         r.append(xc);
 
+        // The folder's audio files are listed in the recordings tree (click opens) — only count + rescan here
         const head = el('div', 'pl-unadded-head');
         const txt = v.scanning ? 'Scanning folder…'
-            : v.unadded.length ? `${v.unadded.length} audio file${v.unadded.length === 1 ? '' : 's'} not in project`
-            : 'All audio files in the folder are in the project.';
+            : v.unadded.length ? `${v.unadded.length} audio file${v.unadded.length === 1 ? '' : 's'} not opened yet — see Recordings`
+            : 'All audio files of the folder are open in the project.';
         head.append(el('span', '', txt));
         const rescan = el('button', 'link-btn', 'Rescan');
         rescan.type = 'button';
         rescan.addEventListener('click', () => this.#cb.onRescan());
         head.append(rescan);
-        if (v.unadded.length > 1) {
-            const all = el('button', 'link-btn', 'Add all');
-            all.type = 'button';
-            all.addEventListener('click', () => this.#cb.onAddFiles(v.unadded.map((f) => f.path)));
-            head.append(all);
-        }
         r.append(head);
-
-        if (!v.unadded.length) return;
-        const list = el('ul', 'pl-unadded');
-        const shown = this.#showAll ? v.unadded : v.unadded.slice(0, 8);
-        for (const f of shown) {
-            const li = el('li');
-            const add = el('button', 'pl-add', '+');
-            add.type = 'button';
-            add.title = `Add ${f.path} to the project`;
-            add.addEventListener('click', () => this.#cb.onAddFiles([f.path]));
-            const p = el('span', 'pl-path', f.path);
-            p.title = f.path;
-            li.append(add, p, el('span', 'pl-size', fmtSize(f.size)));
-            list.append(li);
-        }
-        r.append(list);
-        if (v.unadded.length > shown.length) {
-            const more = el('button', 'link-btn', `Show all ${v.unadded.length}`);
-            more.type = 'button';
-            more.addEventListener('click', () => { this.#showAll = true; this.render(v); });
-            r.append(more);
-        }
     }
 }

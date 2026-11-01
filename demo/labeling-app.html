@@ -1434,6 +1434,7 @@
         unadded: projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : [],
         scanning: projectScanning,
       });
+      try { recordingExplorer.render(); } catch (e) { /* explorer not created yet */ }
     }
 
     async function scanProjectFolder() {
@@ -2203,6 +2204,8 @@
       container:  document.getElementById('recordingExplorerMount'),
       manager:    recordingManager,
       getProjectName: () => projectMeta?.name || 'Project',
+      getFolderFiles: () => (projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : []),
+      onOpenFile: (path) => addFolderFiles([path]),
       getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
       getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
       getOwnSetId: () => OWN_SOURCE_ID,

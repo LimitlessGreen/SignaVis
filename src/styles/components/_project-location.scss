@@ -100,3 +100,7 @@
   color: var(--color-success, #22c55e);
   .us-snap--changed & { color: var(--color-warning, #f59e0b); }
 }
+
+// Folder files not opened yet (recording-explorer _buildFileRow): dimmed until opened
+.recording-explorer-row--file { opacity: .65; font-style: italic; }
+.recording-explorer-row--file:hover, .recording-explorer-row--file:focus-visible { opacity: 1; }

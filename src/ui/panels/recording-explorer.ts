@@ -49,6 +49,8 @@ export class RecordingExplorer {
     _multiMode: boolean;
     _openFolders: Set<string>;
     _getProjectName: any;
+    _getFolderFiles: any;
+    _onOpenFile: any;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -79,6 +81,10 @@ export class RecordingExplorer {
         this._onAdoptSet       = opts.onAdoptSet || null;
         this._collapsed        = false;
         this._getProjectName   = opts.getProjectName || null;
+        /** Audio files of the project folder without a recording entry yet ({ path, size }[]). */
+        this._getFolderFiles   = opts.getFolderFiles || (() => []);
+        /** Open such a file (host creates the entry and loads it). */
+        this._onOpenFile       = opts.onOpenFile || null;
         try { this._openFolders = new Set(JSON.parse(localStorage.getItem(OPEN_FOLDERS_KEY) || '[]')); } catch { this._openFolders = new Set(); }
         try { this._multiMode = localStorage.getItem(MULTI_MODE_KEY) === '1'; } catch { this._multiMode = false; }
 
@@ -109,7 +115,9 @@ export class RecordingExplorer {
     }
 
     /** True when new recordings are added to the session instead of replacing the current one. */
-    isMultiMode() { return this._multiMode || this._manager.getAll().length > 1; }
+    isMultiMode() {
+        return this._multiMode || this._manager.getAll().length > 1 || (this._getFolderFiles() || []).length > 0;
+    }
 
     /** Multi-recording labeling: the tree and its controls show only once this is on. */
     setMultiMode(on: boolean) {
@@ -241,7 +249,8 @@ export class RecordingExplorer {
         const entries  = this._manager.getAll();
         const activeId = this._manager.activeId;
 
-        if (entries.length === 0) {
+        const folderFiles = this._getFolderFiles() || [];
+        if (entries.length === 0 && !folderFiles.length) {
             const hint = document.createElement('div');
             hint.className = 'recording-explorer-empty';
             hint.textContent = 'No recordings — use + to add';
@@ -250,7 +259,7 @@ export class RecordingExplorer {
             const list = document.createElement('ul');
             list.className = 'recording-explorer-list';
 
-            const tree = buildRecordingTree(entries);
+            const tree = buildRecordingTree(entries, folderFiles);
             for (const id of folderPathOf(tree, activeId)) this._openFolders.add(id);
             this._appendNodes(list, tree, activeId, 0);
 
@@ -349,6 +358,7 @@ export class RecordingExplorer {
                 for (const el of this._buildRecordingRow(node.entry, activeId, depth)) list.appendChild(el);
                 continue;
             }
+            if (node.kind === 'file') { list.appendChild(this._buildFileRow(node, depth)); continue; }
             const open = this._openFolders.has(node.id);
             const li = document.createElement('li');
             li.className = 'recording-explorer-folder' + (node.virtual ? ' recording-explorer-folder--xc' : '');
@@ -380,6 +390,30 @@ export class RecordingExplorer {
             list.appendChild(li);
             if (open) this._appendNodes(list, node.children, activeId, depth + 1);
         }
+    }
+
+    /** Audio file of the project folder that was never opened: click opens it. */
+    _buildFileRow(node: { path: string; name: string; size?: number }, depth: number) {
+        const li = document.createElement('li');
+        li.className = 'recording-explorer-row recording-explorer-row--file';
+        li.style.setProperty('--rec-depth', String(depth));
+        li.tabIndex = 0;
+        li.title = `${node.path} — click to open`;
+        const icon = document.createElement('span');
+        icon.className = 'recording-explorer-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = ' ';
+        const label = document.createElement('span');
+        label.className = 'recording-explorer-label';
+        label.textContent = node.name;
+        const meta = document.createElement('span');
+        meta.className = 'recording-explorer-meta';
+        if (node.size) meta.textContent = node.size >= 1048576 ? `${(node.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(node.size / 1024))} kB`;
+        li.append(icon, label, meta);
+        const open = () => this._onOpenFile?.(node.path);
+        li.addEventListener('click', open);
+        li.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } });
+        return li;
     }
 
     _saveOpenFolders() {
