@@ -14,6 +14,8 @@ const TILE = 256;
 
 export interface RecordingContextBlockOptions {
     el: HTMLElement;
+    /** Where the mini map goes (default: below the fields in el). */
+    mapEl?: HTMLElement;
     /** Store a manual override (null/'' clears it, falling back to the automatic source). */
     onChange: (field: ContextField, value: ContextValues[ContextField] | null) => void;
 }
@@ -61,16 +63,19 @@ export function buildMiniMap(c: Coords, onClick: () => void) {
 
 export class RecordingContextBlock {
     el: HTMLElement;
+    mapEl: HTMLElement | null;
     onChange: RecordingContextBlockOptions['onChange'];
 
     constructor(opts: RecordingContextBlockOptions) {
         this.el = opts.el;
+        this.mapEl = opts.mapEl || null;
         this.onChange = opts.onChange;
     }
 
     /** ctx null = no recording loaded. */
     render(ctx: ResolvedContext | null) {
         this.el.innerHTML = '';
+        if (this.mapEl) this.mapEl.innerHTML = '';
         if (!ctx) return; // the surrounding section already says 'No recording loaded'
 
         const grid = document.createElement('div');
@@ -105,7 +110,7 @@ export class RecordingContextBlock {
             ctx.device.source, ctx.device.source === 'manual' ? ['device'] : []));
 
         this.el.appendChild(grid);
-        if (coords) this.el.appendChild(buildMiniMap(coords, () => this._openMap(coords)));
+        if (coords) (this.mapEl || this.el).appendChild(buildMiniMap(coords, () => this._openMap(coords)));
     }
 
     _row(label: string, controls: HTMLElement[], source: string | null, manualFields: ContextField[]) {

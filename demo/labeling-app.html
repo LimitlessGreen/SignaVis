@@ -2981,6 +2981,7 @@
     // One source for BirdNET's geo filter and Explore; manual values override XC / GUANO / file name.
     const recordingContextBlock = new RecordingContextBlock({
       el: propsPanel.contextEl,
+      mapEl: propsPanel.contextMapEl,
       onChange: (field, value) => {
         const entry = recordingManager.getActive();
         if (!entry) return;

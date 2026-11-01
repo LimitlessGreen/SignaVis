@@ -78,6 +78,7 @@ export class PropertiesPanel {
     _lblSection: any;
     _recBody: any;
     contextEl!: HTMLElement;
+    contextMapEl!: HTMLElement;
     _setRecCollapsed: (c: boolean) => void = () => {};
     _recSection: any;
     _recSummary: any;
@@ -323,6 +324,10 @@ export class PropertiesPanel {
     this._recBody = document.createElement('div');
     this._recBody.className = 'props-section-body';
     this._recSection.appendChild(this._recBody);
+    // Map of the context location, last in the section
+    this.contextMapEl = document.createElement('div');
+    this.contextMapEl.className = 'props-section-body rc-block';
+    this._recSection.appendChild(this.contextMapEl);
 
     // Set section (between Label and Recording)
     this._setSection = document.createElement('div');
