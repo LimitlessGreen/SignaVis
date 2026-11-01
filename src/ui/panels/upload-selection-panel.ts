@@ -117,7 +117,7 @@ export class UploadSelectionPanel {
                 recs.appendChild(row);
                 continue;
             }
-            const n = (sel.sources.includes('own') ? r.own : 0) + (sel.sources.includes('birdnet') ? r.birdnet : 0);
+            const n = r.own;
             const row = this._check(r.xcId ? `${r.xcId}` : r.name, String(n), r.included,
                 (on) => change({ excludedRecordings: toggleIn(sel.excludedRecordings, r.id, on) }),
                 !r.xcId, r.xcId ? (r.name !== `${r.xcId}.mp3` ? r.name : '') : 'local only');
@@ -154,14 +154,6 @@ export class UploadSelectionPanel {
             el.appendChild(ly);
         }
 
-        // Sources
-        const birdnet = cand.recordings.reduce((s, r) => s + r.birdnet, 0);
-        const src = this._group('Sources');
-        src.appendChild(this._check('Own labels', '', true, () => {}, false));
-        (src.lastChild as HTMLElement).querySelector('input')!.disabled = true;
-        src.appendChild(this._check('BirdNET detections', String(birdnet), sel.sources.includes('birdnet'),
-            (on) => change({ sources: on ? ['own', 'birdnet'] : ['own'] }), !birdnet));
-        el.appendChild(src);
     }
 
     _renderSnapshots(rows: SnapshotRow[]) {
