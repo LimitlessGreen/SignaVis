@@ -17,7 +17,6 @@ import { TAG_PRESETS } from './label-table.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { formatCoords } from '../../app/recording-context.ts';
-import { buildMiniMap } from './recording-context-block.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
 
@@ -31,13 +30,8 @@ const RECORDING_FIELDS = [
   { key: 'channels',    label: 'Channels' },
   { key: 'recordist',   label: 'Recordist' },
   { key: 'species',     label: 'Species' },
-  { key: 'country',     label: 'Country' },
-  { key: 'locality',    label: 'Locality' },
-  { key: 'date',        label: 'Date' },
-  { key: 'time',        label: 'Time' },
   { key: 'quality',     label: 'Quality' },
   { key: 'license',     label: 'License' },
-  { key: 'coords',      label: 'Coordinates' },
   { key: 'alt',         label: 'Altitude' },
   { key: 'method',      label: 'Method' },
   { key: 'animalSeen',  label: 'Animal seen' },
@@ -83,6 +77,7 @@ export class PropertiesPanel {
     _lblHeader: any;
     _lblSection: any;
     _recBody: any;
+    contextEl!: HTMLElement;
     _recSection: any;
     _recSummary: any;
     _setBody: any;
@@ -313,6 +308,10 @@ export class PropertiesPanel {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
     this._recSection.appendChild(recHeader);
+    // Editable recording context (date, place, device) — filled by the host via contextEl
+    this.contextEl = document.createElement('div');
+    this.contextEl.className = 'props-section-body rc-block';
+    this._recSection.appendChild(this.contextEl);
     this._recBody = document.createElement('div');
     this._recBody.className = 'props-section-body';
     this._recSection.appendChild(this._recBody);
@@ -354,18 +353,8 @@ export class PropertiesPanel {
       return;
     }
 
-    const lat = parseFloat(merged.lat);
-    const lon = parseFloat(merged.lng);
-    const hasCoords = isFinite(lat) && isFinite(lon);
-
-    this._recBody.appendChild(
-      this._buildReadonlyGrid(RECORDING_FIELDS, merged, (hasCoords ? { lat, lon } : null) as any)
-    );
-    if (hasCoords) {
-      const map = buildMiniMap({ lat, lon }, () => openMapModal({ lat, lon, zoom: 10, readOnly: true }));
-      map.classList.add('props-minimap');
-      this._recBody.appendChild(map);
-    }
+    // Date, place, coordinates and device are in the context block above
+    this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
   }
 
   _renderSet() {

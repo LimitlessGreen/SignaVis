@@ -234,7 +234,7 @@
     <div class="panel-section">
       <div class="birdnet-location-line">
         <span id="birdnetLocationLine" class="meta">No location set</span>
-        <button class="tb-btn" id="birdnetLocationEditBtn" type="button" title="Edit the recording's location in the Project tab">Edit</button>
+        <button class="tb-btn" id="birdnetLocationEditBtn" type="button" title="Edit the recording's location in Properties">Edit</button>
       </div>
       <label class="field-check geo-filter-toggle" id="birdnetGeoFilterLabel"
         title="Needs the BirdNET area model — available once a model with area model is loaded">
@@ -288,17 +288,6 @@
     <!-- Recording explorer — populated by RecordingExplorer widget -->
     <div id="recordingExplorerMount"></div>
     </section>
-
-    <div class="sidebar-section-header">Recording context</div>
-    <div id="recordingContextBlock" class="panel-section rc-block"></div>
-
-    <div class="props-section">
-      <div class="props-section-title xc-section-hdr"><span>Current recording (from XC)</span></div>
-      <div id="xcRecordingMeta" class="props-section-body xc-recording-meta">
-        <div class="props-empty">No XC recording loaded.</div>
-      </div>
-      <div id="xcRecordingEdit" class="props-section-body xc-recording-edit" hidden></div>
-    </div>
   </div>
 
   <!-- ── Sidebar panel: Upload (Xeno-canto) ──────────────────────── -->
@@ -2987,7 +2976,7 @@
     // ── Recording context (date/time, location, device) ──────────────
     // One source for BirdNET's geo filter and Explore; manual values override XC / GUANO / file name.
     const recordingContextBlock = new RecordingContextBlock({
-      el: document.getElementById('recordingContextBlock'),
+      el: propsPanel.contextEl,
       onChange: (field, value) => {
         const entry = recordingManager.getActive();
         if (!entry) return;
@@ -3026,7 +3015,7 @@
       }
     }
 
-    document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => sidebar.setActive('project'));
+    document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => rightBar.setActive('properties'));
     recordingManager.addEventListener('activechange', () => renderRecordingContext());
     recordingManager.addEventListener('change', () => renderRecordingContext());
     renderRecordingContext();

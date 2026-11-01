@@ -71,10 +71,7 @@ export class RecordingContextBlock {
     /** ctx null = no recording loaded. */
     render(ctx: ResolvedContext | null) {
         this.el.innerHTML = '';
-        if (!ctx) {
-            this.el.innerHTML = '<div class="props-empty">No recording loaded.</div>';
-            return;
-        }
+        if (!ctx) return; // the surrounding section already says 'No recording loaded'
 
         const grid = document.createElement('div');
         grid.className = 'rc-grid';
