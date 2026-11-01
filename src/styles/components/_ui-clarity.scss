@@ -114,6 +114,13 @@ html[data-theme="light"] { @include light-tokens; }
   &:hover { text-decoration: underline; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
+// XC annotation set rows (Xeno-canto › Annotation sets): set of the active recording highlighted
+.rec-xc-set { cursor: pointer; color: var(--color-text-primary); }
+.rec-xc-set--active {
+  background: rgba(56, 189, 248, 0.06);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  .rec-set-name { font-weight: 600; }
+}
 .rec-set-adopted { font-size: 10px; white-space: nowrap; flex-shrink: 0; color: var(--color-success, var(--color-text-secondary)); }
 
 // Read-only (imported / locked) labels: dashed + muted, own labels stay solid.
