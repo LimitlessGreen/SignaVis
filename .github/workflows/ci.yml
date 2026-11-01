@@ -244,8 +244,7 @@ jobs:
           {
             echo 'NOTES<<EOF'
             if [ -n "$(printf '%s' "${SECTION}" | tr -d '[:space:]')" ]; then
-              printf '%s
-' "${SECTION}"
+              printf '%s\n' "${SECTION}"
             else
               echo "## Changes"
               git log --pretty=format:'- %s (%h)' "${RANGE}" -- . ':(exclude)VERSION' ':(exclude)package.json' ':(exclude)python-wrapper/pyproject.toml' || true
