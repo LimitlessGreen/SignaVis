@@ -636,6 +636,44 @@ export class RecordingExplorer {
                     actions.appendChild(done);
                 }
             }
+            // Own set: rename inline (✎ on hover, or F2)
+            const startRename = () => {
+                if (nm.querySelector('input')) return;
+                const old = info.name || '';
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'inline-name-input rec-set-rename';
+                inp.value = old;
+                inp.setAttribute('aria-label', 'Set name');
+                nm.replaceChildren(inp);
+                li.classList.add('rec-set--editing');
+                inp.focus(); inp.select();
+                let done = false;
+                const finish = (save: boolean) => {
+                    if (done) return;
+                    done = true;
+                    const val = inp.value.trim();
+                    if (save && val && val !== old) this._onRenameSet(val);   // host re-renders via change
+                    else this.render();
+                };
+                inp.addEventListener('blur', () => finish(true));
+                inp.addEventListener('keydown', (ev) => {
+                    ev.stopPropagation();
+                    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+                    if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+                });
+                inp.addEventListener('click', (ev) => ev.stopPropagation());
+            };
+            if (set.own && this._onRenameSet) {
+                const edit = document.createElement('button');
+                edit.type = 'button';
+                edit.className = 'rec-set-edit';
+                edit.textContent = '✎';
+                edit.title = 'Rename (F2)';
+                edit.addEventListener('click', (e) => { e.stopPropagation(); startRename(); });
+                actions.appendChild(edit);
+                li.addEventListener('keydown', (e) => { if (e.key === 'F2') { e.preventDefault(); startRename(); } });
+            }
             li.append(sw, text, actions, cnt);
 
             const focus = () => { this._focusSetId = this._focusSetId === setId ? null : setId; this.render(); };

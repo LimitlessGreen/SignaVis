@@ -243,3 +243,10 @@ html[data-theme="light"] { @include light-tokens; }
   i.is-hidden { background: transparent; box-shadow: inset 0 0 0 1px var(--set-color); }
 }
 .recording-explorer-row--unfocused { opacity: 0.35; }
+.rec-set-edit {
+  border: 0; background: none; padding: 0 3px; cursor: pointer;
+  font-size: 11px; color: var(--color-text-secondary);
+  &:hover { color: var(--color-accent); }
+}
+.rec-set-rename { width: 100%; font-size: 11px; padding: 0 3px; }
+.rec-set--editing .rec-set-actions { display: none !important; }
