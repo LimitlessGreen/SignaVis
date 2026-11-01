@@ -44,3 +44,15 @@ test('folder files without entry appear as file nodes, sorted with recordings', 
     assert.deepEqual(shape(tree), [{ P: [{ garden: ['file:a1.wav', 'f2', 'file:a10.wav'] }, 'file:top.wav'] }]);
     assert.equal(countRecordings(tree[0]), 4);
 });
+
+test('recordingFolder / folderContents', async () => {
+    const { recordingFolder, folderContents } = await import('../src/app/recording-tree.ts');
+    assert.equal(recordingFolder({ source: 'file', path: 'garden/2026/a.wav' }), 'garden/2026');
+    assert.equal(recordingFolder({ source: 'file', path: 'top.wav' }), '');
+    assert.equal(recordingFolder({ source: 'xc', xcId: 'XC1' }), XC_FOLDER_ID);
+    assert.equal(recordingFolder({ source: 'file', filename: 's.wav' }), SESSION_FOLDER_ID);
+    const tree = buildRecordingTree([{ id: 'f2', source: 'file', path: 'g/a2.wav' }], [{ path: 'g/sub/b.wav' }, { path: 'c.wav' }]);
+    const g = tree[0].children.find((n) => n.name === 'g');
+    const c = folderContents(g);
+    assert.deepEqual([c.entries.map((e) => e.id), c.files.map((f) => f.path)], [['f2'], ['g/sub/b.wav']]);
+});

@@ -56,3 +56,11 @@ test('snapshots detect edits and deletions', () => {
     assert.deepEqual(snapshotState(snap, [e[0].annotations[1]]), { state: 'changed', missing: 1 });
     assert.equal(labelsHash([{ id: 1, tags: { a: 1, b: 2 } }]), labelsHash([{ id: 1, tags: { b: 2, a: 1 } }]));
 });
+
+test('candidates carry their folder', () => {
+    const c = uploadCandidates([
+        { id: 'a', xcId: 'XC1', source: 'file', path: 'g/a.wav', annotations: [{ id: 1, setId: 'own' }] },
+        { id: 'b', xcId: 'XC2', source: 'xc', annotations: [{ id: 2, setId: 'own' }] },
+    ], defaultUploadSelection(), sets);
+    assert.deepEqual(c.recordings.map((r) => r.folder), ['g', '@xc']);
+});

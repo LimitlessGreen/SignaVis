@@ -15,6 +15,8 @@ export interface UploadSelectionPanelOptions {
     onForgetSnapshot?: (id: string) => void;
     onAssignXc?: (recordingId: string) => void;
     layerName?: (id: string) => string;
+    /** Display name of the project folder root ('' folder). */
+    localName?: () => string;
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -83,9 +85,38 @@ export class UploadSelectionPanel {
             return;
         }
 
-        // Recordings
+        // Recordings — grouped by folder when they come from more than one
         const recs = this._group('Recordings', 'Only recordings with an XC number can be part of an XC set.');
+        const byFolder = new Map<string, typeof cand.recordings>();
         for (const r of cand.recordings) {
+            if (!byFolder.has(r.folder)) byFolder.set(r.folder, []);
+            byFolder.get(r.folder)!.push(r);
+        }
+        const grouped = byFolder.size > 1;
+        const folderName = (f: string) => (f === '@xc' ? '🌐 Xeno-canto' : f === '@session' ? '🗂 Session files'
+            : f === '' ? `📁 ${this.o.localName?.() || 'Project folder'}` : `📁 ${f}`);
+        const rank = (f: string) => (f === '@xc' ? 2 : f === '@session' ? 3 : f === '' ? 0 : 1);
+        const order = [...byFolder.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+        const rows: [string, (typeof cand.recordings)[number] | null][] = [];
+        for (const f of order) {
+            if (grouped) rows.push([f, null]);
+            for (const r of byFolder.get(f)!) rows.push([f, r]);
+        }
+        for (const [f, r] of rows) {
+            if (!r) {
+                const members = byFolder.get(f)!.filter((x) => x.xcId);
+                const on = members.filter((x) => x.included).length;
+                const row = this._check(folderName(f), '', on > 0, (checked) => {
+                    const ids = new Set(members.map((x) => x.id));
+                    const rest = sel.excludedRecordings.filter((id) => !ids.has(id));
+                    change({ excludedRecordings: checked ? rest : [...rest, ...ids] });
+                }, !members.length, members.length ? '' : 'local only');
+                row.classList.add('us-row--folder');
+                const cb = row.querySelector('input')!;
+                cb.indeterminate = on > 0 && on < members.length;
+                recs.appendChild(row);
+                continue;
+            }
             const n = (sel.sources.includes('own') ? r.own : 0) + (sel.sources.includes('birdnet') ? r.birdnet : 0);
             const row = this._check(r.xcId ? `${r.xcId}` : r.name, String(n), r.included,
                 (on) => change({ excludedRecordings: toggleIn(sel.excludedRecordings, r.id, on) }),
@@ -98,6 +129,7 @@ export class UploadSelectionPanel {
                 b.addEventListener('click', (e) => { e.preventDefault(); this.o.onAssignXc!(r.id); });
                 row.appendChild(b);
             }
+            if (grouped) row.classList.add('us-row--nested');
             recs.appendChild(row);
         }
         el.appendChild(recs);

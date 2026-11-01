@@ -21,7 +21,7 @@
  */
 
 import { toXcId } from '../../domain/xc/xcId.ts';
-import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, type TreeNode } from '../../app/recording-tree.ts';
+import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
@@ -51,6 +51,8 @@ export class RecordingExplorer {
     _getProjectName: any;
     _getFolderFiles: any;
     _onOpenFile: any;
+    _onFolderKeepAll: any;
+    _onFolderBirdnet: any;
     /**
      * @param {object} opts
      * @param {HTMLElement}   opts.container
@@ -85,6 +87,9 @@ export class RecordingExplorer {
         this._getFolderFiles   = opts.getFolderFiles || (() => []);
         /** Open such a file (host creates the entry and loads it). */
         this._onOpenFile       = opts.onOpenFile || null;
+        /** Folder menu: keep all ({ entries, paths }) / run BirdNET on all recordings (entries + paths). */
+        this._onFolderKeepAll  = opts.onFolderKeepAll || null;
+        this._onFolderBirdnet  = opts.onFolderBirdnet || null;
         try { this._openFolders = new Set(JSON.parse(localStorage.getItem(OPEN_FOLDERS_KEY) || '[]')); } catch { this._openFolders = new Set(); }
         try { this._multiMode = localStorage.getItem(MULTI_MODE_KEY) === '1'; } catch { this._multiMode = false; }
 
@@ -392,6 +397,14 @@ export class RecordingExplorer {
             meta.textContent = String(countRecordings(node));
             meta.title = 'Recordings in this folder';
             li.append(chev, name, meta);
+            const items = this._folderMenuItems(node);
+            if (items.length) {
+                li.appendChild(this._menuButton('Folder actions', () => this._folderMenuItems(node)));
+                li.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showContextMenu({ x: e.clientX, y: e.clientY, items: this._folderMenuItems(node) });
+                });
+            }
             const toggle = () => {
                 if (this._openFolders.has(node.id)) this._openFolders.delete(node.id);
                 else this._openFolders.add(node.id);
@@ -403,6 +416,23 @@ export class RecordingExplorer {
             list.appendChild(li);
             if (open) this._appendNodes(list, node.children, activeId, depth + 1);
         }
+    }
+
+    _folderMenuItems(node: TreeFolder) {
+        const { entries, files } = folderContents(node);
+        const items: any[] = [];
+        const unkept = entries.filter((e) => e.pinned === false);
+        if (this._onFolderKeepAll && (files.length || unkept.length)) {
+            const n = files.length + unkept.length;
+            items.push({ label: `Keep all files in the project (${n})`,
+                action: () => this._onFolderKeepAll({ entries: unkept, paths: files.map((f) => f.path) }) });
+        }
+        const total = entries.length + files.length;
+        if (this._onFolderBirdnet && total) {
+            items.push({ label: `Run BirdNET on this folder (${total} recording${total === 1 ? '' : 's'})…`,
+                action: () => this._onFolderBirdnet({ entries, paths: files.map((f) => f.path) }) });
+        }
+        return items;
     }
 
     /** Audio file of the project folder that was never opened: click opens it. */

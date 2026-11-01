@@ -116,3 +116,5 @@
   cursor: pointer;
   &:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
 }
+.us-row--folder { font-weight: 600; margin-top: 2px; }
+.us-row--nested { padding-left: 16px; }
