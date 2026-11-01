@@ -118,3 +118,8 @@
 }
 .us-row--folder { font-weight: 600; margin-top: 2px; }
 .us-row--nested { padding-left: 16px; }
+
+// Folder tree: neutral background, no single indent guide (it cannot follow nested folders)
+.rec-session-body { background: transparent; }
+.rec-session-body::before,
+.rec-session-body .recording-explorer-row::before { display: none; }
