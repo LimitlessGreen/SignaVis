@@ -158,3 +158,41 @@ function highFrequencySpectrum(channel: Float32Array, sampleRate: number) {
         fraction: total > 0 ? ultrasonic / total : 0,
     };
 }
+
+/**
+ * The stretch of the recording with the most high-frequency activity — a
+ * representative bit of calls to preview the listening modes on.
+ * @returns start / end in seconds, or null for very short files
+ */
+export function findCallExcerpt(channel: Float32Array, sampleRate: number, lengthSec = 1.5): { start: number; end: number } | null {
+    const nBlocks = Math.floor(channel.length / FFT_SIZE);
+    if (nBlocks < 2 || !(sampleRate > 0)) return null;
+    const duration = channel.length / sampleRate;
+    if (duration <= lengthSec) return { start: 0, end: duration };
+
+    // HF proxy per block (first-difference energy), sampled for long files.
+    const stride = Math.max(1, Math.ceil(nBlocks / MAX_BLOCKS_SCANNED));
+    const n = Math.ceil(nBlocks / stride);
+    const score = new Float64Array(n);
+    for (let j = 0; j < n; j++) {
+        const off = j * stride * FFT_SIZE;
+        let e = 0;
+        for (let i = off + 1; i < off + FFT_SIZE; i++) {
+            const d = channel[i] - channel[i - 1];
+            e += d * d;
+        }
+        score[j] = e;
+    }
+    const blockSec = (stride * FFT_SIZE) / sampleRate;
+    const w = Math.max(1, Math.min(n, Math.round(lengthSec / blockSec)));
+    let sum = 0;
+    for (let j = 0; j < w; j++) sum += score[j];
+    let best = sum, bestJ = 0;
+    for (let j = w; j < n; j++) {
+        sum += score[j] - score[j - w];
+        if (sum > best) { best = sum; bestJ = j - w + 1; }
+    }
+    // A little lead-in so the first call is not clipped.
+    const start = Math.max(0, bestJ * blockSec - 0.1);
+    return { start, end: Math.min(duration, start + lengthSec) };
+}

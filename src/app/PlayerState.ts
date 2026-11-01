@@ -33,7 +33,8 @@ import { WaveformRenderer } from './player/WaveformRenderer.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
-import { analyzeUltrasound, type UltrasoundInfo } from '../domain/ultrasound.ts';
+import { analyzeUltrasound, findCallExcerpt, type UltrasoundInfo } from '../domain/ultrasound.ts';
+import { UltrasoundDialog, loadUltrasoundDefault, saveUltrasoundDefault, type UltrasoundChoice } from '../ui/components/ultrasound-dialog/ultrasound-dialog.ts';
 import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
 
 /**
@@ -146,6 +147,9 @@ export class PlayerState {
     bandProfile: BandProfile | null = null;
     /** Zoom the frequency axis to where something happens after loading. */
     autoFreqView = true;
+    /** Ask how to listen when an ultrasonic recording was loaded (unless a default was remembered). */
+    ultrasoundPrompt = true;
+    _usDialog: UltrasoundDialog | null = null;
     /** Last detector settings, reused when the mode is picked from the transport bar. */
     detectorSettings = { carrierHz: 0, divisor: 10, envelope: false, pitchFactor: 10 };
     amplitudePeakAbs: number;
@@ -223,7 +227,10 @@ export class PlayerState {
         });
         this._engine.addEventListener('segmentstart', (e: CustomEvent<any>) => this._emit('segmentplaystart', e.detail));
         this._engine.addEventListener('listenmodechange', (e: CustomEvent<any>) => this._onListenModeChange(e.detail.mode));
-        this._engine.addEventListener('segmentend', (e: CustomEvent<any>) => this._emit('segmentplayend', e.detail));
+        this._engine.addEventListener('segmentend', (e: CustomEvent<any>) => {
+            this._usDialog?.previewEnded();
+            this._emit('segmentplayend', e.detail);
+        });
         this._engine.addEventListener('segmentloop', (e: CustomEvent<any>) => this._emit('segmentloop', e.detail));
         this._emitHostEvent = typeof emitHostEvent === 'function' ? emitHostEvent : null;
         this.options = options || {};
@@ -797,6 +804,7 @@ export class PlayerState {
 
     async _onAudioLoaded({ duration, sampleRate }: { duration: number; sampleRate: number }, displayName: string, readyReason?: string, sourceFile: File | null = null, sourcePath: string | null = null) {
         this.sampleRateHz = sampleRate;
+        this._usDialog?.close(null);
         this._setTimeExpansion(1);
         this.detectorSettings.carrierHz = 0;
         const ch0 = this._engine.audioBuffer?.getChannelData(0) ?? null;
@@ -833,6 +841,7 @@ export class PlayerState {
 
         await this._spectro.generate({ autoAdjust: true });
         if (this.autoFreqView) this.applyAutoFreqView();
+        this._offerUltrasoundListening();
         this._drawMainWaveform();
         this._drawOverviewWaveform();
         this._createFrequencyLabels();
@@ -1088,9 +1097,63 @@ export class PlayerState {
         this._emit('listenmodechange', { mode });
     }
 
+    /** Chip click: choose (again) how to listen to the ultrasonic recording. */
     _applyUltrasoundSuggestion() {
-        const f = this.ultrasoundInfo?.suggestedExpansion ?? 1;
-        if (f > 1) this._setTimeExpansion(f);
+        this.openUltrasoundDialog();
+    }
+
+    /** After loading a bat recording: apply the remembered listening mode, or ask. */
+    _offerUltrasoundListening() {
+        const info = this.ultrasoundInfo;
+        // Already slowed down by the detector (GUANO TE): audible as it is.
+        if (!info?.isUltrasonic || info.storedExpansion > 1) return;
+        const remembered = loadUltrasoundDefault();
+        if (remembered) this._applyUltrasoundChoice(remembered);
+        else if (this.ultrasoundPrompt) this.openUltrasoundDialog();
+    }
+
+    _applyUltrasoundChoice(choice: UltrasoundChoice) {
+        const f = this.ultrasoundInfo?.suggestedExpansion && this.ultrasoundInfo.suggestedExpansion > 1
+            ? this.ultrasoundInfo.suggestedExpansion : 10;
+        if (choice === 'expansion') this._setTimeExpansion(f);
+        else if (choice === 'none') this._setTimeExpansion(1);
+        else this._selectListenMode(choice);
+    }
+
+    /** Popup: what was detected, the listening modes with a preview of the loudest calls. */
+    openUltrasoundDialog() {
+        const info = this.ultrasoundInfo;
+        const buf = this._engine.audioBuffer;
+        if (!info?.isUltrasonic || !buf) return;
+        this._usDialog?.close(null);
+        const before = this._engine.listenMode;
+        const mode = before?.kind === 'expansion' ? (before.factor > 1 ? 'expansion' : 'none') : before?.kind;
+        const host = this.container;
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        this._usDialog = new UltrasoundDialog({
+            host,
+            peakHz: info.peakHz,
+            source: info.source,
+            device: info.device,
+            expansion: info.suggestedExpansion > 1 ? info.suggestedExpansion : 10,
+            divisor: this.detectorSettings.divisor,
+            pitchFactor: this.detectorSettings.pitchFactor,
+            excerpt: findCallExcerpt(buf.getChannelData(0), buf.sampleRate),
+            remembered: loadUltrasoundDefault() != null,
+            initial: loadUltrasoundDefault() ?? (mode && mode !== 'none' ? mode : 'heterodyne') as UltrasoundChoice,
+            apply: (c) => this._applyUltrasoundChoice(c),
+            preview: (start, end) => this.playSegment(start, end),
+            stopPreview: () => this._engine.stopSegmentPlayback('stopped'),
+            onClose: (choice, remember) => {
+                this._usDialog = null;
+                if (choice == null) {
+                    if (before) this._setListenMode(before);
+                    return;
+                }
+                this._applyUltrasoundChoice(choice);
+                saveUltrasoundDefault(remember ? choice : null);
+            },
+        });
     }
 
     /** Offers the suggested slowdown while the recording is ultrasonic and still played at ×1. */
@@ -1100,13 +1163,14 @@ export class PlayerState {
         const info = this.ultrasoundInfo;
         const mode = this._engine.listenMode;
         const plain = !mode || (mode.kind === 'expansion' && mode.factor === 1);
-        const show = !!info && info.suggestedExpansion > 1 && plain;
+        const show = !!info && info.isUltrasonic && info.storedExpansion === 1;
         chip.hidden = !show;
         if (!show) return;
         const peak = info!.peakHz != null ? ` ≈ ${(info!.peakHz / 1000).toFixed(0)} kHz` : '';
-        chip.textContent = `Ultrasound${peak} → ×${info!.suggestedExpansion}`;
+        chip.textContent = plain ? `Ultrasound${peak} — listen…` : `Ultrasound${peak}`;
+        chip.classList.toggle('ultrasound-chip--set', !plain);
         chip.title = `Ultrasonic recording detected (${info!.source === 'guano' ? 'GUANO metadata' : 'spectrum'}). `
-            + `Click to slow playback down ×${info!.suggestedExpansion} so the calls become audible.`;
+            + 'Click to choose how to listen (heterodyne, time expansion, …) with a preview.';
     }
 
     _toggleMute() {
