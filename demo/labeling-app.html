@@ -1717,27 +1717,79 @@
         let takeOver = false;
         if (n > 0) {
           takeOver = await appConfirm(
-            `${found}
-
-${adds}
-
-Take over the ${n} recording${n === 1 ? '' : 's'} open now (with labels; audio is copied into the folder), or start without them?`,
+            `${found}\n\n${adds}\n\nTake over the ${n} recording${n === 1 ? '' : 's'} open now (with labels; audio is copied into the folder), or start without them?`,
             { title: 'Create project in this folder', okLabel: `Take over ${n} recording${n === 1 ? '' : 's'}`, cancelLabel: 'Start without them' });
-        } else if (!await appConfirm(`${found}
-
-${adds}`, { title: 'Create project in this folder', okLabel: 'Create project' })) {
+        } else if (!await appConfirm(`${found}\n\n${adds}`, { title: 'Create project in this folder', okLabel: 'Create project' })) {
           return;
         }
         const meta = { id: `folder-${Date.now().toString(36)}`, name: handle.name };
         const snap = takeOver
           ? { ...recordingManager.snapshot(), labelSets: state.labelSets, ownSetId: OWN_SOURCE_ID, activeSetId: state.activeSetId }
           : { entries: [], activeId: null, labelSets: new Map(), ownSetId: null, activeSetId: null };
+        if (takeOver) snap.entries = await copyEntriesIntoFolder(store, snap.entries);
         try { await store.saveProject(serializeProject({ ...snap, settings: { taxonomyLang: state.taxonomyLang } }, meta)); }
         catch (e) { await appAlert(`Could not write to “${handle.name}”: ${e?.message || e}`, { title: 'Folder error' }); return; }
       }
       await rememberFolder(handle);
       lsSet(PROJECT_LOCATION_KEY, 'folder');
       window.location.reload();
+    }
+
+    /**
+     * Free project path for a local file: an equal file (same name + size) already in the folder is reused,
+     * otherwise audio/<name>, audio/<name> (2), …
+     */
+    async function folderPathForFile(store, file, folderFiles = []) {
+      const same = folderFiles.find((f) => f.path.split('/').pop() === file.name && f.size === file.size);
+      if (same) return { path: same.path, exists: true };
+      const dot = file.name.lastIndexOf('.');
+      const stem = dot > 0 ? file.name.slice(0, dot) : file.name, ext = dot > 0 ? file.name.slice(dot) : '';
+      for (let i = 1; ; i++) {
+        const path = `audio/${i === 1 ? file.name : `${stem} (${i})${ext}`}`;
+        const there = await store.readAudio(path);
+        if (!there) return { path, exists: false };
+        if (there.size === file.size) return { path, exists: true };
+      }
+    }
+
+    /** Copy a local file into the project folder (unless it is already there). Returns its project path. */
+    async function copyFileIntoFolder(store, file, folderFiles = []) {
+      const { path, exists } = await folderPathForFile(store, file, folderFiles);
+      if (!exists) await store.writeAudio(path, await file.arrayBuffer());
+      return path;
+    }
+
+    /**
+     * "Take over" into a new project folder: session files (blob URLs, still alive before the reload) are copied
+     * to audio/, XC downloads to xc/ (when switched on). Entries that cannot be copied stay as they are.
+     */
+    async function copyEntriesIntoFolder(store, entries) {
+      let folderFiles = [];
+      try { folderFiles = await store.listAudio(); } catch { /* empty */ }
+      const out = [];
+      for (const [i, entry] of entries.entries()) {
+        const e = { ...entry };
+        selectionMeta.textContent = `Copying recordings into “${store.label}” (${i + 1}/${entries.length})…`;
+        try {
+          if (!e.path && e.xcId && e.source === 'xc' && xcToFolder()) {
+            const audio = await xcPanel.fetchAudio(e.xcId);
+            await store.writeAudio(xcRecordingPath(e.xcId), audio.buffer);
+            const meta = e.xcRecordingMeta || { id: toXcId(e.xcId), url: `https://xeno-canto.org/${xcNumber(e.xcId)}` };
+            await store.writeText(xcMetaPath(e.xcId), JSON.stringify(meta, null, 2) + '\n');
+            e.path = xcRecordingPath(e.xcId);
+          } else if (!e.path && typeof e.audioUrl === 'string' && e.audioUrl.startsWith('blob:')) {
+            const blob = await (await fetch(e.audioUrl)).blob();
+            const file = new File([blob], e.filename || 'recording.wav', { type: blob.type });
+            e.path = await copyFileIntoFolder(store, file, folderFiles);
+            e.source = 'file';
+          }
+        } catch (err) {
+          console.warn('[project] could not copy recording into folder', e.filename, err);
+        }
+        out.push(e);
+      }
+      selectionMeta.textContent = '';
+      return out;
     }
 
     async function reopenRecentFolder() {
