@@ -458,7 +458,19 @@ export class XenoCantoPanel {
     const directUrl = `https://xeno-canto.org/${clean}/download`;
     let lastError = null;
 
-    const streamToBuffer = async (res: any, label: any) => {
+    /** Time allowed until response headers arrive. */
+    const CONNECT_TIMEOUT_MS = 8_000;
+    /** Abort a running download when no data arrives for this long. */
+    const STALL_TIMEOUT_MS = 15_000;
+
+    const timedFetch = async (url: string, ctrl: AbortController) => {
+      const timer = setTimeout(() => ctrl.abort(new Error(`no response after ${CONNECT_TIMEOUT_MS / 1000} s`)), CONNECT_TIMEOUT_MS);
+      try { return await fetch(url, { signal: ctrl.signal }); }
+      catch (err) { throw ctrl.signal.aborted && ctrl.signal.reason ? ctrl.signal.reason : err; }
+      finally { clearTimeout(timer); }
+    };
+
+    const streamToBuffer = async (res: any, label: any, ctrl: AbortController) => {
       const total = parseInt(res.headers.get('Content-Length') || '0', 10) || 0;
       const reader = res.body?.getReader();
       if (!reader) return res.arrayBuffer(); // fallback: no streaming
@@ -466,13 +478,24 @@ export class XenoCantoPanel {
       onStatus?.(`Loading XC${clean} (${label})…`);
       const chunks = [];
       let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        onProgress?.(total > 0 ? received / total : null, received, total);
-      }
+      let stall: any = null;
+      const arm = () => {
+        clearTimeout(stall);
+        stall = setTimeout(() => ctrl.abort(new Error(`download stalled (${STALL_TIMEOUT_MS / 1000} s without data)`)), STALL_TIMEOUT_MS);
+      };
+      try {
+        arm();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          arm();
+          chunks.push(value);
+          received += value.length;
+          onProgress?.(total > 0 ? received / total : null, received, total);
+        }
+      } catch (err) {
+        throw ctrl.signal.aborted && ctrl.signal.reason ? ctrl.signal.reason : err;
+      } finally { clearTimeout(stall); }
       // Assemble chunks into a single ArrayBuffer
       const buf = new ArrayBuffer(received);
       const view = new Uint8Array(buf);
@@ -482,15 +505,12 @@ export class XenoCantoPanel {
     };
 
     const notFound = (msg: any) => Object.assign(new Error(msg), { code: 'XC_NOT_FOUND' });
-    const isAudioContent = (res: any) => {
-      const ct = res.headers.get('Content-Type') || '';
-      return ct.startsWith('audio/') || ct.startsWith('application/octet') || ct.includes('mpeg') || ct.includes('ogg') || ct.includes('flac');
-    };
 
     try {
       onStatus?.(`Loading XC${clean} (Direct)…`);
       onProgress?.(0, 0, 0);
-      const res = await fetch(directUrl);
+      const ctrl = new AbortController();
+      const res = await timedFetch(directUrl, ctrl);
       if (res.status === 404 || res.status === 410) {
         throw notFound(`XC${clean} not found — this recording may not exist on Xeno-Canto or has no downloadable audio.`);
       }
@@ -499,7 +519,7 @@ export class XenoCantoPanel {
         if (res.headers.get('Content-Type')?.startsWith('text/html')) {
           throw notFound(`XC${clean} not found — Xeno-Canto returned an error page instead of audio.`);
         }
-        const buf = await streamToBuffer(res, 'Direct');
+        const buf = await streamToBuffer(res, 'Direct', ctrl);
         if (buf && buf.byteLength >= 10_000) return { xcId: clean, buffer: buf, audioUrl: directUrl };
         lastError = new Error('Response too small to be valid audio — the file may not exist.');
       } else { lastError = new Error(`HTTP ${res.status}`); }
@@ -516,13 +536,31 @@ export class XenoCantoPanel {
       { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}` },
       { name: 'ThingProxy', url: `https://thingproxy.freeboard.io/fetch/${directUrl}` },
     ];
-    for (const c of candidates) {
+    // Ask all proxies at once; the first one that answers with audio wins and
+    // the others are aborted. Failing proxies no longer cost time one by one.
+    onStatus?.(`Loading XC${clean} (trying proxies)…`);
+    onProgress?.(0, 0, 0);
+    const attempts = candidates.map((c) => {
+      const ctrl = new AbortController();
+      const p = timedFetch(c.url, ctrl).then((res) => {
+        if (!res.ok) throw new Error(`${c.name}: HTTP ${res.status}`);
+        if (res.headers.get('Content-Type')?.startsWith('text/html')) throw new Error(`${c.name}: returned HTML instead of audio`);
+        return { c, ctrl, res };
+      }).catch((err) => { throw new Error(`${c.name}: ${(err as any)?.message || err}`); });
+      return { ctrl, p };
+    });
+    let winner: any;
+    try {
+      winner = await (Promise as any).any(attempts.map((a) => a.p));
+    } catch (agg) {
+      const msgs = ((agg as any).errors || []).map((e: any) => e?.message).filter(Boolean);
+      lastError = new Error(msgs.join('; ') || 'all proxies failed');
+    }
+    for (const a of attempts) if (a.ctrl !== winner?.ctrl) a.ctrl.abort();
+    if (winner) {
       try {
-        onProgress?.(0, 0, 0);
-        const res = await fetch(c.url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buf = await streamToBuffer(res, c.name);
-        if (!buf || buf.byteLength < 10_000) throw new Error('Response too small.');
+        const buf = await streamToBuffer(winner.res, winner.c.name, winner.ctrl);
+        if (!buf || buf.byteLength < 10_000) throw new Error(`${winner.c.name}: response too small.`);
         return { xcId: clean, buffer: buf, audioUrl: directUrl };
       } catch (err) { lastError = err; }
     }
