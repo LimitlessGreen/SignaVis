@@ -22,7 +22,7 @@ export const DEFAULT_LAYER = Object.freeze({ id: DEFAULT_LAYER_ID, name: 'Defaul
 
 export type LabelSource = 'own' | 'birdnet' | `xc-set:${string}` | `file:${string}`;
 
-export interface Layer { id: string; name: string; annotator?: string; color?: string }
+export interface Layer { id: string; name: string; annotator?: string; annotatorXcId?: string; color?: string }
 
 /** Own label: points at the own source, or has no source at all and is manual. */
 export function isOwnLabel(l: any) {
@@ -153,6 +153,28 @@ export function renameLayer(sets: Map<string, any>, id: string, name: string) {
     if (!l || !String(name || '').trim()) return false;
     l.name = String(name).trim();
     return true;
+}
+
+/** Annotator of a layer (name + optional XC user id); empty name = use the profile again. */
+export function setLayerAnnotator(sets: Map<string, any>, id: string, annotator: string, annotatorXcId = '') {
+    const own = ownEntry(sets);
+    const l = own?.layers.find((x: Layer) => x.id === id);
+    if (!l) return false;
+    const name = String(annotator || '').trim();
+    if (name) { l.annotator = name; l.annotatorXcId = String(annotatorXcId || '').trim(); }
+    else { delete l.annotator; delete l.annotatorXcId; }
+    return true;
+}
+
+/**
+ * Upload fields of an own label whose layer has an annotator: `author` + `annotatorXcId`
+ * (see buildAnnotaAnnotation). null for other labels — they keep the profile as annotator.
+ */
+export function layerAnnotatorFields(sets: Map<string, any>, l: any) {
+    if (l?.setId !== OWN_SOURCE_ID) return null;
+    const layer = ownLayers(sets).find((x) => x.id === (l.layer || DEFAULT_LAYER_ID));
+    if (!layer?.annotator) return null;
+    return { author: layer.annotator, annotatorXcId: layer.annotatorXcId || '' };
 }
 
 export function setActiveLayer(sets: Map<string, any>, id: string) {

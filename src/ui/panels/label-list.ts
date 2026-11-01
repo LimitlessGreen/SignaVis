@@ -31,10 +31,11 @@ const HIDDEN_TAG_KEYS = new Set(['annotator', 'animalSeen', 'playbackUsed', 'rem
 const VIEW_KEY = 'signavis.labels.view.v1';
 
 export interface LayerOptions {
-  get: () => { layers: { id: string; name: string }[]; active: string; hidden: Set<string> };
+  get: () => { layers: { id: string; name: string; annotator?: string }[]; active: string; hidden: Set<string> };
   onSetActive: (id: string) => void;
   onAdd: () => void;
   onRename: (id: string) => void;
+  onSetAnnotator?: (id: string) => void;
   onRemove: (id: string) => void;
   onMove: (labelIds: string[], layerId: string) => void;
   onToggleHidden: (id: string) => void;
@@ -547,6 +548,14 @@ export class LabelList {
       if (ly.id === DEFAULT_LAYER_ID && info.layers.length === 1) continue;
       items.push({ label: `Rename layer “${ly.name}”…`, action: () => this._layers!.onRename(ly.id) });
     }
+    if (this._layers!.onSetAnnotator) {
+      items.push({ separator: true });
+      for (const ly of info.layers) {
+        const who = ly.annotator ? ` (${ly.annotator})` : ' (profile)';
+        const name = info.layers.length === 1 ? 'my labels' : `layer “${ly.name}”`;
+        items.push({ label: `Annotator of ${name}${who}…`, action: () => this._layers!.onSetAnnotator!(ly.id) });
+      }
+    }
     const removable = info.layers.filter((x) => x.id !== DEFAULT_LAYER_ID);
     if (removable.length) items.push({ separator: true });
     for (const ly of removable) {
@@ -565,7 +574,8 @@ export class LabelList {
       const chip = el('span', 'lt-layer-chip' + (ly.id === info.active ? ' lt-layer-chip--active' : '') + (hidden ? ' lt-layer-chip--hidden' : ''));
       const b = el('button', 'lt-layer-name', ly.name);
       b.type = 'button';
-      b.title = ly.id === info.active ? 'New labels go to this layer (double-click to rename)' : 'Draw new labels on this layer (double-click to rename)';
+      b.title = (ly.id === info.active ? 'New labels go to this layer (double-click to rename)' : 'Draw new labels on this layer (double-click to rename)')
+        + (ly.annotator ? `\nAnnotator: ${ly.annotator}` : '');
       b.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onSetActive(ly.id); });
       b.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onRename(ly.id); });
       const eye = iconBtn(`lt-eye${hidden ? ' lt-eye--off' : ''}`, hidden ? ICON.eyeOff : ICON.eye,

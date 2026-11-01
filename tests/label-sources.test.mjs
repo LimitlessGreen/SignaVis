@@ -78,3 +78,16 @@ test('layer editing: add, rename, activate, remove (labels move to default)', as
     assert.equal(removeLayer(s, 'default', [labels]), -1);
     assert.equal(addLayer(new Map(), 'x'), null);
 });
+
+test('layer annotator: upload fields only for own labels on that layer', async () => {
+    const { addLayer, setLayerAnnotator, layerAnnotatorFields } = await import('../src/app/label-sources.ts');
+    const s = new Map([['own', { id: 'own', origin: 'manual' }]]);
+    const b = addLayer(s, 'B');
+    assert.ok(setLayerAnnotator(s, b.id, ' Jane Doe ', 'ABC'));
+    assert.deepEqual(layerAnnotatorFields(s, { setId: 'own', layer: b.id }), { author: 'Jane Doe', annotatorXcId: 'ABC' });
+    assert.equal(layerAnnotatorFields(s, { setId: 'own', layer: 'default' }), null);
+    assert.equal(layerAnnotatorFields(s, { setId: 'xc', layer: b.id }), null);
+    setLayerAnnotator(s, b.id, '');
+    assert.equal(layerAnnotatorFields(s, { setId: 'own', layer: b.id }), null);
+    assert.equal(setLayerAnnotator(s, 'nope', 'x'), false);
+});

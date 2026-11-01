@@ -5,6 +5,7 @@ Needs the dev server on port 5199. Instead of the folder picker, an OPFS sub-fol
 (garden/2026/a1.wav, garden/a2.wav, top.wav from ./samples/birdsong.wav) and registered as the
 recent project folder. Checks + console errors go to <outdir>/report.txt.
 """
+import json
 import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -144,6 +145,20 @@ def main():
         ut = pg.locator("#xcSelection").inner_text()
         check("upload: a1 selectable after XC number", "XC928094" in ut, ut.replace("\n", " | ")[:200])
         check("upload: set details in upload tab", pg.locator("#panelXc #xcSetContainer").count() == 1)
+
+        # Layer annotator: the Default layer (the label is on it) gets "Jane Doe" → appears in the Annota JSON
+        open_panel(pg, "labels")
+        dialog_answers.extend(["Jane Doe", "JANEID"])
+        sec = pg.locator('.lt-src[data-set-key="own"]').first
+        sec.locator(".lt-src-head").hover()
+        sec.locator(".lt-more").first.click(); pg.wait_for_timeout(300)
+        pg.get_by_text("Annotator of layer “Default”").first.click(); pg.wait_for_timeout(800)
+        open_panel(pg, "upload")
+        with pg.expect_download() as dl:
+            pg.locator("#xcDownloadSetBtn").click()
+        anns = json.loads(Path(dl.value.path()).read_text(encoding="utf-8")).get("annotations", [])
+        who = [(a.get("annotator"), a.get("annotator_xc_id")) for a in anns]
+        check("layer annotator in Annota JSON", ("Jane Doe", "JANEID") in who, str(who))
 
         # Folder menu
         open_panel(pg, "project")
