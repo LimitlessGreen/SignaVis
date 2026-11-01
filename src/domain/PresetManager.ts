@@ -231,7 +231,7 @@ export class PresetManager {
         if (fav && Array.from(sel.options).some(o => o.value === fav)) {
             sel.value = fav;
         } else {
-            sel.value = 'xc';
+            sel.value = 'classic';
         }
     }
 
@@ -279,7 +279,7 @@ export class PresetManager {
         }
         if (!p) p = this.loadLastSettings();
         if (!p) {
-            const defaultKey = this.#d.presetSelect?.value || 'xc';
+            const defaultKey = this.#d.presetSelect?.value || 'classic';
             p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
@@ -372,7 +372,7 @@ export class PresetManager {
 
     /**
      * Settings of the preset the controls are measured against: the selected preset,
-     * else the favourite, else 'xc'. Missing fields fall back to the DSP defaults.
+     * else the favourite, else 'classic'. Missing fields fall back to the DSP defaults.
      */
     getReferenceSettings(): Record<string, any> {
         const resolve = (name: string) => name.startsWith('user:')
@@ -380,7 +380,7 @@ export class PresetManager {
             : DSP_PROFILES[name];
         const p = resolve(this.#d.presetSelect?.value || '')
             || resolve(this.getFavouritePreset() || '')
-            || DSP_PROFILES.xc;
+            || DSP_PROFILES.classic;
         return { ...DSP_SETTINGS_DEFAULTS, ...p };
     }
 
