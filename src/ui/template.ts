@@ -477,6 +477,9 @@ export function createPlayerHTML(opts = {}) {
             <div class="spectrogram-resize-handle" data-aw="spectrogramResizeHandle" title="Adjust spectrogram height"></div>
         </div>
 
+        <!-- Zoom widget moves here when the toolbar is too narrow for it -->
+        <div class="zoom-dock" data-aw="zoomDock" hidden></div>
+
         <!-- Overview -->
         <div class="overview-container" data-aw="overviewContainer"${hide(o.showOverview)}>
             <canvas data-aw="overviewCanvas"></canvas>

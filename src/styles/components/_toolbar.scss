@@ -196,3 +196,11 @@
 .tb-spacer { flex: 1; }
 .tb-meta { color: var(--color-text-secondary); font-size: 11px; }
 
+
+/* Below the spectrogram when the toolbar has no room for the zoom widget */
+.zoom-dock {
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 8px;
+  &[hidden] { display: none; }
+}
