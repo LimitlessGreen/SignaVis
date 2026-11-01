@@ -224,6 +224,8 @@ export class RecordingExplorer {
         single.className = 'tb-btn ghost rec-single-btn';
         single.textContent = 'Single';
         const canSingle = this._manager.getAll().length <= 1;
+        // A project folder always shows its tree — no single-recording view
+        single.hidden = (this._getFolderFiles() || []).length > 0 || this._manager.getAll().some((e: any) => e.path);
         single.disabled = !canSingle;
         single.title = canSingle ? 'Back to single-recording view' : 'Remove other recordings first';
         single.addEventListener('click', (e) => { e.stopPropagation(); this.setMultiMode(false); });
