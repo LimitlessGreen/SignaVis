@@ -36,9 +36,9 @@ export const DB_CONTRAST = {
  * instead of saturating.
  */
 export const AUTO_CONTRAST = {
-    blackMarginDb: 3,
+    blackMarginDb: 6,
     whitePercentile: 99.9,
-    headroomDb: 6,
+    headroomDb: 0,
 } as const;
 
 // Classic (Xeno-Canto-style) spectrogram defaults
@@ -150,7 +150,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         colourScale: 'dbSquared',
         // Was 2048 / 50 %: a 46 ms window with 23 ms hop smears fast song.
         windowSize: 1024,
-        overlapLevel: 3,       // 75 %
+        overlapLevel: 4,       // 87.5 %
         oversamplingLevel: 1,  // 2× → fft 2048
         nMels: CLASSIC_N_MELS,
         frameRate: CLASSIC_FRAME_RATE,

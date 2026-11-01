@@ -1190,7 +1190,7 @@ export class SpectrogramController extends EventTarget {
         this._syncGainSliders();
         if (this._gainDbMode || this._isNoiseFloorContrast()) {
             const vis = this._visibleValues();
-            const pts = vis && visibleContrastPoints(vis.values, AUTO_CONTRAST.blackMarginDb, AUTO_CONTRAST.whitePercentile);
+            const pts = vis && visibleContrastPoints(vis.values, AUTO_CONTRAST.blackMarginDb, AUTO_CONTRAST.whitePercentile, !this._gainDbMode);
             if (pts && vis) {
                 if (this._gainDbMode) {
                     // Black a little above the visible noise floor, white above its p99.9.
