@@ -8,6 +8,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    ignore:
+      # v8 changes the public peer-dependency API; revisit after 1.0
+      - dependency-name: "wavesurfer.js"
+        update-types: ["version-update:semver-major"]
     reviewers:
       - "jairuskhan"
     labels:
