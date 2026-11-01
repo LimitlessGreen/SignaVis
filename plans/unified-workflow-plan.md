@@ -113,3 +113,6 @@ mehr, sondern ein **Export**, der erst im Upload-Tab entsteht.
   umgesetzt (Annotator kommt weiter aus dem Profil). Im Browser noch ungetestet.
 - Nachtrag (2026-11-01, Nutzer-Feedback „seltsame +-Ansicht, Datei vorher nicht ansehbar“): Ordnerdateien
   ohne Eintrag als blasse `file`-Knoten im Baum, Klick öffnet (legt Eintrag an); „+“-Liste entfernt.
+- Nachtrag 2 (2026-11-01, Nutzer: „Ordnerdateien direkt in der Ebene, XC im Unterordner“; „erst hinzufügen,
+  wenn Label oder +“): Baum oben = Quellen-Ordner `@local` (Projektname), `@xc`, `@session`.
+  Geöffnete Ordnerdateien `pinned: false` → nur gespeichert mit Labels / aktiv / nach „+“.
