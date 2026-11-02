@@ -579,7 +579,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         const coords = this.player?._state?.coords;
         const el = document.createElement('div');
         const isLocked = this._lockedIds.has(region.id);
-        const isBlocked = isLocked || region.readonly === true;
+        const isBlocked = isLocked || region.readonly === true || (this.player as any)?._readOnly === true;
         el.className = 'annotation-region';
         if (region.readonly) el.classList.add('annotation-region--readonly');
         if (isLocked) el.classList.add('annotation-region--locked');
@@ -605,7 +605,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
         const aiTag = region.aiSuggested ? `<span class="annotation-ai-badge" title="AI: ${escapeHtml(region.aiSuggested.model || '')} ${escapeHtml(region.aiSuggested.version || '')}">AI</span>` : '';
-        const lockIcon = isBlocked ? `<span class="annotation-lock" title="${region.readonly ? 'Read-only (imported from XC)' : 'Locked'}">🔒</span>` : '';
+        const lockIcon = (isLocked || region.readonly === true) ? `<span class="annotation-lock" title="${region.readonly ? 'Read-only (imported from XC)' : 'Locked'}">🔒</span>` : '';
         el.innerHTML = `
             <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
             <span class="annotation-confidence">${confidenceStr}</span>
@@ -685,7 +685,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _startEditInteraction(id: any, mode: any, clientX: number, element: any) {
         const region = this._items.find((a: any) => a.id === id);
-        if (!region || region.readonly || this._lockedIds.has(id)) return;
+        if (!region || region.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         this._editing = {
             id,
             mode,
@@ -803,7 +803,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _renameRegionPrompt(id: any) {
         const region = this._items.find((a: any) => a.id === id);
-        if (!region || region.readonly || this._lockedIds.has(id)) return;
+        if (!region || region.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         openLabelNameEditor({
@@ -1163,7 +1163,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.className = 'spectrogram-label-region';
         const isLocked = this._lockedIds.has(label.id);
         const isReadonly = label.readonly === true;
-        const isBlocked = isLocked || isReadonly;
+        const isBlocked = isLocked || isReadonly || (this.player as any)?._readOnly === true;
         if (isLocked) el.classList.add('spectrogram-label-region--locked');
         if (isReadonly) el.classList.add('spectrogram-label-region--readonly');
         const isSuggestion = label.origin && label.origin !== 'manual' && label.origin !== 'xeno-canto';
@@ -1612,7 +1612,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             }
 
             if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
-            if ((!e.shiftKey && !this.drawMode) || e.button !== 0) return;
+            if ((!e.shiftKey && !this.drawMode) || e.button !== 0 || (this.player as any)?._readOnly) return;
             if (!this.player?._state?.audioBuffer) return;
 
             const start = this._clientXToTime(e.clientX);
@@ -2466,7 +2466,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _renameSpectrogramLabelPrompt(id: any) {
         const label = this._items.find((l: any) => l.id === id);
-        if (!label || label.readonly || this._lockedIds.has(id)) return;
+        if (!label || label.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
         openLabelNameEditor({

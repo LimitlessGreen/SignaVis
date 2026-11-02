@@ -896,7 +896,7 @@ export class BirdNETPlayer {
             layer.drawMode = on ? false : layer === this.spectrogramLabels;
             layer.exitStampMode?.();
             layer.exitSnapMode?.();
-            if (layer.overlay) layer.overlay.style.pointerEvents = on ? 'none' : '';
+            layer.render?.();  // regions re-read the read-only state (no handles, no drag)
         }
         for (const b of [this._drawBtn, this._stampBtn, this._snapBtn]) if (b) b.hidden = on;
         this._drawBtn?.classList.toggle('active', !on);
