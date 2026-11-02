@@ -735,3 +735,46 @@
         linear-gradient(#38bdf8, #38bdf8) center / 100% 1px no-repeat;
     filter: drop-shadow(0 0 1px #000);
 }
+
+/* ═══ Loupe window (Display → Loupe Window) ═══ */
+.loupe-window {
+    position: fixed;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.18));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.loupe-window canvas { display: block; }
+.loupe-window-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 4px 0 10px;
+    background: var(--color-bg-secondary, #16213e);
+    color: var(--color-text-primary, #e2e8f0);
+    font-size: 11px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+.loupe-window-bar:active { cursor: grabbing; }
+.loupe-window-title { flex: 1; font-weight: 600; }
+.loupe-window-zoom { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; color: var(--color-text-secondary, #94a3b8); }
+.loupe-window-bar button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.loupe-window-bar button:hover { background: rgba(255, 255, 255, 0.1); }

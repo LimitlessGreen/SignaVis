@@ -292,6 +292,11 @@ export function createPlayerHTML(opts = {}) {
                     <input type="checkbox" data-aw="loupeDetailCheck" checked> Loupe Detail
                 </label>
             </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Movable window that magnifies the spectrogram around the mouse pointer">
+                    <input type="checkbox" data-aw="loupeWindowCheck"> Loupe Window
+                </label>
+            </div>
             <div class="settings-row" data-expert>
                 <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
                     <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast

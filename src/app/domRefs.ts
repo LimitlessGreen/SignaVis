@@ -119,6 +119,7 @@ export interface DomRefs {
     colorSchemeSelect:       HTMLSelectElement | null;
     editLoupeCheck:          HTMLInputElement  | null;
     loupeDetailCheck:        HTMLInputElement  | null;
+    loupeWindowCheck:        HTMLInputElement  | null;
     freqLabels:              HTMLElement       | null;
     freqZoomResetBtn:        HTMLButtonElement | null;
     freqAxisSpacer:          HTMLElement       | null;

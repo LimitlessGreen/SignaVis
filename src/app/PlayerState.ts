@@ -707,6 +707,7 @@ export class PlayerState {
             colorSchemeSelect:      q('colorSchemeSelect'),
             editLoupeCheck:         q('editLoupeCheck'),
             loupeDetailCheck:       q('loupeDetailCheck'),
+            loupeWindowCheck:       q('loupeWindowCheck'),
             freqLabels:             q('freqLabels'),
             freqZoomResetBtn:       q('freqZoomResetBtn'),
             freqAxisSpacer:         q('freqAxisSpacer'),

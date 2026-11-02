@@ -950,7 +950,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }));
     }
 
-    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); }
+    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); this._bindLoupeWindow(root); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
@@ -2122,12 +2122,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     }
 
     /** Settings checkbox, default on, choice remembered in localStorage. */
-    _loupeOption(dataAw: string, storageKey: string): boolean {
+    _loupeOption(dataAw: string, storageKey: string, fallback = true): boolean {
         const box = this._settingEl(dataAw) as HTMLInputElement | null;
-        if (!box) return true;
+        if (!box) return fallback;
         if (!box.dataset.awBound) {
             box.dataset.awBound = '1';
-            try { if (localStorage.getItem(storageKey) === '0') box.checked = false; } catch { /* storage blocked */ }
+            try {
+                const v = localStorage.getItem(storageKey);
+                if (v === '0') box.checked = false;
+                else if (v === '1') box.checked = true;
+            } catch { /* storage blocked */ }
             box.addEventListener('change', () => {
                 try { localStorage.setItem(storageKey, box.checked ? '1' : '0'); } catch { /* storage blocked */ }
             });
@@ -2290,6 +2294,106 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         cv.style.left = `${Math.max(4, left)}px`;
         cv.style.top = `${Math.max(4, Math.min(window.innerHeight - H - 4, top))}px`;
 
+        this._paintLoupe(cv, W, H, cx, cy, zx, zy, el, mode, opts);
+    }
+
+    // ── Loupe window: movable panel magnifying around the pointer ─────
+    _loupeWin: { el: HTMLElement; cv: HTMLCanvasElement; zoomEl: HTMLElement; zoom: number } | null = null;
+    _loupeWinRaf = 0;
+
+    _bindLoupeWindow(root: HTMLElement) {
+        const box = this._settingEl('loupeWindowCheck') as HTMLInputElement | null;
+        const sync = () => this._setLoupeWindow(this._loupeOption('loupeWindowCheck', 'aw-loupe-window', false));
+        box?.addEventListener('change', sync);
+        sync();
+        root.addEventListener('pointermove', (e: PointerEvent) => {
+            if (!this._loupeWin || this._loupeWinRaf) return;
+            const { clientX, clientY } = e;
+            this._loupeWinRaf = requestAnimationFrame(() => {
+                this._loupeWinRaf = 0;
+                this._paintLoupeWindow(clientX, clientY);
+            });
+        });
+    }
+
+    _setLoupeWindow(on: boolean) {
+        if (!on) { this._loupeWin?.el.remove(); this._loupeWin = null; return; }
+        if (this._loupeWin) return;
+        const W = 320, H = 220;
+        const el = document.createElement('div');
+        el.className = 'loupe-window';
+        el.innerHTML = '<div class="loupe-window-bar" title="Drag to move"><span class="loupe-window-title">Loupe</span>'
+            + '<button type="button" data-z="-1" title="Less zoom">−</button><span class="loupe-window-zoom"></span>'
+            + '<button type="button" data-z="1" title="More zoom">+</button>'
+            + '<button type="button" class="loupe-window-close" title="Close (Display → Loupe Window)">×</button></div>';
+        const cv = document.createElement('canvas');
+        const dpr = window.devicePixelRatio || 1;
+        cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+        cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+        el.appendChild(cv);
+        let pos = { x: window.innerWidth - W - 40, y: 120 };
+        try { const p = JSON.parse(localStorage.getItem('aw-loupe-window-pos') || 'null'); if (p) pos = p; } catch { /* ignore */ }
+        let zoom = 4;
+        try { zoom = Number(localStorage.getItem('aw-loupe-window-zoom')) || 4; } catch { /* ignore */ }
+        const place = (x: number, y: number) => {
+            pos = { x: Math.max(0, Math.min(window.innerWidth - 80, x)), y: Math.max(0, Math.min(window.innerHeight - 40, y)) };
+            el.style.left = `${pos.x}px`; el.style.top = `${pos.y}px`;
+        };
+        place(pos.x, pos.y);
+        document.body.appendChild(el);
+        const zoomEl = el.querySelector('.loupe-window-zoom') as HTMLElement;
+        this._loupeWin = { el, cv, zoomEl, zoom };
+        zoomEl.textContent = `${zoom}×`;
+        // Drag by the title bar
+        const bar = el.querySelector('.loupe-window-bar') as HTMLElement;
+        bar.addEventListener('pointerdown', (e: PointerEvent) => {
+            if ((e.target as Element).closest('button')) return;
+            e.preventDefault();
+            const ox = e.clientX - pos.x, oy = e.clientY - pos.y;
+            bar.setPointerCapture(e.pointerId);
+            const move = (m: PointerEvent) => place(m.clientX - ox, m.clientY - oy);
+            const up = () => {
+                bar.removeEventListener('pointermove', move);
+                try { localStorage.setItem('aw-loupe-window-pos', JSON.stringify(pos)); } catch { /* ignore */ }
+            };
+            bar.addEventListener('pointermove', move);
+            bar.addEventListener('pointerup', up, { once: true });
+        });
+        el.addEventListener('click', (e) => {
+            const btn = (e.target as Element).closest('button') as HTMLButtonElement | null;
+            if (!btn || !this._loupeWin) return;
+            if (btn.classList.contains('loupe-window-close')) {
+                const box = this._settingEl('loupeWindowCheck') as HTMLInputElement | null;
+                if (box) { box.checked = false; box.dispatchEvent(new Event('change')); } else this._setLoupeWindow(false);
+                return;
+            }
+            const steps = [2, 3, 4, 6, 8, 12];
+            const i = Math.max(0, steps.indexOf(this._loupeWin.zoom));
+            this._loupeWin.zoom = steps[Math.max(0, Math.min(steps.length - 1, i + Number(btn.dataset.z)))];
+            this._loupeWin.zoomEl.textContent = `${this._loupeWin.zoom}×`;
+            try { localStorage.setItem('aw-loupe-window-zoom', String(this._loupeWin.zoom)); } catch { /* ignore */ }
+        });
+    }
+
+    _paintLoupeWindow(clientX: number, clientY: number) {
+        const w = this._loupeWin;
+        const src = this.player?._state?.d?.spectrogramCanvas as HTMLCanvasElement | null;
+        if (!w || !src) return;
+        const r = src.getBoundingClientRect();
+        // Only while the pointer is over the spectrogram; keep the last view otherwise
+        if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return;
+        const W = parseFloat(w.cv.style.width), H = parseFloat(w.cv.style.height);
+        const t = this._clientXToTime(clientX), f = this._clientYToFreq(clientY);
+        this._paintLoupe(w.cv, W, H, clientX, clientY, w.zoom, w.zoom, null, 'pointer',
+            { readout: `${t.toFixed(3)} s · ${Math.round(f)} Hz` });
+    }
+
+    /** Draw the magnified spectrogram around (cx, cy) into a loupe canvas. */
+    _paintLoupe(cv: HTMLCanvasElement, W: number, H: number, cx: number, cy: number, zx: number, zy: number,
+                el: HTMLElement | null | undefined, mode: string, opts: { readout?: string; fine?: boolean } = {}) {
+        const src = this.player?._state?.d?.spectrogramCanvas as HTMLCanvasElement | null;
+        if (!src || !src.width || !src.height) return;
+        const b = el?.getBoundingClientRect();
         const ctx = cv.getContext('2d');
         if (!ctx) return;
         const r = src.getBoundingClientRect();
