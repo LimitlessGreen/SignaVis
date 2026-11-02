@@ -707,10 +707,10 @@ export class LabelGrid {
             const reset = document.createElement('span');
             reset.className = 'lgrid-reset';
             reset.textContent = '×';
-            reset.title = 'Reset to "not specified" (Delete)';
+            reset.title = 'Reset to "not specified" (Backspace)';
             cell.appendChild(reset);
           }
-          cell.title = `${c.tip || ''} — ${yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified'} · click / Space toggles · × or Delete resets`;
+          cell.title = `${c.tip || ''} — ${yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified'} · click / Space toggles · × or Backspace resets`;
         } else if (c.tagKey === 'remarks' && cell.textContent) {
           cell.title = cell.textContent;
         }
@@ -864,9 +864,8 @@ export class LabelGrid {
     }
     if (!this.cursor) return;
     if (k === 'Enter' || k === 'F2') { e.preventDefault(); e.stopPropagation(); this.startEdit(this.cursor.id, this.cursor.col); return; }
-    // Delete / Backspace on an optional field resets it to "not specified";
-    // Delete elsewhere (species, times, …) removes the label(s).
-    if ((k === 'Delete' || k === 'Backspace') && this.isClearable(this.cursor.col)) {
+    // Backspace resets an optional field to "not specified"; Delete removes the label(s).
+    if (k === 'Backspace' && this.isClearable(this.cursor.col)) {
       e.preventDefault();
       e.stopPropagation();
       this.clearCell(this.cursor.id, this.cursor.col);
