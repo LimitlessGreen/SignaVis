@@ -223,7 +223,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
     &::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; } // hover bridge
   }
-  .audio-ctl:hover .audio-pop, .audio-ctl:focus-within .audio-pop { display: inline-flex; }
+  .audio-ctl:hover .audio-pop, .audio-ctl:has(:focus-visible) .audio-pop { display: inline-flex; }
   // Norm is hidden in the popover: show its state as a dot on the speaker
   .audio-ctl:has([data-aw="normalizeBtn"].active) [data-aw="volumeToggleBtn"] { box-shadow: inset 0 -2px 0 var(--color-accent); }
   .toolbar-select { width: 64px; }
@@ -244,7 +244,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
     &::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; }
   }
-  .view-ctl:hover .view-group, .view-ctl:focus-within .view-group { display: inline-flex; }
+  .view-ctl:hover .view-group, .view-ctl:has(:focus-visible) .view-group { display: inline-flex; }
   // Follow/Loop/Crosshair on while folded away: mark the ⋯ button
   .view-ctl:has(.toggle-btn.active:not([data-aw="followToggleBtn"])) .view-more-btn { box-shadow: inset 0 -2px 0 var(--color-accent); }
 }

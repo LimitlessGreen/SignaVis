@@ -327,14 +327,34 @@ html[data-theme="light"] { @include sponsor-light; }
   flex-shrink: 0;
 }
 
-// Items that can shrink away completely at narrow widths
-.tb-xc-key,
-#taxonomyMeta,
-#taxonomyLangSelect {
-  @media (max-width: 900px) {
+// Label language + XC key: inline on wide screens; on narrow ones they fold
+// behind the ⚙ button into a popover (instead of disappearing).
+.topbar-settings { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+.topbar-settings-pop { display: inline-flex; align-items: center; gap: 6px; }
+.topbar-settings-btn { display: none !important; }
+@media (max-width: 900px) {
+  .topbar-settings-btn { display: inline-flex !important; }
+  .topbar-settings-pop {
     display: none;
+    position: absolute; top: 100%; right: 0; z-index: 200;
+    margin-top: 4px; padding: 6px 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    &::before { content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px; }
   }
+  .topbar-settings:hover .topbar-settings-pop,
+  .topbar-settings:has(:focus-visible) .topbar-settings-pop,
+  .topbar-settings:has(select:focus) .topbar-settings-pop { display: inline-flex; }
+  .statusbar-section:has(> #taxonomyMeta) { display: none; }
 }
+
+// Status bar: drop the less important parts before anything overlaps
+.statusbar-notice { color: var(--color-text-secondary); white-space: nowrap; gap: 6px; }
+.statusbar-notice a { color: inherit; text-decoration: underline; }
+@media (max-width: 1200px) { .statusbar-commit { display: none; } }
+@media (max-width: 1000px) { .statusbar-notice, .statusbar-updated { display: none; } }
 
 // Species search: shrinks before hiding
 .species-search {
