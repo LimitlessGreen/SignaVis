@@ -2917,6 +2917,7 @@
         selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
       },
       onNotice: (msg) => { selectionMeta.textContent = msg; },
+      onTogglePlay: () => { if (player.isPlaying) player.pause(); else player.play(); },
       onExport: (format, labels, columns) => {
         const entry = recordingManager.getActive();
         const file = (entry?.filename || fileLabel.textContent || 'labels').split('/').pop();

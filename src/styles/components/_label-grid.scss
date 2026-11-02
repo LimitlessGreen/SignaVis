@@ -278,3 +278,35 @@ input.lgrid-editor {
     &.selected .pin { background: color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-secondary)); }
 }
 .lgrid-cell.pin.editing { z-index: 2; }
+
+.lgrid-cell.yn { justify-content: center; }
+
+.lgrid-check {
+    width: 11px;
+    height: 11px;
+    border: 1px solid var(--color-text-secondary);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+
+    &.on {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+    }
+    &.on::after {
+        content: '';
+        position: absolute;
+        left: 3px;
+        top: 0;
+        width: 3px;
+        height: 7px;
+        border: solid var(--color-bg-primary);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+}
+.lgrid-check.unset {
+    border-style: dashed;
+    opacity: 0.6;
+}
+.lgrid-row.locked .lgrid-check { cursor: default; opacity: 0.6; }

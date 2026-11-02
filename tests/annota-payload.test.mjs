@@ -7,6 +7,7 @@ import {
     readOriginalSetMetadata,
     ANNOTA_SET_FIELDS,
     ANNOTA_ANNOTATION_FIELDS,
+    buildAnnotaAnnotation,
 } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 
@@ -125,4 +126,17 @@ test('label annotator (layer) overrides the set creator, incl. its XC id', async
         ],
     });
     assert.deepEqual(p.annotations.map((a) => [a.annotator, a.annotator_xc_id]), [['Me', 'MYID'], ['Jane', 'JANE'], ['Max', '']]);
+});
+
+test('annotation: overlap, collection and temperature fields come from tags', () => {
+    const ann = buildAnnotaAnnotation({
+        id: 'x', start: 1, end: 2, scientificName: 'Strix aluco',
+        tags: { overlap: 'yes', animalSeen: 'n', collectionDate: '2024-05-03', collectionSpecimen: 'ZMB 123', temperature: '12 °C', remarks: 'faint' },
+    }, { defaultXcNr: 1 });
+    assert.equal(ann.overlap, 'y');
+    assert.equal(ann.animal_seen, 'n');
+    assert.equal(ann.collection_date, '2024-05-03');
+    assert.equal(ann.collection_specimen, 'ZMB 123');
+    assert.equal(ann.temperature, '12 °C');
+    assert.equal(ann.annotation_remarks, 'faint');
 });

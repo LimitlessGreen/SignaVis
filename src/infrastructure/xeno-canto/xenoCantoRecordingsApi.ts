@@ -158,6 +158,16 @@ function _buildXcLabel(src: any, index: number, meta: any) {
     if (animalSeen) tags.animalSeen = animalSeen;
     if (playbackUsed) tags.playbackUsed = playbackUsed;
     if (remarks) tags.remarks = remarks;
+    const overlap = firstNonEmpty([src.overlap]) || '';
+    const collectionDate = firstNonEmpty([src.collection_date, src.collectionDate]) || '';
+    const collectionSpecimen = firstNonEmpty([src.collection_specimen, src.collectionSpecimen]) || '';
+    const temperature = firstNonEmpty([src.temperature]) || '';
+    if (overlap) tags.overlap = overlap;
+    if (collectionDate) tags.collectionDate = collectionDate;
+    if (collectionSpecimen) tags.collectionSpecimen = collectionSpecimen;
+    if (temperature) tags.temperature = temperature;
+    const annotatorXcId = firstNonEmpty([src.annotator_xc_id, src.annotatorXcId]) || '';
+    const dateIdentified = firstNonEmpty([src.date_identified, src.dateIdentified]) || '';
 
     // Fv0: array of original sets (combined XC exports); older payloads: single object
     const setMeta = readOriginalSetMetadata(src)[0] || {};
@@ -185,6 +195,8 @@ function _buildXcLabel(src: any, index: number, meta: any) {
         origin: 'xeno-canto',
         readonly: true,
         author: annotator || recordist || '',
+        ...(annotatorXcId ? { annotatorXcId } : {}),
+        ...(dateIdentified ? { createdAt: dateIdentified } : {}),
         tags,
         ...(annotationSet ? { annotationSet } : {}),
     };

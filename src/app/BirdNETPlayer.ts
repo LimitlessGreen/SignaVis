@@ -801,6 +801,8 @@ export class BirdNETPlayer {
             const tag = targetEl?.tagName?.toLowerCase?.() || '';
             const typing = tag === 'input' || tag === 'textarea' || (targetEl as HTMLElement)?.isContentEditable;
             if (typing) return;
+            // Widgets with their own keyboard handling (e.g. the label table) opt out of the hotkeys
+            if (targetEl?.closest?.('[data-aw-own-keys]')) return;
             const key = String((event as KeyboardEvent).key || '');
             const ctrl = (event as KeyboardEvent).ctrlKey || (event as KeyboardEvent).metaKey;
 

@@ -17,6 +17,7 @@
  */
 
 import { TAG_PRESETS } from './label-table.ts';
+import { ANNOTA_FIELDS, cycleYN, formatAnnotaValue, isoDay, toYN, type AnnotaField } from '../../domain/annotaFields.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { LABEL_EXPORT_FORMATS, type LabelExportColumn, type LabelExportFormat } from '../../infrastructure/export/labelTableFormats.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
@@ -24,7 +25,7 @@ import { OWN_SOURCE_ID } from '../../app/label-sources.ts';
 
 type Lbl = any;
 type SourceKey = 'own' | 'bn' | 'xc' | 'imp';
-type EditKind = 'species' | 'time' | 'dur' | 'freq' | 'tag' | null;
+type EditKind = 'species' | 'time' | 'dur' | 'freq' | 'tag' | 'text' | 'yn' | 'date' | null;
 
 interface Column {
   key: string;
@@ -39,6 +40,10 @@ interface Column {
   csv?: (g: LabelGrid) => LabelExportColumn[];
   /** Never hidden (needed to read the table). */
   fixed?: boolean;
+  /** Hidden until switched on in the column menu. */
+  hiddenByDefault?: boolean;
+  /** Where a 'text' / 'yn' / 'date' edit is stored: tags[tagKey], or the label field `author`. */
+  tagKey?: string;
 }
 
 export interface LabelGridOptions {
@@ -60,6 +65,8 @@ export interface LabelGridOptions {
   onDelete?: (ids: string[]) => void;
   /** Called after an edit was refused (e.g. locked label) with a short reason. */
   onNotice?: (msg: string) => void;
+  /** Space outside a checkbox cell (the player hotkeys are off while the table has focus). */
+  onTogglePlay?: () => void;
   /** Export the given rows; columns = the visible table columns as raw CSV columns. */
   onExport?: (format: LabelExportFormat, labels: Lbl[], columns: LabelExportColumn[]) => void;
 }
@@ -99,6 +106,17 @@ function tagCol(key: string, title: string, width: number): Column {
   };
 }
 
+function annotaCol(f: AnnotaField): Column {
+  const width = f.kind === 'yn' ? 64 : f.kind === 'date' ? 92 : f.key === 'remarks' ? 200 : 100;
+  return {
+    key: `annota:${f.key}`, title: f.short, width, edit: f.kind, tagKey: f.key,
+    tip: f.hint, hiddenByDefault: !f.visibleByDefault,
+    text: (l) => formatAnnotaValue(f, l.tags?.[f.key]),
+    sort: (l) => formatAnnotaValue(f, l.tags?.[f.key]).toLowerCase(),
+    csv: () => [{ title: f.label, value: (l) => (f.kind === 'yn' ? toYN(l.tags?.[f.key]) : String(l.tags?.[f.key] ?? '')) }],
+  };
+}
+
 const COLUMNS: Column[] = [
   { key: 'src', title: 'Src', width: 38, edit: null, tip: 'Source',
     csv: () => [{ title: 'Source', value: (l) => SOURCE_DEFS.find((s) => s.key === sourceOf(l))!.title }],
@@ -133,9 +151,23 @@ const COLUMNS: Column[] = [
     csv: () => [{ title: 'Confidence', value: (l) => l.confidence }],
     text: (l) => (l.confidence != null && l.confidence !== '' ? `${Math.round(Number(l.confidence) * 100)}%` : ''),
     sort: (l) => num(l.confidence) },
+  { key: 'author', title: 'Annotator', width: 110, edit: 'text', tip: 'Annotator of this label (empty = layer / profile)',
+    text: (l) => String(l.author || ''), sort: (l) => String(l.author || '').toLowerCase(),
+    csv: () => [{ title: 'Annotator', value: (l) => l.author || '' }] },
+  ...ANNOTA_FIELDS.map(annotaCol),
+  { key: 'identified', title: 'Identified', width: 84, edit: null, hiddenByDefault: true,
+    tip: 'Date identified (last change of the label)',
+    text: (l) => isoDay(l.updatedAt || l.createdAt), sort: (l) => isoDay(l.updatedAt || l.createdAt),
+    csv: () => [{ title: 'Date identified', value: (l) => isoDay(l.updatedAt || l.createdAt) }] },
   { key: 'layer', title: 'Set / layer', width: 90, edit: null,
     text: (l, g) => g.opts.layerName?.(l) || '', sort: (l, g) => (g.opts.layerName?.(l) || '').toLowerCase() },
 ];
+
+function withTag(l: Lbl, key: string, v: string) {
+  const tags = { ...(l.tags || {}) };
+  if (v) tags[key] = v; else delete tags[key];
+  return tags;
+}
 
 function loadPrefs(): any {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch { return {}; }
@@ -149,7 +181,7 @@ export class LabelGrid {
   private labels: Lbl[] = [];
   private rows: Lbl[] = [];
   private byId = new Map<string, Lbl>();
-  private prefs: { sortKey: string; sortDir: 1 | -1; sources: SourceKey[]; inView: boolean; follow: boolean; hidden: string[]; widths: Record<string, number> };
+  private prefs: { sortKey: string; sortDir: 1 | -1; sources: SourceKey[]; inView: boolean; follow: boolean; vis: Record<string, boolean>; widths: Record<string, number> };
   private query = '';
   private viewRange: { start: number; end: number } | null = null;
 
@@ -186,13 +218,14 @@ export class LabelGrid {
       sources: Array.isArray(p.sources) ? p.sources : SOURCE_DEFS.map((s) => s.key),
       inView: !!p.inView,
       follow: p.follow !== false,
-      hidden: Array.isArray(p.hidden) ? p.hidden : [],
+      vis: p.vis && typeof p.vis === 'object' ? p.vis : {},
       widths: p.widths && typeof p.widths === 'object' ? p.widths : {},
     };
 
     this.root = document.createElement('div');
     this.root.className = 'lgrid';
     this.root.tabIndex = 0;
+    this.root.dataset.awOwnKeys = '';   // player hotkeys (Delete, arrows, …) stay out while the table has focus
 
     this.scroller = document.createElement('div');
     this.scroller.className = 'lgrid-scroll';
@@ -431,8 +464,7 @@ export class LabelGrid {
   private colWidth(c: Column) { return Math.max(30, Math.round(this.prefs.widths[c.key] || c.width)); }
 
   private applyColumns() {
-    const hidden = new Set(this.prefs.hidden);
-    this.visCols = COLUMNS.map((_, i) => i).filter((i) => COLUMNS[i].fixed || !hidden.has(COLUMNS[i].key));
+    this.visCols = COLUMNS.map((_, i) => i).filter((i) => this.isColVisible(COLUMNS[i]));
     this.syncColWidths();
     this.buildHead();
     this.syncHead();
@@ -453,28 +485,33 @@ export class LabelGrid {
     this.root.style.setProperty('--lgrid-cols', cols);
   }
 
+  private isColVisible(c: Column) {
+    if (c.fixed) return true;
+    const v = this.prefs.vis[c.key];
+    return v === undefined ? !c.hiddenByDefault : v;
+  }
+
   private toggleColumn(key: string) {
-    const h = new Set(this.prefs.hidden);
-    if (h.has(key)) h.delete(key); else h.add(key);
-    this.prefs.hidden = [...h];
+    const c = COLUMNS.find((x) => x.key === key);
+    if (!c) return;
+    this.prefs.vis[key] = !this.isColVisible(c);
     savePrefs(this.prefs);
     this.applyColumns();
     if (this.cursor && !this.visCols.includes(this.cursor.col)) this.cursor.col = this.visCols[1];
   }
 
   private showColumnMenu(x: number, y: number) {
-    const hidden = new Set(this.prefs.hidden);
     const check = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8.5 6.5,12 13,4.5"/></svg>';
     showContextMenu({
       x, y,
       items: [
         ...COLUMNS.filter((c) => !c.fixed).map((c) => ({
           label: c.tip ? `${c.title} (${c.tip})` : c.title,
-          icon: hidden.has(c.key) ? '' : check,
+          icon: this.isColVisible(c) ? check : '',
           action: () => this.toggleColumn(c.key),
         })),
         { separator: true },
-        { label: 'Reset columns', action: () => { this.prefs.hidden = []; this.prefs.widths = {}; savePrefs(this.prefs); this.applyColumns(); } },
+        { label: 'Reset columns', action: () => { this.prefs.vis = {}; this.prefs.widths = {}; savePrefs(this.prefs); this.applyColumns(); } },
       ],
     });
   }
@@ -561,7 +598,7 @@ export class LabelGrid {
       if (vr && (num(l.end) < vr.start || num(l.start) > vr.end)) return false;
       if (q) {
         const n = this.opts.resolveName(l);
-        const hay = [n.display, n.scientific, l.label, ...Object.values(l.tags || {}), this.opts.layerName?.(l) || '']
+        const hay = [n.display, n.scientific, l.label, l.author || '', ...Object.values(l.tags || {}), this.opts.layerName?.(l) || '']
           .join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
@@ -652,6 +689,20 @@ export class LabelGrid {
         cell.title = n.scientific ? `${n.display} — ${n.scientific}` : n.display;
       } else {
         cell.textContent = c.text(l, this);
+        if (c.edit === 'yn') {
+          const yn = toYN(l.tags?.[c.tagKey!]);
+          const on = yn === 'y';
+          cell.textContent = '';
+          cell.classList.add('yn');
+          const box = document.createElement('span');
+          box.className = `lgrid-check${on ? ' on' : ''}${yn === '' ? ' unset' : ''}`;
+          box.setAttribute('role', 'checkbox');
+          box.setAttribute('aria-checked', yn === '' ? 'mixed' : String(on));
+          cell.appendChild(box);
+          cell.title = `${c.tip || ''} — ${yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified'} · click / Space toggles · Backspace resets`;
+        } else if (c.tagKey === 'remarks' && cell.textContent) {
+          cell.title = cell.textContent;
+        }
       }
       r.appendChild(cell);
     });
@@ -699,6 +750,12 @@ export class LabelGrid {
     if (!hit) return;
     if (this.editing) this.commitEdit();
     e.preventDefault();
+    if ((e.target as HTMLElement).closest('.lgrid-check') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      this.cursor = { id: hit.id, col: hit.col };
+      this.focus();
+      this.startEdit(hit.id, hit.col);
+      return;
+    }
     // Own double-click detection: rows may be rebuilt between the two clicks.
     const now = performance.now();
     const ld = this.lastDown;
@@ -790,7 +847,13 @@ export class LabelGrid {
     }
     if (!this.cursor) return;
     if (k === 'Enter' || k === 'F2') { e.preventDefault(); e.stopPropagation(); this.startEdit(this.cursor.id, this.cursor.col); return; }
-    if (k === 'Delete' || k === 'Backspace') {
+    if (k === 'Backspace') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.clearCell(this.cursor.id, this.cursor.col);
+      return;
+    }
+    if (k === 'Delete') {
       e.preventDefault();
       e.stopPropagation();
       const ids = this.targetIds(this.cursor.id).filter((id) => !this.opts.isLocked(this.byId.get(id)));
@@ -799,11 +862,29 @@ export class LabelGrid {
       return;
     }
     // Typing a printable character starts editing with that character.
+    if (k === ' ' && COLUMNS[this.cursor.col]?.edit === 'yn') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.startEdit(this.cursor.id, this.cursor.col);
+      return;
+    }
+    if (k === ' ') { e.preventDefault(); this.opts.onTogglePlay?.(); return; }
     if (k.length === 1 && k !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
       this.startEdit(this.cursor.id, this.cursor.col, k);
     }
+  }
+
+  /** Backspace: reset optional fields (tags, Annota fields, annotator, frequency) to empty. */
+  private clearCell(id: string, col: number) {
+    const c = COLUMNS[col];
+    const l = this.byId.get(id);
+    if (!c || !l) return;
+    if (!['tag', 'text', 'yn', 'date', 'freq'].includes(String(c.edit))) return;
+    if (this.opts.isLocked(l)) { this.opts.onNotice?.('This label is read-only — adopt it to edit.'); return; }
+    this.applyValue(id, c, '');
+    this.queueRender(true);
   }
 
   /** Ids an edit applies to: the whole multi-selection if the edited row is part of it. */
@@ -839,6 +920,14 @@ export class LabelGrid {
       this.editTag(id, col, cell, l, c, initial);
       return;
     }
+    if (c.edit === 'yn') {
+      cell.classList.remove('editing');
+      const k = (initial || '').toLowerCase();
+      const v = k === 'y' || k === 'j' || k === 'x' ? 'y' : k === 'n' ? 'n' : cycleYN(l.tags?.[c.tagKey!]);
+      this.applyValue(id, c, v);
+      this.queueRender(true);
+      return;
+    }
     this.editText(id, col, cell, l, c, initial);
   }
 
@@ -848,9 +937,11 @@ export class LabelGrid {
     input.spellcheck = false;
     input.autocomplete = 'off';
     const isNum = c.edit === 'time' || c.edit === 'dur' || c.edit === 'freq';
-    input.value = initial ?? c.text(l, this);
+    input.value = initial ?? (c.tagKey ? String(l.tags?.[c.tagKey] ?? '') : c.text(l, this));
     if (isNum) input.inputMode = 'decimal';
-    if (c.key === 'species') {
+    if (c.edit === 'date') {
+      input.placeholder = 'YYYY-MM-DD';
+    } else if (c.key === 'species') {
       input.placeholder = 'Label';
     }
 
@@ -1022,6 +1113,22 @@ export class LabelGrid {
           else if (c.key === 'freqMax' && hz <= fmax && (!Number.isFinite(lo) || hz > lo)) up = { freqMax: hz };
           break;
         }
+        case 'text':
+          if (c.key === 'author') up = { author: v };
+          else if (c.tagKey) up = { tags: withTag(l, c.tagKey, v) };
+          break;
+        case 'yn':
+          up = { tags: withTag(l, c.tagKey!, v === '' ? '' : toYN(v)) };
+          break;
+        case 'date': {
+          if (v === '') { up = { tags: withTag(l, c.tagKey!, '') }; break; }
+          const m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/) || v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+          if (!m) break;
+          const [y, mo, d] = m[1].length === 4 ? [m[1], m[2], m[3]] : [m[3], m[2], m[1]];
+          const iso = `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          if (!Number.isNaN(new Date(iso).getTime())) up = { tags: withTag(l, c.tagKey!, iso) };
+          break;
+        }
         case 'tag': {
           const key = c.key.slice(4);
           const tags = { ...(l.tags || {}) };
@@ -1039,7 +1146,8 @@ export class LabelGrid {
     }
     if (refused) {
       const why = c.edit === 'time' || c.edit === 'dur' ? 'start must stay before end and inside the recording'
-        : c.edit === 'freq' ? 'f min must stay below f max and below the Nyquist frequency' : 'invalid value';
+        : c.edit === 'freq' ? 'f min must stay below f max and below the Nyquist frequency'
+        : c.edit === 'date' ? 'use YYYY-MM-DD or DD.MM.YYYY' : 'invalid value';
       this.opts.onNotice?.(`${refused} value${refused > 1 ? 's' : ''} not applied: ${why}.`);
     }
   }

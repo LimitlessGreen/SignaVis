@@ -21,6 +21,7 @@ import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
 import { appConfirm } from '../components/modal/dialogs.ts';
+import { ANNOTA_FIELD_KEYS } from '../../domain/annotaFields.ts';
 
 const BIRD_IMG_BASE = './data/species_images/';
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
@@ -28,7 +29,7 @@ const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 // Tags that belong to the set header — never shown per label
 const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
-const HIDDEN_TAG_KEYS = new Set(['annotator', 'animalSeen', 'playbackUsed', 'remarks']);
+const HIDDEN_TAG_KEYS = new Set(['annotator', ...ANNOTA_FIELD_KEYS]);
 const VIEW_KEY = 'signavis.labels.view.v1';
 
 export interface LayerOptions {

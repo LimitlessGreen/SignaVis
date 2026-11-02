@@ -28,6 +28,10 @@ still a preview.
   text filter, "In view", follow playhead, sortable and resizable columns,
   spreadsheet-style inline editing (multi-row edits, live box updates) and
   export of the shown rows as CSV, Raven, Audacity, Sonic Visualiser or JSON.
+- **Full Annota field support** — remarks, animal seen, playback used, overlap,
+  collection date / specimen and temperature are editable per label (table,
+  properties panel), imported from XC and uploaded; yes/no fields are
+  checkboxes with a reset to "not specified".
 - **Snap to call** — box a call from a single click.
 - **Zoom box and edit loupe** — drag a field to zoom time and frequency onto
   it; a magnified view (with its own fine STFT) follows the cursor while moving

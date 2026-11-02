@@ -132,9 +132,9 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
         life_stage: str(tags.lifeStage),
         animal_seen: toYesNo(tags.animalSeen),
         playback_used: toYesNo(tags.playbackUsed),
-        collection_date: '',
-        collection_specimen: '',
-        temperature: '',
+        collection_date: isoDate(tags.collectionDate),
+        collection_specimen: str(tags.collectionSpecimen),
+        temperature: str(tags.temperature),
         annotation_remarks: [str(tags.remarks), tags.referenceXc ? `compared with ${str(tags.referenceXc)}` : '']
             .filter(Boolean).join('; '),
         overlap: toYesNo(tags.overlap),

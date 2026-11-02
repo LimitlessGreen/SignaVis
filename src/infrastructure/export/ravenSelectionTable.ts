@@ -10,7 +10,7 @@
 export const RAVEN_COLUMNS = [
     'Selection', 'View', 'Channel', 'Begin Time (s)', 'End Time (s)',
     'Low Freq (Hz)', 'High Freq (Hz)', 'Species', 'Common Name', 'Sound Type',
-    'Confidence', 'Annotator', 'Set', 'Label ID',
+    'Confidence', 'Annotator', 'Set', 'Remarks', 'Label ID',
 ];
 
 const clean = (v: unknown) => String(v ?? '').replace(/[\t\r\n]+/g, ' ').trim();
@@ -43,7 +43,7 @@ export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {})
                 clean(tags.sound_type ?? tags.soundType ?? l.soundType),
                 l.confidence != null && l.confidence !== '' ? num(l.confidence, 4) : '',
                 clean(l.author || l.annotator), clean(l.setId ? (opts.setName?.(l.setId) || l.setId) : ''),
-                clean(l.id),
+                clean(tags.remarks), clean(l.id),
             ].join('\t');
         });
     return [RAVEN_COLUMNS.join('\t'), ...rows].join('\n') + '\n';

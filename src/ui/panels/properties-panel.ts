@@ -19,6 +19,7 @@ import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-mod
 import { formatCoords } from '../../app/recording-context.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
+import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, formatAnnotaValue, toYN } from '../../domain/annotaFields.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -451,6 +452,7 @@ export class PropertiesPanel {
       this._lblBody.appendChild(hint);
     }
     this._lblBody.appendChild(this._buildTagsSection(lbl, editable));
+    this._lblBody.appendChild(this._buildAnnotaSection(lbl, editable));
   }
 
   /**
@@ -481,7 +483,10 @@ export class PropertiesPanel {
       for (const [k, v] of Object.entries(tags)) {
         if (PRESET_MAP.has(k)) continue;
         const input = this._lblBody.querySelector(`[data-focus-key="tag:${k}"]`);
-        if (input && input !== active) input.value = v ?? '';
+        if (input && input !== active) {
+          if (input.type === 'checkbox') { input.checked = toYN(v) === 'y'; input.indeterminate = toYN(v) === ''; }
+          else input.value = v ?? '';
+        }
       }
     }
 
@@ -712,6 +717,7 @@ export class PropertiesPanel {
         const dl = document.createElement('dl');
         dl.className = 'props-grid';
         for (const [k, v] of Object.entries(tags)) {
+          if (ANNOTA_FIELD_KEYS.has(k)) continue;
           const dt = document.createElement('dt');
           dt.textContent = k;
           const dd = document.createElement('dd');
@@ -761,7 +767,7 @@ export class PropertiesPanel {
     }
 
     // Custom (non-preset) tags
-    const customKeys = Object.keys(tags).filter((k) => !PRESET_MAP.has(k));
+    const customKeys = Object.keys(tags).filter((k) => !PRESET_MAP.has(k) && !ANNOTA_FIELD_KEYS.has(k));
     for (const k of customKeys) {
       const dt = document.createElement('dt');
       const keyInput = document.createElement('input');
@@ -823,6 +829,95 @@ export class PropertiesPanel {
     frag.appendChild(addBtn);
 
     return frag;
+  }
+
+  // ── Annota fields (remarks, seen, playback, overlap, collection, temperature) ──
+
+  _buildAnnotaSection(lbl: any, editable: any) {
+    const wrap = document.createElement('div');
+    wrap.className = 'props-annota';
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'props-tag-header props-annota-toggle';
+    const tags = lbl.tags || {};
+    const filled = ANNOTA_FIELDS.filter((f) => String(tags[f.key] ?? '') !== '').length;
+    header.innerHTML = `<span class="props-annota-chev" aria-hidden="true">▾</span> Annota fields${filled ? ` <span class="props-annota-count">${filled}</span>` : ''}`;
+    header.title = 'Further fields of the Xeno-canto Annota format';
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('aw.props.annotaCollapsed') === '1'; } catch { /* storage blocked */ }
+    const apply = (c: boolean) => {
+      wrap.classList.toggle('collapsed', c);
+      header.setAttribute('aria-expanded', String(!c));
+      try { localStorage.setItem('aw.props.annotaCollapsed', c ? '1' : '0'); } catch { /* storage blocked */ }
+    };
+    header.addEventListener('click', () => apply(!wrap.classList.contains('collapsed')));
+    wrap.appendChild(header);
+
+    const grid = document.createElement('dl');
+    grid.className = 'props-grid props-annota-grid';
+    const emitTag = (key: string, val: string) => {
+      const cur = this.displayedLabel;
+      if (!cur) return;
+      const next = { ...(cur.tags || {}) };
+      if (val) next[key] = val; else delete next[key];
+      this._emitChange(cur.id, { tags: next });
+    };
+
+    for (const f of ANNOTA_FIELDS) {
+      const dt = document.createElement('dt');
+      dt.textContent = f.label;
+      dt.title = `${f.hint} (${f.annota})`;
+      const dd = document.createElement('dd');
+      const val = tags[f.key];
+      if (!editable) {
+        dd.textContent = formatAnnotaValue(f, val) || '–';
+      } else if (f.kind === 'yn') {
+        dd.classList.add('props-editable');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'props-yn';
+        cb.dataset.focusKey = `tag:${f.key}`;
+        cb.checked = toYN(val) === 'y';
+        cb.title = f.hint;
+        const yn = toYN(val);
+        cb.indeterminate = yn === '';          // not specified (uploaded empty)
+        cb.addEventListener('change', () => emitTag(f.key, cb.checked ? 'y' : 'n'));
+        const wrapYn = document.createElement('span');
+        wrapYn.className = 'props-yn-wrap';
+        wrapYn.appendChild(cb);
+        const state = document.createElement('span');
+        state.className = 'props-yn-state';
+        state.textContent = yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified';
+        wrapYn.appendChild(state);
+        if (yn) {
+          const reset = document.createElement('button');
+          reset.type = 'button';
+          reset.className = 'props-tag-del props-yn-reset';
+          reset.textContent = '×';
+          reset.title = 'Reset to "not specified"';
+          reset.addEventListener('click', () => emitTag(f.key, ''));
+          wrapYn.appendChild(reset);
+        }
+        dd.appendChild(wrapYn);
+      } else {
+        dd.classList.add('props-editable');
+        const input = document.createElement('input');
+        input.type = f.kind === 'date' ? 'date' : 'text';
+        input.className = 'props-input';
+        input.dataset.focusKey = `tag:${f.key}`;
+        input.value = String(val ?? '');
+        input.placeholder = f.kind === 'date' ? '' : '–';
+        input.addEventListener('change', () => emitTag(f.key, input.value.trim()));
+        this._bindEnterBlur(input);
+        dd.appendChild(input);
+      }
+      grid.appendChild(dt);
+      grid.appendChild(dd);
+    }
+
+    wrap.appendChild(grid);
+    apply(collapsed);
+    return wrap;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────

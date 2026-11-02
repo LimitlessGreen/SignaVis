@@ -195,3 +195,16 @@
 .props-section--collapsed .props-toggle-summary { display: block; }
 .props-section--collapsed > .props-section-body { display: none; }
 .props-minimap { margin-top: 8px; }
+
+/* Annota fields group in the properties panel */
+.props-annota-toggle { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0; border: none; background: none; cursor: pointer; text-align: left; }
+.props-annota-toggle:hover { color: var(--color-text-primary); }
+.props-annota-chev { display: inline-block; width: 9px; transition: transform 0.15s; }
+.props-annota.collapsed .props-annota-chev { transform: rotate(-90deg); }
+.props-annota.collapsed .props-annota-grid { display: none; }
+.props-annota-count { font-weight: 600; color: var(--color-accent); letter-spacing: 0; }
+.props-annota-grid { margin-top: 4px; }
+.props-yn { margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.props-yn-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.props-yn-state { font-size: 11px; color: var(--color-text-secondary); }
+.props-yn-reset { margin-left: 0; }
