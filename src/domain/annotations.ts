@@ -2050,9 +2050,20 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return this._loupeOption('editLoupeCheck', 'aw-edit-loupe');
     }
 
+    /**
+     * Settings control by data-aw. Hosts may move the settings sections out of
+     * the player root (labeling app: Display sidebar), so prefer the DOM refs
+     * cached at startup and only fall back to a root query.
+     */
+    _settingEl(dataAw: string): HTMLElement | null {
+        return (this.player?._state?.d?.[dataAw] as HTMLElement | null | undefined)
+            ?? (this.player?.root?.querySelector?.(`[data-aw="${dataAw}"]`) as HTMLElement | null)
+            ?? null;
+    }
+
     /** Settings checkbox, default on, choice remembered in localStorage. */
     _loupeOption(dataAw: string, storageKey: string): boolean {
-        const box = this.player?.root?.querySelector?.(`[data-aw="${dataAw}"]`) as HTMLInputElement | null;
+        const box = this._settingEl(dataAw) as HTMLInputElement | null;
         if (!box) return true;
         if (!box.dataset.awBound) {
             box.dataset.awBound = '1';
@@ -2125,7 +2136,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const RANGE = 70;
         const lo = hi - RANGE;
 
-        const scheme = (this.player?.root?.querySelector?.('[data-aw="colorSchemeSelect"]') as HTMLSelectElement | null)?.value || 'grayscale';
+        const scheme = (this._settingEl('colorSchemeSelect') as HTMLSelectElement | null)?.value || 'grayscale';
         if (this._loupeLutScheme !== scheme) {
             const lut = new Uint8ClampedArray(256 * 3);
             for (let i = 0; i < 256; i++) {

@@ -705,6 +705,8 @@ export class PlayerState {
             maxFreqModeSelect:      q('maxFreqModeSelect'),
             maxFreqSelect:          q('maxFreqSelect'),
             colorSchemeSelect:      q('colorSchemeSelect'),
+            editLoupeCheck:         q('editLoupeCheck'),
+            loupeDetailCheck:       q('loupeDetailCheck'),
             freqLabels:             q('freqLabels'),
             freqZoomResetBtn:       q('freqZoomResetBtn'),
             freqAxisSpacer:         q('freqAxisSpacer'),
