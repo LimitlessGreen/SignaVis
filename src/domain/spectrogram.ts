@@ -162,9 +162,9 @@ const COLOR_MAPS = {
         [253, 195, 40],
         [240, 249, 33],
     ],
-    // Xeno-Canto inspired warm-body palette:
+    // Ember: warm-body palette
     // black → deep brown → warm red → orange → yellow → white
-    xenocanto: [
+    ember: [
         [0, 0, 0],
         [30, 10, 5],
         [65, 20, 10],

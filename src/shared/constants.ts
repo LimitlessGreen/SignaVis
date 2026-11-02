@@ -160,7 +160,7 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         pcenRoot: 1,
         pcenTimeConstant: 0.4,
         windowFunction: 'hann',
-        colorScheme: 'xenocanto',
+        colorScheme: 'ember',
         reassigned: false,
         noiseReduction: false,
         clahe: false,
