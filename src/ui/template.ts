@@ -300,7 +300,7 @@ export function createPlayerHTML(opts = {}) {
             </div>
             <div class="settings-row">
                 <label class="settings-label" title="Loupe computes its own fine spectrogram (Hann ~11.6 ms) instead of magnifying the display pixels">
-                    <input type="checkbox" data-aw="loupeDetailCheck" checked> Loupe Detail
+                    <input type="checkbox" data-aw="loupeDetailCheck"> Loupe Detail
                 </label>
             </div>
             <div class="settings-row" data-expert>

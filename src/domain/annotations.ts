@@ -2426,7 +2426,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         ctx.imageSmoothingEnabled = zx < 1 || zy < 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
-        const detail = this._loupeOption('loupeDetailCheck', 'aw-loupe-detail')
+        const detail = this._loupeOption('loupeDetailCheck', 'aw-loupe-detail', false)
             && this._drawLoupeDetail(ctx, W, H, cx, cy, halfW, halfH);
         if (!detail) {
             try {
