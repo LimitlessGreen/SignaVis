@@ -287,13 +287,7 @@ function isTyping(t: EventTarget | null) {
 
 // Fully disable labeling on a player: blocks both drawMode and Shift+drag.
 function disableLabeling(p: any) {
-  for (const layer of [p.spectrogramLabels, p.annotations]) {
-    if (!layer) continue;
-    layer.drawMode = false;
-    if (layer.overlay) layer.overlay.style.pointerEvents = 'none';
-  }
-  if (p._drawBtn)  p._drawBtn.hidden  = true;
-  if (p._stampBtn) p._stampBtn.hidden = true;
+  p.setReadOnly(true);
 }
 
 const el = (tag: string, cls?: string, text?: string) => {

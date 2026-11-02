@@ -157,6 +157,7 @@ export class BirdNETPlayer {
      * @param {number}      [options.smoothSeekMinStepRatio] - smooth min step ratio after seek (default: 0.008)
      * @param {number}      [options.smoothSeekFocusMs] - slow-follow window after manual seek (default: 1400)
      * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
+     * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
      */
     constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
@@ -227,6 +228,7 @@ export class BirdNETPlayer {
         this._bindLinkedLabelSync();
         this._bindGlobalHotkeys();
         this._injectAnnotationToolbar();
+        if (this.options.readOnly) this.setReadOnly(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
         // routing through the player event bus first).
@@ -767,7 +769,7 @@ export class BirdNETPlayer {
 
     _bindGlobalHotkeys() {
         this._globalKeyHandler = (event: KeyboardEvent) => {
-            if (this._state?._keyboardEnabled === false) return;
+            if (this._state?._keyboardEnabled === false || this._readOnly) return;
             const targetEl = event.target as Element | null;
             const tag = targetEl?.tagName?.toLowerCase?.() || '';
             const typing = tag === 'input' || tag === 'textarea' || (targetEl as HTMLElement)?.isContentEditable;
@@ -878,6 +880,31 @@ export class BirdNETPlayer {
         };
         document.addEventListener('keydown', this._globalKeyHandler, true);
     }
+
+    // ── Read-only mode ──────────────────────────────────────────────
+
+    _readOnly = false;
+
+    /**
+     * View/listen only: hides Draw/Stamp/Snap, blocks drawing (incl. Shift+drag), moving and resizing
+     * labels and the label hotkeys. Zoom, magnifier, playback and seeking stay available.
+     */
+    setReadOnly(on: boolean) {
+        this._readOnly = on;
+        for (const layer of [this.spectrogramLabels, this.annotations] as any[]) {
+            if (!layer) continue;
+            layer.drawMode = on ? false : layer === this.spectrogramLabels;
+            layer.exitStampMode?.();
+            layer.exitSnapMode?.();
+            if (layer.overlay) layer.overlay.style.pointerEvents = on ? 'none' : '';
+        }
+        for (const b of [this._drawBtn, this._stampBtn, this._snapBtn]) if (b) b.hidden = on;
+        this._drawBtn?.classList.toggle('active', !on);
+        this.root?.classList.toggle('draw-mode-active', !on);
+        this.root?.classList.toggle('read-only', on);
+    }
+
+    get readOnly() { return this._readOnly; }
 
     // ── Annotation Toolbar ──────────────────────────────────────────
 

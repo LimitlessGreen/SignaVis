@@ -247,7 +247,7 @@ export class AudioEngine extends AudioEngineBase {
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
-    this._setupWaveSurfer(url, name);
+    await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
 
@@ -261,7 +261,7 @@ export class AudioEngine extends AudioEngineBase {
     this.guano = parseGuano(arrayBuffer);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
-    this._setupWaveSurfer(file, file.name);
+    await this._setupWaveSurfer(file, file.name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
 
@@ -817,7 +817,7 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string|File|Blob|null} source - URL string, File/Blob, or null
    * @param {string} [name] - display name
    */
-  _setupWaveSurfer(source: any, name: any) {
+  _setupWaveSurfer(source: any, name: any): Promise<void> {
     if (this.wavesurfer) this.wavesurfer.destroy();
 
     // Support WaveSurfer builds that expose a static `create()` or are constructible.
@@ -849,7 +849,12 @@ export class AudioEngine extends AudioEngineBase {
       ws.loadBlob(source, peaks, duration);
     }
 
+    // Resolves on WaveSurfer 'ready': callers that seek/play right after loading (e.g. playSegment)
+    // would otherwise be reset to 0 by the ready handler below. Timeout = never block loading.
+    let resolveReady: () => void;
+    const readyPromise = new Promise<void>((res) => { resolveReady = res; setTimeout(res, 15000); });
     ws.on('ready', () => {
+      queueMicrotask(() => resolveReady());
       ws.zoom(this.pixelsPerSecond);
       ws.setVolume(this.volume);
       this._applyPlaybackRate();
@@ -914,6 +919,7 @@ export class AudioEngine extends AudioEngineBase {
     });
 
     this.wavesurfer = ws;
+    return readyPromise;
   }
 
   // ── Custom Segment Playback (AudioContext) ──────────────────────────
