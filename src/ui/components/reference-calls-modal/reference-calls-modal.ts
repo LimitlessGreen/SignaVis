@@ -573,6 +573,11 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
 
   /** Only one player may play: when one starts, pause the other. */
   function watchPlayer(p: any) {
+    // Loading finishes asynchronously after loadUrl() (spectrogram compute,
+    // initial seek): re-apply the shared view once the spectrogram is ready.
+    // Once only: later 'ready' events (re-renders) must not undo user zoom.
+    let first = true;
+    p.on?.('ready', () => { if (first) { first = false; scheduleView(); } });
     p.on?.('play', () => {
       for (const other of players()) if (other !== p && other.isPlaying) other.pause();
       try { const mp = getMainPlayer?.(); if (mp?.isPlaying) mp.pause(); } catch {}
@@ -661,29 +666,37 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const widths = players().map(p => p._state?._getViewportWidth?.() || 0).filter(w => w > 0);
     return widths.length ? Math.min(...widths) / viewLen() : 0;
   }
-  function applyView(p: any, anchor: number, dur: number, pps: number, zoomFreq = true) {
+  function applyView(p: any, anchor: number, dur: number, pps: number, b: { lo: number; hi: number } | null) {
     const st = p?._state;
     if (!st?.audioBuffer || !pps) return;
     const total = st.audioBuffer.duration;
     const W = viewLen();
     // Centre the call; the onset sits at the same x in both players.
     const start = Math.max(0, Math.min(anchor - (W - dur) / 2, Math.max(0, total - W)));
-    const b = zoomFreq ? band(st) : null;
     try {
       if (b) st._freqZoom.set(b.lo, b.hi); else st._freqZoom.reset();
       st._setPixelsPerSecond(pps, true, start, 0);
     } catch {}
   }
+  /** One frequency range for both views: the label band, else the common full range. */
+  function sharedBand() {
+    const maxes = players().map(p => p._state?.coords?.boundedMaxFreq || 0).filter(m => m > 0);
+    if (!maxes.length) return null;
+    const top = Math.min(...maxes);
+    const b = band(_ownPlayer?._state || _refPlayer?._state);
+    if (b) return { lo: Math.min(b.lo, Math.max(0, top - (b.hi - b.lo))), hi: Math.min(b.hi, top) };
+    return { lo: 0, hi: top };
+  }
   function syncView() {
     const pps = sharedPps();
     const seg = segment();
-    if (_ownPlayer && seg) applyView(_ownPlayer, seg.start, seg.end - seg.start, pps);
-    // Reference: same time scale, but the full frequency range (no zoom-in).
-    if (_refPlayer && _refCall) applyView(_refPlayer, _refCall.start, _refCall.end - _refCall.start, pps, false);
-    const b = band(_ownPlayer?._state || _refPlayer?._state);
+    const b = sharedBand();
+    // Same time and frequency scale in both views.
+    if (_ownPlayer && seg) applyView(_ownPlayer, seg.start, seg.end - seg.start, pps, b);
+    if (_refPlayer && _refCall) applyView(_refPlayer, _refCall.start, _refCall.end - _refCall.start, pps, b);
     viewInfo.textContent = `Window ${viewLen().toFixed(1)} s`
       + (b ? ` · ${(b.lo / 1000).toFixed(1)}–${(b.hi / 1000).toFixed(1)} kHz` : '')
-      + ' (yours) · same time scale in both views';
+      + ' · same scale in both views';
   }
   // Players finish their own initial layout asynchronously; apply again shortly after.
   let _viewTimer = 0;
@@ -895,6 +908,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     try {
       const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, spectrogramHeight: _docked ? SPEC_HEIGHT_DOCKED : SPEC_HEIGHT });
       await p.ready;
+      // The modal sets both views itself; the player's auto frequency view
+      // would otherwise re-zoom after load and break the shared scale.
+      if (p._state) p._state.autoFreqView = false;
       await p.loadUrl(audioUrl);
       if (!inner.isConnected) { p.destroy?.(); return; }
       _ownPlayer = p;
@@ -985,6 +1001,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       refPlayerWrap.appendChild(inner);
       const p = new BirdNETPlayer(inner, { ...PLAYER_OPTS, spectrogramHeight: _docked ? SPEC_HEIGHT_DOCKED : SPEC_HEIGHT });
       await p.ready;
+      // The modal sets both views itself; the player's auto frequency view
+      // would otherwise re-zoom after load and break the shared scale.
+      if (p._state) p._state.autoFreqView = false;
       await p.loadUrl(blobUrl);
       if (token !== _refToken) { try { p.destroy?.(); } catch {} if (!own) URL.revokeObjectURL(blobUrl); return; }
       _refPlayer = p;
