@@ -207,6 +207,8 @@
     position: absolute;
     top: 0;
     left: 0;
+    /* shifted into the visible part of the box (see _pinLabelText) */
+    transform: translate(var(--label-text-dx, 0px), var(--label-text-dy, 0px));
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -658,6 +660,12 @@
 .spectrogram-label-region.label-tiny .label-handle.handle-r { top: 0; bottom: 0; }
 .spectrogram-label-region.label-tiny .label-handle.handle-t,
 .spectrogram-label-region.label-tiny .label-handle.handle-b { left: 0; right: 0; }
+/* Name above the box would be off-screen: show it inside at the top */
+.spectrogram-label-region.label-compact.label-text-inside .spectrogram-label-text {
+    top: 0;
+    bottom: auto;
+    margin-bottom: 0;
+}
 /* While dragging, hide everything but the box itself */
 .spectrogram-label-region.label-compact.editing .spectrogram-label-text,
 .spectrogram-label-region.label-compact.editing button {

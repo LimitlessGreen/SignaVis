@@ -1090,6 +1090,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
+        this._pinAllLabelTexts();
+        this._bindTextPinScroll();
         if (this._snap) { this._snapEl = null; this._renderSnapPreview(); }
 
         // Re-acquire editing element after innerHTML wipe
@@ -1122,6 +1124,51 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * @param {HTMLElement[]} elements
      * @param {Array<{left: number, top: number, width: number, height: number}>} geometries
      */
+    // ── Keep the label name inside the visible part of a box ──────────
+    /**
+     * A box can extend past the visible view (scrolled in time or zoomed in
+     * frequency). Shift its name into the visible part, staying inside the box.
+     */
+    _pinLabelText(el: HTMLElement) {
+        const wrap = this._getRoot() as HTMLElement | null;
+        if (!wrap) return;
+        const viewL = wrap.scrollLeft;
+        const viewR = viewL + wrap.clientWidth;
+        const viewH = this.overlay?.offsetHeight || wrap.clientHeight;
+        const left = el.offsetLeft, top = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
+        const TEXT_W = 60, TEXT_H = 16;
+        // Horizontal: start at the left edge of the visible part
+        const dx = clamp(viewL - left, 0, Math.max(0, Math.min(w, viewR - left) - TEXT_W));
+        const textEl = el.querySelector('.spectrogram-label-text') as HTMLElement | null;
+        const atBottom = !!textEl?.classList.contains('label-text-bottom');
+        const compact = el.classList.contains('label-compact');
+        // Compact names sit above the box; if that is off-screen, put them inside.
+        const inside = compact && top < TEXT_H;
+        el.classList.toggle('label-text-inside', inside);
+        let dy = 0;
+        if (atBottom && !compact) dy = -clamp(top + h - viewH, 0, Math.max(0, h - TEXT_H));
+        else if (!compact || inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
+        el.style.setProperty('--label-text-dx', `${Math.round(dx)}px`);
+        el.style.setProperty('--label-text-dy', `${Math.round(dy)}px`);
+    }
+
+    _pinAllLabelTexts() {
+        if (!this.overlay) return;
+        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) this._pinLabelText(el as HTMLElement);
+    }
+
+    _textPinScrollBound: HTMLElement | null = null;
+    _textPinRaf = 0;
+    _bindTextPinScroll() {
+        const wrap = this._getRoot() as HTMLElement | null;
+        if (!wrap || this._textPinScrollBound === wrap) return;
+        this._textPinScrollBound = wrap;
+        wrap.addEventListener('scroll', () => {
+            if (this._textPinRaf) return;
+            this._textPinRaf = requestAnimationFrame(() => { this._textPinRaf = 0; this._pinAllLabelTexts(); });
+        }, { passive: true });
+    }
+
     _resolveTextCollisions(elements: HTMLElement[], geometries: Array<{ left: number; top: number; width: number; height: number }>) {
         const TEXT_H = 16;
         const occupiedRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
@@ -1365,6 +1412,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.classList.toggle('label-compact', geometry.width < 70 || geometry.height < 44);
         // Only really tiny boxes drop the corner dots (12 px dots + edge strips need room)
         el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
+        if (el.isConnected) this._pinLabelText(el);
     }
 
     _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {
