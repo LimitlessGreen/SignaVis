@@ -99,6 +99,7 @@ export class BirdNETPlayer {
     spectrogramLabels: SpectrogramLabelLayer;
     _linkedLabels: Map<string, LinkedLabel>;
     _isSyncingLabels: boolean;
+    _lastUndoKey = '';
     _undoStack: UndoStack;
     _isRestoring: boolean;
     _labelLibrary: Map<string, number>;
@@ -1155,7 +1156,14 @@ export class BirdNETPlayer {
         // Push undo snapshot before applying the new state
         // (skip during restore, initial sync, or preview events)
         if (!this._isRestoring) {
-            this._undoStack.push(this._snapshotLabels());
+            // Hosts re-push unchanged labels (e.g. after every create event):
+            // identical snapshots would become undo steps that do nothing.
+            const snap = this._snapshotLabels();
+            const key = this._undoKey(snap);
+            if (key !== this._lastUndoKey) {
+                this._undoStack.push(snap);
+                this._lastUndoKey = key;
+            }
         }
         this._isSyncingLabels = true;
         try {
@@ -1167,6 +1175,13 @@ export class BirdNETPlayer {
             this._isSyncingLabels = false;
         }
         this._emit('labelsync', {});
+    }
+
+    /** Content key of a snapshot: what the user can change, ignoring bookkeeping fields. */
+    _undoKey(snap: LinkedLabel[]): string {
+        const rows = snap.map((l: any) => [l.id, l.start, l.end, l.freqMin, l.freqMax, l.label, l.scientificName, l.color, l.tags])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+        return JSON.stringify(rows);
     }
 
     /** Create a deep snapshot of the current _linkedLabels for undo. */
@@ -1188,6 +1203,7 @@ export class BirdNETPlayer {
         }
         this._syncLinkedLabelsToLayers();
         this._isRestoring = false;
+        this._lastUndoKey = this._undoKey(this._snapshotLabels());
         // Hosts that keep their own label list (e.g. the labeling app) must
         // apply the same change, otherwise their next sync re-adds undone labels.
         this._emit?.('labelrestore', { before, after: this._snapshotLabels() });
