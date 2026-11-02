@@ -6,7 +6,8 @@
 //   0  everything in the toolbar, buttons with icon + text
 //   1  zoom widget moves into the strip below the spectrogram
 //   2  view/tool buttons show only their icon (.tb-compact)
-//   3  last resort: the toolbar may wrap (.tb-wrap)
+//   3  view toggles fold behind a "⋯" popover (.tb-overflow)
+//   4  last resort: the toolbar may wrap (.tb-wrap)
 // Each resize starts again from level 0, so wide players get the zoom back.
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -74,7 +75,8 @@ export class ToolbarFitController {
             if (this.#sep) this.#sep.hidden = docked;
         }
         t.classList.toggle('tb-compact', level >= 2);
-        t.classList.toggle('tb-wrap', level >= 3);
+        t.classList.toggle('tb-overflow', level >= 3);
+        t.classList.toggle('tb-wrap', level >= 4);
         this.level = level;
     }
 
@@ -82,7 +84,7 @@ export class ToolbarFitController {
         if (!this.#toolbar) return;
         let level = 0;
         this.#apply(level);
-        while (level < 3 && this.#overflows()) {
+        while (level < 4 && this.#overflows()) {
             level += (level === 0 && !this.#anchor) ? 2 : 1;
             this.#apply(level);
         }

@@ -202,12 +202,52 @@
 [data-aw="toolbarRoot"] {
   flex-wrap: nowrap;
   &.tb-wrap, &.tb-wrap .toolbar-secondary { flex-wrap: wrap; }
-  .toolbar-btn:not(.compact-more-btn):not([hidden]) { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .toolbar-btn:not(.compact-more-btn):not(.view-more-btn):not([hidden]) { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   .toolbar-btn > svg { flex-shrink: 0; }
   &.tb-compact .tb-label { display: none; }
   &.tb-compact .toolbar-btn:has(> svg) { padding-left: 6px; padding-right: 6px; }
 }
 .toolbar-tools { gap: 4px; }
+
+/* Volume group: slider + Norm inline; compact toolbar folds them into a popover. */
+.audio-ctl { position: relative; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.audio-pop { display: inline-flex; align-items: center; gap: 4px; }
+[data-aw="toolbarRoot"].tb-compact {
+  .audio-pop {
+    display: none;
+    position: absolute; top: 100%; left: 0; z-index: 50;
+    padding: 6px 8px;
+    background: var(--color-toolbar);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    &::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; } // hover bridge
+  }
+  .audio-ctl:hover .audio-pop, .audio-ctl:focus-within .audio-pop { display: inline-flex; }
+  // Norm is hidden in the popover: show its state as a dot on the speaker
+  .audio-ctl:has([data-aw="normalizeBtn"].active) [data-aw="volumeToggleBtn"] { box-shadow: inset 0 -2px 0 var(--color-accent); }
+  .toolbar-select { width: 64px; }
+}
+
+/* View toggles: inline; with .tb-overflow they fold behind the "⋯" button. */
+.view-ctl { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+[data-aw="toolbarRoot"] .view-more-btn { display: none; }
+[data-aw="toolbarRoot"].tb-overflow {
+  .view-more-btn { display: inline-flex; padding-left: 6px; padding-right: 6px; }
+  .view-group {
+    display: none;
+    position: absolute; top: 100%; left: 0; z-index: 50;
+    padding: 4px;
+    background: var(--color-toolbar);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    &::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; }
+  }
+  .view-ctl:hover .view-group, .view-ctl:focus-within .view-group { display: inline-flex; }
+  // Follow/Loop/Crosshair on while folded away: mark the ⋯ button
+  .view-ctl:has(.toggle-btn.active:not([data-aw="followToggleBtn"])) .view-more-btn { box-shadow: inset 0 -2px 0 var(--color-accent); }
+}
 
 /* Below the spectrogram when the toolbar has no room for the zoom widget */
 .zoom-dock {

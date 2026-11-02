@@ -97,15 +97,20 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="toolbar-sep"${hide(o.showVolume)}></div>
 
-        <!-- Volume -->
+        <!-- Volume: inline when there is room; in the compact toolbar slider + Norm
+             fold into a popover that opens on hover/focus of the speaker -->
+        <span class="audio-ctl"${hide(o.showVolume)}>
         <button class="toolbar-btn icon-btn" data-aw="volumeToggleBtn" title="Mute / Unmute"${hide(o.showVolume)}>
             <svg data-aw="volumeIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="6 9 2 9 2 15 6 15 11 19 11 5"/>
                 <path data-aw="volumeWaves" d="M15 8.5a4 4 0 010 7M18 5a9 9 0 010 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </button>
+        <span class="audio-pop">
         <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Volume"${hide(o.showVolume)}>
         <button class="toolbar-btn toggle-btn" data-aw="normalizeBtn" title="Normalize playback: amplify to -1 dBFS peak (max +40 dB)"${hide(o.showVolume)}>Norm</button>
+        </span>
+        </span>
         <select data-aw="slowdownSelect" class="toolbar-select" title="Listening mode for ultrasound: slow down (pitch drops along, ×10 makes bat calls audible), or a heterodyne / frequency-division detector"${hide(o.showVolume)}>
             <option value="1">×1</option>
             <option value="2">×2</option>
@@ -121,13 +126,16 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="toolbar-sep"${hide(o.showViewToggles)}></div>
 
-        <!-- Toggle tools -->
-        <span class="toolbar-group"${hide(o.showViewToggles)}>
+        <!-- View toggles: inline; on very narrow toolbars they fold behind "⋯" (.tb-overflow) -->
+        <span class="view-ctl"${hide(o.showViewToggles)}>
+        <button type="button" class="toolbar-btn view-more-btn" title="View: follow, loop, crosshair, fit, reset" aria-label="View options"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+        <span class="toolbar-group view-group">
             <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Toggle Free / Follow / Smooth"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><line x1="20" y1="4" x2="20" y2="20"/></svg><span class="tb-label">Follow</span></button>
             <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 013-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 01-3 3H3"/></svg><span class="tb-label">Loop</span></button>
             <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Toggle crosshair"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg><span class="tb-label">Crosshair</span></button>
             <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit: show the whole recording (time only)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/><path d="M3 4v16M21 4v16"/></svg><span class="tb-label">Fit</span></button>
             <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset: default time zoom, back to the start, full frequency range"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span class="tb-label">Reset</span></button>
+        </span>
         </span>
 
         <div class="toolbar-sep"${hide(o.showZoom)}></div>
