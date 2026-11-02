@@ -258,6 +258,17 @@ export class BirdNETPlayer {
     isLabelViewCollapsed(): boolean { return !!this._state?.d?.overviewLabelSection?.classList.contains('collapsed'); }
     setLabelView(view: 'tracks' | 'table') { this._state?._setLabelView?.(view); }
 
+    /** Time range (s) currently visible in the main view, or null before audio is loaded. */
+    getVisibleTimeRange(): { start: number; end: number } | null {
+        const s = this._state;
+        const dur = s?.audioBuffer?.duration || 0;
+        const pps = s?.pixelsPerSecond || 0;
+        const w = s?.d?.canvasWrapper;
+        if (!dur || !pps || !w) return null;
+        const start = Math.max(0, w.scrollLeft / pps);
+        return { start, end: Math.min(dur, start + w.clientWidth / pps) };
+    }
+
     /**
      * Show the spectrogram loading overlay with a custom message.
      * Useful for displaying feedback during network fetches before DSP starts.

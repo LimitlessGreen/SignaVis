@@ -559,6 +559,7 @@
     import { Sidebar } from '../src/ui/panels/sidebar.ts';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
+    import { LabelGrid } from '../src/ui/panels/label-grid.ts';
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
     import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
     import { OpfsProjectStore } from '../src/infrastructure/project/OpfsProjectStore.ts';
@@ -2878,6 +2879,57 @@
       state.labels = state.labels.filter((l) => l.id !== lbl.id);
       syncToPlayer();
     };
+
+    // ── Label table ("Table" tab below the overview) — plans/label-table-view-plan.md ──
+    const labelTableHost = player.enableLabelTable?.();
+    const labelTable = labelTableHost ? new LabelGrid({
+      host: labelTableHost,
+      tools: player.getLabelTableTools?.(),
+      resolveName,
+      tagStore,
+      isLocked: (l) => !!(l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked)),
+      layerName: (l) => {
+        if (!l.setId || l.setId === OWN_SOURCE_ID) {
+          const layers = ownLayers(state.labelSets);
+          return layers.length > 1 ? (layers.find((x) => x.id === (l.layer || DEFAULT_LAYER_ID))?.name || '') : '';
+        }
+        return state.labelSets.get(l.setId)?.name || '';
+      },
+      getViewRange: () => player.getVisibleTimeRange?.() ?? null,
+      getDuration: () => player._state?.audioBuffer?.duration || 0,
+      getMaxFreq: () => (player._state?.audioBuffer?.sampleRate || 0) / 2,
+      onChange: (id, updates) => propsPanel.onChange?.(id, updates),
+      onFocus: (id) => player._emit?.('labelfocus', { id, source: 'table', interaction: 'click' }),
+      onHover: (id) => player._emit?.('labelfocus', { id, source: 'table', interaction: 'hover' }),
+      onMultiSelectionChange: (ids) => {
+        labelList._multiSelectedIds = new Set(ids);
+        labelList._updateMultiVisual?.();
+        labelList._updateBulkToolbar?.();
+        syncMultiSelected(ids);
+      },
+      onDelete: async (ids) => {
+        if (ids.length > 1 && !await appConfirm(`Delete ${ids.length} labels?`, { title: 'Delete labels', okLabel: 'Delete', danger: true })) return;
+        const del = new Set(ids);
+        for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
+        state.labels = state.labels.filter((l) => !del.has(l.id));
+        syncToPlayer();
+        selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
+      },
+      onNotice: (msg) => { selectionMeta.textContent = msg; },
+    }) : null;
+    if (labelTable) {
+      // Every place that redraws the label list redraws the table as well.
+      const renderList = labelList.render.bind(labelList);
+      labelList.render = (labels) => { renderList(labels); labelTable.render(labels); };
+      player.on('timeupdate', (e) => labelTable.setPlayhead(Number(e.detail?.currentTime) || 0));
+      player.on('labelfocus', (e) => {
+        const d = e.detail || {};
+        if (d.source === 'table') return;
+        const interaction = d.interaction ?? ((d.source === 'list') ? 'click' : 'hover');
+        if (interaction === 'hover') labelTable.setHover(d.id || null);
+      });
+      labelTable.render(state.labels);
+    }
     propsPanel.onEditSet = () => sidebar.setActive('project');
 
     player.on('labelfocus', (e) => {
@@ -3143,6 +3195,7 @@
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
     function syncToPlayerSoft() {
       player.setSpectrogramLabels(_visibleLabels());
+      try { labelTable?.render(state.labels); } catch (e) {}
       _pushLockedIds(_computeLockedIds());
       sidebar.setBadge('labels', state.labels.length || '');
       if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
@@ -3154,6 +3207,7 @@
 
     /** Push a multi-selection change to every view that can show it. */
     function syncMultiSelected(ids) {
+      try { labelTable?.setMultiSelected(ids); } catch (e) {}
       try { player.spectrogramLabels?.setMultiSelected(ids); } catch (e) {}
       try { player.annotations?.setMultiSelected(ids); } catch (e) {}
       try { player.setMultiSelectedOverview?.(ids); } catch (e) {}
@@ -3787,6 +3841,7 @@
           createSpeciesSearchWidget({ getSuggestions, onSelect });
         labelList.setSpeciesSearchFactory(speciesSearchFactory);
         propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
+        labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
         labelList.render(state.labels);
       } catch (err) {
         taxonomy.clear();
