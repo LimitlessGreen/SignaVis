@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-11-02
+
+### Added
+- Privacy policy in the "?" help menu of the labeling app (hosting, local
+  processing, analytics, third-party services, GDPR rights).
+- Cookieless, self-hosted Umami analytics for the web version (respects
+  "Do Not Track"; not loaded in the desktop app).
+- SEO: page description, canonical URL, Open Graph / Twitter tags and
+  schema.org metadata; improved GitHub Pages start page, sitemap.xml,
+  robots.txt and Google Search Console verification.
+
 ## [1.0.0] - 2026-11-02
 
 First stable release. The static labeling app (GitHub Pages) and the `signavis`
