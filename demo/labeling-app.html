@@ -551,6 +551,7 @@
     import { AnalysisBackendProxy, resolveAnalysisBackend } from '../src/infrastructure/analysis/index.ts';
     import ModalManager from '../src/ui/components/modal/modal-manager.ts';
     import { appAlert, appConfirm, appPrompt } from '../src/ui/components/modal/dialogs.ts';
+    import { showUploadSuccess } from '../src/ui/components/upload-success/upload-success.ts';
     import { createXcExportModal } from './xc-export-modal.js';
     import { createReferenceCallsModal } from '../src/ui/components/reference-calls-modal/reference-calls-modal.ts';
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
@@ -3600,10 +3601,20 @@
       xcUploadBtn.disabled = true;
       xcPanel._setStatus('Uploading…', 'info');
       try {
-        const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets);
+        const sent = collectSetLabels();
+        const result = await xcPanel.uploadToXenoCanto(sent, state.labelSets);
         if (result.ok) {
           onSetUploaded();
           xcPanel._setStatus(result.message, 'success');
+          const target = xcUploadTarget();
+          showUploadSuccess({
+            labelCount: sent.length,
+            recordingCount: new Set(sent.map((l) => l.xc_nr || l.sound_file || '')).size,
+            setName: state.labelSets.get(OWN_SOURCE_ID)?.name || '',
+            message: result.message,
+            endpoint: target.endpoint,
+            testServer: target.env !== 'live' ? `${target.env.toUpperCase()} test server` : '',
+          });
         } else {
           const msgs = [result.message, ...(result.errors || [])].filter(Boolean).join('; ');
           xcPanel._setStatus(msgs, 'error');
