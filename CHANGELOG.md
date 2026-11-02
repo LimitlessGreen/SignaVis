@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-11-02
 
 First stable release. The static labeling app (GitHub Pages) and the `signavis`
 npm / PyPI packages are considered production-ready; the Tauri desktop app is
