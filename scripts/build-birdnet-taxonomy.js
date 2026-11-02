@@ -210,17 +210,43 @@ async function main() {
         records.push(record);
     }
 
+    // Bird species the BirdNET model does not know (e.g. Zosterops borbonicus):
+    // available for manual labeling, flagged with x: 1, no images.
+    const modelCount = records.length;
+    const known = new Set(records.map((r) => normalizeSci(r.s)));
+    for (const r of records) {
+        const e = cornellBySci.get(r.s) || cornellBySci.get(CURATED_LABEL_ALIASES[r.s]);
+        if (e) known.add(normalizeSci(e.scientific_name));
+    }
+    let extraCount = 0;
+    for (const e of cornellRaw) {
+        if (e.taxon_group !== 'Aves' || e.record_type !== 'species') continue;
+        if (known.has(normalizeSci(e.scientific_name))) continue;
+        const cn = e.common_names || {};
+        const en = cn.en || e.common_name || e.scientific_name;
+        const n = { en_uk: en };
+        for (const lang of built.languages) {
+            if (lang === 'en_uk') continue;
+            const v = cn[lang] || cn[lang.replace('_', '-')] || cn[lang.split('_')[0]];
+            if (v && v !== en) n[lang] = v; // resolver falls back to en_uk
+        }
+        records.push({ s: e.scientific_name, n, x: 1, birdnet_id: e.birdnet_id, taxon_group: 'Aves' });
+        extraCount++;
+    }
+    records.sort((a, b) => a.s.localeCompare(b.s));
+
     const payload = {
         modelVersion,
         sourceUrl,
         updatedAt: new Date().toISOString(),
         languages: built.languages,
-        speciesCount: records.length,
+        speciesCount: modelCount,
+        extraCount,
         records,
     };
 
     fs.writeFileSync(outputFile, JSON.stringify(payload), 'utf8');
-    console.log(`Wrote ${payload.speciesCount} species to ${outputFile}`);
+    console.log(`Wrote ${payload.speciesCount} model species + ${extraCount} extra birds to ${outputFile}`);
     console.log(`Processed ${imageCount} images into ${imageDir}`);
 }
 

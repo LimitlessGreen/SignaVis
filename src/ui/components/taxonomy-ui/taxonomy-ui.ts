@@ -159,6 +159,11 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
           if (!hay.includes(q)) continue;
         }
       }
+      // Species from the Cornell supplement: labelable, but BirdNET cannot detect them.
+      const xrec = item.scientificName ? taxonomy.resolve(item.scientificName) : null;
+      if (xrec?.x && xrec.s === item.scientificName) {
+        item.detail = item.detail ? `${item.detail} · not in BirdNET model` : 'not in BirdNET model';
+      }
       out.push(item);
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
