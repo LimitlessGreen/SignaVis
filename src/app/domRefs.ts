@@ -133,6 +133,7 @@ export interface DomRefs {
     volumeIcon:              HTMLElement       | null;
     volumeWaves:             HTMLElement       | null;
     volumeSlider:            HTMLInputElement  | null;
+    normalizeBtn:            HTMLButtonElement | null;
     slowdownSelect:          HTMLSelectElement | null;
     ultrasoundChip:          HTMLButtonElement | null;
 

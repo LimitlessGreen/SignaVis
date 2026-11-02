@@ -55,6 +55,7 @@ export abstract class AudioEngineBase extends EventTarget {
 
     setVolume(_val: number): void { this._ni('setVolume'); }
     toggleMute(): void            { this._ni('toggleMute'); }
+    setNormalize(_on: boolean): number { this._ni('setNormalize'); return 1; }
     setTimeExpansion(_factor: number): void { this._ni('setTimeExpansion'); }
     setListenMode(_mode: object): void      { this._ni('setListenMode'); }
 

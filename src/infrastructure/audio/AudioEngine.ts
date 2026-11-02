@@ -22,6 +22,7 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
+import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
@@ -130,6 +131,9 @@ export class AudioEngine extends AudioEngineBase {
   wavesurfer: any;
   volume: number;
   muted: boolean;
+  normalize: boolean;
+  normGain: number;
+  _mediaGraph: { el: HTMLMediaElement; ctx: AudioContext; gain: GainNode; resume: () => void } | null;
   preMuteVolume: number;
   _segmentMode: boolean;
   _activeSegmentLabelId: string | null;
@@ -169,6 +173,9 @@ export class AudioEngine extends AudioEngineBase {
     this.wavesurfer = null;
     /** @type {number} Volume 0-1 */
     this.volume = 0.8;
+    this.normalize = false;
+    this.normGain = 1;
+    this._mediaGraph = null;
     /** @type {boolean} */
     this.muted = false;
     /** @type {number} Volume before mute */
@@ -472,7 +479,7 @@ export class AudioEngine extends AudioEngineBase {
     }
 
     const gain = ctx.createGain();
-    gain.gain.value = this.muted ? 0 : this.volume;
+    gain.gain.value = this._outputGain();
 
     bandpass.connect(gain);
     gain.connect(ctx.destination);
@@ -726,9 +733,79 @@ export class AudioEngine extends AudioEngineBase {
    */
   setVolume(val: number) {
     this.volume = clamp(val, 0, 1);
-    if (this.wavesurfer) this.wavesurfer.setVolume(this.volume);
+    this._applyOutputGain();
+  }
+
+  // ── Normalized playback ─────────────────────────────────────────────
+  // Gain = target peak (-1 dBFS) / file peak, capped at +40 dB. Amplifying above 1 is impossible
+  // with media-element volume, so the WaveSurfer <audio> is routed through a WebAudio GainNode
+  // (built lazily, only while normalizing; a routed element stays routed until the next load).
+
+  static NORM_TARGET = 10 ** (-1 / 20);
+  static NORM_MAX_GAIN = 100;
+
+  /** Turns normalized playback on/off. Returns the applied gain factor (1 when off). */
+  setNormalize(on: boolean) {
+    this.normalize = !!on;
+    this._applyOutputGain();
+    return this.normalize ? this.normGain : 1;
+  }
+
+  _updateNormGain() {
+    const peak = this.audioBuffer ? computeAmplitudePeak(channelData(this.audioBuffer)) : 1;
+    this.normGain = clamp(AudioEngine.NORM_TARGET / peak, 0.05, AudioEngine.NORM_MAX_GAIN);
+  }
+
+  /** Final output gain for WebAudio paths: volume x normalization, 0 when muted. */
+  _outputGain() {
+    if (this.muted) return 0;
+    return this.volume * (this.normalize ? this.normGain : 1);
+  }
+
+  _ensureMediaGraph() {
+    const el = this.wavesurfer?.getMediaElement?.();
+    if (!el) return null;
+    if (this._mediaGraph?.el === el) return this._mediaGraph;
+    this._closeMediaGraph();
+    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctor) return null;
+    try {
+      const ctx = new Ctor();
+      const src = ctx.createMediaElementSource(el);
+      const gain = ctx.createGain();
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      // Media starts playing via a user gesture; resume the context alongside it.
+      const resume = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); };
+      el.addEventListener('play', resume);
+      this._mediaGraph = { el, ctx, gain, resume };
+      return this._mediaGraph;
+    } catch (err) {
+      console.warn('[AudioEngine] normalized playback unavailable for this media element', err);
+      return null;
+    }
+  }
+
+  _closeMediaGraph() {
+    const g = this._mediaGraph;
+    if (!g) return;
+    g.el.removeEventListener('play', g.resume);
+    try { g.ctx.close(); } catch { /**/ }
+    this._mediaGraph = null;
+  }
+
+  _applyOutputGain() {
+    const graph = this.normalize ? this._ensureMediaGraph() : this._mediaGraph;
+    if (this.wavesurfer) {
+      if (graph) {
+        this.wavesurfer.setVolume(1);  // level is set by the GainNode
+        graph.gain.gain.value = this._outputGain();
+      } else {
+        this.wavesurfer.setVolume(this.muted ? 0 : this.volume);
+      }
+    }
     if (this._customSegmentPlayback?.gain) {
-      this._customSegmentPlayback.gain.gain.value = this.muted ? 0 : this.volume;
+      this._customSegmentPlayback.gain.gain.value = this._outputGain();
     }
   }
 
@@ -742,8 +819,7 @@ export class AudioEngine extends AudioEngineBase {
     } else {
       this.preMuteVolume = this.volume;
       this.muted = true;
-      if (this.wavesurfer) this.wavesurfer.setVolume(0);
-      if (this._customSegmentPlayback?.gain) this._customSegmentPlayback.gain.gain.value = 0;
+      this._applyOutputGain();
     }
   }
 
@@ -801,6 +877,7 @@ export class AudioEngine extends AudioEngineBase {
    * Destroys the engine and releases all resources.
    */
   destroy() {
+    this._closeMediaGraph();
     if (this._customSegmentPlayback) {
       this._stopCustomSegmentPlayback('stopped', 0);
     }
@@ -819,6 +896,8 @@ export class AudioEngine extends AudioEngineBase {
    */
   _setupWaveSurfer(source: any, name: any): Promise<void> {
     if (this.wavesurfer) this.wavesurfer.destroy();
+    this._closeMediaGraph();
+    this._updateNormGain();
 
     // Support WaveSurfer builds that expose a static `create()` or are constructible.
     const WaveSurferCtor = /** @type {any} */ (this._WaveSurferCtor);
@@ -856,7 +935,7 @@ export class AudioEngine extends AudioEngineBase {
     ws.on('ready', () => {
       queueMicrotask(() => resolveReady());
       ws.zoom(this.pixelsPerSecond);
-      ws.setVolume(this.volume);
+      this._applyOutputGain();
       this._applyPlaybackRate();
       this.seekToTime(0, true);
       this._lastTimeupdateEmitAt = 0;

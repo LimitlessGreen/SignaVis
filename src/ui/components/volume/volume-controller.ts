@@ -5,6 +5,7 @@ export interface VolumeHost {
     muted: boolean;
     _setVolume(v: number): void;
     _toggleMute(): void;
+    _toggleNormalize(): void;
     _setTimeExpansion(factor: number): void;
     _selectListenMode(value: string): void;
     _applyUltrasoundSuggestion(): void;
@@ -21,6 +22,7 @@ export class VolumeController implements UiController {
             this.host._setVolume(parseFloat((e.target as HTMLInputElement).value) / 100);
         });
         on(this.d.volumeToggleBtn, 'click', () => this.host._toggleMute());
+        on(this.d.normalizeBtn, 'click', () => this.host._toggleNormalize());
         on(this.d.slowdownSelect, 'change', (e: Event) => {
             this.host._selectListenMode((e.target as HTMLSelectElement).value);
         });

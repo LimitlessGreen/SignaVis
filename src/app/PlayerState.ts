@@ -719,6 +719,7 @@ export class PlayerState {
             volumeIcon:             q('volumeIcon'),
             volumeWaves:            q('volumeWaves'),
             volumeSlider:           q('volumeSlider'),
+            normalizeBtn:           q('normalizeBtn'),
             slowdownSelect:         q('slowdownSelect'),
             ultrasoundChip:         q('ultrasoundChip'),
             gainModeSelect:         q('gainModeSelect'),
@@ -828,6 +829,7 @@ export class PlayerState {
         this._updateUltrasoundChip();
         this._emit('ultrasoundinfo', this.ultrasoundInfo);
         this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
+        this._updateNormalizeBtn();
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {
             this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile, sourcePath);
@@ -1070,6 +1072,23 @@ export class PlayerState {
     _setVolume(val: unknown) {
         this._engine.setVolume(val);
         this._updateVolumeIcon();
+    }
+
+    get normalize() { return !!this._engine.normalize; }
+
+    _setNormalize(on: boolean) {
+        this._engine.setNormalize(on);
+        this._updateNormalizeBtn();
+    }
+
+    _toggleNormalize() { this._setNormalize(!this.normalize); }
+
+    _updateNormalizeBtn() {
+        const btn = this.d.normalizeBtn;
+        if (!btn) return;
+        btn.classList.toggle('active', this.normalize);
+        const db = 20 * Math.log10(this._engine.normGain || 1);
+        btn.title = `Normalize playback to -1 dBFS peak (max +40 dB)${this._engine.audioBuffer ? ` - this file: ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB` : ''}`;
     }
 
     _setTimeExpansion(factor: number) {

@@ -158,6 +158,7 @@ export class BirdNETPlayer {
      * @param {number}      [options.smoothSeekFocusMs] - slow-follow window after manual seek (default: 1400)
      * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
      * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
+     * @param {boolean}     [options.normalize] - play normalized to -1 dBFS peak, max +40 dB (default: false)
      */
     constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
@@ -229,6 +230,7 @@ export class BirdNETPlayer {
         this._bindGlobalHotkeys();
         this._injectAnnotationToolbar();
         if (this.options.readOnly) this.setReadOnly(true);
+        if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
         // routing through the player event bus first).
@@ -905,6 +907,11 @@ export class BirdNETPlayer {
     }
 
     get readOnly() { return this._readOnly; }
+
+    /** Normalized playback (peak -> -1 dBFS, max +40 dB), per loaded file. Also toggled by the "Norm" button. */
+    setNormalize(on: boolean) { this._state?._setNormalize(on); }
+
+    get normalize() { return !!this._state?.normalize; }
 
     // ── Annotation Toolbar ──────────────────────────────────────────
 

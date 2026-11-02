@@ -105,6 +105,7 @@ export function createPlayerHTML(opts = {}) {
             </svg>
         </button>
         <input type="range" data-aw="volumeSlider" class="toolbar-range toolbar-range-sm" min="0" max="100" value="80" title="Volume"${hide(o.showVolume)}>
+        <button class="toolbar-btn toggle-btn" data-aw="normalizeBtn" title="Normalize playback: amplify to -1 dBFS peak (max +40 dB)"${hide(o.showVolume)}>Norm</button>
         <select data-aw="slowdownSelect" class="toolbar-select" title="Listening mode for ultrasound: slow down (pitch drops along, ×10 makes bat calls audible), or a heterodyne / frequency-division detector"${hide(o.showVolume)}>
             <option value="1">×1</option>
             <option value="2">×2</option>
