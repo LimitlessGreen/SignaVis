@@ -14,7 +14,7 @@ def probe(d, fx, fy):
     """Click once in snap mode (before begin(), cut from the GIF); True if a box preview appears."""
     d.pg.mouse.click(*d.at(fx, fy))
     d.wait(150)
-    ok = d.pg.locator(".snap-preview").count() > 0
+    ok = d.pg.locator(".snap-box").count() > 0
     d.pg.keyboard.press("Escape")          # leaves snap mode without adding anything
     d.wait(60)
     d.pg.locator(SNAP_BTN).click()

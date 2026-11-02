@@ -282,38 +282,88 @@
     z-index: 30;
 }
 
-/* ── Snap to call preview ── */
-.spectrogram-label-draft.snap-preview {
-    border-color: rgba(250, 204, 21, 0.98);
-    z-index: 30;
-}
-.snap-caption,
-.snap-hint {
+/* ── Snap to call preview: viewfinder box + chip ── */
+.snap-box {
+    --snap: var(--color-accent, #38bdf8);
     position: absolute;
-    font-size: 0.65rem;
-    white-space: nowrap;
-    padding: 1px 6px;
+    z-index: 30;
+    pointer-events: none;
+    border: 1px solid color-mix(in srgb, var(--snap) 70%, transparent);
     border-radius: 3px;
-    background: rgba(250, 204, 21, 0.95);
-    color: #111;
+    background: color-mix(in srgb, var(--snap) 12%, transparent);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 14px color-mix(in srgb, var(--snap) 35%, transparent);
+    transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s;
+}
+.snap-box--in { animation: snap-in 0.16s ease-out; }
+@keyframes snap-in {
+    from { opacity: 0; transform: scale(1.06); }
+    to   { opacity: 1; transform: scale(1); }
+}
+.snap-corner {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 0 solid var(--snap);
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+.snap-corner.tl { left: -3px;  top: -3px;    border-left-width: 3px;  border-top-width: 3px;    border-top-left-radius: 3px; }
+.snap-corner.tr { right: -3px; top: -3px;    border-right-width: 3px; border-top-width: 3px;    border-top-right-radius: 3px; }
+.snap-corner.bl { left: -3px;  bottom: -3px; border-left-width: 3px;  border-bottom-width: 3px; border-bottom-left-radius: 3px; }
+.snap-corner.br { right: -3px; bottom: -3px; border-right-width: 3px; border-bottom-width: 3px; border-bottom-right-radius: 3px; }
+
+.snap-chip,
+.snap-miss {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+    color: #e2e8f0;
+    background: rgba(2, 6, 23, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(3px);
     pointer-events: none;
 }
-.snap-caption {
-    left: -2px;
-    bottom: calc(100% + 3px);
+.snap-chip {
+    position: absolute;
+    left: -3px;
+    bottom: calc(100% + 6px);
 }
-.snap-caption.below {
-    bottom: auto;
-    top: calc(100% + 3px);
+.snap-chip.below  { bottom: auto; top: calc(100% + 6px); }
+.snap-chip.inside { bottom: auto; top: 5px; left: 5px; }
+.snap-meter { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 9px; }
+.snap-meter-bar {
+    width: 3px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.22);
 }
-.snap-caption.inside {
-    bottom: auto;
-    top: 3px;
-    left: 3px;
+.snap-meter-bar:nth-child(1) { height: 3px; }
+.snap-meter-bar:nth-child(2) { height: 4.5px; }
+.snap-meter-bar:nth-child(3) { height: 6px; }
+.snap-meter-bar:nth-child(4) { height: 7.5px; }
+.snap-meter-bar:nth-child(5) { height: 9px; }
+.snap-meter-bar.on { background: var(--snap); }
+.snap-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+.snap-sep { width: 1px; height: 10px; background: rgba(255, 255, 255, 0.18); }
+.snap-chip kbd {
+    font: inherit;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-bottom-width: 2px;
 }
-.snap-hint {
-    transform: translate(8px, -50%);
+.snap-miss {
+    position: absolute;
     z-index: 30;
+    transform: translate(10px, -50%);
+    color: #94a3b8;
 }
 
 /* ── Ghost stamp preview ── */

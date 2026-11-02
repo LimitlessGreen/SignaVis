@@ -1518,23 +1518,30 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const pct = Math.round(this._snapSensitivity * 100);
         if (result.ok) {
             const g = this._toGeometry(this._normalize({ ...result.box, label: '' }), width, height);
-            el.className = 'spectrogram-label-draft snap-preview';
+            const fresh = !el.classList.contains('snap-box');
+            el.className = 'snap-box' + (fresh ? ' snap-box--in' : '');
             Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
-            const cap = document.createElement('span');
-            cap.className = 'snap-caption';
-            cap.textContent = `Sensitivity ${pct} % · Shift+wheel · click or Enter to add`;
-            el.replaceChildren(cap);
+            // Viewfinder corners + a compact chip: sensitivity meter and key hints
+            const bars = Array.from({ length: 5 }, (_, i) =>
+                `<i class="snap-meter-bar${i < Math.round(this._snapSensitivity * 5) ? ' on' : ''}"></i>`).join('');
+            el.innerHTML = '<i class="snap-corner tl"></i><i class="snap-corner tr"></i><i class="snap-corner bl"></i><i class="snap-corner br"></i>'
+                + `<span class="snap-chip" title="Sensitivity ${pct} % — Shift + mouse wheel to change. Click or Enter adds the label.">`
+                + `<span class="snap-meter" aria-label="Sensitivity ${pct} %">${bars}</span><span class="snap-pct">${pct}%</span>`
+                + '<span class="snap-sep"></span><kbd>⇧ scroll</kbd><kbd>↵</kbd></span>';
+            const chip = el.querySelector('.snap-chip') as HTMLElement;
             // Above the box; below it at the top edge; inside when it spans the full height
-            const roomBelow = g.top + g.height < height - 24;
-            cap.classList.toggle('below', g.top < 24 && roomBelow);
-            cap.classList.toggle('inside', g.top < 24 && !roomBelow);
+            const roomBelow = g.top + g.height < height - 26;
+            chip.classList.toggle('below', g.top < 26 && roomBelow);
+            chip.classList.toggle('inside', g.top < 26 && !roomBelow);
         } else {
             const g = this._toGeometry(this._normalize({ start: time, end: time, freqMin: freq, freqMax: freq, label: '' }), width, height);
-            el.className = 'snap-hint';
+            el.className = 'snap-miss';
             Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: '', height: '' });
-            el.textContent = 'reason' in result && result.reason === 'noise'
-                ? 'No call here — click on a brighter trace'
-                : `Trace merges with the background (sensitivity ${pct} %) — Shift+wheel to lower it`;
+            const text = 'reason' in result && result.reason === 'noise'
+                ? 'No call here — try a brighter trace'
+                : `Merges with background · ${pct}% — ⇧ scroll to lower`;
+            el.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>';
+            el.append(text);
         }
     }
 
