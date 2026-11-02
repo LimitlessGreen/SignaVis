@@ -14,6 +14,8 @@ export interface OverviewHost {
     _queueOverviewViewportApply(final: boolean): void;
     _seekToTime(t: number, ui: boolean): void;
     _toggleOverviewLabelSection(): void;
+    _onLabelViewTabClick(view: 'tracks' | 'table'): void;
+    _startLabelTableResize(e: PointerEvent): void;
 }
 
 export class OverviewController implements UiController {
@@ -48,5 +50,10 @@ export class OverviewController implements UiController {
             h._seekToTime(xNorm * h.audioBuffer.duration, true);
         });
         on(this.d.overviewLabelToggle, 'click', () => h._toggleOverviewLabelSection());
+        on(this.d.overviewLabelTabs, 'click', (e: MouseEvent) => {
+            const b = (e.target as HTMLElement).closest<HTMLElement>('[data-view]');
+            if (b) h._onLabelViewTabClick(b.dataset.view === 'table' ? 'table' : 'tracks');
+        });
+        on(this.d.overviewLabelTableResize, 'pointerdown', (e: PointerEvent) => h._startLabelTableResize(e));
     }
 }

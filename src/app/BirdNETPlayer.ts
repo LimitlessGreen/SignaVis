@@ -246,6 +246,19 @@ export class BirdNETPlayer {
     // ── Public API ──────────────────────────────────────────────────
 
     /**
+     * Enable the "Table" tab next to "Tracks" below the overview and return its host element
+     * (the app renders its own table into it). Returns null when the overview is not built.
+     */
+    enableLabelTable(): HTMLElement | null { return this._state?._enableLabelTable?.() ?? null; }
+
+    /** Toolbar area in the tab strip (right side, visible while the table view is active). */
+    getLabelTableTools(): HTMLElement | null { return this._state?.d?.overviewLabelTools ?? null; }
+
+    getLabelView(): 'tracks' | 'table' { return this._state?._labelView ?? 'tracks'; }
+    isLabelViewCollapsed(): boolean { return !!this._state?.d?.overviewLabelSection?.classList.contains('collapsed'); }
+    setLabelView(view: 'tracks' | 'table') { this._state?._setLabelView?.(view); }
+
+    /**
      * Show the spectrogram loading overlay with a custom message.
      * Useful for displaying feedback during network fetches before DSP starts.
      * Call hideLoadingOverlay() to dismiss it.

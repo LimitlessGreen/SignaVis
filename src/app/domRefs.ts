@@ -62,6 +62,10 @@ export interface DomRefs {
     overviewLabelTracks:     HTMLElement       | null;
     overviewLabelSection:    HTMLElement       | null;
     overviewLabelToggle:     HTMLButtonElement | null;
+    overviewLabelTabs:       HTMLElement       | null;
+    overviewLabelTools:      HTMLElement       | null;
+    overviewLabelTable:      HTMLElement       | null;
+    overviewLabelTableResize:HTMLElement       | null;
 
     // ── File info ────────────────────────────────────────────────────────
     fileInfo:                HTMLElement       | null;

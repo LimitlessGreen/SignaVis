@@ -662,6 +662,10 @@ export class PlayerState {
             overviewLabelTracks:    q('overviewLabelTracks'),
             overviewLabelSection:   q('overviewLabelSection'),
             overviewLabelToggle:    q('overviewLabelToggle'),
+            overviewLabelTabs:      q('overviewLabelTabs'),
+            overviewLabelTools:     q('overviewLabelTools'),
+            overviewLabelTable:     q('overviewLabelTable'),
+            overviewLabelTableResize: q('overviewLabelTableResize'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
             scaleSelect:            q('scaleSelect'),
@@ -1290,6 +1294,61 @@ export class PlayerState {
         if (btn) btn.setAttribute('aria-expanded', String(!collapsed));
         this._storage.setItem('aw-label-section-collapsed', collapsed ? '1' : '0');
         // Collapsing/expanding changes layout height — trigger spectrogram resize handling.
+        this._afterLabelSectionLayoutChange();
+        this._emit('labelviewchange', { view: this._labelView, collapsed });
+    }
+
+    // ── Label views below the overview: "Tracks" | "Table" ──
+    _labelTableEnabled = false;
+    _labelView: 'tracks' | 'table' = 'tracks';
+
+    /** Turn on the "Table" tab; the app fills the returned host element. */
+    _enableLabelTable(): HTMLElement | null {
+        const section = this.d.overviewLabelSection;
+        const tabs = this.d.overviewLabelTabs;
+        if (!section || !tabs || !this.d.overviewLabelTable) return null;
+        if (!this._labelTableEnabled) {
+            this._labelTableEnabled = true;
+            tabs.hidden = false;
+            section.classList.add('has-view-tabs');
+            const h = Number(this._storage.getItem('aw-label-table-height'));
+            if (h > 0) this.d.overviewLabelTable.style.height = `${Math.round(h)}px`;
+            const saved = this._storage.getItem('aw-label-view');
+            this._setLabelView(saved === 'table' ? 'table' : 'tracks', false);
+        }
+        return this.d.overviewLabelTable;
+    }
+
+    _setLabelView(view: 'tracks' | 'table', emit = true) {
+        const section = this.d.overviewLabelSection;
+        if (!section) return;
+        if (view === 'table' && !this._labelTableEnabled) view = 'tracks';
+        this._labelView = view;
+        const isTable = view === 'table';
+        section.classList.toggle('view-table', isTable);
+        if (this.d.overviewLabelTracks) this.d.overviewLabelTracks.hidden = isTable;
+        if (this.d.overviewLabelTable) this.d.overviewLabelTable.hidden = !isTable;
+        if (this.d.overviewLabelTableResize) this.d.overviewLabelTableResize.hidden = !isTable;
+        if (this.d.overviewLabelTools) this.d.overviewLabelTools.hidden = !isTable;
+        for (const b of this.d.overviewLabelTabs?.querySelectorAll<HTMLElement>('[data-view]') || []) {
+            const on = b.dataset.view === view;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', String(on));
+        }
+        this._storage.setItem('aw-label-view', view);
+        this._afterLabelSectionLayoutChange();
+        if (emit) this._emit('labelviewchange', { view });
+    }
+
+    /** Tab click: the active tab collapses/expands, the other one switches (and expands). */
+    _onLabelViewTabClick(view: 'tracks' | 'table') {
+        const collapsed = this.d.overviewLabelSection?.classList.contains('collapsed');
+        if (view === this._labelView) { this._toggleOverviewLabelSection(); return; }
+        this._setLabelView(view);
+        if (collapsed) this._toggleOverviewLabelSection(false);
+    }
+
+    _afterLabelSectionLayoutChange() {
         requestAnimationFrame(() => {
             this._invalidateSpectrogramHeightCache?.();
             if (this.audioBuffer) {
@@ -1297,6 +1356,32 @@ export class PlayerState {
                 this._drawMainWaveform();
             }
         });
+    }
+
+    _startLabelTableResize(e: PointerEvent) {
+        const table = this.d.overviewLabelTable;
+        const handle = this.d.overviewLabelTableResize;
+        if (!table || !handle) return;
+        e.preventDefault();
+        const startY = e.clientY;
+        const startH = table.getBoundingClientRect().height;
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add('dragging');
+        const move = (ev: PointerEvent) => {
+            const h = Math.max(60, Math.min(window.innerHeight * 0.7, startH + ev.clientY - startY));
+            table.style.height = `${Math.round(h)}px`;
+        };
+        const up = () => {
+            handle.removeEventListener('pointermove', move);
+            handle.removeEventListener('pointerup', up);
+            handle.removeEventListener('pointercancel', up);
+            handle.classList.remove('dragging');
+            this._storage.setItem('aw-label-table-height', String(Math.round(table.getBoundingClientRect().height)));
+            this._afterLabelSectionLayoutChange();
+        };
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', up);
+        handle.addEventListener('pointercancel', up);
     }
 
     _applyOverviewWindowToViewport(redraw = true) { this._viewport.applyOverviewWindowToViewport(redraw); }

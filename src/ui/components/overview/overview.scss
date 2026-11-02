@@ -126,8 +126,135 @@
     transform: rotate(-90deg);
 }
 
-.overview-label-section.collapsed .overview-label-tracks {
+.overview-label-section.collapsed .overview-label-tracks,
+.overview-label-section.collapsed .overview-label-table,
+.overview-label-section.collapsed .overview-label-table-resize,
+.overview-label-section.collapsed .overview-label-tools {
     display: none;
+}
+
+/* ═══ Tab strip: "▾ Tracks | Table" ═══ */
+
+.overview-label-bar {
+    display: flex;
+    align-items: stretch;
+    height: 16px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-primary);
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.overview-label-bar .overview-label-tab {
+    border-bottom: none;
+}
+
+.overview-label-section.has-view-tabs .overview-label-tab {
+    width: auto;
+    padding: 0 4px 0 6px;
+}
+
+.overview-label-section.has-view-tabs .overview-label-tab-text {
+    display: none;
+}
+
+.overview-label-tabs {
+    display: flex;
+    align-items: stretch;
+}
+
+.overview-label-tabs[hidden] {
+    display: none;
+}
+
+.overview-label-view-tab {
+    position: relative;
+    padding: 0 7px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.12s, background 0.12s;
+}
+
+.overview-label-view-tab + .overview-label-view-tab {
+    border-left: 1px solid var(--color-border);
+}
+
+.overview-label-view-tab:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-secondary);
+}
+
+.overview-label-view-tab.active {
+    color: var(--color-text-primary);
+}
+
+.overview-label-view-tab.active::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    bottom: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--color-accent, #4a9eff);
+}
+
+.overview-label-section.collapsed .overview-label-view-tab.active::after {
+    opacity: 0.35;
+}
+
+.overview-label-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-end;
+    padding: 0 6px;
+    overflow: hidden;
+}
+
+.overview-label-tools[hidden] {
+    display: none;
+}
+
+/* ═══ Table host + resize handle ═══ */
+
+.overview-label-table {
+    height: 180px;
+    min-height: 60px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-secondary);
+}
+
+.overview-label-table[hidden],
+.overview-label-tracks[hidden],
+.overview-label-table-resize[hidden] {
+    display: none;
+}
+
+.overview-label-table-resize {
+    height: 5px;
+    margin-top: -2px;
+    margin-bottom: -3px;
+    position: relative;
+    z-index: 2;
+    cursor: ns-resize;
+    flex-shrink: 0;
+}
+
+.overview-label-table-resize:hover,
+.overview-label-table-resize.dragging {
+    background: color-mix(in srgb, var(--color-accent, #4a9eff) 45%, transparent);
 }
 
 /* ═══ Overview Label Tracks ═══ */

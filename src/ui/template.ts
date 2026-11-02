@@ -494,13 +494,22 @@ export function createPlayerHTML(opts = {}) {
             </div>
         </div>
         <div class="overview-label-section" data-aw="overviewLabelSection"${hide(o.showOverview)}>
-            <button class="overview-label-tab" data-aw="overviewLabelToggle" type="button" title="Toggle label overview" aria-expanded="true">
-                <svg class="overview-label-tab-chevron" width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
-                    <polyline points="1,2.5 4.5,6.5 8,2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="overview-label-tab-text">Labels</span>
-            </button>
+            <div class="overview-label-bar">
+                <button class="overview-label-tab" data-aw="overviewLabelToggle" type="button" title="Toggle label overview" aria-expanded="true">
+                    <svg class="overview-label-tab-chevron" width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
+                        <polyline points="1,2.5 4.5,6.5 8,2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="overview-label-tab-text">Labels</span>
+                </button>
+                <div class="overview-label-tabs" data-aw="overviewLabelTabs" role="tablist" hidden>
+                    <button class="overview-label-view-tab" type="button" role="tab" data-view="tracks" title="Label tracks along the timeline">Tracks</button>
+                    <button class="overview-label-view-tab" type="button" role="tab" data-view="table" title="Editable label table">Table</button>
+                </div>
+                <div class="overview-label-tools" data-aw="overviewLabelTools" hidden></div>
+            </div>
             <div class="overview-label-tracks" data-aw="overviewLabelTracks"></div>
+            <div class="overview-label-table" data-aw="overviewLabelTable" hidden></div>
+            <div class="overview-label-table-resize" data-aw="overviewLabelTableResize" title="Drag to resize the table" hidden></div>
         </div>
     </div>
 
