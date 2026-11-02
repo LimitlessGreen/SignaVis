@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-11-02
+
+### Added
+- Open Graph / Twitter preview image (1200x630) for shared links to the
+  labeling app and the GitHub Pages start page.
+
 ## [1.0.1] - 2026-11-02
 
 ### Added
