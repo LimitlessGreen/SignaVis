@@ -642,17 +642,22 @@
 .spectrogram-label-region.label-compact .label-edit-btn { left: 0; right: auto; }
 .spectrogram-label-region.label-compact .label-delete-btn { left: 22px; right: auto; }
 .spectrogram-label-region.label-compact .label-refcalls-btn { left: 44px; right: auto; }
-/* No corner dots; edge strips span the full edge and lie mostly outside */
-.spectrogram-label-region.label-compact .label-handle.handle-tl,
-.spectrogram-label-region.label-compact .label-handle.handle-tr,
-.spectrogram-label-region.label-compact .label-handle.handle-bl,
-.spectrogram-label-region.label-compact .label-handle.handle-br {
+/* Compact: corner dots stay; edge strips lie mostly outside the box */
+.spectrogram-label-region.label-compact .label-handle.handle-l { left: -7px; width: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-r { right: -7px; width: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-t { top: -7px; height: 8px; }
+.spectrogram-label-region.label-compact .label-handle.handle-b { bottom: -7px; height: 8px; }
+/* Tiny: no corner dots; edge strips span the full edge */
+.spectrogram-label-region.label-tiny .label-handle.handle-tl,
+.spectrogram-label-region.label-tiny .label-handle.handle-tr,
+.spectrogram-label-region.label-tiny .label-handle.handle-bl,
+.spectrogram-label-region.label-tiny .label-handle.handle-br {
     display: none;
 }
-.spectrogram-label-region.label-compact .label-handle.handle-l { left: -7px; top: 0; bottom: 0; width: 8px; }
-.spectrogram-label-region.label-compact .label-handle.handle-r { right: -7px; top: 0; bottom: 0; width: 8px; }
-.spectrogram-label-region.label-compact .label-handle.handle-t { top: -7px; left: 0; right: 0; height: 8px; }
-.spectrogram-label-region.label-compact .label-handle.handle-b { bottom: -7px; left: 0; right: 0; height: 8px; }
+.spectrogram-label-region.label-tiny .label-handle.handle-l,
+.spectrogram-label-region.label-tiny .label-handle.handle-r { top: 0; bottom: 0; }
+.spectrogram-label-region.label-tiny .label-handle.handle-t,
+.spectrogram-label-region.label-tiny .label-handle.handle-b { left: 0; right: 0; }
 /* While dragging, hide everything but the box itself */
 .spectrogram-label-region.label-compact.editing .spectrogram-label-text,
 .spectrogram-label-region.label-compact.editing button {
