@@ -3873,6 +3873,11 @@
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      try { await loadLocalAudioFile(file); } finally { fileInput.value = ''; }
+    });
+
+    /** Load a local audio file (file picker or drag & drop). */
+    async function loadLocalAudioFile(file) {
       // Re-picked session-only file from a restored project: reattach audio, keep its labels.
       const _orphan = recordingManager.getAll().find((e) =>
         e.source === 'file' && !e.audioUrl && e.filename === file.name);
@@ -3920,6 +3925,46 @@
       fileInput.value = '';
       finishRecordingLoad(_prep);
       await keepFileInProjectFolder(_fileEntry, file);
+    }
+
+    // ── Drag & drop of audio files anywhere on the page ──────────────
+    const AUDIO_EXT = /\.(wav|mp3|flac|ogg|oga|opus|m4a|aac|webm|aif|aiff)$/i;
+    const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    const dropOverlay = document.createElement('div');
+    dropOverlay.className = 'file-drop-overlay';
+    dropOverlay.innerHTML = '<div class="file-drop-card"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><div class="file-drop-title">Drop audio file to open</div><div class="file-drop-hint">WAV, MP3, FLAC, OGG, M4A …</div></div>';
+    // Popover = browser top layer, so it also covers open <dialog> modals.
+    dropOverlay.popover = 'manual';
+    document.body.appendChild(dropOverlay);
+    const showDropOverlay = () => { try { if (!dropOverlay.matches(':popover-open')) dropOverlay.showPopover(); } catch (e) {} };
+    let _dragDepth = 0;
+    const hideDropOverlay = () => { _dragDepth = 0; try { dropOverlay.hidePopover(); } catch (e) {} };
+    window.addEventListener('dragenter', (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      _dragDepth++;
+      showDropOverlay();
+    });
+    window.addEventListener('dragover', (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault(); // otherwise the browser opens the file itself
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    window.addEventListener('dragleave', (e) => {
+      if (!isFileDrag(e)) return;
+      if (--_dragDepth <= 0) hideDropOverlay();
+    });
+    window.addEventListener('drop', async (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      hideDropOverlay();
+      const files = Array.from(e.dataTransfer.files || []);
+      const file = files.find((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name));
+      if (!file) {
+        showLoadError(files.length ? `"${files[0].name}" is not an audio file` : 'no file', 'Cannot open');
+        return;
+      }
+      await loadLocalAudioFile(file);
     });
 
     loadSampleBtn.addEventListener('click', async () => {
