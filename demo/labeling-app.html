@@ -3,7 +3,32 @@
   <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SignaVis - Labeling</title>
+  <title>SignaVis – Spectrogram Viewer &amp; Audio Labeling for Bioacoustics</title>
+  <meta name="description" content="SignaVis is a free, open-source web app for bioacoustics: view spectrograms, label bird and bat calls, run BirdNET detections and work with xeno-canto recordings right in your browser." />
+  <meta name="keywords" content="bioacoustics, spectrogram, audio labeling, bird sounds, bat calls, BirdNET, xeno-canto, annotation, open source" />
+  <meta name="author" content="Jairus Behrisch" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SignaVis" />
+  <meta property="og:title" content="SignaVis – Spectrogram viewer &amp; audio labeling for bioacoustics" />
+  <meta property="og:description" content="Free, open-source browser app to visualize and label bird and bat sounds, with BirdNET and xeno-canto integration." />
+  <meta property="og:url" content="https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html" />
+  <meta name="twitter:card" content="summary" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "SignaVis",
+    "applicationCategory": "ScientificApplication",
+    "operatingSystem": "Web browser, Windows, macOS, Linux",
+    "description": "Open-source spectrogram viewer and audio labeling tool for bioacoustics with BirdNET and xeno-canto integration.",
+    "url": "https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html",
+    "codeRepository": "https://github.com/LimitlessGreen/SignaVis",
+    "author": { "@type": "Person", "name": "Jairus Behrisch" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+  }
+  </script>
   <!-- Umami analytics (cookieless, self-hosted) — skipped in the Tauri desktop app -->
   <script>
     if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window)) {
@@ -360,26 +385,39 @@
   <div id="panelPrivacy" class="scroll-panel" hidden>
     <div class="help-content">
       <div class="help-section">
-        <h3>Privacy policy / Datenschutzerklärung</h3>
-        <p><strong>Controller:</strong> [NAME], [ADDRESS], [E-MAIL]</p>
+        <h3>Privacy policy</h3>
+        <p><strong>Controller (Art. 4(7) GDPR):</strong><br>Jairus Behrisch<br>Friedmar-Brendel-Weg 6<br>09599 Freiberg, Germany<br>E-mail: <a href="mailto:jairus@openhdfpv.org">jairus@openhdfpv.org</a></p>
+        <p>SignaVis is a non-commercial open-source project.</p>
       </div>
       <div class="help-section">
         <h4>Hosting (GitHub Pages)</h4>
-        <p>This website is hosted on GitHub Pages, a service of GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, USA. When you visit the site, GitHub processes your IP address and technical request data (e.g. date and time, requested page, browser) in server logs to deliver the site and ensure its security. Legal basis: Art. 6(1)(f) GDPR (legitimate interest in reliable and secure delivery of the website).</p>
-        <p>Data may be transferred to the USA. GitHub is certified under the EU-US Data Privacy Framework (Art. 45 GDPR). Further information: <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub Privacy Statement</a>.</p>
+        <p>This website is hosted on GitHub Pages, a service of GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, USA. When you visit the site, GitHub processes your IP address and technical request data (e.g. date and time, requested file, browser) in server logs to deliver the site and keep it secure. The BirdNET model files are served from the same host. Legal basis: Art. 6(1)(f) GDPR (legitimate interest in reliable and secure delivery of the website).</p>
+        <p>Data may be transferred to the USA. GitHub is certified under the EU-US Data Privacy Framework (Art. 45 GDPR). Details: <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub Privacy Statement</a>.</p>
       </div>
       <div class="help-section">
         <h4>Your recordings and labels</h4>
-        <p>Audio files, spectrograms and labels are processed locally in your browser. They are not uploaded to our servers. Data you choose to load from or send to xeno-canto is exchanged directly with xeno-canto under their privacy policy.</p>
+        <p>Audio files, spectrograms, detections and labels are processed locally in your browser. They are not uploaded to us. Settings and projects are stored in your browser's local storage or in a folder you choose, and you can delete them at any time.</p>
       </div>
       <div class="help-section">
         <h4>Web analytics (Umami)</h4>
-        <p>This website uses a self-hosted instance of Umami (stats.sommertheater-altrossthal.de) to collect anonymous usage statistics (page views, referrer, browser, operating system, device type, country). Umami sets no cookies and does not store IP addresses; visitors are not tracked across websites. The data stays on our own server and is not shared with third parties.</p>
-        <p>Legal basis: Art. 6(1)(f) GDPR (legitimate interest in improving the application). You can object at any time, e.g. by enabling “Do Not Track” or a content blocker. The desktop app does not use analytics.</p>
+        <p>We use a self-hosted instance of Umami (stats.sommertheater-altrossthal.de) to collect anonymous usage statistics (page views, referrer, browser, operating system, device type, country). Umami sets no cookies, does not store IP addresses and does not track you across websites. The data stays on our server and is not shared with third parties. If your browser sends a “Do Not Track” signal, no statistics are collected.</p>
+        <p>Legal basis: Art. 6(1)(f) GDPR (legitimate interest in understanding how the application is used and improving it). The desktop app does not use analytics.</p>
+      </div>
+      <div class="help-section">
+        <h4>Third-party services loaded on demand</h4>
+        <p>Some features load content from external servers. Your browser then connects directly to these providers, which receive your IP address and technical request data. Legal basis: Art. 6(1)(f) GDPR (legitimate interest in providing these features).</p>
+        <ul>
+          <li><strong>unpkg</strong> (Cloudflare, Inc., USA) and <strong>jsDelivr</strong> (Prospect One, Poland, delivered via Cloudflare/Fastly): program libraries (audio player, map, machine-learning runtime). Data may be transferred to the USA.</li>
+          <li><strong>OpenStreetMap</strong> (OpenStreetMap Foundation, UK): map tiles for recording locations. <a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener">Privacy policy</a>.</li>
+          <li><strong>xeno-canto</strong> (Xeno-canto Foundation, Netherlands): search, download and upload of recordings when you use the xeno-canto features; your API key is sent only to xeno-canto.</li>
+          <li><strong>GBIF</strong> (Global Biodiversity Information Facility, Denmark): species and reference data in the reference-call view.</li>
+          <li><strong>CORS proxies</strong> (codetabs.com, corsproxy.io, allorigins.win, thingproxy.freeboard.io): used only as a fallback when a xeno-canto download is blocked by the browser; the requested file URL and your IP address pass through the proxy.</li>
+        </ul>
       </div>
       <div class="help-section">
         <h4>Your rights</h4>
-        <p>You have the right to access, rectification, erasure, restriction of processing, objection and data portability (Art. 15–21 GDPR), and the right to lodge a complaint with a supervisory authority.</p>
+        <p>You have the right to access, rectification, erasure, restriction of processing and data portability (Art. 15–20 GDPR), and the right to object to processing based on legitimate interests (Art. 21 GDPR). You also have the right to lodge a complaint with a supervisory authority, e.g. the Saxon Data Protection and Transparency Commissioner (Sächsischer Datenschutz- und Transparenzbeauftragter).</p>
+        <p>Last updated: November 2026</p>
       </div>
     </div>
   </div>

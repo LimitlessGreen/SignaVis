@@ -84,12 +84,37 @@ jobs:
         run: |
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
+          <html lang="en">
+          <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>SignaVis – Open-source spectrogram viewer &amp; audio labeling</title>
+          <meta name="description" content="SignaVis is a free, open-source web app for bioacoustics: spectrograms, bird and bat call labeling, BirdNET detections and xeno-canto integration.">
+          <link rel="canonical" href="https://limitlessgreen.github.io/SignaVis/">
+          </head>
+          <body>
           <h1>SignaVis</h1>
+          <p>Free, open-source spectrogram viewer and audio labeling tool for bioacoustics.</p>
           <ul>
+            <li><a href="demo/labeling-app.html">Open the labeling app</a></li>
             <li><a href="demo/storybook.html">Demo / Storybook</a></li>
-            <li><a href="docs/">Dokumentation</a></li>
+            <li><a href="docs/">Documentation</a></li>
+            <li><a href="https://github.com/LimitlessGreen/SignaVis">Source code on GitHub</a></li>
           </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: robots.txt and sitemap
+        run: |
+          printf 'User-agent: *\nAllow: /\nSitemap: https://limitlessgreen.github.io/SignaVis/sitemap.xml\n' > _site/robots.txt
+          cat > _site/sitemap.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://limitlessgreen.github.io/SignaVis/</loc></url>
+            <url><loc>https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html</loc></url>
+            <url><loc>https://limitlessgreen.github.io/SignaVis/docs/</loc></url>
+          </urlset>
           EOF
 
       - name: Write version.json for deployment
