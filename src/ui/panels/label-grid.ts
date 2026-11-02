@@ -17,6 +17,8 @@
  */
 
 import { TAG_PRESETS } from './label-table.ts';
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { LABEL_EXPORT_FORMATS, type LabelExportColumn, type LabelExportFormat } from '../../infrastructure/export/labelTableFormats.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { OWN_SOURCE_ID } from '../../app/label-sources.ts';
 
@@ -33,6 +35,10 @@ interface Column {
   tip?: string;
   text: (l: Lbl, g: LabelGrid) => string;
   sort: (l: Lbl, g: LabelGrid) => number | string;
+  /** Raw columns for CSV export (default: the cell text under the column title). */
+  csv?: (g: LabelGrid) => LabelExportColumn[];
+  /** Never hidden (needed to read the table). */
+  fixed?: boolean;
 }
 
 export interface LabelGridOptions {
@@ -54,6 +60,8 @@ export interface LabelGridOptions {
   onDelete?: (ids: string[]) => void;
   /** Called after an edit was refused (e.g. locked label) with a short reason. */
   onNotice?: (msg: string) => void;
+  /** Export the given rows; columns = the visible table columns as raw CSV columns. */
+  onExport?: (format: LabelExportFormat, labels: Lbl[], columns: LabelExportColumn[]) => void;
 }
 
 const ROW_H = 20;
@@ -80,6 +88,7 @@ function sourceOf(l: Lbl): SourceKey {
 const num = (v: any) => (v == null || v === '' || !Number.isFinite(Number(v)) ? NaN : Number(v));
 const fmtTime = (v: any) => (Number.isFinite(num(v)) ? num(v).toFixed(3) : '');
 const fmtKHz = (v: any) => (Number.isFinite(num(v)) ? (num(v) / 1000).toFixed(2) : '');
+const round = (v: any, d: number) => (Number.isFinite(num(v)) ? Math.round(num(v) * 10 ** d) / 10 ** d : '');
 const tagPreset = (key: string) => TAG_PRESETS.find((p) => p.key === key)?.options || [];
 
 function tagCol(key: string, title: string, width: number): Column {
@@ -92,28 +101,39 @@ function tagCol(key: string, title: string, width: number): Column {
 
 const COLUMNS: Column[] = [
   { key: 'src', title: 'Src', width: 38, edit: null, tip: 'Source',
+    csv: () => [{ title: 'Source', value: (l) => SOURCE_DEFS.find((s) => s.key === sourceOf(l))!.title }],
     text: (l) => SOURCE_DEFS.find((s) => s.key === sourceOf(l))!.badge,
     sort: (l) => sourceOf(l) },
-  { key: 'species', title: 'Species', width: 190, edit: 'species',
+  { key: 'species', title: 'Species', width: 190, edit: 'species', fixed: true,
+    csv: (g) => [
+      { title: 'Species', value: (l) => g.opts.resolveName(l).display },
+      { title: 'Scientific name', value: (l) => g.opts.resolveName(l).scientific },
+    ],
     text: (l, g) => g.opts.resolveName(l).display,
     sort: (l, g) => g.opts.resolveName(l).display.toLowerCase() },
-  { key: 'start', title: 'Start s', width: 66, align: 'right', edit: 'time',
+  { key: 'start', title: 'Start s', width: 66, align: 'right', edit: 'time', fixed: true,
+    csv: () => [{ title: 'Start (s)', value: (l) => round(l.start, 6) }],
     text: (l) => fmtTime(l.start), sort: (l) => num(l.start) },
   { key: 'end', title: 'End s', width: 66, align: 'right', edit: 'time',
+    csv: () => [{ title: 'End (s)', value: (l) => round(l.end, 6) }],
     text: (l) => fmtTime(l.end), sort: (l) => num(l.end) },
   { key: 'dur', title: 'Dur s', width: 58, align: 'right', edit: 'dur',
+    csv: () => [{ title: 'Duration (s)', value: (l) => round(num(l.end) - num(l.start), 6) }],
     text: (l) => fmtTime(num(l.end) - num(l.start)), sort: (l) => num(l.end) - num(l.start) },
   { key: 'freqMin', title: 'f min kHz', width: 70, align: 'right', edit: 'freq',
+    csv: () => [{ title: 'Low freq (Hz)', value: (l) => round(l.freqMin, 1) }],
     text: (l) => fmtKHz(l.freqMin), sort: (l) => num(l.freqMin) },
   { key: 'freqMax', title: 'f max kHz', width: 70, align: 'right', edit: 'freq',
+    csv: () => [{ title: 'High freq (Hz)', value: (l) => round(l.freqMax, 1) }],
     text: (l) => fmtKHz(l.freqMax), sort: (l) => num(l.freqMax) },
   tagCol('soundType', 'Type', 96),
   tagCol('sex', 'Sex', 64),
   tagCol('lifeStage', 'Age', 72),
   { key: 'conf', title: 'Conf', width: 48, align: 'right', edit: null, tip: 'BirdNET confidence',
+    csv: () => [{ title: 'Confidence', value: (l) => l.confidence }],
     text: (l) => (l.confidence != null && l.confidence !== '' ? `${Math.round(Number(l.confidence) * 100)}%` : ''),
     sort: (l) => num(l.confidence) },
-  { key: 'layer', title: 'Layer', width: 90, edit: null,
+  { key: 'layer', title: 'Set / layer', width: 90, edit: null,
     text: (l, g) => g.opts.layerName?.(l) || '', sort: (l, g) => (g.opts.layerName?.(l) || '').toLowerCase() },
 ];
 
@@ -129,7 +149,7 @@ export class LabelGrid {
   private labels: Lbl[] = [];
   private rows: Lbl[] = [];
   private byId = new Map<string, Lbl>();
-  private prefs: { sortKey: string; sortDir: 1 | -1; sources: SourceKey[]; inView: boolean; follow: boolean };
+  private prefs: { sortKey: string; sortDir: 1 | -1; sources: SourceKey[]; inView: boolean; follow: boolean; hidden: string[]; widths: Record<string, number> };
   private query = '';
   private viewRange: { start: number; end: number } | null = null;
 
@@ -166,13 +186,13 @@ export class LabelGrid {
       sources: Array.isArray(p.sources) ? p.sources : SOURCE_DEFS.map((s) => s.key),
       inView: !!p.inView,
       follow: p.follow !== false,
+      hidden: Array.isArray(p.hidden) ? p.hidden : [],
+      widths: p.widths && typeof p.widths === 'object' ? p.widths : {},
     };
 
     this.root = document.createElement('div');
     this.root.className = 'lgrid';
     this.root.tabIndex = 0;
-    const cols = COLUMNS.map((c) => `${c.width}px`).join(' ') + ' minmax(0,1fr)';
-    this.root.style.setProperty('--lgrid-cols', cols);
 
     this.scroller = document.createElement('div');
     this.scroller.className = 'lgrid-scroll';
@@ -186,7 +206,7 @@ export class LabelGrid {
     this.root.append(this.scroller, this.empty);
     opts.host.appendChild(this.root);
 
-    this.buildHead();
+    this.applyColumns();
     if (opts.tools) this.buildTools(opts.tools);
 
     this.scroller.addEventListener('scroll', () => this.queueRender(true));
@@ -201,7 +221,7 @@ export class LabelGrid {
     });
     this.root.addEventListener('keydown', (e) => this.onKey(e));
     this.root.addEventListener('contextmenu', (e) => {
-      if ((e.target as HTMLElement).closest('.lgrid-head')) { e.preventDefault(); }
+      if ((e.target as HTMLElement).closest('.lgrid-head')) { e.preventDefault(); this.showColumnMenu(e.clientX, e.clientY); }
     });
     this.setInView(this.prefs.inView);
   }
@@ -307,10 +327,39 @@ export class LabelGrid {
     this.counter = document.createElement('span');
     this.counter.className = 'lgrid-count';
 
-    t.append(chips, search, this.inViewBtn, this.counter, this.followBtn);
+    const colsBtn = this.toggleBtn('Columns', 'Show / hide columns (also: right click on the header)', () => {
+      const r = colsBtn.getBoundingClientRect();
+      this.showColumnMenu(r.left, r.bottom + 2);
+    });
+    const exportBtn = this.toggleBtn('Export', 'Export the rows shown in the table', () => {
+      const r = exportBtn.getBoundingClientRect();
+      this.showExportMenu(r.left, r.bottom + 2);
+    });
+    if (!this.opts.onExport) exportBtn.hidden = true;
+    t.append(chips, search, this.inViewBtn, this.counter, this.followBtn, colsBtn, exportBtn);
     slot.appendChild(t);
     this.toolsEl = t;
     this.syncTools();
+  }
+
+  private showExportMenu(x: number, y: number) {
+    const sel = this.rows.filter((l) => this.multi.has(l.id));
+    const scopes: { label: string; rows: Lbl[] }[] = [
+      { label: this.rows.length === this.labels.length ? `all ${this.rows.length}` : `${this.rows.length} shown`, rows: this.rows },
+    ];
+    if (sel.length > 1) scopes.push({ label: `${sel.length} selected`, rows: sel });
+    const items: any[] = [];
+    scopes.forEach((sc, si) => {
+      if (si > 0) items.push({ separator: true });
+      for (const f of LABEL_EXPORT_FORMATS) {
+        items.push({
+          label: `${f.label} — ${sc.label}`,
+          disabled: sc.rows.length === 0,
+          action: () => this.opts.onExport?.(f.id, sc.rows, this.exportColumns()),
+        });
+      }
+    });
+    showContextMenu({ x, y, items });
   }
 
   private toggleBtn(text: string, title: string, onClick: () => void) {
@@ -374,16 +423,112 @@ export class LabelGrid {
     this.recompute();
   }
 
+  // ── Columns: visibility + widths ────────────────────────────────────
+
+  /** Indices (into COLUMNS) of the visible columns. */
+  private visCols: number[] = [];
+
+  private colWidth(c: Column) { return Math.max(30, Math.round(this.prefs.widths[c.key] || c.width)); }
+
+  private applyColumns() {
+    const hidden = new Set(this.prefs.hidden);
+    this.visCols = COLUMNS.map((_, i) => i).filter((i) => COLUMNS[i].fixed || !hidden.has(COLUMNS[i].key));
+    this.syncColWidths();
+    this.buildHead();
+    this.syncHead();
+    this.queueRender(true);
+  }
+
+  /** Source + species stay visible while the table scrolls sideways. */
+  private pinCell(el: HTMLElement, ci: number) {
+    if (ci > 1) return;
+    el.classList.add('pin');
+    if (ci === 1) el.classList.add('pin-last');
+    el.style.left = ci === 0 ? '0' : 'var(--lgrid-pin1)';
+  }
+
+  private syncColWidths() {
+    this.root.style.setProperty('--lgrid-pin1', `${this.colWidth(COLUMNS[0])}px`);
+    const cols = this.visCols.map((i) => `${this.colWidth(COLUMNS[i])}px`).join(' ') + ' minmax(0,1fr)';
+    this.root.style.setProperty('--lgrid-cols', cols);
+  }
+
+  private toggleColumn(key: string) {
+    const h = new Set(this.prefs.hidden);
+    if (h.has(key)) h.delete(key); else h.add(key);
+    this.prefs.hidden = [...h];
+    savePrefs(this.prefs);
+    this.applyColumns();
+    if (this.cursor && !this.visCols.includes(this.cursor.col)) this.cursor.col = this.visCols[1];
+  }
+
+  private showColumnMenu(x: number, y: number) {
+    const hidden = new Set(this.prefs.hidden);
+    const check = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8.5 6.5,12 13,4.5"/></svg>';
+    showContextMenu({
+      x, y,
+      items: [
+        ...COLUMNS.filter((c) => !c.fixed).map((c) => ({
+          label: c.tip ? `${c.title} (${c.tip})` : c.title,
+          icon: hidden.has(c.key) ? '' : check,
+          action: () => this.toggleColumn(c.key),
+        })),
+        { separator: true },
+        { label: 'Reset columns', action: () => { this.prefs.hidden = []; this.prefs.widths = {}; savePrefs(this.prefs); this.applyColumns(); } },
+      ],
+    });
+  }
+
+  private startColResize(e: PointerEvent, c: Column, handle: HTMLElement) {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const w0 = this.colWidth(c);
+    handle.setPointerCapture(e.pointerId);
+    this.root.classList.add('col-resizing');
+    const move = (ev: PointerEvent) => {
+      this.prefs.widths[c.key] = Math.max(30, Math.min(600, w0 + ev.clientX - x0));
+      this.syncColWidths();
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      this.root.classList.remove('col-resizing');
+      savePrefs(this.prefs);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  }
+
+  /** Visible columns as raw export columns (CSV). */
+  exportColumns(): LabelExportColumn[] {
+    return this.visCols.flatMap((i) => {
+      const c = COLUMNS[i];
+      return c.csv ? c.csv(this) : [{ title: c.title, value: (l: Lbl) => c.text(l, this) }];
+    });
+  }
+
   // ── Header / sorting ────────────────────────────────────────────────
 
   private buildHead() {
     this.head.innerHTML = '';
-    COLUMNS.forEach((c) => {
+    this.visCols.forEach((ci) => {
+      const c = COLUMNS[ci];
       const h = document.createElement('div');
       h.className = `lgrid-cell lgrid-h${c.align ? ' r' : ''}`;
       h.dataset.key = c.key;
+      this.pinCell(h, ci);
       h.title = c.tip ? `${c.tip} — click to sort` : 'Click to sort';
       h.textContent = c.title;
+      const grip = document.createElement('span');
+      grip.className = 'lgrid-col-grip';
+      grip.title = 'Drag to resize - double click: default width';
+      grip.addEventListener('pointerdown', (e) => this.startColResize(e, c, grip));
+      grip.addEventListener('click', (e) => e.stopPropagation());
+      grip.addEventListener('dblclick', (e) => { e.stopPropagation(); delete this.prefs.widths[c.key]; savePrefs(this.prefs); this.syncColWidths(); });
+      h.appendChild(grip);
       h.addEventListener('click', () => {
         if (this.prefs.sortKey === c.key) this.prefs.sortDir = this.prefs.sortDir === 1 ? -1 : 1;
         else { this.prefs.sortKey = c.key; this.prefs.sortDir = 1; }
@@ -485,10 +630,12 @@ export class LabelGrid {
     r.dataset.id = l.id;
     r.style.top = `${i * ROW_H}px`;
     const locked = this.opts.isLocked(l);
-    COLUMNS.forEach((c, ci) => {
+    this.visCols.forEach((ci) => {
+      const c = COLUMNS[ci];
       const cell = document.createElement('div');
       cell.className = `lgrid-cell${c.align ? ' r' : ''}${c.edit && !locked ? ' editable' : ''}`;
       cell.dataset.col = String(ci);
+      this.pinCell(cell, ci);
       if (c.key === 'src') {
         const k = sourceOf(l);
         const dot = document.createElement('span');
@@ -590,7 +737,10 @@ export class LabelGrid {
     let col = this.cursor?.col ?? 1;
     if (i < 0) i = 0;
     else i = Math.max(0, Math.min(this.rows.length - 1, i + dRow));
-    col = Math.max(1, Math.min(COLUMNS.length - 1, col + dCol));
+    let vi = this.visCols.indexOf(col);
+    if (vi < 0) vi = 1;
+    vi = Math.max(1, Math.min(this.visCols.length - 1, vi + dCol));
+    col = this.visCols[vi];
     const id = this.rows[i].id;
     this.cursor = { id, col };
     if (dRow !== 0) {

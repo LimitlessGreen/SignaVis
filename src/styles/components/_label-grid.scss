@@ -66,6 +66,8 @@
 
 .lgrid-h {
     display: flex;
+    position: relative;
+    overflow: visible;
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -246,3 +248,33 @@ input.lgrid-editor {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+
+.lgrid-col-grip {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 7px;
+    height: 100%;
+    z-index: 1;
+    cursor: col-resize;
+
+    &:hover { background: color-mix(in srgb, var(--color-accent) 45%, transparent); }
+}
+
+.lgrid.col-resizing,
+.lgrid.col-resizing * { cursor: col-resize !important; user-select: none; }
+
+// Pinned columns (source, species)
+.lgrid-cell.pin {
+    position: sticky;
+    z-index: 1;
+    background: var(--color-bg-secondary);
+}
+.lgrid-head .lgrid-cell.pin { background: var(--color-bg-primary); z-index: 3; }
+.lgrid-cell.pin-last { box-shadow: 1px 0 0 var(--color-border), 4px 0 6px -4px rgba(0, 0, 0, 0.35); }
+.lgrid-body .lgrid-row {
+    &.hover .pin { background: color-mix(in srgb, var(--color-text-primary) 5%, var(--color-bg-secondary)); }
+    &.multi .pin { background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-secondary)); }
+    &.selected .pin { background: color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-secondary)); }
+}
+.lgrid-cell.pin.editing { z-index: 2; }

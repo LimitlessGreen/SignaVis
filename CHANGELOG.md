@@ -23,6 +23,11 @@ still a preview.
 - **Unified explorer** — local files and Xeno-canto recordings in one folder
   tree; own labels in layers, imported sets shown as read-only layers that can
   be copied to your own labels.
+- **Label table** — below the overview a "Tracks | Table" tab strip switches
+  to a Raven-like table of all labels (own, BirdNET, XC): source filters,
+  text filter, "In view", follow playhead, sortable and resizable columns,
+  spreadsheet-style inline editing (multi-row edits, live box updates) and
+  export of the shown rows as CSV, Raven, Audacity, Sonic Visualiser or JSON.
 - **Snap to call** — box a call from a single click.
 - **Zoom box and edit loupe** — drag a field to zoom time and frequency onto
   it; a magnified view (with its own fine STFT) follows the cursor while moving

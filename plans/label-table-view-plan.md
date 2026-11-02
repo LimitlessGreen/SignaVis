@@ -40,6 +40,10 @@ dieselbe Logik wie `_computeLockedIds`).
   Danach wird die Spektrogrammhöhe neu berechnet, wie beim Ein- und Ausklappen.
 - Kompakte Zeilen (20 px), Zahlen in Tabular-Ziffern, fremde Quellen gedimmt.
 
+## Stand (2026-11-02)
+
+Phasen 1–5 umgesetzt (dae38a0, 2162c1b, 8c20919 und der Phase-5-Commit). Abweichungen vom Plan: Tag-Zellen nutzen `createEditableSelect`; Quelle und Art bleiben beim horizontalen Scrollen fixiert; Export in fünf Formaten (`src/infrastructure/export/labelTableFormats.ts`). Offen: Notiz-Spalte, Löschen aus der Tabelle über Undo.
+
 ## Phasen
 
 ### Phase 1: Tab-Leiste und leerer Tabellen-Host (Player)
