@@ -862,6 +862,18 @@ export class LabelGrid {
       this.queueRender();
       return;
     }
+    // Delete removes the row under the mouse (like in the spectrogram), else the cursor row;
+    // a multi-selection containing that row is removed as a whole.
+    if (k === 'Delete') {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = (this.hoverId && this.byId.has(this.hoverId)) ? this.hoverId : this.cursor?.id;
+      if (!target) return;
+      const ids = this.targetIds(target).filter((id) => !this.opts.isLocked(this.byId.get(id)));
+      if (ids.length) this.opts.onDelete?.(ids);
+      else this.opts.onNotice?.('Read-only labels cannot be deleted — adopt them first.');
+      return;
+    }
     if (!this.cursor) return;
     if (k === 'Enter' || k === 'F2') { e.preventDefault(); e.stopPropagation(); this.startEdit(this.cursor.id, this.cursor.col); return; }
     // Backspace resets an optional field to "not specified"; Delete removes the label(s).
@@ -872,14 +884,6 @@ export class LabelGrid {
       return;
     }
     if (k === 'Backspace') { e.preventDefault(); return; }
-    if (k === 'Delete') {
-      e.preventDefault();
-      e.stopPropagation();
-      const ids = this.targetIds(this.cursor.id).filter((id) => !this.opts.isLocked(this.byId.get(id)));
-      if (ids.length) this.opts.onDelete?.(ids);
-      else this.opts.onNotice?.('Read-only labels cannot be deleted — adopt them first.');
-      return;
-    }
     // Typing a printable character starts editing with that character.
     if (k === ' ' && COLUMNS[this.cursor.col]?.edit === 'yn') {
       e.preventDefault();
