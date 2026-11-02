@@ -168,6 +168,7 @@ function _buildXcLabel(src: any, index: number, meta: any) {
     if (temperature) tags.temperature = temperature;
     const annotatorXcId = firstNonEmpty([src.annotator_xc_id, src.annotatorXcId]) || '';
     const dateIdentified = firstNonEmpty([src.date_identified, src.dateIdentified]) || '';
+    const snrRaw = Number(firstNonEmpty([src.signal_noise_ratio, src.snr]));
 
     // Fv0: array of original sets (combined XC exports); older payloads: single object
     const setMeta = readOriginalSetMetadata(src)[0] || {};
@@ -197,6 +198,7 @@ function _buildXcLabel(src: any, index: number, meta: any) {
         author: annotator || recordist || '',
         ...(annotatorXcId ? { annotatorXcId } : {}),
         ...(dateIdentified ? { createdAt: dateIdentified } : {}),
+        ...(Number.isFinite(snrRaw) && firstNonEmpty([src.signal_noise_ratio, src.snr]) ? { snr: snrRaw } : {}),
         tags,
         ...(annotationSet ? { annotationSet } : {}),
     };

@@ -139,4 +139,6 @@ test('annotation: overlap, collection and temperature fields come from tags', ()
     assert.equal(ann.collection_specimen, 'ZMB 123');
     assert.equal(ann.temperature, '12 °C');
     assert.equal(ann.annotation_remarks, 'faint');
+    assert.equal(ann.signal_noise_ratio, '');
+    assert.equal(buildAnnotaAnnotation({ id: 'y', start: 0, end: 1, snr: 12.345 }, {}).signal_noise_ratio, '12.3');
 });

@@ -155,6 +155,10 @@ const COLUMNS: Column[] = [
     text: (l) => String(l.author || ''), sort: (l) => String(l.author || '').toLowerCase(),
     csv: () => [{ title: 'Annotator', value: (l) => l.author || '' }] },
   ...ANNOTA_FIELDS.map(annotaCol),
+  { key: 'snr', title: 'SNR dB', width: 58, align: 'right', edit: null, hiddenByDefault: true,
+    tip: 'Signal-to-noise ratio of the box (computed)',
+    text: (l) => (Number.isFinite(num(l.snr)) ? num(l.snr).toFixed(1) : ''), sort: (l) => num(l.snr),
+    csv: () => [{ title: 'SNR (dB)', value: (l) => round(l.snr, 1) }] },
   { key: 'identified', title: 'Identified', width: 84, edit: null, hiddenByDefault: true,
     tip: 'Date identified (last change of the label)',
     text: (l) => isoDay(l.updatedAt || l.createdAt), sort: (l) => isoDay(l.updatedAt || l.createdAt),
@@ -847,12 +851,15 @@ export class LabelGrid {
     }
     if (!this.cursor) return;
     if (k === 'Enter' || k === 'F2') { e.preventDefault(); e.stopPropagation(); this.startEdit(this.cursor.id, this.cursor.col); return; }
-    if (k === 'Backspace') {
+    // Delete / Backspace on an optional field resets it to "not specified";
+    // Delete elsewhere (species, times, …) removes the label(s).
+    if ((k === 'Delete' || k === 'Backspace') && this.isClearable(this.cursor.col)) {
       e.preventDefault();
       e.stopPropagation();
       this.clearCell(this.cursor.id, this.cursor.col);
       return;
     }
+    if (k === 'Backspace') { e.preventDefault(); return; }
     if (k === 'Delete') {
       e.preventDefault();
       e.stopPropagation();
@@ -877,11 +884,14 @@ export class LabelGrid {
   }
 
   /** Backspace: reset optional fields (tags, Annota fields, annotator, frequency) to empty. */
+  private isClearable(col: number) {
+    return ['tag', 'text', 'yn', 'date', 'freq'].includes(String(COLUMNS[col]?.edit));
+  }
+
   private clearCell(id: string, col: number) {
     const c = COLUMNS[col];
     const l = this.byId.get(id);
-    if (!c || !l) return;
-    if (!['tag', 'text', 'yn', 'date', 'freq'].includes(String(c.edit))) return;
+    if (!c || !l || !this.isClearable(col)) return;
     if (this.opts.isLocked(l)) { this.opts.onNotice?.('This label is read-only — adopt it to edit.'); return; }
     this.applyValue(id, c, '');
     this.queueRender(true);

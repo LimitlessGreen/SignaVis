@@ -31,7 +31,8 @@ still a preview.
 - **Full Annota field support** — remarks, animal seen, playback used, overlap,
   collection date / specimen and temperature are editable per label (table,
   properties panel), imported from XC and uploaded; yes/no fields are
-  checkboxes with a reset to "not specified".
+  checkboxes with a reset to "not specified"; the computed SNR of each box is stored
+  and uploaded as `signal_noise_ratio`.
 - **Snap to call** — box a call from a single click.
 - **Zoom box and edit loupe** — drag a field to zoom time and frequency onto
   it; a magnified view (with its own fine STFT) follows the cursor while moving

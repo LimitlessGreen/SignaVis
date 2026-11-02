@@ -1161,7 +1161,28 @@
     propsPanel.setTagStore(tagStore);
 
     const snrComputer = new SnrComputer();
-    snrComputer.setOnResult((id, status, value) => propsPanel.setSnr(id, status, value));
+    snrComputer.setOnResult((id, status, value) => {
+      propsPanel.setSnr(id, status, value);
+      // Keep the value on the label (uploaded as signal_noise_ratio). Not an edit: updatedAt stays.
+      const lbl = state.labels.find((l) => l.id === id);
+      if (!lbl || lbl.readonly) return;
+      const next = status === 'done' && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+      if ((lbl.snr ?? null) === next) return;
+      if (next == null) delete lbl.snr; else lbl.snr = next;
+      try { labelTable?.updateLabel(lbl); } catch (e) { /* table not ready */ }
+      saveCurrentAnnotationsIfNeeded();
+    });
+    /** Compute the SNR of every own label that has none yet (worker, debounced per label). */
+    function requestMissingSnr() {
+      const ab = player._state?.audioBuffer;
+      if (!ab) return;
+      for (const l of state.labels) {
+        if (l.readonly || Number.isFinite(l.snr)) continue;
+        const st = snrComputer.getStatus(l.id);
+        if (st && st.status !== 'done') continue;   // pending or failed (e.g. silence)
+        snrComputer.request(l, ab, ab.sampleRate);
+      }
+    }
 
     // Closed by default (v2 key drops the old always-open state); opens on label selection
     const rightBar = new Sidebar(document.getElementById('workspace'), {
@@ -4084,6 +4105,7 @@
     });
 
     player.on('ready', (e) => {
+      setTimeout(() => requestMissingSnr(), 500);
       if (e.detail?.sampleRate) {
         state.sampleRate = e.detail.sampleRate;
         if (recordingManager?.activeId) recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate });
@@ -4288,7 +4310,7 @@
       }
     };
 
-    player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); });
+    player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); requestMissingSnr(); });
     player.on('spectrogramlabelupdate', (e) => {
       upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
       // Re-compute SNR when a label is resized/moved on the spectrogram
