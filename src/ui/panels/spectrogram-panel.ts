@@ -63,7 +63,12 @@ export class SpectrogramSettingsPanel {
     // Hide the internal settings panel and its toggle button
     internalPanel.style.display = 'none';
     const toggleBtn = root.querySelector('[data-aw="settingsToggleBtn"]');
-    if (toggleBtn) toggleBtn.style.display = 'none';
+    if (toggleBtn) {
+      toggleBtn.style.display = 'none';
+      // its separator too, or it is left dangling at the end of the toolbar
+      const sep = toggleBtn.previousElementSibling as HTMLElement | null;
+      if (sep?.classList.contains('toolbar-sep')) sep.hidden = true;
+    }
 
     this._relocated = true;
     this._buildExpertToggle();

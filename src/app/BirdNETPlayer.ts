@@ -946,15 +946,20 @@ export class BirdNETPlayer {
         const secondary = this.root?.querySelector('[data-aw="toolbarSecondary"]');
         if (!secondary) return;
 
+        // Label tools sit in their own group, left of the zoom widget (which stays rightmost).
         const sep = document.createElement('div');
         sep.className = 'toolbar-sep';
-        secondary.appendChild(sep);
+        const tools = document.createElement('span');
+        tools.className = 'toolbar-group toolbar-tools';
+        const zoomSep = secondary.querySelector('.zoom-widget')?.previousElementSibling;
+        if (zoomSep) { secondary.insertBefore(sep, zoomSep); secondary.insertBefore(tools, zoomSep); }
+        else { secondary.append(sep, tools); }
 
         // Draw mode toggle — enables click+drag label creation without Shift
         const drawBtn = document.createElement('button');
         drawBtn.className = 'toolbar-btn toggle-btn active';
         drawBtn.title = 'Draw mode: drag on the spectrogram to draw a label (Shift+Drag always draws)';
-        drawBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.375 2.625a1 1 0 013 3l-9.013 9.014a2 2 0 01-.853.505l-2.873.84a.5.5 0 01-.62-.62l.84-2.873a2 2 0 01.506-.852z"/></svg> Draw`;
+        drawBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.375 2.625a1 1 0 013 3l-9.013 9.014a2 2 0 01-.853.505l-2.873.84a.5.5 0 01-.62-.62l.84-2.873a2 2 0 01.506-.852z"/></svg><span class="tb-label">Draw</span>`;
         // keep a reference so keyboard toggles update it
         this._drawBtn = drawBtn;
         // Draw mode is on by default
@@ -971,13 +976,13 @@ export class BirdNETPlayer {
             drawBtn.classList.toggle('active', on);
             this.root?.classList.toggle('draw-mode-active', on);
         });
-        secondary.appendChild(drawBtn);
+        tools.appendChild(drawBtn);
 
         // Stamp mode toggle — click to stamp the last/focused label (Ctrl+D)
         const stampBtn = document.createElement('button');
         stampBtn.className = 'toolbar-btn toggle-btn';
         stampBtn.title = 'Stamp mode (Ctrl+D)';
-        stampBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg> Stamp`;
+        stampBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="tb-label">Stamp</span>`;
         this._stampBtn = stampBtn;
         stampBtn.addEventListener('click', () => {
             if (this.spectrogramLabels.stampMode) {
@@ -998,13 +1003,13 @@ export class BirdNETPlayer {
                 this.root?.classList.add('stamp-mode-active');
             }
         });
-        secondary.appendChild(stampBtn);
+        tools.appendChild(stampBtn);
 
         // Snap to call — click a call to box it automatically
         const snapBtn = document.createElement('button');
         snapBtn.className = 'toolbar-btn toggle-btn';
         snapBtn.title = 'Snap to call: click a call to box it (Shift+wheel = sensitivity, click/Enter = add, Esc = cancel)';
-        snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 15c2-6 4-6 5-3s3 3 5-3"/></svg> Snap`;
+        snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 15c2-6 4-6 5-3s3 3 5-3"/></svg><span class="tb-label">Snap</span>`;
         this._snapBtn = snapBtn;
         snapBtn.addEventListener('click', () => {
             const layer = this.spectrogramLabels;
@@ -1018,13 +1023,13 @@ export class BirdNETPlayer {
             snapBtn.classList.add('active');
             this.root?.classList.add('snap-mode-active');
         });
-        secondary.appendChild(snapBtn);
+        tools.appendChild(snapBtn);
 
         // Zoom box ("Lupe") — drag a field to zoom time and frequency onto it
         const zoomBoxBtn = document.createElement('button');
         zoomBoxBtn.className = 'toolbar-btn toggle-btn';
         zoomBoxBtn.title = 'Magnifier: drag a field to zoom into it (right-click = back, Esc = leave)';
-        zoomBoxBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg> Zoom`;
+        zoomBoxBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg><span class="tb-label">Zoom</span>`;
         this._zoomBoxBtn = zoomBoxBtn;
         zoomBoxBtn.addEventListener('click', () => {
             const layer = this.spectrogramLabels;
@@ -1039,7 +1044,7 @@ export class BirdNETPlayer {
             zoomBoxBtn.classList.add('active');
             this.root?.classList.add('zoombox-mode-active');
         });
-        secondary.appendChild(zoomBoxBtn);
+        tools.appendChild(zoomBoxBtn);
     }
 
     /** Zoom time and frequency so the dragged box fills the spectrogram view. */

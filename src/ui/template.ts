@@ -123,11 +123,11 @@ export function createPlayerHTML(opts = {}) {
 
         <!-- Toggle tools -->
         <span class="toolbar-group"${hide(o.showViewToggles)}>
-            <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Toggle Free / Follow / Smooth">Follow</button>
-            <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop">Loop</button>
-            <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Toggle crosshair">Crosshair</button>
-            <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit to view">Fit</button>
-            <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset zoom">Reset</button>
+            <button class="toolbar-btn toggle-btn active" data-aw="followToggleBtn" disabled title="Toggle Free / Follow / Smooth"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><line x1="20" y1="4" x2="20" y2="20"/></svg><span class="tb-label">Follow</span></button>
+            <button class="toolbar-btn toggle-btn" data-aw="loopToggleBtn" disabled title="Loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 013-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 01-3 3H3"/></svg><span class="tb-label">Loop</span></button>
+            <button class="toolbar-btn toggle-btn" data-aw="crosshairToggleBtn" disabled title="Toggle crosshair"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg><span class="tb-label">Crosshair</span></button>
+            <button class="toolbar-btn" data-aw="fitViewBtn" disabled title="Fit: show the whole recording (time only)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/><path d="M3 4v16M21 4v16"/></svg><span class="tb-label">Fit</span></button>
+            <button class="toolbar-btn" data-aw="resetViewBtn" disabled title="Reset: default time zoom, back to the start, full frequency range"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span class="tb-label">Reset</span></button>
         </span>
 
         <div class="toolbar-sep"${hide(o.showZoom)}></div>

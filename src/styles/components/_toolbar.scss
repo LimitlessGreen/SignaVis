@@ -25,7 +25,7 @@
 
 .toolbar-secondary {
   display: inline-flex;
-  flex-wrap: wrap;  // narrow players (side bars open): wrap instead of clipping
+  flex-wrap: nowrap;  // ToolbarFitController compacts instead; .tb-wrap is the last resort
   align-items: center;
   gap: 4px;
   min-width: 0;
@@ -196,6 +196,18 @@
 .tb-spacer { flex: 1; }
 .tb-meta { color: var(--color-text-secondary); font-size: 11px; }
 
+
+/* Player toolbar: one line. ToolbarFitController docks the zoom widget, then
+   switches to icon-only buttons (.tb-compact), and only then allows wrapping. */
+[data-aw="toolbarRoot"] {
+  flex-wrap: nowrap;
+  &.tb-wrap, &.tb-wrap .toolbar-secondary { flex-wrap: wrap; }
+  .toolbar-btn:not(.compact-more-btn):not([hidden]) { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .toolbar-btn > svg { flex-shrink: 0; }
+  &.tb-compact .tb-label { display: none; }
+  &.tb-compact .toolbar-btn:has(> svg) { padding-left: 6px; padding-right: 6px; }
+}
+.toolbar-tools { gap: 4px; }
 
 /* Below the spectrogram when the toolbar has no room for the zoom widget */
 .zoom-dock {

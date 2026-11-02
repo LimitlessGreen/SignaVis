@@ -31,7 +31,7 @@ import { ViewResizeController } from './player/ViewResizeController.ts';
 import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
 import { WaveformRenderer } from './player/WaveformRenderer.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
-import { ZoomDockController } from './player/ZoomDockController.ts';
+import { ToolbarFitController } from './player/ToolbarFitController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, findCallExcerpt, type UltrasoundInfo } from '../domain/ultrasound.ts';
@@ -125,7 +125,7 @@ export class PlayerState {
     _perf: PerfOverlay;
     _crosshair: CrosshairController;
     _carrierLine: CarrierLineController;
-    _zoomDock: ZoomDockController;
+    _toolbarFit: ToolbarFitController;
     _viewResize: ViewResizeController;
     _freqZoom: FrequencyZoomController;
     _waveformRenderer: WaveformRenderer;
@@ -354,7 +354,7 @@ export class PlayerState {
             getCoords: () => this.coords,
         });
 
-        this._zoomDock = new ZoomDockController(container);
+        this._toolbarFit = new ToolbarFitController(container);
 
         // ── Heterodyne tuning line ──
         this._carrierLine = new CarrierLineController({
@@ -756,7 +756,7 @@ export class PlayerState {
         this._viewport.dispose();
         this._crosshair.dispose();
         this._carrierLine.dispose();
-        this._zoomDock.dispose();
+        this._toolbarFit.dispose();
         this._viewResize.dispose();
         this._freqZoom.dispose();
         this._toolbar.dispose();

@@ -46,6 +46,12 @@ export interface ToolbarDeps {
     setFollowPlayback:   (v: boolean) => void;
 }
 
+/** The button's text span (icon buttons), or the button itself (plain text / test doubles). */
+function labelOf(btn: { textContent: string | null }): { textContent: string | null } {
+    const q = (btn as unknown as { querySelector?: (s: string) => HTMLElement | null }).querySelector;
+    return (q && q.call(btn, '.tb-label')) || btn;
+}
+
 export class ToolbarController {
     #container: ToolbarDeps['container'];
     #d: ToolbarDeps['d'];
@@ -99,7 +105,7 @@ export class ToolbarController {
         const fb = this.#d.followToggleBtn;
         if (fb) {
             fb.classList.toggle('active', followPlayback);
-            fb.textContent = followMode === 'smooth'
+            labelOf(fb).textContent = followMode === 'smooth'
                 ? 'Smooth'
                 : (followPlayback ? 'Follow' : 'Free');
             fb.title = followMode === 'smooth'
@@ -110,7 +116,7 @@ export class ToolbarController {
         if (lb) {
             const loop = this.#getLoopPlayback();
             lb.classList.toggle('active', loop);
-            lb.textContent = loop ? 'Loop On' : 'Loop';
+            labelOf(lb).textContent = loop ? 'Loop On' : 'Loop';
         }
         this.queueLayoutRefresh();
     }
