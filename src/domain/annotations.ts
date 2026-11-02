@@ -950,7 +950,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }));
     }
 
-    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._editLoupeEnabled(); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); this._bindLoupeWindow(root); }
+    _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); this._bindLoupeWindow(root); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
@@ -2107,7 +2107,22 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     // ── Edit loupe: magnified view next to the cursor while moving/resizing ──
 
     _editLoupeEnabled(): boolean {
-        return this._loupeOption('editLoupeCheck', 'aw-edit-loupe');
+        return this._loupeMode() !== 'off';
+    }
+
+    /** Loupe setting: 'pointer' (next to the cursor while editing), 'window' (movable panel) or 'off'. */
+    _loupeMode(): 'pointer' | 'window' | 'off' {
+        const sel = this._settingEl('loupeModeSelect') as HTMLSelectElement | null;
+        if (!sel) return 'pointer';
+        if (!sel.dataset.awBound) {
+            sel.dataset.awBound = '1';
+            try { const v = localStorage.getItem('aw-loupe-mode'); if (v) sel.value = v; } catch { /* storage blocked */ }
+            sel.addEventListener('change', () => {
+                try { localStorage.setItem('aw-loupe-mode', sel.value); } catch { /* storage blocked */ }
+            });
+        }
+        const v = sel.value;
+        return v === 'window' || v === 'off' ? v : 'pointer';
     }
 
     /**
@@ -2275,6 +2290,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             cy = mode.includes('-t') ? b.top : b.bottom;
         }
 
+        if (this._loupeMode() === 'window') {
+            this._hideLoupeCanvas();
+            const w = this._loupeWin;
+            if (w) this._paintLoupe(w.cv, parseFloat(w.cv.style.width), parseFloat(w.cv.style.height), cx, cy, zx, zy, el, mode, opts);
+            return;
+        }
         let cv = this._editLoupeEl as HTMLCanvasElement | null;
         if (!cv) {
             cv = document.createElement('canvas');
@@ -2302,12 +2323,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _loupeWinRaf = 0;
 
     _bindLoupeWindow(root: HTMLElement) {
-        const box = this._settingEl('loupeWindowCheck') as HTMLInputElement | null;
-        const sync = () => this._setLoupeWindow(this._loupeOption('loupeWindowCheck', 'aw-loupe-window', false));
-        box?.addEventListener('change', sync);
+        const sel = this._settingEl('loupeModeSelect') as HTMLSelectElement | null;
+        const sync = () => this._setLoupeWindow(this._loupeMode() === 'window');
+        sel?.addEventListener('change', sync);
         sync();
         root.addEventListener('pointermove', (e: PointerEvent) => {
-            if (!this._loupeWin || this._loupeWinRaf) return;
+            // While editing, the edit loupe paints the window
+            if (!this._loupeWin || this._loupeWinRaf || this._editing) return;
             const { clientX, clientY } = e;
             this._loupeWinRaf = requestAnimationFrame(() => {
                 this._loupeWinRaf = 0;
@@ -2325,7 +2347,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.innerHTML = '<div class="loupe-window-bar" title="Drag to move"><span class="loupe-window-title">Loupe</span>'
             + '<button type="button" data-z="-1" title="Less zoom">−</button><span class="loupe-window-zoom"></span>'
             + '<button type="button" data-z="1" title="More zoom">+</button>'
-            + '<button type="button" class="loupe-window-close" title="Close (Display → Loupe Window)">×</button></div>';
+            + '<button type="button" class="loupe-window-close" title="Close (back to loupe at pointer)">×</button></div>';
         const cv = document.createElement('canvas');
         const dpr = window.devicePixelRatio || 1;
         cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
@@ -2363,8 +2385,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const btn = (e.target as Element).closest('button') as HTMLButtonElement | null;
             if (!btn || !this._loupeWin) return;
             if (btn.classList.contains('loupe-window-close')) {
-                const box = this._settingEl('loupeWindowCheck') as HTMLInputElement | null;
-                if (box) { box.checked = false; box.dispatchEvent(new Event('change')); } else this._setLoupeWindow(false);
+                // Closing the window switches back to the loupe at the pointer
+                const sel = this._settingEl('loupeModeSelect') as HTMLSelectElement | null;
+                if (sel) { sel.value = 'pointer'; sel.dispatchEvent(new Event('change')); } else this._setLoupeWindow(false);
                 return;
             }
             const steps = [2, 3, 4, 6, 8, 12];

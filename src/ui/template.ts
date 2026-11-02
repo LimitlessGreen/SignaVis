@@ -283,18 +283,16 @@ export function createPlayerHTML(opts = {}) {
                 </label>
             </div>
             <div class="settings-row">
-                <label class="settings-label" title="Show a magnified view next to the cursor while moving or resizing a label (hold Shift for fine 1/4-speed dragging)">
-                    <input type="checkbox" data-aw="editLoupeCheck" checked> Edit Loupe
-                </label>
+                <label class="settings-label" title="Magnified view: next to the pointer while moving or resizing a label (hold Shift for fine 1/4-speed dragging), or in a movable window that follows the pointer">Loupe</label>
+                <select data-aw="loupeModeSelect" class="settings-select">
+                    <option value="pointer" selected>At pointer</option>
+                    <option value="window">Window</option>
+                    <option value="off">Off</option>
+                </select>
             </div>
             <div class="settings-row">
                 <label class="settings-label" title="Loupe computes its own fine spectrogram (Hann ~11.6 ms) instead of magnifying the display pixels">
                     <input type="checkbox" data-aw="loupeDetailCheck" checked> Loupe Detail
-                </label>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label" title="Movable window that magnifies the spectrogram around the mouse pointer">
-                    <input type="checkbox" data-aw="loupeWindowCheck"> Loupe Window
                 </label>
             </div>
             <div class="settings-row" data-expert>
