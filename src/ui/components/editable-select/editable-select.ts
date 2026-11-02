@@ -19,6 +19,8 @@ type EditableOpts = {
   onAdd?: (val: string) => void;
   onRemove?: (val: string) => void;
   onRename?: (oldVal: string, newVal: string) => void;
+  /** Called whenever the dropdown closes (after onChange when a value was picked). */
+  onClose?: () => void;
 };
 
 export function createEditableSelect(opts: EditableOpts) {
@@ -61,10 +63,10 @@ export function createEditableSelect(opts: EditableOpts) {
 
   function ensurePortal() { if (!dropdown.parentElement) document.body.appendChild(dropdown); }
 
-  function show() {
+  function show(query = '') {
     if (open) return;
     open = true;
-    searchInput.value = '';
+    searchInput.value = query;
     editingValue = null;
     ensurePortal();
     dropdown.classList.remove('hidden');
@@ -79,6 +81,7 @@ export function createEditableSelect(opts: EditableOpts) {
     dropdown.classList.add('hidden');
     editingValue = null;
     activeIndex = -1;
+    opts.onClose?.();
   }
 
   function positionDropdown() {
@@ -187,7 +190,7 @@ export function createEditableSelect(opts: EditableOpts) {
     if (activeIndex >= 0 && rows[activeIndex]) rows[activeIndex].scrollIntoView({ block: 'nearest' });
   }
 
-  function selectValue(val: string) { currentValue = val; updateTriggerText(); hide(); opts.onChange?.(val); }
+  function selectValue(val: string) { currentValue = val; updateTriggerText(); opts.onChange?.(val); hide(); }
 
   function addCustom(val: string) {
     const trimmed = String(val || '').trim();
@@ -234,6 +237,8 @@ export function createEditableSelect(opts: EditableOpts) {
   return {
     el: root,
     getValue() { return currentValue; },
+    /** Open the dropdown programmatically, optionally pre-filled with a search query. */
+    open(query?: string) { show(query || ''); },
     setValue(val: string | undefined) { currentValue = val || ''; updateTriggerText(); },
     setItems(newItems: EditableItem[] | undefined) { items = (newItems || []).slice(); if (open) renderList(); },
     destroy() { destroyed = true; hide(); document.removeEventListener('pointerdown', onPointerDown); if (dropdown.parentElement) dropdown.remove(); root.remove(); },

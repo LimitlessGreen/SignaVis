@@ -17,6 +17,7 @@
  */
 
 import { TAG_PRESETS } from './label-table.ts';
+import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { OWN_SOURCE_ID } from '../../app/label-sources.ts';
 
 type Lbl = any;
@@ -684,6 +685,10 @@ export class LabelGrid {
       this.editSpecies(id, col, cell, l, initial);
       return;
     }
+    if (c.edit === 'tag') {
+      this.editTag(id, col, cell, l, c, initial);
+      return;
+    }
     this.editText(id, col, cell, l, c, initial);
   }
 
@@ -695,15 +700,7 @@ export class LabelGrid {
     const isNum = c.edit === 'time' || c.edit === 'dur' || c.edit === 'freq';
     input.value = initial ?? c.text(l, this);
     if (isNum) input.inputMode = 'decimal';
-    let list: HTMLDataListElement | null = null;
-    if (c.edit === 'tag') {
-      const key = c.key.slice(4);
-      const items = this.opts.tagStore?.getMerged?.(key, tagPreset(key)) ?? tagPreset(key).map((v) => ({ value: v }));
-      list = document.createElement('datalist');
-      list.id = `lgrid-dl-${key}`;
-      for (const it of items) list.appendChild(Object.assign(document.createElement('option'), { value: it.value }));
-      input.setAttribute('list', list.id);
-    } else if (c.key === 'species') {
+    if (c.key === 'species') {
       input.placeholder = 'Label';
     }
 
@@ -742,17 +739,53 @@ export class LabelGrid {
     const cleanup = () => {
       input.removeEventListener('blur', onBlur);
       cell.classList.remove('editing');
-      list?.remove();
       input.remove();
       const fresh = this.byId.get(id);
       if (fresh && cell.isConnected) cell.textContent = c.text(fresh, this);
     };
     cell.textContent = '';
-    if (list) cell.appendChild(list);
     cell.appendChild(input);
     this.editing = { id, col, el: input, cleanup: () => finish(false) };
     input.focus();
     if (initial == null) input.select();
+  }
+
+  /** Tag cells use the app's editable select (search, custom values, add/rename/remove). */
+  private editTag(id: string, col: number, cell: HTMLElement, l: Lbl, c: Column, initial?: string) {
+    const key = c.key.slice(4);
+    const store = this.opts.tagStore;
+    const original = String(l.tags?.[key] ?? '');
+    let done = false;
+    let es: ReturnType<typeof createEditableSelect> | null = null;
+    const finish = (val: string | undefined) => {
+      if (done) return;
+      done = true;
+      this.editing = null;
+      queueMicrotask(() => {
+        try { es?.destroy(); } catch { /* ignore */ }
+        cell.classList.remove('editing');
+        if (val !== undefined && val !== original) this.applyValue(id, c, val);
+        const fresh = this.byId.get(id);
+        if (fresh && cell.isConnected) cell.textContent = c.text(fresh, this);
+        this.focus();
+        this.queueRender(true);
+      });
+    };
+    es = createEditableSelect({
+      value: original,
+      items: store ? store.getMerged(key, tagPreset(key)) : tagPreset(key).map((v) => ({ value: v, custom: false })),
+      placeholder: '–',
+      className: 'lgrid-esel',
+      onChange: (v) => finish(v),
+      onClose: () => finish(undefined),
+      onAdd: store ? (v) => store.add(key, v) : undefined,
+      onRemove: store ? (v) => store.remove(key, v) : undefined,
+      onRename: store ? (o, n) => store.rename(key, o, n) : undefined,
+    });
+    cell.textContent = '';
+    cell.appendChild(es.el);
+    this.editing = { id, col, el: es.el, cleanup: () => finish(undefined) };
+    es.open(initial);
   }
 
   private editSpecies(id: string, col: number, cell: HTMLElement, l: Lbl, initial?: string) {
