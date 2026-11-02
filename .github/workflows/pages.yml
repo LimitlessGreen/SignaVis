@@ -90,6 +90,7 @@ jobs:
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>SignaVis – Open-source spectrogram viewer &amp; audio labeling</title>
           <meta name="description" content="SignaVis is a free, open-source web app for bioacoustics: spectrograms, bird and bat call labeling, BirdNET detections and xeno-canto integration.">
+          <meta name="google-site-verification" content="LQaceaYKsZF6elDYBWZfJyz8RE2UzSP5u9QXgMI9xNk">
           <link rel="canonical" href="https://limitlessgreen.github.io/SignaVis/">
           </head>
           <body>
