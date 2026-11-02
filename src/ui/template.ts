@@ -334,7 +334,7 @@ export function createPlayerHTML(opts = {}) {
                     <option value="dbSquared" selected>dB²</option>
                     <option value="db">dB</option>
                     <option value="linear">Linear</option>
-                    <option value="phase">Phase</option>
+                    <option value="phase" data-expert title="Phase angle per bin: looks like noise on most recordings; only useful for analysing tonal/phase structure">Phase</option>
                 </select>
             </div>
             <div class="settings-row">
