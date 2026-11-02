@@ -472,3 +472,20 @@ test('mel label drag: zero deltaCanvasY preserves original frequencies', () => {
     assert.ok(minErr < 0.05, `freqMin should stay ~same with 0 delta: ${newMin} vs ${freqMin}`);
     assert.ok(maxErr < 0.05, `freqMax should stay ~same with 0 delta: ${newMax} vs ${freqMax}`);
 });
+
+// A label dragged past the edge of a zoomed frequency view must keep its
+// height: pixels outside the view map to frequencies outside it.
+test('pixelYToFrequency is not clamped to a zoomed frequency view', () => {
+    const cs = new CoordinateSystem({
+        canvasHeight: 200, sampleRate: 32000, maxFreq: 16000,
+        scale: 'linear', spectrogramMels: 256,
+        freqViewMin: 2000, freqViewMax: 6000,
+    });
+    const above = cs.pixelYToFrequency(-50);   // 50 px above the view
+    const below = cs.pixelYToFrequency(250);   // 50 px below the view
+    assert.ok(above > 6500 && above < 7500, `above view: ${above}`);
+    assert.ok(below > 500 && below < 1500, `below view: ${below}`);
+    // Still bounded by the full range
+    assert.ok(cs.pixelYToFrequency(-100000) <= 16000);
+    assert.ok(cs.pixelYToFrequency(100000) >= 0);
+});

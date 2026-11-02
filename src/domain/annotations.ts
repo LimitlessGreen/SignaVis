@@ -1373,8 +1373,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         const x1 = c ? clamp(c.timeToPixelX(label.start), 0, canvasWidth) : clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = c ? clamp(c.timeToPixelX(label.end), 0, canvasWidth) : clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
-        const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax ?? 0), 0, canvasHeight) : 0;
-        const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin ?? 0), 0, canvasHeight) : canvasHeight;
+        // Not clipped to the visible frequency view: a label reaching past the
+        // view edge must not show a border there (the canvas wrapper clips it).
+        // Bounded to one view height beyond each edge to keep elements small.
+        const yHigh = c ? clamp(c.frequencyToPixelY(label.freqMax ?? 0), -canvasHeight, 2 * canvasHeight) : 0;
+        const yLow = c ? clamp(c.frequencyToPixelY(label.freqMin ?? 0), -canvasHeight, 2 * canvasHeight) : canvasHeight;
 
         return {
             left: Math.min(x1, x2),
@@ -2018,7 +2021,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const origPixelSpan = Math.abs(srcMinPy - srcMaxPy);
             const newMinPy = c ? c.frequencyToPixelY(next.freqMin ?? 0) : height;
             const newMaxPy = newMinPy - origPixelSpan;  // top = lower Y
-            next.freqMax = c ? c.pixelYToFrequency(Math.max(0, newMaxPy)) : (next.freqMax ?? 0);
+            next.freqMax = c ? c.pixelYToFrequency(newMaxPy) : (next.freqMax ?? 0);
 
             if (next.end > duration) {
                 const shift = next.end - duration;

@@ -294,7 +294,9 @@ export class CoordinateSystem {
         }
 
         if (this._hasFreqView) {
-            const fraction = 1 - clamp(displayY / this.canvasHeight, 0, 1);
+            // Not clamped to the view: positions above/below the zoomed view
+            // map to frequencies outside it (only the full range limits them).
+            const fraction = 1 - displayY / this.canvasHeight;
             const bin = this._viewMinBin + fraction * this._viewBinRange;
             const clampedBin = clamp(Math.round(bin), 0, this._maxBin);
             if (this.isLinear) {
