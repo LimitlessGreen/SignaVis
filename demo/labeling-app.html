@@ -4179,6 +4179,25 @@
       saveCurrentAnnotationsIfNeeded();
     });
 
+    // Undo/redo inside the player: mirror the restored state into state.labels
+    // (diff only — hidden labels are not part of the player's snapshot).
+    player.on('labelrestore', (e) => {
+      const before = e.detail?.before || [];
+      const after = e.detail?.after || [];
+      const afterIds = new Set(after.map((l) => l.id));
+      const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
+      for (const id of removed) snrComputer.invalidate(id);
+      state.labels = state.labels.filter((l) => !removed.has(l.id));
+      for (const lbl of after) {
+        const idx = state.labels.findIndex((l) => l.id === lbl.id);
+        if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...lbl };
+        else state.labels.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
+      }
+      labelList.render(state.labels);
+      sidebar.setBadge('labels', state.labels.length || '');
+      saveCurrentAnnotationsIfNeeded();
+    });
+
     player.on('spectrogramlabelrefcalls', (e) => {
       const label = e.detail?.label;
       if (label) openRefCalls(label);

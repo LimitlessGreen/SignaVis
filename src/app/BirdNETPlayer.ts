@@ -41,7 +41,7 @@ export interface LabelSuggestionItem {
 
 export type PlayerEventName =
     | 'ready' | 'transportstatechange' | 'play' | 'pause' | 'finish' | 'seek'
-    | 'labelfocus' | 'labelsync' | 'undochange' | 'labeltaxonomyapply'
+    | 'labelfocus' | 'labelsync' | 'labelrestore' | 'undochange' | 'labeltaxonomyapply'
     | 'annotationcreate' | 'annotationupdate' | 'annotationremove' | 'annotationpreview'
     | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview'
     | 'stampmodechange' | 'snapmodechange' | 'speciesbarchange' | 'viewresize' | 'viewportchange'
@@ -1177,6 +1177,7 @@ export class BirdNETPlayer {
     /** Restore a snapshot from the undo stack. */
     _restoreSnapshot(snapshot: LinkedLabel[] | unknown) {
         if (!snapshot) return;
+        const before = this._snapshotLabels();
         this._isRestoring = true;
         this._linkedLabels.clear();
         for (const label of (snapshot as LinkedLabel[])) {
@@ -1187,6 +1188,9 @@ export class BirdNETPlayer {
         }
         this._syncLinkedLabelsToLayers();
         this._isRestoring = false;
+        // Hosts that keep their own label list (e.g. the labeling app) must
+        // apply the same change, otherwise their next sync re-adds undone labels.
+        this._emit?.('labelrestore', { before, after: this._snapshotLabels() });
         this._emit?.('undochange', { canUndo: this._undoStack.canUndo, canRedo: this._undoStack.canRedo });
     }
 
