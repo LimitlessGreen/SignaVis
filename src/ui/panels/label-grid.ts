@@ -703,7 +703,14 @@ export class LabelGrid {
           box.setAttribute('role', 'checkbox');
           box.setAttribute('aria-checked', yn === '' ? 'mixed' : String(on));
           cell.appendChild(box);
-          cell.title = `${c.tip || ''} — ${yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified'} · click / Space toggles · Backspace resets`;
+          if (yn && !locked) {
+            const reset = document.createElement('span');
+            reset.className = 'lgrid-reset';
+            reset.textContent = '×';
+            reset.title = 'Reset to "not specified" (Delete)';
+            cell.appendChild(reset);
+          }
+          cell.title = `${c.tip || ''} — ${yn === 'y' ? 'yes' : yn === 'n' ? 'no' : 'not specified'} · click / Space toggles · × or Delete resets`;
         } else if (c.tagKey === 'remarks' && cell.textContent) {
           cell.title = cell.textContent;
         }
@@ -754,6 +761,12 @@ export class LabelGrid {
     if (!hit) return;
     if (this.editing) this.commitEdit();
     e.preventDefault();
+    if ((e.target as HTMLElement).closest('.lgrid-reset')) {
+      this.cursor = { id: hit.id, col: hit.col };
+      this.focus();
+      this.clearCell(hit.id, hit.col);
+      return;
+    }
     if ((e.target as HTMLElement).closest('.lgrid-check') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       this.cursor = { id: hit.id, col: hit.col };
       this.focus();

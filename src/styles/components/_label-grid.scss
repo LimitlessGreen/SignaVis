@@ -279,7 +279,24 @@ input.lgrid-editor {
 }
 .lgrid-cell.pin.editing { z-index: 2; }
 
-.lgrid-cell.yn { justify-content: center; }
+.lgrid-cell.yn { justify-content: center; position: relative; }
+
+.lgrid-reset {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    line-height: 1;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    visibility: hidden;
+
+    &:hover { color: var(--color-danger); }
+}
+.lgrid-row.hover .lgrid-reset,
+.lgrid-row.selected .lgrid-reset,
+.lgrid-cell.cursor .lgrid-reset { visibility: visible; }
 
 .lgrid-check {
     width: 11px;
