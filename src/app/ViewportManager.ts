@@ -615,12 +615,15 @@ export class ViewportManager extends EventTarget {
         const cw = this._d.overviewContainer?.clientWidth || 0;
         if (cw <= 0) return;
         this._overviewLayoutWidth = cw;
-        const minW = 8;
+        // Always draw the true range (a thin line when tiny). Below a
+        // grabbable width a separate grip takes over dragging, so the box
+        // never claims a wider range than is actually shown.
         let left  = this.windowStartNorm * cw;
-        let width = Math.max(minW, this.windowEndNorm * cw - left);
+        let width = Math.max(2, this.windowEndNorm * cw - left);
         if (left + width > cw) left = Math.max(0, cw - width);
         this._d.overviewWindow.style.left  = `${left}px`;
         this._d.overviewWindow.style.width = `${width}px`;
+        this._d.overviewWindow.classList.toggle('compact', width < 24);
     }
 
     _getOverviewSpanConstraints() {

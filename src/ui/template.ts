@@ -487,6 +487,7 @@ export function createPlayerHTML(opts = {}) {
             <div class="overview-window" data-aw="overviewWindow">
                 <div class="handle left" data-aw="overviewHandleLeft"></div>
                 <div class="handle right" data-aw="overviewHandleRight"></div>
+                <div class="overview-grip" aria-hidden="true"></div>
             </div>
         </div>
         <div class="overview-label-section" data-aw="overviewLabelSection"${hide(o.showOverview)}>
