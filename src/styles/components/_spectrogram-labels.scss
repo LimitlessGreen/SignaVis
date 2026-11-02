@@ -288,9 +288,9 @@
     position: absolute;
     z-index: 30;
     pointer-events: none;
-    border: 1px solid color-mix(in srgb, var(--snap) 70%, transparent);
+    border: 1.5px solid var(--snap);
     border-radius: 3px;
-    background: color-mix(in srgb, var(--snap) 12%, transparent);
+    background: color-mix(in srgb, var(--snap) 18%, transparent);
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 14px color-mix(in srgb, var(--snap) 35%, transparent);
     transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s;
 }
