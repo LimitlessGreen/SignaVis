@@ -4,6 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SignaVis - Labeling</title>
+  <!-- Umami analytics (cookieless, self-hosted) — skipped in the Tauri desktop app -->
+  <script>
+    if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window)) {
+      const s = document.createElement('script');
+      s.defer = true;
+      s.src = 'https://stats.sommertheater-altrossthal.de/st.js';
+      s.dataset.websiteId = 'e8641ce8-5663-43ec-b0b5-39c8e721d79e';
+      s.dataset.doNotTrack = 'true';
+      document.head.appendChild(s);
+    }
+  </script>
   <link rel="stylesheet" href="/src/styles/tokens.css" />
   <!-- Styles are provided via the SCSS entrypoint imported in the module script: ../src/styles/main.scss -->
 </head>
@@ -344,6 +355,29 @@
   </div>
 
   <!-- About panel moved to demo/lib/about-panel.js -->
+
+  <!-- ── Privacy policy (opened from the "?" menu) ── -->
+  <div id="panelPrivacy" class="scroll-panel" hidden>
+    <div class="help-content">
+      <div class="help-section">
+        <h3>Privacy policy / Datenschutzerklärung</h3>
+        <p><strong>Controller:</strong> [NAME], [ADDRESS], [E-MAIL]</p>
+      </div>
+      <div class="help-section">
+        <h4>Your recordings and labels</h4>
+        <p>Audio files, spectrograms and labels are processed locally in your browser. They are not uploaded to our servers. Data you choose to load from or send to xeno-canto is exchanged directly with xeno-canto under their privacy policy.</p>
+      </div>
+      <div class="help-section">
+        <h4>Web analytics (Umami)</h4>
+        <p>This website uses a self-hosted instance of Umami (stats.sommertheater-altrossthal.de) to collect anonymous usage statistics (page views, referrer, browser, operating system, device type, country). Umami sets no cookies and does not store IP addresses; visitors are not tracked across websites. The data stays on our own server and is not shared with third parties.</p>
+        <p>Legal basis: Art. 6(1)(f) GDPR (legitimate interest in improving the application). You can object at any time, e.g. by enabling “Do Not Track” or a content blocker. The desktop app does not use analytics.</p>
+      </div>
+      <div class="help-section">
+        <h4>Your rights</h4>
+        <p>You have the right to access, rectification, erasure, restriction of processing, objection and data portability (Art. 15–21 GDPR), and the right to lodge a complaint with a supervisory authority.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Sidebar panel: Help ──────────────────────────────────────── -->
   <div id="panelHelp" class="scroll-panel" hidden>
@@ -1004,6 +1038,7 @@
     // ── "?" menu: help, about and tips open in a dialog instead of sidebar tabs ──
     const aboutPanelEl = createAboutPanel();
     const helpPanelEl = document.getElementById('panelHelp');
+    const privacyPanelEl = document.getElementById('panelPrivacy');
     function openInfoDialog(el, title) {
       const backdrop = document.createElement('div');
       backdrop.className = 'app-modal-backdrop';
@@ -1034,6 +1069,7 @@
           { label: 'Load demo recording', action: () => document.getElementById('loadSampleBtn')?.click() },
           { separator: true },
           { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
+          { label: 'Privacy policy', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
           { label: '♥ Sponsor SignaVis', action: () => window.open('https://github.com/sponsors/LimitlessGreen', '_blank', 'noopener') },
         ],
       });
