@@ -416,6 +416,13 @@
   </div>
   <!-- App footer: version & commit injected at Pages deployment (version.json) -->
   <footer class="statusbar app-footer" id="appFooter" role="contentinfo" aria-label="App version">
+    <div class="statusbar-section statusbar-updated" style="white-space:nowrap">
+      <span>Updated</span>
+      <span id="appCommitAge">—</span>
+    </div>
+    <div class="statusbar-section statusbar-notice">
+      <a href="https://github.com/LimitlessGreen/Audio-Workbench/issues" target="_blank" rel="noopener noreferrer">Report issues</a>
+    </div>
     <div class="statusbar-section">
       <span>Version</span>
       <span class="statusbar-label" id="appVersion">—</span>
@@ -430,17 +437,6 @@
     <div class="statusbar-section">
       <span class="statusbar-label" id="selectionMeta"></span>
     </div>
-    <div class="statusbar-spacer"></div>
-    <div class="statusbar-section statusbar-updated" style="white-space:nowrap">
-      <span>Updated</span>
-      <span id="appCommitAge">—</span>
-    </div>
-    <!-- Demo notice: in the flow (no absolute centering, which overlapped), hidden when narrow -->
-    <div class="statusbar-section statusbar-notice">
-      <span>Beta ·</span>
-      <a href="https://github.com/LimitlessGreen/Audio-Workbench/issues" target="_blank" rel="noopener noreferrer">Report issues</a>
-    </div>
-    <div class="statusbar-spacer"></div>
   </footer>
 
   <script>
@@ -1170,7 +1166,7 @@
     const snrComputer = new SnrComputer();
     snrComputer.setOnResult((id, status, value) => {
       propsPanel.setSnr(id, status, value);
-      // Keep the value on the label (uploaded as signal_noise_ratio). Not an edit: updatedAt stays.
+      // Keep the value on the label (shown in the table). Not an edit: updatedAt stays.
       const lbl = state.labels.find((l) => l.id === id);
       if (!lbl || lbl.readonly) return;
       const next = status === 'done' && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;

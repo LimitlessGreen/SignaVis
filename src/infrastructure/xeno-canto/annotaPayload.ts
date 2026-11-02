@@ -23,7 +23,6 @@ export const ANNOTA_ANNOTATION_FIELDS = [
     'start_time', 'end_time', 'frequency_low', 'frequency_high', 'scientific_name',
     'sound_type', 'date_identified', 'sex', 'life_stage', 'animal_seen', 'playback_used',
     'collection_date', 'collection_specimen', 'temperature', 'annotation_remarks', 'overlap',
-    'signal_noise_ratio',
 ] as const;
 
 export const ANNOTA_REQUIRED_ANNOTATION_FIELDS = ['xc_nr', 'start_time', 'end_time', 'scientific_name'] as const;
@@ -139,8 +138,6 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
         annotation_remarks: [str(tags.remarks), tags.referenceXc ? `compared with ${str(tags.referenceXc)}` : '']
             .filter(Boolean).join('; '),
         overlap: toYesNo(tags.overlap),
-        // SNR (dB) of the box, computed in the app (SnrComputer); empty when not computed
-        signal_noise_ratio: Number.isFinite(Number(l?.snr)) && l?.snr !== null && l?.snr !== '' ? String(Math.round(Number(l.snr) * 10) / 10) : '',
     };
     if (ann.frequency_low === null) delete ann.frequency_low;
     if (ann.frequency_high === null) delete ann.frequency_high;
