@@ -17,6 +17,7 @@ export const MIN_WINDOW_NORM = 0.02;
 
 // ─── Tile-based lazy rendering (for long audio files) ──────────────
 export const WASM_TILE_MIN_DURATION_SEC = 10 * 60; // long files use the spectrogram pyramid
+export const WASM_PYRAMID_BLOCK_FRAMES = 6000;
 export const PERCH_FRAME_RATE = 100;
 export const PERCH_N_MELS = 160;
 export const PERCH_PCEN_GAIN = 0.8;

@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════
 // WasmTileManager.ts — tiled rendering on top of the WASM pyramid
 //
-// The whole file is computed once by WasmSpectrogramService (Rust/WASM,
-// multi-worker, cached in OPFS) into a max-pooled level pyramid. This class
-// only fetches the frames visible at the current zoom, picking the coarsest
+// A local preview is computed on demand while WasmSpectrogramService builds
+// a max-pooled level pyramid in the background (cached in OPFS). This class
+// fetches the frames visible at the current zoom, picking the coarsest
 // level that still has ≥ 1 frame per display pixel, and renders them: on the
 // GPU straight from the dB values (renderGpu), otherwise colorized on the CPU
 // when first drawn (renderToCanvas; CLAHE, PCEN, legacy contrast).
@@ -35,11 +35,19 @@ interface PyramidSource {
     tile(level: number, f0: number, f1: number): Promise<Float32Array>;
     dispose(): void;
 }
-import { CQT_FMIN, CQT_BINS_PER_OCTAVE } from '../shared/constants.ts';
+import { CQT_FMIN, CQT_BINS_PER_OCTAVE, WASM_PYRAMID_BLOCK_FRAMES } from '../shared/constants.ts';
 
 const TILE_FRAMES = 1024;          // frames of the chosen level per tile
 const TILE_MAX_IN_MEMORY = 48;     // LRU limit across all levels
 const TILE_PRELOAD_AHEAD = 1;
+
+/** Limit the combined size of the pyramid workers' in-flight output blocks. */
+export function pyramidWorkerCount(p: StftParamsV2, hardwareConcurrency: number): number {
+    const bins = p.scale.kind === 'linear' ? Math.floor(p.nFft / 2) + 1 : p.scale.bands;
+    const bytesPerBlock = WASM_PYRAMID_BLOCK_FRAMES * bins * Float32Array.BYTES_PER_ELEMENT;
+    const memoryLimit = Math.max(1, Math.floor((32 * 1024 * 1024) / bytesPerBlock));
+    return Math.max(1, Math.min(7, (hardwareConcurrency || 4) - 2, memoryLimit));
+}
 
 export interface TileColorOptions {
     colorScheme: string;
@@ -165,9 +173,11 @@ export function pcmWavBlob(channelData: Float32Array, sampleRate: number): Blob 
 
 export class WasmTileManager extends EventTarget {
     readonly nMels: number;
-    readonly meta: PyramidMeta;
-    readonly fromCache: boolean;
-    private readonly svc: PyramidSource;
+    meta: PyramidMeta;
+    fromCache: boolean;
+    private svc: PyramidSource;
+    private buildFull: (() => Promise<{ svc: PyramidSource; meta: PyramidMeta; fromCache: boolean }>) | null = null;
+    private buildingService: PyramidSource | null = null;
     private readonly duration: number;
     private readonly frameSec: number;       // seconds per level-0 frame
     private colorOptions: TileColorOptions;
@@ -182,9 +192,8 @@ export class WasmTileManager extends EventTarget {
     globalMax: number;
 
     /**
-     * Computes (or loads from cache) the pyramid for `file`. In the desktop app a
-     * local WAV `nativePath` is built by the Rust backend instead (disk cache);
-     * on failure this falls back to the WASM workers.
+     * Opens a cached pyramid or prepares an on-demand preview. The complete
+     * pyramid is started by queueAllTiles() after the preview is ready.
      */
     static async create(params: {
         file: File;
@@ -197,25 +206,49 @@ export class WasmTileManager extends EventTarget {
         colorOptions: TileColorOptions;
         onProgress?: (fraction: number) => void;
     }): Promise<WasmTileManager> {
+        const { WasmSpectrogramService } = await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts');
+        const preview = await WasmSpectrogramService.create(1);
+        try {
+            const initial = await preview.openPreview(params.file, params.wasmParams, params.source);
+            const manager = new WasmTileManager(preview, initial.meta, initial.fromCache, params.duration, params.colorOptions);
+            if (!initial.fromCache) manager.buildFull = () => manager.openFull(params, WasmSpectrogramService);
+            return manager;
+        } catch (err) {
+            preview.dispose();
+            throw err;
+        }
+    }
+
+    private async openFull(params: {
+        file: File; source?: Blob; nativePath?: string | null; wasmParams: StftParamsV2;
+        onProgress?: (fraction: number) => void;
+    }, WasmService: typeof import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts').WasmSpectrogramService):
+        Promise<{ svc: PyramidSource; meta: PyramidMeta; fromCache: boolean }> {
         if (isTauriSpectrogramSource(params.nativePath)) {
             const { TauriSpectrogramService } = await import('../infrastructure/tauri/TauriSpectrogramService.ts');
             const native = await TauriSpectrogramService.create();
+            if (this.disposed) { native.dispose(); throw new Error('disposed'); }
+            this.buildingService = native;
             try {
                 const { meta, fromCache } = await native.open(params.nativePath, params.wasmParams, params.onProgress);
-                return new WasmTileManager(native, meta, fromCache, params.duration, params.colorOptions);
+                return { svc: native, meta, fromCache };
             } catch (err) {
                 native.dispose();
+                this.buildingService = null;
+                if (this.disposed) throw err;
                 console.warn('Native spectrogram failed, using WASM:', err);
             }
         }
-        const { WasmSpectrogramService } = await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts');
-        const svc = await WasmSpectrogramService.create();
+        const svc = await WasmService.create(pyramidWorkerCount(params.wasmParams, navigator.hardwareConcurrency));
+        if (this.disposed) { svc.dispose(); throw new Error('disposed'); }
+        this.buildingService = svc;
         try {
             const { meta, fromCache } = await svc.open(params.file, params.wasmParams,
                 (f) => params.onProgress?.(f), params.source);
-            return new WasmTileManager(svc, meta, fromCache, params.duration, params.colorOptions);
+            return { svc, meta, fromCache };
         } catch (err) {
             svc.dispose();
+            this.buildingService = null;
             throw err;
         }
     }
@@ -361,6 +394,11 @@ export class WasmTileManager extends EventTarget {
             if (!wanted.has(tile.key)) this.tiles.delete(tile.key);
         }
         this.queue = this.queue.filter(t => wanted.has(t.key)).concat(pending);
+        const visibleFirst = Math.floor(startTime / ts);
+        const visibleLast = Math.floor(endTime / ts);
+        const distance = (t: Tile) => t.idx < visibleFirst ? visibleFirst - t.idx
+            : t.idx > visibleLast ? t.idx - visibleLast : 0;
+        this.queue.sort((a, b) => distance(a) - distance(b));
 
         this._evict(wanted);
         if (!this.isComputing) this._computeNext();
@@ -531,8 +569,32 @@ export class WasmTileManager extends EventTarget {
         await this._computeTile(tile);
     }
 
-    /** No-op: the pyramid is complete after create(). */
-    queueAllTiles(): void {}
+    /** Build the complete cached pyramid after the initial preview is available. */
+    queueAllTiles(): void {
+        const build = this.buildFull;
+        this.buildFull = null;
+        if (!build || this.disposed) return;
+        void build().then(({ svc, meta, fromCache }) => {
+            this.buildingService = null;
+            if (this.disposed) { svc.dispose(); return; }
+            const old = this.svc;
+            this.svc = svc;
+            this.meta = meta;
+            this.fromCache = fromCache;
+            [this.globalMin, this.globalMax] = this.contrastRange(0);
+            // Keep ready level-0 tiles visible until the new viewport loads.
+            // Drop in-flight preview requests; their service is about to close.
+            this.queue = [];
+            for (const [key, tile] of this.tiles) {
+                if (tile.state !== 'ready') this.tiles.delete(key);
+                else tile.canvas = null;
+            }
+            old.dispose();
+            this.dispatchEvent(new CustomEvent('tileready'));
+        }).catch(err => {
+            if (!this.disposed) console.warn('Background spectrogram build failed:', err);
+        });
+    }
 
     invalidate(): void {
         this.tiles.clear();
@@ -542,6 +604,7 @@ export class WasmTileManager extends EventTarget {
 
     dispose(): void {
         this.disposed = true;
+        this.buildingService?.dispose();
         this.svc.dispose();
         this.tiles.clear();
         this.queue = [];
@@ -573,7 +636,7 @@ export class WasmTileManager extends EventTarget {
             this.tilesComputed++;
             this.dispatchEvent(new CustomEvent('tileready', { detail: { key: tile.key } }));
         } catch (err) {
-            if (!this.disposed) {
+            if (!this.disposed && this.tiles.get(tile.key) === tile) {
                 tile.state = 'error';
                 console.warn(`WasmTileManager: tile ${tile.key} failed:`, err);
             }

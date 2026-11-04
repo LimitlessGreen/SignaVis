@@ -175,9 +175,18 @@ export class SpectrogramCache {
 
             store.put({ ...entry, key, timestamp: Date.now(), byteSize });
 
-            const allReq = store.getAll();
+            // Do not retain every cached spectrogram buffer just to inspect LRU
+            // metadata. A cursor lets each cloned value be released immediately.
+            const all: CacheEntry[] = [];
+            const allReq = store.openCursor();
             allReq.onsuccess = () => {
-                const all: CacheEntry[] = allReq.result as any[];
+                const cursor = allReq.result;
+                if (cursor) {
+                    const { key, timestamp, byteSize } = cursor.value as CacheEntry;
+                    all.push({ key, timestamp, byteSize });
+                    cursor.continue();
+                    return;
+                }
                 const sorted = all.sort((a: CacheEntry, b: CacheEntry) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 
                 // Evict by entry count
@@ -228,10 +237,15 @@ export class SpectrogramCache {
         if (!db) return 0;
         return new Promise((resolve) => {
             const tx  = db.transaction(STORE_NAME, 'readonly');
-            const req = tx.objectStore(STORE_NAME).getAll();
+            const req = tx.objectStore(STORE_NAME).openCursor();
+            let total = 0;
             req.onsuccess = () => {
-                const list: CacheEntry[] = req.result as any[];
-                const total = list.reduce((s: number, e: CacheEntry) => s + (e.byteSize ?? 0), 0);
+                const cursor = req.result;
+                if (cursor) {
+                    total += (cursor.value as CacheEntry).byteSize ?? 0;
+                    cursor.continue();
+                    return;
+                }
                 resolve(total);
             };
             req.onerror = () => resolve(0);
