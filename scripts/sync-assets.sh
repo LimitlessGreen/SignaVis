@@ -17,5 +17,8 @@ fi
 echo "▸ Syncing dist → python-wrapper assets …"
 cp dist/birdnet-player.iife.js "${ASSETS_DIR}/birdnet-player.iife.js"
 cp dist/birdnet-player.css     "${ASSETS_DIR}/birdnet-player.css"
+# Gradio embeds run offline, so WaveSurfer ships alongside (BSD-3-Clause).
+cp node_modules/wavesurfer.js/dist/wavesurfer.min.js "${ASSETS_DIR}/wavesurfer.min.js"
+cp node_modules/wavesurfer.js/LICENSE                "${ASSETS_DIR}/wavesurfer.LICENSE.txt"
 
 echo "✅ Assets synced. Python wrapper will use the latest build."

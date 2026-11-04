@@ -9,8 +9,8 @@ description = "Python wrapper for SignaVis Player (HTML/Streamlit embedding)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 authors = [{ name = "LimitlessGreen" }]
-license = "AGPL-3.0-only"
-license-files = ["LICENSE"]
+license = "MIT OR AGPL-3.0-only"
+license-files = ["LICENSE", "LICENSE-MIT"]
 keywords = ["audio", "player", "streamlit", "jupyter", "embed", "waveform", "spectrogram"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -24,7 +24,7 @@ urls = { "Homepage" = "https://github.com/LimitlessGreen/SignaVis", "Repository"
 [project.optional-dependencies]
 widget = ["anywidget>=0.9", "traitlets>=5.0"]
 streamlit = ["streamlit>=1.30"]
-gradio = ["gradio>=4.0"]
+gradio = ["gradio>=6.0"]
 
 [tool.setuptools]
 package-dir = {"" = "."}
@@ -34,4 +34,4 @@ where = ["."]
 include = ["signavis*"]
 
 [tool.setuptools.package-data]
-"signavis.assets" = ["*.js", "*.css"]
+"signavis.assets" = ["*.js", "*.css", "*.txt"]

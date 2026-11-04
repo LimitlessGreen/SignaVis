@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.4] - 2026-11-05
+## [1.0.4] - Unreleased
+
+### Added
+- `signavis.gradio.SignaVisPlayer`: the player as a native Gradio 6
+  component (`gr.HTML` subclass). Assets, including WaveSurfer, are served
+  from the Python package, so it works offline; audio is streamed by URL
+  instead of being base64-inlined. Detections are drawn as read-only labels
+  and a `select` value scrolls to and plays a span. Built for the
+  BirdNET-Analyzer GUI.
+
+### Changed
+- The Python package is now dual-licensed: MIT or AGPL-3.0, at your choice.
 
 ### Fixed
 - Show the visible spectrogram sooner for long recordings while building the full pyramid in the background.
