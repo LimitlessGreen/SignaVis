@@ -21,7 +21,7 @@ if git rev-parse "${TAG}" >/dev/null 2>&1; then
 fi
 
 git add VERSION package.json python-wrapper/pyproject.toml demo/storybook.html \
-          src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock CITATION.cff
 git commit -m "release: ${TAG}"
 git tag "${TAG}"
 git push origin main --tags

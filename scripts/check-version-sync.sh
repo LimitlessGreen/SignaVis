@@ -86,6 +86,13 @@ if storybook.exists():
     if m and m.group(1) != version:
         errors.append(f"demo/storybook.html badge (v{m.group(1)}) does not match VERSION ({version})")
 
+# Check CITATION.cff version
+citation_cff = root / "CITATION.cff"
+if citation_cff.exists():
+    m = re.search(r'^version:\s*(\S+)\s*$', citation_cff.read_text(encoding="utf-8"), re.MULTILINE)
+    if m and m.group(1) != version:
+        errors.append(f"CITATION.cff version ({m.group(1)}) does not match VERSION ({version})")
+
 # On GitHub tag builds, ensure tag and version match exactly: vX.Y.Z <-> X.Y.Z
 gh_ref_type = os.getenv("GITHUB_REF_TYPE", "")
 gh_ref_name = os.getenv("GITHUB_REF_NAME", "")

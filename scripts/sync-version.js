@@ -73,6 +73,21 @@ async function main() {
       }
     }
 
+    // CITATION.cff — keep `version` and `date-released` in sync with releases
+    const citationPath = path.join(ROOT_DIR, "CITATION.cff");
+    try {
+      const citationText = await fs.readFile(citationPath, "utf8");
+      const today = new Date().toISOString().slice(0, 10);
+      const updated = citationText
+        .replace(/^version:.*$/m, `version: ${version}`)
+        .replace(/^date-released:.*$/m, `date-released: "${today}"`);
+      if (updated !== citationText) {
+        await fs.writeFile(citationPath, updated, "utf8");
+      }
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
     // src-tauri/tauri.conf.json
     const tauriConfPath = path.join(ROOT_DIR, "src-tauri", "tauri.conf.json");
     try {
