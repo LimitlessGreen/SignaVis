@@ -2,7 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-11-04
+
+### Changed
+- Slimmed down README.md: moved the Player Options table and framework
+  integration examples to the docs site (docs/usage/), consolidated the
+  release workflow into DEVELOPER.md, and added a dedicated
+  CONTRIBUTING.md.
+
+### Added
+- CITATION.cff so GitHub shows a "Cite this repository" button; added a
+  Citation section with a Zenodo DOI badge to README.md.
+- Citation info (CITATION.cff link, DOI badge, BibTeX) in the labeling
+  app's "?" help menu (About panel).
+
 ## [1.0.2] - 2026-11-02
+
 
 ### Added
 - Open Graph / Twitter preview image (1200x630) for shared links to the
