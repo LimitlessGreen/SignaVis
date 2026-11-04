@@ -149,6 +149,13 @@ export class WasmSpectrogramService {
         return { meta: r.meta, fromCache: r.fromCache, persistent: r.persistent, key };
     }
 
+    /** Open a cached pyramid, or prepare a small, on-demand preview. */
+    async openPreview(file: File, params: StftParamsV2, source: Blob = file) {
+        const key = await storeKey(file, params, source === file ? '' : `pcm:${source.size}`);
+        return this.request<{ meta: PyramidMeta; fromCache: boolean }>(
+            { type: 'previewOpen', file: source, params, key });
+    }
+
     /**
      * Whole spectrogram of in-memory samples with the v2 engine, computed in
      * parallel blocks (no pyramid, no cache). Row-major [frame][bin].

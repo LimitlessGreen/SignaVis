@@ -15,6 +15,7 @@ import {
     initSync, WasmStft, WasmPyramidBuilderV2,
     decodeF16, wavInfo, wavChannel0, bandFloor,
 } from './pkg/aw_dsp_wasm.js';
+import { WASM_PYRAMID_BLOCK_FRAMES } from '../../shared/constants.ts';
 
 // OPFS sync access handles are worker-only and missing from the DOM lib.
 interface FileSystemSyncAccessHandle {
@@ -122,9 +123,12 @@ function startCoordinator(ports: MessagePort[]) {
         });
 
     let store: Store | null = null;
+    let preview: { file: Blob; wav: WavMeta; engine: WasmStft; paramsJson: string; total: number; first: Float32Array } | null = null;
     let cancelled = false;
 
     const closeStore = () => {
+        preview?.engine.free();
+        preview = null;
         if (!store) return;
         for (const h of store.handles) { try { h.close(); } catch { /* already closed */ } }
         store = null;
@@ -133,17 +137,41 @@ function startCoordinator(ports: MessagePort[]) {
     ctx.onmessage = async (e: MessageEvent) => {
         const msg = e.data;
         try {
-            if (msg.type === 'open') {
+            if (msg.type === 'previewOpen') {
+                closeStore();
+                const cached = await tryOpenCached(msg.key, FORMAT_VERSION);
+                if (cached) {
+                    store = cached;
+                    ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: cached.meta, fromCache: true });
+                } else {
+                    const wav: WavMeta = JSON.parse(wavInfo(new Uint8Array(await msg.file.slice(0, 1 << 16).arrayBuffer())));
+                    const paramsJson = JSON.stringify(v2ForSampleRate(msg.params, wav.sampleRate));
+                    const engine = new WasmStft(paramsJson);
+                    const total = engine.nFrames(wav.nSamples);
+                    preview = { file: msg.file, wav, engine, paramsJson, total, first: new Float32Array(0) };
+                    const first = await previewTile(0, Math.min(total, 1024));
+                    preview.first = first;
+                    const builder = new WasmPyramidBuilderV2(paramsJson, wav.nSamples);
+                    try {
+                        builder.pushBlock(first);
+                        const meta = JSON.parse(builder.finish());
+                        // Until the complete pyramid is ready, request full-resolution
+                        // tiles only. Their statistics are provisional and local.
+                        meta.levels = [{ ...meta.levels[0], nFrames: total }];
+                        ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta, fromCache: false });
+                    } finally { builder.free(); }
+                }
+            } else if (msg.type === 'open') {
                 cancelled = false;
                 closeStore();
                 let r;
                 try {
-                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000);
+                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? WASM_PYRAMID_BLOCK_FRAMES);
                 } catch (err: any) {
                     // OPFS full (long recordings, small quota): build the pyramid in worker memory instead.
                     if (err?.name !== 'QuotaExceededError' || cancelled) throw err;
                     console.warn('[wasm-spectrogram] OPFS quota exceeded, keeping the pyramid in memory', err);
-                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? 6000, true);
+                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? WASM_PYRAMID_BLOCK_FRAMES, true);
                 }
                 ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: r.meta, fromCache: r.fromCache, persistent: r.persistent });
             } else if (msg.type === 'compute') {
@@ -151,7 +179,7 @@ function startCoordinator(ports: MessagePort[]) {
                 const done = await r;
                 ctx.postMessage({ type: 'computed', requestId: msg.requestId, ...done }, [done.data.buffer]);
             } else if (msg.type === 'tile') {
-                const data = readTile(msg.level, msg.f0, msg.f1);
+                const data = preview ? await previewTile(msg.f0, msg.f1) : readTile(msg.level, msg.f0, msg.f1);
                 ctx.postMessage({ type: 'tile', requestId: msg.requestId, data }, [data.buffer]);
             } else if (msg.type === 'cancel') {
                 cancelled = true;
@@ -162,6 +190,24 @@ function startCoordinator(ports: MessagePort[]) {
             ctx.postMessage({ type: 'error', requestId: msg.requestId, message: err?.message || String(err) });
         }
     };
+
+    async function previewTile(f0: number, f1: number): Promise<Float32Array> {
+        const p = preview;
+        if (!p) throw new Error('no preview open');
+        const a = Math.max(0, Math.min(f0, p.total));
+        const b = Math.max(a, Math.min(f1, p.total));
+        if (a === 0 && p.first.length && b * p.engine.outBins() <= p.first.length) {
+            return p.first.slice(0, b * p.engine.outBins());
+        }
+        const [lo, hi] = p.engine.blockFrameRange(a, b - a, p.total);
+        const [start, len] = p.engine.sampleRange(lo, hi - lo);
+        const first = Math.max(0, start);
+        const end = Math.min(p.wav.nSamples, start + len);
+        const align = p.wav.channels * p.wav.bitsPerSample / 8;
+        const bytes = new Uint8Array(await p.file.slice(p.wav.dataOffset + first * align, p.wav.dataOffset + end * align).arrayBuffer());
+        const samples = wavChannel0(bytes, p.wav.channels, p.wav.bitsPerSample, p.wav.float);
+        return computeBlock(p.paramsJson, samples, { first, f0: a, n: b - a, total: p.total });
+    }
 
     async function storeDir(key: string, create: boolean) {
         const root = await navigator.storage.getDirectory();
@@ -242,9 +288,9 @@ function startCoordinator(ports: MessagePort[]) {
         };
 
         try {
-            // Keep 2 blocks in flight per compute worker; finalize strictly in order.
+            // Bound output buffers to one block per worker; finalize strictly in order.
             const inFlight: Promise<Float32Array>[] = [];
-            const maxInFlight = ports.length * 2;
+            const maxInFlight = ports.length;
             let nextF0 = 0;
             let done = 0;
             const t0 = performance.now();
