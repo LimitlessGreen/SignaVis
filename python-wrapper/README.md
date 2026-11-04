@@ -164,6 +164,30 @@ pip install gradio
 python demo_gradio.py
 ```
 
+**Gradio Blocks (native component):**
+
+`signavis.gradio.SignaVisPlayer` is a real Gradio 6 component: the player,
+its stylesheet and WaveSurfer are served from this package (works offline),
+and the audio is streamed from disk instead of being inlined, so hour-long
+recordings stay cheap. Detections are drawn as read-only labels; selecting
+one scrolls to and plays it.
+
+```python
+import gradio as gr
+from signavis.gradio import SignaVisPlayer, player_value
+
+with gr.Blocks() as demo:
+    player = SignaVisPlayer()
+    gr.Button("Show").click(
+        lambda: player_value(
+            "bird.wav",
+            detections=[{"start": 3, "end": 6, "label": "Turdus merula", "confidence": 0.91}],
+            select=(3, 6),  # optional: jump there and play it
+        ),
+        outputs=player,
+    )
+```
+
 **Google Colab:**
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb)
@@ -174,4 +198,6 @@ Try the interactive notebook demo directly in your browser—no setup required!
 
 ## License
 
-GNU AGPL-3.0
+This Python package, including the bundled player assets, is available under
+your choice of the MIT License (`LICENSE-MIT`) or the GNU AGPL-3.0 (`LICENSE`).
+The bundled WaveSurfer.js is BSD-3-Clause (`signavis/assets/wavesurfer.LICENSE.txt`).
