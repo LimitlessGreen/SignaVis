@@ -23,6 +23,21 @@ export function createAboutPanel() {
         <p>Author: LimitlessGreen</p>
         <p>License: AGPL-3.0-only</p>
 
+        <h4>Citing SignaVis</h4>
+        <p>If you use SignaVis in your research, please cite it — see
+          <a href="https://github.com/LimitlessGreen/SignaVis/blob/main/CITATION.cff" target="_blank" rel="noopener noreferrer">CITATION.cff</a>
+          (also available via the "Cite this repository" button on GitHub), or use the BibTeX entry below.
+          A DOI is minted via <a href="https://zenodo.org/badge/latestdoi/1161163939" target="_blank" rel="noopener noreferrer">Zenodo</a> for each release.</p>
+        <details class="bibtex-collapsible">
+          <summary>BibTeX</summary>
+          <pre class="bibtex">@software{signavis,
+  author  = {Behrisch, Jairus},
+  title   = {SignaVis: Interactive waveform + spectrogram audio player for bioacoustic analysis and annotation},
+  url     = {https://github.com/LimitlessGreen/SignaVis},
+  license = {AGPL-3.0-only}
+}</pre>
+        </details>
+
         <h4>Special thanks</h4>
         <p>Special thanks to the BirdNET authors for the model and excellent work. Additional inspiration taken from <a href="https://github.com/nishantnnb/spectrolipi" target="_blank" rel="noopener noreferrer">spectrolipi</a>.</p>
 
