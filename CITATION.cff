@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata
+  below (also available via the "Cite this repository" button on GitHub).
+title: SignaVis
+type: software
+authors:
+  - given-names: Jairus
+    family-names: Behrisch
+    orcid: "https://orcid.org/0009-0005-3083-1248"
+abstract: >-
+  Interactive waveform + spectrogram audio player for bioacoustic analysis,
+  annotation, and embeddable previews (Web, Streamlit, Gradio), with BirdNET
+  detection support and Xeno-canto integration.
+version: 1.0.2
+date-released: "2026-11-02"
+repository-code: "https://github.com/LimitlessGreen/SignaVis"
+url: "https://limitlessgreen.github.io/SignaVis/"
+license: AGPL-3.0-only
+keywords:
+  - audio-annotation
+  - audio-player
+  - audio-visualization
+  - bioacoustics
+  - birdnet
+  - ecology
+  - fft
+  - labeling-tool
+  - mel-spectrogram
+  - pcen
+  - spectrogram
+  - waveform
+  - xeno-canto
+# Once the next GitHub release is archived on Zenodo, add the version DOI here, e.g.:
+# identifiers:
+#   - type: doi
+#     value: 10.5281/zenodo.XXXXXXX
+#     description: The concept DOI for all versions of this software.

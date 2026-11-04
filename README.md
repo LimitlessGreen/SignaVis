@@ -20,6 +20,7 @@
         <a href="https://www.npmjs.com/package/signavis"><img src="https://img.shields.io/npm/v/signavis.svg" alt="NPM"/></a>
         <a href="https://pypi.org/project/signavis/"><img src="https://img.shields.io/pypi/v/signavis.svg" alt="PyPI"/></a>
         <a href="https://github.com/LimitlessGreen/SignaVis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License"/></a>
+        <a href="https://zenodo.org/badge/latestdoi/1161163939"><img src="https://zenodo.org/badge/1161163939.svg" alt="DOI"/></a>
       </p>
     </td>
   </tr>
@@ -34,12 +35,12 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - [Labeling app](#labeling-app)
 - [Install](#install)
 - [Quickstart](#quickstart)
-- [Player Options](#player-options)
-- [Usage Examples](#usage-examples)
+- [Documentation](#documentation)
 - [Demos](#demos)
 - [Python wrapper](#python-wrapper)
-- [Development & releases](#development--releases)
+- [Development](#development)
 - [Contributing](#contributing)
+- [Citation](#citation)
 - [License](#license)
 
 ## ✨ Highlights
@@ -100,159 +101,36 @@ const player = new BirdNETPlayer(document.getElementById('player'))
 await player.ready
 ```
 
-## Player Options
+## Documentation
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `viewMode` | string | `'both'` | `'both'`, `'waveform'`, `'spectrogram'` — visible analysis views |
-| `transportStyle` | string | `'default'` | `'default'`, `'hero'` — transport button style |
-| `transportOverlay` | boolean | `false` | Centered play overlay, no toolbar height |
-| `showFileOpen` | boolean | `true` | Show Open button and file input |
-| `showTransport` | boolean | `true` | Show transport controls (play/pause/stop) |
-| `showTime` | boolean | `true` | Show time display |
-| `showVolume` | boolean | `true` | Show volume controls |
-| `showViewToggles` | boolean | `true` | Show Follow/Loop/Fit/Reset buttons |
-| `showZoom` | boolean | `true` | Show zoom slider |
-| `showFFTControls` | boolean | `true` | Show FFT size, max frequency, color scheme |
-| `showDisplayGain` | boolean | `true` | Show floor/ceiling sliders, auto contrast |
-| `showStatusbar` | boolean | `true` | Show bottom status bar |
-| `showOverview` | boolean | `true` | Show overview navigator |
-| `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
-| `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
-| `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |
-| ... | ... | ... | ... |
+Full documentation lives on the [docs site](https://limitlessgreen.github.io/SignaVis/docs/):
 
-See the [API section](#api) for usage examples and more details.
-
-## Usage Examples
-
-### ESM (Vite / Vanilla)
-```js
-import { BirdNETPlayer } from 'signavis'
-import 'signavis/style'
-
-const player = new BirdNETPlayer(document.getElementById('player'))
-await player.ready
-```
-
-### Load from URL
-```js
-await player.loadUrl('/audio/birdsong.mp3')
-player.play()
-```
-
-### File Input
-```js
-const input = document.querySelector('#audio')
-input.addEventListener('change', async () => {
-  const file = input.files?.[0]
-  if (!file) return
-  await player.loadFile(file)
-})
-```
-
-### React
-```jsx
-import { useEffect, useRef } from 'react'
-import { BirdNETPlayer } from 'signavis'
-import 'signavis/style'
-
-export default function Player() {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!ref.current) return
-    const p = new BirdNETPlayer(ref.current)
-    return () => p.destroy()
-  }, [])
-  return <div ref={ref} />
-}
-```
-
-### Vue
-```js
-import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { BirdNETPlayer } from 'signavis'
-import 'signavis/style'
-
-const root = ref(null)
-let player
-
-onMounted(() => { player = new BirdNETPlayer(root.value) })
-onBeforeUnmount(() => player?.destroy())
-```
-
-### Svelte
-```svelte
-<script>
-  import { onMount } from 'svelte'
-  import { BirdNETPlayer } from 'signavis'
-  import 'signavis/style'
-
-  let el
-  let player
-  onMount(() => {
-    player = new BirdNETPlayer(el)
-    return () => player.destroy()
-  })
-</script>
-
-<div bind:this={el}></div>
-```
-
-### CDN / IIFE
-```html
-<script src="https://unpkg.com/wavesurfer.js@7"></script>
-<script src="https://unpkg.com/signavis/dist/birdnet-player.iife.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/signavis/dist/birdnet-player.css" />
-<div id="player"></div>
-<script>
-  const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
-</script>
-```
-
-### Streamlit (Python)
-```python
-from signavis import render_daw_player
-import streamlit.components.v1 as components
-
-components.html(render_daw_player(audio_bytes), height=620, scrolling=False)
-```
-
-### Jupyter Notebook
-```python
-from IPython.display import HTML
-from signavis import render_daw_player
-
-HTML(render_daw_player(audio_bytes))
-```
+- [Player Options](https://limitlessgreen.github.io/SignaVis/docs/usage/player-options/) — all constructor options
+- [Integration Examples](https://limitlessgreen.github.io/SignaVis/docs/usage/integration/) — ESM, React, Vue, Svelte, CDN/IIFE, Streamlit, Jupyter
+- [Labeling App](https://limitlessgreen.github.io/SignaVis/docs/labeling/) — shortcuts, species format, Xeno-canto format
+- [Python Integration](https://limitlessgreen.github.io/SignaVis/docs/labeling/python-integration/)
+- [Deployment & Migration](https://limitlessgreen.github.io/SignaVis/docs/deployment/)
 
 ## Demos
 
 - **[Live Demo (GitHub Pages)](https://limitlessgreen.github.io/SignaVis/)** — component storybook with configurable stories
 - **[Labeling App](https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html?xcid=1)** — full-featured annotation tool with BirdNET detection, Xeno-canto integration, label management and spectrogram settings (`demo/labeling-app.html`)
 - **[Google Colab Demo Notebook](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb)**
-- **Streamlit:**
-  ```bash
-  streamlit run python-wrapper/demo_streamlit.py
-  ```
-- **Gradio:**
-  ```bash
-  pip install gradio
-  python python-wrapper/demo_gradio.py
-  ```
+- **Streamlit:** `streamlit run python-wrapper/demo_streamlit.py`
+- **Gradio:** `pip install gradio && python python-wrapper/demo_gradio.py`
 
 ## Python wrapper
 
-The Python wrapper allows embedding the player in Streamlit, Jupyter, and Gradio. See [python-wrapper/README.md](python-wrapper/README.md) for full usage, options, and advanced features.
+The Python wrapper allows embedding the player in Streamlit, Jupyter, and Gradio.
 
-Install:
 ```bash
 pip install signavis
 ```
 
-Docs & PyPI: https://pypi.org/project/signavis
+See [python-wrapper/README.md](python-wrapper/README.md) for full usage, options, and advanced features, and
+[PyPI](https://pypi.org/project/signavis) for the published package.
 
-## Development & releases
+## Development
 
 ```bash
 npm ci
@@ -260,20 +138,31 @@ npm run dev          # Vite dev server, labeling app at /demo/labeling-app.html
 npm run typecheck
 npm test
 npm run build        # library + types into dist/ and types/
-npm pack --dry-run   # inspect what would be published
 ```
 
-Releases are cut with `bash scripts/release.sh <version>` (e.g. `1.0.1` or `1.1.0-rc.1`): it syncs the version across
-`package.json`, `pyproject.toml` and the Tauri files, commits, tags and pushes. The tag triggers CI, which publishes
-to npm (trusted publishing; pre-releases under the `next` dist-tag) and PyPI and creates a GitHub release with the
-notes from [CHANGELOG.md](CHANGELOG.md) and the desktop installers.
-
-The npm package includes the BirdNET model under `models/` (~79 MB). Demo GIFs are recorded with
-`npm run demo:gifs` (see [tools/demo-gifs](tools/demo-gifs/README.md)) and attached to the `demo-media` release.
+See [DEVELOPER.md](DEVELOPER.md) for the full setup, git hooks, release and desktop (Tauri) build instructions.
 
 ## Contributing
 
-See the repository on GitHub and open issues/PRs: https://github.com/LimitlessGreen/SignaVis
+See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome on
+[GitHub](https://github.com/LimitlessGreen/SignaVis).
+
+## Citation
+
+If you use SignaVis in your research, please cite it — see [CITATION.cff](CITATION.cff) for machine-readable
+metadata (also shown via the "Cite this repository" button on GitHub), or use:
+
+```bibtex
+@software{signavis,
+  author  = {Behrisch, Jairus},
+  title   = {SignaVis: Interactive waveform + spectrogram audio player for bioacoustic analysis and annotation},
+  url     = {https://github.com/LimitlessGreen/SignaVis},
+  license = {AGPL-3.0-only}
+}
+```
+
+A DOI via [Zenodo](https://zenodo.org/) is minted automatically for each GitHub release; see the DOI badge at
+the top of this README for the latest version.
 
 ## License
 

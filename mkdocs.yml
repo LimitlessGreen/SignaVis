@@ -40,6 +40,9 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Usage:
+      - Player Options: usage/player-options.md
+      - Integration Examples: usage/integration.md
   - Python integration (DE): python-integration.md
   - Labeling:
       - Labeling App: labeling/index.md

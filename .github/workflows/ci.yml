@@ -31,6 +31,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Validate CITATION.cff
+        uses: citation-file-format/cffconvert-github-action@2.0.0
+        with:
+          args: "--validate"
+
   test:
     runs-on: ubuntu-latest
     strategy:

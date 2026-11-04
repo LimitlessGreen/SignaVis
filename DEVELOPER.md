@@ -34,6 +34,15 @@ Syncing versions
 
 Release & publishing
 - CI (GitHub Actions) performs the actual build and publish on tags; local scripts are intended to make local development consistent.
+- Cut a release with `bash scripts/release.sh <version>` (e.g. `1.0.1` or `1.1.0-rc.1`): it syncs the version
+  across `package.json`, `pyproject.toml` and the Tauri files, commits, tags and pushes.
+- The tag triggers CI, which publishes to npm (trusted publishing; pre-releases under the `next` dist-tag) and
+  PyPI, and creates a GitHub release with the notes from [CHANGELOG.md](CHANGELOG.md) and the desktop installers.
+- Pushing a release tag also triggers the Zenodo archival (GitHub-Zenodo integration), minting a new
+  version DOI — see [Citation](README.md#citation) in the README.
+- The npm package includes the BirdNET model under `models/` (~79 MB).
+- Demo GIFs are recorded with `npm run demo:gifs` (see [tools/demo-gifs](tools/demo-gifs/README.md)) and
+  attached to the `demo-media` release.
 
 Useful scripts
 - `npm run typecheck` — run the TypeScript checker (no emit)
