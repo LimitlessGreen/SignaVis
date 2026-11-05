@@ -7,6 +7,7 @@
 import { toXcId } from '../../domain/xc/xcId.ts';
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording, invalidateXenoCantoRecordingCache } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
+import { softwareNameAndVersion } from '../../version.ts';
 import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
 
@@ -782,8 +783,8 @@ export class XenoCantoPanel {
     // The host picks the labels (upload selection: recordings, species, layers, sources)
     const targetLabels = labels || [];
 
-    // Attach app version when available (injected by the demo page at runtime)
-    const softwareVersion = (typeof window !== 'undefined' && (window as any).AUDIO_WORKBENCH_VERSION) ? ` ${(window as any).AUDIO_WORKBENCH_VERSION}` : '';
+    // Build-time version; a host app may override via window.AUDIO_WORKBENCH_VERSION
+    const versionOverride = typeof window !== 'undefined' ? (window as any).AUDIO_WORKBENCH_VERSION : '';
 
     return buildAnnotaPayload({
       set: {
@@ -795,7 +796,7 @@ export class XenoCantoPanel {
       },
       labels: targetLabels,
       defaultXcNr: xcNr,
-      softwareNameAndVersion: `SignaVis${softwareVersion}`,
+      softwareNameAndVersion: softwareNameAndVersion(versionOverride),
     });
   }
 

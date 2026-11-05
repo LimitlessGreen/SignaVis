@@ -7,6 +7,7 @@
  * all JS/CSS bundled and the sample audio files copied over.
  */
 import { defineConfig } from 'vite';
+import { versionDefines } from '../scripts/build-version.mjs';
 import { resolve } from 'path';
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createHash } from 'crypto';
@@ -65,6 +66,7 @@ function taxonomyHashPlugin() {
 }
 
 export default defineConfig({
+  define: versionDefines(),
   root: resolve(__dirname, '..'),   // project root so ../src/ imports resolve
   base: './',                       // relative asset paths for any hosting prefix
   build: {

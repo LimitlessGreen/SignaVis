@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # tags needed for the build version label
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -124,10 +126,8 @@ jobs:
       - name: Write version.json for deployment
         run: |
           mkdir -p _site
-          VERSION="$(node -e "try{const p=require('./package.json'); console.log(p.version||'');}catch(e){console.log('')}")"
-          if [ -z "$VERSION" ] && [ -f VERSION ]; then
-            VERSION="$(cat VERSION)"
-          fi
+          # Same label as baked into the bundle: "X.Y.Z" on a release tag, else "X.Y.Z+<sha>"
+          VERSION="$(node -e "import('./scripts/build-version.mjs').then(m=>console.log(m.getBuildVersion().label))")"
           COMMIT_SHORT="$(git rev-parse --short HEAD || echo '')"
           COMMIT_FULL="$(git rev-parse HEAD || echo '')"
           COMMIT_DATE="$(git show -s --format=%cI HEAD || date -u +"%Y-%m-%dT%H:%M:%SZ")"

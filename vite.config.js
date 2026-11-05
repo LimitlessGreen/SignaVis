@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
+import { versionDefines } from './scripts/build-version.mjs';
 import { resolve } from 'path';
 
 export default defineConfig({
+  define: versionDefines(),
     server: {
         // Cargo build dirs churn (and lock .exe files on Windows → EBUSY crash).
         watch: { ignored: ['**/src-tauri/**/target/**', '**/src-tauri/crates/*/pkg/**'] },
