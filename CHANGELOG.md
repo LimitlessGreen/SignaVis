@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.5] - Unreleased
+## [1.0.5] - 2026-11-05
 
 ### Fixed
 - Show the visible spectrogram sooner for long recordings while building the full pyramid in the background.
