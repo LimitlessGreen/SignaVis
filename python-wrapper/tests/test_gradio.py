@@ -63,7 +63,7 @@ class TestSignaVisPlayer(unittest.TestCase):
     def test_assets_are_served_locally(self):
         head = SignaVisPlayer().head
         self.assertNotIn("unpkg", head)
-        for name in ("birdnet-player.css", "wavesurfer.min.js", "birdnet-player.iife.js"):
+        for name in ("birdnet-player.embed.css", "wavesurfer.min.js", "birdnet-player.iife.js"):
             self.assertIn(name, head)
 
     def test_a_source_path_becomes_a_url(self):
