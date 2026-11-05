@@ -74,3 +74,8 @@ tests/fixtures/local/
 # Demo GIF/MP4 output (attached to GitHub releases, not committed)
 tools/demo-gifs/out/
 python-wrapper/signavis/*.pyi
+
+# SignaVis Lite build output
+_site-lite/
+src-tauri-lite/target/
+src-tauri-lite/gen/

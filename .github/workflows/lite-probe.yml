@@ -1,0 +1,76 @@
+name: Lite webview probe
+
+# Phase-0 spike for SignaVis Lite: build the Lite shell on all three OSes,
+# run demo/lite-probe.html inside the native webview and publish the report.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["signavis-lite"]
+    paths:
+      - "src-tauri-lite/**"
+      - "demo/lite-probe.html"
+      - "demo/vite.lite.config.js"
+      - ".github/workflows/lite-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.14"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri-lite -> target
+          key: lite-${{ matrix.os }}
+
+      - name: Install Linux dependencies (Tauri)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf xvfb \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+
+      - run: npm ci --include=dev
+
+      - name: Build Lite (debug, no bundle)
+        working-directory: src-tauri-lite
+        run: npx tauri build --debug --no-bundle
+
+      - name: Run probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$PWD/probe-${{ runner.os }}.json"
+          BIN=src-tauri-lite/target/debug/signavis-lite
+          [ "${{ runner.os }}" = "Windows" ] && BIN="$BIN.exe"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            SIGNAVIS_LITE_PROBE="$OUT" timeout 180 xvfb-run -a "$BIN"
+          else
+            # macOS has no coreutils `timeout`; perl's alarm does the same.
+            SIGNAVIS_LITE_PROBE="$OUT" perl -e 'alarm 180; exec @ARGV' "$BIN"
+          fi
+          cat "$OUT"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lite-probe-${{ runner.os }}
+          path: probe-*.json
+          if-no-files-found: warn

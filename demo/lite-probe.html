@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SignaVis Lite – webview probe</title>
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #111; color: #ddd; }
+    td { padding: 2px 10px; vertical-align: top; }
+    .ok { color: #4ade80; } .fail { color: #f87171; } .info { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <h1>SignaVis Lite – webview probe</h1>
+  <table id="out"></table>
+  <script type="module">
+    // Phase-0 spike: which browser features does this OS's webview offer?
+    // Each check resolves to { ok, detail }. In the Lite shell the report is
+    // handed to the Rust `probe_report` command, which writes it and exits.
+    import initWasm from '../src/infrastructure/wasm-dsp/pkg/aw_dsp_wasm.js';
+
+    const withTimeout = (p, ms = 15000) =>
+      Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout ${ms} ms`)), ms))]);
+
+    function makeWav(seconds = 0.5, rate = 22050) {
+      const n = Math.floor(seconds * rate);
+      const buf = new ArrayBuffer(44 + n * 2);
+      const v = new DataView(buf);
+      const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true);
+      v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(i / 10) * 8000, true);
+      return buf;
+    }
+
+    const checks = {
+      'wasm.basic': async () => {
+        // (module (func (export "f") (result i32) i32.const 42))
+        const bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,7,5,1,1,102,0,0,10,6,1,4,0,65,42,11]);
+        const { instance } = await WebAssembly.instantiate(bytes);
+        return { ok: instance.exports.f() === 42 };
+      },
+      'wasm.awDsp': async () => { await initWasm(); return { ok: true, detail: 'aw_dsp_wasm loaded' }; },
+      'audio.context': async () => {
+        const ctx = new AudioContext();
+        const detail = `state=${ctx.state} sampleRate=${ctx.sampleRate}`;
+        await ctx.close();
+        return { ok: true, detail };
+      },
+      'audio.decodeWav': async () => {
+        const ctx = new OfflineAudioContext(1, 22050, 22050);
+        const ab = await ctx.decodeAudioData(makeWav());
+        return { ok: ab.length > 0, detail: `${ab.length} samples @ ${ab.sampleRate}` };
+      },
+      'audio.worklet': async () => {
+        const ctx = new AudioContext();
+        const src = 'registerProcessor("p", class extends AudioWorkletProcessor { process() { return true; } });';
+        await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+        new AudioWorkletNode(ctx, 'p');
+        await ctx.close();
+        return { ok: true };
+      },
+      'audio.elementBlob': async () => {
+        const a = new Audio();
+        a.src = URL.createObjectURL(new Blob([makeWav()], { type: 'audio/wav' }));
+        await new Promise((res, rej) => { a.oncanplay = res; a.onerror = () => rej(new Error(`media error ${a.error?.code}`)); a.load(); });
+        return { ok: true, detail: `duration=${a.duration.toFixed(2)} s` };
+      },
+      'worker.module': async () => {
+        const src = 'self.onmessage = (e) => self.postMessage(e.data * 2);';
+        const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+        const r = await new Promise((res) => { w.onmessage = (e) => res(e.data); w.postMessage(21); });
+        w.terminate();
+        return { ok: r === 42 };
+      },
+      'sharedArrayBuffer': async () => ({ ok: typeof SharedArrayBuffer !== 'undefined', detail: `crossOriginIsolated=${self.crossOriginIsolated}` }),
+      'storage.localStorage': async () => {
+        localStorage.setItem('probe', '1');
+        const ok = localStorage.getItem('probe') === '1';
+        localStorage.removeItem('probe');
+        return { ok };
+      },
+      'storage.indexedDB': async () => {
+        const db = await new Promise((res, rej) => {
+          const r = indexedDB.open('probe', 1);
+          r.onupgradeneeded = () => r.result.createObjectStore('s');
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+        });
+        await new Promise((res, rej) => {
+          const t = db.transaction('s', 'readwrite');
+          t.objectStore('s').put(new Uint8Array(1024), 'k');
+          t.oncomplete = res; t.onerror = () => rej(t.error);
+        });
+        db.close(); indexedDB.deleteDatabase('probe');
+        return { ok: true };
+      },
+      'storage.opfs': async () => {
+        const dir = await navigator.storage.getDirectory();
+        const fh = await dir.getFileHandle('probe.bin', { create: true });
+        if (!fh.createWritable) return { ok: false, detail: 'getDirectory ok, createWritable missing' };
+        const w = await fh.createWritable(); await w.write('x'); await w.close();
+        await dir.removeEntry('probe.bin');
+        return { ok: true };
+      },
+      'storage.estimate': async () => {
+        const e = await navigator.storage.estimate();
+        return { ok: true, detail: `quota=${Math.round((e.quota || 0) / 2 ** 20)} MiB` };
+      },
+      'fsAccess.showDirectoryPicker': async () => ({ ok: typeof window.showDirectoryPicker === 'function' }),
+      'fsAccess.showOpenFilePicker': async () => ({ ok: typeof window.showOpenFilePicker === 'function' }),
+      'fsAccess.showSaveFilePicker': async () => ({ ok: typeof window.showSaveFilePicker === 'function' }),
+      'canvas.offscreen2d': async () => ({ ok: typeof OffscreenCanvas !== 'undefined' && !!new OffscreenCanvas(4, 4).getContext('2d') }),
+      'canvas.webgl2': async () => ({ ok: !!document.createElement('canvas').getContext('webgl2') }),
+      'webgpu': async () => ({ ok: !!navigator.gpu && !!(await navigator.gpu.requestAdapter()) }),
+      'crypto.subtle': async () => { await crypto.subtle.digest('SHA-256', new Uint8Array(4)); return { ok: true }; },
+      'clipboard.api': async () => ({ ok: !!navigator.clipboard?.writeText }),
+      // Any HTTP status counts: the point is whether CORS lets the response through.
+      'net.xcApiCors': async () => {
+        const r = await fetch('https://xeno-canto.org/api/3/recordings?query=nr:1');
+        return { ok: true, detail: `HTTP ${r.status} (response readable, no CORS block)` };
+      },
+      'net.xcAudioDirect': async () => {
+        const r = await fetch('https://xeno-canto.org/1/download');
+        return { ok: r.ok, detail: `HTTP ${r.status} type=${r.headers.get('content-type')}` };
+      },
+    };
+
+    const results = {};
+    const table = document.getElementById('out');
+    for (const [name, fn] of Object.entries(checks)) {
+      let res;
+      try { res = await withTimeout(fn()); } catch (e) { res = { ok: false, detail: `${e?.name || 'Error'}: ${e?.message || e}` }; }
+      results[name] = res;
+      table.insertAdjacentHTML('beforeend',
+        `<tr><td>${name}</td><td class="${res.ok ? 'ok' : 'fail'}">${res.ok ? 'ok' : 'FAIL'}</td><td class="info">${res.detail ?? ''}</td></tr>`);
+    }
+    const report = {
+      userAgent: navigator.userAgent,
+      platform: navigator.userAgentData?.platform || navigator.platform,
+      origin: location.origin,
+      isSecureContext,
+      results,
+    };
+    console.log(JSON.stringify(report, null, 2));
+    const invoke = window.__TAURI_INTERNALS__?.invoke;
+    if (invoke) await invoke('probe_report', { report: JSON.stringify(report, null, 2) });
+  </script>
+</body>
+</html>

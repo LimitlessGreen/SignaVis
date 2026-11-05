@@ -1,0 +1,17 @@
+[package]
+name = "signavis-lite"
+version = "1.0.5"
+edition = "2021"
+description = "SignaVis Lite – the labeling app as a standalone desktop app"
+license = "AGPL-3.0-only"
+
+[lib]
+name = "signavis_lite_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri      = { version = "2", features = [] }
+serde_json = "1"
