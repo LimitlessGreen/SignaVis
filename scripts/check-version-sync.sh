@@ -93,6 +93,27 @@ if citation_cff.exists():
     if m and m.group(1) != version:
         errors.append(f"CITATION.cff version ({m.group(1)}) does not match VERSION ({version})")
 
+# Check python-wrapper/signavis/__init__.py __version__
+py_init = root / "python-wrapper" / "signavis" / "__init__.py"
+if py_init.exists():
+    m = re.search(r'^__version__ = "([^"]*)"', py_init.read_text(encoding="utf-8"), re.MULTILINE)
+    if not m:
+        errors.append("python-wrapper/signavis/__init__.py has no __version__")
+    elif m.group(1) != version:
+        errors.append(f"signavis.__version__ ({m.group(1)}) does not match VERSION ({version})")
+
+# CHANGELOG must have a section for this version (pre-releases use the base X.Y.Z section).
+# For releases (tag builds, or RELEASE_CHECK=1 from scripts/release.sh) it must be dated.
+is_release = os.getenv("GITHUB_REF_TYPE", "") == "tag" or os.getenv("RELEASE_CHECK", "") == "1"
+changelog = root / "CHANGELOG.md"
+if changelog.exists():
+    base = version.split("-", 1)[0]
+    m = re.search(rf'^## \[{re.escape(base)}\] - (.+)$', changelog.read_text(encoding="utf-8"), re.MULTILINE)
+    if not m:
+        errors.append(f"CHANGELOG.md has no '## [{base}]' section")
+    elif is_release and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", m.group(1).strip()):
+        errors.append(f"CHANGELOG.md section [{base}] is not dated ('{m.group(1).strip()}')")
+
 # On GitHub tag builds, ensure tag and version match exactly: vX.Y.Z <-> X.Y.Z
 gh_ref_type = os.getenv("GITHUB_REF_TYPE", "")
 gh_ref_name = os.getenv("GITHUB_REF_NAME", "")

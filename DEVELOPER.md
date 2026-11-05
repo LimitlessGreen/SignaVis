@@ -34,8 +34,14 @@ Syncing versions
 
 Release & publishing
 - CI (GitHub Actions) performs the actual build and publish on tags; local scripts are intended to make local development consistent.
-- Cut a release with `bash scripts/release.sh <version>` (e.g. `1.0.1` or `1.1.0-rc.1`): it syncs the version
-  across `package.json`, `pyproject.toml` and the Tauri files, commits, tags and pushes.
+- `VERSION` is the single source. Start each release cycle by setting it to the *next* version and adding a
+  `## [x.y.z] - Unreleased` CHANGELOG section; `npm run version:sync` + `npm run version:check` keep
+  `package.json`, `pyproject.toml`, `signavis.__version__`, Tauri files, `CITATION.cff` and the badge in line.
+- Cut a release with `bash scripts/release.sh [<version>] [--no-push]` (e.g. `1.0.4` or `1.1.0-rc.1`). It refuses
+  to run off `main`, with a dirty tree, an existing tag or a missing CHANGELOG section; it dates the section,
+  syncs, runs typecheck + tests, commits, tags and pushes.
+- Bundles carry a build-time version (`scripts/build-version.mjs`, `src/version.ts`): `x.y.z` on the release tag,
+  `x.y.z+<sha>` otherwise. It is written to XC sets as `annotation_software_name_and_version`.
 - The tag triggers CI, which publishes to npm (trusted publishing; pre-releases under the `next` dist-tag) and
   PyPI, and creates a GitHub release with the notes from [CHANGELOG.md](CHANGELOG.md) and the desktop installers.
 - Pushing a release tag also triggers the Zenodo archival (GitHub-Zenodo integration), minting a new
