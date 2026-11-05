@@ -49,3 +49,11 @@ export function resolveFetch(fetchImpl: unknown) {
     if (typeof globalThis.fetch === 'function') return globalThis.fetch.bind(globalThis);
     return null;
 }
+
+/** localStorage key under which the XC panel keeps the user's API key. */
+export const XC_API_KEY_STORAGE = 'signavis.xc-api-key.v1';
+
+/** The XC API key saved by the XC panel, or '' if none / storage unavailable. */
+export function readStoredXcApiKey(): string {
+    try { return String(globalThis.localStorage?.getItem(XC_API_KEY_STORAGE) || '').trim(); } catch { return ''; }
+}
