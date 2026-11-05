@@ -51,6 +51,8 @@ jobs:
 
       - name: Build Lite (debug, no bundle)
         working-directory: src-tauri-lite
+        env:
+          SIGNAVIS_LITE_DATA_OPTIONAL: "1"   # probe needs no taxonomy / species images
         run: npx tauri build --debug --no-bundle
 
       - name: Run probe

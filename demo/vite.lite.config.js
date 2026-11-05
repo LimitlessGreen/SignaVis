@@ -17,12 +17,19 @@ import { execSync } from 'child_process';
 const root = resolve(import.meta.dirname, '..');
 const out = resolve(root, '_site-lite');
 
+// Taxonomy + species images are generated (npm run taxonomy:build), not in git.
+// A shipped Lite needs them; the webview probe workflow does not.
+const DATA_OPTIONAL = process.env.SIGNAVIS_LITE_DATA_OPTIONAL === '1';
+
 function copyStatic(pairs) {
   return {
     name: 'copy-static',
     closeBundle() {
-      for (const [src, dest] of pairs) {
-        if (!existsSync(src)) throw new Error(`[copy-static] missing: ${src}`);
+      for (const [src, dest, optional] of pairs) {
+        if (!existsSync(src)) {
+          if (optional && DATA_OPTIONAL) { console.warn(`[copy-static] skipping missing ${src}`); continue; }
+          throw new Error(`[copy-static] missing: ${src} (generated data: run \`npm run taxonomy:build\`)`);
+        }
         mkdirSync(resolve(dest, '..'), { recursive: true });
         cpSync(src, dest, { recursive: true });
       }
@@ -104,8 +111,8 @@ export default defineConfig({
       ...vendorCopies,
       [resolve(root, 'src-tauri-lite', 'icons', 'icon.ico'), resolve(out, 'favicon.ico')],
       [resolve(root, 'models'), resolve(out, 'models')],
-      [resolve(root, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), resolve(out, 'demo', 'data', 'birdnet-taxonomy.v2.4.json')],
-      [resolve(root, 'demo', 'data', 'species_images'), resolve(out, 'demo', 'data', 'species_images')],
+      [resolve(root, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), resolve(out, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), true],
+      [resolve(root, 'demo', 'data', 'species_images'), resolve(out, 'demo', 'data', 'species_images'), true],
     ]),
   ],
   // Dev: same watch exclusions as vite.config.js (cargo target dirs lock files on Windows).
