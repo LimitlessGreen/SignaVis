@@ -24,6 +24,7 @@ import { EventBus } from '../shared/EventBus.ts';
 import type { LinkedLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
+import { LabelGrid } from '../ui/panels/label-grid.ts';
 
 export type { LinkedLabel };
 
@@ -160,6 +161,15 @@ export class BirdNETPlayer {
      * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
      * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
      * @param {boolean}     [options.normalize] - play normalized to -1 dBFS peak, max +40 dB (default: false)
+     * @param {string[]}    [options.toolbar] - toolbar controls to keep, all others are hidden:
+     *   'open', 'transport', 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
+     *   'reset', 'draw', 'stamp', 'snap', 'zoombox', 'zoom', 'settings' (default: all)
+     * @param {'boxes'|'focus'} [options.labelDisplay] - 'focus' draws only the hovered or selected
+     *   label on the spectrogram; the label tracks below show them all (default: boxes)
+     * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
+     *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
+     * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
+     *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set)
      */
     constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
@@ -231,6 +241,9 @@ export class BirdNETPlayer {
         this._bindGlobalHotkeys();
         this._injectAnnotationToolbar();
         if (this.options.readOnly) this.setReadOnly(true);
+        if (Array.isArray(this.options.toolbar)) this._applyToolbarAllowList(this.options.toolbar);
+        if (this.options.labelDisplay === 'focus') this.root?.classList.add('label-display-focus');
+        if (this.options.labelTable) this._initBuiltinLabelTable();
         if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
@@ -694,6 +707,8 @@ export class BirdNETPlayer {
 
     /** Tear down the player and free resources */
     destroy() {
+        this._labelGrid?.destroy();
+        this._labelGrid = null;
         if (this._globalKeyHandler) {
             document.removeEventListener('keydown', this._globalKeyHandler, true);
             this._globalKeyHandler = null;
@@ -939,6 +954,109 @@ export class BirdNETPlayer {
     setNormalize(on: boolean) { this._state?._setNormalize(on); }
 
     get normalize() { return !!this._state?.normalize; }
+
+    // ── Built-in label table ────────────────────────────────────────
+
+    _labelGrid: LabelGrid | null = null;
+
+    _initBuiltinLabelTable() {
+        const host = this.enableLabelTable();
+        if (!host) return;
+        const grid = new LabelGrid({
+            host,
+            tools: this.getLabelTableTools(),
+            resolveName: (l: any) => ({
+                display: l.commonName || l.label || l.species || '',
+                scientific: l.scientificName && l.scientificName !== (l.commonName || l.label) ? l.scientificName : '',
+            }),
+            isLocked: (l: any) => this._readOnly || !!l.readonly,
+            getViewRange: () => this.getVisibleTimeRange(),
+            getDuration: () => this.duration,
+            getMaxFreq: () => (this._state?.audioBuffer?.sampleRate || 0) / 2,
+            onChange: () => {},
+            onFocus: (id: string) => {
+                const l = this._linkedLabels.get(id);
+                this._emit('labelfocus', { id, source: 'table', interaction: 'click' });
+                if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
+            },
+            onHover: (id: string | null) => this._emit('labelfocus', { id, source: 'table', interaction: 'hover' }),
+            onTogglePlay: () => this.togglePlayPause(),
+            columns: Array.isArray(this.options.labelTableColumns) ? this.options.labelTableColumns : undefined,
+            storageKey: 'signavis.labelgrid.embed.v1',
+        });
+        this._labelGrid = grid;
+        const refresh = () => grid.render([...this._linkedLabels.values()]);
+        this.on('labelsync', refresh);
+        this.on('timeupdate', (e: any) => grid.setPlayhead(e.detail?.currentTime ?? this.currentTime));
+        this.on('labelfocus', (e: any) => {
+            const d = e.detail || {};
+            if (d.source === 'table') return;
+            if (d.interaction === 'click') grid.highlightRow(d.id ?? null);
+            else grid.setHover(d.id ?? null);
+        });
+        refresh();
+        this.setLabelView('table');
+    }
+
+    /** Select a label as if it was clicked: highlights it everywhere and scrolls it into view. */
+    selectLabel(id: string | null) {
+        this._emit('labelfocus', { id, source: 'api', interaction: 'click' });
+        this._labelGrid?.highlightRow(id);
+    }
+
+    // ── Toolbar allow-list ──────────────────────────────────────────
+
+    _applyToolbarAllowList(keep: string[]) {
+        const root = this.root;
+        if (!root) return;
+        const q = (sel: string) => root.querySelector(sel) as HTMLElement | null;
+        const controls: Record<string, Array<HTMLElement | null | undefined>> = {
+            open:      [q('[data-aw="openFileBtn"]')],
+            transport: [q('.transport')],
+            time:      [q('[data-aw="timeDisplay"]')],
+            volume:    [q('.audio-ctl')],
+            listen:    [q('[data-aw="slowdownSelect"]')],
+            follow:    [q('[data-aw="followToggleBtn"]')],
+            loop:      [q('[data-aw="loopToggleBtn"]')],
+            crosshair: [q('[data-aw="crosshairToggleBtn"]')],
+            fit:       [q('[data-aw="fitViewBtn"]')],
+            reset:     [q('[data-aw="resetViewBtn"]')],
+            draw:      [this._drawBtn],
+            stamp:     [this._stampBtn],
+            snap:      [this._snapBtn],
+            zoombox:   [this._zoomBoxBtn],
+            zoom:      [q('.zoom-widget')],
+            settings:  [q('[data-aw="settingsToggleBtn"]')],
+        };
+        const wanted = new Set(keep);
+        for (const [key, els] of Object.entries(controls)) {
+            if (wanted.has(key)) continue;
+            for (const el of els) if (el) el.style.display = 'none';
+        }
+        const shown = (el: Element) => (el as HTMLElement).style.display !== 'none' && !(el as HTMLElement).hidden;
+        // Groups whose every button is gone go too, so no empty "⋯" or gap is left.
+        for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools')) {
+            const buttons = [...(group as HTMLElement).querySelectorAll<HTMLElement>('[data-aw$="Btn"], .toolbar-tools > button')]
+                .filter((b) => !b.classList.contains('view-more-btn'));
+            if (buttons.length && !buttons.some(shown)) group.style.display = 'none';
+        }
+        for (const bar of (root as HTMLElement).querySelectorAll<HTMLElement>('.toolbar-primary, .toolbar-secondary')) {
+            let contentBefore = false;
+            let pendingSep: HTMLElement | null = null;
+            for (const el of [...bar.children] as HTMLElement[]) {
+                if (el.classList.contains('toolbar-sep')) {
+                    if (pendingSep || !contentBefore) el.style.display = 'none';
+                    else pendingSep = el;
+                    continue;
+                }
+                if (!shown(el) || el.tagName === 'INPUT') continue;
+                if (pendingSep) pendingSep.style.display = '';
+                pendingSep = null;
+                contentBefore = true;
+            }
+            if (pendingSep) pendingSep.style.display = 'none';
+        }
+    }
 
     // ── Annotation Toolbar ──────────────────────────────────────────
 

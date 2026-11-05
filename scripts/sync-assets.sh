@@ -17,6 +17,8 @@ fi
 echo "▸ Syncing dist → python-wrapper assets …"
 cp dist/birdnet-player.iife.js "${ASSETS_DIR}/birdnet-player.iife.js"
 cp dist/birdnet-player.css     "${ASSETS_DIR}/birdnet-player.css"
+# Embeds (signavis.gradio) load tokens + player styles scoped to the player root.
+node scripts/scope-css.mjs dist/tokens.css dist/birdnet-player.css "${ASSETS_DIR}/birdnet-player.embed.css"
 # Gradio embeds run offline, so WaveSurfer ships alongside (BSD-3-Clause).
 cp node_modules/wavesurfer.js/dist/wavesurfer.min.js "${ASSETS_DIR}/wavesurfer.min.js"
 cp node_modules/wavesurfer.js/LICENSE                "${ASSETS_DIR}/wavesurfer.LICENSE.txt"

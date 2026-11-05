@@ -778,3 +778,9 @@
     cursor: pointer;
 }
 .loupe-window-bar button:hover { background: rgba(255, 255, 255, 0.1); }
+
+// labelDisplay: 'focus' — dense detector output (e.g. BirdNET's overlapping 3 s windows) stays
+// readable: the spectrogram shows only the label in hand, the tracks below show them all.
+.label-display-focus .spectrogram-label-region:not(.focused):not(.selected) {
+  display: none;
+}

@@ -34,7 +34,7 @@ from urllib.parse import quote
 
 import gradio as gr
 
-__all__ = ["SignaVisPlayer", "player_value", "file_url", "ASSETS_DIR"]
+__all__ = ["SignaVisPlayer", "player_value", "file_url", "ASSETS_DIR", "VIEWER_TOOLBAR", "DETECTION_COLUMNS"]
 
 ASSETS_DIR = str(files("signavis.assets"))
 
@@ -43,8 +43,13 @@ _select_counter = itertools.count(1)
 DEFAULT_OPTIONS: dict = {
     "viewMode": "spectrogram",
     "showFileOpen": False,
-    "compactToolbar": True,
 }
+
+#: Toolbar of a player that shows detections: listen and navigate, nothing else.
+VIEWER_TOOLBAR = ["transport", "time", "volume", "zoom"]
+
+#: Table columns for detector output: what was found, when, how sure.
+DETECTION_COLUMNS = ["species", "start", "end", "conf"]
 
 
 def file_url(path: str) -> str:
@@ -82,6 +87,18 @@ def player_value(
 
 _JS_ON_LOAD = r"""
 const host = element.querySelector('.signavis-host');
+
+// Menus and popovers the player appends to <body> take the embed styles via this class.
+if (!window.__signavisPortals) {
+  window.__signavisPortals = true;
+  const mark = (n) => {
+    if (n.nodeType === 1 && !/^(GRADIO-APP|SCRIPT|STYLE|LINK)$/.test(n.tagName)) n.classList.add('signavis-portal');
+  };
+  for (const n of document.body.children) mark(n);
+  new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) mark(n);
+  }).observe(document.body, { childList: true });
+}
 const state = { player: null, src: null, labels: null, select: null, chain: Promise.resolve() };
 
 async function ensurePlayer() {
@@ -161,6 +178,17 @@ class SignaVisPlayer(gr.HTML):
         Initial height of the spectrogram in pixels.
     read_only
         View and listen only: no drawing or editing of labels.
+    toolbar
+        Toolbar controls to keep (see the player's ``toolbar`` option);
+        ``None`` keeps all of them. Defaults to :data:`VIEWER_TOOLBAR`.
+    label_table
+        Show the detections in a sortable table below the player.
+    label_table_columns
+        Columns the table starts with; the user can change them in its column
+        menu. Defaults to :data:`DETECTION_COLUMNS`.
+    label_display
+        ``'focus'`` draws only the hovered or selected detection on the
+        spectrogram (the label tracks show all of them); ``'boxes'`` draws all.
     options
         Player constructor options (``viewMode``, ``showOverview``, …), merged
         over :data:`DEFAULT_OPTIONS`.
@@ -174,6 +202,10 @@ class SignaVisPlayer(gr.HTML):
         *,
         spectrogram_height: int = 260,
         read_only: bool = True,
+        toolbar: Optional[Iterable[str]] = tuple(VIEWER_TOOLBAR),
+        label_table: bool = True,
+        label_table_columns: Optional[Iterable[str]] = tuple(DETECTION_COLUMNS),
+        label_display: str = "focus",
         options: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ):
@@ -181,18 +213,29 @@ class SignaVisPlayer(gr.HTML):
             **DEFAULT_OPTIONS,
             "spectrogramHeight": int(spectrogram_height),
             "readOnly": bool(read_only),
+            "labelTable": bool(label_table),
+            **(
+                {"labelTableColumns": list(label_table_columns)}
+                if label_table_columns is not None
+                else {}
+            ),
+            "labelDisplay": label_display,
+            **({"toolbar": list(toolbar)} if toolbar is not None else {}),
             **(options or {}),
         }
         gr.set_static_paths([ASSETS_DIR])
         assets = file_url(ASSETS_DIR).rstrip("/")
         head = (
-            f'<link rel="stylesheet" href="{assets}/birdnet-player.css">'
+            f'<link rel="stylesheet" href="{assets}/birdnet-player.embed.css">'
             f'<script src="{assets}/wavesurfer.min.js"></script>'
             f'<script src="{assets}/birdnet-player.iife.js"></script>'
         )
         super().__init__(
             value=value,
-            html_template='<div class="signavis-root"><div class="signavis-host"></div></div>',
+            html_template=(
+                '<div class="signavis-root signavis-embed">'
+                '<div class="signavis-host"></div></div>'
+            ),
             css_template=_CSS,
             # Baked into the script: a gr.update() of the component replaces its
             # custom props, so options passed as a prop would not survive one.

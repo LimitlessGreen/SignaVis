@@ -69,6 +69,10 @@ export interface LabelGridOptions {
   onTogglePlay?: () => void;
   /** Export the given rows; columns = the visible table columns as raw CSV columns. */
   onExport?: (format: LabelExportFormat, labels: Lbl[], columns: LabelExportColumn[]) => void;
+  /** Columns shown until the user changes them (keys as in the column menu); default: all but the optional ones. */
+  columns?: string[];
+  /** localStorage key for sort, filter and column preferences, so embeds don't share them with the app. */
+  storageKey?: string;
 }
 
 const ROW_H = 20;
@@ -173,15 +177,16 @@ function withTag(l: Lbl, key: string, v: string) {
   return tags;
 }
 
-function loadPrefs(): any {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch { return {}; }
+function loadPrefs(key = STORE_KEY): any {
+  try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; }
 }
-function savePrefs(p: any) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* storage blocked */ }
+function savePrefs(p: any, key = STORE_KEY) {
+  try { localStorage.setItem(key, JSON.stringify(p)); } catch { /* storage blocked */ }
 }
 
 export class LabelGrid {
   opts: LabelGridOptions;
+  private storeKey: string;
   private labels: Lbl[] = [];
   private rows: Lbl[] = [];
   private byId = new Map<string, Lbl>();
@@ -215,7 +220,8 @@ export class LabelGrid {
 
   constructor(opts: LabelGridOptions) {
     this.opts = opts;
-    const p = loadPrefs();
+    this.storeKey = opts.storageKey || STORE_KEY;
+    const p = loadPrefs(this.storeKey);
     this.prefs = {
       sortKey: COLUMNS.some((c) => c.key === p.sortKey) ? p.sortKey : 'start',
       sortDir: p.sortDir === -1 ? -1 : 1,
@@ -358,7 +364,7 @@ export class LabelGrid {
     this.inViewBtn = this.toggleBtn('In view', 'Only labels in the visible part of the spectrogram', () => this.setInView(!this.prefs.inView));
     this.followBtn = this.toggleBtn('Follow', 'Scroll the table with the playhead', () => {
       this.prefs.follow = !this.prefs.follow;
-      savePrefs(this.prefs);
+      savePrefs(this.prefs, this.storeKey);
       this.syncTools();
     });
     this.counter = document.createElement('span');
@@ -429,7 +435,7 @@ export class LabelGrid {
     const s = new Set(this.prefs.sources);
     if (s.has(k)) s.delete(k); else s.add(k);
     this.prefs.sources = [...s];
-    savePrefs(this.prefs);
+    savePrefs(this.prefs, this.storeKey);
     this.recompute();
   }
 
@@ -437,13 +443,13 @@ export class LabelGrid {
     const all = SOURCE_DEFS.map((s) => s.key);
     const only = this.prefs.sources.length === 1 && this.prefs.sources[0] === k;
     this.prefs.sources = only ? all : [k];
-    savePrefs(this.prefs);
+    savePrefs(this.prefs, this.storeKey);
     this.recompute();
   }
 
   private setInView(on: boolean) {
     this.prefs.inView = on;
-    savePrefs(this.prefs);
+    savePrefs(this.prefs, this.storeKey);
     clearInterval(this.viewPoll);
     this.viewRange = on ? (this.opts.getViewRange?.() ?? null) : null;
     if (on) {
@@ -492,14 +498,15 @@ export class LabelGrid {
   private isColVisible(c: Column) {
     if (c.fixed) return true;
     const v = this.prefs.vis[c.key];
-    return v === undefined ? !c.hiddenByDefault : v;
+    if (v !== undefined) return v;
+    return this.opts.columns ? this.opts.columns.includes(c.key) : !c.hiddenByDefault;
   }
 
   private toggleColumn(key: string) {
     const c = COLUMNS.find((x) => x.key === key);
     if (!c) return;
     this.prefs.vis[key] = !this.isColVisible(c);
-    savePrefs(this.prefs);
+    savePrefs(this.prefs, this.storeKey);
     this.applyColumns();
     if (this.cursor && !this.visCols.includes(this.cursor.col)) this.cursor.col = this.visCols[1];
   }
@@ -515,7 +522,7 @@ export class LabelGrid {
           action: () => this.toggleColumn(c.key),
         })),
         { separator: true },
-        { label: 'Reset columns', action: () => { this.prefs.vis = {}; this.prefs.widths = {}; savePrefs(this.prefs); this.applyColumns(); } },
+        { label: 'Reset columns', action: () => { this.prefs.vis = {}; this.prefs.widths = {}; savePrefs(this.prefs, this.storeKey); this.applyColumns(); } },
       ],
     });
   }
@@ -536,7 +543,7 @@ export class LabelGrid {
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
       this.root.classList.remove('col-resizing');
-      savePrefs(this.prefs);
+      savePrefs(this.prefs, this.storeKey);
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
@@ -568,12 +575,12 @@ export class LabelGrid {
       grip.title = 'Drag to resize - double click: default width';
       grip.addEventListener('pointerdown', (e) => this.startColResize(e, c, grip));
       grip.addEventListener('click', (e) => e.stopPropagation());
-      grip.addEventListener('dblclick', (e) => { e.stopPropagation(); delete this.prefs.widths[c.key]; savePrefs(this.prefs); this.syncColWidths(); });
+      grip.addEventListener('dblclick', (e) => { e.stopPropagation(); delete this.prefs.widths[c.key]; savePrefs(this.prefs, this.storeKey); this.syncColWidths(); });
       h.appendChild(grip);
       h.addEventListener('click', () => {
         if (this.prefs.sortKey === c.key) this.prefs.sortDir = this.prefs.sortDir === 1 ? -1 : 1;
         else { this.prefs.sortKey = c.key; this.prefs.sortDir = 1; }
-        savePrefs(this.prefs);
+        savePrefs(this.prefs, this.storeKey);
         this.recompute();
       });
       this.head.appendChild(h);
