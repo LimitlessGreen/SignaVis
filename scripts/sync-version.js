@@ -57,6 +57,16 @@ async function main() {
       }
     }
 
+    // python-wrapper/signavis/__init__.py — __version__
+    const pyInitPath = path.join(ROOT_DIR, "python-wrapper", "signavis", "__init__.py");
+    try {
+      const initText = await fs.readFile(pyInitPath, "utf8");
+      const replaced = initText.replace(/^__version__ = "[^"]*"/m, `__version__ = "${version}"`);
+      if (replaced !== initText) await fs.writeFile(pyInitPath, replaced, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
     // demo/storybook.html badge
     const storybookPath = path.join(ROOT_DIR, "demo", "storybook.html");
     try {
