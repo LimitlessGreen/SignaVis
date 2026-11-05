@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2026-11-04
+## [1.0.4] - Unreleased
 
 ### Added
 - `signavis.gradio.SignaVisPlayer`: the player as a native Gradio 6
