@@ -1,6 +1,6 @@
 import pathlib
 
-__version__ = "1.0.4"  # synced from VERSION by scripts/sync-version.js
+__version__ = "1.0.5"  # synced from VERSION by scripts/sync-version.js
 
 from .renderer import render_daw_player, generate_spectrogram_image
 

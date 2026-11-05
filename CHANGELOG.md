@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.4] - Unreleased
+## [1.0.5] - Unreleased
+
+### Fixed
+- Show the visible spectrogram sooner for long recordings while building the full pyramid in the background.
+- Reduce peak memory used by spectrogram workers and cache maintenance.
+- Cap preview tile requests when zoomed out.
+- Sample preview contrast statistics across the whole recording.
+
+### Changed
+- `scripts/release.sh` also refuses to release when `main` is behind `origin/main`.
+
+## [1.0.4] - 2026-11-05
 
 ### Added
 - `signavis.gradio.SignaVisPlayer`: the player as a native Gradio 6
@@ -21,13 +32,9 @@ All notable changes to this project will be documented in this file.
   (`SignaVis 1.0.4`, or `SignaVis 1.0.4+<commit>` for unreleased builds).
 
 ### Changed
-- Release tooling: `scripts/release.sh` refuses to tag off `main` or behind `origin/main`, with a dirty
+- Release tooling: `scripts/release.sh` refuses to tag off `main`, with a dirty
   tree or without a CHANGELOG section, and runs typecheck and tests first.
 - The Python package is now dual-licensed: MIT or AGPL-3.0, at your choice.
-
-### Fixed
-- Show the visible spectrogram sooner for long recordings while building the full pyramid in the background.
-- Reduce peak memory used by spectrogram workers and cache maintenance.
 
 ## [1.0.3] - 2026-11-04
 
