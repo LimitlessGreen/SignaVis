@@ -11,8 +11,18 @@ All notable changes to this project will be documented in this file.
   instead of being base64-inlined. Detections are drawn as read-only labels
   and a `select` value scrolls to and plays a span. Built for the
   BirdNET-Analyzer GUI.
+- Player options `toolbar` (keep only the listed controls), `labelDisplay: 'focus'`
+  (draw only the hovered/selected label on the spectrogram) and `labelTable` /
+  `labelTableColumns` (built-in sortable label table). `SignaVisPlayer` uses
+  them by default for a compact detection viewer.
+- Embedded players (Gradio) load a stylesheet scoped to the player root, so
+  host page styles and the player no longer affect each other.
+- XC sets record the exact build in `annotation_software_name_and_version`
+  (`SignaVis 1.0.4`, or `SignaVis 1.0.4+<commit>` for unreleased builds).
 
 ### Changed
+- Release tooling: `scripts/release.sh` refuses to tag off `main`, with a dirty
+  tree or without a CHANGELOG section, and runs typecheck and tests first.
 - The Python package is now dual-licensed: MIT or AGPL-3.0, at your choice.
 
 ### Fixed
