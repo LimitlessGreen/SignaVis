@@ -1,13 +1,11 @@
-function isTauriContext() {
-  return typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
-}
+import { isFullDesktop } from './runtime.ts';
 
 /**
  * Read desktop runtime metadata from Tauri IPC.
- * Returns null in browser mode or when IPC is unavailable.
+ * Returns null in browser mode, in SignaVis Lite, or when IPC is unavailable.
  */
 export async function getDesktopRuntimeInfo() {
-  if (!isTauriContext()) return null;
+  if (!isFullDesktop()) return null;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     return await invoke('get_desktop_runtime_info');

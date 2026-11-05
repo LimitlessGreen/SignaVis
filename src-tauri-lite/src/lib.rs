@@ -10,6 +10,14 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 const PROBE_ENV: &str = "SIGNAVIS_LITE_PROBE";
 
+/// Runs before any page script: lets the frontend tell Lite apart from the
+/// full desktop shell (see src/infrastructure/tauri/runtime.ts).
+const LITE_MARKER_SCRIPT: &str = concat!(
+    "Object.defineProperty(window, '__SIGNAVIS_LITE__', { value: Object.freeze({ version: '",
+    env!("CARGO_PKG_VERSION"),
+    "' }), enumerable: false });"
+);
+
 #[tauri::command]
 fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
     let path = std::env::var(PROBE_ENV).map_err(|_| "probe mode is off".to_string())?;
@@ -30,6 +38,7 @@ pub fn run() {
             };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App(page.into()))
                 .title("SignaVis Lite")
+                .initialization_script(LITE_MARKER_SCRIPT)
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(900.0, 600.0)
                 .build()?;

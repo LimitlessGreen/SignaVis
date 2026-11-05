@@ -98,65 +98,70 @@ async function main() {
       if (err.code !== "ENOENT") throw err;
     }
 
-    // src-tauri/tauri.conf.json
-    const tauriConfPath = path.join(ROOT_DIR, "src-tauri", "tauri.conf.json");
-    try {
-      const tauriText = await fs.readFile(tauriConfPath, "utf8");
-      const tauriConf = JSON.parse(tauriText);
-      tauriConf.version = version;
-      // MSI (WiX) only accepts numeric versions: map 1.0.0-rc.2 -> 1.0.0.2.
-      const pre = version.match(/^(\d+\.\d+\.\d+)-[A-Za-z.]*?(\d+)$/);
-      tauriConf.bundle ??= {};
-      if (pre) {
-        tauriConf.bundle.windows ??= {};
-        tauriConf.bundle.windows.wix = { ...(tauriConf.bundle.windows.wix ?? {}), version: `${pre[1]}.${pre[2]}` };
-      } else if (tauriConf.bundle.windows?.wix) {
-        delete tauriConf.bundle.windows.wix.version;
-        if (!Object.keys(tauriConf.bundle.windows.wix).length) delete tauriConf.bundle.windows.wix;
-        if (!Object.keys(tauriConf.bundle.windows).length) delete tauriConf.bundle.windows;
-      }
-      await fs.writeFile(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n", "utf8");
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-    }
-
-    // src-tauri/Cargo.toml — update only the [package] version line
-    const cargoTomlPath = path.join(ROOT_DIR, "src-tauri", "Cargo.toml");
-    try {
-      const cargoText = await fs.readFile(cargoTomlPath, "utf8");
-      const lines = cargoText.split(/\r?\n/);
-      let inPackage = false;
-      let updated = false;
-      for (let i = 0; i < lines.length; i++) {
-        const stripped = lines[i].trim();
-        if (/^\[.*\]$/.test(stripped)) {
-          inPackage = stripped === "[package]";
-          continue;
+    // Tauri shells: the full desktop app and SignaVis Lite.
+    const TAURI_SHELLS = [
+      { dir: "src-tauri", crate: "signavis" },
+      { dir: "src-tauri-lite", crate: "signavis-lite" },
+    ];
+    for (const shell of TAURI_SHELLS) {
+      // <shell>/tauri.conf.json
+      const tauriConfPath = path.join(ROOT_DIR, shell.dir, "tauri.conf.json");
+      try {
+        const tauriText = await fs.readFile(tauriConfPath, "utf8");
+        const tauriConf = JSON.parse(tauriText);
+        tauriConf.version = version;
+        // MSI (WiX) only accepts numeric versions: map 1.0.0-rc.2 -> 1.0.0.2.
+        const pre = version.match(/^(\d+\.\d+\.\d+)-[A-Za-z.]*?(\d+)$/);
+        tauriConf.bundle ??= {};
+        if (pre) {
+          tauriConf.bundle.windows ??= {};
+          tauriConf.bundle.windows.wix = { ...(tauriConf.bundle.windows.wix ?? {}), version: `${pre[1]}.${pre[2]}` };
+        } else if (tauriConf.bundle.windows?.wix) {
+          delete tauriConf.bundle.windows.wix.version;
+          if (!Object.keys(tauriConf.bundle.windows.wix).length) delete tauriConf.bundle.windows.wix;
+          if (!Object.keys(tauriConf.bundle.windows).length) delete tauriConf.bundle.windows;
         }
-        if (inPackage && lines[i].startsWith("version = ")) {
-          lines[i] = `version = "${version}"`;
-          updated = true;
-          break;
-        }
+        await fs.writeFile(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n", "utf8");
+      } catch (err) {
+        if (err.code !== "ENOENT") throw err;
       }
-      if (updated) {
-        await fs.writeFile(cargoTomlPath, lines.join("\n").replace(/\n+$/, "") + "\n", "utf8");
-      }
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-    }
 
-    // src-tauri/Cargo.lock — version of the signavis package entry
-    const cargoLockPath = path.join(ROOT_DIR, "src-tauri", "Cargo.lock");
-    try {
-      const lockText = await fs.readFile(cargoLockPath, "utf8");
-      const replaced = lockText.replace(
-        /(\[\[package\]\]\r?\nname = "signavis"\r?\nversion = ")[^"]*(")/,
-        `$1${version}$2`,
-      );
-      if (replaced !== lockText) await fs.writeFile(cargoLockPath, replaced, "utf8");
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
+      // <shell>/Cargo.toml — update only the [package] version line
+      const cargoTomlPath = path.join(ROOT_DIR, shell.dir, "Cargo.toml");
+      try {
+        const cargoText = await fs.readFile(cargoTomlPath, "utf8");
+        const lines = cargoText.split(/\r?\n/);
+        let inPackage = false;
+        let updated = false;
+        for (let i = 0; i < lines.length; i++) {
+          const stripped = lines[i].trim();
+          if (/^\[.*\]$/.test(stripped)) {
+            inPackage = stripped === "[package]";
+            continue;
+          }
+          if (inPackage && lines[i].startsWith("version = ")) {
+            lines[i] = `version = "${version}"`;
+            updated = true;
+            break;
+          }
+        }
+        if (updated) {
+          await fs.writeFile(cargoTomlPath, lines.join("\n").replace(/\n+$/, "") + "\n", "utf8");
+        }
+      } catch (err) {
+        if (err.code !== "ENOENT") throw err;
+      }
+
+      // <shell>/Cargo.lock — version of the shell's own package entry
+      const cargoLockPath = path.join(ROOT_DIR, shell.dir, "Cargo.lock");
+      try {
+        const lockText = await fs.readFile(cargoLockPath, "utf8");
+        const entry = new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "${shell.crate}"\\r?\\nversion = ")[^"]*(")`);
+        const replaced = lockText.replace(entry, `$1${version}$2`);
+        if (replaced !== lockText) await fs.writeFile(cargoLockPath, replaced, "utf8");
+      } catch (err) {
+        if (err.code !== "ENOENT") throw err;
+      }
     }
 
     console.log(`Synced package versions to ${version}`);

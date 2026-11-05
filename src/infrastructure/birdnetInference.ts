@@ -7,7 +7,9 @@
  * - Audio is resampled to 48 kHz and split into 3-second chunks for prediction.
  */
 
+import { vendorUrl } from './tauri/runtime.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
+const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
 const TARGET_SR = 48000;
 const CHUNK_SECONDS = 3;
 const CHUNK_SAMPLES = TARGET_SR * CHUNK_SECONDS; // 144 000
@@ -23,7 +25,7 @@ export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/mode
 // Worker source — runs in a dedicated thread with WebGL-accelerated TF.js
 // ---------------------------------------------------------------------------
 const WORKER_SOURCE = `
-importScripts('${TFJS_CDN}');
+importScripts('${TFJS_URL}');
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
 class MelSpecLayerSimple extends tf.layers.Layer {

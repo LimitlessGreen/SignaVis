@@ -9,6 +9,7 @@
 //   player.play();
 // ═══════════════════════════════════════════════════════════════════════
 
+import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
 import { createPlayerHTML, DEFAULT_OPTIONS } from '../ui/template.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
@@ -52,6 +53,7 @@ export type AnnotationInput = Partial<AnnotationEntry> & { start: number; end: n
 export type SpectrogramLabelInput = Partial<SpectrogramLabelEntry> & { start: number; end: number };
 
 const WAVESURFER_CDN = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
+const WAVESURFER_URL = () => vendorUrl('wavesurfer/wavesurfer.esm.js', WAVESURFER_CDN);
 
 
 
@@ -217,7 +219,7 @@ export class BirdNETPlayer {
         // 2. Resolve WaveSurfer (option → global → CDN import)
         const WaveSurfer = this.options.WaveSurfer
             || (window as any).WaveSurfer
-            || (await import(/* @vite-ignore */ WAVESURFER_CDN)).default;
+            || (await import(/* @vite-ignore */ WAVESURFER_URL())).default;
 
         // 3. Create internal state machine — wire DSP undo into the shared stack
         this._state = new PlayerState(

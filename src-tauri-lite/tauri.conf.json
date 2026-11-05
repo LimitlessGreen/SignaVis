@@ -5,12 +5,23 @@
   "identifier": "io.github.limitlessgreen.signavis.lite",
   "build": {
     "frontendDist": "../_site-lite",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:lite",
     "beforeBuildCommand": "npm run build:lite"
   },
   "app": {
     "windows": [],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
+        "worker-src": "'self' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: https:",
+        "media-src": "'self' data: blob: https:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:*"
+      }
     }
   },
   "bundle": {
