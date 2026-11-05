@@ -17,6 +17,9 @@ import {
 } from './pkg/aw_dsp_wasm.js';
 import { WASM_PYRAMID_BLOCK_FRAMES } from '../../shared/constants.ts';
 
+const PREVIEW_STAT_SAMPLES = 12;   // windows sampled for provisional contrast stats
+const PREVIEW_STAT_FRAMES = 128;   // frames per window
+
 // OPFS sync access handles are worker-only and missing from the DOM lib.
 interface FileSystemSyncAccessHandle {
     read(buf: Uint8Array, opts?: { at: number }): number;
@@ -154,9 +157,14 @@ function startCoordinator(ports: MessagePort[]) {
                     const builder = new WasmPyramidBuilderV2(paramsJson, wav.nSamples);
                     try {
                         builder.pushBlock(first);
+                        // Contrast statistics from short windows spread over the whole
+                        // file, so they barely change when the full pyramid takes over.
+                        for (const [a, b] of previewSampleRanges(total, first.length / engine.outBins())) {
+                            builder.pushBlock(await previewTile(a, b));
+                        }
                         const meta = JSON.parse(builder.finish());
                         // Until the complete pyramid is ready, request full-resolution
-                        // tiles only. Their statistics are provisional and local.
+                        // tiles only. Their statistics are provisional (sampled).
                         meta.levels = [{ ...meta.levels[0], nFrames: total }];
                         ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta, fromCache: false });
                     } finally { builder.free(); }
@@ -190,6 +198,20 @@ function startCoordinator(ports: MessagePort[]) {
             ctx.postMessage({ type: 'error', requestId: msg.requestId, message: err?.message || String(err) });
         }
     };
+
+    /** Up to PREVIEW_STAT_SAMPLES evenly spaced frame windows after the first block. */
+    function previewSampleRanges(total: number, covered: number): [number, number][] {
+        const out: [number, number][] = [];
+        const rest = total - covered;
+        if (rest <= 0) return out;
+        const n = Math.min(PREVIEW_STAT_SAMPLES, Math.ceil(rest / PREVIEW_STAT_FRAMES));
+        for (let i = 0; i < n; i++) {
+            const a = covered + Math.floor(((i + 0.5) / n) * rest - PREVIEW_STAT_FRAMES / 2);
+            const lo = Math.max(covered, Math.min(a, total - PREVIEW_STAT_FRAMES));
+            out.push([lo, Math.min(total, lo + PREVIEW_STAT_FRAMES)]);
+        }
+        return out;
+    }
 
     async function previewTile(f0: number, f1: number): Promise<Float32Array> {
         const p = preview;
