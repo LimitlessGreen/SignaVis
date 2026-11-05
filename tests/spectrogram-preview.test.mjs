@@ -48,3 +48,15 @@ test('limits workers for large frequency dimensions while keeping at least one',
     assert.equal(pyramidWorkerCount({ ...params, nFft: 16384, scale: { kind: 'linear' } }, 16), 1);
     assert.equal(pyramidWorkerCount(params, 1), 1);
 });
+
+test('caps preview tile requests when zoomed out before the pyramid exists', async () => {
+    const starts = [];
+    const source = { tile: async (_level, a, b) => { starts.push(a); return new Float32Array((b - a) * 2); }, dispose() {} };
+    const big = meta(-80); big.levels[0].nFrames = 1024 * 100;
+    const manager = new WasmTileManager(source, big, false, 820, options);
+    manager.previewMode = true;
+    manager.requestViewport(0, 820, 1);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(starts.length <= 8, `requested ${starts.length} tiles`);
+    manager.dispose();
+});

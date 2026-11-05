@@ -40,6 +40,9 @@ import { CQT_FMIN, CQT_BINS_PER_OCTAVE, WASM_PYRAMID_BLOCK_FRAMES } from '../sha
 const TILE_FRAMES = 1024;          // frames of the chosen level per tile
 const TILE_MAX_IN_MEMORY = 48;     // LRU limit across all levels
 const TILE_PRELOAD_AHEAD = 1;
+// While only the level-0 preview exists, a zoomed-out view would request the
+// whole file at full resolution; cap it to the tiles around the view centre.
+const PREVIEW_MAX_TILES = 8;
 
 /** Limit the combined size of the pyramid workers' in-flight output blocks. */
 export function pyramidWorkerCount(p: StftParamsV2, hardwareConcurrency: number): number {
@@ -178,6 +181,7 @@ export class WasmTileManager extends EventTarget {
     private svc: PyramidSource;
     private buildFull: (() => Promise<{ svc: PyramidSource; meta: PyramidMeta; fromCache: boolean }>) | null = null;
     private buildingService: PyramidSource | null = null;
+    private previewMode = false;
     private readonly duration: number;
     private readonly frameSec: number;       // seconds per level-0 frame
     private colorOptions: TileColorOptions;
@@ -211,7 +215,10 @@ export class WasmTileManager extends EventTarget {
         try {
             const initial = await preview.openPreview(params.file, params.wasmParams, params.source);
             const manager = new WasmTileManager(preview, initial.meta, initial.fromCache, params.duration, params.colorOptions);
-            if (!initial.fromCache) manager.buildFull = () => manager.openFull(params, WasmSpectrogramService);
+            if (!initial.fromCache) {
+                manager.previewMode = true;
+                manager.buildFull = () => manager.openFull(params, WasmSpectrogramService);
+            }
             return manager;
         } catch (err) {
             preview.dispose();
@@ -379,8 +386,13 @@ export class WasmTileManager extends EventTarget {
         const level = this.levelFor(pixelsPerSecond);
         const ts = this.tileSeconds(level);
         const n = this.tileCount(level);
-        const first = Math.max(0, Math.floor(startTime / ts) - TILE_PRELOAD_AHEAD);
-        const last = Math.min(n - 1, Math.floor(endTime / ts) + TILE_PRELOAD_AHEAD);
+        let first = Math.max(0, Math.floor(startTime / ts) - TILE_PRELOAD_AHEAD);
+        let last = Math.min(n - 1, Math.floor(endTime / ts) + TILE_PRELOAD_AHEAD);
+        if (this.previewMode && last - first + 1 > PREVIEW_MAX_TILES) {
+            const centre = Math.floor((startTime + endTime) / 2 / ts);
+            first = Math.max(0, Math.min(centre - PREVIEW_MAX_TILES / 2, n - PREVIEW_MAX_TILES));
+            last = Math.min(n - 1, first + PREVIEW_MAX_TILES - 1);
+        }
 
         // Only what is wanted now stays queued; stale requests from old zoom levels are dropped.
         const wanted = new Set<string>();
@@ -581,6 +593,7 @@ export class WasmTileManager extends EventTarget {
             this.svc = svc;
             this.meta = meta;
             this.fromCache = fromCache;
+            this.previewMode = false;
             [this.globalMin, this.globalMax] = this.contrastRange(0);
             // Keep ready level-0 tiles visible until the new viewport loads.
             // Drop in-flight preview requests; their service is about to close.

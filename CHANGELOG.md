@@ -2,18 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:6758f4a7b93170aa168d14a35e03a82712f06b199432a1e9c47226bfc2b8a266 -->
-
 ## [1.0.4] - 2026-11-05
 
 ### Fixed
 - Show the visible spectrogram sooner for long recordings while building the full pyramid in the background.
 - Reduce peak memory used by spectrogram workers and cache maintenance.
-
-
-<!-- /coderabbit-ai-generated:v1 -->
 
 ## [1.0.3] - 2026-11-04
 
