@@ -572,7 +572,6 @@
             const commit = json.commit || json.commitShort || '';
             const commitDate = json.commitDate || json.commit_date || json.builtAt || null;
             versionEl.textContent = v || '—';
-            try { window.AUDIO_WORKBENCH_VERSION = v || ''; } catch (e) {}
             const displayedCommit = commit || '';
             if (commitEl) {
               if (displayedCommit) {
@@ -611,7 +610,6 @@
 
         // Fallback for local/dev: show 'dev' indicators and remove any link
         versionEl.textContent = 'dev';
-        try { window.AUDIO_WORKBENCH_VERSION = 'dev'; } catch (e) {}
         if (commitEl) {
           commitEl.textContent = 'local';
           try { commitEl.removeAttribute('href'); } catch (e) {}
