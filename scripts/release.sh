@@ -25,6 +25,8 @@ fail() { echo "release: $*" >&2; exit 1; }
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [[ "${BRANCH}" == "main" ]] || fail "must run on main (current: ${BRANCH})"
 [[ -z "$(git status --porcelain)" ]] || fail "working tree not clean — commit or stash first"
+git fetch -q origin main --tags || fail "git fetch failed"
+[[ -z "$(git rev-list HEAD..origin/main)" ]] || fail "main is behind origin/main — pull/rebase first"
 
 if [[ -n "${NEW_VERSION}" ]]; then
   [[ "${NEW_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || fail "not a SemVer version: ${NEW_VERSION}"

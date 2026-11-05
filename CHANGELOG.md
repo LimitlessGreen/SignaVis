@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
   (`SignaVis 1.0.4`, or `SignaVis 1.0.4+<commit>` for unreleased builds).
 
 ### Changed
-- Release tooling: `scripts/release.sh` refuses to tag off `main`, with a dirty
+- Release tooling: `scripts/release.sh` refuses to tag off `main` or behind `origin/main`, with a dirty
   tree or without a CHANGELOG section, and runs typecheck and tests first.
 - The Python package is now dual-licensed: MIT or AGPL-3.0, at your choice.
 
