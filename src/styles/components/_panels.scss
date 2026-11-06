@@ -472,3 +472,25 @@ select::-ms-expand { display: none; }
 .audio-guano summary { cursor: pointer; font-size: 11px; color: var(--color-text-secondary); padding: 2px 0; user-select: none; }
 .audio-guano summary:hover { color: var(--color-text-primary); }
 .audio-guano .audio-facts { margin-top: 6px; }
+
+/* ── Similar panel (Perch-2 embeddings, Lite) ── */
+.similar-panel .sim-search-row { display: flex; gap: 6px; align-items: center; }
+.similar-panel .sim-search-row .field-select { width: 70px; flex: none; }
+.similar-panel .sim-error { color: var(--color-danger, #e5484d); }
+.similar-panel .sim-list { list-style: none; margin: 0; padding: 0; }
+.similar-panel .sim-hit {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0; border-bottom: 1px solid var(--color-border); font-size: 11px;
+}
+.similar-panel .sim-play {
+  flex: none; width: 22px; height: 22px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary);
+  font-size: 9px;
+}
+.similar-panel .sim-open {
+  flex: 1; min-width: 0; display: flex; gap: 6px; text-align: left; cursor: pointer;
+  background: none; border: none; color: var(--color-text-primary); padding: 2px 0;
+}
+.similar-panel .sim-open:hover .sim-file { text-decoration: underline; }
+.similar-panel .sim-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.similar-panel .sim-time, .similar-panel .sim-score { flex: none; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }

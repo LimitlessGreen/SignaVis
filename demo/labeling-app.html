@@ -731,7 +731,8 @@
     } from '../src/app/analysis-backend-config.ts';
     import { createProjectRepositoryRuntime } from '../src/infrastructure/tauri/project-repository-runtime.ts';
     import { getDesktopRuntimeInfo } from '../src/infrastructure/tauri/desktop-runtime-info.ts';
-    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
+    import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen, AudioLines } from 'lucide-static';
+    import { SimilarPanel } from '../src/ui/panels/similar-panel.ts';
     import {
       buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
       getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
@@ -3366,6 +3367,34 @@
     });
     explorePanel.el.classList.add('analyse-explore');
     document.getElementById('panelBirdnet').appendChild(explorePanel.el);
+    // ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
+    if (isLite()) {
+      const similarPanel = new SimilarPanel({
+        getRoot: () => (projectKind === 'folder' && projectStore?.rootPath) || null,
+        getQuery: () => {
+          const entry = recordingManager.getActive();
+          if (!entry?.path) return null;
+          const sel = state.selected;
+          if (sel && sel.end > sel.start) return { path: entry.path, start: sel.start, end: sel.end };
+          const t = player.currentTime || 0;
+          return { path: entry.path, start: t, end: t };
+        },
+        openHit: async (hit, play) => {
+          let entry = recordingManager.getAll().find((e) => e.path === hit.path);
+          if (!entry) {
+            entry = recordingManager.add(folderFileEntry(hit.path, { pinned: false }));
+            renderProjectLocation();
+          }
+          if (recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+          if (play) player.playSegment(hit.start, hit.end);
+          else { player.playSegment(hit.start, hit.end); player.pause(); }
+        },
+      });
+      sidebar.addPanel('similar', {
+        icon: AudioLines, label: 'Similar', element: similarPanel.el,
+        onActivate: () => similarPanel.refresh(),
+      });
+    }
     // Project is the starting point: set + recordings
     sidebar.setActive('project');
 

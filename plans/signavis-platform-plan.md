@@ -114,3 +114,7 @@ Coordinators wird oder nur Ideenlieferant ist.
   Job inkrementell/abbrechbar, Hop einstellbar (Default 5 s), Speicher
   `.signavis/embeddings/perch2/` (index.json + vectors.f16), `embed_similar` Top-k.
   Realtest 3 Sperlingskauz-WAVs: DirectML ok. Offen: DirectML.dll im Bundle, Opus/WebM-Dekodierung.
+- 2026-11-06 Phase 1, Schritt 2: Frontend-Panel „Similar“ (Lite, nur Ordnerprojekt) –
+  `src/ui/panels/similar-panel.ts`: Modell-Download mit Fortschritt, Embedding-Job
+  (Hop 5/2,5/1 s, Abbrechen, fehlgeschlagene Dateien), „Find similar“ aus Auswahl bzw.
+  Abspielposition, Trefferliste (Top-k) mit Abspielen/Öffnen. Im Browser/Tauri ungetestet.
