@@ -49,18 +49,18 @@ pub struct EmbedState {
     cache: Mutex<Option<Loaded>>,
 }
 
-struct Loaded {
-    root: String,
-    stamp: u64,
-    rows: Vec<RowRef>,
-    vecs: Vec<f32>,
+pub(crate) struct Loaded {
+    pub root: String,
+    pub stamp: u64,
+    pub rows: Vec<RowRef>,
+    pub vecs: Vec<f32>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RowRef {
-    path: String,
-    start: f64,
+    pub path: String,
+    pub start: f64,
 }
 
 // ── Index ─────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ impl Index {
     }
 }
 
-fn store_dir(root: &str) -> PathBuf {
+pub(crate) fn store_dir(root: &str) -> PathBuf {
     Path::new(root).join(STORE_DIR)
 }
 
@@ -513,7 +513,7 @@ fn normalize(v: &mut [f32]) {
 }
 
 /// Matrix normiert laden (gecacht, solange sich der Index nicht aendert).
-fn with_loaded<T>(state: &EmbedState, root: &str, f: impl FnOnce(&Loaded) -> T) -> Result<T, String> {
+pub(crate) fn with_loaded<T>(state: &EmbedState, root: &str, f: impl FnOnce(&Loaded) -> T) -> Result<T, String> {
     let idx = read_index(root).ok_or("Noch keine Embeddings in diesem Projekt")?;
     let mut guard = state.cache.lock().unwrap();
     let fresh = guard.as_ref().is_some_and(|l| l.root == root && l.stamp == idx.stamp);
@@ -542,7 +542,7 @@ pub struct Hit {
 }
 
 /// Fenster eines Treffers -> Zeile, gesucht ueber Pfad und Startzeit.
-fn find_row(l: &Loaded, path: &str, start: f64) -> Option<usize> {
+pub(crate) fn find_row(l: &Loaded, path: &str, start: f64) -> Option<usize> {
     l.rows
         .iter()
         .enumerate()
@@ -576,7 +576,7 @@ pub fn embed_similar(
     })?
 }
 
-fn top_k(scores: impl Iterator<Item = f32>, k: usize, skip: Option<usize>) -> Vec<(usize, f32)> {
+pub(crate) fn top_k(scores: impl Iterator<Item = f32>, k: usize, skip: Option<usize>) -> Vec<(usize, f32)> {
     let mut all: Vec<(usize, f32)> = scores.enumerate().filter(|(i, _)| Some(*i) != skip).collect();
     let k = k.min(all.len());
     if k == 0 {

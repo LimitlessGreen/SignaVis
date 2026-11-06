@@ -9,6 +9,7 @@
 // hands the JSON report to `probe_report`, and the app exits.
 // ═══════════════════════════════════════════════════════════════════════
 
+mod agile;
 mod data_cache;
 mod embeddings;
 mod launch;
@@ -92,6 +93,14 @@ pub fn run() {
             embeddings::embed_start,
             embeddings::embed_cancel,
             embeddings::embed_similar,
+            agile::agile_labels,
+            agile::agile_class_add,
+            agile::agile_class_remove,
+            agile::agile_label_set,
+            agile::agile_train,
+            agile::agile_rank,
+            agile::agile_classifier_info,
+            agile::agile_export,
             updater::update_check,
             updater::update_install,
         ])
