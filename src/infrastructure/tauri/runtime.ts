@@ -36,3 +36,36 @@ export function vendorUrl(path: string, cdnUrl: string): string {
     if (!isLite()) return cdnUrl;
     return new URL(`/vendor/${path}`, globalThis.location.href).href;
 }
+
+const isExternalUrl = (href: string) => /^(https?:|mailto:)/i.test(href)
+    && !href.startsWith(globalThis.location.origin);
+
+/** Open a URL in the system browser (Lite) — never inside the app window. */
+export async function openExternal(url: string): Promise<void> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('plugin:opener|open_url', { url });
+}
+
+/**
+ * Lite: links to the web (clicks on <a href="https://…"> and window.open)
+ * go to the system browser. Call once at start-up; no-op outside Lite.
+ */
+export function installExternalLinkHandler(): void {
+    if (!isLite()) return;
+    document.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button !== 0) return;
+        const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+        if (!a || a.hasAttribute('download') || !isExternalUrl(a.href)) return;
+        e.preventDefault();
+        openExternal(a.href).catch((err) => console.warn('[lite] cannot open link', a.href, err));
+    }, true);
+    const nativeOpen = window.open.bind(window);
+    window.open = ((url?: string | URL, target?: string, features?: string) => {
+        const href = url ? String(url) : '';
+        if (href && isExternalUrl(new URL(href, globalThis.location.href).href)) {
+            openExternal(new URL(href, globalThis.location.href).href).catch((err) => console.warn('[lite] cannot open link', href, err));
+            return null;
+        }
+        return nativeOpen(url, target, features);
+    }) as typeof window.open;
+}

@@ -650,8 +650,9 @@
     import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
     import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
     import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../src/infrastructure/project/FolderAccess.ts';
-    import { isLite } from '../src/infrastructure/tauri/runtime.ts';
+    import { isLite, installExternalLinkHandler } from '../src/infrastructure/tauri/runtime.ts';
     import { pickAudioFile, readAudioPath } from '../src/infrastructure/tauri/nativeFiles.ts';
+    import { saveFile } from '../src/infrastructure/saveFile.ts';
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
     import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
     import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
@@ -974,6 +975,7 @@
     const analysisApplyBtn = document.getElementById('analysisApplyBtn');
 
     const taxonomy = new TaxonomyResolver();
+    installExternalLinkHandler();   // Lite: web links open in the system browser
     const projectRuntime = await createProjectRepositoryRuntime();
     const PROJECT_AUTOSAVE_ID = 'labeling-app-autosave';
     let projectCreatedAt = Date.now();
@@ -2021,11 +2023,8 @@
       const entry = recordingManager.getActive();
       const name = entry?.filename || fileLabel.textContent || 'labels';
       const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName });
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = ravenTablePath(name.split('/').pop());
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      saveFile(text, ravenTablePath(name.split('/').pop()), 'text/plain')
+        .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
     }
     /** Folder project: write <audio>.Table.1.selections.txt next to every labeled recording. */
     async function writeRavenTablesToFolder() {
@@ -3050,12 +3049,9 @@
           columns,
           displayName: (l) => resolveName(l).display,
         });
-        const url = URL.createObjectURL(new Blob([out.text], { type: out.mime }));
-        const a = document.createElement('a');
-        a.href = url; a.download = out.name;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        selectionMeta.textContent = `Exported ${labels.length} label${labels.length === 1 ? '' : 's'} → ${out.name}`;
+        saveFile(out.text, out.name, out.mime).then((r) => {
+          if (r) selectionMeta.textContent = `Exported ${labels.length} label${labels.length === 1 ? '' : 's'} → ${r.target}`;
+        }).catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
       },
     }) : null;
     if (labelTable) {
@@ -4254,15 +4250,8 @@
 
     function downloadLabelsJson() {
       const data = JSON.stringify(toLabelExport(), null, 2);
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'labels.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      saveFile(data, 'labels.json', 'application/json')
+        .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
     }
 
     async function copyLabelsJson() {

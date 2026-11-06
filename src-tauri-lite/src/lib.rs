@@ -41,6 +41,7 @@ pub fn run() {
             project_fs::project_list_audio,
             project_fs::default_project_dir,
             project_fs::read_audio_file,
+            project_fs::save_user_file,
         ])
         .setup(|app| {
             let page = if std::env::var_os(PROBE_ENV).is_some() {

@@ -194,6 +194,21 @@ pub fn read_audio_file(path: String) -> Result<Response, String> {
     }
 }
 
+/// Export target the user chose in the native save dialog (src/infrastructure/saveFile.ts).
+/// Raw body = content; header `x-path` = absolute path (percent-encoded).
+#[tauri::command]
+pub fn save_user_file(request: Request<'_>) -> Result<(), String> {
+    let path = header(&request, "x-path")?;
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err(format!("not an absolute path: {path}"));
+    }
+    match request.body() {
+        InvokeBody::Raw(bytes) => write_atomic(p, bytes),
+        InvokeBody::Json(_) => Err("save_user_file expects a raw body".into()),
+    }
+}
+
 /// Folder of the default project (created on demand): <app data>/projects/default.
 #[tauri::command]
 pub fn default_project_dir(app: tauri::AppHandle) -> Result<String, String> {
