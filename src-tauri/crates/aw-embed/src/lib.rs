@@ -133,10 +133,22 @@ pub struct Embedder {
 }
 
 impl Embedder {
-    pub fn new(model: impl AsRef<Path>, threads: usize) -> Result<Self, Error> {
-        let session = ort::session::Session::builder()?
-            .with_intra_threads(threads)?
-            .commit_from_file(model)?;
+    /// `ep`: "cpu", "directml" oder "cuda" (Feature muss aktiv sein).
+    pub fn new(model: impl AsRef<Path>, threads: usize, ep: &str) -> Result<Self, Error> {
+        use ort::execution_providers as eps;
+        let mut b = ort::session::Session::builder()?.with_intra_threads(threads)?;
+        let list: Vec<eps::ExecutionProviderDispatch> = match ep {
+            #[cfg(feature = "directml")]
+            "directml" => vec![eps::DirectMLExecutionProvider::default().build().error_on_failure()],
+            #[cfg(feature = "cuda")]
+            "cuda" => vec![eps::CUDAExecutionProvider::default().build().error_on_failure()],
+            "cpu" => vec![],
+            other => return Err(format!("Execution Provider nicht verfuegbar: {other}").into()),
+        };
+        if !list.is_empty() {
+            b = b.with_execution_providers(list)?;
+        }
+        let session = b.commit_from_file(model)?;
         Ok(Self { session })
     }
 
@@ -146,10 +158,14 @@ impl Embedder {
         let mut out = Vec::with_capacity(n * DIM);
         for b in windows.chunks(batch * WINDOW) {
             let bn = b.len() / WINDOW;
-            let t = ort::value::Tensor::from_array(([bn, WINDOW], b.to_vec().into_boxed_slice()))?;
+            // Letzten Batch auf volle Groesse auffuellen: GPU-EPs (DirectML)
+            // kompilieren sonst fuer jede neue Eingabeform neu.
+            let mut buf = b.to_vec();
+            buf.resize(batch * WINDOW, 0.0);
+            let t = ort::value::Tensor::from_array(([batch, WINDOW], buf.into_boxed_slice()))?;
             let res = self.session.run(ort::inputs!["inputs" => t])?;
             let (_, e) = res["embedding"].try_extract_tensor::<f32>()?;
-            out.extend_from_slice(e);
+            out.extend_from_slice(&e[..bn * DIM]);
         }
         Ok(out)
     }

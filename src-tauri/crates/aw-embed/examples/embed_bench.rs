@@ -9,9 +9,10 @@ fn main() -> Result<(), aw_embed::Error> {
     let threads: usize = a.get(4).and_then(|s| s.parse().ok()).unwrap_or(4);
     let batch: usize = a.get(5).and_then(|s| s.parse().ok()).unwrap_or(4);
     let norm = a.get(6).map(|s| s == "1").unwrap_or(false);
+    let ep = std::env::var("AW_EP").unwrap_or_else(|_| "cpu".into());
 
     let t = Instant::now();
-    let mut emb = aw_embed::Embedder::new(model, threads)?;
+    let mut emb = aw_embed::Embedder::new(model, threads, &ep)?;
     println!("load: {:.2} s", t.elapsed().as_secs_f64());
 
     let t = Instant::now();
@@ -22,16 +23,16 @@ fn main() -> Result<(), aw_embed::Error> {
     let audio_s = x.len() as f64 / sr as f64;
     println!("decode+resample {sr}->32000: {:.3} s, {audio_s:.1} s Audio, {n} Fenster", t.elapsed().as_secs_f64());
 
-    emb.embed(&w[..aw_embed::WINDOW], 1)?; // Warmup
+    emb.embed(&w[..(batch * aw_embed::WINDOW).min(w.len())], batch)?; // Warmup mit gleicher Batch-Form
     let t = Instant::now();
     let e = emb.embed(&w, batch)?;
     let dt = t.elapsed().as_secs_f64();
     println!(
-        "inferenz: {dt:.2} s, {:.1} ms/Fenster, Echtzeitfaktor {:.0}x (threads={threads}, batch={batch})",
+        "inferenz: {dt:.2} s, {:.1} ms/Fenster, Echtzeitfaktor {:.0}x (ep={ep}, threads={threads}, batch={batch})",
         dt * 1000.0 / n as f64,
         audio_s / dt
     );
-    if let Some(p) = out {
+    if let Some(p) = out.filter(|p| !p.is_empty()) {
         let bytes: Vec<u8> = y.iter().chain(e.iter()).flat_map(|v| v.to_le_bytes()).collect();
         std::fs::write(&p, bytes)?;
         println!("geschrieben: {p} ({} Samples 32k + {} Embedding-Werte)", y.len(), e.len());
