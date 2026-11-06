@@ -4854,6 +4854,32 @@
         }
       }
     }
+    // ── Lite: window title and close guard ──────────────────────────────
+    async function installLiteWindow() {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      // Title: "<recording> — <project> — SignaVis Lite"
+      const updateTitle = () => {
+        const rec = fileLabel.textContent?.trim();
+        const parts = [rec && rec !== 'No file loaded' ? rec : '', projectStore?.label || '', 'SignaVis Lite'];
+        win.setTitle(parts.filter(Boolean).join(' — ')).catch(() => {});
+      };
+      new MutationObserver(updateTitle).observe(fileLabel, { childList: true, characterData: true, subtree: true });
+      updateTitle();
+      // Closing: save what is pending first; if that fails, ask before losing it.
+      await win.onCloseRequested(async (event) => {
+        if (!projectAutosaver || projectAutosaver.readOnly) return;
+        await projectAutosaver.flush({ force: true });
+        if (!projectAutosaver.hasUnsavedChanges) return;
+        const close = await appConfirm(
+          `The latest changes could not be saved to “${projectStore?.label || 'the project'}”.
+
+Close anyway and lose them?`,
+          { title: 'Unsaved changes', okLabel: 'Close without saving', cancelLabel: 'Keep open' });
+        if (!close) event.preventDefault();
+      });
+    }
+
     /** `initial`: requests of this start, taken before the last recording would be restored. */
     async function startLiteLaunchHandling(initial) {
       const run = (requests) => { _liteLaunchChain = _liteLaunchChain.then(() => runLiteLaunchRequests(requests)); };
@@ -4893,7 +4919,10 @@
     // Start the XC download right away — the 7 MB taxonomy loads in parallel and
     // re-localizes any labels imported before it finished.
     autoLoadFromParams();
-    if (isLite()) startLiteLaunchHandling(_liteInitialLaunch);
+    if (isLite()) {
+      startLiteLaunchHandling(_liteInitialLaunch);
+      installLiteWindow().catch((e) => console.warn('[lite] window setup failed', e));
+    }
     await loadBirdnetTaxonomy();
   </script>
   <script>

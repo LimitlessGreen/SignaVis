@@ -43,6 +43,8 @@ pub fn run() {
             launch::push(app, launch::parse_args(args, std::path::Path::new(&cwd)));
         }))
         .plugin(tauri_plugin_deep_link::init())
+        // Size, position and maximized state of the window survive restarts.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .register_asynchronous_uri_scheme_protocol(data_cache::SCHEME, data_cache::handle)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
