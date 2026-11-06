@@ -104,6 +104,10 @@
           </span>
         </span>
         <span class="tb-sep"></span>
+        <button class="tb-btn tb-lite-btn" id="liteOpenBtn" type="button" title="Open in the SignaVis Lite desktop app" hidden>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+          <span class="tb-lite-label">Open in app</span>
+        </button>
         <button class="tb-btn" id="themeToggleBtn" type="button" title="Toggle theme" aria-pressed="false"></button>
         <button class="tb-btn tb-help-btn" id="helpMenuBtn" type="button" title="Help, shortcuts &amp; about" aria-haspopup="menu">?</button>
       </div>
@@ -134,6 +138,39 @@
           <input type="checkbox" id="projectFolderDismiss" /> Don't show this again
         </label>
       </div>
+    </div>
+
+    <!-- Hand-over to the SignaVis Lite desktop app (web only, see src/app/lite-handoff.ts) -->
+    <div class="app-modal-backdrop" id="liteHandoffModal" hidden>
+      <div class="app-modal project-folder-modal" role="dialog" aria-modal="true" aria-labelledby="liteHandoffTitle">
+        <h3 id="liteHandoffTitle">Open in SignaVis Lite</h3>
+        <p>SignaVis Lite is this labeling app as a desktop program for Windows, macOS and Linux: projects in real folders, your own audio files reopen after a restart, works offline.</p>
+        <div class="pf-options">
+          <button type="button" class="pf-option pf-option--rec" id="liteHandoffOpenBtn">
+            <span class="pf-option-icon" aria-hidden="true">🖥</span>
+            <span class="pf-option-body">
+              <span class="pf-option-title">Open in SignaVis Lite</span>
+              <span class="pf-option-text" id="liteHandoffOpenText">Opens the current Xeno-canto recording in the app.</span>
+            </span>
+          </button>
+          <a class="pf-option" id="liteHandoffDownload" href="https://github.com/LimitlessGreen/SignaVis/releases/latest" target="_blank" rel="noopener noreferrer">
+            <span class="pf-option-icon" aria-hidden="true">⬇</span>
+            <span class="pf-option-body">
+              <span class="pf-option-title">Download SignaVis Lite</span>
+              <span class="pf-option-text">Free, open source. After installing, links can open in the app.</span>
+            </span>
+          </a>
+        </div>
+        <label class="xc-nokey-dismiss-label">
+          <input type="checkbox" id="liteHandoffAuto" /> Always open SignaVis links in the app on this computer
+        </label>
+        <p class="lite-handoff-status" id="liteHandoffStatus" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+    <div class="lite-banner" id="liteBanner" role="status" aria-live="polite" hidden>
+      <span id="liteBannerText"></span>
+      <button type="button" class="link-btn" id="liteBannerStay">Continue in the browser</button>
+      <button type="button" class="link-btn" id="liteBannerOff">Stop opening in the app</button>
     </div>
 
     <!-- API key missing modal -->
@@ -694,6 +731,84 @@
     import { createProjectRepositoryRuntime } from '../src/infrastructure/tauri/project-repository-runtime.ts';
     import { getDesktopRuntimeInfo } from '../src/infrastructure/tauri/desktop-runtime-info.ts';
     import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
+    import {
+      buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
+      getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
+    } from '../src/app/lite-handoff.ts';
+
+    // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
+    // Runs before anything is loaded: with "always open in the app" switched on, the page
+    // hands its link (?xc=, ?lang=) to Lite and stops here, so nothing is downloaded twice.
+    {
+      const available = isHandoffAvailable(navigator.userAgent, '__TAURI_INTERNALS__' in window);
+      const ls = (() => { try { return localStorage; } catch { return null; } })();
+      const ss = (() => { try { return sessionStorage; } catch { return null; } })();
+      const currentLink = () => {
+        const target = linkTargetFromSearch(window.location.search);
+        let lang = target.lang || document.getElementById('taxonomyLangSelect')?.value || null;
+        if (!target.lang) { try { lang = localStorage.getItem('birdnet-taxonomy-lang') || lang; } catch { /* ignore */ } }
+        return { link: buildLiteLink({ xc: target.xc, lang }), xc: target.xc };
+      };
+
+      const banner = document.getElementById('liteBanner');
+      const bannerText = document.getElementById('liteBannerText');
+      const stayBtn = document.getElementById('liteBannerStay');
+      const offBtn = document.getElementById('liteBannerOff');
+      const reloadHere = () => { setStayInBrowser(ss); window.location.reload(); };
+      function showBanner(kind) {
+        if (kind === 'opened') {
+          // Focus loss = the browser's "open SignaVis Lite?" prompt or the app itself — a page cannot tell which.
+          bannerText.textContent = 'Handed over to SignaVis Lite — confirm the browser’s prompt if it asks.';
+          stayBtn.textContent = 'Continue in the browser';
+          stayBtn.onclick = reloadHere;
+          offBtn.onclick = () => { setAutoOpen(ls, false); reloadHere(); };
+        } else {
+          bannerText.textContent = 'SignaVis Lite did not open — is it installed on this computer?';
+          stayBtn.textContent = 'Dismiss';
+          stayBtn.onclick = () => { banner.hidden = true; };
+          offBtn.onclick = () => { setAutoOpen(ls, false); banner.hidden = true; };
+        }
+        banner.hidden = false;
+      }
+
+      // Button + dialog
+      const btn = document.getElementById('liteOpenBtn');
+      const modal = document.getElementById('liteHandoffModal');
+      const status = document.getElementById('liteHandoffStatus');
+      const auto = document.getElementById('liteHandoffAuto');
+      const openText = document.getElementById('liteHandoffOpenText');
+      const modalManager = new ModalManager({ backdrop: modal, dialog: modal.querySelector('.app-modal') });
+      btn.hidden = !available;
+      btn.addEventListener('click', () => {
+        const { xc } = currentLink();
+        openText.textContent = xc ? `Opens ${xc} in the app.` : 'Starts the app.';
+        auto.checked = getAutoOpen(ls);
+        status.textContent = '';
+        modalManager.open();
+      });
+      auto.addEventListener('change', () => {
+        setAutoOpen(ls, auto.checked);
+        status.textContent = auto.checked
+          ? 'SignaVis links will open in the app. Add ?browser=1 to a link to stay in the browser.'
+          : 'SignaVis links stay in the browser.';
+      });
+      document.getElementById('liteHandoffOpenBtn').addEventListener('click', async () => {
+        status.textContent = 'Opening SignaVis Lite…';
+        const opened = await openLiteLink(currentLink().link, { timeoutMs: 4000 });
+        status.textContent = opened
+          ? 'Handed over to SignaVis Lite (confirm the browser’s prompt if it asks).'
+          : 'SignaVis Lite did not respond. Install it (Download above), then try again.';
+      });
+
+      if (available && shouldAutoRedirect({ autoOpen: getAutoOpen(ls), stay: getStayInBrowser(ss), search: window.location.search })) {
+        const opened = await openLiteLink(currentLink().link, { timeoutMs: 4000 });
+        if (opened) {
+          showBanner('opened');
+          await new Promise(() => {});   // the app has it — do not load anything here
+        }
+        showBanner('missing');
+      }
+    }
 
     // ── Player ────────────────────────────────────────────────────────
     // Waveform above the spectrogram is optional (the overview below always shows one); applied on load

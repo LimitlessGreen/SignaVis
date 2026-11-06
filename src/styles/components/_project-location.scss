@@ -199,3 +199,18 @@
 .rec-session-body { background: transparent; }
 .rec-session-body::before,
 .rec-session-body .recording-explorer-row::before { display: none; }
+
+/* Hand-over to SignaVis Lite (labeling-app.html, src/app/lite-handoff.ts) */
+a.pf-option { text-decoration: none; }
+.lite-handoff-status { min-height: 1.2em; margin: 8px 0 0; font-size: 12px; color: var(--color-text-secondary); }
+.tb-lite-btn { display: inline-flex; align-items: center; gap: 5px; }
+@media (max-width: 1100px) { .tb-lite-label { display: none; } }
+.lite-banner {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  max-width: calc(100vw - 32px); padding: 8px 14px; border-radius: 8px;
+  font-size: 13px; color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-accent); box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+  &[hidden] { display: none; }
+}
