@@ -79,5 +79,6 @@ python-wrapper/signavis/*.pyi
 _site-lite/
 _site-lite.stale-*/
 src-tauri-lite/target/
+src-tauri-lite/target-msix/
 src-tauri-lite/gen/
 src-tauri-lite/.cargo/

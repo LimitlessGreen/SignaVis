@@ -12,6 +12,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Microsoft Store build (MSIX): the Store updates the app, so no self-updater.
+store = []
+
 [dependencies]
 tauri      = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

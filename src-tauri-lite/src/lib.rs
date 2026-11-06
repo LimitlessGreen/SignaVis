@@ -22,11 +22,21 @@ const PROBE_ENV: &str = "SIGNAVIS_LITE_PROBE";
 
 /// Runs before any page script: lets the frontend tell Lite apart from the
 /// full desktop shell (see src/infrastructure/tauri/runtime.ts).
-const LITE_MARKER_SCRIPT: &str = concat!(
-    "Object.defineProperty(window, '__SIGNAVIS_LITE__', { value: Object.freeze({ version: '",
-    env!("CARGO_PKG_VERSION"),
-    "' }), enumerable: false });"
-);
+macro_rules! lite_marker {
+    ($store:literal) => {
+        concat!(
+            "Object.defineProperty(window, '__SIGNAVIS_LITE__', { value: Object.freeze({ version: '",
+            env!("CARGO_PKG_VERSION"),
+            "', store: ",
+            $store,
+            " }), enumerable: false });"
+        )
+    };
+}
+#[cfg(not(feature = "store"))]
+const LITE_MARKER_SCRIPT: &str = lite_marker!("false");
+#[cfg(feature = "store")]
+const LITE_MARKER_SCRIPT: &str = lite_marker!("true");
 
 #[tauri::command]
 fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
@@ -38,7 +48,7 @@ fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
 }
 
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Must be the first plugin: a second instance exits before anything else starts.
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let args = argv.into_iter().skip(1);
@@ -49,8 +59,11 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .register_asynchronous_uri_scheme_protocol(data_cache::SCHEME, data_cache::handle)
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init());
+    // Store builds are updated by the Store (its policies forbid self-updating).
+    #[cfg(not(feature = "store"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             probe_report,
             project_fs::project_stat,

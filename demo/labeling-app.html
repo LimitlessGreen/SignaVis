@@ -4967,6 +4967,7 @@ Check the internet connection and try again.`, { title: 'Download failed' });
       }
     }
     function maybeCheckLiteUpdate() {
+      if (window.__SIGNAVIS_LITE__?.store) return; // the Microsoft Store updates the app
       const last = Number(lsGet(LITE_UPDATE_CHECK_KEY) || 0);
       if (Date.now() - last < 24 * 3600 * 1000) return;
       setTimeout(() => checkLiteUpdate({ quiet: true }).catch(() => {}), 5000);

@@ -76,14 +76,17 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(app, "fullscreen", "Toggle Full Screen", Some(if cfg!(target_os = "macos") { "Ctrl+Cmd+F" } else { "F11" }))?)
         .build()?;
 
-    let help = SubmenuBuilder::new(app, "Help")
+    // Store builds are updated by the Store: no "Check for Updates…".
+    let check_updates = item(app, "check-updates", "Check for Updates…", None)?;
+    let mut help = SubmenuBuilder::new(app, "Help")
         .item(&item(app, "docs", "Documentation", None)?)
         .item(&item(app, "issues", "Report an Issue", None)?)
         .item(&item(app, "web-app", "Open the Web Version", None)?)
-        .separator()
-        .item(&item(app, "check-updates", "Check for Updates…", None)?)
-        .item(&item(app, "about", "About SignaVis Lite", None)?)
-        .build()?;
+        .separator();
+    if !cfg!(feature = "store") {
+        help = help.item(&check_updates);
+    }
+    let help = help.item(&item(app, "about", "About SignaVis Lite", None)?).build()?;
 
     app.manage(RecentMenu(Mutex::new(Some(recent))));
 
