@@ -7,6 +7,8 @@ SignaVis Lite is the [labeling app](https://limitlessgreen.github.io/SignaVis/de
 - `signavis://` links and *Open with › SignaVis Lite* for audio files,
 - updates itself (*Help › Check for Updates…*, and a quiet check once a day).
 
+Privacy: see the [privacy policy](signavis-lite-privacy.md) — no analytics, your recordings stay on your computer.
+
 ## Download
 
 Get the installer for your system from the [latest release](https://github.com/LimitlessGreen/SignaVis/releases/latest):
