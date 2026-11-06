@@ -13,12 +13,17 @@
  *        [--eval="expression"]   (repeatable; printed after the wait)
  * Exit code 1 if any error was seen.
  */
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
-const exe = resolve(args.find((a) => !a.startsWith('--')) ?? 'src-tauri-lite/target/debug/signavis-lite.exe');
+// Default binary: <cargo target dir>/debug — the target dir may be moved (e.g. .cargo/config.toml).
+function defaultExe() {
+  const meta = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], { cwd: 'src-tauri-lite' }).toString());
+  return resolve(meta.target_directory, 'debug', 'signavis-lite.exe');
+}
+const exe = resolve(args.find((a) => !a.startsWith('--')) ?? defaultExe());
 const waitSec = Number(args.find((a) => a.startsWith('--wait='))?.slice(7) ?? 15);
 const url = args.find((a) => a.startsWith('--url='))?.slice(6);
 const shot = args.find((a) => a.startsWith('--screenshot='))?.slice(13);

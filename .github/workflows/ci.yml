@@ -302,6 +302,11 @@ jobs:
           name: lite-data-${{ github.run_id }}
           path: demo/data
 
+      - name: Rust tests (Lite shell)
+        working-directory: src-tauri-lite
+        shell: bash
+        run: cargo test
+
       - name: Build SignaVis Lite bundles
         working-directory: src-tauri-lite
         shell: bash   # PowerShell would turn "nsis,msi" into one argument "nsis msi"

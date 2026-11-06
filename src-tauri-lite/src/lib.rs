@@ -6,6 +6,8 @@
 // hands the JSON report to `probe_report`, and the app exits.
 // ═══════════════════════════════════════════════════════════════════════
 
+mod project_fs;
+
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 const PROBE_ENV: &str = "SIGNAVIS_LITE_PROBE";
@@ -29,7 +31,16 @@ fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![probe_report])
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            probe_report,
+            project_fs::project_stat,
+            project_fs::project_read,
+            project_fs::project_write,
+            project_fs::project_list_audio,
+            project_fs::default_project_dir,
+        ])
         .setup(|app| {
             let page = if std::env::var_os(PROBE_ENV).is_some() {
                 "demo/lite-probe.html"

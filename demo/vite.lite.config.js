@@ -11,7 +11,7 @@
 import { defineConfig } from 'vite';
 import { versionDefines, getBuildVersion } from '../scripts/build-version.mjs';
 import { resolve } from 'path';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 
 const root = resolve(import.meta.dirname, '..');
@@ -58,6 +58,20 @@ function versionJson() {
 
 const nm = (p) => resolve(root, 'node_modules', p);
 
+/**
+ * Empty _site-lite/ with retries: on Windows, a just-closed webview or the virus
+ * scanner can hold files for a moment, and Vite's emptyOutDir then fails (ENOTEMPTY).
+ */
+function cleanOutDir() {
+  return {
+    name: 'clean-out-dir',
+    apply: 'build',
+    buildStart() {
+      rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    },
+  };
+}
+
 /** vendor/<name>/… is served from these package folders (dev) and copied from them (build). */
 const VENDOR = {
   wavesurfer: { dir: nm('wavesurfer.js/dist'), files: ['wavesurfer.esm.js'] },
@@ -96,7 +110,7 @@ export default defineConfig({
   base: './',
   build: {
     outDir: out,
-    emptyOutDir: true,
+    emptyOutDir: false,   // cleanOutDir() does it, with retries
     rollupOptions: {
       input: {
         labeling: resolve(root, 'demo', 'labeling-app.html'),
@@ -105,6 +119,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    cleanOutDir(),
     serveVendor(),
     versionJson(),
     copyStatic([

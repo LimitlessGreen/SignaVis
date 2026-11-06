@@ -648,9 +648,9 @@
     import { buildLabelExport } from '../src/infrastructure/export/labelTableFormats.ts';
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
     import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
-    import { OpfsProjectStore } from '../src/infrastructure/project/OpfsProjectStore.ts';
     import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
-    import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder } from '../src/infrastructure/project/FolderAccess.ts';
+    import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../src/infrastructure/project/FolderAccess.ts';
+    import { isLite } from '../src/infrastructure/tauri/runtime.ts';
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
     import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
     import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
@@ -1630,6 +1630,7 @@
         xcToFolder: xcToFolder(),
         unadded: projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : [],
         scanning: projectScanning,
+        lite: isLite(),
       });
       try { recordingExplorer.render(); } catch (e) { /* explorer not created yet */ }
     }
@@ -1716,7 +1717,7 @@
         }
       }
       if (!projectStore) {
-        projectStore = await OpfsProjectStore.open();
+        projectStore = await openDefaultProjectStore();
         projectKind = projectStore ? 'browser' : 'none';
       }
       if (!projectStore) { renderProjectLocation(); return false; }  // no OPFS → legacy storage only
@@ -1782,6 +1783,7 @@
     });
     function maybeShowProjectFolderModal() {
       if (projectKind !== 'browser' || !isFolderAccessSupported()) return;
+      if (isLite()) return;   // Lite's default project already is a folder on disk
       if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
       try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
       if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
