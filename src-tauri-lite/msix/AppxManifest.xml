@@ -17,7 +17,7 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>SignaVis Lite</DisplayName>
+    <DisplayName>SignAvis Lite</DisplayName>
     <PublisherDisplayName>LimitlessGreen</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Label bird and animal sounds in spectrograms: projects in folders, Xeno-canto, BirdNET, offline.</Description>
@@ -34,7 +34,7 @@
   <Applications>
     <Application Id="SignaVisLite" Executable="signavis-lite.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="SignaVis Lite"
+        DisplayName="SignAvis Lite"
         Description="SignaVis Lite — labeling app for animal sound recordings"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
