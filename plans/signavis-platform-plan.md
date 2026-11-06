@@ -40,7 +40,7 @@ Coordinators wird oder nur Ideenlieferant ist.
   skaliert die Similarity-Suche (Index oder Brute Force)?
 - Perch 2 prüfen: Laufzeit (TF/JAX vs. ONNX-Export), Embedding-Dim, Fenster 5 s,
   Durchsatz CPU/GPU pro Stunde Audio.
-- Speicher-Entscheid: SurrealDB (vorhanden, Vektorindex vorhanden) vs.
+- [x] Speicher-Entscheid: SurrealDB (vorhanden, Vektorindex vorhanden) vs.
   Postgres + pgvector (bewährt, Ops-freundlich) vs. LanceDB/usearch-Dateien.
   Kriterium: 10⁷–10⁸ Embeddings, Backup, Betrieb durch Uni-IT.
 - Hoplite-DB-Format ansehen (Import/Export-Kompatibilität).
@@ -102,3 +102,8 @@ Coordinators wird oder nur Ideenlieferant ist.
    brauchbare Teile (UMAP-Ansicht, Similarity-Browser, Clustering, gRPC-Protos,
    Login-Flow) gezielt nach Lite bzw. in den Coordinator übernehmen.
 4. Pilot-Einrichtung: später.
+
+## Fortschritt
+- 2026-11-06 Phase 0: Crate `src-tauri/crates/aw-embed` (Perch-2-ONNX, resample_poly-Nachbau),
+  Parität exakt, CPU ~22× Echtzeit. Details: `docs/architecture/adr-001-plattform-grundlagen.md`.
+  Offen in Phase 0: GPU-EP, kleineres Modell (FP16/headless).
