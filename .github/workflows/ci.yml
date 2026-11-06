@@ -191,8 +191,9 @@ jobs:
           path: src-tauri/target/release/bundle/**/*
 
   lite-data:
-    # Taxonomy + species images for Lite (generated, not in git). Same steps and
-    # cache key as pages.yml, built once and handed to the Lite builds.
+    # Taxonomy for Lite (generated, not in git). Same steps and cache key as
+    # pages.yml, built once and handed to the Lite builds. Species images are
+    # not shipped with Lite (loaded on demand, see data_cache.rs).
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -242,9 +243,7 @@ jobs:
         with:
           name: lite-data-${{ github.run_id }}
           if-no-files-found: error
-          path: |
-            demo/data/birdnet-taxonomy.v2.4.json
-            demo/data/species_images
+          path: demo/data/birdnet-taxonomy.v2.4.json
 
   lite-build:
     # SignaVis Lite: the labeling app as a slim desktop app (src-tauri-lite).

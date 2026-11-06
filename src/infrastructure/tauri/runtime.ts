@@ -69,3 +69,20 @@ export function installExternalLinkHandler(): void {
         return nativeOpen(url, target, features);
     }) as typeof window.open;
 }
+
+/**
+ * URL of large app data that Lite does not ship (species images, BirdNET
+ * model): the `svdata` protocol of the Lite shell, which serves it from its
+ * cache and downloads it once on a miss (src-tauri-lite/src/data_cache.rs).
+ * `sitePath` is relative to the web app root, e.g. 'models/birdnet-v2.4/'.
+ * Outside Lite, `browserUrl` is returned unchanged.
+ */
+export function onDemandUrl(sitePath: string, browserUrl: string): string {
+    if (!isLite()) return browserUrl;
+    // Custom protocols: http://<scheme>.localhost on Windows (WebView2), <scheme>://localhost elsewhere.
+    const windows = /Windows/i.test(globalThis.navigator?.userAgent || '');
+    return `${windows ? 'http://svdata.localhost' : 'svdata://localhost'}/${sitePath}`;
+}
+
+/** Base URL of the species thumbnails ('<base><Scientific name>.webp'). */
+export const speciesImageBase = () => onDemandUrl('demo/data/species_images/', './data/species_images/');

@@ -6,6 +6,7 @@
 // hands the JSON report to `probe_report`, and the app exits.
 // ═══════════════════════════════════════════════════════════════════════
 
+mod data_cache;
 mod project_fs;
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -31,6 +32,7 @@ fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol(data_cache::SCHEME, data_cache::handle)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

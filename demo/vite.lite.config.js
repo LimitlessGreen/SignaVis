@@ -4,20 +4,22 @@
  * Usage:  npx vite build --config demo/vite.lite.config.js
  *
  * Builds only the labeling app (plus the Phase-0 webview probe) into
- * _site-lite/, with the taxonomy, models, species images and the libraries
+ * _site-lite/, with the taxonomy and the libraries
  * the web app takes from CDNs (vendor/, see runtime.ts vendorUrl) bundled,
- * so the app works offline and under a strict CSP.
+ * so the app works offline and under a strict CSP. Species images and the
+ * BirdNET model are not shipped: Lite loads them on demand and caches them
+ * (svdata protocol, src-tauri-lite/src/data_cache.rs).
  */
 import { defineConfig } from 'vite';
 import { versionDefines, getBuildVersion } from '../scripts/build-version.mjs';
 import { resolve } from 'path';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 
 const root = resolve(import.meta.dirname, '..');
 const out = resolve(root, '_site-lite');
 
-// Taxonomy + species images are generated (npm run taxonomy:build), not in git.
+// The taxonomy is generated (npm run taxonomy:build), not in git.
 // A shipped Lite needs them; the webview probe workflow does not.
 const DATA_OPTIONAL = process.env.SIGNAVIS_LITE_DATA_OPTIONAL === '1';
 
@@ -67,7 +69,16 @@ function cleanOutDir() {
     name: 'clean-out-dir',
     apply: 'build',
     buildStart() {
-      rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+      try {
+        rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+      } catch (err) {
+        // Still locked: move it out of the way (a rename works while single files are
+        // held) and remove the leftover best-effort. _site-lite.stale-* is git-ignored.
+        const stale = `${out}.stale-${Date.now()}`;
+        renameSync(out, stale);
+        try { rmSync(stale, { recursive: true, force: true, maxRetries: 3 }); }
+        catch { console.warn(`[clean-out-dir] could not remove ${stale} (${err.code}); delete it later`); }
+      }
     },
   };
 }
@@ -125,9 +136,7 @@ export default defineConfig({
     copyStatic([
       ...vendorCopies,
       [resolve(root, 'src-tauri-lite', 'icons', 'icon.ico'), resolve(out, 'favicon.ico')],
-      [resolve(root, 'models'), resolve(out, 'models')],
       [resolve(root, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), resolve(out, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), true],
-      [resolve(root, 'demo', 'data', 'species_images'), resolve(out, 'demo', 'data', 'species_images'), true],
     ]),
   ],
   // Dev: same watch exclusions as vite.config.js (cargo target dirs lock files on Windows).
