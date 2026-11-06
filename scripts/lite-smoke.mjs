@@ -8,6 +8,7 @@
  *
  * Usage: node scripts/lite-smoke.mjs [path/to/signavis-lite.exe] [--wait=15]
  *        [--url=demo/labeling-app.html?xc=XC123]   (navigate there instead of reloading)
+ *        [--arg=…]       (repeatable; passed to the app, e.g. a signavis:// link or a file)
  *        [--no-reload]   (only attach; start-up errors before attaching are missed)
  *        [--screenshot=out.png]
  *        [--eval="expression"]   (repeatable; printed after the wait)
@@ -24,13 +25,14 @@ function defaultExe() {
   return resolve(meta.target_directory, 'debug', 'signavis-lite.exe');
 }
 const exe = resolve(args.find((a) => !a.startsWith('--')) ?? defaultExe());
+const appArgs = args.filter((a) => a.startsWith('--arg=')).map((a) => a.slice(6));
 const waitSec = Number(args.find((a) => a.startsWith('--wait='))?.slice(7) ?? 15);
 const url = args.find((a) => a.startsWith('--url='))?.slice(6);
 const shot = args.find((a) => a.startsWith('--screenshot='))?.slice(13);
 const evals = args.filter((a) => a.startsWith('--eval=')).map((a) => a.slice(7));
 const PORT = 9333;
 
-const child = spawn(exe, [], {
+const child = spawn(exe, appArgs, {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
   stdio: 'ignore',
 });

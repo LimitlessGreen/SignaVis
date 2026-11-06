@@ -3987,8 +3987,8 @@
     }
 
     // ── URL params & startup ──────────────────────────────────────────
-    async function autoLoadFromParams() {
-      const p = new URLSearchParams(window.location.search || '');
+    /** Open the XC recording named in `p` (page URL by default; Lite deep links pass their own). */
+    async function autoLoadFromParams(p = new URLSearchParams(window.location.search || '')) {
       const xcid = p.get('xcid') || p.get('XCID') || p.get('xc') || p.get('XC');
       if (!xcid) return;
       // Deduplicate: entry already in session (e.g. from previous page load) — just activate it
@@ -4708,9 +4708,52 @@
       player.on('labelsync', () => topbarWidget.refresh());
     }
 
+    // ── Lite: "open this" from outside (signavis:// links, Open with, 2nd start) ──
+    // The shell queues requests (src-tauri-lite/src/launch.rs) and emits 'lite-launch';
+    // they are pulled here once at start and on every event, one after the other.
+    let _liteLaunchChain = Promise.resolve();
+    function applyLiteLanguage(lang) {
+      try { localStorage.setItem(LANG_STORAGE_KEY, lang); } catch { /* ignore */ }
+      if (![...taxonomyLangSelect.options].some((o) => o.value === lang)) return;  // taxonomy not loaded yet
+      taxonomyLangSelect.value = lang;
+      taxonomyLangSelect.dispatchEvent(new Event('change'));
+    }
+    async function takeLiteLaunchRequests() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke('take_launch_requests');
+    }
+    async function runLiteLaunchRequests(requests) {
+      for (const req of requests) {
+        try {
+          if (req.kind === 'xc') {
+            if (req.lang) applyLiteLanguage(req.lang);
+            await autoLoadFromParams(new URLSearchParams({ xc: req.xc }));
+          } else if (req.kind === 'file') {
+            const file = await readAudioPath(req.path);
+            if (file) await loadLocalAudioFile(file, { filePath: req.path });
+            else showLoadError(`File not found: ${req.path}`, 'Cannot open');
+          }
+        } catch (e) {
+          console.warn('[lite] launch request failed', req, e);
+          showLoadError(e?.message || e, 'Cannot open');
+        }
+      }
+    }
+    /** `initial`: requests of this start, taken before the last recording would be restored. */
+    async function startLiteLaunchHandling(initial) {
+      const run = (requests) => { _liteLaunchChain = _liteLaunchChain.then(() => runLiteLaunchRequests(requests)); };
+      const pull = () => { _liteLaunchChain = _liteLaunchChain.then(async () => runLiteLaunchRequests(await takeLiteLaunchRequests())); };
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen('lite-launch', pull);
+      run(initial);
+      pull();   // anything queued between taking `initial` and listening
+    }
+
     // ── Startup ───────────────────────────────────────────────────────
     const _startParams = new URLSearchParams(window.location.search);
     const _hasXcParam = ['xc', 'XC', 'xcid', 'XCID'].some((k) => _startParams.has(k));
+    // Lite: a link / file that started the app opens instead of the last recording (like ?xc= above).
+    const _liteInitialLaunch = isLite() ? await takeLiteLaunchRequests().catch(() => []) : [];
     const _restoredFromProject = await openProject();
     if (!_restoredFromProject) {
       await restoreProjectSnapshotIfPossible();
@@ -4726,7 +4769,7 @@
     labelList.render(state.labels);
     // Reopen the last recording of the browser project (XC audio comes from the cache).
     // Session-only local files have no audio after a restart — they stay listed until re-picked.
-    if (_restoredFromProject && !_hasXcParam) {
+    if (_restoredFromProject && !_hasXcParam && !_liteInitialLaunch.length) {
       const _last = recordingManager.getActive();
       if (_last && (_last.xcId || _last.audioUrl || _last.path || _last.filePath)) activateRecordingEntry(_last);
       else recordingManager.setActive(null);
@@ -4735,6 +4778,7 @@
     // Start the XC download right away — the 7 MB taxonomy loads in parallel and
     // re-localizes any labels imported before it finished.
     autoLoadFromParams();
+    if (isLite()) startLiteLaunchHandling(_liteInitialLaunch);
     await loadBirdnetTaxonomy();
   </script>
   <script>
