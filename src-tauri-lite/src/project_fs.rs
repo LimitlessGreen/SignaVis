@@ -174,6 +174,26 @@ pub fn project_list_audio(root: String) -> Result<Vec<FileInfo>, String> {
     Ok(out)
 }
 
+/// A local audio file outside any project, by absolute path (picked in the
+/// native dialog, remembered as `filePath` of a recording). Only audio
+/// extensions are served, so this cannot be used to read arbitrary files.
+#[tauri::command]
+pub fn read_audio_file(path: String) -> Result<Response, String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err(format!("not an absolute path: {path}"));
+    }
+    let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !AUDIO_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!("not an audio file: {path}"));
+    }
+    match std::fs::read(p) {
+        Ok(bytes) => Ok(Response::new(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err("not-found".into()),
+        Err(e) => Err(format!("read {path}: {e}")),
+    }
+}
+
 /// Folder of the default project (created on demand): <app data>/projects/default.
 #[tauri::command]
 pub fn default_project_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -226,6 +246,11 @@ mod tests {
         let stat = project_stat(root.clone(), "audio/a.wav".into()).unwrap().unwrap();
         assert_eq!(stat.size, 4);
         assert!(project_stat(root.clone(), "missing.wav".into()).unwrap().is_none());
+        let abs = resolve(&root, "audio/a.wav").unwrap().to_string_lossy().into_owned();
+        assert!(read_audio_file(abs).is_ok());
+        let json = resolve(&root, "project.signavis.json").unwrap().to_string_lossy().into_owned();
+        assert!(read_audio_file(json).err().unwrap().contains("not an audio file"));
+        assert!(read_audio_file("audio/a.wav".into()).err().unwrap().contains("absolute"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

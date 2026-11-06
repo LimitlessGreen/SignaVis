@@ -651,6 +651,7 @@
     import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
     import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../src/infrastructure/project/FolderAccess.ts';
     import { isLite } from '../src/infrastructure/tauri/runtime.ts';
+    import { pickAudioFile, readAudioPath } from '../src/infrastructure/tauri/nativeFiles.ts';
     import { ProjectAutosaver, acquireTabLock } from '../src/app/project-autosave.ts';
     import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../src/domain/project/workspaceProject.ts';
     import { ProjectLocationPanel } from '../src/ui/panels/project-location.ts';
@@ -1979,6 +1980,17 @@
 
     /** Folder recordings: read the audio file from the project folder into a blob URL. */
     async function resolveProjectAudio(entry) {
+      // Lite: a local file outside the project, remembered by its absolute path.
+      if (isLite() && entry?.filePath && !entry.path && !entry.audioUrl) {
+        try {
+          const file = await readAudioPath(entry.filePath);
+          if (file) recordingManager.update(entry.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+          else selectionMeta.textContent = `File not found: ${entry.filePath}`;
+        } catch (e) {
+          selectionMeta.textContent = `Could not read ${entry.filePath}: ${e?.message || e}`;
+        }
+        return;
+      }
       if (!projectStore || !entry?.path) return;
       if (entry.audioUrl?.startsWith('blob:')) return;
       const file = await projectStore.readAudio(entry.path);
@@ -4064,20 +4076,31 @@
       window.location.replace(window.location.pathname);
     });
 
-    browseBtn.addEventListener('click', () => fileInput.click());
+    browseBtn.addEventListener('click', async () => {
+      if (!isLite()) { fileInput.click(); return; }
+      // Lite: native dialog; the path is kept so the file reopens after a restart.
+      let picked;
+      try { picked = await pickAudioFile(); }
+      catch (e) { showLoadError(e?.message || e, 'Cannot open'); return; }
+      if (picked) await loadLocalAudioFile(picked.file, { filePath: picked.path });
+    });
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
       try { await loadLocalAudioFile(file); } finally { fileInput.value = ''; }
     });
 
-    /** Load a local audio file (file picker or drag & drop). */
-    async function loadLocalAudioFile(file) {
+    /**
+     * Load a local audio file (file picker or drag & drop).
+     * `extra.filePath` (Lite): absolute path, stored on the recording so it reopens after a restart.
+     */
+    async function loadLocalAudioFile(file, extra = {}) {
       // Re-picked session-only file from a restored project: reattach audio, keep its labels.
       const _orphan = recordingManager.getAll().find((e) =>
-        e.source === 'file' && !e.audioUrl && e.filename === file.name);
+        e.source === 'file' && !e.audioUrl
+        && (extra.filePath ? (e.filePath === extra.filePath || (!e.filePath && e.filename === file.name)) : e.filename === file.name));
       if (_orphan) {
-        recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+        recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true, ...extra });
         fileInput.value = '';
         await activateRecordingEntry(_orphan);
         await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
@@ -4114,6 +4137,7 @@
         filename: file.name,
         audioUrl: _blobUrl,
         isBlobUrl: true,
+        ...extra,
       });
       recordingManager.setActive(_fileEntry.id);
       state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
@@ -4715,7 +4739,7 @@
     // Session-only local files have no audio after a restart — they stay listed until re-picked.
     if (_restoredFromProject && !_hasXcParam) {
       const _last = recordingManager.getActive();
-      if (_last && (_last.xcId || _last.audioUrl || _last.path)) activateRecordingEntry(_last);
+      if (_last && (_last.xcId || _last.audioUrl || _last.path || _last.filePath)) activateRecordingEntry(_last);
       else recordingManager.setActive(null);
     }
     setTimeout(maybeShowProjectFolderModal, 400);

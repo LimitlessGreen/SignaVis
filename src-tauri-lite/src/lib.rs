@@ -40,6 +40,7 @@ pub fn run() {
             project_fs::project_write,
             project_fs::project_list_audio,
             project_fs::default_project_dir,
+            project_fs::read_audio_file,
         ])
         .setup(|app| {
             let page = if std::env::var_os(PROBE_ENV).is_some() {
@@ -50,6 +51,9 @@ pub fn run() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App(page.into()))
                 .title("SignaVis Lite")
                 .initialization_script(LITE_MARKER_SCRIPT)
+                // Keep HTML5 drag & drop: dropping audio files and dragging label rows
+                // (Tauri's own handler would swallow both on Windows).
+                .disable_drag_drop_handler()
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(900.0, 600.0)
                 .build()?;
