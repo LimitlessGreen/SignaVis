@@ -47,19 +47,42 @@ Durchsatz CPU (12 logische Kerne, Windows):
 Mehr Threads bringen kaum etwas → speicher-/bandbreitenbegrenzt; Batch 8 sinnvoll.
 Resampling ≈ 1 % der Inferenzzeit.
 
+## Befund: GPU und Modellvarianten (RTX 2060 SUPER, 8 GB)
+
+`perch_v2_embed.onnx` = Graph bis `embedding` zugeschnitten (`scripts/make_headless.py`),
+ohne Klassifikationskopf: 409 MB → 45–49 MB. Grund zusätzlich: DirectML stürzt im
+Kopf (ProtoPNet-MatMul) bei Batch > 1 ab.
+
+Messung mit 30 min Audio (360 Fenster), Echtzeitfaktor:
+
+| Modell | CPU (8 Thr., Batch 8) | DirectML (Win, Batch 32–64) | CUDA (WSL, ORT 1.22, Batch 32) |
+|---|---|---|---|
+| perch_v2 (voll) | 22× | – (Absturz bei Batch > 1) | – |
+| perch_v2_embed | 30–39× | ~1000× | 177× (DFT fällt auf CPU zurück) |
+| **perch_v2_no_dft_embed** | **48×** | **~1000×** | **~1300×** |
+
+- Genauigkeit `no_dft_embed` (CPU und DirectML) gegen das volle Modell: Kosinus 1,00000.
+- **Standardmodell: `perch_v2_no_dft_embed.onnx` (49 MB).**
+- DirectML: Batch-Form muss gleich bleiben, sonst Neukompilierung → letzter Batch wird
+  aufgefüllt (`Embedder::embed`). Batch 32–64 optimal, 96 sprengt 8 GB VRAM.
+- CUDA in WSL: `onnxruntime-gpu[cuda,cudnn]==1.22.0` (CUDA 12) + `ort.preload_dlls()`;
+  das aktuelle Paket erwartet CUDA 13 (`libcublasLt.so.13`). Rust-`ort` mit Feature
+  `cuda` unter Linux für den Worker noch nicht gebaut.
+
 ## Folgen
 
-- **Client (Lite):** ~20× Echtzeit → 100 h Audio ≈ 5 h Rechenzeit. Für Einzelprojekte ok,
-  im Hintergrund und inkrementell. Modell nicht ins Installationspaket, sondern bei
-  Bedarf herunterladen (409 MB).
-- **Einrichtung:** 1 Rekorder × 1 Jahr 24/7 = 8760 h Audio ≈ 400 h CPU. Bei vielen
-  Rekordern sind **GPU-Worker** Pflicht (ort CUDA/DirectML-EP prüfen) – Phase 3.
+- **Client (Lite):** DirectML als Standard unter Windows (~1000× → 100 h Audio in ~6 min),
+  CPU-Fallback 48× (100 h ≈ 2 h). Modell (49 MB) bei Bedarf herunterladen oder mitliefern.
+- **Einrichtung:** 1 Rekorder-Jahr (8760 h) ≈ 7 h auf einer Mittelklasse-GPU, ≈ 180 h CPU.
+  GPU-Worker im Coordinator sinnvoll, aber auch eine Workstation schafft ~1000 Rekorder-Tage
+  pro Tag. Engpass wird eher Dekodieren/Einlesen vom NAS als die Inferenz.
 - **Speicher:** 1536 × f16 = 3 KB pro 5 s ≈ 2,2 MB pro Stunde ≈ 19 GB pro
   Rekorder-Jahr. 10⁸ Fenster ≈ 300 GB Vektoren. Optionen für Phase 2/3: Hop = Fenster
   (kein Überlapp), PCA/Quantisierung für den Index, volle Vektoren auf Platte.
 
 ## Offen
 
-- GPU-Execution-Provider (CUDA in WSL/Linux, DirectML unter Windows) messen.
-- FP16-/INT8-Variante bzw. Modell ohne Klassifikationskopf (kleiner, schneller).
+- Rust-`ort` mit CUDA unter Linux bauen (Worker, Phase 3).
+- FP16-/INT8-Variante (nach den GPU-Werten nicht dringend).
+- Dekodier-/IO-Durchsatz (FLAC/MP3, NAS) messen – vermutlich der eigentliche Engpass.
 - Hop/Überlapp für die Suche (Perch-Agile nutzt 5 s ohne Überlapp).

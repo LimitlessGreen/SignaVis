@@ -106,4 +106,6 @@ Coordinators wird oder nur Ideenlieferant ist.
 ## Fortschritt
 - 2026-11-06 Phase 0: Crate `src-tauri/crates/aw-embed` (Perch-2-ONNX, resample_poly-Nachbau),
   Parität exakt, CPU ~22× Echtzeit. Details: `docs/architecture/adr-001-plattform-grundlagen.md`.
-  Offen in Phase 0: GPU-EP, kleineres Modell (FP16/headless).
+- 2026-11-06 Phase 0 GPU: Standardmodell `perch_v2_no_dft_embed.onnx` (49 MB):
+  CPU 48×, DirectML ~1000×, CUDA (WSL) ~1300× Echtzeit, Kosinus 1,00000 zum Original.
+  **Phase 0 abgeschlossen.** Rest (Rust-CUDA-Build, IO-Durchsatz) → Phase 3.

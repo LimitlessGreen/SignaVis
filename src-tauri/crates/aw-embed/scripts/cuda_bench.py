@@ -1,4 +1,5 @@
 import sys, time, numpy as np, onnxruntime as ort
+ort.preload_dlls()
 model = sys.argv[1]
 print("providers:", ort.get_available_providers())
 for prov in (["CUDAExecutionProvider"],):
