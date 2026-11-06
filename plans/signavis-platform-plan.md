@@ -109,3 +109,8 @@ Coordinators wird oder nur Ideenlieferant ist.
 - 2026-11-06 Phase 0 GPU: Standardmodell `perch_v2_no_dft_embed.onnx` (49 MB):
   CPU 48×, DirectML ~1000×, CUDA (WSL) ~1300× Echtzeit, Kosinus 1,00000 zum Original.
   **Phase 0 abgeschlossen.** Rest (Rust-CUDA-Build, IO-Durchsatz) → Phase 3.
+- 2026-11-06 Phase 1, Schritt 1 (7b6f412): Lite-Backend `src-tauri-lite/src/embeddings.rs` –
+  Modell-Download beim 1. Gebrauch (SHA-256, Release-Asset `models-perch-v2` noch anzulegen),
+  Job inkrementell/abbrechbar, Hop einstellbar (Default 5 s), Speicher
+  `.signavis/embeddings/perch2/` (index.json + vectors.f16), `embed_similar` Top-k.
+  Realtest 3 Sperlingskauz-WAVs: DirectML ok. Offen: DirectML.dll im Bundle, Opus/WebM-Dekodierung.
