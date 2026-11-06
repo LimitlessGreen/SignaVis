@@ -64,7 +64,7 @@ The [labeling app](https://limitlessgreen.github.io/SignaVis/demo/labeling-app.h
 | **Snap to call** — one click boxes the call<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/snap.gif" alt="Snap to call" width="420"/> | **Zoom box & loupe** — precise box edges<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/magnifier.gif" alt="Zoom box and loupe" width="420"/> |
 | **Display** — presets, colour schemes, contrast<br><img src="https://github.com/LimitlessGreen/SignaVis/releases/download/demo-media/display.gif" alt="Display settings" width="420"/> | |
 
-The same UI is available as a desktop app (Tauri, preview) — installers are attached to each [release](https://github.com/LimitlessGreen/SignaVis/releases).
+**SignaVis Lite** — the same app as a small desktop program for Windows, macOS and Linux (project folders, offline use, self-update). [Download the latest release](https://github.com/LimitlessGreen/SignaVis/releases/latest) · [install notes](docs/signavis-lite.md) (the installers are not code-signed yet).
 
 ## Install
 
