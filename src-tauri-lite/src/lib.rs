@@ -20,6 +20,15 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 const PROBE_ENV: &str = "SIGNAVIS_LITE_PROBE";
 
+/// Throw-away profile for screenshots and tests (scripts/lite-store-screenshots.mjs):
+/// the default project and the webview's storage live in this folder instead of
+/// the user's app data. The BirdNET/data cache stays shared.
+const DATA_DIR_ENV: &str = "SIGNAVIS_LITE_DATA_DIR";
+
+pub(crate) fn data_dir_override() -> Option<std::path::PathBuf> {
+    std::env::var_os(DATA_DIR_ENV).filter(|v| !v.is_empty()).map(Into::into)
+}
+
 /// Runs before any page script: lets the frontend tell Lite apart from the
 /// full desktop shell (see src/infrastructure/tauri/runtime.ts).
 macro_rules! lite_marker {
@@ -104,7 +113,11 @@ pub fn run() {
             } else {
                 "demo/labeling-app.html"
             };
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App(page.into()))
+            let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(page.into()));
+            if let Some(dir) = data_dir_override() {
+                window = window.data_directory(dir.join("webview"));
+            }
+            window
                 .title("SignaVis Lite")
                 .initialization_script(LITE_MARKER_SCRIPT)
                 // Keep HTML5 drag & drop: dropping audio files and dragging label rows

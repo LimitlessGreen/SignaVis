@@ -209,10 +209,15 @@ pub fn save_user_file(request: Request<'_>) -> Result<(), String> {
     }
 }
 
-/// Folder of the default project (created on demand): <app data>/projects/default.
+/// Folder of the default project (created on demand): <app data>/projects/default,
+/// or <SIGNAVIS_LITE_DATA_DIR>/projects/default for a throw-away profile.
 #[tauri::command]
 pub fn default_project_dir(app: tauri::AppHandle) -> Result<String, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("projects").join("default");
+    let base = match crate::data_dir_override() {
+        Some(d) => d,
+        None => app.path().app_data_dir().map_err(|e| e.to_string())?,
+    };
+    let dir = base.join("projects").join("default");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     Ok(dir.to_string_lossy().into_owned())
 }
