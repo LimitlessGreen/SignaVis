@@ -4921,6 +4921,55 @@ Check the internet connection and try again.`, { title: 'Download failed' });
         _litePrefetching = false;
       }
     }
+    /** Help › Check for Updates… and a quiet daily check at start (updater.rs). */
+    const LITE_UPDATE_CHECK_KEY = 'signavis-lite-update-checked';
+    let _liteUpdating = false;
+    async function checkLiteUpdate({ quiet = false } = {}) {
+      if (_liteUpdating) return;
+      _liteUpdating = true;
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        let info;
+        try {
+          info = await invoke('update_check');
+          lsSet(LITE_UPDATE_CHECK_KEY, String(Date.now()));
+        } catch (e) {
+          if (!quiet) await appAlert(`Could not check for updates: ${e?.message || e}`, { title: 'Check for updates' });
+          return;
+        }
+        if (!info) {
+          if (!quiet) await appAlert(`SignaVis Lite ${window.__SIGNAVIS_LITE__?.version || ''} is up to date.`, { title: 'Check for updates' });
+          return;
+        }
+        const notes = info.notes ? `\n\n${info.notes.slice(0, 600)}${info.notes.length > 600 ? '…' : ''}` : '';
+        if (!await appConfirm(`SignaVis Lite ${info.version} is available (installed: ${info.current}). Install it now? The app saves the project and restarts.${notes}`,
+          { title: 'Update available', okLabel: 'Install and restart' })) return;
+        await projectAutosaver?.flush({ force: true });
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen('lite-update-progress', ({ payload: p }) => {
+          const mb = (p.done / 1e6).toFixed(1);
+          selectionMeta.textContent = p.total
+            ? `Downloading update… ${Math.round((100 * p.done) / p.total)} % (${mb} MB)`
+            : `Downloading update… ${mb} MB`;
+        });
+        try {
+          selectionMeta.textContent = 'Downloading update…';
+          await invoke('update_install');
+        } catch (e) {
+          selectionMeta.textContent = '';
+          await appAlert(`The update could not be installed: ${e?.message || e}`, { title: 'Update failed' });
+        } finally {
+          unlisten();
+        }
+      } finally {
+        _liteUpdating = false;
+      }
+    }
+    function maybeCheckLiteUpdate() {
+      const last = Number(lsGet(LITE_UPDATE_CHECK_KEY) || 0);
+      if (Date.now() - last < 24 * 3600 * 1000) return;
+      setTimeout(() => checkLiteUpdate({ quiet: true }).catch(() => {}), 5000);
+    }
     async function installLiteMenu() {
       const { listen } = await import('@tauri-apps/api/event');
       await listen('lite-menu', async ({ payload: id }) => {
@@ -4930,6 +4979,7 @@ Check the internet connection and try again.`, { title: 'Download failed' });
           else if (id === 'default-project') await useDefaultProject();
           else if (id === 'export-labels') downloadLabelsJson();
           else if (id === 'prefetch-model') await prefetchBirdnetModel();
+          else if (id === 'check-updates') await checkLiteUpdate();
           else if (id === 'recent-clear') { saveRecent(_lsLite, []); liteRecentSync(); }
           else if (typeof id === 'string' && id.startsWith('recent:')) await openLiteRecent(Number(id.slice(7)));
           else if (id === 'about') {
@@ -5018,6 +5068,7 @@ Close anyway and lose them?`,
       startLiteLaunchHandling(_liteInitialLaunch);
       installLiteWindow().catch((e) => console.warn('[lite] window setup failed', e));
       installLiteMenu().catch((e) => console.warn('[lite] menu setup failed', e));
+      maybeCheckLiteUpdate();
     }
     await loadBirdnetTaxonomy();
   </script>

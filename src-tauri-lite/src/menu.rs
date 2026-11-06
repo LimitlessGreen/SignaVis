@@ -81,6 +81,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(app, "issues", "Report an Issue", None)?)
         .item(&item(app, "web-app", "Open the Web Version", None)?)
         .separator()
+        .item(&item(app, "check-updates", "Check for Updates…", None)?)
         .item(&item(app, "about", "About SignaVis Lite", None)?)
         .build()?;
 
@@ -91,6 +92,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     {
         let app_menu = SubmenuBuilder::new(app, "SignaVis Lite")
             .item(&item(app, "about", "About SignaVis Lite", None)?)
+            .item(&item(app, "check-updates", "Check for Updates…", None)?)
             .separator()
             .item(&PredefinedMenuItem::hide(app, None)?)
             .item(&PredefinedMenuItem::hide_others(app, None)?)

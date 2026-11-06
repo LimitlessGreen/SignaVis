@@ -13,6 +13,7 @@ mod data_cache;
 mod launch;
 mod menu;
 mod project_fs;
+mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -49,6 +50,7 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol(data_cache::SCHEME, data_cache::handle)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             probe_report,
             project_fs::project_stat,
@@ -61,9 +63,12 @@ pub fn run() {
             launch::take_launch_requests,
             menu::set_recent_items,
             data_cache::prefetch_model,
+            updater::update_check,
+            updater::update_install,
         ])
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .manage(launch::LaunchQueue::default())
+        .manage(updater::PendingUpdate::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
             // Windows, have to do it themselves at run time.

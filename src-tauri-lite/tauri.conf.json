@@ -52,7 +52,8 @@
         "role": "Viewer",
         "rank": "Alternate"
       }
-    ]
+    ],
+    "createUpdaterArtifacts": true
   },
   "plugins": {
     "deep-link": {
@@ -60,6 +61,15 @@
         "schemes": [
           "signavis"
         ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4ODJDOTJFRkM4M0ZFQkIKUldTNy9vUDhMc21DaUlpV1hOdFY3WjU3YW1Ud1gyUnB1ektmdlhza3o1bk9ieG4xNU5sMmpaekYK",
+      "endpoints": [
+        "https://github.com/LimitlessGreen/SignaVis/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
