@@ -735,6 +735,7 @@
       buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
       getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
     } from '../src/app/lite-handoff.ts';
+    import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../src/app/recent-items.ts';
 
     // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
     // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -1912,11 +1913,16 @@
       setTimeout(() => document.getElementById('projectFolderChooseBtn').focus(), 60);
     }
 
-    /** Pick a folder; a folder without project gets one (current session or empty). Then reload into it. */
-    async function chooseProjectFolder() {
-      let handle;
-      try { handle = await pickProjectFolder(); }
-      catch (e) { await appAlert(`Could not open the folder: ${e?.message || e}`, { title: 'Folder error' }); return; }
+    /**
+     * Pick a folder; a folder without project gets one (current session or empty). Then reload into it.
+     * `preset`: a known folder handle (Lite "Open Recent") instead of the picker.
+     */
+    async function chooseProjectFolder(preset = null) {
+      let handle = preset;
+      if (!handle) {
+        try { handle = await pickProjectFolder(); }
+        catch (e) { await appAlert(`Could not open the folder: ${e?.message || e}`, { title: 'Folder error' }); return; }
+      }
       if (!handle) return;
       if (await ensurePermission(handle, { request: true }) !== 'granted') return;
       const store = folderStore(handle);
@@ -4206,6 +4212,7 @@
      * `extra.filePath` (Lite): absolute path, stored on the recording so it reopens after a restart.
      */
     async function loadLocalAudioFile(file, extra = {}) {
+      if (extra.filePath) liteRecentAdd({ kind: 'file', path: extra.filePath });
       // Re-picked session-only file from a restored project: reattach audio, keep its labels.
       const _orphan = recordingManager.getAll().find((e) =>
         e.source === 'file' && !e.audioUrl
@@ -4854,6 +4861,67 @@
         }
       }
     }
+    // ── Lite: native menu (src-tauri-lite/src/menu.rs) and "Open Recent" ─
+    const _lsLite = (() => { try { return localStorage; } catch { return null; } })();
+    function liteRecentSync() {
+      if (!isLite()) return;
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('set_recent_items', { items: recentMenuItems(loadRecent(_lsLite)) }))
+        .catch((e) => console.warn('[lite] recent menu', e));
+    }
+    function liteRecentAdd(item) {
+      if (!isLite()) return;
+      saveRecent(_lsLite, addRecent(loadRecent(_lsLite), item));
+      liteRecentSync();
+    }
+    async function openLiteRecent(index) {
+      const item = loadRecent(_lsLite)[index];
+      if (!item) return;
+      if (item.kind === 'folder') {
+        await chooseProjectFolder({ kind: 'native', name: item.name, path: item.path });
+        return;
+      }
+      const file = await readAudioPath(item.path).catch(() => null);
+      if (!file) {
+        showLoadError(`File not found: ${item.path}`, 'Cannot open');
+        saveRecent(_lsLite, loadRecent(_lsLite).filter((i) => i !== item && i.path !== item.path));
+        liteRecentSync();
+        return;
+      }
+      await loadLocalAudioFile(file, { filePath: item.path });
+    }
+    async function useDefaultProject() {
+      await projectAutosaver?.flush();
+      lsSet(PROJECT_LOCATION_KEY, 'browser');
+      window.location.reload();
+    }
+    async function installLiteMenu() {
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen('lite-menu', async ({ payload: id }) => {
+        try {
+          if (id === 'open-file') browseBtn.click();
+          else if (id === 'open-folder') await chooseProjectFolder();
+          else if (id === 'default-project') await useDefaultProject();
+          else if (id === 'export-labels') downloadLabelsJson();
+          else if (id === 'recent-clear') { saveRecent(_lsLite, []); liteRecentSync(); }
+          else if (typeof id === 'string' && id.startsWith('recent:')) await openLiteRecent(Number(id.slice(7)));
+          else if (id === 'about') {
+            await appAlert(`SignaVis Lite ${window.__SIGNAVIS_LITE__?.version || ''}
+
+The SignaVis labeling app as a desktop program.
+AGPL-3.0 · github.com/LimitlessGreen/SignaVis`, { title: 'About SignaVis Lite' });
+          }
+        } catch (e) {
+          console.warn('[lite] menu action failed', id, e);
+        }
+      });
+      if (projectKind === 'folder' && projectStore?.rootPath) {
+        liteRecentAdd({ kind: 'folder', path: projectStore.rootPath, name: projectStore.label });
+      } else {
+        liteRecentSync();
+      }
+    }
+
     // ── Lite: window title and close guard ──────────────────────────────
     async function installLiteWindow() {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -4922,6 +4990,7 @@ Close anyway and lose them?`,
     if (isLite()) {
       startLiteLaunchHandling(_liteInitialLaunch);
       installLiteWindow().catch((e) => console.warn('[lite] window setup failed', e));
+      installLiteMenu().catch((e) => console.warn('[lite] menu setup failed', e));
     }
     await loadBirdnetTaxonomy();
   </script>

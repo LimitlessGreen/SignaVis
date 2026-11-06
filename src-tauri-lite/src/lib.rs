@@ -11,6 +11,7 @@
 
 mod data_cache;
 mod launch;
+mod menu;
 mod project_fs;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -58,7 +59,9 @@ pub fn run() {
             project_fs::read_audio_file,
             project_fs::save_user_file,
             launch::take_launch_requests,
+            menu::set_recent_items,
         ])
+        .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .manage(launch::LaunchQueue::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
@@ -73,6 +76,9 @@ pub fn run() {
             let cwd = std::env::current_dir().unwrap_or_default();
             let initial = launch::parse_args(std::env::args().skip(1), &cwd);
             app.state::<launch::LaunchQueue>().0.lock().unwrap().extend(initial);
+
+            let app_menu = menu::build(app.handle())?;
+            app.set_menu(app_menu)?;
 
             let page = if std::env::var_os(PROBE_ENV).is_some() {
                 "demo/lite-probe.html"
