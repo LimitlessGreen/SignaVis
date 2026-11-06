@@ -4895,6 +4895,32 @@
       lsSet(PROJECT_LOCATION_KEY, 'browser');
       window.location.reload();
     }
+    /** File › Download BirdNET Model for Offline Use: fill the shell's data cache (data_cache.rs). */
+    let _litePrefetching = false;
+    async function prefetchBirdnetModel() {
+      if (_litePrefetching) return;
+      _litePrefetching = true;
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { listen } = await import('@tauri-apps/api/event');
+      const mb = (b) => (b / 1e6).toFixed(0);
+      const unlisten = await listen('lite-prefetch', ({ payload: p }) => {
+        selectionMeta.textContent = `Downloading BirdNET model for offline use… ${p.done}/${p.total} files, ${mb(p.bytes)} MB`;
+      });
+      try {
+        selectionMeta.textContent = 'Downloading BirdNET model for offline use…';
+        const r = await invoke('prefetch_model');
+        selectionMeta.textContent = `BirdNET model is available offline (${r.total} files, ${mb(r.bytes)} MB)`;
+        await appAlert('The BirdNET model is now stored on this computer. BirdNET analysis works without an internet connection.', { title: 'BirdNET available offline' });
+      } catch (e) {
+        selectionMeta.textContent = '';
+        await appAlert(`The BirdNET model could not be downloaded: ${e?.message || e}
+
+Check the internet connection and try again.`, { title: 'Download failed' });
+      } finally {
+        unlisten();
+        _litePrefetching = false;
+      }
+    }
     async function installLiteMenu() {
       const { listen } = await import('@tauri-apps/api/event');
       await listen('lite-menu', async ({ payload: id }) => {
@@ -4903,6 +4929,7 @@
           else if (id === 'open-folder') await chooseProjectFolder();
           else if (id === 'default-project') await useDefaultProject();
           else if (id === 'export-labels') downloadLabelsJson();
+          else if (id === 'prefetch-model') await prefetchBirdnetModel();
           else if (id === 'recent-clear') { saveRecent(_lsLite, []); liteRecentSync(); }
           else if (typeof id === 'string' && id.startsWith('recent:')) await openLiteRecent(Number(id.slice(7)));
           else if (id === 'about') {

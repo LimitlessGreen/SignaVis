@@ -10,7 +10,8 @@
 
 use std::path::{Component, Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
-use tauri::{Manager, UriSchemeContext, UriSchemeResponder};
+use serde::Serialize;
+use tauri::{Emitter, Manager, UriSchemeContext, UriSchemeResponder};
 
 pub const SCHEME: &str = "svdata";
 const UPSTREAM: &str = "https://limitlessgreen.github.io/SignaVis";
@@ -95,6 +96,55 @@ fn urlencode(segment: &str) -> String {
         .collect()
 }
 
+/// BirdNET model directories (layers model + area model) under models/.
+const MODEL_DIRS: &[&str] = &["models/birdnet-v2.4/", "models/birdnet-v2.4/mdata/"];
+pub const PREFETCH_EVENT: &str = "lite-prefetch";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefetchProgress {
+    done: usize,
+    total: usize,
+    bytes: u64,
+}
+
+/// File names listed in a TF.js model.json (`weightsManifest[].paths`).
+fn manifest_paths(model_json: &[u8]) -> Result<Vec<String>, String> {
+    let v: serde_json::Value = serde_json::from_slice(model_json).map_err(|e| format!("model.json: {e}"))?;
+    let paths = v["weightsManifest"]
+        .as_array()
+        .ok_or("model.json has no weightsManifest")?
+        .iter()
+        .flat_map(|w| w["paths"].as_array().cloned().unwrap_or_default())
+        .filter_map(|p| p.as_str().map(str::to_string))
+        .filter(|p| !p.contains(['/', '\\']) && !p.starts_with('.'))
+        .collect();
+    Ok(paths)
+}
+
+/// Download the BirdNET model into the cache (for offline use), reporting
+/// progress as PREFETCH_EVENT. Files already cached are not fetched again.
+#[tauri::command]
+pub async fn prefetch_model(app: tauri::AppHandle) -> Result<PrefetchProgress, String> {
+    let cache_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("data-cache");
+    let mut files = Vec::new();
+    for dir in MODEL_DIRS {
+        let model = load(cache_dir.clone(), format!("{dir}model.json")).await.map_err(|(_, m)| m)?;
+        files.push(format!("{dir}model.json"));
+        files.extend(manifest_paths(&model)?.into_iter().map(|p| format!("{dir}{p}")));
+    }
+    files.push(format!("{}labels.json", MODEL_DIRS[0]));
+    let total = files.len();
+    let mut progress = PrefetchProgress { done: 0, total, bytes: 0 };
+    for path in files {
+        let bytes = load(cache_dir.clone(), path).await.map_err(|(_, m)| m)?;
+        progress.done += 1;
+        progress.bytes += bytes.len() as u64;
+        let _ = app.emit(PREFETCH_EVENT, progress.clone());
+    }
+    Ok(progress)
+}
+
 pub fn handle<R: tauri::Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>, responder: UriSchemeResponder) {
     let Some(path) = site_path(request.uri().path()) else {
         responder.respond(respond(StatusCode::NOT_FOUND, "text/plain", b"not found".to_vec()));
@@ -133,6 +183,13 @@ mod tests {
         for bad in ["/demo/labeling-app.html", "/models/../demo/x", "/models/a%5Cb", "/", "/demo/data/species_images/%zz"] {
             assert!(site_path(bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn manifest_lists_shards_only_by_plain_name() {
+        let json = br#"{"weightsManifest":[{"paths":["group1-shard1of2.bin","group1-shard2of2.bin"]},{"paths":["../evil.bin","a/b.bin"]}]}"#;
+        assert_eq!(manifest_paths(json).unwrap(), vec!["group1-shard1of2.bin", "group1-shard2of2.bin"]);
+        assert!(manifest_paths(b"{}").is_err());
     }
 
     #[test]

@@ -67,6 +67,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(app, "default-project", "Use Default Project", None)?)
         .separator()
         .item(&item(app, "export-labels", "Export Labels…", Some("CmdOrCtrl+Shift+E"))?)
+        .item(&item(app, "prefetch-model", "Download BirdNET Model for Offline Use", None)?)
         .separator()
         .item(&item(app, "quit", if cfg!(windows) { "Exit" } else { "Quit" }, Some("CmdOrCtrl+Q"))?)
         .build()?;

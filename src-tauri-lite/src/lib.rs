@@ -60,6 +60,7 @@ pub fn run() {
             project_fs::save_user_file,
             launch::take_launch_requests,
             menu::set_recent_items,
+            data_cache::prefetch_model,
         ])
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .manage(launch::LaunchQueue::default())
