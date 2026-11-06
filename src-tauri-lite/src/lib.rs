@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 mod data_cache;
+mod embeddings;
 mod launch;
 mod menu;
 mod project_fs;
@@ -85,12 +86,19 @@ pub fn run() {
             launch::take_launch_requests,
             menu::set_recent_items,
             data_cache::prefetch_model,
+            embeddings::embed_model_status,
+            embeddings::embed_model_download,
+            embeddings::embed_info,
+            embeddings::embed_start,
+            embeddings::embed_cancel,
+            embeddings::embed_similar,
             updater::update_check,
             updater::update_install,
         ])
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .manage(launch::LaunchQueue::default())
         .manage(updater::PendingUpdate::default())
+        .manage(embeddings::EmbedState::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
             // Windows, have to do it themselves at run time.

@@ -20,12 +20,12 @@ const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "flac", "ogg", "oga", "opus", 
 const SKIP_DIRS: &[&str] = &["node_modules", ".git", ".signavis-trash"];
 const MAX_DEPTH: usize = 8;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
-    path: String,
-    size: u64,
-    last_modified: f64,
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) last_modified: f64,
 }
 
 /// Join `rel` onto `root`, refusing anything that could leave the root.
