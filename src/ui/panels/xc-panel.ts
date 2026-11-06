@@ -29,7 +29,7 @@ function parseXcLen(len: any) {
 // until XC's spelling for it is known.
 const LICENSE_CODES = ['CC-BY-NC-SA', 'CC-BY-NC-ND', 'CC-BY-SA', 'CC-BY-NC', 'CC-BY', 'CC0'];
 const withLicenseVersion = (code: string) => (code === 'CC0' ? code : `${code}-4.0`);
-const SET_LICENSES = ['', ...LICENSE_CODES.map(withLicenseVersion)];
+export const SET_LICENSES = ['', ...LICENSE_CODES.map(withLicenseVersion)];
 
 const AUTHOR_FIELDS = [
   { key: 'name',       label: 'Full Name',     type: 'text', placeholder: 'Your name', required: true },

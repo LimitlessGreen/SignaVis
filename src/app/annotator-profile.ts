@@ -112,3 +112,11 @@ export class AnnotatorProfile extends EventTarget {
         this.dispatchEvent(new CustomEvent('change', { detail: this.toJSON() }));
     }
 }
+
+/** True while the first-run onboarding has neither been finished/skipped nor made moot by a filled-in name. */
+export function onboardingPending(): boolean {
+    try {
+        const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        return !p.onboardingDone && !String(p.name || '').trim();
+    } catch { return true; }
+}
