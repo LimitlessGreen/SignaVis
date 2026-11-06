@@ -118,3 +118,11 @@ Coordinators wird oder nur Ideenlieferant ist.
   `src/ui/panels/similar-panel.ts`: Modell-Download mit Fortschritt, Embedding-Job
   (Hop 5/2,5/1 s, Abbrechen, fehlgeschlagene Dateien), „Find similar“ aus Auswahl bzw.
   Abspielposition, Trefferliste (Top-k) mit Abspielen/Öffnen. Im Browser/Tauri ungetestet.
+- 2026-11-06 Phase 1, Schritt 3 (56f5899 + Folgecommit): agiles Modellieren in Lite –
+  `src-tauri-lite/src/agile.rs` (Fenster-Labels pos/neg/unsicher in `.signavis/agile/labels.json`,
+  logistische Regression mit Klassengewichten + 5-fach-CV, Hintergrundfenster nur bei zu wenig
+  Negativen, Ranking top/nahe Schwelle/zufällig, Export Raven/CSV mit Zusammenfassen benachbarter
+  Fenster), Panel-Abschnitt „Classifier“ mit ✓/✗/? in den Trefferlisten.
+  Realtest Labeled_Audiosegments (A:\agile-test, 160 Ausschnitte, 4 Arten, Hälfte Training):
+  Sperlingskauz 100 %, Waldkauz/Hohltaube 99 % Genauigkeit. Offen: Annota-Export,
+  UI-Test in Tauri, Realtest Raufußkauz auf Langaufnahmen.

@@ -276,8 +276,12 @@ fn build_set(l: &Loaded, class: &AgileClass, use_background: bool) -> TrainSet {
         }
     }
     let n_rows = l.rows.len();
-    if use_background && s.positives > 0 && n_rows > seen.len() {
-        let want = (s.positives * 10).clamp(50, 1000).min(n_rows - seen.len());
+    // Hintergrund nur als Notbehelf: ungelabelte Fenster enthalten auch Positive
+    // und kosten Recall (Realtest Sperlingskauz: 100 % -> 77 %). Daher nur, bis
+    // explizite + Hintergrund-Negative das Doppelte der Positiven erreichen.
+    let need = (s.positives * 2).max(20).saturating_sub(s.negatives);
+    if use_background && s.positives > 0 && need > 0 && n_rows > seen.len() {
+        let want = need.min(n_rows - seen.len());
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ n_rows as u64);
         let mut tries = 0;
         while s.background < want && tries < want * 20 {
@@ -640,6 +644,53 @@ mod tests {
         for (x, t) in xs.iter().zip(&y) {
             assert_eq!(sigmoid(dot(&w, x) + b) >= 0.5, *t > 0.5);
         }
+    }
+
+    /// Realtest: AGILE_TEST_DIR = Projekt mit Unterordnern pro Art (Embeddings
+    /// vorher per embeddings::tests::job_end_to_end berechnet), AGILE_TEST_CLASS = Ordner.
+    /// Trainiert auf jeder zweiten Datei (Rest Negative), wertet auf dem Rest aus.
+    #[test]
+    #[ignore]
+    fn real_holdout() {
+        let root = std::env::var("AGILE_TEST_DIR").unwrap();
+        let target = std::env::var("AGILE_TEST_CLASS").unwrap();
+        let state = EmbedState::default();
+        with_loaded(&state, &root, |l| {
+            let mut class = AgileClass { name: target.clone(), examples: vec![] };
+            let mut test = vec![];
+            for (i, r) in l.rows.iter().enumerate() {
+                let pos = r.path.starts_with(&format!("{target}/"));
+                if i % 2 == 0 {
+                    class.examples.push(Example { path: r.path.clone(), start: r.start, label: if pos { "pos" } else { "neg" }.into() });
+                } else {
+                    test.push((i, pos));
+                }
+            }
+            for bg in [false, true] {
+                let set = build_set(l, &class, bg);
+                let xs: Vec<&[f32]> = set.rows.iter().map(|&r| &l.vecs[r * DIM..(r + 1) * DIM]).collect();
+                let t = std::time::Instant::now();
+                let (w, b) = fit_logreg(&xs, &set.y, &set.sw, L2, ITERS);
+                let ms = t.elapsed().as_millis();
+                let (mut tp, mut fp, mut tn, mut fneg) = (0, 0, 0, 0);
+                for &(i, pos) in &test {
+                    let p = sigmoid(dot(&w, &l.vecs[i * DIM..(i + 1) * DIM]) + b) >= 0.5;
+                    match (p, pos) {
+                        (true, true) => tp += 1,
+                        (true, false) => fp += 1,
+                        (false, false) => tn += 1,
+                        (false, true) => fneg += 1,
+                    }
+                }
+                eprintln!(
+                    "{target} bg={bg}: train {}+/{}-/{}bg in {ms} ms | test tp {tp} fp {fp} tn {tn} fn {fneg} | acc {:.3}",
+                    set.positives, set.negatives, set.background,
+                    (tp + tn) as f32 / test.len() as f32
+                );
+                assert!((tp + tn) as f32 / test.len() as f32 > 0.8);
+            }
+        })
+        .unwrap();
     }
 
     #[test]
