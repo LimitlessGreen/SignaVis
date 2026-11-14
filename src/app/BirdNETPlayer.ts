@@ -164,7 +164,8 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
      * @param {boolean}     [options.normalize] - play normalized to -1 dBFS peak, max +40 dB (default: false)
      * @param {string[]}    [options.toolbar] - toolbar controls to keep, all others are hidden:
-     *   'open', 'transport', 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
+     *   'open', 'transport' (= 'play' + 'seek'), 'play' (play/pause, stop),
+     *   'seek' (jump to start/end, ±5 s), 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
      *   'reset', 'draw', 'stamp', 'snap', 'zoombox', 'zoom', 'settings' (default: all)
      * @param {'boxes'|'focus'} [options.labelDisplay] - 'focus' draws only the hovered or selected
      *   label on the spectrogram; the label tracks below show them all (default: boxes)
@@ -1014,7 +1015,9 @@ export class BirdNETPlayer {
         const q = (sel: string) => root.querySelector(sel) as HTMLElement | null;
         const controls: Record<string, Array<HTMLElement | null | undefined>> = {
             open:      [q('[data-aw="openFileBtn"]')],
-            transport: [q('.transport')],
+            play:      [q('[data-aw="playPauseBtn"]'), q('[data-aw="stopBtn"]')],
+            seek:      [q('[data-aw="jumpStartBtn"]'), q('[data-aw="backwardBtn"]'),
+                        q('[data-aw="forwardBtn"]'), q('[data-aw="jumpEndBtn"]')],
             time:      [q('[data-aw="timeDisplay"]')],
             volume:    [q('.audio-ctl')],
             listen:    [q('[data-aw="slowdownSelect"]')],
@@ -1031,13 +1034,14 @@ export class BirdNETPlayer {
             settings:  [q('[data-aw="settingsToggleBtn"]')],
         };
         const wanted = new Set(keep);
+        if (wanted.has('transport')) { wanted.add('play'); wanted.add('seek'); }
         for (const [key, els] of Object.entries(controls)) {
             if (wanted.has(key)) continue;
             for (const el of els) if (el) el.style.display = 'none';
         }
         const shown = (el: Element) => (el as HTMLElement).style.display !== 'none' && !(el as HTMLElement).hidden;
         // Groups whose every button is gone go too, so no empty "⋯" or gap is left.
-        for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools')) {
+        for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools, .transport')) {
             const buttons = [...(group as HTMLElement).querySelectorAll<HTMLElement>('[data-aw$="Btn"], .toolbar-tools > button')]
                 .filter((b) => !b.classList.contains('view-more-btn'));
             if (buttons.length && !buttons.some(shown)) group.style.display = 'none';

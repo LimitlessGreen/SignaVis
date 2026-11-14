@@ -47,7 +47,7 @@ DEFAULT_OPTIONS: dict = {
 }
 
 #: Toolbar of a player that shows detections: listen and navigate, nothing else.
-VIEWER_TOOLBAR = ["transport", "time", "volume", "zoom"]
+VIEWER_TOOLBAR = ["play", "time", "volume", "zoom"]
 
 #: Table columns for detector output: what was found, when, how sure.
 DETECTION_COLUMNS = ["species", "start", "end", "conf"]
@@ -180,7 +180,10 @@ schedule();
 """
 
 _CSS = """
-.signavis-root { position: relative; width: 100%; overflow: hidden; }
+.signavis-root {
+  position: relative; width: 100%; overflow: hidden;
+  border-radius: var(--block-radius, 0);
+}
 .signavis-host { width: 100%; }
 """
 
