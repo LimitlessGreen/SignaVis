@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-11-14
 
 ### Added
 - **SignaVis Lite**: the labeling app as a lightweight desktop app for
