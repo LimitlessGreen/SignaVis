@@ -128,7 +128,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             bundle: appimage
           - os: macos-latest
             bundle: dmg
@@ -254,7 +254,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             bundles: appimage,deb
           - os: macos-latest
             bundles: app,dmg   # app → the updater's .app.tar.gz
