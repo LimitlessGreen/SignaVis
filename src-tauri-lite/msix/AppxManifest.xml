@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Microsoft Store package of SignaVis Lite (built by scripts/lite-msix.mjs).
+  Identity values come from Partner Center (Product identity) and must match exactly.
+  {{VERSION}} is replaced with x.y.z.0 (the Store requires the last part to be 0).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="LimitlessGreen.SignAvisLite"
+    Publisher="CN=E2CB0CB7-D395-42AE-A499-CD0A072624AB"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>SignAvis Lite</DisplayName>
+    <PublisherDisplayName>LimitlessGreen</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Label bird and animal sounds in spectrograms: projects in folders, Xeno-canto, BirdNET, offline.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="SignaVisLite" Executable="signavis-lite.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="SignAvis Lite"
+        Description="SignaVis Lite — labeling app for animal sound recordings"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="signavis">
+            <uap:DisplayName>SignaVis Lite link</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+        <!-- Only offered under "Open with", never taken as the default player. -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="audio">
+            <uap:DisplayName>Audio recording</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.wav</uap:FileType>
+              <uap:FileType>.mp3</uap:FileType>
+              <uap:FileType>.flac</uap:FileType>
+              <uap:FileType>.ogg</uap:FileType>
+              <uap:FileType>.oga</uap:FileType>
+              <uap:FileType>.opus</uap:FileType>
+              <uap:FileType>.m4a</uap:FileType>
+              <uap:FileType>.aac</uap:FileType>
+              <uap:FileType>.webm</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

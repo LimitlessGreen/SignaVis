@@ -2,6 +2,8 @@
 //
 // Pure view: the app passes a view model to render() and gets callbacks.
 // Browser project (OPFS) ↔ project folder (File System Access, Chromium).
+// In SignaVis Lite (`lite`) the 'browser' kind is the default project in the
+// app-data folder, and any folder can be opened natively.
 
 export interface ProjectLocationView {
     kind: 'browser' | 'folder' | 'none';
@@ -12,6 +14,8 @@ export interface ProjectLocationView {
     xcToFolder: boolean;
     unadded: { path: string; size: number }[];
     scanning: boolean;
+    /** SignaVis Lite: 'browser' = default project in the app-data folder. */
+    lite?: boolean;
 }
 
 export interface ProjectLocationCallbacks {
@@ -58,16 +62,18 @@ export class ProjectLocationPanel {
 
         // ── Identity: where the project lives + save status ──
         const head = el('div', 'pl-head');
-        const icon = el('span', `pl-kind pl-kind-${v.kind}`, v.kind === 'folder' ? '📁' : v.kind === 'browser' ? '🌐' : '⚠');
+        const icon = el('span', `pl-kind pl-kind-${v.kind}`, v.kind === 'folder' ? '📁' : v.kind === 'browser' ? (v.lite ? '💾' : '🌐') : '⚠');
         icon.setAttribute('aria-hidden', 'true');
         const text = el('div', 'pl-text');
         const name = el('span', 'pl-name', v.kind === 'none' ? 'This session only' : v.label);
         const sub = el('span', 'pl-sub', v.kind === 'folder' ? 'Folder · labels + audio as files'
-            : v.kind === 'browser' ? 'In this browser only'
+            : v.kind === 'browser' ? (v.lite ? 'In the app data folder' : 'In this browser only')
             : 'Not saved — browser storage unavailable');
         name.title = v.kind === 'folder'
             ? 'Project folder on your computer — project.signavis.json + audio'
-            : v.kind === 'browser' ? 'Stored privately in this browser' : 'Not saved (browser storage unavailable)';
+            : v.kind === 'browser'
+                ? (v.lite ? 'Default project, stored in the app data folder' : 'Stored privately in this browser')
+                : 'Not saved (browser storage unavailable)';
         text.append(name, sub);
         head.append(icon, text);
         if (v.status && STATUS_TEXT[v.status]) {
@@ -92,12 +98,14 @@ export class ProjectLocationPanel {
                 return;
             }
             const tip = el('div', 'pl-recommend');
-            tip.append(el('p', 'pl-recommend-text',
-                'Recommended: keep the project in a folder — labels, XC downloads and your own audio stay together as files.'));
+            tip.append(el('p', 'pl-recommend-text', v.lite
+                ? 'Keep a project in a folder of your choice — labels, XC downloads and your own audio stay together and are easy to back up.'
+                : 'Recommended: keep the project in a folder — labels, XC downloads and your own audio stay together as files.'));
             const acts = el('div', 'pl-actions');
             if (v.recentFolder) {
                 acts.append(button('sidebar-action-btn', `Reopen “${v.recentFolder}”`,
-                    'The browser asks once more for access to this folder', () => this.#cb.onReopenRecent()));
+                    v.lite ? 'Open this project folder again' : 'The browser asks once more for access to this folder',
+                    () => this.#cb.onReopenRecent()));
                 acts.append(button('link-btn', 'Other folder…', '', () => this.#cb.onOpenFolder()));
             } else {
                 acts.append(button('sidebar-action-btn', 'Choose project folder…',
@@ -130,7 +138,9 @@ export class ProjectLocationPanel {
 
         const switches = el('div', 'pl-switch');
         switches.append(button('link-btn', 'Other folder…', 'Open or create another project folder', () => this.#cb.onOpenFolder()));
-        switches.append(button('link-btn', 'Use browser storage', 'Switch to the project stored in this browser', () => this.#cb.onUseBrowserProject()));
+        switches.append(v.lite
+            ? button('link-btn', 'Use default project', 'Switch to the default project in the app data folder', () => this.#cb.onUseBrowserProject())
+            : button('link-btn', 'Use browser storage', 'Switch to the project stored in this browser', () => this.#cb.onUseBrowserProject()));
         opts.append(switches);
         r.append(opts);
     }

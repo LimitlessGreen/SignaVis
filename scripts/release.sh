@@ -59,7 +59,9 @@ npm test
 # ── Commit, tag, push ───────────────────────────────────────────────
 git add VERSION CHANGELOG.md package.json python-wrapper/pyproject.toml \
         python-wrapper/signavis/__init__.py demo/storybook.html \
-        src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock CITATION.cff
+        src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock \
+        src-tauri-lite/tauri.conf.json src-tauri-lite/Cargo.toml src-tauri-lite/Cargo.lock \
+        CITATION.cff
 git commit -m "release: ${TAG}"
 git tag "${TAG}"
 

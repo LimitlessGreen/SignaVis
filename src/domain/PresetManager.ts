@@ -14,6 +14,7 @@
 //   • onStage1Rebuild()             — display-only rebuild (no FFT)
 // ═══════════════════════════════════════════════════════════════════════
 
+import { saveFile } from '../infrastructure/saveFile.ts';
 import { DSP_PROFILES, QUALITY_LEVELS } from '../shared/constants.ts';
 import { jsonGetItem, jsonSetItem } from '../shared/storageJson.ts';
 import { readDspSettings, applyDspSettings, DSP_SETTINGS_DEFAULTS } from './dsp/DspSettings.ts';
@@ -722,14 +723,9 @@ export class PresetManager {
             favourite: this.getFavouritePreset(),
             presets: this.loadUserPresets(),
         };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = 'signavis-presets.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        this.#showPresetStatus('Exported');
+        saveFile(JSON.stringify(data, null, 2), 'signavis-presets.json', 'application/json')
+            .then((r) => { if (r) this.#showPresetStatus('Exported'); })
+            .catch((e) => this.#showPresetStatus(`Export failed: ${e?.message || e}`));
     }
 
     #importPresets() {

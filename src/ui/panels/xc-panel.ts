@@ -5,6 +5,8 @@
  */
 
 import { toXcId } from '../../domain/xc/xcId.ts';
+import { XC_API_KEY_STORAGE } from '../../infrastructure/xeno-canto/xcHelpers.ts';
+import { saveFile } from '../../infrastructure/saveFile.ts';
 import { importXenoCantoSpectrogramLabels, normalizeXcId, fetchXenoCantoRecording, invalidateXenoCantoRecordingCache } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { softwareNameAndVersion } from '../../version.ts';
@@ -36,7 +38,7 @@ const AUTHOR_FIELDS = [
   { key: 'owner',      label: 'Organisation',  type: 'text', placeholder: 'Organisation / person' },
 ];
 
-const API_KEY_STORAGE     = 'signavis.xc-api-key.v1';
+const API_KEY_STORAGE     = XC_API_KEY_STORAGE;
 const SET_META_STORAGE    = 'signavis.xc-set-meta.v2';
 // Profile fields that are auto-saved per manual set (persisted by labeling-app.html)
 const LABELER_PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
@@ -834,13 +836,8 @@ export class XenoCantoPanel {
   exportAnnotationSetJSON(labels: any, labelSets: any) {
     const payload = this.buildAnnotationSetPayload(labels, labelSets);
     const json = JSON.stringify(payload, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = toXcId(this.xcId) ? `${toXcId(this.xcId)}_annotation_set.json` : 'annotation_set.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    const name = toXcId(this.xcId) ? `${toXcId(this.xcId)}_annotation_set.json` : 'annotation_set.json';
+    return saveFile(json, name, 'application/json');
   }
 
   // ── Status helpers ──────────────────────────────────────────────────

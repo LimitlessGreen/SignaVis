@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     PROJECT_SCHEMA, inferSource, serializeProject, parseProject, deserializeProject, filesNotInProject, folderFileEntry,
-    stringifyProject, ProjectFormatError, xcRecordingPath,
+    stringifyProject, ProjectFormatError, xcRecordingPath, toProjectRecording, fromProjectRecording,
 } from '../src/domain/project/workspaceProject.ts';
 import { normalizeProjectPath, isAudioPath } from '../src/domain/project/IProjectStore.ts';
 import { MemoryProjectStore } from '../src/infrastructure/project/MemoryProjectStore.ts';
@@ -193,4 +193,17 @@ test('folderFileEntry: xc/XC<n>.mp3 becomes an XC recording, other files stay lo
     const own = folderFileEntry('audio/2026/a.wav', { pinned: false });
     assert.deepEqual([own.source, own.xcId, own.filename, own.pinned], ['file', undefined, 'a.wav', false]);
     assert.equal(folderFileEntry('field/XC5.mp3').source, 'file');   // only the xc/ folder means XC
+});
+
+test('Lite filePath (local file outside the project) survives save and load', () => {
+    const PATH = String.raw`D:\Feld\2026\a.wav`;
+    const entry = { id: 'r1', source: 'file', filename: 'a.wav', audioUrl: 'blob:x', isBlobUrl: true,
+        filePath: PATH, annotations: [] };
+    const rec = toProjectRecording(entry);
+    assert.equal(rec.filePath, PATH);
+    assert.equal(rec.url, null);                       // the blob URL is never stored
+    const back = fromProjectRecording(rec);
+    assert.equal(back.filePath, PATH);
+    assert.equal(back.audioUrl, null);                 // re-read from filePath on open
+    assert.equal('filePath' in toProjectRecording({ id: 'r2', filename: 'b.wav' }), false);
 });

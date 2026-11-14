@@ -94,6 +94,29 @@ Desktop app (Tauri)
   - macOS:   `~/Library/Application Support/io.github.limitlessgreen.signavis/projects/`
   - Windows: `%APPDATA%\io.github.limitlessgreen.signavis\projects\`
 
+SignaVis Lite (Tauri, `src-tauri-lite/`)
+- The labeling app as a slim desktop app: no SurrealDB / gRPC / platform, only
+  `demo/labeling-app.html` built by `demo/vite.lite.config.js` into `_site-lite/`.
+  Plan: `plans/signavis-lite-plan.md` in the workspace.
+- The frontend tells the shells apart with `src/infrastructure/tauri/runtime.ts`
+  (`isLite()`, `isFullDesktop()`); Lite sets `window.__SIGNAVIS_LITE__` before any page script.
+  Code that calls full-desktop Rust commands must check `isFullDesktop()`.
+- Libraries the web app loads from CDNs (WaveSurfer, Leaflet, TF.js) are bundled under
+  `vendor/` in Lite; load them through `vendorUrl(path, cdnUrl)`.
+- Commands:
+  ```
+  npm run lite:dev      # Vite (dev:lite, port 5173) + Lite window with hot reload
+  npm run build:lite    # frontend only → _site-lite/
+  npm run lite:build    # installers → src-tauri-lite/target/release/bundle/
+  ```
+- Smoke test (Windows, WebView2 DevTools protocol): build with
+  `cd src-tauri-lite && npx tauri build --debug --no-bundle`, then
+  `npm run lite:smoke -- --url="labeling-app.html?xc=XC1191997" --screenshot=shot.png`.
+  Reports console errors, exceptions and CSP violations; `--eval="expr"` prints values.
+- Webview capability probe: `SIGNAVIS_LITE_PROBE=report.json src-tauri-lite/target/debug/signavis-lite`
+  runs `demo/lite-probe.html` and writes a JSON report; the `Lite webview probe`
+  workflow does this on Linux, macOS and Windows.
+
 Notes
 - The new `scripts/sync-version.js` is a Node replacement for the previous shell+Python script and is cross-platform.
 - If you prefer Husky for hooks, it's compatible with this approach; we chose a small repo-managed `githooks/` folder and `git config core.hooksPath` to keep installs simple.

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SignaVis Lite",
+  "version": "1.0.5",
+  "identifier": "io.github.limitlessgreen.signavis.lite",
+  "build": {
+    "frontendDist": "../_site-lite",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:lite",
+    "beforeBuildCommand": "npm run build:lite"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
+        "worker-src": "'self' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: https: svdata: http://svdata.localhost",
+        "media-src": "'self' data: blob: https:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost svdata: http://svdata.localhost data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:*"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "wav",
+          "mp3",
+          "flac",
+          "ogg",
+          "oga",
+          "opus",
+          "m4a",
+          "aac",
+          "webm"
+        ],
+        "name": "Audio recording",
+        "description": "Audio recording (open in SignaVis Lite)",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "signavis"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4ODJDOTJFRkM4M0ZFQkIKUldTNy9vUDhMc21DaUlpV1hOdFY3WjU3YW1Ud1gyUnB1ektmdlhza3o1bk9ieG4xNU5sMmpaekYK",
+      "endpoints": [
+        "https://github.com/LimitlessGreen/SignaVis/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

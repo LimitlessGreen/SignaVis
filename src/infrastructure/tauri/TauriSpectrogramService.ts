@@ -10,11 +10,13 @@
 // Type-only: the WASM service module pulls in Vite worker imports.
 import type { StftParamsV2, PyramidMeta } from '../wasm-dsp/WasmSpectrogramService.ts';
 
+import { isFullDesktop } from './runtime.ts';
+
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 export function isTauriSpectrogramSource(path: string | null | undefined): path is string {
-    return !!path && /\.wav$/i.test(path)
-        && typeof (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined';
+    // Native DSP is a full-desktop command; SignaVis Lite renders via WASM.
+    return !!path && /\.wav$/i.test(path) && isFullDesktop();
 }
 
 export class TauriSpectrogramService {

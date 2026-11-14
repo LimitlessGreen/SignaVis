@@ -26,8 +26,11 @@
  */
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
+import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
 
-const DEFAULT_MODEL_URL = '../models/birdnet-v2.4/';
+const BUNDLED_MODEL_URL = '../models/birdnet-v2.4/';
+// Lite does not ship the model: it is fetched on first use and cached (onDemandUrl).
+const DEFAULT_MODEL_URL = onDemandUrl('models/birdnet-v2.4/', BUNDLED_MODEL_URL);
 const STORAGE_KEY     = 'signavis.birdnet-model-url.v2';
 const STORAGE_GEO_KEY = 'signavis.birdnet-geo-coords';
 let DETECTION_COLOR = 'var(--color-detection)';
@@ -176,7 +179,8 @@ export class BirdNETPanel {
   _restoreModelUrl() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      this.modelUrlInput.value = stored || DEFAULT_MODEL_URL;
+      // The bundled path does not exist in Lite — treat it like "no custom URL".
+      this.modelUrlInput.value = (stored && stored !== BUNDLED_MODEL_URL) ? stored : DEFAULT_MODEL_URL;
     } catch {
       this.modelUrlInput.value = DEFAULT_MODEL_URL;
     }

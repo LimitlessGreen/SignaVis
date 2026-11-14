@@ -37,11 +37,12 @@
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
 import ModalManager from '../modal/modal-manager.ts';
+import { speciesImageBase } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
 import { getXcAudioStore, xcAudioKey } from '../../../infrastructure/storage/audioBlobStore.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
-const BIRD_IMG_BASE = './data/species_images/';
+// Species thumbnails: bundled in the web app, loaded on demand in Lite (speciesImageBase).
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
 const SPEC_HEIGHT = 300;     // spectrogram px; the player adds its own toolbar/axis
@@ -856,7 +857,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const record = sciName ? taxonomy?.resolve(sciName) : null;
     const lang = getLang?.() || 'en';
     const common = (record && taxonomy.resolveCommonName(record, lang)) || fallbackName || sciName || 'Reference Calls';
-    const imgSrc = sciName ? `${BIRD_IMG_BASE}${encodeURIComponent(sciName)}.webp` : FALLBACK_SVG;
+    const imgSrc = sciName ? `${speciesImageBase()}${encodeURIComponent(sciName)}.webp` : FALLBACK_SVG;
     const attribution = record?.img_author ? `Image © ${record.img_author}${record.img_license ? ` (${record.img_license})` : ''}` : '';
     speciesEl.innerHTML = `
       <img class="rc-species-img" src="${esc(imgSrc)}" alt="" title="${esc(attribution)}" onerror="this.src='${FALLBACK_SVG}'" />

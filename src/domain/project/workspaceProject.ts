@@ -36,6 +36,8 @@ export interface ProjectRecording {
     /** false: opened folder file not kept yet (see keepRecording). */
     pinned?: boolean;
     guano?: unknown;
+    /** SignaVis Lite: absolute path of a local file outside the project (re-read on open). */
+    filePath?: string;
 }
 
 export interface WorkspaceProject {
@@ -95,6 +97,7 @@ export function toProjectRecording(entry: any): ProjectRecording {
     if (entry.context !== undefined) rec.context = entry.context;
     if (entry.pinned === false) rec.pinned = false;
     if (entry.guano !== undefined) rec.guano = entry.guano;
+    if (typeof entry.filePath === 'string' && entry.filePath) rec.filePath = entry.filePath;
     return rec;
 }
 
@@ -122,6 +125,7 @@ export function fromProjectRecording(rec: ProjectRecording): any {
     if (rec.context !== undefined) entry.context = rec.context;
     if (rec.pinned === false) entry.pinned = false;
     if (rec.guano !== undefined) entry.guano = rec.guano;
+    if (rec.filePath) entry.filePath = rec.filePath;
     return entry;
 }
 

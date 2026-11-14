@@ -1,0 +1,31 @@
+[package]
+name = "signavis-lite"
+version = "1.0.5"
+edition = "2021"
+description = "SignaVis Lite – the labeling app as a standalone desktop app"
+license = "AGPL-3.0-only"
+
+[lib]
+name = "signavis_lite_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+# Microsoft Store build (MSIX): the Store updates the app, so no self-updater.
+store = []
+
+[dependencies]
+tauri      = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir    = "2"
+reqwest    = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio      = { version = "1", features = ["fs"] }
