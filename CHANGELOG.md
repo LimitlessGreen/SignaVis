@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - Unreleased
+
+### Added
+- Label display `'lanes'`: labels without frequency bounds as stacked strips
+  along the top of the spectrogram; the selected one shades its time span.
+- `labelConfidence` option shows the confidence next to label names
+  (`player_value(show_confidence=...)` in `signavis.gradio`).
+- Toolbar items `'contrast'` (floor/range sliders and Auto Contrast),
+  `'play'` and `'seek'` (split from `'transport'`).
+- Download and decode progress while loading audio from a URL.
+- `signavis.gradio`: `GRADIO_THEME_CSS` makes the player follow the Gradio
+  theme; `player_value(select=..., play=False, select_id=...)` selects a
+  detection without playing it.
+
+### Fixed
+- Gradio: the player follows Gradio's dark mode and spans the full width.
+- A spectrogram resized taller fills its pane when the host sets no height.
+
 ## [1.1.1] - 2026-11-14
 
 ### Fixed
