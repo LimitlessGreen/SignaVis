@@ -815,6 +815,13 @@
     // ── Player ────────────────────────────────────────────────────────
     // Waveform above the spectrogram is optional (the overview below always shows one); applied on load
     const SHOW_WAVEFORM_KEY = 'signavis.labeling.show-waveform.v1';
+    const SHOW_CONF_KEY = 'signavis.labeling.show-confidence.v1';
+    const AUTO_FREQ_VIEW_KEY = 'signavis.labeling.auto-freq-view.v1';
+    const NORMALIZE_KEY = 'signavis.labeling.normalize.v1';
+    const ULTRASOUND_PROMPT_KEY = 'signavis.labeling.ultrasound-prompt.v1';
+    const BIRDNET_SHOW_LABELS_KEY = 'signavis.labeling.birdnet-show-labels.v1';
+    const readFlag = (key, fallback) => { try { const v = localStorage.getItem(key); return v == null ? fallback : v === '1'; } catch { return fallback; } };
+    const writeFlag = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* ignore */ } };
     const showMainWaveform = (() => { try { return localStorage.getItem(SHOW_WAVEFORM_KEY) !== '0'; } catch { return true; } })();
     const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
       showFileOpen: false,
@@ -822,8 +829,16 @@
       showOverview: true,
       viewMode: showMainWaveform ? 'both' : 'spectrogram',
       showTransport: true,
+      // BirdNET detections (no frequency bounds) as strips along the top edge
+      labelDisplay: 'lanes',
+      labelConfidence: readFlag(SHOW_CONF_KEY, true),
+      normalize: readFlag(NORMALIZE_KEY, false),
     });
     await player.ready;
+    if (player._state) {
+      player._state.autoFreqView = readFlag(AUTO_FREQ_VIEW_KEY, true);
+      player._state.ultrasoundPrompt = readFlag(ULTRASOUND_PROMPT_KEY, true);
+    }
 
     // Initialize daily tips (shows one tip per day unless disabled)
     try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ }
@@ -1360,6 +1375,52 @@
         wf.querySelector('.field-hint').hidden = check.checked === showMainWaveform;
       });
       specPanel.el.insertBefore(wf, sec);
+
+      // ── Automatic behaviour: what the app does by itself, each one switchable ──
+      const auto = document.createElement('div');
+      auto.className = 'settings-section';
+      auto.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+      auto.innerHTML = '<h3 class="settings-section-title">Automatic behaviour</h3>';
+      const addToggle = (text, hint, get, set) => {
+        const row = document.createElement('label');
+        row.className = 'field-check';
+        row.title = hint;
+        row.innerHTML = '<input type="checkbox" /> ';
+        row.append(text);
+        const box = row.querySelector('input');
+        box.checked = get();
+        box.addEventListener('change', () => set(box.checked));
+        auto.appendChild(row);
+        return box;
+      };
+      // Auto contrast is the player's gain mode (saved with the spectrogram settings); kept in sync both ways.
+      const gainSel = player._state?.d?.gainModeSelect;
+      const contrastBox = addToggle('Auto contrast for each recording',
+        'Sets floor and range from the recording when it is loaded. Off: keeps your floor/range values.',
+        () => (gainSel?.value || 'auto') === 'auto',
+        (on) => { if (gainSel) { gainSel.value = on ? 'auto' : 'fixed'; gainSel.dispatchEvent(new Event('change', { bubbles: true })); } });
+      gainSel?.addEventListener('change', () => { contrastBox.checked = gainSel.value === 'auto'; });
+      addToggle('Fit frequency zoom to the calls',
+        'Zooms the frequency axis to where the calls are when a recording is loaded. Off: shows the full range.',
+        () => readFlag(AUTO_FREQ_VIEW_KEY, true),
+        (on) => { writeFlag(AUTO_FREQ_VIEW_KEY, on); if (player._state) player._state.autoFreqView = on; });
+      addToggle('Normalize playback',
+        'Plays every recording normalized to -1 dBFS peak (up to +40 dB). Same as the toolbar button, remembered.',
+        () => readFlag(NORMALIZE_KEY, false),
+        (on) => { writeFlag(NORMALIZE_KEY, on); player.setNormalize(on); });
+      addToggle('Ask how to play ultrasound recordings',
+        'Offers slowed-down playback for bat/ultrasound recordings. Off: plays them as they are, unless you saved a choice in that dialog.',
+        () => readFlag(ULTRASOUND_PROMPT_KEY, true),
+        (on) => { writeFlag(ULTRASOUND_PROMPT_KEY, on); if (player._state) player._state.ultrasoundPrompt = on; });
+      addToggle('Open the label list after BirdNET analysis',
+        'Switches the sidebar to Labels when BirdNET has added its detections.',
+        () => readFlag(BIRDNET_SHOW_LABELS_KEY, true),
+        (on) => writeFlag(BIRDNET_SHOW_LABELS_KEY, on));
+      addToggle('Show confidence on detections',
+        'Shows each detection\'s confidence as a number and a coloured bar.',
+        () => player.options.labelConfidence === true,
+        (on) => { writeFlag(SHOW_CONF_KEY, on); player.options.labelConfidence = on; syncToPlayerSoft(); });
+      specPanel.el.insertBefore(auto, sec);
     })();
 
     const propsPanel = new PropertiesPanel({
@@ -3285,7 +3346,7 @@
         const _bnRecordingId = recordingManager?.activeId || null;
         for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
         syncToPlayer();
-        sidebar.setActive('labels');
+        if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
       },
     });
 
@@ -3435,9 +3496,14 @@
       });
     }
 
+    // BirdNET detections cover the whole band; labels saved before 'fullBand' existed get it here
+    function _playerLabels() {
+      return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
+    }
+
     function syncToPlayer() {
       saveCurrentAnnotationsIfNeeded();
-      player.setSpectrogramLabels(_visibleLabels());
+      player.setSpectrogramLabels(_playerLabels());
       _pushLockedIds(_computeLockedIds());
       labelList.render(state.labels);
       sidebar.setBadge('labels', state.labels.length || '');
@@ -3453,7 +3519,7 @@
 
     /** Sync labels to spectrogram without re-rendering the label list DOM. */
     function syncToPlayerSoft() {
-      player.setSpectrogramLabels(_visibleLabels());
+      player.setSpectrogramLabels(_playerLabels());
       try { labelTable?.render(state.labels); } catch (e) {}
       _pushLockedIds(_computeLockedIds());
       sidebar.setBadge('labels', state.labels.length || '');

@@ -835,8 +835,67 @@
 }
 
 .spectrogram-label-conf {
-  font-weight: 500;
-  opacity: 0.8;
-  margin-left: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+
+  small {
+    font-size: 0.8em;
+    font-weight: 500;
+    opacity: 0.7;
+    margin-left: -2px;
+  }
+}
+
+// Mini meter in the name pill: track + fill to the confidence
+.spectrogram-label-conf-meter {
+  position: relative;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+  flex: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--label-conf, 0) * 100%);
+    background: var(--label-conf-color, currentColor);
+    border-radius: inherit;
+  }
+}
+
+// Lanes: the strip's bottom edge fills to the confidence, so the whole strip reads as a meter
+.spectrogram-label-region.spectrogram-label-region--lane.has-conf {
+  &::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    bottom: 0;
+    height: 2px;
+    width: calc((100% - 4px) * var(--label-conf, 0));
+    background: var(--label-conf-color);
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  .spectrogram-label-text {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  // In a narrow strip the name is truncated, the number stays
+  .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .spectrogram-label-conf { margin-left: auto; padding-left: 4px; flex: none; }
+  // The bottom edge already is the meter
+  .spectrogram-label-conf-meter { display: none; }
 }

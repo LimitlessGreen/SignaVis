@@ -467,6 +467,7 @@ export class BirdNETPanel {
         end: det.end,
         freqMin: 0,
         freqMax: audioBuffer.sampleRate / 2,
+        fullBand: true,
         color: DETECTION_COLOR,
         confidence: det.confidence,
         origin: 'BirdNET',

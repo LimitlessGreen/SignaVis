@@ -1249,11 +1249,21 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const band = label.fullBand ? '' : ` / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
         el.title = `${label.label || 'Label'}${confText ? ` (${confText})` : ''} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s${band}${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
+        if (showConf) {
+            // Confidence as a meter: the strip's bottom edge (lanes) and a mini bar in the name pill,
+            // tinted from red (low) over amber to green (high).
+            el.classList.add('has-conf');
+            el.style.setProperty('--label-conf', String(Math.max(0, Math.min(1, conf))));
+            el.style.setProperty('--label-conf-color', `hsl(${Math.round(Math.max(0, Math.min(1, conf)) * 125)} 75% 52%)`);
+        }
+        const confHtml = showConf
+            ? ` <span class="spectrogram-label-conf"><span class="spectrogram-label-conf-meter" aria-hidden="true"></span>${Math.round(conf * 100)}<small>%</small></span>`
+            : '';
         const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
         // A read-only player has nothing to edit: a lock on every label would only be noise.
         const lockIconHtml = isReadonly && (this.player as any)?._readOnly !== true ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
-            <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}${showConf ? ` <span class="spectrogram-label-conf">${confText}</span>` : ''}</span>
+            <span class="spectrogram-label-text"><span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${confHtml}</span>
             ${label.fullBand ? '' : `<span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>`}
             ${aiTagHtml}${lockIconHtml}
             ${!isBlocked ? `
@@ -2499,7 +2509,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if (x0 > W || y0 > H || x0 + w < 0 || y0 + h < 0) continue;
                 ctx.strokeStyle = 'rgba(203, 213, 225, 0.75)';
                 ctx.strokeRect(x0, y0, w, h);
-                const name = (n.querySelector('.spectrogram-label-text')?.textContent || '').trim();
+                const name = (n.querySelector('.spectrogram-label-name')?.textContent || '').trim();
                 if (name) {
                     ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
                     ctx.fillText(name, Math.max(2, x0 + 2), Math.max(2, y0 + 2), Math.max(20, w - 4));
