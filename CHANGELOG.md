@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.3] - Unreleased
+
+### Added
+- Label confidence as a meter: lane strips fill their bottom edge, boxes get
+  a mini bar next to the number, tinted from red (low) to green (high).
+- Labeling app: BirdNET detections are drawn as lanes; a new
+  "Automatic behaviour" settings section switches auto contrast, the
+  frequency zoom fit, normalized playback, the ultrasound prompt, opening the
+  label list after a BirdNET run and the confidence display.
+- Desktop app: sound events without frequency range are shown as lanes with
+  their confidence.
+
+### Fixed
+- Reading a label's name back (loupe window) no longer includes its confidence.
+
 ## [1.1.2] - 2026-11-14
 
 ### Added
