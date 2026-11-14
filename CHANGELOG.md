@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - Unreleased
+
+### Added
+- **SignaVis Lite**: the labeling app as a lightweight desktop app for
+  Windows, macOS and Linux (`src-tauri-lite/`). Native project folders and a
+  default project on disk, local audio opened by path (reopens after a
+  restart), exports through a save dialog, species images and the BirdNET
+  model loaded on demand (optional offline download), native menu with
+  Open Recent, remembered window state, close guard.
+- `signavis://open?xc=…&lang=…` deep links, single instance and
+  "Open with" for audio files.
+- Web app: "Open in app" hands the current recording over to SignaVis Lite,
+  with an opt-in to always open links in the app.
+- Self-update for SignaVis Lite over GitHub Releases; Lite installers and
+  `latest.json` are attached to releases (installers are unsigned, see
+  `docs/signavis-lite.md`).
+- Microsoft Store (MSIX) package, privacy policy and Store screenshots.
+
+### Fixed
+- Xeno-canto recording search uses API v3 (v2 was retired and returned 404).
+
 ## [1.0.5] - 2026-11-05
 
 ### Fixed
