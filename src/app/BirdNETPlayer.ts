@@ -167,7 +167,10 @@ export class BirdNETPlayer {
      *   'open', 'transport' (= 'play' + 'seek'), 'play' (play/pause, stop),
      *   'seek' (jump to start/end, ±5 s), 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
      *   'reset', 'draw', 'stamp', 'snap', 'zoombox', 'zoom', 'settings' (default: all)
-     * @param {'boxes'|'focus'} [options.labelDisplay] - 'focus' draws only the hovered or selected
+     * @param {boolean} [options.labelConfidence] - show each label's confidence next to its name
+     * @param {'boxes'|'focus'|'lanes'} [options.labelDisplay] - 'lanes' draws labels without frequency
+     *   bounds as stacked strips along the top edge (the selected one also shades its time span);
+     *   'focus' draws only the hovered or selected
      *   label on the spectrogram; the label tracks below show them all (default: boxes)
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
@@ -246,6 +249,7 @@ export class BirdNETPlayer {
         if (this.options.readOnly) this.setReadOnly(true);
         if (Array.isArray(this.options.toolbar)) this._applyToolbarAllowList(this.options.toolbar);
         if (this.options.labelDisplay === 'focus') this.root?.classList.add('label-display-focus');
+        if (this.options.labelDisplay === 'lanes') this.root?.classList.add('label-display-lanes');
         if (this.options.labelTable) this._initBuiltinLabelTable();
         if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
@@ -1005,9 +1009,42 @@ export class BirdNETPlayer {
     selectLabel(id: string | null) {
         this._emit('labelfocus', { id, source: 'api', interaction: 'click' });
         this._labelGrid?.highlightRow(id);
+        const l = id ? this._linkedLabels.get(id) : null;
+        if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
     }
 
     // ── Toolbar allow-list ──────────────────────────────────────────
+
+    /**
+     * Toolbar item 'contrast': the Floor and Range (Ceiling) sliders and the
+     * Auto Contrast button of the settings panel move into the toolbar, after `anchor`. Moving keeps their
+     * listeners; the panel's Gain section still holds the mode switch.
+     */
+    _moveContrastToToolbar(anchor: HTMLElement | null) {
+        const root = this.root;
+        if (!root || root.querySelector('.contrast-ctl')) return;
+        const floor = root.querySelector('[data-aw="floorSlider"]')?.closest('.settings-row');
+        const ceil = root.querySelector('[data-aw="ceilSlider"]')?.closest('.settings-row');
+        const bar = anchor?.parentElement ?? root.querySelector('.toolbar-primary');
+        if (!floor || !ceil || !bar) return;
+        const group = document.createElement('span');
+        group.className = 'toolbar-group contrast-ctl';
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', 'Spectrogram contrast');
+        group.append(floor, ceil);
+        // Its click handler stays: re-fits the contrast to what is visible now.
+        const auto = root.querySelector('[data-aw="autoContrastBtn"]') as HTMLButtonElement | null;
+        if (auto) {
+            auto.className = 'zoom-auto-btn contrast-auto-btn';
+            auto.textContent = 'Auto';
+            auto.title = 'Fit floor and range to the visible part of the spectrogram';
+            group.append(auto);
+        }
+        const sep = document.createElement('div');
+        sep.className = 'toolbar-sep';
+        if (anchor) anchor.after(sep, group);
+        else bar.append(sep, group);
+    }
 
     _applyToolbarAllowList(keep: string[]) {
         const root = this.root;
@@ -1032,6 +1069,7 @@ export class BirdNETPlayer {
             zoombox:   [this._zoomBoxBtn],
             zoom:      [q('.zoom-widget')],
             settings:  [q('[data-aw="settingsToggleBtn"]')],
+            contrast:  [],
         };
         const wanted = new Set(keep);
         if (wanted.has('transport')) { wanted.add('play'); wanted.add('seek'); }
@@ -1039,6 +1077,7 @@ export class BirdNETPlayer {
             if (wanted.has(key)) continue;
             for (const el of els) if (el) el.style.display = 'none';
         }
+        if (wanted.has('contrast')) this._moveContrastToToolbar(q('.zoom-widget'));
         const shown = (el: Element) => (el as HTMLElement).style.display !== 'none' && !(el as HTMLElement).hidden;
         // Groups whose every button is gone go too, so no empty "⋯" or gap is left.
         for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools, .transport')) {
@@ -1591,6 +1630,8 @@ export class BirdNETPlayer {
             freqMin: l.freqMin,
             freqMax: l.freqMax,
             label: l.label || l.species || '',
+            confidence: l.confidence,
+            fullBand: (l as any).fullBand === true,
             color: l.color,
             scientificName: l.scientificName || '',
             commonName: l.commonName || '',
@@ -1625,6 +1666,7 @@ export class BirdNETPlayer {
             species: meta.species,
             label: meta.label,
             confidence: label?.confidence,
+            fullBand: (label as any)?.fullBand ?? (label?.freqMin == null && label?.freqMax == null),
             color: meta.color || tax?.color || colorForName(meta.label),
             scientificName: meta.scientificName,
             commonName: meta.commonName,

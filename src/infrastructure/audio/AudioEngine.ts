@@ -243,11 +243,15 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string} url
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
-  async loadFromUrl(url: string) {
+  async loadFromUrl(
+    url: string,
+    onProgress?: (stage: 'download' | 'decode', loaded?: number, total?: number) => void,
+  ) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const arrayBuffer = await response.arrayBuffer();
+    const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
     this.guano = parseGuano(arrayBuffer);
+    onProgress?.('decode');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
 
@@ -1180,4 +1184,27 @@ export class AudioEngine extends AudioEngineBase {
     this.dispatchEvent(new CustomEvent(String(eventName), { detail }));
   }
 
+}
+/** The body of `response`, reporting the bytes read so far (total is 0 when unknown). */
+async function readWithProgress(
+  response: Response,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<ArrayBuffer> {
+  const total = Number(response.headers.get('content-length')) || 0;
+  const reader = response.body?.getReader();
+  if (!reader) return response.arrayBuffer();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  onProgress(0, total);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded, total);
+  }
+  const out = new Uint8Array(loaded);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+  return out.buffer;
 }

@@ -2,6 +2,7 @@
 // PlayerState.ts — Central state machine, interaction & event binding
 // ═══════════════════════════════════════════════════════════════════════
 
+import { setOverlayContent } from '../ui/loadingOverlay.ts';
 import {
     DEFAULT_SAMPLE_RATE,
     DEFAULT_ZOOM_PPS,
@@ -810,7 +811,24 @@ export class PlayerState {
         this._setTransportState('loading', 'url-load');
 
         try {
-            const result = await this._engine.loadFromUrl(url);
+            const overlay = this.d.recomputingOverlay;
+            const mb = (n: number) => (n / 1048576).toFixed(1);
+            let lastPaint = 0;
+            const result = await this._engine.loadFromUrl(url, (stage: 'download' | 'decode', loaded = 0, total = 0) => {
+                if (!overlay) return;
+                overlay.hidden = false;
+                if (stage === 'decode') {
+                    setOverlayContent(overlay, 'Decoding audio…', { progress: null });
+                    return;
+                }
+                const now = performance.now();
+                if (loaded && loaded !== total && now - lastPaint < 100) return;
+                lastPaint = now;
+                setOverlayContent(overlay, 'Loading audio…', {
+                    detail: total ? `${mb(loaded)} / ${mb(total)} MB` : loaded ? `${mb(loaded)} MB` : '',
+                    progress: total ? loaded / total : null,
+                });
+            });
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );

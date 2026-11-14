@@ -26,6 +26,8 @@ export interface SpectrogramLabel extends LabelCore {
     freqMin?: number;
     freqMax?: number;
     confidence?: number;
+    /** No frequency bounds were given (e.g. BirdNET): the label covers the whole band. */
+    fullBand?: boolean;
     readonly?: boolean;
     aiSuggested?: { model?: string; version?: string } | null;
     recordingId?: string | null;

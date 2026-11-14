@@ -10,6 +10,9 @@ import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, type SnapPatch, type SnapResult } from './snapToCall.ts';
 
+/** Height of one strip in the 'lanes' label display, and the gap above it. */
+const LANE_H = 18;
+const LANE_GAP = 2;
 
 const _colorCtx = (() => {
     try {
@@ -1079,6 +1082,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this.overlay.style.height = `${height}px`;
         this.overlay.innerHTML = '';
 
+        this._assignLanes(height);
         const elements = [];
         const geometries = [];
         for (const label of this._items) {
@@ -1175,6 +1179,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         for (let i = 0; i < elements.length; i++) {
             const geo = geometries[i];
+            if (elements[i].classList.contains('spectrogram-label-region--lane')) continue;
             const textEl = elements[i].querySelector('.spectrogram-label-text') as HTMLElement | null;
             if (!textEl) continue;
 
@@ -1219,7 +1224,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
 
-        this._applyGeometryToElement(el, this._toGeometry(label, canvasWidth, canvasHeight));
+        const geo = this._toGeometry(label, canvasWidth, canvasHeight);
+        const inLane = this._lanes.has(label.id);
+        if (inLane) {
+            el.classList.add('spectrogram-label-region--lane');
+            // The selected strip shades its time span down to the bottom edge.
+            el.style.setProperty('--lane-column', `${Math.max(0, canvasHeight - geo.top - geo.height)}px`);
+        }
+        this._applyGeometryToElement(el, geo);
         const colorStyle = getOverlayColorStyle(label.color);
         if (colorStyle) {
             el.style.setProperty('--spectrogram-label-color', colorStyle.fill);
@@ -1231,13 +1243,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.dataset.start = String(label.start);
         el.dataset.end = String(label.end);
         const readonlyNote = isReadonly ? ' [read-only]' : '';
-        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz${readonlyNote}`;
+        const conf = Number.isFinite(label.confidence) ? Number(label.confidence) : null;
+        const confText = conf != null ? `${Math.round(conf * 100)}%` : '';
+        const showConf = conf != null && (this.player as any)?.options?.labelConfidence === true;
+        const band = label.fullBand ? '' : ` / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
+        el.title = `${label.label || 'Label'}${confText ? ` (${confText})` : ''} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s${band}${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
-        const lockIconHtml = isReadonly ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
+        // A read-only player has nothing to edit: a lock on every label would only be noise.
+        const lockIconHtml = isReadonly && (this.player as any)?._readOnly !== true ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
-            <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
-            <span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>
+            <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}${showConf ? ` <span class="spectrogram-label-conf">${confText}</span>` : ''}</span>
+            ${label.fullBand ? '' : `<span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>`}
             ${aiTagHtml}${lockIconHtml}
             ${!isBlocked ? `
             <button class="label-refcalls-btn" type="button" title="Reference calls">
@@ -1264,7 +1281,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
             ` : ''}
-            ${isSuggestion ? `
+            ${isSuggestion && !isBlocked ? `
             <button class="label-accept-btn" type="button" title="Accept label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
@@ -1409,10 +1426,33 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.style.width = `${geometry.width}px`;
         el.style.height = `${geometry.height}px`;
         // Small boxes: name + buttons go outside
-        el.classList.toggle('label-compact', geometry.width < 70 || geometry.height < 44);
+        const lane = el.classList.contains('spectrogram-label-region--lane');
+        el.classList.toggle('label-compact', !lane && (geometry.width < 70 || geometry.height < 44));
         // Only really tiny boxes drop the corner dots (12 px dots + edge strips need room)
         el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
         if (el.isConnected) this._pinLabelText(el);
+    }
+
+    /** Lane of each full-band label in 'lanes' display (empty in other modes). */
+    _lanes = new Map<string, number>();
+
+    /**
+     * 'lanes' display: labels without frequency bounds (BirdNET's 3 s windows)
+     * become strips along the top edge. Overlapping ones go to the next lane
+     * down, up to half the spectrogram height; beyond that they share the last.
+     */
+    _assignLanes(canvasHeight: number) {
+        this._lanes.clear();
+        if ((this.player as any)?.options?.labelDisplay !== 'lanes') return;
+        const maxLanes = Math.max(1, Math.floor((canvasHeight * 0.5) / LANE_H));
+        const laneEnds: number[] = [];
+        const items = this._items.filter((l: any) => l.fullBand).sort((a, b) => a.start - b.start || b.end - a.end);
+        for (const l of items) {
+            let lane = laneEnds.findIndex((end) => end <= l.start + 1e-6);
+            if (lane < 0) lane = Math.min(laneEnds.length, maxLanes - 1);
+            laneEnds[lane] = Math.max(laneEnds[lane] ?? 0, l.end);
+            this._lanes.set(l.id, lane);
+        }
     }
 
     _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {
@@ -1421,6 +1461,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         const x1 = c ? clamp(c.timeToPixelX(label.start), 0, canvasWidth) : clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = c ? clamp(c.timeToPixelX(label.end), 0, canvasWidth) : clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
+        const lane = this._lanes.get(label.id);
+        if (lane != null) {
+            return {
+                left: Math.min(x1, x2),
+                top: LANE_GAP + lane * LANE_H,
+                width: Math.max(1, Math.abs(x2 - x1)),
+                height: LANE_H - LANE_GAP,
+            };
+        }
         // Not clipped to the visible frequency view: a label reaching past the
         // view edge must not show a border there (the canvas wrapper clips it).
         // Bounded to one view height beyond each edge to keep elements small.
@@ -2808,6 +2857,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             end: Math.max(s + 0.01, e),
             freqMin: f0,
             freqMax: Math.max(f0 + 1, f1),
+            ...(Number.isFinite(Number(label?.confidence)) ? { confidence: Number(label.confidence) } : {}),
+            ...(label?.fullBand === true ? { fullBand: true } : {}),
             label: meta.label,
             color: meta.color || colorForName(meta.label),
             scientificName: meta.scientificName,

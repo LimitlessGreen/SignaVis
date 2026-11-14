@@ -19,6 +19,7 @@ The component's value is a plain dict (see :func:`player_value`):
 ``src``          path or URL of the audio file
 ``detections``   list of ``{start, end, label, confidence?, freqMin?, freqMax?,
                  scientificName?, commonName?, color?, id?}``
+``showConfidence`` show the confidence next to the detection names
 ``select``       ``{start, end, play, id?}`` — plays the span, or without ``play``
                  selects the detection ``id`` and scrolls it into view;
                  a new dict each time re-triggers it
@@ -35,7 +36,7 @@ from urllib.parse import quote
 
 import gradio as gr
 
-__all__ = ["SignaVisPlayer", "player_value", "file_url", "ASSETS_DIR", "VIEWER_TOOLBAR", "DETECTION_COLUMNS"]
+__all__ = ["SignaVisPlayer", "player_value", "file_url", "ASSETS_DIR", "GRADIO_THEME_CSS", "VIEWER_TOOLBAR", "DETECTION_COLUMNS"]
 
 ASSETS_DIR = str(files("signavis.assets"))
 
@@ -69,13 +70,18 @@ def player_value(
     select: Optional[tuple] = None,
     play: bool = True,
     select_id: Optional[str] = None,
+    show_confidence: Optional[bool] = None,
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
     ``select`` is ``(start_s, end_s)``; with ``play`` the span is played,
     otherwise the detection ``select_id`` is selected and scrolled into view.
+    ``show_confidence`` switches the confidence next to the detection names on
+    or off; ``None`` keeps the player's setting.
     """
     value: dict = {"src": src}
+    if show_confidence is not None:
+        value["showConfidence"] = bool(show_confidence)
     if detections is not None:
         value["detections"] = [dict(d) for d in detections]
     if select is not None:
@@ -153,6 +159,8 @@ function toLabels(detections) {
 async function sync() {
   const v = props.value || {};
   element.querySelector('.signavis-root').style.display = v.src ? '' : 'none';
+  // Without audio the component keeps some height, so Gradio's progress shows on it.
+  element.style.minHeight = v.src ? '' : '120px';
   if (!v.src) return;
   const player = await ensurePlayer();
   if (v.src !== state.src) {
@@ -160,6 +168,10 @@ async function sync() {
     state.labels = null;
     state.select = null;
     await player.loadUrl(v.src);
+  }
+  if (v.showConfidence != null && !!v.showConfidence !== !!player.options.labelConfidence) {
+    player.options.labelConfidence = !!v.showConfidence;
+    player.spectrogramLabels?.render();
   }
   const labelsKey = JSON.stringify(v.detections || []);
   if (labelsKey !== state.labels) {
@@ -177,6 +189,33 @@ async function sync() {
 const schedule = () => { state.chain = state.chain.then(sync).catch((e) => console.error('SignaVis:', e)); };
 watch('value', schedule);
 schedule();
+"""
+
+#: Maps the player's colour tokens to the Gradio theme, so the player follows the
+#: app's theme (light and dark, custom ``gr.themes``). ``:root:root`` outranks the
+#: player's own ``html[data-theme] .signavis-embed`` rules. Gradio defines its own
+#: ``--color-accent``, hence the primary palette for the accent.
+GRADIO_THEME_CSS = """
+:root:root :is(.signavis-embed, .signavis-portal) {
+  --color-bg-primary: var(--block-background-fill);
+  --color-bg-secondary: var(--background-fill-secondary);
+  --color-bg-surface: var(--block-background-fill);
+  --color-bg-tertiary: var(--button-secondary-background-fill-hover, var(--background-fill-secondary));
+  --color-card: var(--background-fill-secondary);
+  --color-toolbar: var(--block-background-fill);
+  --color-statusbar: var(--background-fill-secondary);
+  --color-text-primary: var(--body-text-color);
+  --color-text-secondary: var(--body-text-color-subdued);
+  --color-accent: var(--primary-500);
+  --color-accent-hover: var(--primary-600);
+  --color-accent-faint: color-mix(in srgb, var(--primary-500) 10%, transparent);
+  --color-on-accent: var(--button-primary-text-color);
+  --color-border: var(--border-color-primary);
+  --color-border-strong: var(--border-color-accent, var(--border-color-primary));
+  --input-bg: var(--input-background-fill);
+  --input-bg-weak: var(--input-background-fill-hover, var(--input-background-fill));
+  font-family: var(--font);
+}
 """
 
 _CSS = """
@@ -209,7 +248,14 @@ class SignaVisPlayer(gr.HTML):
         menu. Defaults to :data:`DETECTION_COLUMNS`.
     label_display
         ``'focus'`` draws only the hovered or selected detection on the
-        spectrogram (the label tracks show all of them); ``'boxes'`` draws all.
+        spectrogram (the label tracks show all of them); ``'boxes'`` draws all;
+        ``'lanes'`` draws detections without a frequency range (``freqMin`` /
+        ``freqMax``) as stacked strips along the top edge, and shades the time
+        span of the hovered or selected one.
+    show_confidence
+        Show each detection's confidence next to its name.
+    gradio_theme
+        Take the colours from the Gradio theme instead of the player's own.
     options
         Player constructor options (``viewMode``, ``showOverview``, …), merged
         over :data:`DEFAULT_OPTIONS`.
@@ -227,6 +273,8 @@ class SignaVisPlayer(gr.HTML):
         label_table: bool = True,
         label_table_columns: Optional[Iterable[str]] = tuple(DETECTION_COLUMNS),
         label_display: str = "focus",
+        show_confidence: bool = False,
+        gradio_theme: bool = True,
         options: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ):
@@ -241,6 +289,7 @@ class SignaVisPlayer(gr.HTML):
                 else {}
             ),
             "labelDisplay": label_display,
+            "labelConfidence": bool(show_confidence),
             **({"toolbar": list(toolbar)} if toolbar is not None else {}),
             **(options or {}),
         }
@@ -254,6 +303,8 @@ class SignaVisPlayer(gr.HTML):
             # like the other components.
             "<style>.html-container:has(.signavis-root) { padding: 0; }</style>"
         )
+        if gradio_theme:
+            head += f"<style>{GRADIO_THEME_CSS}</style>"
         super().__init__(
             value=value,
             html_template=(
