@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-python - "$ROOT_DIR" << 'PY'
+"$(command -v python3 || command -v python)" - "$ROOT_DIR" << 'PY'
 from __future__ import annotations
 
 import json
