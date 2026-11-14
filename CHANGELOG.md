@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - Unreleased
+
+### Fixed
+- Linux desktop bundles (SignaVis Lite AppImage/deb and the full desktop
+  AppImage) are built on Ubuntu 22.04 again. The 1.1.0 bundles were built on
+  Ubuntu 26 and failed to start on older systems (`GLIBC_2.43 not found`).
+- `scripts/check-version-sync.sh` uses `python3` when `python` is missing.
+
 ## [1.1.0] - 2026-11-14
 
 ### Added
