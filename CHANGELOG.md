@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.1] - Unreleased
+## [1.1.1] - 2026-11-14
 
 ### Fixed
 - Linux desktop bundles (SignaVis Lite AppImage/deb and the full desktop
