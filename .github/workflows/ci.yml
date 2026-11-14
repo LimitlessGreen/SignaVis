@@ -154,6 +154,9 @@ jobs:
           workspaces: |
             src-tauri -> target
           key: desktop-${{ matrix.os }}
+          # Caches saved from tag runs are invisible to later tags; only main
+          # warms them. Keeps us under the 10 GB repo limit.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies (Tauri)
         if: runner.os == 'Linux'
@@ -225,17 +228,28 @@ jobs:
           restore-keys: |
             cornell-taxonomy-${{ runner.os }}-
 
-      - name: Cache Species Images
-        id: cache-species
+      # Lite only needs the taxonomy JSON (a few MB). Cache it on its own so a
+      # missing or evicted image cache (80 MB) does not cost a 16-min rebuild.
+      - name: Cache Lite taxonomy
+        id: cache-lite-taxonomy
         uses: actions/cache@v6
+        with:
+          path: demo/data/birdnet-taxonomy.v2.4.json
+          key: lite-taxonomy-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
+
+      - name: Restore species assets (same key as pages.yml)
+        if: steps.cache-lite-taxonomy.outputs.cache-hit != 'true'
+        id: cache-species
+        uses: actions/cache/restore@v6
         with:
           path: |
             demo/data/species_images
             demo/data/birdnet-taxonomy.v2.4.json
           key: species-assets-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
+      # Full build (with images) so image credits in the taxonomy match Pages.
       - name: Build taxonomy and download images
-        if: steps.cache-species.outputs.cache-hit != 'true'
+        if: steps.cache-lite-taxonomy.outputs.cache-hit != 'true' && steps.cache-species.outputs.cache-hit != 'true'
         run: npm run taxonomy:build
 
       - name: Upload Lite data
@@ -280,6 +294,9 @@ jobs:
           workspaces: |
             src-tauri-lite -> target
           key: lite-${{ matrix.os }}
+          # Caches saved from tag runs are invisible to later tags; only main
+          # warms them. Keeps us under the 10 GB repo limit.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies (Tauri)
         if: runner.os == 'Linux'
@@ -302,6 +319,8 @@ jobs:
           path: demo/data
 
       - name: Rust tests (Lite shell)
+        # No platform-specific test code; Linux is enough (saves ~3 min on Windows).
+        if: runner.os == 'Linux'
         working-directory: src-tauri-lite
         shell: bash
         run: cargo test
