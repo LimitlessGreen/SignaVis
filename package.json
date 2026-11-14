@@ -12,6 +12,8 @@
     "dist/",
     "types/",
     "models/",
+    "!models/birdnet-v3.0/",
+    "!models/birdnet-v3.0-12k/",
     "README.md",
     "LICENSE"
   ],
