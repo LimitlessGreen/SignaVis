@@ -40,7 +40,8 @@
     }
   },
   "dependencies": {
-    "jsoneditor": "^10.4.3"
+    "jsoneditor": "^10.4.3",
+    "onnxruntime-web": "1.30.0"
   },
   "keywords": [
     "audio",

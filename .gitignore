@@ -82,3 +82,6 @@ src-tauri-lite/target/
 src-tauri-lite/target-msix/
 src-tauri-lite/gen/
 src-tauri-lite/.cargo/
+
+# BirdNET+ V3.0 Global 12K (173 MB) — fetched with scripts/fetch-birdnet-12k.mjs
+models/birdnet-v3.0-12k/

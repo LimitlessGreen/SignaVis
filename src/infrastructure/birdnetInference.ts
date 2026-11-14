@@ -1,30 +1,38 @@
 /**
- * BirdNET browser inference via TensorFlow.js Web Worker.
+ * BirdNET browser inference in a Web Worker. Two model formats are supported,
+ * detected from the model folder:
  *
- * - TF.js is loaded from CDN at runtime (not bundled).
- * - The BirdNET model (TF.js Layers format) is fetched from a user-supplied URL
- *   or from the bundled model shipped with the GitHub Pages demo.
- * - Audio is resampled to 48 kHz and split into 3-second chunks for prediction.
+ * - BirdNET+ V3.0 (ONNX, default): the folder contains `model_config.json`
+ *   (BirdNET Live layout). Runs on onnxruntime-web (WASM), 32 kHz, 3 s windows,
+ *   optional geo-model (lat, lon, week 1–48).
+ * - BirdNET v2.4 (TF.js Layers): the folder contains `model.json` + `labels.json`
+ *   and optionally the area model in `mdata/`. 48 kHz, 3 s windows.
+ *
+ * Runtimes (TF.js / onnxruntime-web) are loaded from CDN at runtime (vendored in Lite).
  */
 
 import { vendorUrl } from './tauri/runtime.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
-const TARGET_SR = 48000;
+const ORT_VERSION = '1.30.0';
+const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
+const TFJS_SR = 48000;
 const CHUNK_SECONDS = 3;
-const CHUNK_SAMPLES = TARGET_SR * CHUNK_SECONDS; // 144 000
+const TFJS_CHUNK_SAMPLES = TFJS_SR * CHUNK_SECONDS; // 144 000
 
 /**
- * Default model URL pointing to the bundled BirdNET v2.4 TF.js model
+ * Default model URL pointing to the bundled BirdNET+ V3.0 ONNX model
  * on the GitHub Pages demo site.  npm users can use this as a convenient
  * fallback or host the model themselves.
  */
-export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/models/birdnet-v2.4/';
+export const BIRDNET_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/models/birdnet-v3.0/';
+/** Legacy BirdNET v2.4 TF.js model on the GitHub Pages demo site. */
+export const BIRDNET_V24_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/models/birdnet-v2.4/';
 
 // ---------------------------------------------------------------------------
 // Worker source — runs in a dedicated thread with WebGL-accelerated TF.js
 // ---------------------------------------------------------------------------
-const WORKER_SOURCE = `
+const TFJS_WORKER_SOURCE = `
 importScripts('${TFJS_URL}');
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
@@ -105,7 +113,7 @@ self.onmessage = async (e) => {
       model = await tf.loadLayersModel(base + 'model.json');
 
       self.postMessage({ id: id, type: 'progress', message: 'Warming up\\u2026', percent: 50 });
-      model.predict(tf.zeros([1, ${CHUNK_SAMPLES}])).dispose();
+      model.predict(tf.zeros([1, ${TFJS_CHUNK_SAMPLES}])).dispose();
 
       self.postMessage({ id: id, type: 'progress', message: 'Loading labels\\u2026', percent: 80 });
       var raw = await fetch(base + 'labels.json').then(function (r) { return r.json(); });
@@ -120,10 +128,10 @@ self.onmessage = async (e) => {
       self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
       try {
         areaModel = await tf.loadGraphModel(base + 'mdata/model.json');
-        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true });
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, sampleRate: ${TFJS_SR}, format: 'tfjs' });
       } catch (_) {
         // Area model is optional — continue without it
-        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: false });
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: false, sampleRate: ${TFJS_SR}, format: 'tfjs' });
       }
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
@@ -177,7 +185,7 @@ self.onmessage = async (e) => {
 
   if (type === 'predict') {
     try {
-      var pcm  = tf.tensor(e.data.samples, [1, ${CHUNK_SAMPLES}]);
+      var pcm  = tf.tensor(e.data.samples, [1, ${TFJS_CHUNK_SAMPLES}]);
       var res  = model.predict(pcm);
       var probs = await res.data();
       pcm.dispose();
@@ -203,9 +211,186 @@ self.onmessage = async (e) => {
 `;
 
 // ---------------------------------------------------------------------------
+// Worker source — BirdNET+ V3.0 (ONNX, BirdNET Live layout) on onnxruntime-web
+// ---------------------------------------------------------------------------
+const ONNX_WORKER_SOURCE = `
+importScripts('${ORT_BASE}ort.wasm.min.js');
+ort.env.wasm.wasmPaths = '${ORT_BASE}';
+ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, self.navigator.hardwareConcurrency || 1) : 1;
+
+let audio = null, geo = null, cfg = null;
+let labels = [];        // { scientific, common, geoIx }
+let multipliers = null; // Float32Array | null (score blacklist)
+let geoscores = null;   // Float32Array aligned with labels | null
+let chunkSamples = 0;
+
+function parseCsv(text, delim) {
+  return text.replace(/\\r/g, '').split('\\n').filter(function (l) { return l.length; })
+    .map(function (l) { return l.split(delim); });
+}
+
+/** BirdNET+ geo week: 4 per month, 1–48. */
+function geoWeek(d) {
+  return d.getMonth() * 4 + Math.min(3, Math.floor((d.getDate() - 1) / 7)) + 1;
+}
+
+self.onmessage = async (e) => {
+  var type = e.data.type;
+  var id   = e.data.id;
+
+  if (type === 'load') {
+    try {
+      var base = e.data.modelUrl;
+      if (!base.endsWith('/')) base += '/';
+      cfg = e.data.config;
+      var am = cfg.audioModel;
+      chunkSamples = am.audio.sampleRate * ${CHUNK_SECONDS};
+
+      self.postMessage({ id: id, type: 'progress', message: 'Loading labels\\u2026', percent: 5 });
+      var lc = am.labels, cols = lc.columns;
+      var rows = parseCsv(await fetch(base + lc.file).then(function (r) { return r.text(); }), lc.delimiter || ';');
+      var header = lc.hasHeader !== false ? rows.shift() : null;
+      var col = function (name, fallback) { var i = header ? header.indexOf(name) : -1; return i >= 0 ? i : fallback; };
+      var iIdx = col(cols.index, 0), iId = col(cols.birdnetId, 1), iSci = col(cols.scientificName, 2), iCom = col(cols.commonName, 3);
+      labels = [];
+      var ids = [];
+      rows.forEach(function (r) {
+        labels[Number(r[iIdx])] = { scientific: r[iSci], common: r[iCom], geoIx: -1 };
+        ids[Number(r[iIdx])] = r[iId];
+      });
+
+      multipliers = null;
+      if (am.scoreBlacklistFile) {
+        try {
+          var bl = await fetch(base + am.scoreBlacklistFile).then(function (r) { return r.ok ? r.json() : {}; });
+          var keys = Object.keys(bl);
+          if (keys.length) {
+            multipliers = new Float32Array(labels.length).fill(1);
+            labels.forEach(function (l, i) { if (bl[l.common] != null) multipliers[i] = Number(bl[l.common]); });
+          }
+        } catch (_) { /* optional */ }
+      }
+
+      self.postMessage({ id: id, type: 'progress', message: 'Loading BirdNET+ model\\u2026', percent: 15 });
+      audio = await ort.InferenceSession.create(base + am.onnx.modelFile, { executionProviders: ['wasm'] });
+
+      self.postMessage({ id: id, type: 'progress', message: 'Warming up\\u2026', percent: 60 });
+      var warm = new ort.Tensor('float32', new Float32Array(chunkSamples), [1, chunkSamples]);
+      var wf = {}; wf[am.onnx.inputName] = warm;
+      await audio.run(wf, [am.onnx.outputNames.predictions]);
+
+      geo = null;
+      if (cfg.geoModel) {
+        self.postMessage({ id: id, type: 'progress', message: 'Loading geo model\\u2026', percent: 85 });
+        try {
+          var gText = await fetch(base + cfg.geoModel.labelsFile).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); });
+          // Geo labels: <id>\\t<scientific>\\t<common>. The id is the BirdNET id in the BNL
+          // build but an iNat id in the 14K geomodel, so fall back to the scientific name.
+          var geoById = {}, geoBySci = {};
+          parseCsv(gText, '\\t').forEach(function (r, i) { geoById[r[0]] = i; if (r[1]) geoBySci[r[1]] = i; });
+          labels.forEach(function (l, i) {
+            var g = geoById[ids[i]];
+            if (g == null) g = geoBySci[l.scientific];
+            l.geoIx = g == null ? -1 : g;
+          });
+          geo = await ort.InferenceSession.create(base + cfg.geoModel.modelFile, { executionProviders: ['wasm'] });
+        } catch (_) { geo = null; }
+      }
+      self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: !!geo,
+        sampleRate: am.audio.sampleRate, format: 'onnx' });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'set-location') {
+    if (!geo) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      // No (valid) recording date → whole year: max over weeks 1–48 (week 0, as in birdnet_v3.py).
+      var refDate = e.data.date ? new Date(e.data.date) : null;
+      var week = refDate && !isNaN(refDate.getTime()) ? geoWeek(refDate) : 0;
+      var weeks = week ? [week] : Array.from({ length: 48 }, function (_, w) { return w + 1; });
+      var x = new Float32Array(weeks.length * 3);
+      weeks.forEach(function (w, r) { x[r * 3] = e.data.latitude; x[r * 3 + 1] = e.data.longitude; x[r * 3 + 2] = w; });
+      var feeds = {};
+      feeds[cfg.geoModel.inputName] = new ort.Tensor('float32', x, [weeks.length, 3]);
+      var out = await geo.run(feeds);
+      var all = out[cfg.geoModel.outputName].data;
+      var n = all.length / weeks.length;
+      var probs = new Float32Array(n);
+      for (var r = 0; r < weeks.length; r++) for (var q = 0; q < n; q++) if (all[r * n + q] > probs[q]) probs[q] = all[r * n + q];
+      // Align to audio labels; non-animal sound classes have no geo output → never filtered.
+      geoscores = new Float32Array(labels.length);
+      for (var i = 0; i < labels.length; i++) {
+        geoscores[i] = labels[i].geoIx >= 0 ? probs[labels[i].geoIx] : 1;
+      }
+      self.postMessage({ id: id, type: 'area-scores-set', count: geoscores.length, week: week });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'clear-location') {
+    geoscores = null;
+    self.postMessage({ id: id, type: 'location-cleared' });
+  }
+
+  if (type === 'get-species-list') {
+    var specList = [];
+    for (var j = 0; j < labels.length; j++) {
+      specList.push({
+        scientific: labels[j].scientific,
+        common:     labels[j].common,
+        geoscore:   geoscores ? geoscores[j] : null,
+      });
+    }
+    self.postMessage({ id: id, type: 'species-list', species: specList });
+    return;
+  }
+
+  if (type === 'predict') {
+    try {
+      var on = cfg.audioModel.onnx;
+      var f = {};
+      f[on.inputName] = new ort.Tensor('float32', e.data.samples, [1, chunkSamples]);
+      var res = await audio.run(f, [on.outputNames.predictions]);
+      var p = res[on.outputNames.predictions].data;
+      var predictions = [];
+      for (var k = 0; k < p.length && k < labels.length; k++) {
+        var c = multipliers ? p[k] * multipliers[k] : p[k];
+        if (c > 0.01) {
+          predictions.push({
+            scientific: labels[k].scientific,
+            common:     labels[k].common,
+            confidence: c,
+            geoscore:   geoscores ? geoscores[k] : 1,
+          });
+        }
+      }
+      self.postMessage({ id: id, type: 'predictions', predictions: predictions });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+};
+`;
+
+/** Fetch `model_config.json` (BirdNET Live / V3.0 layout); null for TF.js model folders. */
+async function fetchOnnxConfig(baseUrl: string): Promise<any | null> {
+  try {
+    const res = await fetch(baseUrl + 'model_config.json');
+    if (!res.ok) return null;
+    const cfg = await res.json();
+    return cfg?.audioModel?.onnx ? cfg : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Audio resampling helper (browser only — uses OfflineAudioContext)
 // ---------------------------------------------------------------------------
-async function resampleTo48k(channelData: Float32Array | number[], sourceSampleRate: number): Promise<Float32Array> {
+async function resampleTo(channelData: Float32Array | number[], sourceSampleRate: number, TARGET_SR: number): Promise<Float32Array> {
   if (sourceSampleRate === TARGET_SR) return channelData instanceof Float32Array ? channelData : Float32Array.from(channelData as any);
   const duration = (channelData as any).length / sourceSampleRate;
   const targetLength = Math.ceil(duration * TARGET_SR);
@@ -237,6 +422,8 @@ export class BirdNETInference {
   #nextId = 0;
   #loaded = false;
   #hasAreaModel = false;
+  #sampleRate = TFJS_SR;
+  #format: 'onnx' | 'tfjs' | null = null;
   #onLoadProgress: ((...args: any[]) => void) | null = null;
 
   /** Whether the model has been loaded successfully. */
@@ -245,12 +432,16 @@ export class BirdNETInference {
   /** Whether the area (geo) model was found and loaded alongside the main model. */
   get hasAreaModel() { return this.#hasAreaModel; }
 
+  /** Format of the loaded model: 'onnx' (BirdNET+ V3.0) or 'tfjs' (BirdNET v2.4). */
+  get format() { return this.#format; }
+
   /**
    * Load the BirdNET model into a Web Worker.
    *
    * @param {object}   opts
-   * @param {string}   opts.modelUrl    Base URL of the TF.js model directory
-   *                                    (must contain model.json + shards + labels.json).
+   * @param {string}   opts.modelUrl    Base URL of the model directory: either a BirdNET+ V3.0
+   *                                    folder with model_config.json (ONNX) or a TF.js folder
+   *                                    with model.json + shards + labels.json.
    * @param {function} [opts.onProgress] Called with (message, percent) during loading.
    * @returns {Promise<{ labelCount: number, hasAreaModel: boolean }>}
    */
@@ -259,11 +450,13 @@ export class BirdNETInference {
 
     // Resolve relative URLs against the page origin so the Blob-based Worker
     // (which has no meaningful base URL) can fetch the model files.
-    const absoluteModelUrl = new URL(modelUrl, globalThis.location?.href).href;
+    let absoluteModelUrl = new URL(modelUrl, globalThis.location?.href).href;
+    if (!absoluteModelUrl.endsWith('/')) absoluteModelUrl += '/';
 
     this.dispose();
 
-    const blob = new Blob([WORKER_SOURCE], { type: 'text/javascript' });
+    const onnxConfig = await fetchOnnxConfig(absoluteModelUrl);
+    const blob = new Blob([onnxConfig ? ONNX_WORKER_SOURCE : TFJS_WORKER_SOURCE], { type: 'text/javascript' });
     const blobUrl = URL.createObjectURL(blob);
     this.#worker = new Worker(blobUrl);
     URL.revokeObjectURL(blobUrl);
@@ -283,10 +476,12 @@ export class BirdNETInference {
       }
     };
 
-    const result: any = await this.#send('load', { modelUrl: absoluteModelUrl });
+    const result: any = await this.#send('load', { modelUrl: absoluteModelUrl, config: onnxConfig });
     this.#onLoadProgress = null;
     if (result.type === 'error') throw new Error(result.message);
     this.#loaded = true;
+    this.#sampleRate = result.sampleRate || TFJS_SR;
+    this.#format = result.format || 'tfjs';
     this.#hasAreaModel = result.hasAreaModel === true;
     return { labelCount: result.labelCount, hasAreaModel: this.#hasAreaModel };
   }
@@ -345,10 +540,12 @@ export class BirdNETInference {
    */
   async analyze(channelData: Float32Array | number[], opts: any = {}) {
     const { overlap = 0, minConfidence = 0.25, geoThreshold = 0, onProgress } = opts;
-    const sampleRate = opts.sampleRate || TARGET_SR;
     if (!this.#loaded) throw new Error('Model not loaded — call load() first.');
+    const TARGET_SR = this.#sampleRate;
+    const CHUNK_SAMPLES = TARGET_SR * CHUNK_SECONDS;
+    const sampleRate = opts.sampleRate || TARGET_SR;
 
-    const pcm = await resampleTo48k(channelData, sampleRate);
+    const pcm = await resampleTo(channelData, sampleRate, TARGET_SR);
 
     const overlapSamples = Math.round(overlap * TARGET_SR);
     const step = CHUNK_SAMPLES - overlapSamples;
@@ -401,6 +598,7 @@ export class BirdNETInference {
     this.#pending.clear();
     this.#loaded = false;
     this.#hasAreaModel = false;
+    this.#format = null;
     this.#onLoadProgress = null;
   }
 

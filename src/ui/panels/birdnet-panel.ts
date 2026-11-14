@@ -28,10 +28,16 @@ import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
 
-const BUNDLED_MODEL_URL = '../models/birdnet-v2.4/';
-// Lite does not ship the model: it is fetched on first use and cached (onDemandUrl).
-const DEFAULT_MODEL_URL = onDemandUrl('models/birdnet-v2.4/', BUNDLED_MODEL_URL);
-const STORAGE_KEY     = 'signavis.birdnet-model-url.v2';
+// Bundled models (Lite does not ship them: fetched on first use and cached, see onDemandUrl).
+export const BIRDNET_MODEL_PRESETS = {
+  'v3.0': { label: 'BirdNET+ V3.0 (Global 10K, ONNX)', url: onDemandUrl('models/birdnet-v3.0/', '../models/birdnet-v3.0/') },
+  // Full model, not committed: fetch with `node scripts/fetch-birdnet-12k.mjs` (needs a served models/ folder).
+  'v3.0-12k': { label: 'BirdNET+ V3.0 Global 12K (full, local download)', url: onDemandUrl('models/birdnet-v3.0-12k/', '../models/birdnet-v3.0-12k/') },
+  'v2.4': { label: 'BirdNET v2.4 (legacy, TF.js)',      url: onDemandUrl('models/birdnet-v2.4/', '../models/birdnet-v2.4/') },
+} as const;
+const DEFAULT_MODEL_URL = BIRDNET_MODEL_PRESETS['v3.0'].url;
+// v3: V3.0 became the default; URLs stored by older versions (v2.4) are not carried over.
+const STORAGE_KEY     = 'signavis.birdnet-model-url.v3';
 const STORAGE_GEO_KEY = 'signavis.birdnet-geo-coords';
 let DETECTION_COLOR = 'var(--color-detection)';
 if (typeof window !== 'undefined') {
@@ -92,6 +98,7 @@ export class BirdNETPanel {
     mapBtn: any;
     mergeCheckbox: any;
     modelUrlInput: any;
+    modelPresetSelect: any;
     onResults: any;
     openBtn: any;
     overlapSelect: any;
@@ -106,6 +113,7 @@ export class BirdNETPanel {
    * @param {object} opts
    * @param {HTMLElement} opts.backdrop
    * @param {HTMLInputElement} opts.modelUrlInput
+   * @param {HTMLSelectElement} [opts.modelPresetSelect]  Bundled model picker (values: v3.0, v2.4, custom)
    * @param {HTMLInputElement} opts.confidenceInput
    * @param {HTMLElement} opts.confidenceVal
    * @param {HTMLSelectElement} opts.overlapSelect
@@ -179,11 +187,20 @@ export class BirdNETPanel {
   _restoreModelUrl() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      // The bundled path does not exist in Lite — treat it like "no custom URL".
-      this.modelUrlInput.value = (stored && stored !== BUNDLED_MODEL_URL) ? stored : DEFAULT_MODEL_URL;
+      this.modelUrlInput.value = stored || DEFAULT_MODEL_URL;
     } catch {
       this.modelUrlInput.value = DEFAULT_MODEL_URL;
     }
+    this._syncPreset();
+  }
+
+  /** Reflect the URL field in the preset picker (custom when it matches no bundled model). */
+  _syncPreset() {
+    const sel = this.modelPresetSelect;
+    if (!sel) return;
+    const url = String(this.modelUrlInput.value || '').trim();
+    const hit = Object.entries(BIRDNET_MODEL_PRESETS).find(([, p]) => p.url === url);
+    sel.value = hit ? hit[0] : 'custom';
   }
 
   _restoreGeoCoords() {
@@ -312,6 +329,13 @@ export class BirdNETPanel {
   }
 
   _bindEvents() {
+    this.modelPresetSelect?.addEventListener('change', () => {
+      const preset = (BIRDNET_MODEL_PRESETS as any)[this.modelPresetSelect.value];
+      if (preset) this.modelUrlInput.value = preset.url;
+      else this.modelUrlInput.focus();
+      try { localStorage.setItem(STORAGE_KEY, String(this.modelUrlInput.value || '').trim()); } catch { /* ignore */ }
+    });
+    this.modelUrlInput?.addEventListener('input', () => this._syncPreset());
     this.openBtn?.addEventListener('click', () => this.open());
     this.cancelBtn?.addEventListener('click', () => this.close());
     // Backdrop clicks and global Escape handler are managed by ModalManager when provided.
@@ -415,8 +439,8 @@ export class BirdNETPanel {
     this.progressBar.style.width = '0%';
 
     try {
-      if (!this.birdnet.loaded) {
-        this.statusEl.textContent = 'Loading TF.js + model…';
+      if (!this.birdnet.loaded || this._loadedModelUrl !== modelUrl) {
+        this.statusEl.textContent = 'Loading model…';
         const loadResult = await this.birdnet.load({
           modelUrl,
           onProgress: (msg: any, pct: any) => {
@@ -437,9 +461,9 @@ export class BirdNETPanel {
         const geoResult = await this.birdnet.setLocation(coords.lat, coords.lon, {
           date: this._date() || undefined,
         });
-        if (geoResult.ok && geoResult.week) {
-          const dateLabel = this._date()
-            ? `recording date (week ${geoResult.week})`
+        if (geoResult.ok) {
+          const dateLabel = !geoResult.week ? 'whole year (no recording date)'
+            : this._date() ? `recording date (week ${geoResult.week})`
             : `today (week ${geoResult.week})`;
           this.statusEl.textContent = `Location filter applied — ${dateLabel}`;
         }

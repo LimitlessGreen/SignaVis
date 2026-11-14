@@ -96,8 +96,8 @@ fn urlencode(segment: &str) -> String {
         .collect()
 }
 
-/// BirdNET model directories (layers model + area model) under models/.
-const MODEL_DIRS: &[&str] = &["models/birdnet-v2.4/", "models/birdnet-v2.4/mdata/"];
+/// Default BirdNET model (BirdNET+ V3.0, ONNX) under models/; its files are listed in model_config.json.
+const MODEL_DIR: &str = "models/birdnet-v3.0/";
 pub const PREFETCH_EVENT: &str = "lite-prefetch";
 
 #[derive(Clone, Serialize)]
@@ -108,17 +108,19 @@ pub struct PrefetchProgress {
     bytes: u64,
 }
 
-/// File names listed in a TF.js model.json (`weightsManifest[].paths`).
-fn manifest_paths(model_json: &[u8]) -> Result<Vec<String>, String> {
-    let v: serde_json::Value = serde_json::from_slice(model_json).map_err(|e| format!("model.json: {e}"))?;
-    let paths = v["weightsManifest"]
-        .as_array()
-        .ok_or("model.json has no weightsManifest")?
-        .iter()
-        .flat_map(|w| w["paths"].as_array().cloned().unwrap_or_default())
+/// File names listed in a BirdNET Live model_config.json (audio/geo model, labels, blacklist).
+fn config_paths(config_json: &[u8]) -> Result<Vec<String>, String> {
+    let v: serde_json::Value = serde_json::from_slice(config_json).map_err(|e| format!("model_config.json: {e}"))?;
+    let a = &v["audioModel"];
+    let g = &v["geoModel"];
+    let paths: Vec<String> = [&a["onnx"]["modelFile"], &a["labels"]["file"], &a["scoreBlacklistFile"], &g["modelFile"], &g["labelsFile"]]
+        .into_iter()
         .filter_map(|p| p.as_str().map(str::to_string))
         .filter(|p| !p.contains(['/', '\\']) && !p.starts_with('.'))
         .collect();
+    if a["onnx"]["modelFile"].as_str().is_none() {
+        return Err("model_config.json has no audioModel.onnx.modelFile".into());
+    }
     Ok(paths)
 }
 
@@ -127,13 +129,9 @@ fn manifest_paths(model_json: &[u8]) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn prefetch_model(app: tauri::AppHandle) -> Result<PrefetchProgress, String> {
     let cache_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("data-cache");
-    let mut files = Vec::new();
-    for dir in MODEL_DIRS {
-        let model = load(cache_dir.clone(), format!("{dir}model.json")).await.map_err(|(_, m)| m)?;
-        files.push(format!("{dir}model.json"));
-        files.extend(manifest_paths(&model)?.into_iter().map(|p| format!("{dir}{p}")));
-    }
-    files.push(format!("{}labels.json", MODEL_DIRS[0]));
+    let config = load(cache_dir.clone(), format!("{MODEL_DIR}model_config.json")).await.map_err(|(_, m)| m)?;
+    let mut files = vec![format!("{MODEL_DIR}model_config.json")];
+    files.extend(config_paths(&config)?.into_iter().map(|p| format!("{MODEL_DIR}{p}")));
     let total = files.len();
     let mut progress = PrefetchProgress { done: 0, total, bytes: 0 };
     for path in files {
@@ -186,10 +184,10 @@ mod tests {
     }
 
     #[test]
-    fn manifest_lists_shards_only_by_plain_name() {
-        let json = br#"{"weightsManifest":[{"paths":["group1-shard1of2.bin","group1-shard2of2.bin"]},{"paths":["../evil.bin","a/b.bin"]}]}"#;
-        assert_eq!(manifest_paths(json).unwrap(), vec!["group1-shard1of2.bin", "group1-shard2of2.bin"]);
-        assert!(manifest_paths(b"{}").is_err());
+    fn config_lists_model_files_only_by_plain_name() {
+        let json = br#"{"audioModel":{"onnx":{"modelFile":"a.onnx"},"labels":{"file":"l.csv"},"scoreBlacklistFile":"../evil.json"},"geoModel":{"modelFile":"g.onnx","labelsFile":"a/b.txt"}}"#;
+        assert_eq!(config_paths(json).unwrap(), vec!["a.onnx", "l.csv", "g.onnx"]);
+        assert!(config_paths(b"{}").is_err());
     }
 
     #[test]

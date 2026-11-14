@@ -88,6 +88,7 @@ const VENDOR = {
   wavesurfer: { dir: nm('wavesurfer.js/dist'), files: ['wavesurfer.esm.js'] },
   leaflet:    { dir: nm('leaflet/dist'), files: ['leaflet.js', 'leaflet.css', 'images'] },
   tfjs:       { dir: nm('@tensorflow/tfjs/dist'), files: ['tf.min.js'] },
+  ort:        { dir: nm('onnxruntime-web/dist'), files: ['ort.wasm.min.js', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm'] },
 };
 
 /** Dev server (`tauri dev` of Lite): answer /vendor/<name>/<file> from node_modules. */
@@ -104,7 +105,8 @@ function serveVendor() {
         const entry = VENDOR[name];
         const file = entry && resolve(entry.dir, ...rest);
         if (!file || !file.startsWith(entry.dir) || !existsSync(file)) return next();
-        const type = file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png' : 'text/javascript';
+        const type = file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png'
+          : file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript';
         res.setHeader('Content-Type', type);
         res.end(readFileSync(file));
       });

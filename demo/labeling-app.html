@@ -274,9 +274,16 @@
     </div>
     <div id="birdnetBackendWrap" hidden>
       <div class="panel-section">
+        <label class="field-label" for="birdnetModelPreset">Model</label>
+        <select id="birdnetModelPreset" class="field-select">
+          <option value="v3.0">BirdNET+ V3.0 (Global 10K, ONNX)</option>
+          <option value="v3.0-12k">BirdNET+ V3.0 Global 12K (full, local download)</option>
+          <option value="v2.4">BirdNET v2.4 (legacy, TF.js)</option>
+          <option value="custom">Custom URL…</option>
+        </select>
         <label class="field-label" for="birdnetModelUrl">Model URL</label>
-        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v2.4/" />
-        <p class="field-hint">TF.js Layers format — folder containing model.json and labels.json</p>
+        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/" />
+        <p class="field-hint">BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json</p>
       </div>
       <div class="panel-section">
         <label class="field-label" for="analysisModeSelect">Analysis backend</label>
@@ -3311,6 +3318,7 @@
     });
     const birdnetPanel = new BirdNETPanel({
       modelUrlInput:      document.getElementById('birdnetModelUrl'),
+      modelPresetSelect:  document.getElementById('birdnetModelPreset'),
       confidenceInput:    document.getElementById('birdnetConfidence'),
       confidenceVal:      document.getElementById('birdnetConfidenceVal'),
       overlapSelect:      document.getElementById('birdnetOverlap'),
