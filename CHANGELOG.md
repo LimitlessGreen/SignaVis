@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.3] - Unreleased
+## [1.1.3] - 2026-11-14
 
 ### Added
 - Label confidence as a meter: lane strips fill their bottom edge, boxes get
