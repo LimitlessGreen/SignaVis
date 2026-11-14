@@ -104,6 +104,18 @@ if (!window.__signavisPortals) {
     for (const r of records) for (const n of r.addedNodes) mark(n);
   }).observe(document.body, { childList: true });
 }
+// Gradio marks its dark theme with a "dark" class; the player reads html[data-theme].
+if (!window.__signavisTheme) {
+  window.__signavisTheme = true;
+  const apply = () => {
+    const dark = document.body.classList.contains('dark') || document.documentElement.classList.contains('dark');
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  };
+  apply();
+  const observer = new MutationObserver(apply);
+  observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
 const state = { player: null, src: null, labels: null, select: null, chain: Promise.resolve() };
 
 async function ensurePlayer() {
@@ -235,6 +247,9 @@ class SignaVisPlayer(gr.HTML):
             f'<link rel="stylesheet" href="{assets}/birdnet-player.embed.css">'
             f'<script src="{assets}/wavesurfer.min.js"></script>'
             f'<script src="{assets}/birdnet-player.iife.js"></script>'
+            # Gradio pads the container of a gr.HTML; the player spans the full width
+            # like the other components.
+            "<style>.html-container:has(.signavis-root) { padding: 0; }</style>"
         )
         super().__init__(
             value=value,
