@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.2] - Unreleased
+## [1.1.2] - 2026-11-14
 
 ### Added
 - Label display `'lanes'`: labels without frequency bounds as stacked strips
