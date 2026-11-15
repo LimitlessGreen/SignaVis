@@ -92,6 +92,16 @@ export {
 } from '../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
 import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
+import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
+export { LiveRecorder, encodeWav, recordingFileName, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+
+export interface StartRecordingOptions extends LiveRecorderOptions {
+    /** Load the recording into the player when it stops (default true). */
+    loadWhenDone?: boolean;
+    /** Seconds across the live view (default 20). */
+    spanSeconds?: number;
+}
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
 export { BirdNETInference, BIRDNET_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
@@ -716,6 +726,8 @@ export class BirdNETPlayer {
 
     /** Tear down the player and free resources */
     destroy() {
+        this._liveRecorder?.cancel();
+        this._liveView?.detach();
         this._labelGrid?.destroy();
         this._labelGrid = null;
         if (this._globalKeyHandler) {
@@ -976,6 +988,69 @@ export class BirdNETPlayer {
         const start = this.recordingStart;
         return start ? isoClockTime(start, seconds) : null;
     }
+
+    // ── Live recording ──────────────────────────────────────────────
+
+    _liveRecorder: LiveRecorder | null = null;
+    _liveView: LiveSpectrogramView | null = null;
+
+    /** True when this browser can record from a microphone. */
+    static get recordingSupported(): boolean { return LiveRecorder.supported; }
+
+    get isRecording(): boolean { return !!this._liveRecorder?.recording; }
+
+    /**
+     * Records from the microphone; the spectrogram pane shows the sound as it
+     * arrives. Emits 'recordingstart', then 'recordingcomplete' { file,
+     * startedAt, duration, sampleRate, reason } (or 'recordingstop' { reason }
+     * without a recording). Stops by itself after `maxSeconds` (default 300).
+     * The WAV carries the start time, so `recordingStart` knows it after loading.
+     */
+    async startRecording(opts: StartRecordingOptions = {}): Promise<void> {
+        if (this._liveRecorder) throw new Error('Already recording');
+        const s = this._state;
+        if (!s) throw new Error('Player not ready');
+        this.pause();
+        const rec = new LiveRecorder(opts);
+        this._liveRecorder = rec;
+        const host = (s.d.spectrogramContainer && s._showSpectrogram ? s.d.spectrogramContainer : this.container) as HTMLElement;
+        const view = new LiveSpectrogramView(host, {
+            spanSeconds: opts.spanSeconds,
+            getColorScheme: () => s.d.colorSchemeSelect?.value || 'inferno',
+            getMaxFreq: () => parseFloat(s.d.maxFreqSelect?.value || '0') || 0,
+        });
+        view.addEventListener('stoprequest', () => { void this.stopRecording(); });
+        let reason: 'user' | 'limit' | 'ended' = 'user';
+        rec.addEventListener('stop', (e: Event) => { reason = (e as CustomEvent).detail?.reason ?? 'user'; });
+        const finished = new Promise<LiveRecording | null>((resolve) => {
+            rec.addEventListener('stop', () => resolve(rec.stop()), { once: true });
+        });
+        try {
+            await rec.start();
+        } catch (err) {
+            this._liveRecorder = null;
+            throw err;
+        }
+        this._liveView = view;
+        view.attach(rec);
+        this._emit('recordingstart', { sampleRate: rec.sampleRate, maxSeconds: rec.maxSeconds });
+        void finished.then(async (recording) => {
+            view.detach();
+            if (this._liveView === view) this._liveView = null;
+            if (this._liveRecorder === rec) this._liveRecorder = null;
+            if (!recording) { this._emit('recordingstop', { reason }); return; }
+            this._emit('recordingcomplete', { ...recording, reason });
+            if (opts.loadWhenDone !== false) await this.loadFile(recording.file).catch(() => {});
+        });
+    }
+
+    /** Stops the recording; resolves with it (null when nothing was recorded or none was running). */
+    async stopRecording(): Promise<LiveRecording | null> {
+        return this._liveRecorder ? this._liveRecorder.stop('user') : null;
+    }
+
+    /** Stops the recording and throws it away. */
+    cancelRecording(): void { this._liveRecorder?.cancel(); }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
     setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }

@@ -378,6 +378,9 @@
         <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
           <span aria-hidden="true">＋</span> Local audio file…
         </button>
+        <button class="project-add-file" id="recordBtn" type="button" hidden title="Record from the microphone; the spectrogram shows the sound as it arrives (up to 5 minutes)">
+          <span aria-hidden="true">●</span> <span class="record-btn-text">Record from microphone</span>
+        </button>
       </div>
     <!-- Recording explorer — populated by RecordingExplorer widget -->
     <div id="recordingExplorerMount"></div>
@@ -4296,6 +4299,31 @@
       catch (e) { showLoadError(e?.message || e, 'Cannot open'); return; }
       if (picked) await loadLocalAudioFile(picked.file, { filePath: picked.path });
     });
+    // ── Microphone recording: live spectrogram, then added like a local file ──
+    const recordBtn = document.getElementById('recordBtn');
+    if (recordBtn && BirdNETPlayer.recordingSupported) {
+      recordBtn.hidden = false;
+      const recordText = recordBtn.querySelector('.record-btn-text');
+      const setRecording = (on) => {
+        recordBtn.classList.toggle('is-recording', on);
+        recordText.textContent = on ? 'Stop recording' : 'Record from microphone';
+      };
+      recordBtn.addEventListener('click', async () => {
+        if (player.isRecording) { await player.stopRecording(); return; }
+        try {
+          await player.startRecording({ maxSeconds: 300, loadWhenDone: false });
+          setRecording(true);
+        } catch (e) {
+          showLoadError(e?.name === 'NotAllowedError' ? 'Microphone access was denied.' : (e?.message || e), 'Cannot record');
+        }
+      });
+      player.on('recordingstop', () => setRecording(false));
+      player.on('recordingcomplete', async (e) => {
+        setRecording(false);
+        const file = e.detail?.file;
+        if (file) await loadLocalAudioFile(file);
+      });
+    }
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
