@@ -28,6 +28,33 @@ input.addEventListener('change', async () => {
 })
 ```
 
+## Record from the microphone
+
+While recording, the spectrogram pane shows the sound as it arrives (it flies
+in from the right, 20 s across). When it stops — Stop button, `stopRecording()`
+or after `maxSeconds` — the recording is loaded like a file. The WAV carries
+its start time, so `player.recordingStart` and Raven exports know the clock time.
+
+```js
+if (BirdNETPlayer.recordingSupported) {
+  player.on('recordingcomplete', ({ detail }) => {
+    console.log(detail.file.name, detail.duration) // Recording_20261115_143012.wav
+  })
+  await player.startRecording({ maxSeconds: 300 }) // asks for microphone access
+  // … later
+  await player.stopRecording()
+}
+```
+
+Pass `loadWhenDone: false` to handle `detail.file` yourself.
+
+## Recording start time
+
+`player.recordingStart` is read from AudioMoth, GUANO, BWF `bext` or WAV INFO
+metadata, or from a date and time in the file name (`20230512_190000.wav`);
+`null` when unknown. `player.clockTimeAt(seconds)` gives the wall-clock time at
+a position, e.g. `"2023-05-12T19:00:03.000+01:00"`.
+
 ## React
 
 ```jsx

@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
   MIT): shown in the status bar, `player.recordingStart`,
   `player.clockTimeAt(seconds)`, and Raven selection tables get
   Begin Date / Begin Clock Time / End Clock Time.
+- Microphone recording: `player.startRecording()` / `stopRecording()` show a
+  live spectrogram that flies in from the right while recording, then load
+  the recording (a WAV with its start time in the INFO chunk). Events
+  `recordingstart`, `recordingcomplete`, `recordingstop`. The labeling app
+  adds "Record from microphone" under Add recordings.
 
 ## [1.1.3] - 2026-11-14
 
