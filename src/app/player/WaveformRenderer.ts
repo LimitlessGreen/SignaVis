@@ -70,6 +70,9 @@ export class WaveformRenderer {
     #overviewToken = 0;
     /** True while the strip shows a spectrogram image (kept on redraws until a new one is ready). */
     #overviewHasImage = false;
+    /** What the strip's waveform was drawn for; skips rescanning every sample when nothing changed. */
+    #overviewWaveKey: { audioBuffer: AudioBuffer; w: number; h: number; peak: number } | null = null;
+    #overviewImage: CanvasImageSource | null = null;
 
     constructor(deps: WaveformRendererDeps) {
         this.#d = deps.d;
@@ -119,8 +122,15 @@ export class WaveformRenderer {
         const audioBuffer = this.#getAudioBuffer();
         if (!audioBuffer) return;
         const token = ++this.#overviewToken;
-        const drawWaveform = () => {
+        const drawWaveform = (force = true) => {
+            const rect = overviewContainer.getBoundingClientRect();
+            const key = { audioBuffer, w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs() };
+            const k = this.#overviewWaveKey;
+            const same = !this.#overviewHasImage && k && k.audioBuffer === key.audioBuffer && k.w === key.w && k.h === key.h && k.peak === key.peak;
             this.#overviewHasImage = false;
+            this.#overviewImage = null;
+            if (same && !force) return;
+            this.#overviewWaveKey = key;
             renderOverviewWaveform({
                 audioBuffer,
                 overviewCanvas,
@@ -135,13 +145,18 @@ export class WaveformRenderer {
         }
         // Spectrogram: keep what is shown until the new image is ready; the
         // waveform stands in while the spectrogram is still being computed.
-        if (!this.#overviewHasImage) drawWaveform();
+        if (!this.#overviewHasImage) drawWaveform(false);
         const cols = Math.max(1, Math.floor(overviewContainer.getBoundingClientRect().width));
         this.#getOverviewImage(cols).then((image) => {
             if (token !== this.#overviewToken || this.#getAudioBuffer() !== audioBuffer) return;
             if (image) {
-                renderOverviewImage({ image, overviewCanvas, overviewContainer });
+                // Cached images come back as the same object: redraw only on change or resize.
+                const sized = overviewCanvas.width === Math.max(1, cols);
+                if (image !== this.#overviewImage || !this.#overviewHasImage || !sized) {
+                    renderOverviewImage({ image, overviewCanvas, overviewContainer });
+                }
                 this.#overviewHasImage = true;
+                this.#overviewImage = image;
             } else if (this.#overviewHasImage) {
                 drawWaveform();
             }
@@ -154,6 +169,8 @@ export class WaveformRenderer {
     /** A new file is loading: the old spectrogram image must not stay on screen. */
     resetOverview(): void {
         this.#overviewHasImage = false;
+        this.#overviewImage = null;
+        this.#overviewWaveKey = null;
         this.#overviewToken++;
     }
 

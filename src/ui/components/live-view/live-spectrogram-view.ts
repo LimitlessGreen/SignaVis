@@ -111,14 +111,16 @@ export class LiveSpectrogramView extends EventTarget {
         const w = Math.max(1, Math.floor(root.clientWidth));
         const h = Math.max(1, Math.floor(root.clientHeight));
         if (c.width === w && c.height === h) return;
-        // Keep what is drawn, anchored at the right edge (the newest sound).
+        // The view always spans the same seconds: scale what is drawn to the new size
+        // and continue from the current time at the new pixels per second.
         const old = c.width > 1 && c.height > 1 ? this.snapshot(c) : null;
         c.width = w;
         c.height = h;
         const ctx = this.ctx!;
         ctx.fillStyle = this.color(0);
         ctx.fillRect(0, 0, w, h);
-        if (old) ctx.drawImage(old, w - old.width, 0, old.width, h);
+        if (old) ctx.drawImage(old, 0, 0, w, h);
+        if (this.recorder) this.drawnPx = Math.floor(this.recorder.elapsed * w / this.opts.spanSeconds);
     }
 
     private snapshot(c: HTMLCanvasElement): HTMLCanvasElement {

@@ -126,18 +126,27 @@ export class LiveRecorder extends EventTarget {
     async start(): Promise<void> {
         if (this.startedAt) throw new Error('Already recording');
         if (!LiveRecorder.supported) throw new Error('Recording is not supported in this browser');
+        if (this.stopping) throw new Error('Recording was cancelled');
+        // stop()/cancel() while waiting (e.g. for microphone permission) cancels the start.
+        const cancelled = () => !!this.stopping;
         // Raw signal: the browser's voice processing would remove quiet calls.
-        this.stream = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : {}),
                 echoCancellation: false, noiseSuppression: false, autoGainControl: false,
                 channelCount: 1,
             },
         });
+        if (cancelled()) {
+            stream.getTracks().forEach((t) => t.stop());
+            throw new Error('Recording was cancelled');
+        }
+        this.stream = stream;
         try {
             const ctx = new AudioContext();
             this.ctx = ctx;
             if (ctx.state === 'suspended') await ctx.resume();
+            if (cancelled()) throw new Error('Recording was cancelled');
             this.sampleRate = ctx.sampleRate;
             this.source = ctx.createMediaStreamSource(this.stream);
             this.analyser = ctx.createAnalyser();
@@ -149,6 +158,7 @@ export class LiveRecorder extends EventTarget {
             this.mute.gain.value = 0;
             this.mute.connect(ctx.destination);
             this.capture = await this.createCapture(ctx);
+            if (cancelled()) throw new Error('Recording was cancelled');
             this.source.connect(this.capture);
             this.capture.connect(this.mute);
             this.stream.getAudioTracks()[0]?.addEventListener('ended', () => { void this.stop('ended'); });
@@ -181,12 +191,14 @@ export class LiveRecorder extends EventTarget {
 
     private push(chunk: Float32Array): void {
         if (!this.startedAt || this.stopping) return;
-        const room = Math.round(this.maxSeconds * this.sampleRate) - this.samples;
-        if (room <= 0) return;
-        const c = chunk.length > room ? chunk.subarray(0, room) : chunk;
-        this.chunks.push(c);
-        this.samples += c.length;
-        if (c.length < chunk.length || this.samples >= this.maxSeconds * this.sampleRate) void this.stop('limit');
+        const limit = Math.round(this.maxSeconds * this.sampleRate);
+        const room = limit - this.samples;
+        if (room > 0) {
+            const c = chunk.length > room ? chunk.subarray(0, room) : chunk;
+            this.chunks.push(c);
+            this.samples += c.length;
+        }
+        if (this.samples >= limit) void this.stop('limit');
     }
 
     /** Stops and returns the recording (null when nothing was recorded). */

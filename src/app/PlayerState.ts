@@ -1067,6 +1067,8 @@ export class PlayerState {
         // second update picks up the canvas height draw() may have changed.
         this._updateCoords();
         this._spectro.draw(this._getSpectrogramDrawParams());
+        // Display changes (colors, contrast, noise reduction) end here too; the image is cached.
+        this._scheduleOverviewSpectrogram();
         this._updateCoords();
         this._carrierLine.update();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });

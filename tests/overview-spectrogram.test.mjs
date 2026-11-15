@@ -26,3 +26,9 @@ test('poolFramesMax covers uneven splits without gaps', () => {
     const { data: out } = poolFramesMax(data, 5, 1, 2);
     assert.deepEqual([...out], [5, 7]);
 });
+
+test('poolFramesMax samples phase instead of taking the largest angle', () => {
+    const data = Float32Array.from([-3, 3, -3, 3, -3, 3]); // 6 frames × 1 bin
+    const { data: out } = poolFramesMax(data, 6, 1, 2, 'sample');
+    assert.deepEqual([...out], [3, -3]); // frames 1 and 4 (column centres)
+});

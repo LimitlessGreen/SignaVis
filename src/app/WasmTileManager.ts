@@ -611,6 +611,7 @@ export class WasmTileManager extends EventTarget {
     }
 
     private overviewLevel: { level: number; meta: PyramidMeta; data: Promise<Float32Array> } | null = null;
+    private overviewCache: { key: string; data: Float32Array; image: HTMLCanvasElement | OffscreenCanvas | null } | null = null;
 
     /**
      * Whole-file image for the overview strip: the coarsest pyramid level with
@@ -633,16 +634,21 @@ export class WasmTileManager extends EventTarget {
         }
         if (this.disposed) return null;
         const opts = this.colorOptions;
+        const key = `${cols}|${level}|${JSON.stringify(opts)}`;
+        if (this.overviewCache && this.overviewCache.data === data && this.overviewCache.key === key) return this.overviewCache.image;
         const [lo, hi] = this.valueWindow(level);
-        return buildOverviewImage({
+        const image = buildOverviewImage({
             data, nFrames: levels[level].nFrames, bins: this.nMels, cols,
             sampleRateHz: this.meta.params.sampleRate,
             maxFreq: opts.maxFreq, lo, hi,
-            scale: opts.scale, binFreqs: this.binFreqs, colourScale: opts.colourScale,
+            scale: opts.scale, binFreqs: this.binFreqs, colourScale: this.phase ? 'phase' : opts.colourScale,
             noiseReduction: opts.noiseReduction,
             bandFloor: levels[level]?.stats.bandFloor ?? null,
             colorScheme: opts.colorScheme,
+            floor01: opts.floor01, ceil01: opts.ceil01,
         });
+        this.overviewCache = { key, data, image };
+        return image;
     }
 
     invalidate(): void {
