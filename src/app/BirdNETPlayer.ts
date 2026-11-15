@@ -91,6 +91,8 @@ export {
     importXenoCantoSpectrogramLabels,
 } from '../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
+import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
+export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
 export { BirdNETInference, BIRDNET_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 export class BirdNETPlayer {
@@ -961,6 +963,19 @@ export class BirdNETPlayer {
     setNormalize(on: boolean) { this._state?._setNormalize(on); }
 
     get normalize() { return !!this._state?.normalize; }
+
+    /**
+     * When the loaded recording started, from AudioMoth / GUANO / BWF / WAV INFO
+     * metadata or a date and time in the file name; null when unknown.
+     * `ms` is the recorder's wall-clock time written as UTC, `tz` its offset in minutes.
+     */
+    get recordingStart(): RecordingStart | null { return this._state?.recordingStart ?? null; }
+
+    /** Wall-clock time at `seconds` into the recording ("2023-05-12T19:00:03.000+01:00"), null when the start is unknown. */
+    clockTimeAt(seconds: number): string | null {
+        const start = this.recordingStart;
+        return start ? isoClockTime(start, seconds) : null;
+    }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
     setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }

@@ -2231,7 +2231,7 @@
     function downloadRavenTable() {
       const entry = recordingManager.getActive();
       const name = entry?.filename || fileLabel.textContent || 'labels';
-      const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName });
+      const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName, recordingStart: entry?.recordingStart || player.recordingStart });
       saveFile(text, ravenTablePath(name.split('/').pop()), 'text/plain')
         .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
     }
@@ -2244,7 +2244,7 @@
           const labels = entryLabels(entry);
           if (!labels.length) continue;
           const target = entry.path ? ravenTablePath(entry.path) : `exports/raven/${ravenTablePath(entry.filename)}`;
-          await projectStore.writeText(target, buildRavenSelectionTable(labels, { sampleRate: entry.sampleRate, setName: ravenSetName }));
+          await projectStore.writeText(target, buildRavenSelectionTable(labels, { sampleRate: entry.sampleRate, setName: ravenSetName, recordingStart: entry.recordingStart || null }));
           written++;
         }
         selectionMeta.textContent = written
@@ -3255,6 +3255,7 @@
         const out = buildLabelExport(format, labels, base, {
           sampleRate: entry?.sampleRate || state.sampleRate,
           setName: ravenSetName,
+          recordingStart: entry?.recordingStart || player.recordingStart,
           columns,
           displayName: (l) => resolveName(l).display,
         });
@@ -4433,7 +4434,7 @@
       setTimeout(() => requestMissingSnr(), 500);
       if (e.detail?.sampleRate) {
         state.sampleRate = e.detail.sampleRate;
-        if (recordingManager?.activeId) recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate });
+        if (recordingManager?.activeId) recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || null });
       }
       propsPanel.setRecordingMeta(state.recordingMeta, {
         sampleRate: state.sampleRate,

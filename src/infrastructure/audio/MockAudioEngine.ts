@@ -163,6 +163,7 @@ export class MockAudioEngine extends AudioEngineBase {
     override setNormalize(on: boolean): number { this.normalize = !!on; return 1; }
     timeExpansion = 1;
     guano: Record<string, string> | null = null;
+    recordingStart: import('../../domain/recordingTime.ts').RecordingStart | null = null;
     listenMode: any = { kind: 'expansion', factor: 1 };
     override setTimeExpansion(factor: number): void { this.setListenMode({ kind: 'expansion', factor }); }
     override setListenMode(mode: any): void {
