@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `overviewMode: 'spectrogram'` (and `player.setOverviewMode()`): the overview
+  strip shows the whole recording as a spectrogram, max-pooled so short calls
+  stay visible; the waveform stands in while the spectrogram is computed.
+  The labeling app offers the choice under Display → Overview.
+
 ## [1.1.3] - 2026-11-14
 
 ### Added

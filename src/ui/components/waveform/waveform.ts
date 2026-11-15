@@ -311,6 +311,30 @@ export function renderOverviewWaveform({
     });
 }
 
+/**
+ * Draws a whole-file spectrogram image into the overview strip (overview
+ * mode 'spectrogram'). Clears the waveform's theme re-render so a theme
+ * change does not paint the waveform over it.
+ */
+export function renderOverviewImage({
+    image,
+    overviewCanvas,
+    overviewContainer,
+}: {
+    image: CanvasImageSource;
+    overviewCanvas: HTMLCanvasElement;
+    overviewContainer: HTMLElement;
+}) {
+    const ctx = overviewCanvas.getContext('2d');
+    if (!ctx) return;
+    (overviewCanvas as any)._aw_lastRender = null;
+    const rect = overviewContainer.getBoundingClientRect();
+    overviewCanvas.width = Math.max(1, Math.floor(rect.width));
+    overviewCanvas.height = Math.max(1, Math.floor(rect.height));
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(image, 0, 0, overviewCanvas.width, overviewCanvas.height);
+}
+
 // ─── Frequency Labels ───────────────────────────────────────────────
 
 export function renderFrequencyLabels({ labelsElement, coords }: { labelsElement: HTMLElement; coords: any }) {

@@ -820,8 +820,9 @@
     }
 
     // ── Player ────────────────────────────────────────────────────────
-    // Waveform above the spectrogram is optional (the overview below always shows one); applied on load
+    // Waveform above the spectrogram is optional; applied on load. The overview below shows a waveform or the whole spectrogram.
     const SHOW_WAVEFORM_KEY = 'signavis.labeling.show-waveform.v1';
+    const OVERVIEW_MODE_KEY = 'signavis.labeling.overview-mode.v1';
     const SHOW_CONF_KEY = 'signavis.labeling.show-confidence.v1';
     const AUTO_FREQ_VIEW_KEY = 'signavis.labeling.auto-freq-view.v1';
     const NORMALIZE_KEY = 'signavis.labeling.normalize.v1';
@@ -834,6 +835,7 @@
       showFileOpen: false,
       enableProgressiveSpectrogram: true,
       showOverview: true,
+      overviewMode: (() => { try { return localStorage.getItem(OVERVIEW_MODE_KEY) === 'spectrogram' ? 'spectrogram' : 'waveform'; } catch { return 'waveform'; } })(),
       viewMode: showMainWaveform ? 'both' : 'spectrogram',
       showTransport: true,
       // BirdNET detections (no frequency bounds) as strips along the top edge
@@ -1382,6 +1384,23 @@
         wf.querySelector('.field-hint').hidden = check.checked === showMainWaveform;
       });
       specPanel.el.insertBefore(wf, sec);
+
+      const ov = document.createElement('div');
+      ov.className = 'settings-section';
+      ov.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+      ov.innerHTML = `
+        <label class="field-label" for="overviewModeSelect">Overview</label>
+        <select id="overviewModeSelect" class="field-select" title="What the overview strip below the player shows. Spectrogram: the whole recording, with short calls kept visible.">
+          <option value="waveform">Waveform</option>
+          <option value="spectrogram">Spectrogram</option>
+        </select>`;
+      const ovSel = ov.querySelector('select');
+      ovSel.value = player.overviewMode;
+      ovSel.addEventListener('change', () => {
+        try { localStorage.setItem(OVERVIEW_MODE_KEY, ovSel.value); } catch { /* ignore */ }
+        player.setOverviewMode(ovSel.value);
+      });
+      specPanel.el.insertBefore(ov, sec);
 
       // ── Automatic behaviour: what the app does by itself, each one switchable ──
       const auto = document.createElement('div');

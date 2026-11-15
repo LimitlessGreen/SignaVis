@@ -30,7 +30,7 @@ import { CrosshairController } from './player/CrosshairController.ts';
 import { PerfOverlay } from './player/PerfOverlay.ts';
 import { ViewResizeController } from './player/ViewResizeController.ts';
 import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
-import { WaveformRenderer } from './player/WaveformRenderer.ts';
+import { WaveformRenderer, type OverviewMode } from './player/WaveformRenderer.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
 import { ToolbarFitController } from './player/ToolbarFitController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
@@ -43,6 +43,7 @@ import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/b
  * @typedef {Object} PlayerOptions
  * @property {string}  [viewMode]
  * @property {boolean} [showOverview]
+ * @property {'waveform'|'spectrogram'} [overviewMode]  Overview strip content (default 'waveform')
  * @property {boolean} [transportOverlay]
  * @property {string}  [compactToolbar]
  * @property {boolean} [showWaveformTimeline]
@@ -137,6 +138,8 @@ export class PlayerState {
     _showWaveform: any;
     _showSpectrogram: any;
     _showOverview: any;
+    _overviewMode: OverviewMode = 'waveform';
+    _overviewRedrawTimer: ReturnType<typeof setTimeout> | null = null;
     _transportOverlay: any;
     _keyboardEnabled = true;
     _compactToolbarMode: any;
@@ -243,6 +246,7 @@ export class PlayerState {
         this._showWaveform = this._viewMode !== 'spectrogram';
         this._showSpectrogram = this._viewMode !== 'waveform';
         this._showOverview = this.options.showOverview !== false;
+        this._overviewMode = this.options.overviewMode === 'spectrogram' ? 'spectrogram' : 'waveform';
         this._transportOverlay = this.options.transportOverlay === true;
         this._keyboardEnabled = this.options.keyboardShortcuts !== false;
         this._compactToolbarMode = this.options.compactToolbar && ['auto', 'on', 'off'].includes(this.options.compactToolbar)
@@ -275,6 +279,7 @@ export class PlayerState {
             this._createFrequencyLabels();
             this._drawSpectrogram();
             this._syncOverviewWindowToViewport();
+            this._scheduleOverviewSpectrogram();
         });
 
         // ── Audio / analysis state ──
@@ -417,6 +422,8 @@ export class PlayerState {
             scheduleUiUpdate:        () => this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true }),
             getScrollLeft:           () => this._getPrimaryScrollLeft(),
             getViewportWidth:        () => this._getViewportWidth(),
+            getOverviewMode:         () => this._overviewMode,
+            getOverviewImage:        (cols: number) => this._spectro.overviewImage(cols),
         });
 
         // ── ToolbarController ──
@@ -876,6 +883,7 @@ export class PlayerState {
         // spectrogram (a pyramid for long files) is still being computed.
         this._syncTrackWidth();
         this._drawMainWaveform();
+        this._waveformRenderer.resetOverview();
         this._drawOverviewWaveform();
         this._syncOverviewWindowToViewport();
 
@@ -1264,6 +1272,26 @@ export class PlayerState {
 
     _drawMainWaveform()       { this._waveformRenderer.drawMainWaveform(); }
     _drawOverviewWaveform()   { this._waveformRenderer.drawOverviewWaveform(); }
+
+    /** Overview strip: 'waveform' or a whole-file 'spectrogram' (max-pooled). */
+    _setOverviewMode(mode: OverviewMode) {
+        const next: OverviewMode = mode === 'spectrogram' ? 'spectrogram' : 'waveform';
+        if (next === this._overviewMode) return;
+        this._overviewMode = next;
+        this.options.overviewMode = next;
+        this._waveformRenderer.resetOverview();
+        this._drawOverviewWaveform();
+        this._emit('overviewmodechange', { mode: next });
+    }
+
+    /** Spectrogram tiles/colors changed: redraw the spectrogram overview, at most a few times a second. */
+    _scheduleOverviewSpectrogram() {
+        if (this._overviewMode !== 'spectrogram' || this._overviewRedrawTimer) return;
+        this._overviewRedrawTimer = setTimeout(() => {
+            this._overviewRedrawTimer = null;
+            this._drawOverviewWaveform();
+        }, 200);
+    }
     _createFrequencyLabels()  { this._waveformRenderer.createFrequencyLabels(); }
     _updateAmplitudeLabels()  { this._waveformRenderer.updateAmplitudeLabels(); }
 

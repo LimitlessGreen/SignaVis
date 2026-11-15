@@ -14,6 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
+    buildOverviewImage,
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
     drawTimeGrid,
@@ -606,6 +607,41 @@ export class WasmTileManager extends EventTarget {
             this.dispatchEvent(new CustomEvent('tileready'));
         }).catch(err => {
             if (!this.disposed) console.warn('Background spectrogram build failed:', err);
+        });
+    }
+
+    private overviewLevel: { level: number; meta: PyramidMeta; data: Promise<Float32Array> } | null = null;
+
+    /**
+     * Whole-file image for the overview strip: the coarsest pyramid level with
+     * at least `cols` frames, max-pooled to `cols` columns and colored with the
+     * current options. Null while only the preview exists (no pyramid yet).
+     */
+    async overviewImage(cols: number): Promise<HTMLCanvasElement | OffscreenCanvas | null> {
+        if (this.disposed || this.previewMode || cols <= 0) return null;
+        const levels = this.meta.levels;
+        let level = 0;
+        levels.forEach((l, i) => { if (l.nFrames >= cols) level = i; });
+        if (!this.overviewLevel || this.overviewLevel.meta !== this.meta || this.overviewLevel.level !== level) {
+            this.overviewLevel = { level, meta: this.meta, data: this.svc.tile(level, 0, levels[level].nFrames) };
+        }
+        const entry = this.overviewLevel;
+        let data: Float32Array;
+        try { data = await entry.data; } catch (err) {
+            if (this.overviewLevel === entry) this.overviewLevel = null;
+            throw err;
+        }
+        if (this.disposed) return null;
+        const opts = this.colorOptions;
+        const [lo, hi] = this.valueWindow(level);
+        return buildOverviewImage({
+            data, nFrames: levels[level].nFrames, bins: this.nMels, cols,
+            sampleRateHz: this.meta.params.sampleRate,
+            maxFreq: opts.maxFreq, lo, hi,
+            scale: opts.scale, binFreqs: this.binFreqs, colourScale: opts.colourScale,
+            noiseReduction: opts.noiseReduction,
+            bandFloor: levels[level]?.stats.bandFloor ?? null,
+            colorScheme: opts.colorScheme,
         });
     }
 
