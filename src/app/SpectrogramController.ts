@@ -35,6 +35,7 @@ import {
     visibleContrastPoints,
     noiseFloorStats,
     detectMaxFrequency,
+    buildOverviewImage,
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
     windowGrayscale,
@@ -521,6 +522,32 @@ export class SpectrogramController extends EventTarget {
             wasmTiles:  tm instanceof WasmTileManager,
         });
         this._emit('needsredraw');
+    }
+
+    /**
+     * Whole-file spectrogram image for the overview strip, `cols` columns wide
+     * (max-pooled, current colors). Null when there is nothing to show yet
+     * (pyramid still building, external image mode): callers fall back to the waveform.
+     */
+    async overviewImage(cols: number): Promise<HTMLCanvasElement | OffscreenCanvas | null> {
+        if (this._externalMode || cols <= 0) return null;
+        const tm = this._tileManager;
+        if (tm) return tm.overviewImage(cols);
+        if (!this._data || this._nFrames <= 0 || this._nMels <= 0) return null;
+        const o = this._getCurrentColorOptions();
+        const win = this._dbWindow();
+        const [lo, hi] = win ?? (() => {
+            const a = this._absLogMin, b = this._absLogMax;
+            return [a + o.floor01 * (b - a), a + o.ceil01 * (b - a)];
+        })();
+        return buildOverviewImage({
+            data: this._data, nFrames: this._nFrames, bins: this._nMels, cols,
+            sampleRateHz: this._sampleRateHz, maxFreq: o.maxFreq, lo, hi,
+            scale: this._activeScale || o.scale, binFreqs: this.binFreqs,
+            colourScale: this._colourScale || o.colourScale,
+            noiseReduction: o.noiseReduction, bandFloor: this._bandFloor,
+            colorScheme: o.colorScheme,
+        });
     }
 
     private _getCurrentColorOptions(): TileColorOptions {

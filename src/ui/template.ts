@@ -17,6 +17,7 @@ export const DEFAULT_OPTIONS = {
     showDisplayGain:    true,   // Floor / Ceil / AC sliders
     showStatusbar:      true,   // Bottom status bar
     showOverview:       true,   // Bottom overview navigator
+    overviewMode:       'waveform', // waveform | spectrogram (whole file, max-pooled)
     viewMode:           'both', // both | waveform | spectrogram
     transportStyle:     'default', // default | hero
     transportOverlay:   false,  // Overlay mode: centered play button without toolbar height

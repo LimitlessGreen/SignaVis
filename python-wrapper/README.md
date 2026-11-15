@@ -114,6 +114,7 @@ HTML(html)
 | `viewMode` | `'spectrogram'` | Show only the spectrogram |
 | `transportStyle` | `'hero'` | Large centered play button |
 | `showOverview` | `False` | Hide overview navigator |
+| `overviewMode` | `'spectrogram'` | Overview shows the whole spectrogram instead of the waveform |
 | `showFileOpen` | `False` | Hide file open button |
 | `showStatusbar` | `False` | Hide status bar |
 | `labelTaxonomy` | `[{'name': 'Species', 'color': '#0ea5e9'}]` | Custom label presets |

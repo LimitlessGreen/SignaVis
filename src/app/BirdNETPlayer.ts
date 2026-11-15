@@ -962,6 +962,11 @@ export class BirdNETPlayer {
 
     get normalize() { return !!this._state?.normalize; }
 
+    /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
+    setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }
+
+    get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }
+
     // ── Built-in label table ────────────────────────────────────────
 
     _labelGrid: LabelGrid | null = null;
