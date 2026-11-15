@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
   strip shows the whole recording as a spectrogram, max-pooled so short calls
   stay visible; the waveform stands in while the spectrogram is computed.
   The labeling app offers the choice under Display → Overview.
+- Recording start time from AudioMoth, GUANO, BWF `bext` and WAV INFO metadata
+  or a date and time in the file name (adapted from the BirdNET website demo,
+  MIT): shown in the status bar, `player.recordingStart`,
+  `player.clockTimeAt(seconds)`, and Raven selection tables get
+  Begin Date / Begin Clock Time / End Clock Time.
 
 ## [1.1.3] - 2026-11-14
 

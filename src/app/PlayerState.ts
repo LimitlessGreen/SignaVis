@@ -31,6 +31,7 @@ import { PerfOverlay } from './player/PerfOverlay.ts';
 import { ViewResizeController } from './player/ViewResizeController.ts';
 import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
 import { WaveformRenderer, type OverviewMode } from './player/WaveformRenderer.ts';
+import { formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
 import { ToolbarFitController } from './player/ToolbarFitController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
@@ -868,7 +869,11 @@ export class PlayerState {
         }
         this._spectro.updateMaxFreqOptions(sampleRate);
 
-        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
+        const start = this._engine.recordingStart ?? null;
+        const startHtml = start
+            ? ` <span title="Recording start (from ${escapeHtml(start.source === 'fileName' ? 'the file name' : `${start.source} metadata`)})">· ${escapeHtml(formatRecordingStart(start))}</span>`
+            : '';
+        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>${startHtml}`;
         if (this.d.sampleRateInfo) this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
         if (this.d.totalTimeDisplay) this.d.totalTimeDisplay.textContent = formatTime(duration);
         if (this.d.currentTimeDisplay) this.d.currentTimeDisplay.textContent = formatTime(0);
@@ -1272,6 +1277,9 @@ export class PlayerState {
 
     _drawMainWaveform()       { this._waveformRenderer.drawMainWaveform(); }
     _drawOverviewWaveform()   { this._waveformRenderer.drawOverviewWaveform(); }
+
+    /** When the loaded recording started (file metadata or name), null when unknown. */
+    get recordingStart(): RecordingStart | null { return this._engine.recordingStart ?? null; }
 
     /** Overview strip: 'waveform' or a whole-file 'spectrogram' (max-pooled). */
     _setOverviewMode(mode: OverviewMode) {

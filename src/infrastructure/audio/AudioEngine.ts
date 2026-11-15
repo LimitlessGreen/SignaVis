@@ -22,6 +22,7 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
+import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
 import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
@@ -153,6 +154,8 @@ export class AudioEngine extends AudioEngineBase {
   _peakFor: AudioBuffer | null;
   _peak: number;
   guano: Record<string, string> | null;
+  /** When the loaded recording started (metadata or file name), null when unknown. */
+  recordingStart: RecordingStart | null = null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -230,6 +233,7 @@ export class AudioEngine extends AudioEngineBase {
    */
   async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
     this.guano = parseGuano(arrayBuffer);
+    this.recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
 
@@ -258,6 +262,7 @@ export class AudioEngine extends AudioEngineBase {
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
+    this.recordingStart = readRecordingStart(arrayBuffer, name);
     await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -270,6 +275,7 @@ export class AudioEngine extends AudioEngineBase {
   async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
     this.guano = parseGuano(arrayBuffer);
+    this.recordingStart = readRecordingStart(arrayBuffer, file.name);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
     await this._setupWaveSurfer(file, file.name);
