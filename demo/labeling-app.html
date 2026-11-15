@@ -2619,7 +2619,13 @@
             // Blob URL (local file) — same origin, no CORS issue
             _lastAudioUrl = entry.audioUrl?.startsWith('blob:') ? entry.audioUrl : null;
             player.showLoadingOverlay('Loading…');
-            await player.loadUrl(entry.audioUrl);
+            if (_lastAudioUrl) {
+              // As a File with its name, so a start time in the file name is found again.
+              const blob = await (await fetch(entry.audioUrl)).blob();
+              await player.loadFile(new File([blob], (entry.filename || 'audio').split('/').pop(), { type: blob.type }));
+            } else {
+              await player.loadUrl(entry.audioUrl);
+            }
           }
         } catch (e) {
           _audioFailed = true;
@@ -4379,6 +4385,7 @@
         audioUrl: _blobUrl,
         isBlobUrl: true,
         ...extra,
+        recordingStart: player.recordingStart || null,
       });
       recordingManager.setActive(_fileEntry.id);
       state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
@@ -4462,7 +4469,11 @@
       setTimeout(() => requestMissingSnr(), 500);
       if (e.detail?.sampleRate) {
         state.sampleRate = e.detail.sampleRate;
-        if (recordingManager?.activeId) recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || null });
+        if (recordingManager?.activeId) {
+          // Keep a known start when this load could not tell (e.g. metadata stripped).
+          const known = recordingManager.getById(recordingManager.activeId)?.recordingStart || null;
+          recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known });
+        }
       }
       propsPanel.setRecordingMeta(state.recordingMeta, {
         sampleRate: state.sampleRate,

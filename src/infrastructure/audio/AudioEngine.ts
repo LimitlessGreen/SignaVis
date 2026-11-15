@@ -233,9 +233,10 @@ export class AudioEngine extends AudioEngineBase {
    */
   async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
     this.guano = parseGuano(arrayBuffer);
-    this.recordingStart = readRecordingStart(arrayBuffer, name || '');
+    const recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
 
     const displayName = name || 'audio';
     this._setupWaveSurfer(null, displayName);
@@ -255,14 +256,15 @@ export class AudioEngine extends AudioEngineBase {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
     this.guano = parseGuano(arrayBuffer);
-    onProgress?.('decode');
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-    this.audioBuffer = audioBuffer;
-
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
-    this.recordingStart = readRecordingStart(arrayBuffer, name);
+    // Before decoding: decodeAudioData detaches the buffer.
+    const recordingStart = readRecordingStart(arrayBuffer, name);
+    onProgress?.('decode');
+    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
     await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -275,9 +277,10 @@ export class AudioEngine extends AudioEngineBase {
   async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
     this.guano = parseGuano(arrayBuffer);
-    this.recordingStart = readRecordingStart(arrayBuffer, file.name);
+    const recordingStart = readRecordingStart(arrayBuffer, file.name);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
     await this._setupWaveSurfer(file, file.name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }

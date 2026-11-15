@@ -307,7 +307,11 @@ export function renderOverviewWaveform({
 
     installThemeObserver(overviewCanvas, () => {
         const s = (overviewCanvas as any)._aw_lastRender;
-        if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch {} });
+        if (s) requestAnimationFrame(() => {
+            // A spectrogram image drawn meanwhile clears the saved state: keep it.
+            if ((overviewCanvas as any)._aw_lastRender !== s) return;
+            try { renderOverviewWaveform(s); } catch {}
+        });
     });
 }
 

@@ -33,7 +33,8 @@ input.addEventListener('change', async () => {
 While recording, the spectrogram pane shows the sound as it arrives (it flies
 in from the right, 20 s across). When it stops — Stop button, `stopRecording()`
 or after `maxSeconds` — the recording is loaded like a file. The WAV carries
-its start time, so `player.recordingStart` and Raven exports know the clock time.
+its start time, so `player.recordingStart` knows the clock time (the labeling app's
+Raven selection tables use it; `player.exportAnnotationsRaven()` has no clock columns).
 
 ```js
 if (BirdNETPlayer.recordingSupported) {
