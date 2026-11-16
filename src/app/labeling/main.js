@@ -25,6 +25,7 @@ import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
+import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
 import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../../app/session-sets.ts';
 import { ProjectConflictError } from '../../infrastructure/project/DirectoryProjectStore.ts';
 import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../../infrastructure/project/FolderAccess.ts';
@@ -2791,6 +2792,7 @@ player.on('labelfocus', (e) => {
 });
 
 // ── BirdNET panel ─────────────────────────────────────────────────
+initModeTiles(document.querySelector('#panelBirdnet .mode-tiles'), 'signavis.analyseMode');
 const birdnetBackendToggle = document.getElementById('birdnetBackendToggle');
 birdnetBackendToggle?.addEventListener('click', () => {
   const wrap = document.getElementById('birdnetBackendWrap');

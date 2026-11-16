@@ -1,0 +1,142 @@
+/* Shared building blocks of the sidebar tabs (Project, Analyse, Upload, Display, Properties, Audio).
+   One section header, one field grid (name left, control right), one text size.
+   Loaded after the older partials so every tab picks it up. */
+
+.sidebar-body { font-size: 12px; }
+
+/* ── Section header: sentence case, readable ───────────────────────── */
+.sidebar-section-header {
+  padding: 12px 14px 6px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+  opacity: 1;
+}
+// Sub-heading inside a section or a details block.
+.panel-subhead {
+  display: block;
+  width: 100%;
+  margin: 10px 0 6px;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--color-text-secondary);
+}
+.panel-subhead--toggle {
+  cursor: pointer;
+  &::before { content: '▸'; display: inline-block; width: 12px; }
+  &[aria-expanded="true"]::before { content: '▾'; }
+  &:hover { color: var(--color-text-primary); }
+}
+
+/* ── Field grid: name left, control right ──────────────────────────── */
+.field-grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  &[hidden] { display: none; }
+  > .field-label { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  > .field-grid-wide { grid-column: 1 / -1; }
+  .input, .field-select { width: 100%; min-width: 0; height: 26px; padding: 3px 7px; font-size: 12px; }
+}
+.field-label {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.field-check { font-size: 12px; flex-wrap: wrap; }
+// Selects lost their arrow with `appearance: none`; draw one.
+.field-select {
+  padding-right: 22px !important;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%) !important;
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50% !important;
+  background-size: 4px 4px, 4px 4px !important;
+  background-repeat: no-repeat !important;
+}
+.field-hint { font-size: 11px; }
+.field-slider {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  .range-input { flex: 1; min-width: 0; }
+  .slider-val { flex: 0 0 auto; min-width: 34px; text-align: right; }
+}
+
+/* ── Folded settings ───────────────────────────────────────────────── */
+.panel-details {
+  margin: 10px 14px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  > summary {
+    padding: 7px 10px;
+    font-size: 12px; font-weight: 600;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+    &:hover { color: var(--color-text-primary); }
+  }
+  &[open] > summary { color: var(--color-text-primary); border-bottom: 1px solid var(--color-border); }
+  > :not(summary) { margin-left: 10px; margin-right: 10px; }
+  > .panel-subhead { width: calc(100% - 20px); }
+  > summary + * { margin-top: 10px; }
+  > :last-child:not(summary) { margin-bottom: 10px; }
+  .field-hint { margin-top: 8px; }
+}
+
+/* ── Mode tiles: what this tab does, one pane per tile ─────────────── */
+.mode-tiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  margin: 12px 14px 0;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--input-bg-weak);
+}
+.mode-tile {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  &:hover { color: var(--color-text-primary); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+  &[aria-selected="true"] {
+    background: var(--color-bg-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    .mode-tile-icon { color: var(--color-accent); }
+  }
+}
+.mode-tile-icon { flex: 0 0 auto; }
+.mode-tile-text {
+  display: flex; flex-direction: column; min-width: 0; line-height: 1.25;
+  strong { font-size: 12px; font-weight: 650; }
+  small { font-size: 11px; color: var(--color-text-secondary); }
+}
+.mode-pane {
+  padding-bottom: 14px;
+  &[hidden] { display: none; }
+  > .panel-actions { display: block; padding: 0 14px; }
+  > .panel-actions .sidebar-action-btn { width: 100%; max-width: none; padding: 9px 12px; font-size: 13px; justify-content: center; }
+  > .birdnet-status:not(:empty) { margin-top: 6px; }
+}
+.mode-desc {
+  margin: 10px 14px;
+  font-size: 12px; line-height: 1.45;
+  color: var(--color-text-secondary);
+}
