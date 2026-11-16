@@ -8,6 +8,10 @@
   "module": "./dist/birdnet-player.esm.js",
   "unpkg": "./dist/birdnet-player.iife.js",
   "types": "./types/index.d.ts",
+  "sideEffects": [
+    "*.css",
+    "**/*.worker*.js"
+  ],
   "files": [
     "dist/",
     "types/",
