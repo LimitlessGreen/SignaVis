@@ -3273,6 +3273,24 @@
       resolveName,
       isOwn: (l) => l.setId === OWN_SOURCE_ID,
       addFile: () => document.getElementById('fileInput')?.click(),
+      acceptLabel: (id) => adoptOneLabel(id),
+      discardLabel: (id) => {
+        const lbl = state.labels.find((l) => l.id === id);
+        if (!lbl) return null;
+        snrComputer.invalidate(id);
+        touchOwnSet(lbl.setId);
+        state.labels = state.labels.filter((l) => l.id !== id);
+        syncToPlayer();
+        saveCurrentAnnotationsIfNeeded();
+        return { ...lbl };
+      },
+      restoreLabel: (lbl) => {
+        if (!lbl || state.labels.some((l) => l.id === lbl.id)) return;
+        state.labels.push({ ...lbl });
+        touchOwnSet(lbl.setId);
+        syncToPlayer();
+        saveCurrentAnnotationsIfNeeded();
+      },
       analysis: {
         confInput: document.getElementById('birdnetConfidence'),
         overlapSelect: document.getElementById('birdnetOverlap'),

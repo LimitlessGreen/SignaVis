@@ -130,6 +130,57 @@ html.is-mobile {
   .m-conf i { display: block; height: 100%; background: var(--m-ok); }
   .m-conf i.low { background: var(--m-warn); }
   .m-det-pct { flex-shrink: 0; font-family: var(--m-mono); font-size: 12px; font-weight: 700; color: var(--m-muted); }
+  .m-det { cursor: pointer; }
+  .m-det.ok { box-shadow: inset 3px 0 0 var(--m-ok); }
+  .m-det.ok.cur { box-shadow: inset 3px 0 0 var(--m-ok), inset 0 0 0 1.5px var(--m-accent); }
+  .m-det-acts { display: flex; gap: 6px; flex-shrink: 0; margin-left: 2px; }
+  .m-act {
+    width: 40px; height: 40px; display: grid; place-items: center; padding: 0;
+    border-radius: 6px; border: 1px solid var(--m-line); background: transparent; color: var(--m-muted);
+  }
+  .m-act svg { width: 19px; height: 19px; }
+  .m-act.yes { color: var(--m-ok); border-color: color-mix(in srgb, var(--m-ok) 45%, transparent); }
+  .m-act.yes.on { background: var(--m-ok); border-color: var(--m-ok); color: #06140b; }
+  .m-act.no:active { background: color-mix(in srgb, #ef4444 20%, transparent); color: #ef4444; }
+
+  .m-sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .m-rv-chips { display: flex; gap: 6px; }
+  .m-rv-chips .m-chip { height: 28px; }
+
+  /* Analysis running for the shown recording */
+  .m-rv-progress {
+    flex-shrink: 0; padding: 6px 14px; font-size: 12px; color: var(--m-text);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--m-accent) 22%, transparent) var(--p, 0%), var(--m-surface) var(--p, 0%));
+    border-bottom: 1px solid var(--m-line);
+  }
+  .m-rv-progress[hidden] { display: none; }
+
+  /* Undo bar above the nav */
+  .m-snack {
+    position: absolute; left: 10px; right: 10px; bottom: calc(var(--m-nav-h) + 10px); z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 8px 10px 14px; border-radius: 6px;
+    background: #2a2d36; color: #f1f2f4; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  }
+  .m-snack[hidden] { display: none; }
+  .m-snack-btn { border: none; background: transparent; color: var(--m-accent); font-weight: 700; font-size: 13px; padding: 6px 8px; }
+
+  /* Queue („Prüfen“) */
+  .m-q-sum { padding: 0 16px 8px; font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); flex-shrink: 0; }
+  .m-q-list { padding: 0 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .m-q-rec { background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; overflow: hidden; }
+  .m-q-rec-h {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; border: none; background: transparent; color: var(--m-text); text-align: left; font-size: 13.5px;
+  }
+  .m-q-rec-h b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-q-sp {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 12px;
+    border: none; border-top: 1px solid var(--m-line); background: transparent; color: var(--m-text); text-align: left;
+  }
+  .m-q-sp img { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: #252525; }
+  .m-q-go { color: var(--m-muted); display: grid; }
+  .m-q-go svg { width: 18px; height: 18px; }
 }
 
 /* BirdNET detections (time only, "lanes") — same strategy as the desktop (_assignLanes):

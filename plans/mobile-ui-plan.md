@@ -44,6 +44,17 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
   `resolveName`, `activateRecordingEntry`, `analysis` = Elemente des Desktop-Analyse-Panels.
 - Aktualisierung: `labelList.render` und `recordingManager`-Events rufen `mobileApp.refresh()`.
 
+## Ablauf-Überarbeitung (2026-11-16)
+
+- **Prüfen-Tab = Warteschlange:** offene Treffer über alle Aufnahmen, je Aufnahme nach Art gruppiert; Tipp öffnet
+  die Aufnahme an der Stelle. Badge = offene Treffer gesamt.
+- **✓/✕ auf dem Handy gebaut:** ✓ kopiert nach „Meine Labels“ (`adoptOneLabel`), ✕ entfernt; beides mit
+  Rückgängig-Leiste; danach springt die Wiedergabe zum nächsten offenen Treffer. Filter „Offen / Alle“.
+  „Offen“ = Erkennung ohne Kopie mit `adoptedFrom.id`. Host: `acceptLabel`, `discardLabel`, `restoreLabel`.
+- **Automatische Analyse** nach „Neu“ und nach Live-Stop (aktuelle Einstellungen), Fortschritt als Leiste im
+  Prüfen-Bildschirm; Live-Stop landet direkt im Prüfen.
+- Aufnahmen-Karten zeigen „x offen“ bzw. „✓ geprüft“; Arten zählt übernommene Erkennungen nur einmal.
+
 ## Offen / nächste Schritte
 
 1. **Live** — gebaut (Screenshot `mobile-design/stand-live.png`): Mikrofon (`LiveRecorder.ondata`), laufendes
@@ -54,7 +65,7 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
 2. **Aufnahmen-Karten:** Mini-Spektrogramm; „Neu“-Menü mit Xeno-canto und Mikrofon (bisher nur Datei).
 3. **Arten:** Spektrogramm-Ausschnitte bei den Belegen; anzeigen, welcher Beleg gerade läuft.
 4. **Prüfen:** Sheet hochziehbar; Spuren-Optik wie Mockup (schmaler).
-5. **Später:** Übernehmen/Verwerfen auf dem Handy (Design steht), Tablet-Touch (Zeichenmodus, langer Druck).
+5. **Später:** Wischgesten für ✓/✕, Tablet-Touch (Zeichenmodus, langer Druck).
 6. Test auf echtem Gerät; dann Push + PR.
 
 ## Testen
