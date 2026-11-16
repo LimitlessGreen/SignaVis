@@ -225,3 +225,222 @@
 /* ── Activity bar: labels fit ──────────────────────────────────────── */
 .activity-bar { width: 58px; }
 .activity-btn-label { font-size: 10px; letter-spacing: 0; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Visual pass: calmer, larger, one look for every control
+   ══════════════════════════════════════════════════════════════════════ */
+$pad: 16px;
+
+/* ── Tab title + what the tab is for ───────────────────────────────── */
+.sidebar-header {
+  flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 14px $pad 12px;
+  min-height: 0;
+}
+.sidebar-title {
+  font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+.sidebar-hint {
+  font-size: 12px; line-height: 1.35;
+  color: var(--color-text-secondary);
+  &[hidden] { display: none; }
+}
+
+/* ── Activity bar: quiet icons, the active tab is a filled block ───── */
+.activity-bar { width: 64px; }
+.activity-btn-group { padding: 8px 6px; gap: 2px; }
+.activity-btn {
+  padding: 8px 0 7px; gap: 4px;
+  border-radius: 8px;
+  &:hover { background: var(--input-bg-weak); }
+  &.active {
+    background: var(--color-accent-faint);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+}
+.activity-btn-icon svg { width: 20px; height: 20px; }
+.activity-btn-label { font-size: 10px; font-weight: 600; }
+.activity-badge { top: 3px; right: 6px; }
+
+/* ── Sections ──────────────────────────────────────────────────────── */
+.sidebar-section-header {
+  padding: 16px $pad 8px;
+  margin-top: 0;
+  font-size: 13px; font-weight: 700;
+  border-top: 1px solid var(--color-border);
+  // no accent bar: the size carries the hierarchy
+  > span:first-child::before,
+  &:not(:has(> span))::before { content: none; }
+}
+.spectrogram-settings-panel .settings-section-title,
+.props-section-title { font-size: 13px; font-weight: 700; }
+.spectrogram-settings-panel .settings-section-title { margin-bottom: 10px; &::before { content: none; } }
+.spectrogram-settings-panel .settings-section { padding: 14px $pad; }
+.props-section-title { padding: 14px $pad 8px; }
+.props-section-body { padding: 0 $pad 14px; }
+.panel-section { padding: 8px $pad; }
+
+/* ── Controls: one height, one border, a visible focus ring ────────── */
+.sidebar-body {
+  .input, .field-select, .settings-select, .settings-number, .props-select, .props-input, .lt-filter {
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 12px;
+    transition: border-color 0.12s, box-shadow 0.12s;
+    &:hover { border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border-strong)); }
+    &:focus, &:focus-visible {
+      outline: none;
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 3px var(--color-accent-faint);
+    }
+    &::placeholder { color: var(--color-text-secondary); opacity: 0.8; }
+  }
+  .settings-number { padding: 0 6px; }
+  input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--color-accent); flex: 0 0 auto; }
+  input[type="range"] { accent-color: var(--color-accent); }
+}
+.field-grid { gap: 8px 10px; .input, .field-select { height: 30px; padding: 0 9px; } }
+.field-check { gap: 8px; line-height: 1.35; }
+.slider-val {
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--input-bg-weak);
+  font-size: 11px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.sidebar-body .sidebar-action-btn {
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-accent-faint); }
+}
+.mode-pane > .panel-actions .sidebar-action-btn,
+#panelXc .xc-actions > .sidebar-action-btn {
+  min-height: 38px; font-size: 13px; font-weight: 700; border-radius: 7px;
+}
+.sidebar-body .tb-btn {
+  min-height: 26px; padding: 0 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  background: var(--color-bg-surface);
+}
+
+/* ── Segmented control (model, later others) ───────────────────────── */
+.seg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  gap: 2px; padding: 3px;
+  border-radius: 7px;
+  background: var(--input-bg-weak);
+}
+.seg-btn {
+  min-width: 0; height: 26px; padding: 0 4px;
+  border: 0; border-radius: 5px;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit; font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  &:hover { color: var(--color-text-primary); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+  &[aria-checked="true"] {
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--color-border);
+  }
+}
+.model-picker {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 0 $pad 12px;
+  .input[hidden] { display: none; }
+}
+.model-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.model-picker-head .field-label { margin: 0; font-weight: 600; color: var(--color-text-primary); }
+.model-picker-note { font-size: 11px; color: var(--color-text-secondary); text-align: right; }
+// Audio method uses the same look
+.audio-seg { padding: 3px; gap: 2px; border-radius: 7px; background: var(--input-bg-weak); }
+.audio-seg-btn {
+  height: 26px; border: 0;
+  &[aria-checked="true"] {
+    background: var(--color-bg-surface); border: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--color-border);
+    .audio-seg-title { color: var(--color-text-primary); }
+  }
+  .audio-seg-title { font-size: 12px; font-weight: 600; color: var(--color-text-secondary); }
+}
+.audio-section { padding: 0 $pad 14px; }
+
+/* ── Mode tiles: icon in a tinted square, the chosen one framed ────── */
+.mode-tiles { margin: 14px $pad 0; padding: 0; gap: 8px; background: none; }
+.mode-tile {
+  gap: 10px; padding: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-bg-surface);
+  transition: border-color 0.12s, background 0.12s;
+  &:hover { border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border-strong)); }
+  &[aria-selected="true"] {
+    border-color: var(--color-accent);
+    background: var(--color-accent-faint);
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+    .mode-tile-icon { background: var(--color-accent); color: var(--color-on-accent); }
+  }
+}
+.mode-tile-icon {
+  width: 30px; height: 30px; padding: 6px; box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--input-bg-weak);
+  color: var(--color-text-secondary);
+}
+.mode-tile-text strong { font-size: 13px; font-weight: 700; }
+.mode-desc { margin: 12px $pad; font-size: 12.5px; }
+.mode-pane { padding-bottom: 16px; }
+.mode-pane > .panel-actions { padding: 0 $pad; }
+.mode-pane > .birdnet-status { padding: 0 $pad; }
+.mode-pane > .birdnet-progress { margin: 8px $pad; }
+.panel-details {
+  margin: 12px $pad 0;
+  border-radius: 8px;
+  background: none;
+  > summary { padding: 9px 12px; }
+  > :not(summary) { margin-left: 12px; margin-right: 12px; }
+  > .panel-subhead { width: calc(100% - 24px); }
+  > summary + * { margin-top: 12px; }
+  > :last-child:not(summary) { margin-bottom: 12px; }
+}
+
+/* ── Tab specifics on the new spacing ──────────────────────────────── */
+.project-add { padding: 0 $pad 14px; }
+.project-add-file { min-height: 38px; border-radius: 7px; background: var(--color-bg-surface); }
+.project-add .xc-load-row .input { border-radius: 6px 0 0 6px; }
+.project-add .project-add-src { display: none; }
+.project-add .xc-load-row .xc-load-primary { min-height: 30px; border-radius: 0 6px 6px 0; }
+.project-location { padding: 0 $pad 14px; }
+.ua-checklist { padding: 0 $pad 12px; gap: 6px; }
+.ua-step { border-radius: 7px; }
+.ua-title { font-size: 12.5px; }
+#panelXc .xc-actions { padding: 12px $pad; }
+#panelLabels > .panel-toolbar, .lt-toolbar { padding-left: $pad; padding-right: $pad; }
+.ep-tab { font-size: 12px; padding: 9px 4px; }
+
+/* Native controls (checkboxes, select lists, scrollbars) follow the theme */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: light) { html:not([data-theme="dark"]) { color-scheme: light; } }
+
+/* Label/recording/set forms: same grid as .field-grid */
+.sidebar-body .props-grid {
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  overflow: visible;
+  dt { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
+  .props-input, .props-select { width: 100%; min-width: 0; }
+}
+.spectrogram-settings-panel .settings-label { min-width: 64px; }
+.spectrogram-settings-panel .settings-select { padding: 0 4px 0 8px; }

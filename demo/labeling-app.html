@@ -280,6 +280,24 @@
     <!-- ── Species (BirdNET) ── -->
     <section class="mode-pane" id="analyseSpecies" role="tabpanel" aria-labelledby="analyseTabSpecies">
       <p class="mode-desc">Names the species in the recording and adds one label per detection.</p>
+      <!-- Model: every version one click away; the select stays the source of truth for BirdNETPanel -->
+      <div class="model-picker">
+        <div class="model-picker-head"><span class="field-label" id="birdnetModelLabel">Model</span><span class="model-picker-note" id="birdnetModelNote"></span></div>
+        <div class="seg" id="birdnetModelSeg" role="radiogroup" aria-labelledby="birdnetModelLabel">
+          <button type="button" class="seg-btn" role="radio" data-value="v3.0" data-note="Newest · about 10,000 species">V3.0</button>
+          <button type="button" class="seg-btn" role="radio" data-value="v3.0-12k" data-note="Full model · 12,000 species · local download">V3.0 12K</button>
+          <button type="button" class="seg-btn" role="radio" data-value="v2.4" data-note="Classic BirdNET · about 6,500 species">V2.4</button>
+          <button type="button" class="seg-btn" role="radio" data-value="custom" data-note="Your own model folder">Custom</button>
+        </div>
+        <select id="birdnetModelPreset" hidden aria-hidden="true" tabindex="-1">
+          <option value="v3.0">BirdNET+ V3.0 (Global 10K, ONNX)</option>
+          <option value="v3.0-12k">BirdNET+ V3.0 Global 12K (full, local download)</option>
+          <option value="v2.4">BirdNET v2.4 (legacy, TF.js)</option>
+          <option value="custom">Custom URL…</option>
+        </select>
+        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/" aria-label="Model folder URL" hidden
+          title="BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json" />
+      </div>
       <div class="panel-actions">
         <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
       </div>
@@ -332,19 +350,9 @@
         </div>
 
         <button id="birdnetBackendToggle" class="panel-subhead panel-subhead--toggle" type="button"
-          title="Model and where the analysis runs" aria-expanded="false" aria-controls="birdnetBackendWrap">Model &amp; backend</button>
+          title="Where the analysis runs" aria-expanded="false" aria-controls="birdnetBackendWrap">Backend</button>
         <div id="birdnetBackendWrap" hidden>
           <div class="field-grid">
-            <label class="field-label" for="birdnetModelPreset">Model</label>
-            <select id="birdnetModelPreset" class="field-select">
-              <option value="v3.0">BirdNET+ V3.0 (Global 10K, ONNX)</option>
-              <option value="v3.0-12k">BirdNET+ V3.0 Global 12K (full, local download)</option>
-              <option value="v2.4">BirdNET v2.4 (legacy, TF.js)</option>
-              <option value="custom">Custom URL…</option>
-            </select>
-            <label class="field-label" for="birdnetModelUrl">Model URL</label>
-            <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/"
-              title="BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json" />
             <label class="field-label" for="analysisModeSelect">Runs on</label>
             <select id="analysisModeSelect" class="field-select">
               <option value="local">Local (Browser)</option>

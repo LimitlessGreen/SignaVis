@@ -26,6 +26,7 @@ import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
 import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
+import { initModelPicker } from '../../ui/panels/model-picker.ts';
 import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../../app/session-sets.ts';
 import { ProjectConflictError } from '../../infrastructure/project/DirectoryProjectStore.ts';
 import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../../infrastructure/project/FolderAccess.ts';
@@ -549,14 +550,14 @@ const sidebar = new Sidebar(document.getElementById('workspace'), {
 });
 
 // Tabs follow the XC model: Project (set + recordings) → Labels → Analyse → Upload.
-sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', element: document.getElementById('panelProject') });
-sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  element: document.getElementById('panelLabels') });
+sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', hint: 'Recordings and where they are saved', element: document.getElementById('panelProject') });
+sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  hint: 'Every label of this recording', element: document.getElementById('panelLabels') });
 sidebar.addPanel('analyse', {
-  icon: ICONS.birdnet, label: 'Analyse', element: document.getElementById('panelBirdnet'),
+  icon: ICONS.birdnet, label: 'Analyse', hint: 'Let a model find species or calls', element: document.getElementById('panelBirdnet'),
   // Explore ("expected species here") lives below the BirdNET run; created further down.
   onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
 });
-sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'),
+sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  hint: 'Send your labels to Xeno-canto', element: document.getElementById('panelXc'),
   // May fire during startup (restored last tab) before `state` exists; refreshed later anyway.
   onActivate: () => { try { refreshUploadChecklist(); } catch (e) { /* not initialised yet */ } } });
 
@@ -819,9 +820,9 @@ const rightBar = new Sidebar(document.getElementById('workspace'), {
   onResize: () => player?.resize?.(),
 });
 
-rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
-rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
-rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
+rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     hint: 'How the spectrogram looks', element: specPanel.el });
+rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  hint: 'Details of the label and the recording', element: propsPanel.el });
+rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       hint: 'How the recording sounds', element: buildAudioPanel() });
 
 // ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
 function buildAudioPanel() {
@@ -2866,6 +2867,12 @@ const birdnetPanel = new BirdNETPanel({
     syncToPlayer();
     if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
   },
+});
+initModelPicker({
+  seg: document.getElementById('birdnetModelSeg'),
+  select: document.getElementById('birdnetModelPreset'),
+  urlInput: document.getElementById('birdnetModelUrl'),
+  note: document.getElementById('birdnetModelNote'),
 });
 
 // ── BirdBox panel (call boxes) ────────────────────────────────────
