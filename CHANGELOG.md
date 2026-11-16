@@ -20,6 +20,18 @@ All notable changes to this project will be documented in this file.
   `recordingstart`, `recordingcomplete`, `recordingstop`. The labeling app
   adds "Record from microphone" under Add recordings.
 
+### Changed
+- npm package: much smaller. The library build is minified, the aw-dsp WASM
+  ships once as `dist/aw_dsp_wasm_bg.wasm` (loaded on demand, next to the
+  bundle; override with `globalThis.SIGNAVIS_WASM_URL`) instead of being
+  inlined three times, and the BirdNET models are no longer part of the
+  package.
+
+### Removed
+- **Breaking:** the `signavis/models/birdnet-v2.4` export. The models are
+  loaded from `BIRDNET_MODEL_URL` / `BIRDNET_V24_MODEL_URL` (GitHub Pages) or
+  any URL you host them at.
+
 ## [1.1.3] - 2026-11-14
 
 ### Added

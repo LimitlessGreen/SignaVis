@@ -15,9 +15,6 @@
   "files": [
     "dist/",
     "types/",
-    "models/",
-    "!models/birdnet-v3.0/",
-    "!models/birdnet-v3.0-12k/",
     "README.md",
     "LICENSE"
   ],
@@ -34,8 +31,7 @@
     "./tokens": {
       "types": "./types/style.d.ts",
       "default": "./dist/tokens.css"
-    },
-    "./models/birdnet-v2.4": "./models/birdnet-v2.4/model.json"
+    }
   },
   "peerDependencies": {
     "wavesurfer.js": "^7"
@@ -75,7 +71,7 @@
     "dev:lite": "node ./scripts/ensure-assets.js && vite --config demo/vite.lite.config.js",
     "build:lite": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.lite.config.js",
     "build:wasm": "wasm-pack build src-tauri/crates/aw-dsp-wasm --release --target web --out-dir ../../../src/infrastructure/wasm-dsp/pkg --no-pack && node -e \"require('fs').rmSync('src/infrastructure/wasm-dsp/pkg/.gitignore',{force:true})\"",
-    "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map",
+    "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map --style=compressed",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
     "typecheck": "tsc --noEmit --checkers 4",
     "postinstall": "node ./scripts/postinstall.js",
