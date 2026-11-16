@@ -586,6 +586,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.className = 'annotation-region';
         if (region.readonly) el.classList.add('annotation-region--readonly');
         if (isLocked) el.classList.add('annotation-region--locked');
+        // Machine detections (BirdNET / BirdBox): locked, but no dashed read-only frame.
+        if (region.origin && region.origin !== 'manual' && region.origin !== 'xeno-canto') el.classList.add('suggestion');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -843,6 +845,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             confidence: annotation?.confidence,
             color: String(annotation?.color || '').trim(),
             readonly: annotation?.readonly === true,
+            origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
             recordingId: annotation?.recordingId ?? null,
         };
@@ -1291,7 +1294,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
             ` : ''}
-            ${isSuggestion && !isBlocked ? `
+            ${isSuggestion && !isReadonly && (this.player as any)?._readOnly !== true ? `
             <button class="label-accept-btn" type="button" title="Accept label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
@@ -1352,7 +1355,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 event.preventDefault();
                 event.stopPropagation();
                 this._suppressClickUntil = performance.now() + 250;
-                this._acceptSuggestion(label.id);
+                // Detections in a locked set (BirdNET / BirdBox) are copied into "My labels"
+                // by the app; an unlocked suggestion simply becomes a manual label.
+                if (this._lockedIds.has(label.id)) {
+                    this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail: { label: { ...label } } }));
+                } else {
+                    this._acceptSuggestion(label.id);
+                }
             });
             acceptBtn.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
         }

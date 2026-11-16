@@ -117,8 +117,9 @@ html[data-theme="light"] { @include light-tokens; }
 .rec-set-adopted { font-size: 11px; white-space: nowrap; flex-shrink: 0; color: var(--color-success, var(--color-text-secondary)); }
 
 // Read-only (imported / locked) labels: dashed + muted, own labels stay solid.
-.spectrogram-label-region--locked,
-.annotation-region--locked {
+// Machine detections (BirdNET / BirdBox, .suggestion) are locked too but keep their solid frame.
+.spectrogram-label-region--locked:not(.suggestion),
+.annotation-region--locked:not(.suggestion) {
   border-style: dashed !important;
   opacity: 0.72;
 }

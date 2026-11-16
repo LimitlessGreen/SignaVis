@@ -27,8 +27,10 @@
 .sidebar-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--color-border); min-height: 36px; }
 .sidebar-title { font-size: 11px; font-weight: 600; color: var(--color-text-secondary); letter-spacing: 0.08em; }
 
-/* Phones: sidebars become bottom sheets, see _mobile-shell.scss. */
-
+@media (max-width: 700px) {
+  .sidebar { --sidebar-width: 240px; }
+  .sidebar--right { --sidebar-right-width: 240px; }
+}
 
 /* Make sidebar panels and their inner bodies scroll when content overflows.
    Uses flex layout so headers/toolbars remain fixed while content scrolls. */
