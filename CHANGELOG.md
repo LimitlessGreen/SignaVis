@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.2.0] - Unreleased
 
 ### Added
 - `overviewMode: 'spectrogram'` (and `player.setOverviewMode()`): the overview
@@ -28,9 +28,9 @@ All notable changes to this project will be documented in this file.
   package.
 
 ### Removed
-- **Breaking:** the `signavis/models/birdnet-v2.4` export. The models are
-  loaded from `BIRDNET_MODEL_URL` / `BIRDNET_V24_MODEL_URL` (GitHub Pages) or
-  any URL you host them at.
+- The `signavis/models/birdnet-v2.4` export. Pass `BIRDNET_V24_MODEL_URL`
+  (now exported, GitHub Pages) or a URL you host the model at to
+  `BirdNETInference.load({ modelUrl })` instead.
 
 ## [1.1.3] - 2026-11-14
 

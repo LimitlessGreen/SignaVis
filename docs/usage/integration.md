@@ -137,9 +137,16 @@ the bundle initialises):
 <script src="/static/birdnet-player.iife.js"></script>
 ```
 
-The BirdNET models are not part of the npm package; `BirdNETInference` loads
-them from `BIRDNET_MODEL_URL` (GitHub Pages) by default, or from any URL you
-pass.
+The BirdNET models are not part of the npm package. `BirdNETInference.load()`
+requires a `modelUrl`: pass `BIRDNET_MODEL_URL` (BirdNET+ V3.0 on GitHub Pages),
+`BIRDNET_V24_MODEL_URL` (legacy v2.4) or any URL you host the model at.
+
+```js
+import { BirdNETInference, BIRDNET_MODEL_URL } from 'signavis'
+
+const birdnet = new BirdNETInference()
+await birdnet.load({ modelUrl: BIRDNET_MODEL_URL })
+```
 
 ## Streamlit (Python)
 

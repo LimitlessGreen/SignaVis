@@ -103,7 +103,7 @@ export interface StartRecordingOptions extends LiveRecorderOptions {
     spanSeconds?: number;
 }
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
-export { BirdNETInference, BIRDNET_MODEL_URL } from '../infrastructure/birdnetInference.ts';
+export { BirdNETInference, BIRDNET_MODEL_URL, BIRDNET_V24_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 export class BirdNETPlayer {
     container: any;
