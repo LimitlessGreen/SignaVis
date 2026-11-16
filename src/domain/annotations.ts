@@ -1785,12 +1785,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return t >= r.box.start && t <= r.box.end && f >= r.box.freqMin && f <= r.box.freqMax;
     }
 
-    _commitSnap() {
+    _commitSnap(forcePicker = false) {
         const r = this._snap?.result;
         if (!r?.ok) return;
         const region = this._normalize({ ...r.box, label: `Label ${this._counter++}` });
         this._clearSnap();
-        this._openNewLabelPicker(region);
+        this._openNewLabelPicker(region, { forcePicker });
     }
 
     exitSnapMode() {
@@ -1855,7 +1855,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
                 if (!this.player?._state?.audioBuffer) return;
                 this.player?._state?._blockSeekClicks?.(400);
-                if (this._snapContains(e.clientX, e.clientY)) this._commitSnap();
+                if (this._snapContains(e.clientX, e.clientY)) this._commitSnap(e.altKey);
                 else this._runSnap(this._clientXToTime(e.clientX), this._clientYToFreq(e.clientY));
                 e.preventDefault();
                 e.stopPropagation();
@@ -1976,7 +1976,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 const region = this._finalizeDraft();
                 this._clearDraft();
                 if (region) {
-                    this._openNewLabelPicker(region);
+                    this._openNewLabelPicker(region, { forcePicker: e.altKey });
                 }
                 e.preventDefault();
                 e.stopPropagation();
@@ -2006,7 +2006,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
             if (this.snapMode && (e.key === 'Escape' || e.key === 'Enter')) {
                 e.preventDefault();
-                if (e.key === 'Enter') this._commitSnap();
+                if (e.key === 'Enter') this._commitSnap(e.altKey);
                 else if (this._snap) this._clearSnap();
                 else this.exitSnapMode();
                 return;
@@ -2143,14 +2143,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._draftEl = null;
     }
 
-    _openNewLabelPicker(region: any) {
-        // If species search bar has a selection, skip the dialog entirely
-        const barSel = this.player?.getSpeciesBarSelection?.();
-        if (barSel && barSel.name) {
-            region.label = barSel.name;
-            region.color = barSel.color || colorForName(barSel.name);
-            region.scientificName = barSel.scientificName || '';
-            region.tags = {};
+    /**
+     * Name a freshly drawn / snapped region. With a species in the label template the
+     * label is added at once (species + template tags); otherwise, or with
+     * `forcePicker` (Alt held), the dialog opens, pre-filled from the template.
+     */
+    _openNewLabelPicker(region: any, { forcePicker = false }: { forcePicker?: boolean } = {}) {
+        const tpl = this.player?.getSpeciesBarSelection?.();
+        if (tpl?.name && !forcePicker) {
+            region.label = tpl.name;
+            region.color = tpl.color || colorForName(tpl.name);
+            region.scientificName = tpl.scientificName || '';
+            region.tags = { ...(tpl.tags || {}) };
             this.add(region);
             return;
         }
@@ -2168,21 +2172,26 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const isXc = l.origin === 'xeno-canto';
             existingLabels.push({ name, color: l.color || '', scientificName: l.scientificName || '', tags: isXc ? {} : (l.tags || {}), detail: isXc ? 'xeno-canto' : (l.origin && l.origin !== 'manual' ? l.origin : '') });
         }
-        // Pre-fill from focused/last label (skip XC metadata)
+        // Pre-fill: the template wins; what it leaves open comes from the focused/last label
+        // (skip XC metadata)
         const ref = this._getReferenceLabelForDefaults();
         const isXcRef = ref?.origin === 'xeno-canto';
-        const initialColor = ref?.color || _autoAssignColor(this._items);
-        const refName = (ref?.label || '').trim().toLowerCase();
+        const tplTags = tpl && Object.keys(tpl.tags || {}).length ? tpl.tags : null;
+        const initialValue = tpl?.name || ref?.label || '';
+        const initialColor = (tpl?.name ? tpl.color : ref?.color) || _autoAssignColor(this._items);
+        const refName = initialValue.trim().toLowerCase();
         openLabelNameEditor({
             layer: this,
             player: this.player,
-            initialValue: ref?.label || '',
+            initialValue,
             initialColor,
-            initialTags: isXcRef ? null : (ref?.tags || null),
-            initialScientificName: ref?.scientificName || '',
+            initialTags: tplTags || (tpl?.name || isXcRef ? null : (ref?.tags || null)),
+            initialScientificName: tpl?.name ? (tpl.scientificName || '') : (ref?.scientificName || ''),
             existingLabels,
             title: 'New Label',
-            onSubmit: ({ name, color, scientificName = '', tags = {}, changed = {} }: any) => {
+            // "Keep for next labels" makes this label the template
+            offerTemplate: typeof this.player?.setSpeciesBar === 'function',
+            onSubmit: ({ name, color, scientificName = '', tags = {}, changed = {}, keepAsTemplate = false }: any) => {
                 // If user typed a different name but didn't manually change color,
                 // auto-assign a deterministic color for the new name.
                 const nameChanged = name.trim().toLowerCase() !== refName;
@@ -2191,6 +2200,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 region.scientificName = String(scientificName || '').trim();
                 region.tags = tags;
                 this.add(region);
+                if (keepAsTemplate) {
+                    this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
+                }
             },
         });
     }

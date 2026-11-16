@@ -28,6 +28,8 @@ export interface LabelEditResult {
     scientificName: string;
     tags:           Record<string, string>;
     changed:        LabelEditChangeset;
+    /** "Keep for next labels" was ticked (only offered with `offerTemplate`). */
+    keepAsTemplate: boolean;
 }
 
 const DEFAULT_TAG_PRESETS = [
@@ -44,6 +46,8 @@ export class LabelEditorModal {
     _title: any;
     _existingLabels: any;
     _onLayerEmit: any;
+    _offerTemplate: boolean = false;
+    _templateCheck: HTMLInputElement | null = null;
     _initialValueTrim: any;
     _initialStyleHex: any;
     hex: any;
@@ -82,19 +86,21 @@ export class LabelEditorModal {
      * @param {string | null} [opts.title]
      * @param {Function} opts.onSubmit
      * @param {Function | null} [opts.onDelete]
+     * @param {boolean} [opts.offerTemplate] - show "Keep for next labels" (result.keepAsTemplate)
      * @param {((event: string, detail: object) => void) | null} [opts.onLayerEmit]
      *   Optional emit callback for layer-originating events (tagcustom*).
      *   When omitted, these events are silently dropped (no player dependency needed).
      */
     constructor({ player, anchorEl, initialValue, initialColor, initialTags,
                   existingLabels, initialScientificName, title,
-                  onSubmit, onDelete, onLayerEmit }: { player: any; anchorEl?: any; initialValue?: any; initialColor?: any; initialTags?: any; existingLabels?: any; initialScientificName?: any; title?: any; onSubmit: any; onDelete?: any; onLayerEmit?: any }) {
+                  onSubmit, onDelete, onLayerEmit, offerTemplate }: { offerTemplate?: boolean; player: any; anchorEl?: any; initialValue?: any; initialColor?: any; initialTags?: any; existingLabels?: any; initialScientificName?: any; title?: any; onSubmit: any; onDelete?: any; onLayerEmit?: any }) {
         this._player         = player;
         this._anchorEl       = anchorEl;
         this._onSubmit       = onSubmit;
         this._onDelete       = onDelete;
         this._title          = title;
         this._existingLabels = existingLabels;
+        this._offerTemplate  = !!offerTemplate;
         // Optional emit callback — replaces direct player._emit() calls for tag events.
         // Callers that don't need tagcustom* events can omit this.
         this._onLayerEmit    = onLayerEmit ?? null;
@@ -221,6 +227,15 @@ export class LabelEditorModal {
         hints.className = 'label-search-hints';
         hints.textContent = '↑↓ navigate · click select · dblclick confirm · esc close';
         footer.appendChild(hints);
+        if (this._offerTemplate) {
+            const keep = document.createElement('label');
+            keep.className = 'label-search-keep';
+            keep.title = 'New labels get this species and these tags without the dialog. Change or clear it in the top bar; Alt while drawing opens the dialog once.';
+            this._templateCheck = document.createElement('input');
+            this._templateCheck.type = 'checkbox';
+            keep.append(this._templateCheck, ' Keep for next labels');
+            footer.appendChild(keep);
+        }
 
         if (this._onDelete) {
             const delBtn = document.createElement('button');
@@ -500,6 +515,7 @@ export class LabelEditorModal {
             scientificName,
             tags,
             changed,
+            keepAsTemplate: !!this._templateCheck?.checked,
         };
         this._onSubmit(result);
         this.close();

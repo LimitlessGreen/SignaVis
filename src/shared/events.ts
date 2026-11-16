@@ -159,6 +159,8 @@ export interface SpeciesBarItem {
     name: string;
     color: string;
     scientificName: string;
+    /** Template tags; `name` is '' for a tags-only template. */
+    tags?: Record<string, string>;
 }
 
 export interface SpeciesBarChangeDetail {

@@ -56,6 +56,7 @@ import { PropertiesPanel } from '../../ui/panels/properties-panel.ts';
 import { SnrComputer } from '../../ui/components/snr-computer/snr-computer.ts';
 import { CustomTagStore } from '../../app/custom-tag-store.ts';
 import { TAG_PRESETS, setTagPresetOptions } from '../../ui/panels/label-table.ts';
+import { createTemplateTags } from '../../ui/components/label-template/template-tags.ts';
 import { TagVocabularyCache, recordingGroup } from '../../app/tag-vocabulary.ts';
 import { fetchXcGroupProperties } from '../../infrastructure/xeno-canto/xcGroupProperties.ts';
 import { createAboutPanel } from '../../ui/panels/about-panel.ts';
@@ -654,13 +655,16 @@ document.addEventListener('keydown', (e) => {
   if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-  const lbl = propsPanel.displayedLabel;
-  if (!lbl || lbl.readonly || state.labelSets.get(lbl.setId)?.locked) return;
+  const editable = (l) => l && !l.readonly && !state.labelSets.get(l.setId)?.locked;
+  // A multi-selection gets the value on every label, otherwise the one shown in Properties
+  const multi = [...(labelList?.multiSelectedIds || [])].map((id) => state.labels.find((l) => l.id === id)).filter(editable);
+  const targets = multi.length > 1 ? multi : [propsPanel.displayedLabel].filter(editable);
+  if (!targets.length) return;
   const value = TAG_PRESETS.find((p) => p.key === 'soundType')?.options[Number(e.key) - 1];
   if (!value) return;
   e.preventDefault();
-  propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
-  selectionMeta.textContent = `Sound type: ${value} (key ${e.key})`;
+  for (const lbl of targets) propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
+  selectionMeta.textContent = `Sound type: ${value} (key ${e.key}${targets.length > 1 ? `, ${targets.length} labels` : ''})`;
 });
 
 // N / P next / previous recording, B BirdNET on the current one, U upload assistant
@@ -4350,6 +4354,20 @@ player.on('labelfocus', (e) => {
 player.on('play', () => { _referenceCallsModal?.pauseAll?.(); });
 
 /** Show rename/delete context menu for a spectrogram label id. */
+const ICON_TEMPLATE = '<svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3-2 2-3-3 2-2zM7.5 6.5l2 2L5 13H3v-2l4.5-4.5z"/></svg>';
+
+/** Make a label the template: new labels get its species and tags (not XC metadata tags). */
+function useLabelAsTemplate(lbl) {
+  const name = (lbl.label || '').trim();
+  if (!name) return;
+  player.setSpeciesBar(name, {
+    color: lbl.color || '',
+    scientificName: lbl.scientificName || '',
+    tags: lbl.origin === 'xeno-canto' ? {} : { ...(lbl.tags || {}) },
+  });
+  selectionMeta.textContent = `New labels: ${name}`;
+}
+
 function showLabelContextMenu(e, id) {
   const lbl = state.labels.find((l) => l.id === id);
   if (!lbl) return;
@@ -4362,6 +4380,8 @@ function showLabelContextMenu(e, id) {
         action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
       { label: 'Reference Calls', icon: ICON_REFS,
         action: () => openRefCalls(lbl) },
+      { label: 'Use as template', icon: ICON_TEMPLATE,
+        action: () => useLabelAsTemplate(lbl) },
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
@@ -4566,6 +4586,16 @@ let topbarWidget = null;
   topbarWidget.el.classList.add('species-search');
   mount.replaceWith(topbarWidget.el);
 
+  // Label template: the species above plus these tags go onto every new label
+  const inner = topbarWidget.el.querySelector('.species-search-inner');
+  if (inner) { inner.style.width = 'auto'; inner.style.flex = '1 1 0'; inner.style.minWidth = '0'; }
+  const templateTags = createTemplateTags({
+    getPresets: () => player.getTagPresets?.() || TAG_PRESETS,
+    getTags: () => player.getSpeciesBarSelection?.()?.tags || {},
+    onChange: (tags) => player.setTemplateTags(tags),
+  });
+  topbarWidget.el.appendChild(templateTags.el);
+
   // Sync display value when player updates species bar programmatically (e.g. XC import).
   // Also cache the species so it persists in suggestions after a clear.
   player.on('speciesbarchange', (e) => {
@@ -4573,6 +4603,7 @@ let topbarWidget = null;
     if (sel?.name) lastForegroundSpecies = sel;
     const name = sel?.name || '';
     if (topbarWidget.input.value !== name) topbarWidget.setValue(name);
+    templateTags.refresh();
   });
 
   // Refresh open dropdown when labels change (only if already visible).
