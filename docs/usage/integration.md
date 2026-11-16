@@ -121,8 +121,10 @@ onBeforeUnmount(() => player?.destroy())
 
 The spectrogram DSP runs in WebAssembly, shipped as `dist/aw_dsp_wasm_bg.wasm`
 and fetched on first use from the same folder as the bundle. The ESM build
-references it as `new URL('./aw_dsp_wasm_bg.wasm', import.meta.url)`, so app
-bundlers (Vite, webpack 5, Rollup) copy it into your build automatically. The
+references it as `new URL('./aw_dsp_wasm_bg.wasm', import.meta.url)`, which Vite
+and webpack 5 detect and copy into your build automatically. Plain Rollup does
+not: add an asset plugin such as `@web/rollup-plugin-import-meta-assets`, or copy
+`node_modules/signavis/dist/aw_dsp_wasm_bg.wasm` next to the output chunk. The
 IIFE build resolves it against its own `<script>` URL; if you self-host it, copy
 the `.wasm` file next to it.
 
