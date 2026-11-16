@@ -23,6 +23,8 @@ export interface LabelExportColumn {
 
 export interface LabelExportOptions {
     sampleRate?: number | null;
+    /** Recording start (Raven clock-time columns). */
+    recordingStart?: import('../../domain/recordingTime.ts').RecordingStart | null;
     setName?: (setId: string) => string;
     /** Columns for CSV (the table's visible columns). */
     columns?: LabelExportColumn[];

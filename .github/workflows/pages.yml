@@ -71,6 +71,15 @@ jobs:
         run: |
           pip install mkdocs-material
 
+      - name: Cache BirdBox model
+        uses: actions/cache@v6
+        with:
+          path: .cache/birdbox
+          key: birdbox-model-${{ hashFiles('scripts/birdbox/fetch-model.mjs') }}
+
+      - name: Fetch BirdBox model (stream graphs)
+        run: npm run models:birdbox
+
       - name: Build demo site
         run: |
           npx vite build --config demo/vite.demo.config.js

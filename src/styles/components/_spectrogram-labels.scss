@@ -123,13 +123,9 @@
 
 /* ── Suggestion labels (BirdNET, xeno-canto — not yet accepted) ── */
 .spectrogram-label-region.suggestion {
-    border-image: repeating-linear-gradient(
-        -45deg,
-        var(--spectrogram-label-edge) 0 4px,
-        transparent 4px 8px
-    ) 6;
-    border-width: 3px;
+    border-width: 2px;
     border-style: solid;
+    border-color: var(--spectrogram-label-edge);
     outline: none;
     opacity: 0.85;
     /* Frame only — detections often span the full band and would hide the spectrogram */
@@ -783,4 +779,119 @@
 // readable: the spectrogram shows only the label in hand, the tracks below show them all.
 .label-display-focus .spectrogram-label-region:not(.focused):not(.selected) {
   display: none;
+}
+
+// labelDisplay: 'lanes' — labels without frequency bounds (BirdNET) are strips along the top
+// edge, one lane per overlap; the hovered or selected one shades its time span below.
+// Doubled class: wins over .suggestion / --readonly (striped / dashed frames).
+.spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
+  border-image: none;
+  border-style: solid;
+  opacity: 1;
+  border-width: 1px;
+  border-color: var(--spectrogram-label-soft);
+  outline: none;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.62);
+  box-shadow: inset 3px 0 0 var(--spectrogram-label-soft);
+
+  .spectrogram-label-text {
+    background: transparent;
+    border: 0;
+    padding: 0 5px 0 7px;
+    max-width: 100%;
+    line-height: 16px;
+    font-size: 10px;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    top: 100%;
+    height: var(--lane-column, 0px);
+    background: var(--spectrogram-label-color);
+    border-left: 1px solid var(--spectrogram-label-soft);
+    border-right: 1px solid var(--spectrogram-label-soft);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  &:hover::after,
+  &.focused::after,
+  &.selected::after { opacity: 1; }
+
+  &.selected,
+  &.focused {
+    border-color: #ffffff;
+    background: rgba(0, 0, 0, 0.8);
+  }
+}
+
+.spectrogram-label-conf {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+
+  small {
+    font-size: 0.8em;
+    font-weight: 500;
+    opacity: 0.7;
+    margin-left: -2px;
+  }
+}
+
+// Mini meter in the name pill: track + fill to the confidence
+.spectrogram-label-conf-meter {
+  position: relative;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+  flex: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--label-conf, 0) * 100%);
+    background: var(--label-conf-color, currentColor);
+    border-radius: inherit;
+  }
+}
+
+// Lanes: the strip's bottom edge fills to the confidence, so the whole strip reads as a meter
+.spectrogram-label-region.spectrogram-label-region--lane.has-conf {
+  &::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    bottom: 0;
+    height: 2px;
+    width: calc((100% - 4px) * var(--label-conf, 0));
+    background: var(--label-conf-color);
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  .spectrogram-label-text {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  // In a narrow strip the name is truncated, the number stays
+  .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .spectrogram-label-conf { margin-left: auto; padding-left: 4px; flex: none; }
+  // The bottom edge already is the meter
+  .spectrogram-label-conf-meter { display: none; }
 }

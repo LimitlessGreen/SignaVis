@@ -28,6 +28,34 @@ input.addEventListener('change', async () => {
 })
 ```
 
+## Record from the microphone
+
+While recording, the spectrogram pane shows the sound as it arrives (it flies
+in from the right, 20 s across). When it stops — Stop button, `stopRecording()`
+or after `maxSeconds` — the recording is loaded like a file. The WAV carries
+its start time, so `player.recordingStart` knows the clock time (the labeling app's
+Raven selection tables use it; `player.exportAnnotationsRaven()` has no clock columns).
+
+```js
+if (BirdNETPlayer.recordingSupported) {
+  player.on('recordingcomplete', ({ detail }) => {
+    console.log(detail.file.name, detail.duration) // Recording_20261115_143012.wav
+  })
+  await player.startRecording({ maxSeconds: 300 }) // asks for microphone access
+  // … later
+  await player.stopRecording()
+}
+```
+
+Pass `loadWhenDone: false` to handle `detail.file` yourself.
+
+## Recording start time
+
+`player.recordingStart` is read from AudioMoth, GUANO, BWF `bext` or WAV INFO
+metadata, or from a date and time in the file name (`20230512_190000.wav`);
+`null` when unknown. `player.clockTimeAt(seconds)` gives the wall-clock time at
+a position, e.g. `"2023-05-12T19:00:03.000+01:00"`.
+
 ## React
 
 ```jsx
@@ -89,6 +117,35 @@ onBeforeUnmount(() => player?.destroy())
 <script>
   const player = new BirdNETPlayerModule.BirdNETPlayer(document.getElementById('player'))
 </script>
+```
+
+The spectrogram DSP runs in WebAssembly, shipped as `dist/aw_dsp_wasm_bg.wasm`
+and fetched on first use from the same folder as the bundle. The ESM build
+references it as `new URL('./aw_dsp_wasm_bg.wasm', import.meta.url)`, which Vite
+and webpack 5 detect and copy into your build automatically. Plain Rollup does
+not: add an asset plugin such as `@web/rollup-plugin-import-meta-assets`, or copy
+`node_modules/signavis/dist/aw_dsp_wasm_bg.wasm` next to the output chunk. The
+IIFE build resolves it against its own `<script>` URL; if you self-host it, copy
+the `.wasm` file next to it.
+
+If the file lives elsewhere, or the bundle is inlined into a page without a
+script URL, set the location **before the bundle is loaded** (it is read while
+the bundle initialises):
+
+```html
+<script>globalThis.SIGNAVIS_WASM_URL = '/static/aw_dsp_wasm_bg.wasm'</script>
+<script src="/static/birdnet-player.iife.js"></script>
+```
+
+The BirdNET models are not part of the npm package. `BirdNETInference.load()`
+requires a `modelUrl`: pass `BIRDNET_MODEL_URL` (BirdNET+ V3.0 on GitHub Pages),
+`BIRDNET_V24_MODEL_URL` (legacy v2.4) or any URL you host the model at.
+
+```js
+import { BirdNETInference, BIRDNET_MODEL_URL } from 'signavis'
+
+const birdnet = new BirdNETInference()
+await birdnet.load({ modelUrl: BIRDNET_MODEL_URL })
 ```
 
 ## Streamlit (Python)

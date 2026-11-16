@@ -2,6 +2,7 @@
 // PlayerState.ts — Central state machine, interaction & event binding
 // ═══════════════════════════════════════════════════════════════════════
 
+import { setOverlayContent } from '../ui/loadingOverlay.ts';
 import {
     DEFAULT_SAMPLE_RATE,
     DEFAULT_ZOOM_PPS,
@@ -29,7 +30,8 @@ import { CrosshairController } from './player/CrosshairController.ts';
 import { PerfOverlay } from './player/PerfOverlay.ts';
 import { ViewResizeController } from './player/ViewResizeController.ts';
 import { FrequencyZoomController } from './player/FrequencyZoomController.ts';
-import { WaveformRenderer } from './player/WaveformRenderer.ts';
+import { WaveformRenderer, type OverviewMode } from './player/WaveformRenderer.ts';
+import { formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
 import { ToolbarController } from './player/ToolbarController.ts';
 import { ToolbarFitController } from './player/ToolbarFitController.ts';
 import { CarrierLineController } from './player/CarrierLineController.ts';
@@ -42,6 +44,7 @@ import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/b
  * @typedef {Object} PlayerOptions
  * @property {string}  [viewMode]
  * @property {boolean} [showOverview]
+ * @property {'waveform'|'spectrogram'} [overviewMode]  Overview strip content (default 'waveform')
  * @property {boolean} [transportOverlay]
  * @property {string}  [compactToolbar]
  * @property {boolean} [showWaveformTimeline]
@@ -136,6 +139,8 @@ export class PlayerState {
     _showWaveform: any;
     _showSpectrogram: any;
     _showOverview: any;
+    _overviewMode: OverviewMode = 'waveform';
+    _overviewRedrawTimer: ReturnType<typeof setTimeout> | null = null;
     _transportOverlay: any;
     _keyboardEnabled = true;
     _compactToolbarMode: any;
@@ -242,6 +247,7 @@ export class PlayerState {
         this._showWaveform = this._viewMode !== 'spectrogram';
         this._showSpectrogram = this._viewMode !== 'waveform';
         this._showOverview = this.options.showOverview !== false;
+        this._overviewMode = this.options.overviewMode === 'spectrogram' ? 'spectrogram' : 'waveform';
         this._transportOverlay = this.options.transportOverlay === true;
         this._keyboardEnabled = this.options.keyboardShortcuts !== false;
         this._compactToolbarMode = this.options.compactToolbar && ['auto', 'on', 'off'].includes(this.options.compactToolbar)
@@ -274,6 +280,7 @@ export class PlayerState {
             this._createFrequencyLabels();
             this._drawSpectrogram();
             this._syncOverviewWindowToViewport();
+            this._scheduleOverviewSpectrogram();
         });
 
         // ── Audio / analysis state ──
@@ -416,6 +423,8 @@ export class PlayerState {
             scheduleUiUpdate:        () => this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true }),
             getScrollLeft:           () => this._getPrimaryScrollLeft(),
             getViewportWidth:        () => this._getViewportWidth(),
+            getOverviewMode:         () => this._overviewMode,
+            getOverviewImage:        (cols: number) => this._spectro.overviewImage(cols),
         });
 
         // ── ToolbarController ──
@@ -810,7 +819,24 @@ export class PlayerState {
         this._setTransportState('loading', 'url-load');
 
         try {
-            const result = await this._engine.loadFromUrl(url);
+            const overlay = this.d.recomputingOverlay;
+            const mb = (n: number) => (n / 1048576).toFixed(1);
+            let lastPaint = 0;
+            const result = await this._engine.loadFromUrl(url, (stage: 'download' | 'decode', loaded = 0, total = 0) => {
+                if (!overlay) return;
+                overlay.hidden = false;
+                if (stage === 'decode') {
+                    setOverlayContent(overlay, 'Decoding audio…', { progress: null });
+                    return;
+                }
+                const now = performance.now();
+                if (loaded && loaded !== total && now - lastPaint < 100) return;
+                lastPaint = now;
+                setOverlayContent(overlay, 'Loading audio…', {
+                    detail: total ? `${mb(loaded)} / ${mb(total)} MB` : loaded ? `${mb(loaded)} MB` : '',
+                    progress: total ? loaded / total : null,
+                });
+            });
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
@@ -843,7 +869,11 @@ export class PlayerState {
         }
         this._spectro.updateMaxFreqOptions(sampleRate);
 
-        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>`;
+        const start = this._engine.recordingStart ?? null;
+        const startHtml = start
+            ? ` <span title="Recording start (from ${escapeHtml(start.source === 'fileName' ? 'the file name' : `${start.source} metadata`)})">· ${escapeHtml(formatRecordingStart(start))}</span>`
+            : '';
+        this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(displayName)}</span> <span>${formatTime(duration)}</span>${startHtml}`;
         if (this.d.sampleRateInfo) this.d.sampleRateInfo.textContent = `${sampleRate} Hz`;
         if (this.d.totalTimeDisplay) this.d.totalTimeDisplay.textContent = formatTime(duration);
         if (this.d.currentTimeDisplay) this.d.currentTimeDisplay.textContent = formatTime(0);
@@ -858,6 +888,7 @@ export class PlayerState {
         // spectrogram (a pyramid for long files) is still being computed.
         this._syncTrackWidth();
         this._drawMainWaveform();
+        this._waveformRenderer.resetOverview();
         this._drawOverviewWaveform();
         this._syncOverviewWindowToViewport();
 
@@ -1036,6 +1067,8 @@ export class PlayerState {
         // second update picks up the canvas height draw() may have changed.
         this._updateCoords();
         this._spectro.draw(this._getSpectrogramDrawParams());
+        // Display changes (colors, contrast, noise reduction) end here too; the image is cached.
+        this._scheduleOverviewSpectrogram();
         this._updateCoords();
         this._carrierLine.update();
         this._scheduleUiUpdate({ time: this._getCurrentTime(), fromPlayback: false, immediate: true });
@@ -1246,6 +1279,29 @@ export class PlayerState {
 
     _drawMainWaveform()       { this._waveformRenderer.drawMainWaveform(); }
     _drawOverviewWaveform()   { this._waveformRenderer.drawOverviewWaveform(); }
+
+    /** When the loaded recording started (file metadata or name), null when unknown. */
+    get recordingStart(): RecordingStart | null { return this._engine.recordingStart ?? null; }
+
+    /** Overview strip: 'waveform' or a whole-file 'spectrogram' (max-pooled). */
+    _setOverviewMode(mode: OverviewMode) {
+        const next: OverviewMode = mode === 'spectrogram' ? 'spectrogram' : 'waveform';
+        if (next === this._overviewMode) return;
+        this._overviewMode = next;
+        this.options.overviewMode = next;
+        this._waveformRenderer.resetOverview();
+        this._drawOverviewWaveform();
+        this._emit('overviewmodechange', { mode: next });
+    }
+
+    /** Spectrogram tiles/colors changed: redraw the spectrogram overview, at most a few times a second. */
+    _scheduleOverviewSpectrogram() {
+        if (this._overviewMode !== 'spectrogram' || this._overviewRedrawTimer) return;
+        this._overviewRedrawTimer = setTimeout(() => {
+            this._overviewRedrawTimer = null;
+            this._drawOverviewWaveform();
+        }, 200);
+    }
     _createFrequencyLabels()  { this._waveformRenderer.createFrequencyLabels(); }
     _updateAmplitudeLabels()  { this._waveformRenderer.updateAmplitudeLabels(); }
 

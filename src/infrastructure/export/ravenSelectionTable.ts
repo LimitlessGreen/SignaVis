@@ -5,7 +5,11 @@
 //   <audio file name without extension>.Table.1.selections.txt
 // Raven opens it next to the audio file (File → Open Selection Table).
 // Frequencies are Hz. Labels without a frequency range span 0 … Nyquist.
+// With a known recording start, Begin Date / Begin Clock Time / End Clock
+// Time carry the recorder's wall-clock time (as Raven measures them).
 // ═══════════════════════════════════════════════════════════════════════
+
+import { RAVEN_CLOCK_COLUMNS, ravenClock, type RecordingStart } from '../../domain/recordingTime.ts';
 
 export const RAVEN_COLUMNS = [
     'Selection', 'View', 'Channel', 'Begin Time (s)', 'End Time (s)',
@@ -24,11 +28,14 @@ export interface RavenOptions {
     sampleRate?: number | null;
     /** Set id → set name for the "Set" column. */
     setName?: (setId: string) => string;
+    /** Recording start: adds the clock-time columns. */
+    recordingStart?: RecordingStart | null;
 }
 
 /** Labels → Raven selection table text (header + one row per label, sorted by start). */
 export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {}): string {
     const nyquist = opts.sampleRate ? opts.sampleRate / 2 : null;
+    const start = opts.recordingStart ?? null;
     const rows = [...(labels || [])]
         .filter((l) => Number.isFinite(Number(l?.start)) && Number.isFinite(Number(l?.end)))
         .sort((a, b) => Number(a.start) - Number(b.start) || Number(a.end) - Number(b.end))
@@ -44,9 +51,11 @@ export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {})
                 l.confidence != null && l.confidence !== '' ? num(l.confidence, 4) : '',
                 clean(l.author || l.annotator), clean(l.setId ? (opts.setName?.(l.setId) || l.setId) : ''),
                 clean(tags.remarks), clean(l.id),
+                ...(start ? ravenClock(start, Number(l.start), Number(l.end)) : []),
             ].join('\t');
         });
-    return [RAVEN_COLUMNS.join('\t'), ...rows].join('\n') + '\n';
+    const header = start ? [...RAVEN_COLUMNS, ...RAVEN_CLOCK_COLUMNS] : RAVEN_COLUMNS;
+    return [header.join('\t'), ...rows].join('\n') + '\n';
 }
 
 /** 'aufnahmen/garten.wav' → 'aufnahmen/garten.Table.1.selections.txt' */

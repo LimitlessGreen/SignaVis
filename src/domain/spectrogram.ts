@@ -1179,3 +1179,90 @@ export function createSpectralFeaturesProcessor() {
 
     return { computeFeatures, computeRidges: computeRidgesWorker, dispose };
 }
+
+// ─── Overview (whole-file thumbnail) ────────────────────────────────
+
+/**
+ * Pools `nFrames` frame-major frames (`bins` values each) into `cols`
+ * columns, keeping each bin's maximum, so short calls stay visible in a
+ * whole-file overview. Returns the data unchanged when it has no more
+ * frames than columns.
+ */
+export function poolFramesMax(data: ArrayLike<number>, nFrames: number, bins: number, cols: number,
+                              mode: 'max' | 'sample' = 'max'): { data: Float32Array; frames: number } {
+    const n = Math.max(0, Math.min(nFrames, Math.floor(data.length / Math.max(1, bins))));
+    if (n <= cols || cols <= 0) {
+        return { data: data instanceof Float32Array ? data.subarray(0, n * bins) : Float32Array.from({ length: n * bins }, (_, i) => data[i]), frames: n };
+    }
+    if (mode === 'sample') {
+        // Phase: the maximum angle means nothing; take the frame at each column's centre.
+        const out = new Float32Array(cols * bins);
+        for (let c = 0; c < cols; c++) {
+            const f = Math.min(n - 1, Math.floor((c + 0.5) * n / cols));
+            for (let b = 0; b < bins; b++) out[c * bins + b] = data[f * bins + b];
+        }
+        return { data: out, frames: cols };
+    }
+    const out = new Float32Array(cols * bins).fill(-Infinity);
+    for (let c = 0; c < cols; c++) {
+        const f0 = Math.floor(c * n / cols);
+        const f1 = Math.max(f0 + 1, Math.floor((c + 1) * n / cols));
+        const o = c * bins;
+        for (let f = f0; f < f1; f++) {
+            const s = f * bins;
+            for (let b = 0; b < bins; b++) {
+                const v = data[s + b];
+                if (v > out[o + b]) out[o + b] = v;
+            }
+        }
+    }
+    return { data: out, frames: cols };
+}
+
+export interface OverviewImageOpts {
+    data: ArrayLike<number>;
+    nFrames: number;
+    bins: number;
+    cols: number;
+    sampleRateHz: number;
+    maxFreq: number;
+    /** Value window [black, white] of `data`. */
+    lo: number;
+    hi: number;
+    scale: string;
+    binFreqs: ArrayLike<number> | null;
+    colourScale: string;
+    noiseReduction: boolean;
+    bandFloor: ArrayLike<number> | null;
+    colorScheme: string;
+    /** Phase values: sampled instead of max-pooled; the window is [floor01, ceil01] of −π…π. */
+    floor01?: number;
+    ceil01?: number;
+}
+
+/** Colored whole-file spectrogram image (one column per overview pixel, max-pooled). */
+export function buildOverviewImage(o: OverviewImageOpts) {
+    const phase = o.colourScale === 'phase';
+    const pooled = poolFramesMax(o.data, o.nFrames, o.bins, o.cols, phase ? 'sample' : 'max');
+    if (pooled.frames <= 0) return null;
+    const grayInfo = buildSpectrogramGrayscale({
+        spectrogramData:      pooled.data,
+        spectrogramFrames:    pooled.frames,
+        spectrogramMels:      o.bins,
+        sampleRateHz:         o.sampleRateHz,
+        maxFreq:              o.maxFreq,
+        spectrogramAbsLogMin: o.lo,
+        spectrogramAbsLogMax: o.hi,
+        scale:                o.scale,
+        binFreqs:             o.binFreqs,
+        colourScale:          o.colourScale,
+        noiseReduction:       o.noiseReduction,
+        bandFloor:            o.bandFloor,
+        clahe:                false,
+    });
+    if (!grayInfo) return null;
+    // Phase maps −π…π to 0…1 in the grayscale stage; the sliders window that range.
+    return phase
+        ? colorizeSpectrogram(grayInfo, o.floor01 ?? 0, o.ceil01 ?? 1, o.colorScheme)
+        : colorizeSpectrogram(grayInfo, 0, 1, o.colorScheme);
+}

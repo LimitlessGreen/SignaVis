@@ -84,6 +84,8 @@
   background: none; color: var(--color-text-secondary);
   font-size: 11px; cursor: pointer;
   &:hover, &:focus-visible { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-faint); }
+  & + & { margin-top: 6px; }
+  &.is-recording { border-style: solid; border-color: #ef4444; color: #ef4444; }
 }
 
 /* Project folder recommendation dialog */

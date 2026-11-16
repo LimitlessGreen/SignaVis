@@ -22,6 +22,7 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
+import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
 import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
@@ -153,6 +154,8 @@ export class AudioEngine extends AudioEngineBase {
   _peakFor: AudioBuffer | null;
   _peak: number;
   guano: Record<string, string> | null;
+  /** When the loaded recording started (metadata or file name), null when unknown. */
+  recordingStart: RecordingStart | null = null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -230,8 +233,10 @@ export class AudioEngine extends AudioEngineBase {
    */
   async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
     this.guano = parseGuano(arrayBuffer);
+    const recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
 
     const displayName = name || 'audio';
     this._setupWaveSurfer(null, displayName);
@@ -243,17 +248,23 @@ export class AudioEngine extends AudioEngineBase {
    * @param {string} url
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
-  async loadFromUrl(url: string) {
+  async loadFromUrl(
+    url: string,
+    onProgress?: (stage: 'download' | 'decode', loaded?: number, total?: number) => void,
+  ) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const arrayBuffer = await response.arrayBuffer();
+    const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
     this.guano = parseGuano(arrayBuffer);
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-    this.audioBuffer = audioBuffer;
-
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
+    // Before decoding: decodeAudioData detaches the buffer.
+    const recordingStart = readRecordingStart(arrayBuffer, name);
+    onProgress?.('decode');
+    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
     await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -266,8 +277,10 @@ export class AudioEngine extends AudioEngineBase {
   async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
     this.guano = parseGuano(arrayBuffer);
+    const recordingStart = readRecordingStart(arrayBuffer, file.name);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
     await this._setupWaveSurfer(file, file.name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -1180,4 +1193,27 @@ export class AudioEngine extends AudioEngineBase {
     this.dispatchEvent(new CustomEvent(String(eventName), { detail }));
   }
 
+}
+/** The body of `response`, reporting the bytes read so far (total is 0 when unknown). */
+async function readWithProgress(
+  response: Response,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<ArrayBuffer> {
+  const total = Number(response.headers.get('content-length')) || 0;
+  const reader = response.body?.getReader();
+  if (!reader) return response.arrayBuffer();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  onProgress(0, total);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded, total);
+  }
+  const out = new Uint8Array(loaded);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+  return out.buffer;
 }

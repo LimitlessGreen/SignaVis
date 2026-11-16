@@ -33,6 +33,11 @@ class TestPlayerValue(unittest.TestCase):
         self.assertFalse(b["play"])
         self.assertNotEqual(a["n"], b["n"])
 
+    def test_a_selection_can_name_the_detection(self):
+        self.assertNotIn("id", player_value("a.wav", select=(1, 2))["select"])
+        sel = player_value("a.wav", select=(1, 2), play=False, select_id="det-3")["select"]
+        self.assertEqual(sel["id"], "det-3")
+
 
 @unittest.skipIf(gr is None, "gradio not installed")
 class TestFileUrl(unittest.TestCase):

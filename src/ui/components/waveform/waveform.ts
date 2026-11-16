@@ -307,8 +307,36 @@ export function renderOverviewWaveform({
 
     installThemeObserver(overviewCanvas, () => {
         const s = (overviewCanvas as any)._aw_lastRender;
-        if (s) requestAnimationFrame(() => { try { renderOverviewWaveform(s); } catch {} });
+        if (s) requestAnimationFrame(() => {
+            // A spectrogram image drawn meanwhile clears the saved state: keep it.
+            if ((overviewCanvas as any)._aw_lastRender !== s) return;
+            try { renderOverviewWaveform(s); } catch {}
+        });
     });
+}
+
+/**
+ * Draws a whole-file spectrogram image into the overview strip (overview
+ * mode 'spectrogram'). Clears the waveform's theme re-render so a theme
+ * change does not paint the waveform over it.
+ */
+export function renderOverviewImage({
+    image,
+    overviewCanvas,
+    overviewContainer,
+}: {
+    image: CanvasImageSource;
+    overviewCanvas: HTMLCanvasElement;
+    overviewContainer: HTMLElement;
+}) {
+    const ctx = overviewCanvas.getContext('2d');
+    if (!ctx) return;
+    (overviewCanvas as any)._aw_lastRender = null;
+    const rect = overviewContainer.getBoundingClientRect();
+    overviewCanvas.width = Math.max(1, Math.floor(rect.width));
+    overviewCanvas.height = Math.max(1, Math.floor(rect.height));
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(image, 0, 0, overviewCanvas.width, overviewCanvas.height);
 }
 
 // ─── Frequency Labels ───────────────────────────────────────────────

@@ -18,6 +18,7 @@
 | `showDisplayGain` | boolean | `true` | Show floor/ceiling sliders, auto contrast |
 | `showStatusbar` | boolean | `true` | Show bottom status bar |
 | `showOverview` | boolean | `true` | Show overview navigator |
+| `overviewMode` | string | `'waveform'` | `'waveform'` or `'spectrogram'` — the whole recording as a max-pooled spectrogram (short calls stay visible); switch at runtime with `player.setOverviewMode(mode)` |
 | `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
 | `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
 | `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |

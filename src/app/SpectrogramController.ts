@@ -35,6 +35,7 @@ import {
     visibleContrastPoints,
     noiseFloorStats,
     detectMaxFrequency,
+    buildOverviewImage,
     buildSpectrogramGrayscale,
     colorizeSpectrogram,
     windowGrayscale,
@@ -522,6 +523,42 @@ export class SpectrogramController extends EventTarget {
         });
         this._emit('needsredraw');
     }
+
+    /**
+     * Whole-file spectrogram image for the overview strip, `cols` columns wide
+     * (max-pooled, current colors). Null when there is nothing to show yet
+     * (pyramid still building, external image mode): callers fall back to the waveform.
+     */
+    async overviewImage(cols: number): Promise<HTMLCanvasElement | OffscreenCanvas | null> {
+        if (this._externalMode || cols <= 0) return null;
+        const tm = this._tileManager;
+        if (tm) return tm.overviewImage(cols);
+        if (!this._data || this._nFrames <= 0 || this._nMels <= 0) return null;
+        const o = this._getCurrentColorOptions();
+        const colourScale = this._colourScale || o.colourScale;
+        const win = colourScale === 'phase' ? null : this._dbWindow();
+        const [lo, hi] = win ?? (() => {
+            // Phase: fixed −π…π (windowed by floor01/ceil01 when colorizing), as in the main view.
+            if (colourScale === 'phase') return [-Math.PI, Math.PI];
+            const a = this._absLogMin, b = this._absLogMax;
+            return [a + o.floor01 * (b - a), a + o.ceil01 * (b - a)];
+        })();
+        const key = `${cols}|${lo}|${hi}|${this._activeScale}|${colourScale}|${JSON.stringify(o)}`;
+        const cache = this._overviewCache;
+        if (cache && cache.data === this._data && cache.key === key) return cache.image;
+        const image = buildOverviewImage({
+            data: this._data, nFrames: this._nFrames, bins: this._nMels, cols,
+            sampleRateHz: this._sampleRateHz, maxFreq: o.maxFreq, lo, hi,
+            scale: this._activeScale || o.scale, binFreqs: this.binFreqs,
+            colourScale,
+            noiseReduction: o.noiseReduction, bandFloor: this._bandFloor,
+            colorScheme: o.colorScheme,
+            floor01: o.floor01, ceil01: o.ceil01,
+        });
+        this._overviewCache = { key, data: this._data, image };
+        return image;
+    }
+    _overviewCache: { key: string; data: Float32Array; image: HTMLCanvasElement | OffscreenCanvas | null } | null = null;
 
     private _getCurrentColorOptions(): TileColorOptions {
         const d = this._d;

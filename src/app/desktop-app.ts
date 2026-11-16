@@ -468,6 +468,7 @@ function extractSpectrogramLabels(recording: Recording): Partial<LinkedLabel>[] 
                 confidence:  evt.confidence,
                 freqMin:     evt.freqRange?.[0],
                 freqMax:     evt.freqRange?.[1],
+                fullBand:    !evt.freqRange,
                 readonly:    true,
                 aiSuggested: { model: 'BirdNET', version: fieldName },
                 color:       confirmed ? '#22c55e' : rejected ? '#ef4444' : '#0ea5e9',
@@ -572,7 +573,7 @@ async function readDirFlat(dirPath: string): Promise<FsEntry[]> {
 async function ensurePlayer(): Promise<BirdNETPlayer> {
     const container = document.getElementById('playerContainer')!;
     if (!player) {
-        player = new BirdNETPlayer(container, {});
+        player = new BirdNETPlayer(container, { labelDisplay: 'lanes', labelConfidence: true });
     }
     return player;
 }

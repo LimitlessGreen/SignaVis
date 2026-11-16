@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-11-16
+
+### Added
+- `overviewMode: 'spectrogram'` (and `player.setOverviewMode()`): the overview
+  strip shows the whole recording as a spectrogram, max-pooled so short calls
+  stay visible; the waveform stands in while the spectrogram is computed.
+  The labeling app offers the choice under Display → Overview.
+- Recording start time from AudioMoth, GUANO, BWF `bext` and WAV INFO metadata
+  or a date and time in the file name (adapted from the BirdNET website demo,
+  MIT): shown in the status bar, `player.recordingStart`,
+  `player.clockTimeAt(seconds)`, and Raven selection tables get
+  Begin Date / Begin Clock Time / End Clock Time.
+- Microphone recording: `player.startRecording()` / `stopRecording()` show a
+  live spectrogram that flies in from the right while recording, then load
+  the recording (a WAV with its start time in the INFO chunk). Events
+  `recordingstart`, `recordingcomplete`, `recordingstop`. The labeling app
+  adds "Record from microphone" under Add recordings.
+
+### Changed
+- npm package: much smaller. The library build is minified, the aw-dsp WASM
+  ships once as `dist/aw_dsp_wasm_bg.wasm` (loaded on demand, next to the
+  bundle; override with `globalThis.SIGNAVIS_WASM_URL`) instead of being
+  inlined three times, and the BirdNET models are no longer part of the
+  package.
+
+### Removed
+- The `signavis/models/birdnet-v2.4` export. Pass `BIRDNET_V24_MODEL_URL`
+  (now exported, GitHub Pages) or a URL you host the model at to
+  `BirdNETInference.load({ modelUrl })` instead.
+
+## [1.1.3] - 2026-11-14
+
+### Added
+- Label confidence as a meter: lane strips fill their bottom edge, boxes get
+  a mini bar next to the number, tinted from red (low) to green (high).
+- Labeling app: BirdNET detections are drawn as lanes; a new
+  "Automatic behaviour" settings section switches auto contrast, the
+  frequency zoom fit, normalized playback, the ultrasound prompt, opening the
+  label list after a BirdNET run and the confidence display.
+- Desktop app: sound events without frequency range are shown as lanes with
+  their confidence.
+
+### Fixed
+- Reading a label's name back (loupe window) no longer includes its confidence.
+
+## [1.1.2] - 2026-11-14
+
+### Added
+- Label display `'lanes'`: labels without frequency bounds as stacked strips
+  along the top of the spectrogram; the selected one shades its time span.
+- `labelConfidence` option shows the confidence next to label names
+  (`player_value(show_confidence=...)` in `signavis.gradio`).
+- Toolbar items `'contrast'` (floor/range sliders and Auto Contrast),
+  `'play'` and `'seek'` (split from `'transport'`).
+- Download and decode progress while loading audio from a URL.
+- `signavis.gradio`: `GRADIO_THEME_CSS` makes the player follow the Gradio
+  theme; `player_value(select=..., play=False, select_id=...)` selects a
+  detection without playing it.
+
+### Fixed
+- Gradio: the player follows Gradio's dark mode and spans the full width.
+- A spectrogram resized taller fills its pane when the host sets no height.
+
+## [1.1.1] - 2026-11-14
+
+### Fixed
+- Linux desktop bundles (SignaVis Lite AppImage/deb and the full desktop
+  AppImage) are built on Ubuntu 22.04 again. The 1.1.0 bundles were built on
+  Ubuntu 26 and failed to start on older systems (`GLIBC_2.43 not found`).
+- `scripts/check-version-sync.sh` uses `python3` when `python` is missing.
+
+## [1.1.0] - 2026-11-14
+
+### Added
+- **SignaVis Lite**: the labeling app as a lightweight desktop app for
+  Windows, macOS and Linux (`src-tauri-lite/`). Native project folders and a
+  default project on disk, local audio opened by path (reopens after a
+  restart), exports through a save dialog, species images and the BirdNET
+  model loaded on demand (optional offline download), native menu with
+  Open Recent, remembered window state, close guard.
+- `signavis://open?xc=…&lang=…` deep links, single instance and
+  "Open with" for audio files.
+- Web app: "Open in app" hands the current recording over to SignaVis Lite,
+  with an opt-in to always open links in the app.
+- Self-update for SignaVis Lite over GitHub Releases; Lite installers and
+  `latest.json` are attached to releases (installers are unsigned, see
+  `docs/signavis-lite.md`).
+- Microsoft Store (MSIX) package, privacy policy and Store screenshots.
+
+### Fixed
+- Xeno-canto recording search uses API v3 (v2 was retired and returned 404).
+
 ## [1.0.5] - 2026-11-05
 
 ### Fixed

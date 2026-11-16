@@ -13,7 +13,7 @@ function setup({ scrollLeft = 0, clientWidth = 500, viewH = 300, box, compact = 
         offsetLeft: box.left, offsetTop: box.top, offsetWidth: box.width, offsetHeight: box.height,
         classList: classes(compact ? ['label-compact'] : []),
         querySelector: () => textEl,
-        style: { setProperty: (k, v) => { vars[k] = v; } },
+        style: { setProperty: (k, v) => { vars[k] = v; }, getPropertyValue: (k) => vars[k] ?? '' },
     };
     const layer = new SpectrogramLabelLayer();
     layer.player = { _state: { d: { canvasWrapper: { scrollLeft, clientWidth, clientHeight: viewH } } } };

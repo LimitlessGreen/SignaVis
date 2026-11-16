@@ -10,6 +10,9 @@ import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, type SnapPatch, type SnapResult } from './snapToCall.ts';
 
+/** Height of one strip in the 'lanes' label display, and the gap above it. */
+const LANE_H = 18;
+const LANE_GAP = 2;
 
 const _colorCtx = (() => {
     try {
@@ -195,6 +198,19 @@ export type { AnnotationRegion } from '../shared/label.types.ts';
 // annotation/label overlay layers.
 // ═══════════════════════════════════════════════════════════════════════
 
+/** JSON replacer: _normalize() stamps a fresh createdAt on every set(); not shown, so not part of a signature. */
+function skipTimestamps(key: string, value: unknown): unknown {
+    return key === 'createdAt' || key === 'updatedAt' ? undefined : value;
+}
+
+/** True when `set` holds exactly the ids in `ids`. */
+function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
+    const next = new Set(ids);   // distinct ids: ['a', 'a'] must not match {a, b}
+    if (next.size !== set.size) return false;
+    for (const id of next) if (!set.has(id)) return false;
+    return true;
+}
+
 class AnnotationLayerBase extends EventTarget {
     declare player: any;
     declare overlay: HTMLElement | null;
@@ -270,6 +286,63 @@ class AnnotationLayerBase extends EventTarget {
     /** Render the overlay. Override in subclasses; default no-op for base typing. */
     render() {}
 
+    // ── Keyed rendering (shared by both layers) ──────────────────────
+    /** Element per item id from the last render(), and the signature/geometry it was built for. */
+    _elById = new Map<string, HTMLElement>();
+    _elState = new WeakMap<HTMLElement, { sig: string; geo: string }>();
+
+    /**
+     * Keyed DOM update: an item keeps its element while `signature` is unchanged; if only `geometry`
+     * changed (zoom, scroll, layout) the element is re-placed. Every other overlay child is removed,
+     * as the former `innerHTML = ''` did, and DOM order follows `items`.
+     * `create` must return a fully placed element.
+     */
+    _reconcile<T extends { id: string }>(items: T[], spec: {
+        signature: (item: T) => string;
+        geometry: (item: T) => string;
+        create: (item: T) => HTMLElement;
+        place: (el: HTMLElement, item: T) => void;
+    }): HTMLElement[] {
+        const overlay = this.overlay as HTMLElement;
+        const prevById = this._elById;
+        const nextById = new Map<string, HTMLElement>();
+        const elements: HTMLElement[] = [];
+        for (const item of items) {
+            const sig = spec.signature(item);
+            const geo = spec.geometry(item);
+            let el = prevById.get(item.id);
+            const st = el && this._elState.get(el);
+            if (!el || !st || st.sig !== sig || nextById.has(item.id)) {
+                el = spec.create(item);
+                this._elState.set(el, { sig, geo });
+            } else if (st.geo !== geo) {
+                spec.place(el, item);
+                st.geo = geo;
+            }
+            nextById.set(item.id, el);
+            elements.push(el);
+        }
+        this._elById = nextById;
+        const keep = new Set<Element>(elements);
+        for (const child of [...overlay.children]) if (!keep.has(child)) child.remove();
+        let ref = overlay.firstChild;
+        for (const el of elements) {
+            if (el === ref) ref = ref.nextSibling;
+            else overlay.insertBefore(el, ref);
+        }
+        return elements;
+    }
+
+    /** An element was changed outside render() (drag, resize): rebuild it on the next render. */
+    _forgetElement(el: HTMLElement | null | undefined): void {
+        if (el) this._elState.delete(el);
+    }
+
+    /** Signature of an item plus display flags; createdAt/updatedAt are not shown and change on every set(). */
+    _signature(item: unknown, ...flags: unknown[]): string {
+        return JSON.stringify([item, ...flags], skipTimestamps);
+    }
+
     attach(player: unknown): void {
         this.detach();
         this.player = player;
@@ -333,6 +406,7 @@ class AnnotationLayerBase extends EventTarget {
     }
 
     setLockedIds(ids: string[] = []): void {
+        if (sameIdSet(this._lockedIds, ids)) return;   // unchanged: the overlay is already up to date
         this._lockedIds = new Set(ids);
         this.render();
     }
@@ -352,6 +426,29 @@ class AnnotationLayerBase extends EventTarget {
     }
 
     // ── Edit interaction shared finish ───────────────────────────────
+    /**
+     * Escape during a drag/resize: put the item back where it started and end the interaction.
+     * Nothing is committed (no update event); the preview event resets the other layer.
+     */
+    _cancelEditInteraction() {
+        if (!this._editing) return;
+        const editing = this._editing as any;
+        const item = this._items.find((i: any) => i.id === editing.id);
+        const start = editing.startLabel ?? editing.startRegion;
+        if (item && start) Object.assign(item, start);
+        editing.element?.classList?.remove('editing');
+        (this as any)._hideEditLoupe?.();
+        this._editing = null;
+        this._axisConstraint = null;
+        this._suppressClickUntil = performance.now() + 250;
+        if (item && editing.moved) { this._emitPreview(item); this._emitPreviewEnd(editing.id); }
+        this.render();
+    }
+    /** Live position during an interaction (the player mirrors it to the other layer). */
+    _emitPreview(_item: any) {}
+    /** Interaction over: the player drops the live highlight on the mirrored label. */
+    _emitPreviewEnd(id: string) { this.dispatchEvent(new CustomEvent('previewend', { detail: { id } })); }
+
     _finishEditInteraction() {
         if (!this._editing) return;
         const editing = this._editing as any;
@@ -361,6 +458,7 @@ class AnnotationLayerBase extends EventTarget {
         const item = this._items.find((i: any) => i.id === editing.id);
         if (item && editing.moved) this._emitUpdate(item);
         this._editing = null;
+        if (editing.moved) this._emitPreviewEnd(editing.id);
         if (shouldSuppressClick) {
             this._suppressClickUntil = performance.now() + 250;
             this.render();
@@ -450,6 +548,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _emitCreate(region: any) { this.player?._emit?.('annotationcreate', { annotation: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('annotationupdate', { annotation: { ...(item as any) } }); }
+    _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('annotationpreview', { detail: { annotation: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
     get annotations() { return this._items; }
@@ -479,7 +578,6 @@ export class AnnotationLayer extends AnnotationLayerBase {
         const duration = this.player.duration || this.player._state?.audioBuffer?.duration || 0;
         const width = Math.max(1, Math.floor(coords ? coords.timeToScrollX(duration) : duration * pps));
         this.overlay.style.width = `${width}px`;
-        this.overlay.innerHTML = '';
 
         // Swimlane row assignment: stack overlapping regions into rows
         const sorted = [...this._items].sort((a, b) => a.start - b.start || a.end - b.end);
@@ -547,17 +645,40 @@ export class AnnotationLayer extends AnnotationLayerBase {
             }
         }
 
-        for (const region of this._items) {
-            const el = this._createRegionElement(region, pps);
+        // Keyed update (see _reconcile): one changed region rebuilds one element.
+        const p = this.player as any;
+        const geometry = (region: any) => {
+            const left = coords ? coords.timeToScrollX(region.start) : region.start * pps;
+            const right = coords ? coords.timeToScrollX(region.end) : region.end * pps;
             const layout = localLayout.get(region.id);
-            if (layout && layout.depth > 1) {
-                const pct = 100 / layout.depth;
-                el.style.top = `${layout.localRow * pct}%`;
+            const stacked = layout && layout.depth > 1 ? layout : null;
+            return { left: Math.max(0, left), width: Math.max(1, right - left), stacked };
+        };
+        const place = (el: HTMLElement, region: any) => {
+            const g = geometry(region);
+            el.style.left = `${g.left}px`;
+            el.style.width = `${g.width}px`;
+            if (g.stacked) {
+                const pct = 100 / g.stacked.depth;
+                el.style.top = `${g.stacked.localRow * pct}%`;
                 el.style.height = `${pct}%`;
                 el.style.bottom = 'auto';
+            } else {
+                el.style.top = '';
+                el.style.height = '';
+                el.style.bottom = '';
             }
-            this.overlay.appendChild(el);
-        }
+        };
+        this._reconcile(this._items as any[], {
+            signature: (region) => this._signature(region, this._lockedIds.has(region.id), this._liveLinkedId === region.id,
+                p?._readOnly === true),
+            geometry: (region) => {
+                const g = geometry(region);
+                return `${g.left},${g.width},${g.stacked ? `${g.stacked.depth}/${g.stacked.localRow}` : ''}`;
+            },
+            create: (region) => { const el = this._createRegionElement(region, pps); place(el, region); return el; },
+            place,
+        });
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
@@ -583,6 +704,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.className = 'annotation-region';
         if (region.readonly) el.classList.add('annotation-region--readonly');
         if (isLocked) el.classList.add('annotation-region--locked');
+        // Machine detections (BirdNET / BirdBox): locked, but no dashed read-only frame.
+        if (region.origin && region.origin !== 'manual' && region.origin !== 'xeno-canto') el.classList.add('suggestion');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -675,6 +798,16 @@ export class AnnotationLayer extends AnnotationLayerBase {
             e.stopPropagation();
         };
 
+        // Escape while dragging/resizing: back to where it started (grab has its own handler)
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || !this._editing || this._grabbing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._cancelEditInteraction();
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+        this._domCleanups.push(() => document.removeEventListener('keydown', onKeyDown, true));
+
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);
@@ -731,6 +864,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this.dispatchEvent(new CustomEvent('annotationpreview', { detail: { annotation: { ...region } } }));
         const el = editing.element;
         if (el) {
+            this._forgetElement(el);   // changed outside render(): rebuilt on the next render
             el.dataset.start = String(region.start);
             el.dataset.end = String(region.end);
             const coords = this.player?._state?.coords;
@@ -779,11 +913,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
-            Object.assign(region, snapshot);
-            el.classList.remove('editing');
-            this._editing = null;
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
+            this._cancelEditInteraction();   // back to the snapshot, other layer included
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') cancel(e as Event);
@@ -813,11 +943,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
             initialValue: current,
             initialColor: region.color,
             initialScientificName: region.scientificName || '',
-            onSubmit: ({ name, color }: any) => {
+            onSubmit: ({ name, color, scientificName = '' }: any) => {
                 const currentHex = getOverlayColorStyle(region.color)?.hex || '';
-                if (name === current && color === currentHex) return;
+                const nextSci = String(scientificName || '').trim();
+                if (name === current && color === currentHex && (!nextSci || nextSci === (region.scientificName || ''))) return;
                 region.species = name;
                 region.color = color;
+                if (nextSci) region.scientificName = nextSci;   // as on the spectrogram
                 this.dispatchEvent(new CustomEvent('annotationupdate', { detail: { annotation: { ...region } } }));
                 this.render();
             },
@@ -840,6 +972,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             confidence: annotation?.confidence,
             color: String(annotation?.color || '').trim(),
             readonly: annotation?.readonly === true,
+            origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
             recordingId: annotation?.recordingId ?? null,
         };
@@ -954,6 +1087,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
+    _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('spectrogramlabelpreview', { detail: { label: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
     get labels() { return this._items; }
@@ -990,6 +1124,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * @param {Set<string>|string[]} ids
      */
     setLockedIds(ids = []) {
+        if (sameIdSet(this._lockedIds, ids)) return;   // unchanged: the overlay is already up to date
         this._lockedIds = new Set(ids);
         this.render();
     }
@@ -1077,17 +1212,26 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const height = Math.max(1, state?.d?.spectrogramCanvas?.height || 1);
         this.overlay.style.width = `${width}px`;
         this.overlay.style.height = `${height}px`;
-        this.overlay.innerHTML = '';
 
-        const elements = [];
-        const geometries = [];
-        for (const label of this._items) {
-            const el = this._createLabelElement(label, width, height);
-            const geo = this._toGeometry(label, width, height);
-            this.overlay.appendChild(el);
-            elements.push(el);
-            geometries.push(geo);
-        }
+        // Keyed update: an element is kept while its label and display state are unchanged
+        // (only its position follows zoom/scroll), so one edit touches one element, not all.
+        // Stamp ghost, snap preview and draft are removed, as the old full wipe did.
+        this._assignLanes(height);
+        const p = this.player as any;
+        const geoById = new Map<string, { left: number; top: number; width: number; height: number }>();
+        for (const label of this._items) geoById.set(label.id, this._toGeometry(label, width, height));
+        const elements = this._reconcile(this._items, {
+            signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
+                this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
+            geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
+            create: (label) => this._createLabelElement(label, width, height),
+            place: (el, label) => {
+                const g = geoById.get(label.id)!;
+                this._setGeometry(el, g);
+                if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - g.top - g.height)}px`);
+            },
+        });
+        const geometries = this._items.map((label) => geoById.get(label.id)!);
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
         this._pinAllLabelTexts();
@@ -1130,11 +1274,26 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * frequency). Shift its name into the visible part, staying inside the box.
      */
     _pinLabelText(el: HTMLElement) {
+        const view = this._pinView();
+        if (view) this._applyPin(el, this._measurePin(el, view));
+    }
+    /** Pins every name. Reads all layout first, then writes: one reflow instead of one per label. */
+    _pinAllLabelTexts() {
+        if (!this.overlay) return;
+        const view = this._pinView();
+        if (!view) return;
+        const els = [...this.overlay.querySelectorAll('.spectrogram-label-region')] as HTMLElement[];
+        const pins = els.map((el) => this._measurePin(el, view));
+        for (let i = 0; i < els.length; i++) this._applyPin(els[i], pins[i]);
+    }
+    _pinView(): { viewL: number; viewR: number; viewH: number } | null {
         const wrap = this._getRoot() as HTMLElement | null;
-        if (!wrap) return;
+        if (!wrap) return null;
         const viewL = wrap.scrollLeft;
-        const viewR = viewL + wrap.clientWidth;
-        const viewH = this.overlay?.offsetHeight || wrap.clientHeight;
+        return { viewL, viewR: viewL + wrap.clientWidth, viewH: this.overlay?.offsetHeight || wrap.clientHeight };
+    }
+    /** Layout reads only (no writes), so measuring many labels in a row costs a single reflow. */
+    _measurePin(el: HTMLElement, { viewL, viewR, viewH }: { viewL: number; viewR: number; viewH: number }) {
         const left = el.offsetLeft, top = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
         const TEXT_W = 60, TEXT_H = 16;
         // Horizontal: start at the left edge of the visible part
@@ -1144,17 +1303,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const compact = el.classList.contains('label-compact');
         // Compact names sit above the box; if that is off-screen, put them inside.
         const inside = compact && top < TEXT_H;
-        el.classList.toggle('label-text-inside', inside);
         let dy = 0;
         if (atBottom && !compact) dy = -clamp(top + h - viewH, 0, Math.max(0, h - TEXT_H));
         else if (!compact || inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
-        el.style.setProperty('--label-text-dx', `${Math.round(dx)}px`);
-        el.style.setProperty('--label-text-dy', `${Math.round(dy)}px`);
+        return { dx: Math.round(dx), dy: Math.round(dy), inside };
     }
-
-    _pinAllLabelTexts() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) this._pinLabelText(el as HTMLElement);
+    _applyPin(el: HTMLElement, { dx, dy, inside }: { dx: number; dy: number; inside: boolean }) {
+        el.classList.toggle('label-text-inside', inside);
+        // Unchanged values are not written: a style write invalidates the element even when equal.
+        const sx = `${dx}px`, sy = `${dy}px`;
+        if (el.style.getPropertyValue('--label-text-dx') !== sx) el.style.setProperty('--label-text-dx', sx);
+        if (el.style.getPropertyValue('--label-text-dy') !== sy) el.style.setProperty('--label-text-dy', sy);
     }
 
     _textPinScrollBound: HTMLElement | null = null;
@@ -1175,6 +1334,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         for (let i = 0; i < elements.length; i++) {
             const geo = geometries[i];
+            if (elements[i].classList.contains('spectrogram-label-region--lane')) continue;
             const textEl = elements[i].querySelector('.spectrogram-label-text') as HTMLElement | null;
             if (!textEl) continue;
 
@@ -1190,9 +1350,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 rect.left < r.right && rect.right > r.left &&
                 rect.top < r.bottom && rect.bottom > r.top,
             );
+            textEl.classList.toggle('label-text-bottom', collides);   // reused elements may still have it
 
             if (collides) {
-                textEl.classList.add('label-text-bottom');
                 rect = {
                     left: geo.left,
                     top: geo.top + geo.height - TEXT_H,
@@ -1219,7 +1379,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
 
-        this._applyGeometryToElement(el, this._toGeometry(label, canvasWidth, canvasHeight));
+        const geo = this._toGeometry(label, canvasWidth, canvasHeight);
+        const inLane = this._lanes.has(label.id);
+        if (inLane) {
+            el.classList.add('spectrogram-label-region--lane');
+            // The selected strip shades its time span down to the bottom edge.
+            el.style.setProperty('--lane-column', `${Math.max(0, canvasHeight - geo.top - geo.height)}px`);
+        }
+        this._applyGeometryToElement(el, geo);
         const colorStyle = getOverlayColorStyle(label.color);
         if (colorStyle) {
             el.style.setProperty('--spectrogram-label-color', colorStyle.fill);
@@ -1231,13 +1398,28 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.dataset.start = String(label.start);
         el.dataset.end = String(label.end);
         const readonlyNote = isReadonly ? ' [read-only]' : '';
-        el.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz${readonlyNote}`;
+        const conf = Number.isFinite(label.confidence) ? Number(label.confidence) : null;
+        const confText = conf != null ? `${Math.round(conf * 100)}%` : '';
+        const showConf = conf != null && (this.player as any)?.options?.labelConfidence === true;
+        const band = label.fullBand ? '' : ` / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
+        el.title = `${label.label || 'Label'}${confText ? ` (${confText})` : ''} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s${band}${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
+        if (showConf) {
+            // Confidence as a meter: the strip's bottom edge (lanes) and a mini bar in the name pill,
+            // tinted from red (low) over amber to green (high).
+            el.classList.add('has-conf');
+            el.style.setProperty('--label-conf', String(Math.max(0, Math.min(1, conf))));
+            el.style.setProperty('--label-conf-color', `hsl(${Math.round(Math.max(0, Math.min(1, conf)) * 125)} 75% 52%)`);
+        }
+        const confHtml = showConf
+            ? ` <span class="spectrogram-label-conf"><span class="spectrogram-label-conf-meter" aria-hidden="true"></span>${Math.round(conf * 100)}<small>%</small></span>`
+            : '';
         const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
-        const lockIconHtml = isReadonly ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
+        // A read-only player has nothing to edit: a lock on every label would only be noise.
+        const lockIconHtml = isReadonly && (this.player as any)?._readOnly !== true ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
         el.innerHTML = `
-            <span class="spectrogram-label-text">${escapeHtml(label.label || 'Label')}</span>
-            <span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>
+            <span class="spectrogram-label-text"><span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${confHtml}</span>
+            ${label.fullBand ? '' : `<span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>`}
             ${aiTagHtml}${lockIconHtml}
             ${!isBlocked ? `
             <button class="label-refcalls-btn" type="button" title="Reference calls">
@@ -1264,7 +1446,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="label-handle handle-t" data-mode="resize-t"></span>
             <span class="label-handle handle-b" data-mode="resize-b"></span>
             ` : ''}
-            ${isSuggestion ? `
+            ${isSuggestion && !isReadonly && (this.player as any)?._readOnly !== true ? `
             <button class="label-accept-btn" type="button" title="Accept label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
@@ -1325,7 +1507,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 event.preventDefault();
                 event.stopPropagation();
                 this._suppressClickUntil = performance.now() + 250;
-                this._acceptSuggestion(label.id);
+                // Detections in a locked set (BirdNET / BirdBox) are copied into "My labels"
+                // by the app; an unlocked suggestion simply becomes a manual label.
+                if (this._lockedIds.has(label.id)) {
+                    this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail: { label: { ...label } } }));
+                } else {
+                    this._acceptSuggestion(label.id);
+                }
             });
             acceptBtn.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
         }
@@ -1404,15 +1592,46 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     }
 
     _applyGeometryToElement(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
+        this._setGeometry(el, geometry);
+        if (el.isConnected) {
+            this._forgetElement(el);   // changed outside render(): rebuilt on the next render
+            this._pinLabelText(el);
+        }
+    }
+    /** Position + size classes only; no layout reads. */
+    _setGeometry(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
         el.style.left = `${geometry.left}px`;
         el.style.top = `${geometry.top}px`;
         el.style.width = `${geometry.width}px`;
         el.style.height = `${geometry.height}px`;
         // Small boxes: name + buttons go outside
-        el.classList.toggle('label-compact', geometry.width < 70 || geometry.height < 44);
+        const lane = el.classList.contains('spectrogram-label-region--lane');
+        el.classList.toggle('label-compact', !lane && (geometry.width < 70 || geometry.height < 44));
         // Only really tiny boxes drop the corner dots (12 px dots + edge strips need room)
         el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
-        if (el.isConnected) this._pinLabelText(el);
+    }
+
+
+    /** Lane of each full-band label in 'lanes' display (empty in other modes). */
+    _lanes = new Map<string, number>();
+
+    /**
+     * 'lanes' display: labels without frequency bounds (BirdNET's 3 s windows)
+     * become strips along the top edge. Overlapping ones go to the next lane
+     * down, up to half the spectrogram height; beyond that they share the last.
+     */
+    _assignLanes(canvasHeight: number) {
+        this._lanes.clear();
+        if ((this.player as any)?.options?.labelDisplay !== 'lanes') return;
+        const maxLanes = Math.max(1, Math.floor((canvasHeight * 0.5) / LANE_H));
+        const laneEnds: number[] = [];
+        const items = this._items.filter((l: any) => l.fullBand).sort((a, b) => a.start - b.start || b.end - a.end);
+        for (const l of items) {
+            let lane = laneEnds.findIndex((end) => end <= l.start + 1e-6);
+            if (lane < 0) lane = Math.min(laneEnds.length, maxLanes - 1);
+            laneEnds[lane] = Math.max(laneEnds[lane] ?? 0, l.end);
+            this._lanes.set(l.id, lane);
+        }
     }
 
     _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {
@@ -1421,6 +1640,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         const x1 = c ? clamp(c.timeToPixelX(label.start), 0, canvasWidth) : clamp((label.start / duration) * canvasWidth, 0, canvasWidth);
         const x2 = c ? clamp(c.timeToPixelX(label.end), 0, canvasWidth) : clamp((label.end / duration) * canvasWidth, 0, canvasWidth);
+        const lane = this._lanes.get(label.id);
+        if (lane != null) {
+            return {
+                left: Math.min(x1, x2),
+                top: LANE_GAP + lane * LANE_H,
+                width: Math.max(1, Math.abs(x2 - x1)),
+                height: LANE_H - LANE_GAP,
+            };
+        }
         // Not clipped to the visible frequency view: a label reaching past the
         // view edge must not show a border there (the canvas wrapper clips it).
         // Bounded to one view height beyond each edge to keep elements small.
@@ -1768,6 +1996,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             // Don't intercept when user is typing in an input
             const tag = ((e.target as HTMLElement)?.tagName || '').toLowerCase();
             if (tag === 'input' || tag === 'textarea' || (e.target as any)?.isContentEditable) return;
+
+            // Escape while dragging/resizing a label: back to where it started (grab has its own handler)
+            if (e.key === 'Escape' && this._editing && !this._grabbing) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._cancelEditInteraction();
+                return;
+            }
 
             if (this.snapMode && (e.key === 'Escape' || e.key === 'Enter')) {
                 e.preventDefault();
@@ -2450,7 +2686,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if (x0 > W || y0 > H || x0 + w < 0 || y0 + h < 0) continue;
                 ctx.strokeStyle = 'rgba(203, 213, 225, 0.75)';
                 ctx.strokeRect(x0, y0, w, h);
-                const name = (n.querySelector('.spectrogram-label-text')?.textContent || '').trim();
+                const name = (n.querySelector('.spectrogram-label-name')?.textContent || '').trim();
                 if (name) {
                     ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
                     ctx.fillText(name, Math.max(2, x0 + 2), Math.max(2, y0 + 2), Math.max(20, w - 4));
@@ -2630,13 +2866,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
-            // Restore original position
-            Object.assign(label, snapshot);
-            el.classList.remove('editing');
-            this._hideEditLoupe();
-            this._editing = null;
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
+            this._cancelEditInteraction();   // back to the snapshot, other layer included
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') cancel(e as Event);
@@ -2808,6 +3038,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             end: Math.max(s + 0.01, e),
             freqMin: f0,
             freqMax: Math.max(f0 + 1, f1),
+            ...(Number.isFinite(Number(label?.confidence)) ? { confidence: Number(label.confidence) } : {}),
+            ...(label?.fullBand === true ? { fullBand: true } : {}),
             label: meta.label,
             color: meta.color || colorForName(meta.label),
             scientificName: meta.scientificName,

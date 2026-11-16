@@ -83,6 +83,7 @@ function getAnnotationSet(lbl: any) {
 function originBadge(origin: string) {
   if (origin === 'xeno-canto') return 'XC';
   if (origin === 'BirdNET') return 'BN';
+  if (origin === 'BirdBox') return 'BB';
   if (origin === 'manual') return 'ME';
   return 'IM';
 }
@@ -93,12 +94,19 @@ function el(tag: string, cls = '', text = ''): any {
   if (text) e.textContent = text;
   return e;
 }
+/** Parsed once per SVG string, cloned per use (innerHTML per button was most of the row cost). */
+const _iconTemplates = new Map<string, HTMLTemplateElement>();
+function iconNode(svg: string): DocumentFragment {
+  let t = _iconTemplates.get(svg);
+  if (!t) { t = document.createElement('template'); t.innerHTML = svg; _iconTemplates.set(svg, t); }
+  return t.content.cloneNode(true) as DocumentFragment;
+}
 function iconBtn(cls: string, icon: string, title: string, onClick: (e: MouseEvent) => void) {
   const b = el('button', `act-btn lt-icon-btn ${cls}`);
   b.type = 'button';
   b.title = title;
   b.setAttribute('aria-label', title);
-  b.innerHTML = icon;
+  b.appendChild(iconNode(icon));
   b.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); onClick(e); });
   return b;
 }
@@ -111,6 +119,12 @@ export class LabelList {
     /** Layer callbacks of the own source (see LayerOptions). */
     _layers: LayerOptions | null;
     _cardMap: any;
+    /** Closed group per label id whose rows are not built yet (see _buildGroup). */
+    _lazyGroupOf = new Map<any, any>();
+    /** Every label id in list order, built or not (range selection). */
+    _rowOrder: any[] = [];
+    /** Index of each label in this._labels at render time. */
+    _indexOf = new Map<any, number>();
     _container: any;
     _emptyEl: any;
     _expandedGroups: any;
@@ -329,6 +343,9 @@ export class LabelList {
     this._container.innerHTML = '';
     this._container.classList.toggle('lt-view-time', this._view === 'time');
     this._cardMap = new Map();
+    this._lazyGroupOf = new Map();
+    this._rowOrder = [];
+    this._indexOf = new Map(labels.map((l: any, i: number) => [l.id, i]));
     if (this._badgeEl) this._badgeEl.textContent = String(labels.length);
     const hasSets = this._getSets ? this._getSets().size > 0 : false;
     this._emptyEl.style.display = (labels.length || hasSets) ? 'none' : '';
@@ -407,6 +424,7 @@ export class LabelList {
       const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
       if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
       list.appendChild(row);
+      this._rowOrder.push(lbl.id);
     }
     this._container.appendChild(list);
   }
@@ -691,7 +709,7 @@ export class LabelList {
 
     const row = el('div', 'lt-sp');
     row.tabIndex = -1;
-    const chev = el('span', 'lt-chev'); chev.innerHTML = ICON.chev; row.appendChild(chev);
+    const chev = el('span', 'lt-chev'); chev.appendChild(iconNode(ICON.chev)); row.appendChild(chev);
     row.appendChild(this._buildThumb(rep, scientific));
     const names = el('span', 'lt-names');
     const nameEl = el('span', 'lt-name', display);
@@ -738,10 +756,51 @@ export class LabelList {
     row.addEventListener('click', () => this._setGroupOpen(group, !group.classList.contains('lt-open')));
     group.appendChild(row);
 
+    // Rows of a closed group are built when it opens (or a row is needed: selection, hover):
+    // groups start closed, so most rows are never built.
     const rows = el('div', 'lt-rows');
-    for (const lbl of instances) rows.appendChild(this._buildRow(lbl, locked, { flat: false, origin: rep.origin, external }));
     group.appendChild(rows);
+    const ids = instances.map((l: any) => l.id);
+    group.__buildRows = () => {
+      if (group.__built) return;
+      group.__built = true;
+      for (const inst of instances) {
+        const lbl = this._currentLabel(inst);
+        const row = this._buildRow(lbl, locked, { flat: false, origin: rep.origin, external });
+        this._decorateRow(lbl.id, row);
+        rows.appendChild(row);
+      }
+    };
+    for (const id of ids) this._lazyGroupOf.set(id, group);
+    for (const id of ids) this._rowOrder.push(id);   // no spread: huge groups would exceed the argument limit
+    if (group.classList.contains('lt-open')) group.__buildRows();
     return group;
+  }
+
+  /** The label as it is now: the app replaces edited labels in the same array between renders. */
+  _currentLabel(lbl: any) {
+    const i = this._indexOf.get(lbl.id);
+    const cur = i != null ? this._labels[i] : null;
+    return cur?.id === lbl.id ? cur : lbl;
+  }
+
+  /** Row for a label id, building its (closed) group's rows if needed. */
+  _rowFor(labelId: any) {
+    let row = this._cardMap.get(labelId);
+    if (!row) {
+      this._lazyGroupOf.get(labelId)?.__buildRows?.();
+      row = this._cardMap.get(labelId);
+    }
+    return row || null;
+  }
+
+  /** Selection, multi-selection and play state for a row built after render(). */
+  _decorateRow(id: any, row: any) {
+    const any = this._multiSelectedIds.size > 0;
+    row.classList.toggle('multi-selected', this._multiSelectedIds.has(id));
+    row.classList.toggle('multi-active', any);
+    if (!any && id === this._selectedId) row.classList.add('selected');
+    if (id === this._playingId) this._setPlayVisual(row, true);
   }
 
   _setGroupOpen(group: any, open: boolean) {
@@ -750,6 +809,7 @@ export class LabelList {
         if (og !== group) { og.classList.remove('lt-open'); this._expandedGroups.delete(og.dataset.groupKey); }
       }
     }
+    if (open) group.__buildRows?.();
     group.classList.toggle('lt-open', open);
     if (open) this._expandedGroups.add(group.dataset.groupKey);
     else this._expandedGroups.delete(group.dataset.groupKey);
@@ -793,7 +853,7 @@ export class LabelList {
     if (this._onPlaySegment) {
       const play = el('button', 'lt-play');
       play.type = 'button';
-      play.innerHTML = ICON.play;
+      play.appendChild(iconNode(ICON.play));
       play.title = 'Play this segment';
       play.setAttribute('aria-label', play.title);
       play.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._onPlaySegment(lbl); });
@@ -912,7 +972,7 @@ export class LabelList {
 
   /** Shift+click: select every visible, editable row between the anchor and this one. */
   _rangeSelect(id: string) {
-    const order = [...this._container.querySelectorAll('.lt-row')].map((r: any) => r.dataset.labelId);
+    const order = this._rowOrder.map(String);   // all rows in list order, built or not
     const anchor = this._selectedId && order.includes(this._selectedId) ? this._selectedId : id;
     const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort((x, y) => x - y);
     for (const rid of order.slice(a, b + 1)) if (!this._lockedIds.has(rid)) this._multiSelectedIds.add(rid);
@@ -936,7 +996,7 @@ export class LabelList {
     this._selectedId = labelId || null;
     for (const c of this._container.querySelectorAll('.lt-row.selected')) c.classList.remove('selected');
     if (labelId && this._multiSelectedIds.size === 0) {
-      const row = this._cardMap.get(labelId);
+      const row = this._rowFor(labelId);
       if (row) {
         this._reveal(row);
         row.classList.add('selected');
@@ -948,7 +1008,7 @@ export class LabelList {
   highlightHover(labelId: any) {
     for (const c of this._container.querySelectorAll('.lt-row.highlighted')) c.classList.remove('highlighted');
     if (labelId) {
-      const row = this._cardMap.get(labelId);
+      const row = this._rowFor(labelId);
       if (row) {
         this._reveal(row);
         row.classList.add('highlighted');

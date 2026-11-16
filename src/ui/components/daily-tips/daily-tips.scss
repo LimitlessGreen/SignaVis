@@ -23,3 +23,10 @@
 .daily-tip-close { border: 1px solid var(--color-border); background: transparent; color: var(--color-text-primary); padding: 6px 10px; border-radius: 6px; cursor: pointer; width: auto; height: auto; }
 .daily-tip-disable-label { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); cursor: pointer; font-size: 13px; }
 .daily-tip-disable-checkbox { width: 16px; height: 16px; accent-color: var(--color-accent); }
+
+/* Narrow screens: cover the whole viewport instead of the (narrow) player host. */
+@media (max-width: 700px) {
+  .daily-tip-backdrop { position: fixed; z-index: 1000; align-items: center; justify-content: center; }
+  .daily-tip-dialog { width: calc(100vw - 24px); }
+  .daily-tip-actions { flex-wrap: wrap; }
+}

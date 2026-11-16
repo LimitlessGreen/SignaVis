@@ -1,6 +1,6 @@
 {
   "name": "signavis",
-  "version": "1.0.5",
+  "version": "1.2.0",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "readme": "README.md",
   "type": "module",
@@ -8,10 +8,13 @@
   "module": "./dist/birdnet-player.esm.js",
   "unpkg": "./dist/birdnet-player.iife.js",
   "types": "./types/index.d.ts",
+  "sideEffects": [
+    "*.css",
+    "**/*.worker*.js"
+  ],
   "files": [
     "dist/",
     "types/",
-    "models/",
     "README.md",
     "LICENSE"
   ],
@@ -28,8 +31,7 @@
     "./tokens": {
       "types": "./types/style.d.ts",
       "default": "./dist/tokens.css"
-    },
-    "./models/birdnet-v2.4": "./models/birdnet-v2.4/model.json"
+    }
   },
   "peerDependencies": {
     "wavesurfer.js": "^7"
@@ -40,7 +42,8 @@
     }
   },
   "dependencies": {
-    "jsoneditor": "^10.4.3"
+    "jsoneditor": "^10.4.3",
+    "onnxruntime-web": "1.31.1"
   },
   "keywords": [
     "audio",
@@ -68,7 +71,7 @@
     "dev:lite": "node ./scripts/ensure-assets.js && vite --config demo/vite.lite.config.js",
     "build:lite": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.lite.config.js",
     "build:wasm": "wasm-pack build src-tauri/crates/aw-dsp-wasm --release --target web --out-dir ../../../src/infrastructure/wasm-dsp/pkg --no-pack && node -e \"require('fs').rmSync('src/infrastructure/wasm-dsp/pkg/.gitignore',{force:true})\"",
-    "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map",
+    "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map --style=compressed",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
     "typecheck": "tsc --noEmit --checkers 4",
     "postinstall": "node ./scripts/postinstall.js",
@@ -76,6 +79,8 @@
     "taxonomy:build": "node ./scripts/build-birdnet-taxonomy.js --source ./_birdnet_upstream/birdnet_analyzer/labels/V2.4 --output ./demo/data/birdnet-taxonomy.v2.4.json --model V2.4 --source-url https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4",
     "pack:check": "npm pack",
     "test": "node ./scripts/run-tests.mjs",
+    "models:birdbox": "node scripts/birdbox/fetch-model.mjs",
+    "test:birdbox-stream": "node --import tsx scripts/birdbox/stream-parity.mjs",
     "test:analysis-smoke": "node --experimental-loader ./scripts/ignore-styles-loader.mjs --experimental-strip-types --test tests/analysis-backend-e2e-smoke.test.ts",
     "prepare": "npm run build:css && node ./scripts/install-githooks.js",
     "prepack": "npm run build:css",

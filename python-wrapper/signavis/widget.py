@@ -18,6 +18,7 @@ import traitlets
 from .renderer import (
     _PLAYER_CSS,
     _PLAYER_JS,
+    _WASM_URL_JS,
     _coerce_image_to_png_bytes,
     _encode_spectrogram_data,
 )
@@ -28,7 +29,7 @@ _WIDGET_JS = (
 
 # Compose ESM: IIFE bundle (creates module-scoped BirdNETPlayerModule) +
 # widget logic.  No eval() or script injection — works under strict CSP.
-_WIDGET_ESM = _PLAYER_JS + "\n\n" + _WIDGET_JS
+_WIDGET_ESM = _WASM_URL_JS + "\n" + _PLAYER_JS + "\n\n" + _WIDGET_JS
 
 
 class AudioWorkbenchWidget(anywidget.AnyWidget):

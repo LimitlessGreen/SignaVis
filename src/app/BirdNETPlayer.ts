@@ -45,7 +45,7 @@ export type PlayerEventName =
     | 'ready' | 'transportstatechange' | 'play' | 'pause' | 'finish' | 'seek'
     | 'labelfocus' | 'labelsync' | 'labelrestore' | 'undochange' | 'labeltaxonomyapply'
     | 'annotationcreate' | 'annotationupdate' | 'annotationremove' | 'annotationpreview'
-    | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview'
+    | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview' | 'spectrogramlabeladopt'
     | 'stampmodechange' | 'snapmodechange' | 'speciesbarchange' | 'viewresize' | 'viewportchange'
     | string;
 
@@ -91,7 +91,19 @@ export {
     importXenoCantoSpectrogramLabels,
 } from '../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
-export { BirdNETInference, BIRDNET_MODEL_URL } from '../infrastructure/birdnetInference.ts';
+import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
+import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
+export { LiveRecorder, encodeWav, recordingFileName, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+
+export interface StartRecordingOptions extends LiveRecorderOptions {
+    /** Load the recording into the player when it stops (default true). */
+    loadWhenDone?: boolean;
+    /** Seconds across the live view (default 20). */
+    spanSeconds?: number;
+}
+export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
+export { BirdNETInference, BIRDNET_MODEL_URL, BIRDNET_V24_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 export class BirdNETPlayer {
     container: any;
@@ -164,9 +176,13 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
      * @param {boolean}     [options.normalize] - play normalized to -1 dBFS peak, max +40 dB (default: false)
      * @param {string[]}    [options.toolbar] - toolbar controls to keep, all others are hidden:
-     *   'open', 'transport', 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
+     *   'open', 'transport' (= 'play' + 'seek'), 'play' (play/pause, stop),
+     *   'seek' (jump to start/end, ±5 s), 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
      *   'reset', 'draw', 'stamp', 'snap', 'zoombox', 'zoom', 'settings' (default: all)
-     * @param {'boxes'|'focus'} [options.labelDisplay] - 'focus' draws only the hovered or selected
+     * @param {boolean} [options.labelConfidence] - show each label's confidence next to its name
+     * @param {'boxes'|'focus'|'lanes'} [options.labelDisplay] - 'lanes' draws labels without frequency
+     *   bounds as stacked strips along the top edge (the selected one also shades its time span);
+     *   'focus' draws only the hovered or selected
      *   label on the spectrogram; the label tracks below show them all (default: boxes)
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
@@ -245,6 +261,7 @@ export class BirdNETPlayer {
         if (this.options.readOnly) this.setReadOnly(true);
         if (Array.isArray(this.options.toolbar)) this._applyToolbarAllowList(this.options.toolbar);
         if (this.options.labelDisplay === 'focus') this.root?.classList.add('label-display-focus');
+        if (this.options.labelDisplay === 'lanes') this.root?.classList.add('label-display-lanes');
         if (this.options.labelTable) this._initBuiltinLabelTable();
         if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
@@ -709,6 +726,8 @@ export class BirdNETPlayer {
 
     /** Tear down the player and free resources */
     destroy() {
+        this._liveRecorder?.cancel();
+        this._liveView?.detach();
         this._labelGrid?.destroy();
         this._labelGrid = null;
         if (this._globalKeyHandler) {
@@ -765,6 +784,16 @@ export class BirdNETPlayer {
             }
         });
 
+        // End of a drag/resize on either layer: drop the live highlight on the mirrored label.
+        const onPreviewEnd = () => {
+            this.annotations.setLiveLinkedId(null);
+            this.spectrogramLabels.setLiveLinkedId(null);
+            this.annotations.render();
+            this.spectrogramLabels.render();
+        };
+        this.annotations.addEventListener('previewend', onPreviewEnd);
+        this.spectrogramLabels.addEventListener('previewend', onPreviewEnd);
+
         // Annotation layer events
         fwd(this.annotations, 'annotationpreview', (ce: CustomEvent) => this._previewFromLayer('annotation', (ce.detail as any).annotation));
         fwd(this.annotations, 'annotationcreate', (ce: CustomEvent) => this._upsertFromLayer('annotation', (ce.detail as any).annotation));
@@ -777,6 +806,7 @@ export class BirdNETPlayer {
         fwd(this.spectrogramLabels, 'spectrogramlabelupdate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelremove', (ce: CustomEvent) => this._removeFromLinkedLabels((ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelrefcalls', (ce: CustomEvent) => this._emit('spectrogramlabelrefcalls', ce.detail));
+        fwd(this.spectrogramLabels, 'spectrogramlabeladopt', () => { /* handled by the app (copy into My labels) */ });
 
         // stampmodechange comes from SpectrogramLabelLayer
         this.spectrogramLabels.addEventListener('stampmodechange', (e: Event) => {
@@ -957,6 +987,87 @@ export class BirdNETPlayer {
 
     get normalize() { return !!this._state?.normalize; }
 
+    /**
+     * When the loaded recording started, from AudioMoth / GUANO / BWF / WAV INFO
+     * metadata or a date and time in the file name; null when unknown.
+     * `ms` is the recorder's wall-clock time written as UTC, `tz` its offset in minutes.
+     */
+    get recordingStart(): RecordingStart | null { return this._state?.recordingStart ?? null; }
+
+    /** Wall-clock time at `seconds` into the recording ("2023-05-12T19:00:03.000+01:00"), null when the start is unknown. */
+    clockTimeAt(seconds: number): string | null {
+        const start = this.recordingStart;
+        return start ? isoClockTime(start, seconds) : null;
+    }
+
+    // ── Live recording ──────────────────────────────────────────────
+
+    _liveRecorder: LiveRecorder | null = null;
+    _liveView: LiveSpectrogramView | null = null;
+
+    /** True when this browser can record from a microphone. */
+    static get recordingSupported(): boolean { return LiveRecorder.supported; }
+
+    get isRecording(): boolean { return !!this._liveRecorder?.recording; }
+
+    /**
+     * Records from the microphone; the spectrogram pane shows the sound as it
+     * arrives. Emits 'recordingstart', then 'recordingcomplete' { file,
+     * startedAt, duration, sampleRate, reason } (or 'recordingstop' { reason }
+     * without a recording). Stops by itself after `maxSeconds` (default 300).
+     * The WAV carries the start time, so `recordingStart` knows it after loading.
+     */
+    async startRecording(opts: StartRecordingOptions = {}): Promise<void> {
+        if (this._liveRecorder) throw new Error('Already recording');
+        const s = this._state;
+        if (!s) throw new Error('Player not ready');
+        this.pause();
+        const rec = new LiveRecorder(opts);
+        this._liveRecorder = rec;
+        const host = (s.d.spectrogramContainer && s._showSpectrogram ? s.d.spectrogramContainer : this.container) as HTMLElement;
+        const view = new LiveSpectrogramView(host, {
+            spanSeconds: opts.spanSeconds,
+            getColorScheme: () => s.d.colorSchemeSelect?.value || 'inferno',
+            getMaxFreq: () => parseFloat(s.d.maxFreqSelect?.value || '0') || 0,
+        });
+        view.addEventListener('stoprequest', () => { void this.stopRecording(); });
+        let reason: 'user' | 'limit' | 'ended' = 'user';
+        rec.addEventListener('stop', (e: Event) => { reason = (e as CustomEvent).detail?.reason ?? 'user'; });
+        const finished = new Promise<LiveRecording | null>((resolve) => {
+            rec.addEventListener('stop', () => resolve(rec.stop()), { once: true });
+        });
+        try {
+            await rec.start();
+        } catch (err) {
+            this._liveRecorder = null;
+            throw err;
+        }
+        this._liveView = view;
+        view.attach(rec);
+        this._emit('recordingstart', { sampleRate: rec.sampleRate, maxSeconds: rec.maxSeconds });
+        void finished.then(async (recording) => {
+            view.detach();
+            if (this._liveView === view) this._liveView = null;
+            if (this._liveRecorder === rec) this._liveRecorder = null;
+            if (!recording) { this._emit('recordingstop', { reason }); return; }
+            this._emit('recordingcomplete', { ...recording, reason });
+            if (opts.loadWhenDone !== false) await this.loadFile(recording.file).catch(() => {});
+        });
+    }
+
+    /** Stops the recording; resolves with it (null when nothing was recorded or none was running). */
+    async stopRecording(): Promise<LiveRecording | null> {
+        return this._liveRecorder ? this._liveRecorder.stop('user') : null;
+    }
+
+    /** Stops the recording and throws it away. */
+    cancelRecording(): void { this._liveRecorder?.cancel(); }
+
+    /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
+    setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }
+
+    get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }
+
     // ── Built-in label table ────────────────────────────────────────
 
     _labelGrid: LabelGrid | null = null;
@@ -1004,9 +1115,42 @@ export class BirdNETPlayer {
     selectLabel(id: string | null) {
         this._emit('labelfocus', { id, source: 'api', interaction: 'click' });
         this._labelGrid?.highlightRow(id);
+        const l = id ? this._linkedLabels.get(id) : null;
+        if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
     }
 
     // ── Toolbar allow-list ──────────────────────────────────────────
+
+    /**
+     * Toolbar item 'contrast': the Floor and Range (Ceiling) sliders and the
+     * Auto Contrast button of the settings panel move into the toolbar, after `anchor`. Moving keeps their
+     * listeners; the panel's Gain section still holds the mode switch.
+     */
+    _moveContrastToToolbar(anchor: HTMLElement | null) {
+        const root = this.root;
+        if (!root || root.querySelector('.contrast-ctl')) return;
+        const floor = root.querySelector('[data-aw="floorSlider"]')?.closest('.settings-row');
+        const ceil = root.querySelector('[data-aw="ceilSlider"]')?.closest('.settings-row');
+        const bar = anchor?.parentElement ?? root.querySelector('.toolbar-primary');
+        if (!floor || !ceil || !bar) return;
+        const group = document.createElement('span');
+        group.className = 'toolbar-group contrast-ctl';
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', 'Spectrogram contrast');
+        group.append(floor, ceil);
+        // Its click handler stays: re-fits the contrast to what is visible now.
+        const auto = root.querySelector('[data-aw="autoContrastBtn"]') as HTMLButtonElement | null;
+        if (auto) {
+            auto.className = 'zoom-auto-btn contrast-auto-btn';
+            auto.textContent = 'Auto';
+            auto.title = 'Fit floor and range to the visible part of the spectrogram';
+            group.append(auto);
+        }
+        const sep = document.createElement('div');
+        sep.className = 'toolbar-sep';
+        if (anchor) anchor.after(sep, group);
+        else bar.append(sep, group);
+    }
 
     _applyToolbarAllowList(keep: string[]) {
         const root = this.root;
@@ -1014,7 +1158,9 @@ export class BirdNETPlayer {
         const q = (sel: string) => root.querySelector(sel) as HTMLElement | null;
         const controls: Record<string, Array<HTMLElement | null | undefined>> = {
             open:      [q('[data-aw="openFileBtn"]')],
-            transport: [q('.transport')],
+            play:      [q('[data-aw="playPauseBtn"]'), q('[data-aw="stopBtn"]')],
+            seek:      [q('[data-aw="jumpStartBtn"]'), q('[data-aw="backwardBtn"]'),
+                        q('[data-aw="forwardBtn"]'), q('[data-aw="jumpEndBtn"]')],
             time:      [q('[data-aw="timeDisplay"]')],
             volume:    [q('.audio-ctl')],
             listen:    [q('[data-aw="slowdownSelect"]')],
@@ -1029,15 +1175,18 @@ export class BirdNETPlayer {
             zoombox:   [this._zoomBoxBtn],
             zoom:      [q('.zoom-widget')],
             settings:  [q('[data-aw="settingsToggleBtn"]')],
+            contrast:  [],
         };
         const wanted = new Set(keep);
+        if (wanted.has('transport')) { wanted.add('play'); wanted.add('seek'); }
         for (const [key, els] of Object.entries(controls)) {
             if (wanted.has(key)) continue;
             for (const el of els) if (el) el.style.display = 'none';
         }
+        if (wanted.has('contrast')) this._moveContrastToToolbar(q('.zoom-widget'));
         const shown = (el: Element) => (el as HTMLElement).style.display !== 'none' && !(el as HTMLElement).hidden;
         // Groups whose every button is gone go too, so no empty "⋯" or gap is left.
-        for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools')) {
+        for (const group of (root as HTMLElement).querySelectorAll<HTMLElement>('.view-ctl, .toolbar-tools, .transport')) {
             const buttons = [...(group as HTMLElement).querySelectorAll<HTMLElement>('[data-aw$="Btn"], .toolbar-tools > button')]
                 .filter((b) => !b.classList.contains('view-more-btn'));
             if (buttons.length && !buttons.some(shown)) group.style.display = 'none';
@@ -1587,6 +1736,8 @@ export class BirdNETPlayer {
             freqMin: l.freqMin,
             freqMax: l.freqMax,
             label: l.label || l.species || '',
+            confidence: l.confidence,
+            fullBand: (l as any).fullBand === true,
             color: l.color,
             scientificName: l.scientificName || '',
             commonName: l.commonName || '',
@@ -1621,6 +1772,7 @@ export class BirdNETPlayer {
             species: meta.species,
             label: meta.label,
             confidence: label?.confidence,
+            fullBand: (label as any)?.fullBand ?? (label?.freqMin == null && label?.freqMax == null),
             color: meta.color || tax?.color || colorForName(meta.label),
             scientificName: meta.scientificName,
             commonName: meta.commonName,
