@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-16 · Branch `refactor/labeling-app-module` (lokal, noch nicht gepusht, kein PR) · Schritte 1–2 fertig
+Stand: 2026-11-16 · Branch `refactor/labeling-app-module` (lokal, noch nicht gepusht, kein PR) · Schritte 1–2 fertig, Schritt 5 Teil 1 auf Branch `perf/spectrogram-labels-keyed`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -28,7 +28,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
 | 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, die selbst `labelViews.invalidate` auslösen) – war ursprünglich Teil von Schritt 2 | offen |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
-| 5 | **Vorziehen (größter Hebel laut Messung):** `SpectrogramLabelLayer.render()` baut bei jeder Änderung alle Label-Elemente neu (`innerHTML = ''`). Keyed-Update (Elemente je id wiederverwenden, nur geänderte anfassen) und/oder nur den sichtbaren Zeitbereich rendern. Danach dasselbe für `LabelList.render()` | offen |
+| 5 | Keyed-Render in `SpectrogramLabelLayer` | ✅ Teil 1 (siehe unten), offen: `AnnotationLayer`, `LabelList`, nur sichtbaren Zeitbereich rendern |
 
 ## Schritt 1 – Details
 
@@ -79,3 +79,30 @@ Messung (Benchmark, Median bis zum nächsten gezeichneten Frame, Demo-Aufnahme 8
 
 Rest: ~1 s (1500) bzw. ~120 ms (200) ist der komplette Neuaufbau aller Spektrogramm-Label-Elemente plus deren Layout
 → Schritt 5 vorziehen. E2E (Label zeichnen, benennen, umbenennen, löschen) verhält sich vorher/nachher gleich.
+
+## Schritt 5, Teil 1 – Keyed-Render der Spektrogramm-Labels
+
+Branch `perf/spectrogram-labels-keyed` (von `refactor/labeling-app-module`).
+
+- `SpectrogramLabelLayer.render()` behält Elemente je Label-id: Signatur = Label-JSON (ohne `createdAt`/`updatedAt`,
+  die `_normalize` bei jedem `set()` neu stempelt – sonst würde nie etwas wiederverwendet) + gesperrt / live / Lane /
+  Konfidenz-Anzeige / Read-only. Gleiche Signatur → Element bleibt; nur Geometrie anders (Zoom, Scroll) → nur Position.
+  Andere Kinder (Stempel-Geist, Snap-Vorschau, Entwurf) werden wie beim alten `innerHTML = ''` entfernt.
+- `_applyGeometryToElement` (Ziehen außerhalb von render) markiert die Geometrie als veraltet; render setzt sie neu.
+- Kollisions-Klasse per `toggle` (wiederverwendete Elemente), Pin-Werte nur bei Änderung schreiben.
+- Prüfung: `tools/perf/label-render-equivalence.py` vergleicht nach Umbenennen, Verschieben (Überlappung), Löschen,
+  Hinzufügen, Sperren, Konfidenz, Zoom, Scroll den Keyed-Stand mit einem erzwungenen Voll-Render: alles gleich,
+  bei Einzeländerungen 199/200 Elemente wiederverwendet. Maus-Ziehen/Größe ändern/E2E verhalten sich wie vorher.
+
+| Aktion | 1500 Labels (nach Schritt 2 → keyed) | 200 Labels |
+|---|---|---|
+| Properties-Edit (ohne Name) | 1597 → 418 ms | 219 → 63 ms |
+| Umbenennen | 1900 → 656 ms | 224 → 104 ms |
+| Ziehen/Größe | 1814 → 689 ms | 225 → 85 ms |
+| `syncToPlayer()` | 1665 → 560 ms | 224 → 96 ms |
+
+Gesamt seit Beginn (200 Labels): ~380 ms → 63–104 ms pro Bearbeitung.
+
+Nächste Kandidaten (Profil 1500 Labels): `AnnotationLayer.render()` (~140 ms, zweite Ebene, in die
+`_syncLinkedLabelsToLayers` spiegelt, baut noch komplett neu) → gleiches Muster; `LabelList.render()` (~200 ms bei
+Umbenennen); ein Layout-Durchlauf (~90 ms). Außerdem `highlightActiveLabel` läuft bei jedem timeupdate über alle Elemente.

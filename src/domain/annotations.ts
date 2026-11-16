@@ -198,6 +198,11 @@ export type { AnnotationRegion } from '../shared/label.types.ts';
 // annotation/label overlay layers.
 // ═══════════════════════════════════════════════════════════════════════
 
+/** JSON replacer: _normalize() stamps a fresh createdAt on every set(); not shown, so not part of a signature. */
+function skipTimestamps(key: string, value: unknown): unknown {
+    return key === 'createdAt' || key === 'updatedAt' ? undefined : value;
+}
+
 /** True when `set` holds exactly the ids in `ids`. */
 function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
     let n = 0;
@@ -1092,17 +1097,40 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const height = Math.max(1, state?.d?.spectrogramCanvas?.height || 1);
         this.overlay.style.width = `${width}px`;
         this.overlay.style.height = `${height}px`;
-        this.overlay.innerHTML = '';
 
+        // Keyed update: an element is kept while its label and display state are unchanged
+        // (only its position follows zoom/scroll), so one edit touches one element, not all.
         this._assignLanes(height);
-        const elements = [];
-        const geometries = [];
+        const prevById = this._elById;
+        const nextById = new Map<string, HTMLElement>();
+        const elements: HTMLElement[] = [];
+        const geometries: Array<{ left: number; top: number; width: number; height: number }> = [];
         for (const label of this._items) {
-            const el = this._createLabelElement(label, width, height);
             const geo = this._toGeometry(label, width, height);
-            this.overlay.appendChild(el);
+            const sig = this._labelSignature(label);
+            const geoKey = `${geo.left},${geo.top},${geo.width},${geo.height},${height}`;
+            let el = prevById.get(label.id);
+            const st = el && this._elState.get(el);
+            if (!el || !st || st.sig !== sig || nextById.has(label.id)) {
+                el = this._createLabelElement(label, width, height);
+                this._elState.set(el, { sig, geo: geoKey });
+            } else if (st.geo !== geoKey) {
+                this._setGeometry(el, geo);
+                if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - geo.top - geo.height)}px`);
+                st.geo = geoKey;
+            }
+            nextById.set(label.id, el);
             elements.push(el);
             geometries.push(geo);
+        }
+        this._elById = nextById;
+        // Everything else goes (stale labels, stamp ghost, snap preview, draft) — as the old full wipe did.
+        const keep = new Set<Element>(elements);
+        for (const child of [...this.overlay.children]) if (!keep.has(child)) child.remove();
+        let ref = this.overlay.firstChild;
+        for (const el of elements) {
+            if (el === ref) ref = ref.nextSibling;
+            else this.overlay.insertBefore(el, ref);
         }
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
@@ -1182,8 +1210,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     }
     _applyPin(el: HTMLElement, { dx, dy, inside }: { dx: number; dy: number; inside: boolean }) {
         el.classList.toggle('label-text-inside', inside);
-        el.style.setProperty('--label-text-dx', `${dx}px`);
-        el.style.setProperty('--label-text-dy', `${dy}px`);
+        // Unchanged values are not written: a style write invalidates the element even when equal.
+        const sx = `${dx}px`, sy = `${dy}px`;
+        if (el.style.getPropertyValue('--label-text-dx') !== sx) el.style.setProperty('--label-text-dx', sx);
+        if (el.style.getPropertyValue('--label-text-dy') !== sy) el.style.setProperty('--label-text-dy', sy);
     }
 
     _textPinScrollBound: HTMLElement | null = null;
@@ -1220,9 +1250,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 rect.left < r.right && rect.right > r.left &&
                 rect.top < r.bottom && rect.bottom > r.top,
             );
+            textEl.classList.toggle('label-text-bottom', collides);   // reused elements may still have it
 
             if (collides) {
-                textEl.classList.add('label-text-bottom');
                 rect = {
                     left: geo.left,
                     top: geo.top + geo.height - TEXT_H,
@@ -1462,6 +1492,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     }
 
     _applyGeometryToElement(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
+        this._setGeometry(el, geometry);
+        if (el.isConnected) {
+            const st = this._elState.get(el);
+            if (st) st.geo = '';   // moved outside render(): the next render re-applies the label's geometry
+            this._pinLabelText(el);
+        }
+    }
+    /** Position + size classes only; no layout reads. */
+    _setGeometry(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
         el.style.left = `${geometry.left}px`;
         el.style.top = `${geometry.top}px`;
         el.style.width = `${geometry.width}px`;
@@ -1471,7 +1510,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.classList.toggle('label-compact', !lane && (geometry.width < 70 || geometry.height < 44));
         // Only really tiny boxes drop the corner dots (12 px dots + edge strips need room)
         el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
-        if (el.isConnected) this._pinLabelText(el);
+    }
+
+    /** Element per label id from the last render(), and what it was built from. */
+    _elById = new Map<string, HTMLElement>();
+    _elState = new WeakMap<HTMLElement, { sig: string; geo: string }>();
+    /** Everything _createLabelElement reads apart from the geometry; a change rebuilds the element. */
+    _labelSignature(label: SpectrogramLabel): string {
+        const p = this.player as any;
+        return JSON.stringify([
+            label, this._lockedIds.has(label.id), this._liveLinkedId === label.id, this._lanes.has(label.id),
+            p?.options?.labelConfidence === true, p?._readOnly === true,
+        ], skipTimestamps);
     }
 
     /** Lane of each full-band label in 'lanes' display (empty in other modes). */
