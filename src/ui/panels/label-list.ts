@@ -772,7 +772,7 @@ export class LabelList {
       }
     };
     for (const id of ids) this._lazyGroupOf.set(id, group);
-    this._rowOrder.push(...ids);
+    for (const id of ids) this._rowOrder.push(id);   // no spread: huge groups would exceed the argument limit
     if (group.classList.contains('lt-open')) group.__buildRows();
     return group;
   }

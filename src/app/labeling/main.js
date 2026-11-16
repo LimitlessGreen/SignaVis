@@ -2988,6 +2988,7 @@ function saveCurrentAnnotationsIfNeeded() {
   // entry, persist them (including the empty-array case when user cleared).
   if (state._labelsEntryId === recordingManager.activeId) {
     recordingManager.saveAnnotations(state.labels);
+    scheduleProjectAutosave();   // saveAnnotations only updates the entry, not the project store
     return;
   }
   // If we have labels in memory but they aren't marked as belonging to the
@@ -2996,6 +2997,7 @@ function saveCurrentAnnotationsIfNeeded() {
   if (Array.isArray(state.labels) && state.labels.length > 0) {
     recordingManager.saveAnnotations(state.labels);
     state._labelsEntryId = recordingManager.activeId;
+    scheduleProjectAutosave();
   }
 }
 // Remove duplicate labels while preserving order. Keys by `id` when present,
