@@ -12,14 +12,14 @@ export function initModelPicker(opts: {
   const { seg, select, urlInput, note } = opts;
   if (!seg || !select) return () => {};
   const btns = [...seg.querySelectorAll<HTMLButtonElement>('.seg-btn')];
-  const sync = () => {
+  const sync = (keepUrl = false) => {
     for (const b of btns) {
       const on = b.dataset.value === select.value;
       b.setAttribute('aria-checked', String(on));
       b.tabIndex = on ? 0 : -1;
       if (on && note) note.textContent = b.dataset.note || '';
     }
-    if (urlInput) urlInput.hidden = select.value !== 'custom';
+    if (urlInput && !keepUrl) urlInput.hidden = select.value !== 'custom';
   };
   const pick = (b: HTMLButtonElement, focus = false) => {
     if (select.value !== b.dataset.value) {
@@ -39,9 +39,11 @@ export function initModelPicker(opts: {
       pick(btns[(i + step + btns.length) % btns.length], true);
     });
   });
-  select.addEventListener('change', sync);
-  // Typing a URL re-detects the preset in BirdNETPanel (its listener runs first)
-  urlInput?.addEventListener('input', () => { if (select.value !== 'custom') sync(); });
+  select.addEventListener('change', () => sync(document.activeElement === urlInput));
+  // Typing a URL re-detects the preset in BirdNETPanel (its listener runs first);
+  // the field stays visible while the user is still editing it
+  urlInput?.addEventListener('input', () => sync(true));
+  urlInput?.addEventListener('blur', () => sync());
   sync();
-  return sync;
+  return () => sync();
 }
