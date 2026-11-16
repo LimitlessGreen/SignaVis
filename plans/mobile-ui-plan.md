@@ -1,6 +1,6 @@
 # Mobile-/Tablet-UI – Plan
 
-Stand: 2026-11-16 · Status: Entwurf, nicht begonnen
+Stand: 2026-11-16 · Status: Phase 1–3 umgesetzt (Branch feat/mobile-ui-phase1)
 
 ## Ziel
 
