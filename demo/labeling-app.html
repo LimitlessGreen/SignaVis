@@ -2814,6 +2814,8 @@
       if (recordingExplorer.isMultiMode()) return { replace: null };
       const old = recordingManager.getAll()[0];
       if (!old) return { replace: null };
+      // Phone UI: „New“ always adds to the list (no replace dialog there).
+      if (mobileApp?.isActive) { recordingExplorer.setMultiMode(true); return { replace: null }; }
       // state.labels belong to the entry only once it is loaded (at startup it may be active but not loaded yet)
       const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
       const anns = (live ? state.labels : old.annotations) || [];
@@ -3265,6 +3267,9 @@
         meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : mt('rec.audioFile')),
         labels: e.id === recordingManager.activeId ? state.labels : (e.annotations || []),
         active: e.id === recordingManager.activeId,
+        duration: e.duration ?? null,
+        thumb: e.thumb ?? null,
+        audioUrl: e.audioUrl ?? null,
       })),
       openRecording: async (id) => {
         const entry = recordingManager.getById(id);
@@ -3274,6 +3279,12 @@
       resolveName,
       isOwn: (l) => l.setId === OWN_SOURCE_ID,
       addFile: () => document.getElementById('fileInput')?.click(),
+      addXenoCanto: (raw) => {
+        // Same path as the desktop Xeno-canto field (dedupe, duration check, label import).
+        xcIdInput.value = raw;
+        xcLoadBtn.click();
+      },
+      setRecordingInfo: (id, info) => { recordingManager.update(id, info); mobileApp.refresh(); },
       acceptLabel: (id) => adoptOneLabel(id),
       discardLabel: (id) => {
         const lbl = state.labels.find((l) => l.id === id);

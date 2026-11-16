@@ -15,6 +15,7 @@ import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
 import { t } from './i18n.ts';
+import { renderThumb, thumbFromUrl } from './thumb.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -25,6 +26,12 @@ export interface MobileRecording {
   meta: string;
   labels: any[];
   active: boolean;
+  /** Length in seconds, once known. */
+  duration?: number | null;
+  /** Mini spectrogram (data URL), once rendered. */
+  thumb?: string | null;
+  /** Audio source, used to render the thumbnail of a recording that is not open. */
+  audioUrl?: string | null;
 }
 
 export interface MobileAppHost {
@@ -41,6 +48,10 @@ export interface MobileAppHost {
   isOwn?(lbl: any): boolean;
   /** Open the file picker to add audio. */
   addFile(): void;
+  /** Load a Xeno-canto recording (number or URL) into the project and open it. */
+  addXenoCanto?(raw: string): Promise<void> | void;
+  /** Remember thumbnail / duration on the recording (so they survive a reload). */
+  setRecordingInfo?(id: string, info: { thumb?: string | null; duration?: number }): void;
   /** ✓: copy a detection of the active recording into "My labels" (desktop: spectrogramlabeladopt). */
   acceptLabel?(id: string): void;
   /** ✕: remove a label of the active recording; returns the removed label (for undo). */
@@ -101,6 +112,8 @@ const I = {
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.2"/><circle cx="13" cy="16" r="1.2"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
   rw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
@@ -183,6 +196,11 @@ export class MobileApp {
   private qList!: HTMLElement;
   private qHead!: HTMLElement;
   private snack!: HTMLElement;
+  private newMenu!: HTMLElement;
+  private xcInput!: HTMLInputElement;
+  /** Thumbnails being rendered in the background (ids), and ones that failed. */
+  private thumbBusy = false;
+  private thumbFailed = new Set<string>();
   private snackTimer = 0;
   private rvProgress!: HTMLElement;
   /** Analyse the next recording that gets loaded (after „Neu“ or Live). */
@@ -266,6 +284,7 @@ export class MobileApp {
     // A newly loaded recording starts with the phone time span.
     host.player?.on?.('ready', () => {
       this.needsFit = true;
+      this.thumbActive();
       if (!this.active) return;
       setTimeout(() => this.fitTime(), 250);
       if (this.autoAnalyse) { this.autoAnalyse = false; setTimeout(() => this.analyseNow(), 300); }
@@ -362,14 +381,69 @@ export class MobileApp {
     const bar = el('header', 'm-appbar');
     bar.appendChild(el('h1', '', t('nav.recordings')));
     this.recList = el('div', 'm-scroll m-rec-list');
-    const fab = button('m-fab', `${I.plus}<span>${t('rec.new')}</span>`, t('rec.add'), () => {
+    const fab = button('m-fab', `${I.plus}<span>${t('rec.new')}</span>`, t('rec.add'), () => this.toggleNewMenu());
+    s.append(bar, this.recList, this.buildNewMenu(), fab);
+    this.screens.set('recordings', s);
+    return s;
+  }
+
+  /** „New“: audio file, Xeno-canto or microphone (Live). */
+  private buildNewMenu(): HTMLElement {
+    const m = el('div', 'm-new');
+    m.hidden = true;
+    const scrim = el('div', 'm-new-scrim');
+    scrim.addEventListener('click', () => this.toggleNewMenu(false));
+    const sheet = el('div', 'm-new-sheet');
+    sheet.appendChild(el('div', 'm-new-h', t('rec.add')));
+    const item = (icon: string, title: string, hint: string, onClick: () => void) => {
+      const b = button('m-new-item', `<span class="m-new-ic">${icon}</span><span class="m-new-tx"><b></b><small></small></span>`, title, onClick);
+      b.querySelector('b')!.textContent = title;
+      b.querySelector('small')!.textContent = hint;
+      sheet.appendChild(b);
+      return b;
+    };
+    item(I.file, t('new.file'), t('new.fileHint'), () => {
+      this.toggleNewMenu(false);
       // The new file is analysed as soon as it is loaded (see the player 'ready' handler).
       this.autoAnalyse = !!this.h.analysis;
       this.h.addFile();
     });
-    s.append(bar, this.recList, fab);
-    this.screens.set('recordings', s);
-    return s;
+    if (this.h.addXenoCanto) {
+      const xcBtn = item(I.globe, t('new.xc'), t('new.xcHint'), () => {
+        xcRow.hidden = !xcRow.hidden;
+        if (!xcRow.hidden) this.xcInput.focus();
+      });
+      const xcRow = el('form', 'm-new-xc');
+      xcRow.hidden = true;
+      this.xcInput = el('input', 'm-input');
+      this.xcInput.placeholder = t('new.xcPlaceholder');
+      this.xcInput.setAttribute('aria-label', t('new.xc'));
+      this.xcInput.inputMode = 'url';
+      this.xcInput.autocapitalize = 'off';
+      const go = el('button', 'm-cta m-cta--sm', t('new.load'));
+      go.type = 'submit';
+      xcRow.append(this.xcInput, go);
+      xcRow.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const raw = this.xcInput.value.trim();
+        if (!raw) return;
+        this.toggleNewMenu(false);
+        this.xcInput.value = '';
+        this.autoAnalyse = !!this.h.analysis;
+        this.toast(t('new.xcLoading'), null);
+        try { await this.h.addXenoCanto!(raw); } catch { this.autoAnalyse = false; }
+      });
+      xcBtn.after(xcRow);
+    }
+    if (this.h.live) item(I.mic, t('new.mic'), t('new.micHint'), () => { this.toggleNewMenu(false); this.show('live'); });
+    m.append(scrim, sheet);
+    this.newMenu = m;
+    return m;
+  }
+
+  private toggleNewMenu(open = this.newMenu.hidden) {
+    this.newMenu.hidden = !open;
+    if (!open) this.newMenu.querySelector<HTMLElement>('.m-new-xc')?.setAttribute('hidden', '');
   }
 
   private renderRecordings() {
@@ -382,25 +456,77 @@ export class MobileApp {
     for (const r of recs) {
       const card = el('button', `m-rec${r.active ? ' active' : ''}`);
       card.type = 'button';
-      const { detections, open } = reviewState(r.labels, this.isOwn);
-      const species = new Set(r.labels.map((l) => l.scientificName || l.label).filter(Boolean)).size;
+      const { adopted, detections, open } = reviewState(r.labels, this.isOwn);
+      const species = new Set(r.labels.map((l) => l.scientificName).filter(Boolean)).size;
+
+      // Mini spectrogram with a tick per detection (open = orange, confirmed = green).
+      const thumb = el('div', 'm-rec-thumb');
+      if (r.thumb) thumb.style.backgroundImage = `url("${r.thumb}")`;
+      const dur = Number(r.duration) || 0;
+      if (dur > 0) {
+        const marks = el('div', 'm-rec-marks');
+        for (const l of detections) {
+          const i = el('i', adopted.has(String(l.id)) ? 'ok' : '');
+          i.style.left = `${Math.min(100, (l.start / dur) * 100)}%`;
+          i.style.width = `${Math.max(0.6, ((l.end - l.start) / dur) * 100)}%`;
+          marks.appendChild(i);
+        }
+        thumb.appendChild(marks);
+      }
+
+      const body = el('div', 'm-rec-body');
       const main = el('div', 'm-rec-main');
       main.appendChild(el('div', 'm-rec-title', r.title));
-      main.appendChild(el('div', 'm-rec-meta', [r.meta, species ? t('rec.species', { n: species }) : ''].filter(Boolean).join(' · ')));
+      main.appendChild(el('div', 'm-rec-meta', [r.meta, dur ? fmtClock(dur, false) : '', species ? t('rec.species', { n: species }) : '']
+        .filter(Boolean).join(' · ')));
       const st = open.length
         ? el('span', 'm-status todo', t('rec.open', { n: open.length }))
         : detections.length ? el('span', 'm-status done', t('rec.reviewed'))
         : r.labels.length ? el('span', 'm-status done', t('common.labels', { n: r.labels.length })) : el('span', 'm-status new', t('rec.notAnalysed'));
-      card.append(main, st);
+      body.append(main, st);
+      card.append(thumb, body);
       card.addEventListener('click', async () => {
         this.autoAnalyse = false;
-        if (!r.active) await this.h.openRecording(r.id);
+        const fresh = !r.labels.length && !!this.h.analysis;
+        if (!r.active) {
+          // Not analysed yet: analyse right away once it is loaded.
+          this.autoAnalyse = fresh;
+          await this.h.openRecording(r.id);
+        }
         this.rvFrom = 'recordings';
-        if (!r.labels.length && this.h.analysis) this.openAnalyse('recordings');
-        else this.show('review');
+        this.show('review');
+        if (fresh && r.active) this.analyseNow();
       });
       this.recList.appendChild(card);
     }
+    this.thumbNext();
+  }
+
+  /** Render the thumbnail of the open recording from the player's decoded audio. */
+  private thumbActive() {
+    const rec = this.h.getRecordings().find((r) => r.active);
+    const buf = this.h.player?._state?.audioBuffer;
+    if (!rec || !buf || !this.h.setRecordingInfo) return;
+    if (rec.thumb && rec.duration) return;
+    setTimeout(() => {
+      const thumb = rec.thumb || renderThumb(buf);
+      this.h.setRecordingInfo!(rec.id, { thumb, duration: buf.duration });
+    }, 50);
+  }
+
+  /** Background: render one missing thumbnail at a time (recordings that were never opened here). */
+  private thumbNext() {
+    if (this.thumbBusy || !this.active || !this.h.setRecordingInfo) return;
+    const r = this.h.getRecordings().find((x) => !x.active && !x.thumb && x.audioUrl && !this.thumbFailed.has(x.id));
+    if (!r) return;
+    this.thumbBusy = true;
+    thumbFromUrl(r.audioUrl!)
+      .then((res) => {
+        if (res?.thumb) this.h.setRecordingInfo!(r.id, { thumb: res.thumb, duration: res.duration });
+        else this.thumbFailed.add(r.id);
+      })
+      .catch(() => this.thumbFailed.add(r.id))
+      .finally(() => { this.thumbBusy = false; setTimeout(() => this.thumbNext(), 100); });
   }
 
   // ── Queue („Prüfen“ tab) ────────────────────────────────────────────

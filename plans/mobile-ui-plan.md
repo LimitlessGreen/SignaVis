@@ -70,7 +70,10 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
    mit heutigem Datum), Artenliste (zuletzt gehört, Anzahl, max. %), Stop = speichern ins Projekt, „Verwerfen“.
    Offen: BirdBox-Boxen im Live-Spektrogramm (`BirdBoxDetector.startLive`, braucht 32-kHz-Resampler),
    Ort-Chip mit Namen, Tap auf Art → Stelle in der Aufnahme, Test auf dem Pixel.
-2. **Aufnahmen-Karten:** Mini-Spektrogramm; „Neu“-Menü mit Xeno-canto und Mikrofon (bisher nur Datei).
+2. **Aufnahmen-Karten** — gebaut (`stand-aufnahmen-karten.png`): Mini-Spektrogramm (`thumb.ts`, einmal gerendert,
+   als `thumb`/`duration` am RecordingEntry gespeichert), Treffer-Striche (orange offen, grün bestätigt), Dauer.
+   „Neu“-Menü: Datei, Xeno-canto (Desktop-Ladeweg), Mikrofon → Live. Auf dem Handy kein Ersetzen-Dialog.
+   Unanalysierte Aufnahme antippen = sofort analysieren. Offen: Datum/Ort in der Metazeile, XC auf dem Gerät testen.
 3. **Arten:** Spektrogramm-Ausschnitte bei den Belegen; anzeigen, welcher Beleg gerade läuft.
 4. **Prüfen:** Sheet hochziehbar; Spuren-Optik wie Mockup (schmaler).
 5. **Später:** Wischgesten für ✓/✕, Tablet-Touch (Zeichenmodus, langer Druck).
