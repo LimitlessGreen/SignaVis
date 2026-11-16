@@ -20,8 +20,8 @@ import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
 const FALLBACK_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Crect width='72' height='72' fill='%23303030'/%3E%3Cpath d='M36 18c-6 0-11 4-13 9l-5-3c-1-1-3 0-2 2l4 7c-1 2-2 4-2 7 0 8 8 14 18 14s18-6 18-14c0-2-1-4-2-6l5-8c1-2-1-3-2-2l-6 4c-2-6-7-10-13-10z' fill='%23555'/%3E%3C/svg%3E`;
 
 // ── Origin display ────────────────────────────────────────────────────────────
-const ORIGIN_DISPLAY = { 'BirdNET': 'BirdNET', 'xeno-canto': 'Xeno-canto' };
-const ORIGIN_ORDER   = { 'BirdNET': 0, 'xeno-canto': 1 };
+const ORIGIN_DISPLAY = { 'BirdNET': 'BirdNET', 'BirdBox': 'BirdBox', 'xeno-canto': 'Xeno-canto' };
+const ORIGIN_ORDER   = { 'BirdNET': 0, 'BirdBox': 1, 'xeno-canto': 2 };
 function originDisplay(o: any) { return (ORIGIN_DISPLAY as any)[o] || 'Manual'; }
 function originOrder(o: any)   { return (ORIGIN_ORDER as any)[o] ?? 99; }
 

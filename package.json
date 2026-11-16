@@ -79,6 +79,8 @@
     "taxonomy:build": "node ./scripts/build-birdnet-taxonomy.js --source ./_birdnet_upstream/birdnet_analyzer/labels/V2.4 --output ./demo/data/birdnet-taxonomy.v2.4.json --model V2.4 --source-url https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4",
     "pack:check": "npm pack",
     "test": "node ./scripts/run-tests.mjs",
+    "models:birdbox": "node scripts/birdbox/fetch-model.mjs",
+    "test:birdbox-stream": "node --import tsx scripts/birdbox/stream-parity.mjs",
     "test:analysis-smoke": "node --experimental-loader ./scripts/ignore-styles-loader.mjs --experimental-strip-types --test tests/analysis-backend-e2e-smoke.test.ts",
     "prepare": "npm run build:css && node ./scripts/install-githooks.js",
     "prepack": "npm run build:css",

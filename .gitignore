@@ -86,3 +86,7 @@ src-tauri-lite/.cargo/
 
 # BirdNET+ V3.0 Global 12K (173 MB) — fetched with scripts/fetch-birdnet-12k.mjs
 models/birdnet-v3.0-12k/
+
+# BirdBox model: fetched at build time (scripts/birdbox/fetch-model.mjs)
+.cache/
+models/birdbox-just-bird/
