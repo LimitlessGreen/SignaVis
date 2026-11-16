@@ -193,7 +193,8 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
     };
 
     if (force) showAt(index);
-    else _whenNoModalOpen(() => showAt(index));
+    // Several deferred calls may wait for the same modal: show only if no tip is open by then.
+    else _whenNoModalOpen(() => { if (!host?.querySelector?.('.daily-tip-backdrop')) showAt(index); });
   } catch (e) {
     try { showTip(tips[0], host); } catch (e) { /* ignore */ }
   }

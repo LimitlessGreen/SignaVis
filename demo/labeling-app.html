@@ -3501,14 +3501,26 @@
           commonName: det.common,
         };
       },
-      onResults: (labels) => {
+      getRecordingId: () => recordingManager?.activeId || null,
+      onResults: (labels, startedFor) => {
         // Find or lazily create the shared BirdNET set
         let birdnetSetId = [...state.labelSets.entries()].find(([, s]) => s.origin === 'BirdNET')?.[0];
         if (!birdnetSetId) {
           const set = createLabelSet({ name: 'BirdNET', origin: 'BirdNET', locked: true });
           birdnetSetId = set.id;
         }
-        const _bnRecordingId = recordingManager?.activeId || null;
+        const _bnRecordingId = startedFor ?? recordingManager?.activeId ?? null;
+        // Another recording was opened while BirdNET ran: the results belong to the one analysed.
+        if (_bnRecordingId && _bnRecordingId !== recordingManager?.activeId) {
+          const entry = recordingManager.getById(_bnRecordingId);
+          if (entry) {
+            const add = labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId }));
+            recordingManager.update(_bnRecordingId, { annotations: [...(entry.annotations || []), ...add] });
+            recordingExplorer.render?.();
+            mobileApp.refresh();
+          }
+          return;
+        }
         for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
         syncToPlayer();
         if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');

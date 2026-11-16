@@ -128,6 +128,8 @@ const I = {
 };
 
 const SKIP_SEC = 5;
+/** Live recordings are held in memory until Stop: keep them short enough for a phone tab. */
+const LIVE_MAX_SEC = 15 * 60;
 /** Seconds visible in the spectrogram on phones (the desktop default is far too zoomed in there). */
 const VIEW_SEC = 10;
 const RATES = [1, 0.5, 0.25];
@@ -679,7 +681,7 @@ export class MobileApp {
     const tr = el('div', 'm-transport');
     this.rateBtn = button('m-tbtn m-tbtn--txt', '1×', t('rv.rate'), () => this.cycleRate());
     this.playBtn = button('m-play', I.play, t('rv.play'), () => this.togglePlay());
-    this.loopBtn = button('m-tbtn m-tbtn--txt', 'Loop', t('rv.loop'), () => this.toggleLoop());
+    this.loopBtn = button('m-tbtn m-tbtn--txt', t('rv.loop'), t('rv.loopLabel'), () => this.toggleLoop());
     tr.append(
       this.rateBtn,
       button('m-tbtn', I.rw, t('rv.skipBack', { s: SKIP_SEC }), () => this.skip(-SKIP_SEC)),
@@ -797,7 +799,10 @@ export class MobileApp {
     }
     if (open && this.h.acceptLabel) this.swipeable(card, () => this.accept(lbl), () => this.discard(lbl));
     card.addEventListener('click', () => { if (performance.now() - this.swipedAt > 350) this.playLabel(lbl); });
-    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.playLabel(lbl); } });
+    card.addEventListener('keydown', (e) => {
+      if (e.target !== card) return;   // ✓/✕ keep their own keyboard activation
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.playLabel(lbl); }
+    });
     return card;
   }
 
@@ -886,8 +891,15 @@ export class MobileApp {
     this.afterDecision(next);
   }
 
-  /** Short message above the nav, with an optional „Rückgängig“. */
+  private activeRecId() { return this.h.getRecordings().find((r) => r.active)?.id ?? null; }
+
+  /** Short message above the nav, with an optional undo; the undo only applies to the recording it was made in. */
   private toast(msg: string, undo: (() => void) | null) {
+    if (undo) {
+      const recId = this.activeRecId();
+      const inner = undo;
+      undo = () => { if (this.activeRecId() === recId) inner(); };
+    }
     clearTimeout(this.snackTimer);
     this.snack.replaceChildren(el('span', '', msg));
     if (undo) {
@@ -1101,7 +1113,7 @@ export class MobileApp {
         this.renderSpecies();
       });
       const best = sp.examples[0];
-      const play = button('m-sp-play', I.play, `Besten Beleg von ${name(sp)} abspielen`, () => this.playExample(best.rec, best.lbl));
+      const play = button('m-sp-play', I.play, t('sp.playBest', { name: name(sp) }), () => this.playExample(best.rec, best.lbl));
       const top = el('div', 'm-sp-top');
       top.append(head, play);
       row.appendChild(top);
@@ -1129,6 +1141,7 @@ export class MobileApp {
 
   /** Play one example; opens its recording first if needed (stays on the species screen). */
   private async playExample(rec: MobileRecording, lbl: any) {
+    this.autoAnalyse = false;
     if (!rec.active) {
       await this.h.openRecording(rec.id);
       await new Promise((r) => setTimeout(r, 300));
@@ -1416,7 +1429,7 @@ export class MobileApp {
       txt.append(el('div', 'm-live-row-name', r.common || r.sci),
         el('div', 'm-live-row-sub', `${on ? this.ago(now - r.last) : fmtClock(r.last, false)} · ${r.count}×`));
       const c = el('div', 'm-live-row-conf', `${Math.round(r.max * 100)}%`);
-      c.appendChild(el('small', '', 'max'));
+      c.appendChild(el('small', '', t('live.max')));
       row.append(img, txt, c);
       this.lvList.appendChild(row);
     }
@@ -1442,7 +1455,7 @@ export class MobileApp {
       this.lvBtn.disabled = false;
       return;
     }
-    const rec = new LiveRecorder({ maxSeconds: 60 * 60 });
+    const rec = new LiveRecorder({ maxSeconds: LIVE_MAX_SEC });
     this.lvSpecies.clear();
     // 3 s chunks at the device rate; BirdNET resamples. A slow phone drops chunks instead of lagging.
     let buf: Float32Array | null = null, n = 0, chunkStart = 0;

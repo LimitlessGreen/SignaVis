@@ -105,11 +105,18 @@ export function renderThumb(buffer: AudioBuffer): string | null {
   return canvas.toDataURL('image/jpeg', 0.72);
 }
 
-/** Fetch + decode a recording that is not open, then render its thumbnail. */
+/** Background thumbnails only for files already on the device, and not for huge ones. */
+const MAX_THUMB_BYTES = 40 * 1024 * 1024;
+
+/** Fetch + decode a recording that is not open, then render its thumbnail (null = skipped). */
 export async function thumbFromUrl(url: string): Promise<{ thumb: string | null; duration: number } | null> {
+  if (!/^blob:/.test(url) && new URL(url, location.href).origin !== location.origin) return null;   // no downloads
   const res = await fetch(url);
   if (!res.ok) return null;
+  const len = Number(res.headers.get('content-length')) || 0;
+  if (len > MAX_THUMB_BYTES) { void res.body?.cancel(); return null; }
   const bytes = await res.arrayBuffer();
+  if (bytes.byteLength > MAX_THUMB_BYTES) return null;
   const Ctx = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
   const ctx = new Ctx(1, 1, 22050);
   const buf: AudioBuffer = await ctx.decodeAudioData(bytes);

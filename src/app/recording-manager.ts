@@ -257,6 +257,7 @@ export class RecordingManager extends EventTarget {
         for (const partial of entries || []) {
             const entry: any = defaultRecordingEntry(partial);
             entry.xcId = toXcId(entry.xcId);
+            if (!partial?.addedAt) entry.addedAt = null;
             entry.source = inferSource(entry);
             this._entries.set(entry.id, entry);
         }
@@ -298,6 +299,7 @@ export class RecordingManager extends EventTarget {
             for (const e of entries) {
                 const entry: any = defaultRecordingEntry(e);
                 entry.xcId = toXcId(entry.xcId);   // older sessions stored the bare number
+                if (!e.addedAt) entry.addedAt = null;   // unknown; do not stamp the restore time
                 entry.source = inferSource({ ...e, isBlobUrl: e.isBlobUrl || (e.source === 'file') });
                 this._entries.set(entry.id, entry);
             }

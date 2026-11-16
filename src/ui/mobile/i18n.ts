@@ -58,6 +58,8 @@ const en = {
   'rv.play': 'Play',
   'rv.pause': 'Pause',
   'rv.loop': 'Loop',
+  'rv.loopLabel': 'Loop',
+  'live.max': 'max',
   'rv.skipBack': (v) => `Back ${v.s} s`,
   'rv.skipFwd': (v) => `Forward ${v.s} s`,
   'rv.open': 'Open',
@@ -179,7 +181,7 @@ const de: Partial<Record<MKey, Entry>> = {
   'rv.analyse': 'Analysieren',
   'rv.rate': 'Wiedergabetempo',
   'rv.play': 'Abspielen',
-  'rv.loop': 'Schleife',
+  'rv.loopLabel': 'Schleife',
   'rv.skipBack': (v) => `${v.s} s zurück`,
   'rv.skipFwd': (v) => `${v.s} s vor`,
   'rv.open': 'Offen',
@@ -257,15 +259,17 @@ const de: Partial<Record<MKey, Entry>> = {
 };
 
 const DICTS: Record<string, Partial<Record<MKey, Entry>>> = { en, de };
+/** Only real dictionaries (not inherited names such as "constructor"). */
+const known = (l: string | null | undefined): l is string => !!l && Object.prototype.hasOwnProperty.call(DICTS, l);
 export const LANGS = Object.keys(DICTS);
 const STORE_KEY = 'signavis.lang';
 
 function detectLang(): string {
   try {
     const q = new URLSearchParams(location.search).get('lang');
-    if (q && DICTS[q]) return q;
+    if (known(q)) return q;
     const s = localStorage.getItem(STORE_KEY);
-    if (s && DICTS[s]) return s;
+    if (known(s)) return s;
   } catch { /* no window / storage */ }
   return 'en';
 }
@@ -276,7 +280,7 @@ export function getLang() { return lang; }
 
 /** Change the language (stored); the caller re-renders. */
 export function setLang(next: string) {
-  if (!DICTS[next]) return;
+  if (!known(next)) return;
   lang = next;
   try { localStorage.setItem(STORE_KEY, next); } catch { /* ignore */ }
 }
