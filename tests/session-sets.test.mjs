@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saveSessionSets, restoreSessionSets } from '../demo/lib/session-sets.js';
+import { saveSessionSets, restoreSessionSets } from '../src/app/session-sets.ts';
 
 function createLocalStorage() {
   let store = Object.create(null);

@@ -219,7 +219,7 @@ globalThis.URL = MockURL;
 globalThis.Worker = FakeWorker;
 
 // Now import SnrComputer (browser globals already set above)
-const { SnrComputer } = await import('../demo/lib/snr-computer.js');
+const { SnrComputer } = await import('../src/ui/components/snr-computer/snr-computer.ts');
 
 function makeAudioBuffer(duration = 5, sampleRate = 44100) {
   const nSamples = Math.ceil(duration * sampleRate);
