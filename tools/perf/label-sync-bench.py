@@ -14,6 +14,8 @@ args = dict(a.lstrip('-').split('=', 1) for a in sys.argv[1:] if '=' in a)
 URL = args.get('url', 'http://localhost:5191/demo/labeling-app.html')
 N = int(args.get('labels', 1500))
 RUNS = int(args.get('runs', 15))
+if N < 1 or RUNS < 1:
+    sys.exit('--labels and --runs must be at least 1')
 
 SETUP = """async (n) => {
   const sv = window.__signavis;
@@ -44,11 +46,13 @@ ACTION = """async ([name, runs]) => {
   const yieldTask = () => new Promise((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
   // Next frame drawn: rAF callbacks, style/layout/paint, then a task.
   const painted = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  const n = sv.state.labels.length;
+  const id = (k) => 'bench_' + (k % n);   // always an existing label, whatever --labels/--runs
   const actions = {
-    'props edit (no name)': (i) => sv.propsPanel.onChange('bench_' + (i * 7), { note: 'n' + i }),
-    'props edit (rename)': (i) => sv.propsPanel.onChange('bench_' + (i * 7), { label: 'Species ' + ((i + 3) % 25) }),
+    'props edit (no name)': (i) => sv.propsPanel.onChange(id(i * 7), { note: 'n' + i }),
+    'props edit (rename)': (i) => sv.propsPanel.onChange(id(i * 7), { label: 'Species ' + ((i + 3) % 25) }),
     'drag/resize on spectrogram': (i) => {
-      const l = sv.state.labels.find((x) => x.id === 'bench_' + (i * 11));
+      const l = sv.state.labels.find((x) => x.id === id(i * 11));
       sv.player._emit('spectrogramlabelupdate', { label: { ...l, end: l.end + 0.01 } });
     },
     'syncToPlayer()': () => sv.syncToPlayer(),

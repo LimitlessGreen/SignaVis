@@ -65,6 +65,26 @@ test('setLockedIds with empty array clears all locks', () => {
     assert.equal(layer._lockedIds.size, 0);
 });
 
+test('setLockedIds with duplicate ids still unlocks the ids that are missing', () => {
+    const { layer } = createLayer();
+    const a = layer.add({ start: 0, end: 1, freqMin: 1000, freqMax: 5000, label: 'A' });
+    const b = layer.add({ start: 2, end: 3, freqMin: 1000, freqMax: 5000, label: 'B' });
+    layer.setLockedIds([a, b]);
+    layer.setLockedIds([a, a]);
+    assert.ok(layer._lockedIds.has(a));
+    assert.ok(!layer._lockedIds.has(b), 'b must be unlocked');
+});
+
+test('setLockedIds with the same ids in another order keeps the set', () => {
+    const { layer } = createLayer();
+    const a = layer.add({ start: 0, end: 1, freqMin: 1000, freqMax: 5000, label: 'A' });
+    const b = layer.add({ start: 2, end: 3, freqMin: 1000, freqMax: 5000, label: 'B' });
+    layer.setLockedIds([a, b]);
+    const before = layer._lockedIds;
+    layer.setLockedIds([b, a, a]);
+    assert.equal(layer._lockedIds, before, 'unchanged ids: no new set, no re-render');
+});
+
 // ── remove() on locked labels ──
 
 test('remove() still removes a locked label (internal API has no guard)', () => {
