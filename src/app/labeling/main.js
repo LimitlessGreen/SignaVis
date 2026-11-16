@@ -77,6 +77,7 @@ import {
   getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
 } from '../../app/lite-handoff.ts';
 import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
+import { RenderScheduler } from './render-scheduler.ts';
 
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -1036,6 +1037,30 @@ function buildAudioPanel() {
 }
 
 // ── App state ─────────────────────────────────────────────────────
+// Views that show state.labels. Changes call labelViews.invalidate(…) (usually via
+// syncToPlayer / syncToPlayerSoft); all invalidations of one synchronous run are drawn
+// once, in a microtask. Call labelViews.flush() before reading the views (rows, overlay).
+const labelViews = new RenderScheduler([
+  ['player', () => {
+    player.setSpectrogramLabels(_playerLabels());
+    _pushLockedIds(_computeLockedIds());
+  }],
+  ['list', () => labelList.render(state.labels)],      // also redraws the table (see labelTable below)
+  ['table', (pending) => {
+    if (pending.has('list')) return;                   // already drawn with the list
+    try { labelTable?.render(state.labels); } catch (e) { /* table not ready */ }
+  }],
+  ['badge', () => sidebar.setBadge('labels', state.labels.length || '')],
+  ['explore', () => explorePanel.notifyLabelsChanged()],
+  ['props', () => {
+    // Keep properties panel in sync with fresh label reference
+    if (!propsPanel._pinnedLabel) return;
+    const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
+    if (fresh) propsPanel.refreshLabel(fresh);
+    else propsPanel.pinLabel(null);
+  }],
+]);
+
 let getSuggestions = (q, n) => [];  // populated after taxonomy loads
 let _lastAudioUrl = null;           // track current audio URL for reference player
 
@@ -1808,8 +1833,7 @@ function updateSet(setId, updates) {
   saveSetProfile(s);
   clearTimeout(_setRenderTimer);
   _setRenderTimer = setTimeout(() => {
-    syncToPlayer();
-    labelList.render(state.labels);                      // set header name/license in label list
+    syncToPlayer();                                      // incl. set header name/license in label list
     xcPanel._rebuildSetSection?.();                      // set form in XC tab
     // Ensure the recording explorer header updates live when a set field changes
     try { recordingExplorer?.render?.(); } catch (e) {}
@@ -2062,7 +2086,6 @@ function snapshotLabels() {
     state._labelsEntryId = labelsEntryId;
     saveSessionSets(state);
     syncToPlayer();
-    labelList.render(state.labels);
     recordingExplorer.render();
     xcPanel._rebuildSetSection?.();
   };
@@ -2339,6 +2362,7 @@ if (themeToggleBtn) {
 // via the .selected CSS class (driven by labelfocus interaction:'click').
 const DEFAULT_SEEK_MODE = 'middle'; // 'middle' | 'start' | 'none'
 function selectLabel(labelId, opts = {}) {
+  labelViews.flush();   // a label added just now needs its row before it can be highlighted
   const seekMode = (opts && typeof opts.seekMode !== 'undefined') ? opts.seekMode : DEFAULT_SEEK_MODE;
   const lbl = labelId ? state.labels.find((l) => l.id === labelId) : null;
 
@@ -2431,7 +2455,7 @@ const labelList = new LabelList({
     if (s) {
       s.locked = lock;
       _pushLockedIds(_computeLockedIds());
-      labelList.render(state.labels);
+      labelViews.invalidate('list');
     }
   },
   onToggleSetVisibility: (setId, hide) => {
@@ -2503,7 +2527,6 @@ const labelList = new LabelList({
 function afterLayerChange() {
   saveSessionSets(state);
   syncToPlayer();
-  labelList.render(state.labels);
   try { refreshUploadChecklist(); } catch (e) { /* not ready yet */ }
 }
 // ── Label list: play one segment (▶ in a row), filter, view switch ──
@@ -2517,6 +2540,7 @@ function toggleSegmentPlay(lbl) {
   if (_segPlay?.id === lbl.id) { player.pause(); player.stop?.(); stopSegmentTracking(); return; }
   stopSegmentTracking();
   selectLabel(lbl.id, {});
+  labelViews.flush();
   labelList.highlightRow(lbl.id);
   player.playSegment(lbl.start, lbl.end, { labelId: lbl.id });
   const now = performance.now();
@@ -3020,33 +3044,18 @@ function _playerLabels() {
   return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
 }
 
+/** Labels changed: save them to the active recording now, redraw every view in the next microtask. */
 function syncToPlayer() {
   saveCurrentAnnotationsIfNeeded();
-  player.setSpectrogramLabels(_playerLabels());
-  _pushLockedIds(_computeLockedIds());
-  labelList.render(state.labels);
-  sidebar.setBadge('labels', state.labels.length || '');
-  explorePanel.notifyLabelsChanged();
-  // Keep properties panel in sync with fresh label reference
-  if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
-    const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
-    if (fresh) propsPanel.refreshLabel(fresh);
-    else propsPanel.pinLabel(null);
-  }
+  labelViews.invalidate('player', 'list', 'badge', 'explore');
+  if (!_skipPropsRefresh) labelViews.invalidate('props');
   scheduleProjectAutosave();
 }
 
-/** Sync labels to spectrogram without re-rendering the label list DOM. */
+/** Like syncToPlayer, but leaves the label list alone (spectrogram, table, badge, properties). */
 function syncToPlayerSoft() {
-  player.setSpectrogramLabels(_playerLabels());
-  try { labelTable?.render(state.labels); } catch (e) {}
-  _pushLockedIds(_computeLockedIds());
-  sidebar.setBadge('labels', state.labels.length || '');
-  if (!_skipPropsRefresh && propsPanel._pinnedLabel) {
-    const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
-    if (fresh) propsPanel.refreshLabel(fresh);
-    else propsPanel.pinLabel(null);
-  }
+  labelViews.invalidate('player', 'table', 'badge');
+  if (!_skipPropsRefresh) labelViews.invalidate('props');
 }
 
 /** Push a multi-selection change to every view that can show it. */
@@ -3464,7 +3473,7 @@ function onSetUploaded() {
   saveSessionSets(state);
   refreshUploadChecklist();
   recordingExplorer.render();
-  labelList.render(state.labels);
+  labelViews.invalidate('list');
 }
 
 // Initialize extracted export modal and wire it to xcPanel
@@ -3686,7 +3695,7 @@ async function loadBirdnetTaxonomy() {
     labelList.setSpeciesSearchFactory(speciesSearchFactory);
     propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
     labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
-    labelList.render(state.labels);
+    labelViews.invalidate('list');
   } catch (err) {
     taxonomy.clear();
     taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
@@ -4069,7 +4078,6 @@ async function importAnnotaSetFile(file) {
   const refresh = () => {
     relocalizeAllLabels();
     syncToPlayer();
-    labelList.render(state.labels);
     recordingExplorer?.render?.();
     saveSessionSets(state);
   };
@@ -4109,8 +4117,7 @@ function upsertLabel(label) {
     state.labels.push(created);
   }
   touchOwnSet(state.labels.find((l) => l.id === label.id)?.setId);
-  labelList.render(state.labels);
-  sidebar.setBadge('labels', state.labels.length || '');
+  labelViews.invalidate('list', 'badge');
   // Refresh properties panel if this label is displayed (pinned or hovered)
   const displayed = propsPanel.displayedLabel;
   if (displayed?.id === label.id) {
@@ -4172,8 +4179,7 @@ player.on('spectrogramlabelremove', (e) => {
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
   state.labels = state.labels.filter((l) => l.id !== id);
-  labelList.render(state.labels);
-  sidebar.setBadge('labels', state.labels.length || '');
+  labelViews.invalidate('list', 'badge');
   saveCurrentAnnotationsIfNeeded();
 });
 
@@ -4191,8 +4197,7 @@ player.on('labelrestore', (e) => {
     if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...lbl };
     else state.labels.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
   }
-  labelList.render(state.labels);
-  sidebar.setBadge('labels', state.labels.length || '');
+  labelViews.invalidate('list', 'badge');
   saveCurrentAnnotationsIfNeeded();
 });
 
@@ -4675,7 +4680,7 @@ if (!_restoredFromProject) {
   }
 }
 xcPanel._rebuildSetSection?.();  // the own set was created silently before the panel existed
-labelList.render(state.labels);
+labelViews.invalidate('list');
 // Reopen the last recording of the browser project (XC audio comes from the cache).
 // Session-only local files have no audio after a restart — they stay listed until re-picked.
 if (_restoredFromProject && !_hasXcParam && !_liteInitialLaunch.length) {
@@ -4692,5 +4697,9 @@ if (isLite()) {
   installLiteWindow().catch((e) => console.warn('[lite] window setup failed', e));
   installLiteMenu().catch((e) => console.warn('[lite] menu setup failed', e));
   maybeCheckLiteUpdate();
+}
+// Dev server only (stripped from builds): handles for scripts in tools/perf/.
+if (import.meta.env.DEV) {
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer() };
 }
 await loadBirdnetTaxonomy();
