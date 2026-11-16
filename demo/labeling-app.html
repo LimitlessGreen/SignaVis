@@ -2025,6 +2025,7 @@
       if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
       try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
       if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
+      document.querySelectorAll('.daily-tip-backdrop .daily-tip-close').forEach((b) => b.click());   // onboarding wins over the daily tip
       const title = projectFolderModal.querySelector('.pf-option-title');
       title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
       projectFolderDismiss.checked = false;

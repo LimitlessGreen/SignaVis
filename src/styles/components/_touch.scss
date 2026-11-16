@@ -1,0 +1,39 @@
+/* Touch devices (pointer: coarse): finger-sized hit targets.
+   Loaded last so it overrides the compact desktop sizes. See plans/mobile-ui-plan.md. */
+@media (pointer: coarse) {
+  .tb-btn,
+  .transport-btn,
+  .toolbar-btn,
+  .toolbar-select,
+  .sidebar-action-btn,
+  .project-add-file,
+  .modal-close,
+  .daily-tip-actions button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .activity-btn { min-height: 48px; }
+  .species-search-input,
+  .sidebar-body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  .sidebar-body select { min-height: 40px; }
+
+  /* Secondary controls inside the player: a bit smaller, the rows would get too tall otherwise. */
+  .zoom-step,
+  .zoom-auto-btn { min-height: 36px; min-width: 36px; }
+
+  /* Header row has a fixed height: stay inside it. The phone header is redone in phase 2. */
+  .topbar .tb-btn { min-height: 36px; min-width: 36px; max-height: 100%; }
+
+  /* Range thumbs: easier to grab. */
+  .toolbar-range { height: 28px; }
+
+  input[type="checkbox"],
+  input[type="radio"] { width: 22px; height: 22px; }
+}
+
+/* Phones: keep the header on one row; the search field gives way. */
+@media (max-width: 600px) {
+  .topbar { flex-wrap: nowrap; }
+  .topbar .species-search { flex: 1 1 auto; min-width: 0; width: auto; }
+  .topbar .tb-sep { display: none; }
+}

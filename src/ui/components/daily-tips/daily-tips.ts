@@ -151,6 +151,8 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
     const today = _today();
     const last = localStorage.getItem(`${storagePrefix}.lastDate`);
     if (!force && last === today) return;
+    // The tips are about mouse/keyboard shortcuts: don't pop them up unasked on touch devices.
+    if (!force && _isCoarsePointer()) return;
 
     try {
       const existing = host && host.querySelector && host.querySelector('.daily-tip-backdrop');
@@ -190,10 +192,27 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
       });
     };
 
-    showAt(index);
+    if (force) showAt(index);
+    else _whenNoModalOpen(() => showAt(index));
   } catch (e) {
     try { showTip(tips[0], host); } catch (e) { /* ignore */ }
   }
+}
+
+function _isCoarsePointer(): boolean {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+}
+
+/** Run `fn` once no app modal (e.g. the project-folder onboarding) is open, so dialogs never stack. */
+function _whenNoModalOpen(fn: () => void) {
+  const open = () => document.querySelector('.app-modal-backdrop:not([hidden])');
+  if (!open()) { fn(); return; }
+  const obs = new MutationObserver(() => {
+    if (open()) return;
+    obs.disconnect();
+    fn();
+  });
+  obs.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
 }
 
 export default { initDailyTips, showTip };
