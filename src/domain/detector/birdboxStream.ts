@@ -86,14 +86,17 @@ export async function readPadded(source: SampleSource, from: number, to: number)
  * from..to-1, receive({ from, data }) takes them when they come. The next block
  * is asked for while half of the last one is still to be read, and samples
  * released are dropped, so only a few blocks are held at any time (a worker
- * need not hold a copy of the whole file).
+ * need not hold a copy of the whole file). A first read past the start skips
+ * the samples before it (a run resumed at a later window). cancel() rejects a
+ * pending read and every later one, so a stopped run can unwind.
  */
 export class BlockSource implements SampleSource {
     private base = 0;
     private data = new Float32Array(0);
     private keep = 0;
     private asked = 0;
-    private waiting: (() => void) | null = null;
+    private waiting: { resolve: () => void; reject: (err: Error) => void } | null = null;
+    private failure: Error | null = null;
 
     constructor(readonly length: number, private readonly ask: (from: number, to: number) => void,
         private readonly block = 10 * SAMPLE_RATE) {}
@@ -101,16 +104,29 @@ export class BlockSource implements SampleSource {
     get end(): number { return this.base + this.data.length; }
 
     async read(from: number, to: number): Promise<Float32Array> {
+        if (this.failure) throw this.failure;
         if (from < this.base) throw new Error(`samples from ${from} on were let go (${this.base})`);
+        // Nothing asked for yet beyond `from`: start there instead of at the file start
+        if (from > this.asked && this.end === this.asked) {
+            this.base = this.asked = this.keep = from;
+            this.data = new Float32Array(0);
+        }
         while (this.end < to) {
             this.askNext();
-            await new Promise<void>(resolve => { this.waiting = resolve; });
+            await new Promise<void>((resolve, reject) => { this.waiting = { resolve, reject }; });
         }
         if (this.asked - to < this.block / 2) this.askNext();
         return this.data.subarray(from - this.base, to - this.base);
     }
 
     release(before: number): void { this.keep = Math.max(this.keep, before); }
+
+    /** Stop serving reads: a pending read and all later ones reject with `reason`. */
+    cancel(reason: Error): void {
+        this.failure = reason;
+        this.waiting?.reject(reason);
+        this.waiting = null;
+    }
 
     private askNext(): void {
         if (this.asked >= this.length || this.asked > this.end) return;   // all asked for, or a block is on its way
@@ -121,6 +137,7 @@ export class BlockSource implements SampleSource {
 
     /** A block; the samples let go of are dropped. */
     receive({ from, data }: { from: number; data: Float32Array }): void {
+        if (this.failure) return;
         if (from !== this.end) throw new Error(`block at ${from}, expected ${this.end}`);
         const keep = Math.min(Math.max(this.keep, this.base), this.end);
         const joined = new Float32Array(this.end - keep + data.length);
@@ -128,7 +145,7 @@ export class BlockSource implements SampleSource {
         joined.set(data, this.end - keep);
         this.base = keep;
         this.data = joined;
-        this.waiting?.();
+        this.waiting?.resolve();
         this.waiting = null;
     }
 }

@@ -82,6 +82,7 @@ export class BirdBoxPanel {
         this.o.runBtn.textContent = '■ Stop';
         this.o.progressWrap.style.display = '';
         this.progress(0);
+        let stoppedRun: (() => void) | null = null;   // keeps the rows received before Stop
         try {
             this.status('Loading BirdBox model…');
             await this.detector.load();
@@ -91,8 +92,17 @@ export class BirdBoxPanel {
             const duration = pcm.length / SAMPLE_RATE;
             const res: Result = { raw: { data: new Float32Array(0), rows: 0, next: 0, analyzedTo: 0, done: false }, cache: {} };
             this.results.set(key(id), res);
+            const current = () => this.results.get(key(id)) === res;   // false once forgotten
             this.status('Detecting calls…');
+            // Rows received so far; the pacer shows them a little later (res.raw)
+            let latest = res.raw;
+            stoppedRun = () => {
+                if (!current()) return;
+                res.raw = { ...latest, done: true };
+                this.emit(id, res, false);
+            };
             const pacer = this.pacer = new Pacer<RawRows>(raw => {
+                if (abort.signal.aborted || !current()) return;
                 res.raw = raw;
                 this.progress(Math.min(100, (raw.analyzedTo / duration) * 100));
                 this.emit(id, res, true);
@@ -101,9 +111,11 @@ export class BirdBoxPanel {
             const final = await this.detector.detect(pcm, {
                 signal: abort.signal,
                 // The rows view grows in place: hand the pacer a copy of the snapshot's bounds
-                onRows: raw => pacer.push({ ...raw }),
+                onRows: raw => { latest = { ...raw }; pacer.push(latest); },
             });
-            await pacer.finish();
+            latest = final;
+            await untilAborted(pacer.finish(), abort.signal);   // Stop also ends the drain
+            if (!current()) return;
             res.raw = final;
             this.progress(100);
             const boxes = this.emit(id, res, false);
@@ -111,8 +123,7 @@ export class BirdBoxPanel {
             this.status(`Done — ${boxes} call box${boxes === 1 ? '' : 'es'} (${secs} s). Sliders update without a new run.`);
         } catch (err) {
             if ((err as Error)?.name === 'AbortError') {
-                const res = this.results.get(key(id));
-                if (res) { res.raw = { ...res.raw, done: true }; this.emit(id, res, false); }
+                stoppedRun?.();
                 this.status('Stopped — boxes so far are kept.');
             } else {
                 this.status(`Error: ${(err as Error)?.message || String(err)}`);
@@ -130,10 +141,16 @@ export class BirdBoxPanel {
 
     stop(): void { this.abort?.abort(); }
 
-    /** Forget a recording's rows (its labels were removed). */
+    /** Forget a recording's rows (its labels were removed); a run on it stops without emitting. */
     forget(recordingId: string | null): void {
-        if (this.runningId === recordingId) this.stop();
         this.results.delete(key(recordingId));
+        if (this.runningId === recordingId) this.stop();
+    }
+
+    /** Forget all rows (the BirdBox set was deleted, or the session was reset). */
+    forgetAll(): void {
+        this.results.clear();
+        this.stop();
     }
 
     dispose(): void { this.stop(); this.detector.dispose(); }
@@ -186,6 +203,17 @@ export class BirdBoxPanel {
 }
 
 const key = (id: string | null) => id ?? '_';
+
+/** `promise`, or an AbortError as soon as `signal` aborts. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(new DOMException('Detection cancelled', 'AbortError'));
+    return new Promise<T>((resolve, reject) => {
+        const onAbort = () => reject(new DOMException('Detection cancelled', 'AbortError'));
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(v => { signal.removeEventListener('abort', onAbort); resolve(v); },
+            e => { signal.removeEventListener('abort', onAbort); reject(e); });
+    });
+}
 
 /** Mean of all channels. */
 function mono(buf: AudioBuffer): Float32Array {

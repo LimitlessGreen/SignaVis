@@ -119,3 +119,23 @@ test('finishRows: minute numbering, clipping to the content, file end', () => {
     assert.equal(live.rows, 4);
     assert.equal(live.data[8], NO_END);
 });
+
+test('BlockSource.cancel rejects a waiting read and every later one', async () => {
+    const src = new BlockSource(100, () => { /* the page never answers */ }, 20);
+    const pending = src.read(0, 10);
+    src.cancel(new Error('Detection cancelled'));
+    await assert.rejects(pending, /cancelled/);
+    await assert.rejects(src.read(0, 5), /cancelled/);
+    src.receive({ from: 0, data: new Float32Array(20) });   // a late block is ignored
+});
+
+test('BlockSource starts at the first read when a run resumes later', async () => {
+    const all = Float32Array.from({ length: 1000 }, (_, i) => i);
+    const asks: [number, number][] = [];
+    const src: BlockSource = new BlockSource(1000, (from, to) => {
+        asks.push([from, to]);
+        queueMicrotask(() => src.receive({ from, data: all.slice(from, to) }));
+    }, 100);
+    assert.deepEqual([...await src.read(700, 705)], [700, 701, 702, 703, 704]);
+    assert.deepEqual(asks[0], [700, 800]);
+});

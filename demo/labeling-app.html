@@ -1899,6 +1899,7 @@
     function applyWorkspaceProject(project) {
       projectMeta = { id: project.id || projectMeta.id, name: project.name || projectMeta.name, createdAt: project.createdAt };
       const snap = deserializeProject(project);
+      forgetBirdboxResults();
       recordingManager.replaceAll(snap.entries, snap.activeId);
       if (snap.labelSets.size) {
         state.labelSets.clear();
@@ -2387,6 +2388,8 @@
     }
 
     function deleteLabelSet(id) {
+      // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
+      if (state.labelSets.get(id)?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
       // Remove the set's labels along with the set itself — orphaned
       // labels would otherwise float in the unassigned bucket.
       state.labels = state.labels.filter((lbl) => lbl.setId !== id);
@@ -2769,6 +2772,7 @@
       const wasActive = entry.id === recordingManager.activeId;
       const snapshot = { ...recordingManager.getById(entry.id) };
       recordingManager.remove(entry.id);
+      forgetBirdboxResults(entry.id);
       showUndoToast(`Removed ${toXcId(entry.xcId) || entry.filename} from the session`, () => {
         recordingManager.add(snapshot);
         if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
@@ -3431,13 +3435,29 @@
       onBoxes: (recordingId, labels, { running }) => {
         let setId = [...state.labelSets.entries()].find(([, s]) => s.origin === BIRDBOX_ORIGIN)?.[0];
         if (!setId) setId = createLabelSet({ name: 'BirdBox', origin: BIRDBOX_ORIGIN, locked: true }, { silent: true }).id;
-        // Only the labels of the recording on screen are in state.labels
-        if (recordingId !== (recordingManager?.activeId || null)) return;
+        const own = labels.map((lbl) => ({ ...lbl, setId, recordingId }));
+        // Only the recording on screen has its labels in state.labels; another one (switched
+        // away during detection) gets them in its stored entry
+        if (recordingId !== (recordingManager?.activeId || null)) {
+          const entry = recordingId ? recordingManager.getById(recordingId) : null;
+          if (!entry) return;
+          const kept = (entry.annotations || []).filter((l) => l.setId !== setId);
+          recordingManager.update(recordingId, { annotations: [...kept, ...own] });
+          if (!running) scheduleProjectAutosave();
+          return;
+        }
         state.labels = state.labels.filter((l) => l.setId !== setId);
-        for (const lbl of labels) state.labels.push({ ...lbl, setId, recordingId });
+        state.labels.push(...own);
         if (running) syncToPlayerSoft(); else syncToPlayer();
       },
     });
+
+    /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
+    function forgetBirdboxResults(recordingId) {
+      let panel;
+      try { panel = birdboxPanel; } catch { return; }   // a project restored before the panel exists
+      if (recordingId === undefined) panel.forgetAll(); else panel.forget(recordingId);
+    }
 
     // ── Recording context (date/time, location, device) ──────────────
     // One source for BirdNET's geo filter and Explore; manual values override XC / GUANO / file name.
@@ -4333,6 +4353,7 @@
         { title: 'Start a new session?', okLabel: 'Remove and start new', danger: true })) return;
       recordingManager.setActive(null);
       recordingManager.clear();
+      forgetBirdboxResults();
       state.labels = [];
       state._labelsEntryId = null;
       state.xcLabelPool = [];

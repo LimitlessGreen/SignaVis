@@ -94,6 +94,21 @@ let ok = true;
     const { data, rows } = concat(chunks);
     ok = compare('file from BlockSource, 4 windows per run', data, rows) && ok;
 }
+// 2b. A run resumed at window 30 (as when a live recording ends): its rows are the graph's from there on
+{
+    const FROM = 30, src = new BlockSource(audio.length, (from, to) => queueMicrotask(() => src.receive({ from, data: audio.slice(from, to) })));
+    const chunks = [];
+    for await (const c of graph.run(src, RAW_CONF, 4, FROM)) chunks.push(c);
+    const { data, rows } = concat(chunks);
+    let first = 0;
+    while (first < fx.rawRows && ref[first * 9 + 7] < FROM * 1.5) first++;
+    const want = ref.subarray(first * 9), n = fx.rawRows - first;
+    let dev = rows === n ? 0 : Infinity;
+    for (let i = 0; dev < Infinity && i < rows * 9; i++) dev = Math.max(dev, Math.abs(data[i] - want[i]) / Math.max(1, Math.abs(want[i])));
+    const pass = dev <= 1e-5;
+    console.log(`${pass ? 'PASS' : 'FAIL'} resumed at window ${FROM}: ${rows} rows (graph ${n}), max rel deviation ${dev}`);
+    ok = pass && ok;
+}
 // 3. A recording pushed in uneven pieces; windows as soon as they are ready
 {
     const live = graph.live(), chunks = [];

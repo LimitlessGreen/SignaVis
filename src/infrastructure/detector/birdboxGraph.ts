@@ -115,7 +115,9 @@ export class BirdBoxGraph {
      */
     async* run(samples: Float32Array | SampleSource, conf: number, step: number, from = 0): AsyncGenerator<RowsChunk> {
         const source = sourceOf(samples), n = source.length, target = paddedLength(n), total = windowCount(n);
+        // A resumed run starts at the floor window of its first window, not at the file start
         const frames = new Frames();
+        frames.base = floorFirstFrame(from, this.grid);
         for (let w = from; w < total;) {
             const k = Math.min(step, total - w);
             // Only the frames of these windows: computing the next ones too would make this run slower than the others
@@ -134,22 +136,38 @@ export class BirdBoxGraph {
      */
     live() {
         const graph = this, frames = new Frames();
-        let audio = new Float32Array(60 * SAMPLE_RATE), n = 0;
+        // Only the audio future frames need: samples from `offset` on (absolute indices)
+        let audio = new Float32Array(30 * SAMPLE_RATE), offset = 0, n = 0;
+        const source: SampleSource = {
+            get length() { return n; },
+            read: (from, to) => {
+                if (from < offset) throw new Error(`live samples from ${from} on were let go (${offset})`);
+                return audio.subarray(from - offset, to - offset);
+            },
+            release: (before) => {
+                // The graph's left pad mirrors the first 0.5 s: keep them until the first frames are done
+                const drop = Math.min(n, before) - offset;
+                if (frames.end === 0 || drop <= 0) return;
+                audio.copyWithin(0, drop, n - offset);
+                offset += drop;
+            },
+        };
         return {
             get length() { return n; },
             get ready() { return readyWindows(n); },
             push(pcm: Float32Array) {
-                if (n + pcm.length > audio.length) {
-                    const grown = new Float32Array(Math.max(2 * audio.length, n + pcm.length));
-                    grown.set(audio.subarray(0, n));
+                const held = n - offset;
+                if (held + pcm.length > audio.length) {
+                    const grown = new Float32Array(Math.max(2 * audio.length, held + pcm.length));
+                    grown.set(audio.subarray(0, held));
                     audio = grown;
                 }
-                audio.set(pcm, n);
+                audio.set(pcm, held);
                 n += pcm.length;
             },
             async windows(conf: number, from: number, count: number): Promise<RowsChunk> {
                 if (from + count > readyWindows(n)) throw new Error(`windows ${from} to ${from + count - 1} are not ready in ${n} samples`);
-                await graph.frames(frames, sourceOf(audio.subarray(0, n)), n, lastFrame(from + count - 1), WINDOW_FRAMES);
+                await graph.frames(frames, source, n, lastFrame(from + count - 1), WINDOW_FRAMES);
                 const det = await graph.detectWindows(frames, from, count, conf);
                 const { data, rows } = finishRows(det.data, det.rows, null);
                 return { data, rows, next: from + count };

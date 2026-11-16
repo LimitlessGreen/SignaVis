@@ -68,31 +68,39 @@ export interface DetectOptions {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+interface Operation { handle: (msg: any) => void; fail: (err: Error) => void }
+
+const abortError = () => new DOMException('Detection cancelled', 'AbortError');
+
 export class BirdBoxDetector {
     private worker: Worker | null = null;
     private nextId = 1;
-    private handlers = new Map<number, (msg: any) => void>();
+    /** Requests in progress; each settles on its messages, or fails with the worker. */
+    private ops = new Map<number, Operation>();
     private ready: Promise<BirdBoxModelConfig> | null = null;
+    private failLoad: ((err: Error) => void) | null = null;
     config: BirdBoxModelConfig | null = null;
 
     /** Load the model into a worker (once). */
     load(modelUrl = BIRDBOX_MODEL_URL): Promise<BirdBoxModelConfig> {
         if (this.ready) return this.ready;
         const worker = this.worker = new BirdBoxWorker();
-        this.ready = new Promise((resolve, reject) => {
+        const ready = this.ready = new Promise<BirdBoxModelConfig>((resolve, reject) => {
+            this.failLoad = reject;
             worker.onmessage = (e: MessageEvent) => {
                 const msg = e.data as any;
-                if (msg.type === 'ready') { this.config = msg.config; resolve(msg.config); return; }
-                if (msg.type === 'error' && msg.id == null) { reject(new Error(msg.message)); return; }
-                this.handlers.get(msg.id)?.(msg);
+                if (msg.type === 'ready') { this.config = msg.config; this.failLoad = null; resolve(msg.config); return; }
+                if (msg.type === 'error' && msg.id == null) { this.failAll(new Error(msg.message)); return; }
+                this.ops.get(msg.id)?.handle(msg);
             };
-            worker.onerror = (e: ErrorEvent) => reject(new Error(e.message));
+            // A crash of the worker: the load, or else every request in progress, fails
+            worker.onerror = (e: ErrorEvent) => this.failAll(new Error(e.message || 'BirdBox worker failed'));
         });
         const absolute = new URL(modelUrl, globalThis.location?.href).href;
         const threads = globalThis.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
         worker.postMessage({ type: 'init', modelUrl: absolute, ortBase: ORT_BASE, threads });
-        this.ready.catch(() => this.dispose());
-        return this.ready;
+        ready.catch(() => { if (this.ready === ready) this.dispose(); });
+        return ready;
     }
 
     /**
@@ -101,31 +109,34 @@ export class BirdBoxDetector {
      */
     async detect(pcm: Float32Array, opts: DetectOptions = {}, from = 0, store = new RowStore()): Promise<RawRows> {
         await this.load();
+        if (opts.signal?.aborted) throw abortError();
         const worker = this.worker!, id = this.nextId++;
         return new Promise<RawRows>((resolve, reject) => {
             let analyzed = 0, next = from;
-            const finish = (fn: () => void) => { this.handlers.delete(id); opts.signal?.removeEventListener('abort', abort); fn(); };
+            const finish = (fn: () => void) => { this.ops.delete(id); opts.signal?.removeEventListener('abort', abort); fn(); };
             const abort = () => {
                 worker.postMessage({ type: 'cancel', id });
-                finish(() => reject(new DOMException('Detection cancelled', 'AbortError')));
+                finish(() => reject(abortError()));
             };
-            if (opts.signal?.aborted) { abort(); return; }
             opts.signal?.addEventListener('abort', abort);
             const snapshot = (done: boolean): RawRows => ({ data: store.data.subarray(0, store.rows * RAW_COLS), rows: store.rows, next, analyzedTo: analyzed, done });
-            this.handlers.set(id, msg => {
-                if (msg.type === 'ask') {
-                    const data = pcm.slice(msg.from, msg.to);
-                    worker.postMessage({ type: 'block', id, from: msg.from, data }, [data.buffer]);
-                } else if (msg.type === 'rows') {
-                    store.append(msg.data, msg.rows);
-                    next = msg.next;
-                    analyzed = msg.analyzedTo ?? analyzed;
-                    opts.onRows?.(snapshot(false));
-                } else if (msg.type === 'done') {
-                    finish(() => resolve(snapshot(true)));
-                } else if (msg.type === 'error') {
-                    finish(() => reject(new Error(msg.message)));
-                }
+            this.ops.set(id, {
+                fail: err => finish(() => reject(err)),
+                handle: msg => {
+                    if (msg.type === 'ask') {
+                        const data = pcm.slice(msg.from, msg.to);
+                        worker.postMessage({ type: 'block', id, from: msg.from, data }, [data.buffer]);
+                    } else if (msg.type === 'rows') {
+                        store.append(msg.data, msg.rows);
+                        next = msg.next;
+                        analyzed = msg.analyzedTo ?? analyzed;
+                        opts.onRows?.(snapshot(false));
+                    } else if (msg.type === 'done') {
+                        finish(() => resolve(snapshot(true)));
+                    } else if (msg.type === 'error') {
+                        finish(() => reject(new Error(msg.message)));
+                    }
+                },
             });
             worker.postMessage({ type: 'file', id, length: pcm.length, conf: BIRDBOX_RAW_CONF, from, step: opts.step ?? 1 });
         });
@@ -134,20 +145,39 @@ export class BirdBoxDetector {
     /**
      * A recording in progress. push() 32 kHz mono audio as it arrives; rows of every
      * window are final as soon as the audio reaches its end. stop() runs the last
-     * windows as in the saved file and resolves with all rows (file end set).
+     * windows as in the saved file and resolves with all rows (file end set). A failure
+     * of the detection is passed to `onError` and makes stop() reject.
      */
-    async startLive(onRows?: (raw: RawRows) => void) {
+    async startLive(onRows?: (raw: RawRows) => void, onError?: (err: Error) => void) {
         await this.load();
         const worker = this.worker!, id = this.nextId++, store = new RowStore();
         let audio = new Float32Array(60 * SAMPLE_RATE), n = 0, next = 0;
+        let failure: Error | null = null;
+        let drained: { resolve: () => void; reject: (err: Error) => void } | null = null;
+        const fail = (err: Error) => {
+            if (failure) return;
+            failure = err;
+            this.ops.delete(id);
+            drained?.reject(err);
+            drained = null;
+            onError?.(err);
+        };
         worker.postMessage({ type: 'live-start', id, conf: BIRDBOX_RAW_CONF });
-        let stopped: (() => void) | null = null;
-        this.handlers.set(id, msg => {
-            if (msg.type === 'rows') {
-                store.append(msg.data, msg.rows);
-                next = msg.next;
-                onRows?.({ data: store.data.subarray(0, store.rows * RAW_COLS), rows: store.rows, next, analyzedTo: (next - 1) * HOP_SECONDS + 2.25, done: false });
-            } else if (msg.type === 'done') stopped?.();
+        this.ops.set(id, {
+            fail,
+            handle: msg => {
+                if (msg.type === 'rows') {
+                    store.append(msg.data, msg.rows);
+                    next = msg.next;
+                    onRows?.({ data: store.data.subarray(0, store.rows * RAW_COLS), rows: store.rows, next, analyzedTo: (next - 1) * HOP_SECONDS + 2.25, done: false });
+                } else if (msg.type === 'done') {
+                    drained?.resolve();
+                    drained = null;
+                } else if (msg.type === 'error') {
+                    worker.postMessage({ type: 'live-stop', id });
+                    fail(new Error(msg.message));
+                }
+            },
         });
         return {
             push: (pcm: Float32Array) => {
@@ -158,13 +188,25 @@ export class BirdBoxDetector {
                 }
                 audio.set(pcm, n);
                 n += pcm.length;
-                worker.postMessage({ type: 'live-push', id, pcm: pcm.slice() });
+                if (!failure) worker.postMessage({ type: 'live-push', id, pcm: pcm.slice() });
             },
-            /** The recording so far (32 kHz mono). */
+            /** The recording so far (32 kHz mono); kept for saving it and for stop(). */
             get audio() { return audio.subarray(0, n); },
             stop: async (opts: DetectOptions = {}): Promise<RawRows> => {
-                await new Promise<void>(resolve => { stopped = resolve; worker.postMessage({ type: 'live-stop', id }); });
-                this.handlers.delete(id);
+                if (failure) throw failure;
+                const { signal } = opts;
+                if (signal?.aborted) throw abortError();
+                const onAbort = () => { drained?.reject(abortError()); drained = null; };
+                signal?.addEventListener('abort', onAbort);
+                try {
+                    await new Promise<void>((resolve, reject) => {
+                        drained = { resolve, reject };
+                        worker.postMessage({ type: 'live-stop', id });
+                    });
+                } finally {
+                    signal?.removeEventListener('abort', onAbort);
+                    this.ops.delete(id);
+                }
                 // The rows so far equal the file's except for the file end (NO_END): set it, and
                 // run only the last windows, which the audio never reached, as the file pads them
                 const pcm = audio.slice(0, n), end = fileEnd(n);
@@ -174,10 +216,20 @@ export class BirdBoxDetector {
         };
     }
 
+    /** Fail the load (if pending) and every request in progress. */
+    private failAll(err: Error): void {
+        this.failLoad?.(err);
+        this.failLoad = null;
+        const ops = [...this.ops.values()];
+        this.ops.clear();
+        for (const op of ops) op.fail(err);
+    }
+
     dispose(): void {
-        this.worker?.terminate();
+        const worker = this.worker;
         this.worker = null;
         this.ready = null;
-        this.handlers.clear();
+        this.failAll(new Error('BirdBox detector disposed'));
+        worker?.terminate();
     }
 }

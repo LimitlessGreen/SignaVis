@@ -54,6 +54,7 @@ async function init(msg: any) {
 
 async function runFile(msg: any) {
     const { id } = msg;
+    if (cancelled.delete(id)) return;   // stopped while queued
     const source = new BlockSource(msg.length, (from, to) => post({ type: 'ask', id, from, to }));
     sources.set(id, source);
     try {
@@ -62,6 +63,8 @@ async function runFile(msg: any) {
             post({ type: 'rows', id, ...chunk }, [chunk.data.buffer]);
         }
         post({ type: 'done', id });
+    } catch (err) {
+        if (!cancelled.has(id)) throw err;   // a cancelled read: the page no longer waits
     } finally {
         sources.delete(id);
         cancelled.delete(id);
@@ -102,6 +105,8 @@ ctx.onmessage = (e: MessageEvent) => {
             break;
         case 'cancel':
             cancelled.add(msg.id);
+            // Wake a read waiting for a block the page will no longer send
+            sources.get(msg.id)?.cancel(new Error('Detection cancelled'));
             break;
         case 'live-start':
             if (!graph) { fail(new Error('model not loaded')); break; }
