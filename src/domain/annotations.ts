@@ -205,9 +205,10 @@ function skipTimestamps(key: string, value: unknown): unknown {
 
 /** True when `set` holds exactly the ids in `ids`. */
 function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
-    let n = 0;
-    for (const id of ids) { if (!set.has(id)) return false; n++; }
-    return n === set.size;
+    const next = new Set(ids);   // distinct ids: ['a', 'a'] must not match {a, b}
+    if (next.size !== set.size) return false;
+    for (const id of next) if (!set.has(id)) return false;
+    return true;
 }
 
 class AnnotationLayerBase extends EventTarget {
