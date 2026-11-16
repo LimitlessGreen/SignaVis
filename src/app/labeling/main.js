@@ -2988,6 +2988,7 @@ function saveCurrentAnnotationsIfNeeded() {
   // entry, persist them (including the empty-array case when user cleared).
   if (state._labelsEntryId === recordingManager.activeId) {
     recordingManager.saveAnnotations(state.labels);
+    scheduleProjectAutosave();   // saveAnnotations only updates the entry, not the project store
     return;
   }
   // If we have labels in memory but they aren't marked as belonging to the
@@ -2996,6 +2997,7 @@ function saveCurrentAnnotationsIfNeeded() {
   if (Array.isArray(state.labels) && state.labels.length > 0) {
     recordingManager.saveAnnotations(state.labels);
     state._labelsEntryId = recordingManager.activeId;
+    scheduleProjectAutosave();
   }
 }
 // Remove duplicate labels while preserving order. Keys by `id` when present,
@@ -4167,6 +4169,33 @@ player.on('spectrogramlabelupdate', (e) => {
     const _ab = player._state?.audioBuffer;
     if (_ab) snrComputer.request(lbl, _ab, _ab.sampleRate);
   }
+});
+// Waveform track (player.annotations): moving, resizing, renaming and deleting a label there
+// must reach state.labels too — otherwise the next sync puts the old label back.
+player.on('annotationupdate', (e) => {
+  const a = e.detail?.annotation;
+  const prev = a?.id ? state.labels.find((l) => l.id === a.id) : null;
+  if (!prev) return;
+  const changes = { id: a.id, start: a.start, end: a.end };
+  if (a.species && a.species !== prev.label) changes.label = a.species;   // the track calls the name "species"
+  if (a.color && a.color !== prev.color) changes.color = a.color;
+  if (a.scientificName && a.scientificName !== prev.scientificName) changes.scientificName = a.scientificName;
+  upsertLabel(changes); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  if (changes.start !== prev.start || changes.end !== prev.end) {
+    const _ab = player._state?.audioBuffer;
+    const fresh = state.labels.find((l) => l.id === a.id);
+    if (_ab && fresh) snrComputer.request(fresh, _ab, _ab.sampleRate);
+  }
+});
+player.on('annotationremove', (e) => {
+  const id = e.detail?.annotation?.id;
+  if (!id || !state.labels.some((l) => l.id === id)) return;
+  snrComputer.invalidate(id);
+  touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
+  state.labels = state.labels.filter((l) => l.id !== id);
+  syncToPlayerSoft();   // the context-menu path removes it from the track only, not from the spectrogram
+  labelViews.invalidate('list', 'badge');
+  saveCurrentAnnotationsIfNeeded();
 });
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {

@@ -784,6 +784,16 @@ export class BirdNETPlayer {
             }
         });
 
+        // End of a drag/resize on either layer: drop the live highlight on the mirrored label.
+        const onPreviewEnd = () => {
+            this.annotations.setLiveLinkedId(null);
+            this.spectrogramLabels.setLiveLinkedId(null);
+            this.annotations.render();
+            this.spectrogramLabels.render();
+        };
+        this.annotations.addEventListener('previewend', onPreviewEnd);
+        this.spectrogramLabels.addEventListener('previewend', onPreviewEnd);
+
         // Annotation layer events
         fwd(this.annotations, 'annotationpreview', (ce: CustomEvent) => this._previewFromLayer('annotation', (ce.detail as any).annotation));
         fwd(this.annotations, 'annotationcreate', (ce: CustomEvent) => this._upsertFromLayer('annotation', (ce.detail as any).annotation));
