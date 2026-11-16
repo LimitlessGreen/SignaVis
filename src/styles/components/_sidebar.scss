@@ -27,21 +27,8 @@
 .sidebar-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--color-border); min-height: 36px; }
 .sidebar-title { font-size: 11px; font-weight: 600; color: var(--color-text-secondary); letter-spacing: 0.08em; }
 
-@media (max-width: 700px) {
-  /* Narrow screens: an open sidebar floats over the player instead of squeezing it.
-     The activity bars stay in the flow (40px each, see _activity-bar.scss). */
-  .sidebar:not(.collapsed) {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 40px;
-    z-index: 30;
-    width: min(320px, calc(100% - 96px));
-    box-shadow: 0 8px 28px var(--shadow-strong, rgba(0, 0, 0, 0.35));
-  }
-  .sidebar--right:not(.collapsed) { left: auto; right: 40px; width: min(320px, calc(100% - 96px)); }
-  .sidebar-resize { display: none; }
-}
+/* Phones: sidebars become bottom sheets, see _mobile-shell.scss. */
+
 
 /* Make sidebar panels and their inner bodies scroll when content overflows.
    Uses flex layout so headers/toolbars remain fixed while content scrolls. */

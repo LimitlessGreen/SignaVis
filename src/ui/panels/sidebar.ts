@@ -50,6 +50,7 @@ export class Sidebar {
     side: any;
     storageKey: any;
     _collapsed: any;
+    _onChange: any;
   /**
    * @param {HTMLElement} workspace   The .workspace flex container
    * @param {object}      [options]
@@ -59,6 +60,7 @@ export class Sidebar {
    * @param {number}      [options.minWidth]      Min sidebar width (px)
    * @param {number}      [options.maxWidth]      Max sidebar width (px)
    * @param {() => void}  [options.onResize]      Called after sidebar resize
+   * @param {(id: string|null) => void} [options.onChange] Called after a panel is activated (id) or the sidebar collapsed (null)
    */
   constructor(workspace: any, options: any = {}) {
     this._workspace = workspace;
@@ -69,6 +71,7 @@ export class Sidebar {
     this._minWidth = options.minWidth || MIN_WIDTH;
     this._maxWidth = options.maxWidth || MAX_WIDTH;
     this._onResize = options.onResize || null;
+    this._onChange = options.onChange || null;
     this._panels = new Map();
     this._activeId = null;
     this._collapsed = true;
@@ -151,6 +154,7 @@ export class Sidebar {
     panel.onActivate?.();
     this._saveState();
     this._onResize?.();
+    this._onChange?.(id);
   }
 
   /** True while no panel is shown. */
@@ -180,6 +184,7 @@ export class Sidebar {
     this._title.textContent = '';
     this._saveState();
     this._onResize?.();
+    this._onChange?.(null);
   }
 
   /** Update badge text on an activity bar button. */
@@ -192,6 +197,15 @@ export class Sidebar {
   }
 
   get activePanel() { return this._activeId; }
+
+  /** The sliding panel element (.sidebar). Used by the phone shell to show it as a bottom sheet. */
+  get element(): HTMLElement { return this._sidebarEl; }
+
+  /** Label of a registered panel, or '' if unknown. */
+  panelLabel(id: string): string { return this._panels.get(id)?.label ?? ''; }
+
+  /** Change the callback fired on activate/collapse (set after construction by the phone shell). */
+  set onChange(fn: ((id: string | null) => void) | null) { this._onChange = fn; }
 
   /**
    * Briefly animate an activity-bar button to draw attention (without switching tabs).

@@ -716,6 +716,7 @@
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
 
     import { Sidebar } from '../src/ui/panels/sidebar.ts';
+    import { MobileShell } from '../src/ui/panels/mobile-shell.ts';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
     import { LabelGrid } from '../src/ui/panels/label-grid.ts';
@@ -1518,6 +1519,28 @@
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
     rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
+
+    // ── Phones: bottom tab bar + bottom sheets instead of the two side columns ──
+    // No label editing on phones (review, listen, analyse only): draw mode goes off there.
+    const mobileShell = new MobileShell({
+      host: document.querySelector('.app'),
+      tabs: [
+        { id: 'project',     bar: sidebar,  label: 'Project',  icon: ICONS.project },
+        { id: 'labels',      bar: sidebar,  label: 'Labels',   icon: ICONS.labels },
+        { id: 'analyse',     bar: sidebar,  label: 'Analyse',  icon: ICONS.birdnet },
+        { id: 'spectrogram', bar: rightBar, label: 'Display',  icon: SlidersHorizontal },
+      ],
+      more: [
+        { id: 'audio',      bar: rightBar, label: 'Audio',      icon: ICONS.audio },
+        { id: 'properties', bar: rightBar, label: 'Properties', icon: Info },
+        { id: 'upload',     bar: sidebar,  label: 'Upload',     icon: ICONS.xc },
+      ],
+      onLayout: () => requestAnimationFrame(() => player?.resize?.()),
+      onModeChange: (phone) => {
+        const drawBtn = player?._drawBtn;
+        if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
+      },
+    });
 
     // ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
     function buildAudioPanel() {
