@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 
 import { HttpAnalysisBackend } from '../src/infrastructure/analysis/HttpAnalysisBackend.ts';
 
@@ -18,8 +19,20 @@ async function waitForServerReady(baseUrl: string, timeoutMs = 10_000): Promise<
   throw new Error(`Mock server did not become ready within ${timeoutMs}ms`);
 }
 
+// A free port: a fixed one collides with parallel runs, and then the mock exits at once
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as { port: number };
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
 test('HttpAnalysisBackend works against live mock analysis server', async () => {
-  const port = 8791;
+  const port = await freePort();
   const host = '127.0.0.1';
   const baseUrl = `http://${host}:${port}`;
 
@@ -66,8 +79,12 @@ test('HttpAnalysisBackend works against live mock analysis server', async () => 
 
     await backend.clearLocation();
   } finally {
-    server.kill('SIGTERM');
-    await new Promise((resolve) => server.once('exit', resolve));
+    // Only wait while it still runs: an 'exit' already emitted would never fire again
+    if (server.exitCode === null && server.signalCode === null) {
+      const exited = new Promise((resolve) => server.once('exit', resolve));
+      server.kill('SIGTERM');
+      await exited;
+    }
 
     if (stderr.trim()) {
       // Keep stderr surfaced in assertions if the test fails later.

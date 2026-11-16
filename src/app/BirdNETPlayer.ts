@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
+import { labelPlaybackBand } from '../domain/labelBand.ts';
 import { createPlayerHTML, DEFAULT_OPTIONS } from '../ui/template.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
@@ -401,10 +402,9 @@ export class BirdNETPlayer {
      * Play a label's time range — bandpassed to its frequency range when `labelBandpass` is on
      * and the label has one.
      */
-    playLabelSegment(label: { start: number; end: number; freqMin?: number | null; freqMax?: number | null }, options?: PlaySegmentOptions) {
-        const lo = label.freqMin ?? 0;
-        const hi = label.freqMax ?? 0;
-        if (this.labelBandpass && hi > lo) this.playBandpassedSegment(label.start, label.end, lo, hi, options);
+    playLabelSegment(label: { start: number; end: number; freqMin?: number | null; freqMax?: number | null; fullBand?: boolean }, options?: PlaySegmentOptions) {
+        const band = this.labelBandpass ? labelPlaybackBand(label) : null;
+        if (band) this.playBandpassedSegment(label.start, label.end, band.lo, band.hi, options);
         else this.playSegment(label.start, label.end, options);
     }
 
