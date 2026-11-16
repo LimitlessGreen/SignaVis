@@ -3612,7 +3612,7 @@ function refreshUploadChecklist() {
     const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
     document.getElementById('xcUploadSummary').textContent = [
       `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
-      c.errorCount ? plural(c.errorCount, 'error') : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+      c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
     ].filter(Boolean).join(' · ');
   } catch (e) { /* app still initializing */ }
   xcPanel._updateUploadState();

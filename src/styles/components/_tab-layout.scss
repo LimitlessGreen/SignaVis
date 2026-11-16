@@ -140,3 +140,31 @@
   font-size: 12px; line-height: 1.45;
   color: var(--color-text-secondary);
 }
+
+/* ── Upload: to-do list instead of an error log ────────────────────── */
+// Open steps are neutral (nothing went wrong yet); only the next one is highlighted.
+.ua-checklist { padding: 2px 14px 10px; gap: 4px; }
+.ua-step {
+  border-radius: 4px;
+  &.ua-error { border-left-color: var(--color-border-strong); }
+  &.ua-error .ua-icon { color: var(--color-text-secondary); }
+  &.ua-next { border-left-color: var(--color-accent); }
+  &.ua-next .ua-icon { color: var(--color-accent); }
+}
+.ua-step-hdr { padding: 7px 8px; }
+.ua-step-body { padding: 0 10px 10px 28px; }
+.ua-issue { font-size: 12px; }
+.ua-issue.ua-issue-error { color: var(--color-text-primary); }
+#panelXc .xc-actions {
+  padding: 10px 14px;
+  .sidebar-action-btn { width: 100%; max-width: none; flex: none; padding: 9px 12px; font-size: 13px; justify-content: center; }
+  .xc-action-row { margin: 0; align-items: center; gap: 6px; }
+  .xc-action-row .field-hint { margin: 0 0 0 auto; cursor: help; white-space: nowrap; }
+  .field-hint { margin: 0; }
+}
+.ua-summary-line { color: var(--color-text-secondary); }
+.xc-key-input-row { display: flex; gap: 6px; align-items: stretch; }
+.xc-key-input-row .xc-key-input-wrap { flex: 1 1 auto; min-width: 0; }
+.xc-key-input-row .sidebar-action-btn { flex: 0 0 auto; width: auto; padding: 0 12px; min-height: 28px; }
+.set-meta-field { grid-template-columns: 96px 1fr; align-items: center; }
+.set-meta-field .field-label { font-size: 12px; }

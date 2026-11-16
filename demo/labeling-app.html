@@ -439,7 +439,7 @@
     <div class="sidebar-section-header">Set details</div>
     <div id="xcSetContainer" class="xc-set-container project-set"></div>
     <!-- ── Upload assistant: live checklist (key · profile · set · recordings · labels) ── -->
-    <div class="sidebar-section-header">Upload check</div>
+    <div class="sidebar-section-header">Before sending</div>
     <div id="xcChecklist" class="ua-checklist"></div>
     <!-- ── API key + profile form (mounted into checklist steps) ── -->
     <div id="xcAuthorContainer" class="ua-host"></div>
@@ -458,17 +458,16 @@
       <p class="field-hint">Required for label import and upload. Stored locally. Get a key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">xeno-canto.org/account</a>.</p>
     </div>
 
-    <!-- ── Preview & send ── -->
-    <div class="sidebar-section-header">Preview</div>
+    <!-- ── Send (sticky): one main action, the file preview is secondary ── -->
     <div class="panel-actions xc-actions">
       <div id="xcUploadSummary" class="ua-summary-line"></div>
-      <div class="xc-action-row">
-        <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button" title="View the Annota-JSON (XC) payload">View JSON</button>
-        <button class="sidebar-action-btn secondary" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download</button>
-      </div>
       <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Send to Xeno-canto</button>
       <p class="field-hint" id="xcUploadTargetHint" hidden></p>
-      <p class="field-hint">The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.</p>
+      <div class="xc-action-row">
+        <button class="tb-btn" id="xcExportSetBtn" type="button" title="View the Annota-JSON (XC) payload">View JSON</button>
+        <button class="tb-btn" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download file</button>
+        <span class="field-hint" title="The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.">Reviewed on XC ⓘ</span>
+      </div>
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
     <div id="xcUploads" class="us-uploads" hidden></div>

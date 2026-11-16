@@ -387,7 +387,7 @@ export class XenoCantoPanel {
     const info = document.createElement('span');
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'sidebar-action-btn secondary';
+    btn.className = 'tb-btn';
     btn.textContent = 'Clear';
     btn.title = 'Delete cached Xeno-canto audio (pinned reference calls are kept)';
     btn.style.marginLeft = '8px';
