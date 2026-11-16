@@ -46,8 +46,11 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
 
 ## Offen / nächste Schritte
 
-1. **Live** (Tab ist Platzhalter): Mikrofon, laufendes Spektrogramm, Trefferliste, großer Aufnahmeknopf,
-   „Stop & speichern“ ins Projekt. Detektor-Stream-Code ist da (`plans/detector-stream-plan.md`).
+1. **Live** — gebaut (Screenshot `mobile-design/stand-live.png`): Mikrofon (`LiveRecorder.ondata`), laufendes
+   Spektrogramm (`LiveSpectrogramView`, 15 s), Pegel, BirdNET alle 3 s (`BirdNETPanel.prepareLive`, Ortsfilter
+   mit heutigem Datum), Artenliste (zuletzt gehört, Anzahl, max. %), Stop = speichern ins Projekt, „Verwerfen“.
+   Offen: BirdBox-Boxen im Live-Spektrogramm (`BirdBoxDetector.startLive`, braucht 32-kHz-Resampler),
+   Ort-Chip mit Namen, Tap auf Art → Stelle in der Aufnahme, Test auf dem Pixel.
 2. **Aufnahmen-Karten:** Mini-Spektrogramm; „Neu“-Menü mit Xeno-canto und Mikrofon (bisher nur Datei).
 3. **Arten:** Spektrogramm-Ausschnitte bei den Belegen; anzeigen, welcher Beleg gerade läuft.
 4. **Prüfen:** Sheet hochziehbar; Spuren-Optik wie Mockup (schmaler).

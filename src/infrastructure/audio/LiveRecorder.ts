@@ -102,6 +102,8 @@ export class LiveRecorder extends EventTarget {
     private startedAt: Date | null = null;
     private stopping: Promise<LiveRecording | null> | null = null;
     analyser: AnalyserNode | null = null;
+    /** Called with each block of samples as it is kept (e.g. for live detection). */
+    ondata: ((chunk: Float32Array) => void) | null = null;
     sampleRate = 0;
 
     constructor(opts: LiveRecorderOptions = {}) {
@@ -197,6 +199,7 @@ export class LiveRecorder extends EventTarget {
             const c = chunk.length > room ? chunk.subarray(0, room) : chunk;
             this.chunks.push(c);
             this.samples += c.length;
+            this.ondata?.(c);
         }
         if (this.samples >= limit) void this.stop('limit');
     }

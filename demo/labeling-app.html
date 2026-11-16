@@ -3287,6 +3287,15 @@
         birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
         birdboxProgressBar: document.getElementById('birdboxProgressBar'),
       },
+      live: {
+        prepare: (onStatus) => birdnetPanel.prepareLive(onStatus),
+        save: (file) => loadLocalAudioFile(file),
+        describe: () => {
+          const c = birdnetPanel.getCoords?.();
+          const geo = document.getElementById('birdnetGeoFilterEnabled')?.checked && c;
+          return `BirdNET · ${geo ? `Ort ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : 'ohne Ortsfilter'}`;
+        },
+      },
       onModeChange: (phone) => {
         // No label editing on phones: draw mode goes off there.
         const drawBtn = player?._drawBtn;

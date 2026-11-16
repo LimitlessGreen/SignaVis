@@ -6,10 +6,11 @@
  * into the review screen while the phone UI is active and moved back afterwards; CSS
  * (`html.is-mobile`) hides the player's desktop chrome (toolbar, waveform, zoom strip).
  *
- * Screens (bottom nav): Aufnahmen · Prüfen · Live · Arten. Live and Arten are placeholders
- * for now. Review is view-and-listen only; accept/discard is planned but not built yet.
+ * Screens (bottom nav): Aufnahmen · Prüfen · Live · Arten. Review is view-and-listen only; accept/discard is planned but not built yet.
  */
 import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
+import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
+import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -43,6 +44,21 @@ export interface MobileAppHost {
    * elements, so BirdNET / BirdBox keep one implementation.
    */
   analysis?: AnalysisControls;
+  /** Live screen: microphone + BirdNET every 3 s; the recording is added to the project. */
+  live?: LiveHost;
+}
+
+export interface LivePrediction { scientific: string; common: string; confidence: number }
+
+export interface LiveHost {
+  /** Load BirdNET (and the location filter); returns a classifier for one chunk of audio. */
+  prepare(onStatus: (msg: string) => void): Promise<{
+    analyze(pcm: Float32Array, sampleRate: number): Promise<LivePrediction[]>;
+  }>;
+  /** Add the finished recording to the project and open it. */
+  save(file: File): Promise<void>;
+  /** Short line about the filter, e.g. "Geofilter: Leipzig" (optional). */
+  describe?(): string;
 }
 
 export interface AnalysisControls {
@@ -171,6 +187,21 @@ export class MobileApp {
   private anJobStarted = false;
   private anJobAt = 0;
 
+  // Live
+  private lvSpec!: HTMLElement;
+  private lvMeter!: HTMLElement;
+  private lvInfo!: HTMLElement;
+  private lvList!: HTMLElement;
+  private lvTime!: HTMLElement;
+  private lvBtn!: HTMLButtonElement;
+  private lvDiscard!: HTMLButtonElement;
+  private lvRec: LiveRecorder | null = null;
+  private lvView: LiveSpectrogramView | null = null;
+  private lvSpecies = new Map<string, { sci: string; common: string; count: number; max: number; last: number }>();
+  private lvBusy = false;
+  private lvRaf = 0;
+  private lvTick = 0;
+
   // Where the player root lives on the desktop
   private playerHome: { parent: Node; next: Node | null } | null = null;
   private raf = 0;
@@ -182,8 +213,7 @@ export class MobileApp {
     this.root = el('div', 'm-app');
     this.root.setAttribute('aria-label', 'SignaVis');
     const body = el('div', 'm-screens');
-    body.append(this.buildRecordings(), this.buildReview(), this.buildAnalyse(), this.buildPlaceholder('live', 'Live',
-      'Live-Erkennung mit dem Mikrofon kommt hier hin.'), this.buildSpecies());
+    body.append(this.buildRecordings(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies());
     const nav = el('nav', 'm-nav');
     nav.setAttribute('aria-label', 'Navigation');
     for (const [id, icon, label] of [['recordings', I.lib, 'Aufnahmen'], ['review', I.check, 'Prüfen'],
@@ -275,6 +305,7 @@ export class MobileApp {
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
     if (screen === 'analyse') this.renderAnalyse();
     if (screen === 'species') this.renderSpecies();
+    if (screen === 'live') this.renderLive();
     if (screen === 'recordings') this.renderRecordings();
     if (screen === 'review') {
       this.renderReview();
@@ -872,14 +903,186 @@ export class MobileApp {
     if (this.screen === 'analyse') this.show('review');
   }
 
-  // ── Placeholders ────────────────────────────────────────────────────
+  // ── Live ────────────────────────────────────────────────────────────
 
-  private buildPlaceholder(id: Screen, title: string, text: string): HTMLElement {
-    const s = el('section', 'm-screen');
+  private buildLive(): HTMLElement {
+    const s = el('section', 'm-screen m-live');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(el('h1', '', title));
-    s.append(bar, el('p', 'm-empty', text));
-    this.screens.set(id, s);
+    bar.appendChild(el('h1', '', 'Live'));
+    const top = el('div', 'm-live-top');
+    const meter = el('div', 'm-live-meter');
+    meter.innerHTML = '<span>Pegel</span><i><b></b></i>';
+    this.lvMeter = meter.querySelector('b')!;
+    this.lvInfo = el('span', 'm-live-info');
+    top.append(meter, this.lvInfo);
+    this.lvSpec = el('div', 'm-live-spec');
+    this.lvSpec.appendChild(el('span', 'm-live-hint', 'Aufnahme starten – das Spektrogramm läuft hier von rechts nach links.'));
+    this.lvList = el('div', 'm-scroll m-live-list');
+    const foot = el('div', 'm-live-foot');
+    this.lvTime = el('div', 'm-live-time', '00:00');
+    this.lvDiscard = button('m-live-discard', 'Verwerfen', 'Aufnahme verwerfen', () => this.stopLive(false));
+    this.lvBtn = button('m-live-rec', '<i></i>', 'Aufnahme starten', () => {
+      if (this.lvRec) void this.stopLive(true); else void this.startLive();
+    });
+    const spacer = el('span', 'm-live-discard-spacer');
+    foot.append(this.lvDiscard, this.lvBtn, spacer);
+    s.append(bar, top, this.lvSpec, this.lvList, this.lvTime, foot);
+    this.screens.set('live', s);
     return s;
+  }
+
+  private renderLive() {
+    const on = !!this.lvRec;
+    this.lvBtn.classList.toggle('on', on);
+    this.lvBtn.setAttribute('aria-label', on ? 'Stoppen und speichern' : 'Aufnahme starten');
+    this.lvDiscard.hidden = !on;
+    this.lvTime.classList.toggle('on', on);
+    if (!on && !this.lvInfo.textContent) this.lvInfo.textContent = this.h.live?.describe?.() || 'BirdNET · alle 3 s';
+    const rows = [...this.lvSpecies.values()].sort((a, b) => b.last - a.last || b.max - a.max);
+    this.lvList.replaceChildren();
+    if (!rows.length) {
+      this.lvList.appendChild(el('p', 'm-empty', on ? 'Noch keine Art erkannt …'
+        : this.h.live ? 'Erkannte Arten erscheinen hier, während aufgenommen wird.' : 'Live-Erkennung ist hier nicht verfügbar.'));
+      return;
+    }
+    const now = this.lvRec?.elapsed ?? Infinity;
+    for (const r of rows) {
+      const row = el('div', `m-live-row${on && now - r.last < 6 ? ' new' : ''}`);
+      const img = el('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.src = `${speciesImageBase()}${encodeURIComponent(r.sci)}.webp`;
+      img.addEventListener('error', () => { img.src = FALLBACK_IMG; }, { once: true });
+      const txt = el('div', 'm-live-row-txt');
+      txt.append(el('div', 'm-live-row-name', r.common || r.sci),
+        el('div', 'm-live-row-sub', `${on ? this.ago(now - r.last) : fmtClock(r.last, false)} · ${r.count}×`));
+      const c = el('div', 'm-live-row-conf', `${Math.round(r.max * 100)}%`);
+      c.appendChild(el('small', '', 'max'));
+      row.append(img, txt, c);
+      this.lvList.appendChild(row);
+    }
+  }
+
+  private ago(sec: number) {
+    if (sec < 6) return 'gerade eben';
+    if (sec < 60) return `vor ${Math.round(sec / 5) * 5} s`;
+    return `vor ${Math.floor(sec / 60)} min`;
+  }
+
+  private async startLive() {
+    const live = this.h.live;
+    if (!live || this.lvRec) return;
+    if (!LiveRecorder.supported) { this.lvInfo.textContent = 'Mikrofon wird hier nicht unterstützt.'; return; }
+    try { this.h.player?.pause?.(); } catch { /* ignore */ }
+    this.lvBtn.disabled = true;
+    let classify: Awaited<ReturnType<LiveHost['prepare']>>;
+    try {
+      classify = await live.prepare((msg) => { this.lvInfo.textContent = msg; });
+    } catch (err: any) {
+      this.lvInfo.textContent = `BirdNET: ${err?.message || err}`;
+      this.lvBtn.disabled = false;
+      return;
+    }
+    const rec = new LiveRecorder({ maxSeconds: 60 * 60 });
+    this.lvSpecies.clear();
+    // 3 s chunks at the device rate; BirdNET resamples. A slow phone drops chunks instead of lagging.
+    let buf: Float32Array | null = null, n = 0, chunkStart = 0;
+    const queue: { pcm: Float32Array; at: number }[] = [];
+    const pump = async () => {
+      if (this.lvBusy) return;
+      this.lvBusy = true;
+      while (queue.length && this.lvRec === rec) {
+        const { pcm, at } = queue.shift()!;
+        try {
+          const preds = await classify.analyze(pcm, rec.sampleRate);
+          for (const p of preds) {
+            const e = this.lvSpecies.get(p.scientific);
+            if (e) { e.count++; e.max = Math.max(e.max, p.confidence); e.last = at; }
+            else this.lvSpecies.set(p.scientific, { sci: p.scientific, common: p.common, count: 1, max: p.confidence, last: at });
+          }
+          if (preds.length && this.screen === 'live') this.renderLive();
+        } catch (err) { console.warn('Live BirdNET:', err); }
+      }
+      this.lvBusy = false;
+    };
+    rec.ondata = (c) => {
+      const size = rec.sampleRate * 3;
+      if (!buf) buf = new Float32Array(size);
+      let i = 0;
+      while (i < c.length) {
+        const k = Math.min(size - n, c.length - i);
+        buf.set(c.subarray(i, i + k), n);
+        n += k; i += k;
+        if (n === size) {
+          queue.push({ pcm: buf, at: chunkStart });
+          if (queue.length > 2) queue.shift();
+          chunkStart += 3;
+          buf = new Float32Array(size); n = 0;
+          void pump();
+        }
+      }
+    };
+    rec.addEventListener('stop', (e) => {
+      // Limit reached or microphone gone: keep what was recorded.
+      const reason = (e as CustomEvent).detail?.reason;
+      if (reason !== 'user' && this.lvRec === rec) void this.stopLive(true);
+    });
+    try {
+      await rec.start();
+    } catch (err: any) {
+      this.lvInfo.textContent = err?.name === 'NotAllowedError' ? 'Kein Zugriff aufs Mikrofon.' : `Mikrofon: ${err?.message || err}`;
+      this.lvBtn.disabled = false;
+      return;
+    }
+    this.lvRec = rec;
+    this.lvBtn.disabled = false;
+    this.lvInfo.textContent = live.describe?.() || 'BirdNET · alle 3 s';
+    this.lvSpec.querySelector('.m-live-hint')?.remove();
+    const view = new LiveSpectrogramView(this.lvSpec, { spanSeconds: 15, getMaxFreq: () => 12000 });
+    view.attach(rec);
+    this.lvView = view;
+    const level = new Float32Array(1024);
+    const loop = () => {
+      const an = rec.analyser;
+      if (an) {
+        an.getFloatTimeDomainData(level);
+        let peak = 0;
+        for (let i = 0; i < level.length; i++) peak = Math.max(peak, Math.abs(level[i]));
+        const db = 20 * Math.log10(peak || 1e-6);
+        this.lvMeter.style.width = `${Math.max(0, Math.min(100, (db + 60) / 60 * 100))}%`;
+        this.lvMeter.classList.toggle('clip', peak > 0.98);
+      }
+      this.lvTime.textContent = fmtClock(rec.elapsed, false);
+      this.lvRaf = requestAnimationFrame(loop);
+    };
+    this.lvRaf = requestAnimationFrame(loop);
+    this.lvTick = window.setInterval(() => { if (this.screen === 'live') this.renderLive(); }, 5000);
+    this.renderLive();
+  }
+
+  /** Ends the live recording; `keep` adds it to the project and opens it. */
+  private async stopLive(keep: boolean) {
+    const rec = this.lvRec;
+    if (!rec) return;
+    this.lvRec = null;
+    cancelAnimationFrame(this.lvRaf);
+    clearInterval(this.lvTick);
+    this.lvMeter.style.width = '0%';
+    rec.ondata = null;
+    if (!keep) rec.cancel();
+    const recording = keep ? await rec.stop('user') : null;
+    this.lvView?.detach();
+    this.lvView = null;
+    this.lvSpec.replaceChildren(el('span', 'm-live-hint', keep ? 'Aufnahme gespeichert.' : 'Aufnahme verworfen.'));
+    this.renderLive();
+    if (recording && this.h.live) {
+      this.lvInfo.textContent = 'Wird gespeichert …';
+      try {
+        await this.h.live.save(recording.file);
+        this.lvInfo.textContent = `Gespeichert: ${recording.file.name}`;
+      } catch (err: any) {
+        this.lvInfo.textContent = `Speichern fehlgeschlagen: ${err?.message || err}`;
+      }
+    }
   }
 }
