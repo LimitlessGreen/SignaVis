@@ -119,6 +119,21 @@ onBeforeUnmount(() => player?.destroy())
 </script>
 ```
 
+The spectrogram DSP runs in WebAssembly, shipped as `dist/aw_dsp_wasm_bg.wasm`
+and fetched on first use from the same folder as the bundle (the ESM and IIFE
+builds both resolve it relative to their own URL). If you self-host the bundle,
+copy the `.wasm` file next to it. If the file lives elsewhere, or the bundle is
+inlined into a page without a script URL, set the location before the player
+starts:
+
+```html
+<script>globalThis.SIGNAVIS_WASM_URL = '/static/aw_dsp_wasm_bg.wasm'</script>
+```
+
+The BirdNET models are not part of the npm package; `BirdNETInference` loads
+them from `BIRDNET_MODEL_URL` (GitHub Pages) by default, or from any URL you
+pass.
+
 ## Streamlit (Python)
 
 ```python

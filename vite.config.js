@@ -27,7 +27,8 @@ function wasmAsFile() {
             // leaves it alone. ESM: import.meta.url; IIFE: the <script> src,
             // captured by output.intro while the bundle is evaluated synchronously.
             return `
-const base = (typeof globalThis !== 'undefined' && globalThis.__SIGNAVIS_SCRIPT_SRC__) || import.meta.url;
+const base = (typeof globalThis !== 'undefined' && globalThis.__SIGNAVIS_SCRIPT_SRC__)
+    || import.meta.url || globalThis.location?.href;
 const override = typeof globalThis !== 'undefined' && globalThis.SIGNAVIS_WASM_URL;
 export default override || new URL(${JSON.stringify('./' + name)} + '', base).href;
 `;
