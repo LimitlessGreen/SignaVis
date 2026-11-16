@@ -1,0 +1,13 @@
+[package]
+name = "aw-embed"
+version = "0.1.0"
+edition = "2024"
+description = "Perch-2-Embeddings (ONNX) fuer SignaVis: Fensterung, Resampling, Inferenz"
+
+[dependencies]
+hound = "3.5.1"
+ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
+
+[features]
+directml = ["ort/directml"]
+cuda = ["ort/cuda"]

@@ -42,8 +42,9 @@ import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToA
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
 import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
 import { UploadSelectionPanel } from '../../ui/panels/upload-selection-panel.ts';
-import { XenoCantoPanel, defaultSetInfo, xcUploadTarget } from '../../ui/panels/xc-panel.ts';
-import { AnnotatorProfile } from '../../app/annotator-profile.ts';
+import { XenoCantoPanel, defaultSetInfo, xcUploadTarget, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
+import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
+import { openOnboardingWizard } from '../../ui/components/onboarding/onboarding-wizard.ts';
 import { RecordingManager, defaultRecordingEntry } from '../../app/recording-manager.ts';
 import { toXcId, xcNumber, sameXcId } from '../../domain/xc/xcId.ts';
 import { RecordingExplorer } from '../../ui/panels/recording-explorer.ts';
@@ -71,7 +72,8 @@ import {
 } from '../../app/analysis-backend-config.ts';
 import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
 import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
-import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen, AudioLines } from 'lucide-static';
+import { SimilarPanel } from '../../ui/panels/similar-panel.ts';
 import {
   buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
   getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
@@ -183,8 +185,9 @@ if (player._state) {
   player._state.ultrasoundPrompt = readFlag(ULTRASOUND_PROMPT_KEY, true);
 }
 
-// Initialize daily tips (shows one tip per day unless disabled)
-try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ }
+// Initialize daily tips (shows one tip per day unless disabled) — not on first run: the onboarding comes first
+const _onboardingAtStart = onboardingPending();
+if (!_onboardingAtStart) { try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ } }
 
 // Show daily tips on demand from Help panel (always force-show)
 const helpShowDailyTipsBtn = document.getElementById('helpShowDailyTipsBtn');
@@ -591,6 +594,7 @@ document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
       { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
       { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
       { label: 'Load demo recording', action: () => document.getElementById('loadSampleBtn')?.click() },
+      { label: 'Run setup again…', action: () => runOnboarding() },
       { separator: true },
       { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
       { label: 'Privacy policy', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
@@ -2970,6 +2974,34 @@ const explorePanel = new ExplorePanel({
 });
 explorePanel.el.classList.add('analyse-explore');
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
+// ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
+if (isLite()) {
+  const similarPanel = new SimilarPanel({
+    getRoot: () => (projectKind === 'folder' && projectStore?.rootPath) || null,
+    getQuery: () => {
+      const entry = recordingManager.getActive();
+      if (!entry?.path) return null;
+      const sel = state.selected;
+      if (sel && sel.end > sel.start) return { path: entry.path, start: sel.start, end: sel.end };
+      const t = player.currentTime || 0;
+      return { path: entry.path, start: t, end: t };
+    },
+    openHit: async (hit, play) => {
+      let entry = recordingManager.getAll().find((e) => e.path === hit.path);
+      if (!entry) {
+        entry = recordingManager.add(folderFileEntry(hit.path, { pinned: false }));
+        renderProjectLocation();
+      }
+      if (recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+      if (play) player.playSegment(hit.start, hit.end);
+      else { player.playSegment(hit.start, hit.end); player.pause(); }
+    },
+  });
+  sidebar.addPanel('similar', {
+    icon: AudioLines, label: 'Similar', element: similarPanel.el,
+    onActivate: () => similarPanel.refresh(),
+  });
+}
 // Project is the starting point: set + recordings
 sidebar.setActive('project');
 
@@ -3277,6 +3309,42 @@ xcKeyIndicator.addEventListener('click', () => {
   setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
 });
 
+// ── First-run onboarding: one paged dialog instead of several stacked ones ──
+let _onboardingOpen = false;
+async function runOnboarding() {
+  if (_onboardingOpen) return;
+  _onboardingOpen = true;
+  const offerFolder = projectKind === 'browser' && isFolderAccessSupported() && !isLite();
+  const hadKey = !!xcPanel.apiKey;
+  let res;
+  try {
+    res = await openOnboardingWizard({
+      profile: annotatorProfile,
+      licenses: SET_LICENSES,
+      getApiKey: () => xcPanel.apiKey || '',
+      saveApiKey: (key) => {
+        xcPanel.keyInput.value = key;
+        xcPanel.saveBtn.click();
+        xcApiKeyInput.value = key;
+        updateXcKeyIndicator();
+      },
+      storage: offerFolder ? { recentName: recentFolderHandle?.name || null } : null,
+    });
+  } finally { _onboardingOpen = false; }
+  annotatorProfile.onboardingDone = true;   // finished or skipped: don't ask again (Help › Run setup again)
+  xcPanel._buildAuthorSection?.();
+  // A key entered in the wizard: load the labels of an XC recording opened meanwhile
+  const xcNow = currentXcId || xcPanel.xcId;
+  if (!hadKey && xcPanel.apiKey && xcNow) {
+    importXenoCantoLabels(xcNow).catch((err) => { if (!handleInvalidKeyError(err)) console.warn('[onboarding] XC label import failed', err); });
+  }
+  if (offerFolder) {
+    try { sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
+    if (res.storage === 'browser') lsSet(PROJECT_FOLDER_HINT_KEY, '1');
+    if (res.storage === 'folder') { if (recentFolderHandle) reopenRecentFolder(); else chooseProjectFolder(); }
+  }
+}
+
 // ── XC no-key modal ───────────────────────────────────────────────
 const XC_NOKEY_DISMISSED_KEY = 'audio-workbench.xc-nokey-dismissed.v1';
 const xcNokeyModal = document.getElementById('xcNokeyModal');
@@ -3291,6 +3359,10 @@ const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: x
 let _xcNokeyShownThisSession = false;
 function showXcNokeyModal() {
   if (xcPanel.apiKey) return false;
+  if (_onboardingOpen || (_onboardingAtStart && !annotatorProfile.onboardingDone)) {   // the wizard asks for the key itself
+    selectionMeta.textContent = 'No XC API key — add one in the setup or the Upload tab to load annotations.';
+    return false;
+  }
   const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
   if (dismissed || _xcNokeyShownThisSession) {
     selectionMeta.textContent = 'No XC API key — add one in the Xeno Canto tab to load and upload annotations.';
@@ -4717,7 +4789,7 @@ if (_restoredFromProject && !_hasXcParam && !_liteInitialLaunch.length) {
   if (_last && (_last.xcId || _last.audioUrl || _last.path || _last.filePath)) activateRecordingEntry(_last);
   else recordingManager.setActive(null);
 }
-setTimeout(maybeShowProjectFolderModal, 400);
+setTimeout(() => { if (_onboardingAtStart) runOnboarding(); else maybeShowProjectFolderModal(); }, 400);
 // Start the XC download right away — the 7 MB taxonomy loads in parallel and
 // re-localizes any labels imported before it finished.
 autoLoadFromParams();

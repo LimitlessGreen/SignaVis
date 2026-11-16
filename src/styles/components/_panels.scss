@@ -472,3 +472,37 @@ select::-ms-expand { display: none; }
 .audio-guano summary { cursor: pointer; font-size: 11px; color: var(--color-text-secondary); padding: 2px 0; user-select: none; }
 .audio-guano summary:hover { color: var(--color-text-primary); }
 .audio-guano .audio-facts { margin-top: 6px; }
+
+/* ── Similar panel (Perch-2 embeddings, Lite) ── */
+.similar-panel .sim-search-row { display: flex; gap: 6px; align-items: center; }
+.similar-panel .sim-search-row .field-select { flex: 1; min-width: 0; }
+.similar-panel .sim-search-row .sim-k { width: 70px; flex: none; }
+.similar-panel .sim-error { color: var(--color-danger, #e5484d); }
+.similar-panel .sim-list { list-style: none; margin: 0; padding: 0; }
+.similar-panel .sim-hit {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0; border-bottom: 1px solid var(--color-border); font-size: 11px;
+}
+.similar-panel .sim-play {
+  flex: none; width: 22px; height: 22px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary);
+  font-size: 9px;
+}
+.similar-panel .sim-open {
+  flex: 1; min-width: 0; display: flex; gap: 6px; text-align: left; cursor: pointer;
+  background: none; border: none; color: var(--color-text-primary); padding: 2px 0;
+}
+.similar-panel .sim-open:hover .sim-file { text-decoration: underline; }
+.similar-panel .sim-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.similar-panel .sim-time, .similar-panel .sim-score { flex: none; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.similar-panel .sim-icon-btn {
+  flex: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary);
+}
+.similar-panel .sim-lbl {
+  flex: none; width: 20px; height: 20px; padding: 0; border-radius: 4px; cursor: pointer; font-size: 11px;
+  border: 1px solid var(--color-border); background: transparent; color: var(--color-text-secondary);
+}
+.similar-panel .sim-lbl.pos.on, .similar-panel .sim-lbl.pos:hover { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+.similar-panel .sim-lbl.neg.on, .similar-panel .sim-lbl.neg:hover { background: #c62828; border-color: #c62828; color: #fff; }
+.similar-panel .sim-lbl.unsure.on, .similar-panel .sim-lbl.unsure:hover { background: #b28704; border-color: #b28704; color: #fff; }

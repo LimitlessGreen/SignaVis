@@ -70,6 +70,7 @@
 @use "components/xc-import";
 // Project folder / browser project location
 @use "components/project-location";
+@use "components/onboarding";
 
 // UI clarity layer — keep last
 @use "components/ui-clarity";
