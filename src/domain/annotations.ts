@@ -285,6 +285,63 @@ class AnnotationLayerBase extends EventTarget {
     /** Render the overlay. Override in subclasses; default no-op for base typing. */
     render() {}
 
+    // ── Keyed rendering (shared by both layers) ──────────────────────
+    /** Element per item id from the last render(), and the signature/geometry it was built for. */
+    _elById = new Map<string, HTMLElement>();
+    _elState = new WeakMap<HTMLElement, { sig: string; geo: string }>();
+
+    /**
+     * Keyed DOM update: an item keeps its element while `signature` is unchanged; if only `geometry`
+     * changed (zoom, scroll, layout) the element is re-placed. Every other overlay child is removed,
+     * as the former `innerHTML = ''` did, and DOM order follows `items`.
+     * `create` must return a fully placed element.
+     */
+    _reconcile<T extends { id: string }>(items: T[], spec: {
+        signature: (item: T) => string;
+        geometry: (item: T) => string;
+        create: (item: T) => HTMLElement;
+        place: (el: HTMLElement, item: T) => void;
+    }): HTMLElement[] {
+        const overlay = this.overlay as HTMLElement;
+        const prevById = this._elById;
+        const nextById = new Map<string, HTMLElement>();
+        const elements: HTMLElement[] = [];
+        for (const item of items) {
+            const sig = spec.signature(item);
+            const geo = spec.geometry(item);
+            let el = prevById.get(item.id);
+            const st = el && this._elState.get(el);
+            if (!el || !st || st.sig !== sig || nextById.has(item.id)) {
+                el = spec.create(item);
+                this._elState.set(el, { sig, geo });
+            } else if (st.geo !== geo) {
+                spec.place(el, item);
+                st.geo = geo;
+            }
+            nextById.set(item.id, el);
+            elements.push(el);
+        }
+        this._elById = nextById;
+        const keep = new Set<Element>(elements);
+        for (const child of [...overlay.children]) if (!keep.has(child)) child.remove();
+        let ref = overlay.firstChild;
+        for (const el of elements) {
+            if (el === ref) ref = ref.nextSibling;
+            else overlay.insertBefore(el, ref);
+        }
+        return elements;
+    }
+
+    /** An element was changed outside render() (drag, resize): rebuild it on the next render. */
+    _forgetElement(el: HTMLElement | null | undefined): void {
+        if (el) this._elState.delete(el);
+    }
+
+    /** Signature of an item plus display flags; createdAt/updatedAt are not shown and change on every set(). */
+    _signature(item: unknown, ...flags: unknown[]): string {
+        return JSON.stringify([item, ...flags], skipTimestamps);
+    }
+
     attach(player: unknown): void {
         this.detach();
         this.player = player;
@@ -495,7 +552,6 @@ export class AnnotationLayer extends AnnotationLayerBase {
         const duration = this.player.duration || this.player._state?.audioBuffer?.duration || 0;
         const width = Math.max(1, Math.floor(coords ? coords.timeToScrollX(duration) : duration * pps));
         this.overlay.style.width = `${width}px`;
-        this.overlay.innerHTML = '';
 
         // Swimlane row assignment: stack overlapping regions into rows
         const sorted = [...this._items].sort((a, b) => a.start - b.start || a.end - b.end);
@@ -563,17 +619,40 @@ export class AnnotationLayer extends AnnotationLayerBase {
             }
         }
 
-        for (const region of this._items) {
-            const el = this._createRegionElement(region, pps);
+        // Keyed update (see _reconcile): one changed region rebuilds one element.
+        const p = this.player as any;
+        const geometry = (region: any) => {
+            const left = coords ? coords.timeToScrollX(region.start) : region.start * pps;
+            const right = coords ? coords.timeToScrollX(region.end) : region.end * pps;
             const layout = localLayout.get(region.id);
-            if (layout && layout.depth > 1) {
-                const pct = 100 / layout.depth;
-                el.style.top = `${layout.localRow * pct}%`;
+            const stacked = layout && layout.depth > 1 ? layout : null;
+            return { left: Math.max(0, left), width: Math.max(1, right - left), stacked };
+        };
+        const place = (el: HTMLElement, region: any) => {
+            const g = geometry(region);
+            el.style.left = `${g.left}px`;
+            el.style.width = `${g.width}px`;
+            if (g.stacked) {
+                const pct = 100 / g.stacked.depth;
+                el.style.top = `${g.stacked.localRow * pct}%`;
                 el.style.height = `${pct}%`;
                 el.style.bottom = 'auto';
+            } else {
+                el.style.top = '';
+                el.style.height = '';
+                el.style.bottom = '';
             }
-            this.overlay.appendChild(el);
-        }
+        };
+        this._reconcile(this._items as any[], {
+            signature: (region) => this._signature(region, this._lockedIds.has(region.id), this._liveLinkedId === region.id,
+                p?._readOnly === true),
+            geometry: (region) => {
+                const g = geometry(region);
+                return `${g.left},${g.width},${g.stacked ? `${g.stacked.depth}/${g.stacked.localRow}` : ''}`;
+            },
+            create: (region) => { const el = this._createRegionElement(region, pps); place(el, region); return el; },
+            place,
+        });
 
         // Re-acquire editing element after innerHTML wipe
         if (this._editing) {
@@ -749,6 +828,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this.dispatchEvent(new CustomEvent('annotationpreview', { detail: { annotation: { ...region } } }));
         const el = editing.element;
         if (el) {
+            this._forgetElement(el);   // changed outside render(): rebuilt on the next render
             el.dataset.start = String(region.start);
             el.dataset.end = String(region.end);
             const coords = this.player?._state?.coords;
@@ -1100,38 +1180,23 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         // Keyed update: an element is kept while its label and display state are unchanged
         // (only its position follows zoom/scroll), so one edit touches one element, not all.
+        // Stamp ghost, snap preview and draft are removed, as the old full wipe did.
         this._assignLanes(height);
-        const prevById = this._elById;
-        const nextById = new Map<string, HTMLElement>();
-        const elements: HTMLElement[] = [];
-        const geometries: Array<{ left: number; top: number; width: number; height: number }> = [];
-        for (const label of this._items) {
-            const geo = this._toGeometry(label, width, height);
-            const sig = this._labelSignature(label);
-            const geoKey = `${geo.left},${geo.top},${geo.width},${geo.height},${height}`;
-            let el = prevById.get(label.id);
-            const st = el && this._elState.get(el);
-            if (!el || !st || st.sig !== sig || nextById.has(label.id)) {
-                el = this._createLabelElement(label, width, height);
-                this._elState.set(el, { sig, geo: geoKey });
-            } else if (st.geo !== geoKey) {
-                this._setGeometry(el, geo);
-                if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - geo.top - geo.height)}px`);
-                st.geo = geoKey;
-            }
-            nextById.set(label.id, el);
-            elements.push(el);
-            geometries.push(geo);
-        }
-        this._elById = nextById;
-        // Everything else goes (stale labels, stamp ghost, snap preview, draft) — as the old full wipe did.
-        const keep = new Set<Element>(elements);
-        for (const child of [...this.overlay.children]) if (!keep.has(child)) child.remove();
-        let ref = this.overlay.firstChild;
-        for (const el of elements) {
-            if (el === ref) ref = ref.nextSibling;
-            else this.overlay.insertBefore(el, ref);
-        }
+        const p = this.player as any;
+        const geoById = new Map<string, { left: number; top: number; width: number; height: number }>();
+        for (const label of this._items) geoById.set(label.id, this._toGeometry(label, width, height));
+        const elements = this._reconcile(this._items, {
+            signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
+                this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
+            geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
+            create: (label) => this._createLabelElement(label, width, height),
+            place: (el, label) => {
+                const g = geoById.get(label.id)!;
+                this._setGeometry(el, g);
+                if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - g.top - g.height)}px`);
+            },
+        });
+        const geometries = this._items.map((label) => geoById.get(label.id)!);
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
         this._pinAllLabelTexts();
@@ -1494,8 +1559,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _applyGeometryToElement(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
         this._setGeometry(el, geometry);
         if (el.isConnected) {
-            const st = this._elState.get(el);
-            if (st) st.geo = '';   // moved outside render(): the next render re-applies the label's geometry
+            this._forgetElement(el);   // changed outside render(): rebuilt on the next render
             this._pinLabelText(el);
         }
     }
@@ -1512,17 +1576,6 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
     }
 
-    /** Element per label id from the last render(), and what it was built from. */
-    _elById = new Map<string, HTMLElement>();
-    _elState = new WeakMap<HTMLElement, { sig: string; geo: string }>();
-    /** Everything _createLabelElement reads apart from the geometry; a change rebuilds the element. */
-    _labelSignature(label: SpectrogramLabel): string {
-        const p = this.player as any;
-        return JSON.stringify([
-            label, this._lockedIds.has(label.id), this._liveLinkedId === label.id, this._lanes.has(label.id),
-            p?.options?.labelConfidence === true, p?._readOnly === true,
-        ], skipTimestamps);
-    }
 
     /** Lane of each full-band label in 'lanes' display (empty in other modes). */
     _lanes = new Map<string, number>();

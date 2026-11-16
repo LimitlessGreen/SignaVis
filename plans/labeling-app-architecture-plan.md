@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-16 · Branch `refactor/labeling-app-module` (lokal, noch nicht gepusht, kein PR) · Schritte 1–2 fertig, Schritt 5 Teil 1 auf Branch `perf/spectrogram-labels-keyed`
+Stand: 2026-11-16 · Branch `refactor/labeling-app-module` (lokal, noch nicht gepusht, kein PR) · Schritte 1–2 fertig, Schritt 5 Teile 1–2 auf Branch `perf/spectrogram-labels-keyed`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -28,7 +28,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
 | 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, die selbst `labelViews.invalidate` auslösen) – war ursprünglich Teil von Schritt 2 | offen |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
-| 5 | Keyed-Render in `SpectrogramLabelLayer` | ✅ Teil 1 (siehe unten), offen: `AnnotationLayer`, `LabelList`, nur sichtbaren Zeitbereich rendern |
+| 5 | Keyed-Render der Label-Ebenen | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`; offen: `LabelList`, nur sichtbaren Zeitbereich rendern |
 
 ## Schritt 1 – Details
 
@@ -106,3 +106,29 @@ Gesamt seit Beginn (200 Labels): ~380 ms → 63–104 ms pro Bearbeitung.
 Nächste Kandidaten (Profil 1500 Labels): `AnnotationLayer.render()` (~140 ms, zweite Ebene, in die
 `_syncLinkedLabelsToLayers` spiegelt, baut noch komplett neu) → gleiches Muster; `LabelList.render()` (~200 ms bei
 Umbenennen); ein Layout-Durchlauf (~90 ms). Außerdem `highlightActiveLabel` läuft bei jedem timeupdate über alle Elemente.
+
+## Schritt 5, Teil 2 – Keyed-Render der Wellenform-Ebene (`AnnotationLayer`)
+
+- Gemeinsame Basis in `AnnotationLayerBase`: `_reconcile(items, { signature, geometry, create, place })`,
+  `_signature(item, ...flags)` (ohne Zeitstempel), `_forgetElement(el)`. Beide Ebenen nutzen sie.
+- `AnnotationLayer`: Signatur = Region + gesperrt / live / Read-only; Geometrie = left/width + Stapel-Position
+  (Tiefe/Reihe aus den Überlappungs-Clustern). Ziehen außerhalb von render (`_updateEditInteraction` schreibt
+  Position **und** `dataset.start/end`) → `_forgetElement`, nächstes render baut das Element neu.
+  Gleiches jetzt auch beim Spektrogramm-Ziehen (statt nur die Geometrie zu verwerfen).
+- Prüfung: `label-render-equivalence.py` prüft beide Ebenen (alles gleich zum Voll-Render, 199/200 je Ebene
+  wiederverwendet); Wellenform-Ziehen, Spektrogramm-Ziehen/Größe, E2E und Handy wie vorher.
+
+| Aktion | 1500 Labels (Teil 1 → Teil 2) | 200 Labels |
+|---|---|---|
+| Properties-Edit (ohne Name) | 443 → 172 ms | 64 → 29 ms |
+| Umbenennen | 649 → 439 ms | 96 → 73 ms |
+| Ziehen/Größe | 674 → 421 ms | 90 → 62 ms |
+| `syncToPlayer()` | 595 → 337 ms | 89 → 61 ms |
+
+Gesamt seit Beginn (200 Labels): ~380 ms → 29–73 ms pro Bearbeitung. Player-Anteil jetzt 13–19 ms;
+größter Rest ist `LabelList.render()` (~35 ms bei 200, ~200 ms bei 1500) bei Umbenennen/Ziehen.
+
+**Gefunden, nicht behoben (war schon vorher so):** Ein Label auf der Wellenform-Spur verschieben ändert nur die
+Spur (`dataset`/Position, z. B. 2 s → 3,73 s); `state.labels` und das Spektrogramm bleiben beim alten Wert.
+Vermutlich verarbeitet die App `annotationupdate` für gespiegelte Labels nicht. Escape bricht ein Ziehen im
+Spektrogramm nicht ab (Label bleibt verschoben).
