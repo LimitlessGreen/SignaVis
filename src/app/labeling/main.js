@@ -3806,7 +3806,7 @@ if (recordBtn && BirdNETPlayer.recordingSupported) {
   const recordText = recordBtn.querySelector('.record-btn-text');
   const setRecording = (on) => {
     recordBtn.classList.toggle('is-recording', on);
-    recordText.textContent = on ? 'Stop recording' : 'Record from microphone';
+    recordText.textContent = on ? 'Stop' : 'Record';
   };
   recordBtn.addEventListener('click', async () => {
     if (player.isRecording) { await player.stopRecording(); return; }

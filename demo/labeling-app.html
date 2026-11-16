@@ -399,34 +399,39 @@
 
   <!-- ── Sidebar panel: Project (storage + adding + recordings as one block) ── -->
   <div id="panelProject" class="scroll-panel" hidden>
+    <!-- Add a recording: three equal ways, all end up in the recordings list below -->
+    <div class="sidebar-section-header">Add a recording</div>
+    <div class="project-add">
+      <div class="project-add-ways">
+        <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+          Audio file
+        </button>
+        <button class="project-add-file" id="recordBtn" type="button" hidden title="Record from the microphone; the spectrogram shows the sound as it arrives (up to 5 minutes)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>
+          <span class="record-btn-text">Record</span>
+        </button>
+      </div>
+      <div class="xc-load-row">
+        <span class="project-add-src" aria-hidden="true">XC</span>
+        <input id="xcIdInput" class="input" placeholder="Xeno-canto number or URL" aria-label="Add Xeno-canto recording" />
+        <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
+      </div>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
+    </div>
+
     <div class="sidebar-section-header project-rec-header">
-      <span>Storage &amp; recordings</span>
+      <span>Project</span>
       <span class="project-rec-actions">
         <button class="tb-btn" id="loadSampleBtn" type="button" hidden>Demo</button>
-        <button class="tb-btn ghost" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
+        <button class="tb-btn" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
       </span>
-      <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
     <section class="project-hub" aria-label="Project">
       <!-- Where the project lives — populated by ProjectLocationPanel -->
       <div id="projectLocationMount"></div>
-      <!-- Add recordings: Xeno-canto or a local file, both end up in the tree below -->
-      <div class="project-add">
-        <div class="project-add-title">Add recordings</div>
-        <div class="xc-load-row">
-          <span class="project-add-src" aria-hidden="true">XC</span>
-          <input id="xcIdInput" class="input" placeholder="Xeno-canto number or URL" aria-label="Add Xeno-canto recording" />
-          <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
-        </div>
-        <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
-          <span aria-hidden="true">＋</span> Local audio file…
-        </button>
-        <button class="project-add-file" id="recordBtn" type="button" hidden title="Record from the microphone; the spectrogram shows the sound as it arrives (up to 5 minutes)">
-          <span aria-hidden="true">●</span> <span class="record-btn-text">Record from microphone</span>
-        </button>
-      </div>
-    <!-- Recording explorer — populated by RecordingExplorer widget -->
-    <div id="recordingExplorerMount"></div>
+      <!-- Recording explorer — populated by RecordingExplorer widget -->
+      <div id="recordingExplorerMount"></div>
     </section>
   </div>
 

@@ -168,3 +168,26 @@
 .xc-key-input-row .sidebar-action-btn { flex: 0 0 auto; width: auto; padding: 0 12px; min-height: 28px; }
 .set-meta-field { grid-template-columns: 96px 1fr; align-items: center; }
 .set-meta-field .field-label { font-size: 12px; }
+
+/* ── Project: add first, storage as a status line ──────────────────── */
+.project-add { padding: 2px 14px 12px; gap: 8px; }
+.project-add-ways { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.project-add-file {
+  padding: 9px 8px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 12px; font-weight: 600;
+  svg { color: var(--color-accent); flex: 0 0 auto; }
+  & + & { margin-top: 0; }
+  &.is-recording svg { color: inherit; }
+}
+.project-add .xc-load-row .input { height: 30px; }
+.project-hub { margin: 0; border: 0; border-radius: 0; background: none; }
+.project-location { padding: 2px 14px 12px; }
+.project-location .pl-actions { gap: 8px; }
+.project-location .pl-why { font-size: 11px; color: var(--color-text-secondary); cursor: help; }
+.project-rec-actions .tb-btn { padding: 2px 8px; font-size: 11px; }
+.rec-multi-start { border-style: solid; border-color: var(--color-border-strong); }
+.rec-multi-start-title { font-size: 12px; }
+.rec-multi-start-sub { font-size: 11px; }
