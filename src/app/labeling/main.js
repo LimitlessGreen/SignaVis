@@ -25,6 +25,8 @@ import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
+import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
+import { initModelPicker } from '../../ui/panels/model-picker.ts';
 import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../../app/session-sets.ts';
 import { ProjectConflictError } from '../../infrastructure/project/DirectoryProjectStore.ts';
 import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../../infrastructure/project/FolderAccess.ts';
@@ -551,14 +553,14 @@ const sidebar = new Sidebar(document.getElementById('workspace'), {
 });
 
 // Tabs follow the XC model: Project (set + recordings) → Labels → Analyse → Upload.
-sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', element: document.getElementById('panelProject') });
-sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  element: document.getElementById('panelLabels') });
+sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', hint: 'Recordings and where they are saved', element: document.getElementById('panelProject') });
+sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  hint: 'Every label of this recording', element: document.getElementById('panelLabels') });
 sidebar.addPanel('analyse', {
-  icon: ICONS.birdnet, label: 'Analyse', element: document.getElementById('panelBirdnet'),
+  icon: ICONS.birdnet, label: 'Analyse', hint: 'Let a model find species or calls', element: document.getElementById('panelBirdnet'),
   // Explore ("expected species here") lives below the BirdNET run; created further down.
   onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
 });
-sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'),
+sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  hint: 'Send your labels to Xeno-canto', element: document.getElementById('panelXc'),
   // May fire during startup (restored last tab) before `state` exists; refreshed later anyway.
   onActivate: () => { try { refreshUploadChecklist(); } catch (e) { /* not initialised yet */ } } });
 
@@ -711,8 +713,8 @@ specPanel.relocate();
 
   const wf = document.createElement('div');
   wf.className = 'settings-section';
-  wf.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
   wf.innerHTML = `
+    <h3 class="settings-section-title">Layout</h3>
     <label class="field-check"><input type="checkbox" /> Show waveform above spectrogram</label>
     <p class="field-hint" hidden>Takes effect after reloading the page.</p>`;
   const check = wf.querySelector('input');
@@ -723,12 +725,12 @@ specPanel.relocate();
   });
   specPanel.el.insertBefore(wf, sec);
 
+  // Overview strip: second row of the Layout section
   const ov = document.createElement('div');
-  ov.className = 'settings-section';
-  ov.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+  ov.className = 'settings-row';
   ov.innerHTML = `
-    <label class="field-label" for="overviewModeSelect">Overview</label>
-    <select id="overviewModeSelect" class="field-select" title="What the overview strip below the player shows. Spectrogram: the whole recording, with short calls kept visible.">
+    <label class="settings-label" for="overviewModeSelect">Overview</label>
+    <select id="overviewModeSelect" class="settings-select" title="What the overview strip below the player shows. Spectrogram: the whole recording, with short calls kept visible.">
       <option value="waveform">Waveform</option>
       <option value="spectrogram">Spectrogram</option>
     </select>`;
@@ -738,12 +740,11 @@ specPanel.relocate();
     try { localStorage.setItem(OVERVIEW_MODE_KEY, ovSel.value); } catch { /* ignore */ }
     player.setOverviewMode(ovSel.value);
   });
-  specPanel.el.insertBefore(ov, sec);
+  wf.appendChild(ov);
 
   // ── Automatic behaviour: what the app does by itself, each one switchable ──
   const auto = document.createElement('div');
   auto.className = 'settings-section';
-  auto.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
   auto.innerHTML = '<h3 class="settings-section-title">Automatic behaviour</h3>';
   const addToggle = (text, hint, get, set) => {
     const row = document.createElement('label');
@@ -823,9 +824,9 @@ const rightBar = new Sidebar(document.getElementById('workspace'), {
   onResize: () => player?.resize?.(),
 });
 
-rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
-rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
-rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
+rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     hint: 'How the spectrogram looks', element: specPanel.el });
+rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  hint: 'Details of the label and the recording', element: propsPanel.el });
+rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       hint: 'How the recording sounds', element: buildAudioPanel() });
 
 // ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
 function buildAudioPanel() {
@@ -888,6 +889,12 @@ function buildAudioPanel() {
         </div>
       </div>
     </div>
+    <div class="sidebar-section-header">Labels</div>
+    <div class="audio-section">
+      <label class="field-check" title="Clicking a label on the spectrogram plays only its frequency range, so calls stand out from the background. Off plays the unfiltered sound.">
+        <input id="audioLabelBandpassCheck" type="checkbox" checked /> Filter to the label's frequency range
+      </label>
+    </div>
     <div class="sidebar-section-header">Recording</div>
     <div class="audio-section audio-section--facts">
       <div id="audioDetectStatus" class="audio-empty">No audio loaded.</div>
@@ -906,6 +913,15 @@ function buildAudioPanel() {
   const divisorSel = el.querySelector('#audioDivisorSelect');
   const envelopeCheck = el.querySelector('#audioEnvelopeCheck');
   const pitchSel = el.querySelector('#audioPitchSelect');
+  // Auto band-pass when a label is played (default on, remembered)
+  const bandpassCheck = el.querySelector('#audioLabelBandpassCheck');
+  const BANDPASS_KEY = 'signavis.audio.labelBandpass';
+  try { bandpassCheck.checked = localStorage.getItem(BANDPASS_KEY) !== '0'; } catch { /* private mode */ }
+  player.labelBandpass = bandpassCheck.checked;
+  bandpassCheck.addEventListener('change', () => {
+    player.labelBandpass = bandpassCheck.checked;
+    try { localStorage.setItem(BANDPASS_KEY, bandpassCheck.checked ? '1' : '0'); } catch { /* private mode */ }
+  });
   divisorSel.value = '10';
   pitchSel.value = '10';
   const statusEl = el.querySelector('#audioDetectStatus');
@@ -2795,6 +2811,7 @@ player.on('labelfocus', (e) => {
 });
 
 // ── BirdNET panel ─────────────────────────────────────────────────
+initModeTiles(document.querySelector('#panelBirdnet .mode-tiles'), 'signavis.analyseMode');
 const birdnetBackendToggle = document.getElementById('birdnetBackendToggle');
 birdnetBackendToggle?.addEventListener('click', () => {
   const wrap = document.getElementById('birdnetBackendWrap');
@@ -2854,6 +2871,12 @@ const birdnetPanel = new BirdNETPanel({
     syncToPlayer();
     if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
   },
+});
+initModelPicker({
+  seg: document.getElementById('birdnetModelSeg'),
+  select: document.getElementById('birdnetModelPreset'),
+  urlInput: document.getElementById('birdnetModelUrl'),
+  note: document.getElementById('birdnetModelNote'),
 });
 
 // ── BirdBox panel (call boxes) ────────────────────────────────────
@@ -3684,7 +3707,7 @@ function refreshUploadChecklist() {
     const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
     document.getElementById('xcUploadSummary').textContent = [
       `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
-      c.errorCount ? plural(c.errorCount, 'error') : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+      c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
     ].filter(Boolean).join(' · ');
   } catch (e) { /* app still initializing */ }
   xcPanel._updateUploadState();
@@ -3878,7 +3901,7 @@ if (recordBtn && BirdNETPlayer.recordingSupported) {
   const recordText = recordBtn.querySelector('.record-btn-text');
   const setRecording = (on) => {
     recordBtn.classList.toggle('is-recording', on);
-    recordText.textContent = on ? 'Stop recording' : 'Record from microphone';
+    recordText.textContent = on ? 'Stop' : 'Record';
   };
   recordBtn.addEventListener('click', async () => {
     if (player.isRecording) { await player.stopRecording(); return; }

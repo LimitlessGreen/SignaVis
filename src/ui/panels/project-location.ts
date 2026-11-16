@@ -97,23 +97,23 @@ export class ProjectLocationPanel {
                 r.append(el('p', 'pl-note', 'Project folders need Chrome or Edge on a desktop computer. Labels are kept in this browser.'));
                 return;
             }
-            const tip = el('div', 'pl-recommend');
-            tip.append(el('p', 'pl-recommend-text', v.lite
+            // One quiet line: the folder is a recommendation, not a task (the reason sits in the tooltip)
+            const why = v.lite
                 ? 'Keep a project in a folder of your choice — labels, XC downloads and your own audio stay together and are easy to back up.'
-                : 'Recommended: keep the project in a folder — labels, XC downloads and your own audio stay together as files.'));
+                : 'Recommended: keep the project in a folder — labels, XC downloads and your own audio stay together as files.';
             const acts = el('div', 'pl-actions');
             if (v.recentFolder) {
-                acts.append(button('sidebar-action-btn', `Reopen “${v.recentFolder}”`,
+                acts.append(button('tb-btn', `Reopen “${v.recentFolder}”`,
                     v.lite ? 'Open this project folder again' : 'The browser asks once more for access to this folder',
                     () => this.#cb.onReopenRecent()));
-                acts.append(button('link-btn', 'Other folder…', '', () => this.#cb.onOpenFolder()));
+                acts.append(button('link-btn', 'Other folder…', why, () => this.#cb.onOpenFolder()));
             } else {
-                acts.append(button('sidebar-action-btn', 'Choose project folder…',
-                    'Use a folder on your computer as project: labels are saved there, audio files in it can be added',
-                    () => this.#cb.onOpenFolder()));
+                acts.append(button('tb-btn', 'Use a project folder…', why, () => this.#cb.onOpenFolder()));
+                const hint = el('span', 'pl-why', 'recommended');
+                hint.title = why;
+                acts.append(hint);
             }
-            tip.append(acts);
-            r.append(tip);
+            r.append(acts);
             return;
         }
 

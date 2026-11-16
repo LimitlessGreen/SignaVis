@@ -5,7 +5,7 @@
 
 import type { ChecklistResult, CheckTarget, CheckStatus } from '../../app/upload-checklist.ts';
 
-const STATUS_ICON: Record<CheckStatus, string> = { ok: '✓', warn: '!', error: '✕' };
+const STATUS_ICON: Record<CheckStatus, string> = { ok: '✓', warn: '!', error: '○' };
 
 export interface UploadAssistantOptions {
     el: HTMLElement;
@@ -39,9 +39,13 @@ export class UploadAssistant {
         this.profileEl?.remove();
         this.el.innerHTML = '';
 
+        // The step to do next: the first open one, else the first with warnings.
+        const next = result.steps.find((s) => s.status === 'error') ?? result.steps.find((s) => s.status === 'warn');
+
         result.steps.forEach((step, n) => {
             const item = document.createElement('div');
             item.className = `ua-step ua-${step.status}`;
+            item.classList.toggle('ua-next', step === next);
 
             const hdr = document.createElement('button');
             hdr.type = 'button';
@@ -50,7 +54,7 @@ export class UploadAssistant {
             hdr.querySelector('.ua-icon')!.textContent = STATUS_ICON[step.status];
             hdr.querySelector('.ua-title')!.textContent = `${n + 1}. ${step.title}`;
             hdr.querySelector('.ua-summary')!.textContent = step.summary;
-            hdr.title = { ok: 'OK', warn: 'Warnings', error: 'Needs fixing' }[step.status];
+            hdr.title = { ok: 'Done', warn: 'Done, with warnings', error: 'To do' }[step.status];
             item.appendChild(hdr);
 
             const body = document.createElement('div');
@@ -60,8 +64,8 @@ export class UploadAssistant {
             if (host) body.appendChild(host);
             item.appendChild(body);
 
-            // Open by default when something needs attention; the key/profile forms are always reachable
-            const auto = step.status !== 'ok';
+            // Only the next step is open by default, so the list reads as a to-do list; every step opens on click
+            const auto = step === next;
             const open = this._expanded.get(step.id) ?? auto;
             const hasContent = body.childElementCount > 0;
             body.hidden = !open || !hasContent;

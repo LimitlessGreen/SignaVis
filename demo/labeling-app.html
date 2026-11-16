@@ -263,153 +263,183 @@
 
   <!-- ── Sidebar panel: BirdNET ───────────────────────────────────── -->
   <div id="panelBirdnet" class="scroll-panel" hidden>
-    <!-- Analyse tab: BirdNET run first, expected species ("Explore") appended below at runtime -->
-    <div class="sidebar-section-header" style="display:flex;align-items:center;justify-content:space-between;">
-      <span>Detection</span>
-      <button id="birdnetBackendToggle" class="birdnet-backend-toggle" type="button" title="Backend &amp; Model settings"
-        aria-expanded="false" aria-controls="birdnetBackendWrap">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Backend
+    <!-- Analyse tab: pick what to find (tiles), run it, settings folded away; results appended below at runtime -->
+    <div class="mode-tiles" role="tablist" aria-label="What to find">
+      <button class="mode-tile" type="button" role="tab" id="analyseTabSpecies" data-analyse-mode="species"
+        aria-selected="true" aria-controls="analyseSpecies">
+        <svg class="mode-tile-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h1M7 8v8M11 4v16M15 9v6M19 7v10M22 12h-1"/></svg>
+        <span class="mode-tile-text"><strong>Species</strong><small>BirdNET</small></span>
+      </button>
+      <button class="mode-tile" type="button" role="tab" id="analyseTabCalls" data-analyse-mode="calls"
+        aria-selected="false" aria-controls="analyseCalls" tabindex="-1">
+        <svg class="mode-tile-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1"/><path d="M5 2v3M2 5h3M19 2v3M22 5h-3M5 22v-3M2 19h3M19 22v-3M22 19h-3"/></svg>
+        <span class="mode-tile-text"><strong>Call boxes</strong><small>BirdBox</small></span>
       </button>
     </div>
-    <div id="birdnetBackendWrap" hidden>
-      <div class="panel-section">
-        <label class="field-label" for="birdnetModelPreset">Model</label>
-        <select id="birdnetModelPreset" class="field-select">
+
+    <!-- ── Species (BirdNET) ── -->
+    <section class="mode-pane" id="analyseSpecies" role="tabpanel" aria-labelledby="analyseTabSpecies">
+      <p class="mode-desc">Names the species in the recording and adds one label per detection.</p>
+      <!-- Model: every version one click away; the select stays the source of truth for BirdNETPanel -->
+      <div class="model-picker">
+        <div class="model-picker-head"><span class="field-label" id="birdnetModelLabel">Model</span><span class="model-picker-note" id="birdnetModelNote"></span></div>
+        <div class="seg" id="birdnetModelSeg" role="radiogroup" aria-labelledby="birdnetModelLabel">
+          <button type="button" class="seg-btn" role="radio" data-value="v3.0" data-note="Newest · about 10,000 species">V3.0</button>
+          <button type="button" class="seg-btn" role="radio" data-value="v3.0-12k" data-note="Full model · 12,000 species · local download">V3.0 12K</button>
+          <button type="button" class="seg-btn" role="radio" data-value="v2.4" data-note="Classic BirdNET · about 6,500 species">V2.4</button>
+          <button type="button" class="seg-btn" role="radio" data-value="custom" data-note="Your own model folder">Custom</button>
+        </div>
+        <select id="birdnetModelPreset" hidden aria-hidden="true" tabindex="-1">
           <option value="v3.0">BirdNET+ V3.0 (Global 10K, ONNX)</option>
           <option value="v3.0-12k">BirdNET+ V3.0 Global 12K (full, local download)</option>
           <option value="v2.4">BirdNET v2.4 (legacy, TF.js)</option>
           <option value="custom">Custom URL…</option>
         </select>
-        <label class="field-label" for="birdnetModelUrl">Model URL</label>
-        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/" />
-        <p class="field-hint">BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json</p>
+        <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/" aria-label="Model folder URL" hidden
+          title="BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json" />
       </div>
-      <div class="panel-section">
-        <label class="field-label" for="analysisModeSelect">Analysis backend</label>
-        <select id="analysisModeSelect" class="field-select">
-          <option value="local">Local (Browser)</option>
-          <option value="server">Server</option>
-          <option value="hybrid">Hybrid (Auto)</option>
-          <option value="cloud">Cloud</option>
-        </select>
-        <label class="field-label" for="analysisEndpointInput" style="margin-top:8px">Backend endpoint</label>
-        <input id="analysisEndpointInput" class="input" placeholder="http://localhost:8787" />
-        <div class="panel-actions" style="margin-top:8px">
-          <button class="sidebar-action-btn secondary" id="analysisApplyBtn" type="button">Apply backend</button>
-        </div>
-        <p class="field-hint">For server/cloud mode, enter the base URL of the analysis API.</p>
+      <div class="panel-actions">
+        <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
       </div>
-    </div>
-    <div class="panel-section">
-      <div class="slider-row">
-        <label class="field-label" for="birdnetConfidence" style="margin:0">Min. Confidence</label>
-        <span class="slider-val" id="birdnetConfidenceVal">0.25</span>
+      <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none" role="progressbar" aria-label="BirdNET progress">
+        <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
       </div>
-      <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" class="range-input" />
-    </div>
-    <div class="panel-section">
-      <label class="field-label" for="birdnetOverlap">Overlap</label>
-      <select id="birdnetOverlap" class="field-select">
-        <option value="0">0 s</option>
-        <option value="0.5">0.5 s</option>
-        <option value="1">1 s</option>
-        <option value="1.5">1.5 s</option>
-        <option value="2">2 s</option>
-        <option value="2.5">2.5 s</option>
-      </select>
-    </div>
-    <div class="panel-section">
-      <label class="field-check">
-        <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
-      </label>
-    </div>
-    <div class="sidebar-section-header">Location</div>
-    <div class="panel-section">
-      <div class="birdnet-location-line">
-        <span id="birdnetLocationLine" class="meta">No location set</span>
-        <button class="tb-btn" id="birdnetLocationEditBtn" type="button" title="Edit the recording's location in Properties">Edit</button>
-      </div>
-      <label class="field-check geo-filter-toggle" id="birdnetGeoFilterLabel"
-        title="Needs the BirdNET area model — available once a model with area model is loaded">
-        <input id="birdnetGeoFilterEnabled" type="checkbox" disabled />
-        Enable geo filter
-        <span class="meta" id="birdnetGeoFilterHint">(needs area model)</span>
-      </label>
-      <div id="birdnetGeoFilterSliderWrap" hidden>
-        <div class="slider-row" style="margin-top:6px">
-          <label class="field-label" for="birdnetGeoThreshold" style="margin:0">Min. occurrence</label>
-          <span class="slider-val" id="birdnetGeoThresholdVal">0.01</span>
-        </div>
-        <input id="birdnetGeoThreshold" type="range" min="0.001" max="0.5" step="0.001" value="0.01" class="range-input" />
-      </div>
-    </div>
-    <div class="sidebar-section-header">Run</div>
-    <div class="birdnet-progress" id="birdnetProgressWrap" style="display:none" role="progressbar" aria-label="BirdNET progress">
-      <div class="birdnet-progress-bar" id="birdnetProgressBar"></div>
-    </div>
-    <span id="birdnetStatus" class="meta birdnet-status" aria-live="polite"></span>
-    <div class="panel-actions">
-      <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
-    </div>
+      <span id="birdnetStatus" class="meta birdnet-status" aria-live="polite"></span>
 
-    <!-- BirdBox call boxes: one run per recording, the sliders re-fuse the boxes instantly -->
-    <div class="sidebar-section-header">Call boxes (BirdBox)</div>
-    <div class="panel-section">
-      <p class="field-hint" style="margin:0 0 10px">Draws a box around every bird call (time and frequency) with the
-        <a href="https://github.com/birdnet-team/BirdBox" target="_blank" rel="noopener">BirdBox</a> Just-Bird model
-        (BirdNET-Team, AGPL-3.0). Runs once; the sliders change the boxes without a new run.</p>
-      <div class="slider-row">
-        <label class="field-label" for="birdboxConf" style="margin:0">Min. Confidence</label>
-        <span class="slider-val" id="birdboxConfVal">0.15</span>
+      <details class="panel-details">
+        <summary>Settings</summary>
+        <div class="field-grid">
+          <label class="field-label" for="birdnetConfidence">Min. confidence</label>
+          <div class="field-slider">
+            <input id="birdnetConfidence" type="range" min="0.05" max="1.0" step="0.05" value="0.25" class="range-input" />
+            <span class="slider-val" id="birdnetConfidenceVal">0.25</span>
+          </div>
+          <label class="field-label" for="birdnetOverlap">Overlap</label>
+          <select id="birdnetOverlap" class="field-select">
+            <option value="0">0 s</option>
+            <option value="0.5">0.5 s</option>
+            <option value="1">1 s</option>
+            <option value="1.5">1.5 s</option>
+            <option value="2">2 s</option>
+            <option value="2.5">2.5 s</option>
+          </select>
+          <label class="field-check field-grid-wide">
+            <input id="birdnetMerge" type="checkbox" checked /> Merge overlapping labels
+          </label>
+        </div>
+
+        <div class="panel-subhead">Location filter</div>
+        <div class="field-grid">
+          <div class="birdnet-location-line field-grid-wide">
+            <span id="birdnetLocationLine" class="meta">No location set</span>
+            <button class="tb-btn" id="birdnetLocationEditBtn" type="button" title="Edit the recording's location in Properties">Edit</button>
+          </div>
+          <label class="field-check geo-filter-toggle field-grid-wide" id="birdnetGeoFilterLabel"
+            title="Needs the BirdNET area model — available once a model with area model is loaded">
+            <input id="birdnetGeoFilterEnabled" type="checkbox" disabled />
+            Only species expected here
+            <span class="meta" id="birdnetGeoFilterHint">(needs area model)</span>
+          </label>
+          <div id="birdnetGeoFilterSliderWrap" class="field-grid field-grid-wide" hidden>
+            <label class="field-label" for="birdnetGeoThreshold">Min. occurrence</label>
+            <div class="field-slider">
+              <input id="birdnetGeoThreshold" type="range" min="0.001" max="0.5" step="0.001" value="0.01" class="range-input" />
+              <span class="slider-val" id="birdnetGeoThresholdVal">0.01</span>
+            </div>
+          </div>
+        </div>
+
+        <button id="birdnetBackendToggle" class="panel-subhead panel-subhead--toggle" type="button"
+          title="Where the analysis runs" aria-expanded="false" aria-controls="birdnetBackendWrap">Backend</button>
+        <div id="birdnetBackendWrap" hidden>
+          <div class="field-grid">
+            <label class="field-label" for="analysisModeSelect">Runs on</label>
+            <select id="analysisModeSelect" class="field-select">
+              <option value="local">Local (Browser)</option>
+              <option value="server">Server</option>
+              <option value="hybrid">Hybrid (Auto)</option>
+              <option value="cloud">Cloud</option>
+            </select>
+            <label class="field-label" for="analysisEndpointInput">Endpoint</label>
+            <input id="analysisEndpointInput" class="input" placeholder="http://localhost:8787"
+              title="For server/cloud mode, enter the base URL of the analysis API." />
+            <div class="field-grid-wide">
+              <button class="sidebar-action-btn secondary" id="analysisApplyBtn" type="button">Apply backend</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Call boxes (BirdBox): one run per recording, the sliders re-fuse the boxes instantly ── -->
+    <section class="mode-pane" id="analyseCalls" role="tabpanel" aria-labelledby="analyseTabCalls" hidden>
+      <p class="mode-desc">Draws a box around every bird call, in time and frequency — without naming the species.</p>
+      <div class="panel-actions">
+        <button class="sidebar-action-btn" id="birdboxRunBtn" type="button">▶ Detect calls</button>
       </div>
-      <input id="birdboxConf" type="range" min="0.05" max="0.95" step="0.01" value="0.15" class="range-input" />
-      <div class="slider-row" style="margin-top:6px">
-        <label class="field-label" for="birdboxGap" style="margin:0"
-          title="Join calls closer than this into one phrase box; 0 keeps single calls">Phrase gap</label>
-        <span class="slider-val" id="birdboxGapVal">0.05 s</span>
+      <div class="birdnet-progress" id="birdboxProgressWrap" style="display:none" role="progressbar" aria-label="BirdBox progress">
+        <div class="birdnet-progress-bar" id="birdboxProgressBar"></div>
       </div>
-      <input id="birdboxGap" type="range" min="0" max="1" step="0.05" value="0.05" class="range-input" />
-    </div>
-    <div class="birdnet-progress" id="birdboxProgressWrap" style="display:none" role="progressbar" aria-label="BirdBox progress">
-      <div class="birdnet-progress-bar" id="birdboxProgressBar"></div>
-    </div>
-    <span id="birdboxStatus" class="meta birdnet-status" aria-live="polite"></span>
-    <div class="panel-actions">
-      <button class="sidebar-action-btn" id="birdboxRunBtn" type="button">▶ Detect calls</button>
-    </div>
+      <span id="birdboxStatus" class="meta birdnet-status" aria-live="polite"></span>
+
+      <details class="panel-details">
+        <summary>Settings</summary>
+        <div class="field-grid">
+          <label class="field-label" for="birdboxConf">Min. confidence</label>
+          <div class="field-slider">
+            <input id="birdboxConf" type="range" min="0.05" max="0.95" step="0.01" value="0.15" class="range-input" />
+            <span class="slider-val" id="birdboxConfVal">0.15</span>
+          </div>
+          <label class="field-label" for="birdboxGap"
+            title="Join calls closer than this into one phrase box; 0 keeps single calls">Phrase gap</label>
+          <div class="field-slider">
+            <input id="birdboxGap" type="range" min="0" max="1" step="0.05" value="0.05" class="range-input" />
+            <span class="slider-val" id="birdboxGapVal">0.05 s</span>
+          </div>
+        </div>
+        <p class="field-hint">The model runs once; the sliders change the boxes without a new run.
+          <a href="https://github.com/birdnet-team/BirdBox" target="_blank" rel="noopener">BirdBox</a> Just-Bird model, BirdNET-Team, AGPL-3.0.</p>
+      </details>
+    </section>
+
+    <div class="sidebar-section-header">Results</div>
   </div>
 
   <!-- ── Sidebar panel: Project (storage + adding + recordings as one block) ── -->
   <div id="panelProject" class="scroll-panel" hidden>
+    <!-- Add a recording: three equal ways, all end up in the recordings list below -->
+    <div class="sidebar-section-header">Add a recording</div>
+    <div class="project-add">
+      <div class="project-add-ways">
+        <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+          Audio file
+        </button>
+        <button class="project-add-file" id="recordBtn" type="button" hidden title="Record from the microphone; the spectrogram shows the sound as it arrives (up to 5 minutes)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>
+          <span class="record-btn-text">Record</span>
+        </button>
+      </div>
+      <div class="xc-load-row">
+        <span class="project-add-src" aria-hidden="true">XC</span>
+        <input id="xcIdInput" class="input" placeholder="Xeno-canto number or URL" aria-label="Add Xeno-canto recording" />
+        <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
+      </div>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
+    </div>
+
     <div class="sidebar-section-header project-rec-header">
-      <span>Storage &amp; recordings</span>
+      <span>Project</span>
       <span class="project-rec-actions">
         <button class="tb-btn" id="loadSampleBtn" type="button" hidden>Demo</button>
-        <button class="tb-btn ghost" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
+        <button class="tb-btn" id="newSessionBtn" type="button" title="Start a new session (removes all recordings and labels)">New…</button>
       </span>
-      <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
     <section class="project-hub" aria-label="Project">
       <!-- Where the project lives — populated by ProjectLocationPanel -->
       <div id="projectLocationMount"></div>
-      <!-- Add recordings: Xeno-canto or a local file, both end up in the tree below -->
-      <div class="project-add">
-        <div class="project-add-title">Add recordings</div>
-        <div class="xc-load-row">
-          <span class="project-add-src" aria-hidden="true">XC</span>
-          <input id="xcIdInput" class="input" placeholder="Xeno-canto number or URL" aria-label="Add Xeno-canto recording" />
-          <button class="sidebar-action-btn xc-load-primary" id="xcLoadBtn" type="button">Load</button>
-        </div>
-        <button class="project-add-file" id="browseBtn" type="button" title="Add a local audio file (needs an XC number only if you upload it to Xeno-canto)">
-          <span aria-hidden="true">＋</span> Local audio file…
-        </button>
-        <button class="project-add-file" id="recordBtn" type="button" hidden title="Record from the microphone; the spectrogram shows the sound as it arrives (up to 5 minutes)">
-          <span aria-hidden="true">●</span> <span class="record-btn-text">Record from microphone</span>
-        </button>
-      </div>
-    <!-- Recording explorer — populated by RecordingExplorer widget -->
-    <div id="recordingExplorerMount"></div>
+      <!-- Recording explorer — populated by RecordingExplorer widget -->
+      <div id="recordingExplorerMount"></div>
     </section>
   </div>
 
@@ -422,7 +452,7 @@
     <div class="sidebar-section-header">Set details</div>
     <div id="xcSetContainer" class="xc-set-container project-set"></div>
     <!-- ── Upload assistant: live checklist (key · profile · set · recordings · labels) ── -->
-    <div class="sidebar-section-header">Upload check</div>
+    <div class="sidebar-section-header">Before sending</div>
     <div id="xcChecklist" class="ua-checklist"></div>
     <!-- ── API key + profile form (mounted into checklist steps) ── -->
     <div id="xcAuthorContainer" class="ua-host"></div>
@@ -441,17 +471,16 @@
       <p class="field-hint">Required for label import and upload. Stored locally. Get a key at <a href="https://xeno-canto.org/account" target="_blank" rel="noopener noreferrer">xeno-canto.org/account</a>.</p>
     </div>
 
-    <!-- ── Preview & send ── -->
-    <div class="sidebar-section-header">Preview</div>
+    <!-- ── Send (sticky): one main action, the file preview is secondary ── -->
     <div class="panel-actions xc-actions">
       <div id="xcUploadSummary" class="ua-summary-line"></div>
-      <div class="xc-action-row">
-        <button class="sidebar-action-btn secondary" id="xcExportSetBtn" type="button" title="View the Annota-JSON (XC) payload">View JSON</button>
-        <button class="sidebar-action-btn secondary" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download</button>
-      </div>
       <button class="sidebar-action-btn" id="xcUploadBtn" type="button" disabled>Send to Xeno-canto</button>
       <p class="field-hint" id="xcUploadTargetHint" hidden></p>
-      <p class="field-hint">The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.</p>
+      <div class="xc-action-row">
+        <button class="tb-btn" id="xcExportSetBtn" type="button" title="View the Annota-JSON (XC) payload">View JSON</button>
+        <button class="tb-btn" id="xcDownloadSetBtn" type="button" title="Download the Annota-JSON (XC) file">Download file</button>
+        <span class="field-hint" title="The set lands in your XC account for review. Uploaded sets can't be edited — only deleted and uploaded again.">Reviewed on XC ⓘ</span>
+      </div>
     </div>
     <div id="xcStatus" class="xc-status" style="display:none"></div>
     <div id="xcUploads" class="us-uploads" hidden></div>

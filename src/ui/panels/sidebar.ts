@@ -42,6 +42,7 @@ export class Sidebar {
     _sidebarEl: any;
     _storageKey: any;
     _title: any;
+    _hint: any;
     _workspace: any;
     defaultWidth: any;
     maxWidth: any;
@@ -88,11 +89,12 @@ export class Sidebar {
    * @param {object} opts
    * @param {string} opts.icon   SVG string for the activity bar button
    * @param {string} opts.label  Human-readable panel title
+   * @param {string} [opts.hint]  One line under the title: what this tab is for
    * @param {HTMLElement} opts.element  Panel content element (will be moved into sidebar)
    * @param {() => void} [opts.onActivate]   Called when panel becomes active
    * @param {() => void} [opts.onDeactivate] Called when panel is deactivated
    */
-  addPanel(id: any, { icon, label, element, onActivate, onDeactivate }: any) {
+  addPanel(id: any, { icon, label, hint, element, onActivate, onDeactivate }: any) {
     const btn = document.createElement('button');
     btn.className = 'activity-btn';
     btn.title = label;
@@ -121,7 +123,7 @@ export class Sidebar {
     element.style.display = 'none';
     this._body.appendChild(element);
 
-    this._panels.set(id, { btn, badge, element, label, onActivate, onDeactivate });
+    this._panels.set(id, { btn, badge, element, label, hint, onActivate, onDeactivate });
 
     if (this._pendingActivePanel === id) {
       this._pendingActivePanel = null;
@@ -146,7 +148,9 @@ export class Sidebar {
     const panel = this._panels.get(id);
     panel.btn.classList.add('active');
     panel.element.style.display = '';
-    this._title.textContent = panel.label.toUpperCase();
+    this._title.textContent = panel.label;
+    this._hint.textContent = panel.hint || '';
+    this._hint.hidden = !panel.hint;
 
     this._sidebarEl.classList.remove('collapsed');
     this._handle.style.display = '';
@@ -182,6 +186,7 @@ export class Sidebar {
     this._sidebarEl.classList.add('collapsed');
     this._handle.style.display = 'none';
     this._title.textContent = '';
+    this._hint.textContent = '';
     this._saveState();
     this._onResize?.();
     this._onChange?.(null);
@@ -239,6 +244,10 @@ export class Sidebar {
     this._title = document.createElement('span');
     this._title.className = 'sidebar-title';
     this._header.appendChild(this._title);
+    this._hint = document.createElement('span');
+    this._hint.className = 'sidebar-hint';
+    this._hint.hidden = true;
+    this._header.appendChild(this._hint);
     this._sidebarEl.appendChild(this._header);
 
     this._body = document.createElement('div');

@@ -1539,17 +1539,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 return;
             }
             // Emit labelfocus but explicitly request no automatic seek
-            // (seek is handled by playBandpassedSegment; we only want
+            // (seek is handled by the segment playback; we only want
             // to highlight/pin without changing viewport).
             this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' } }));
             this.player?._state?._blockSeekClicks?.(260);
-            this.player?.playBandpassedSegment?.(
-                label.start,
-                label.end,
-                label.freqMin ?? 0,
-                label.freqMax ?? 0,
-                { labelId: label.id },
-            );
+            // Bandpassed to the label's frequency range unless the user turned that off (Audio tab)
+            if (this.player?.playLabelSegment) {
+                this.player.playLabelSegment(label, { labelId: label.id });
+            } else {
+                this.player?.playBandpassedSegment?.(label.start, label.end, label.freqMin ?? 0, label.freqMax ?? 0, { labelId: label.id });
+            }
         });
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();

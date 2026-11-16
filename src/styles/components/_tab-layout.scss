@@ -1,0 +1,460 @@
+/* Shared building blocks of the sidebar tabs (Project, Analyse, Upload, Display, Properties, Audio).
+   One section header, one field grid (name left, control right), one text size.
+   Loaded after the older partials so every tab picks it up. */
+
+.sidebar-body { font-size: 12px; }
+
+/* ── Section header: sentence case, readable ───────────────────────── */
+.sidebar-section-header {
+  padding: 12px 14px 6px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+  opacity: 1;
+}
+// Sub-heading inside a section or a details block.
+.panel-subhead {
+  display: block;
+  width: 100%;
+  margin: 10px 0 6px;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--color-text-secondary);
+}
+.panel-subhead--toggle {
+  cursor: pointer;
+  &::before { content: '▸'; display: inline-block; width: 12px; }
+  &[aria-expanded="true"]::before { content: '▾'; }
+  &:hover { color: var(--color-text-primary); }
+}
+
+/* ── Field grid: name left, control right ──────────────────────────── */
+.field-grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  &[hidden] { display: none; }
+  > .field-label { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  > .field-grid-wide { grid-column: 1 / -1; }
+  .input, .field-select { width: 100%; min-width: 0; height: 26px; padding: 3px 7px; font-size: 12px; }
+}
+.field-label {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.field-check { font-size: 12px; flex-wrap: wrap; }
+// Selects lost their arrow with `appearance: none`; draw one.
+.field-select {
+  padding-right: 22px !important;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%) !important;
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50% !important;
+  background-size: 4px 4px, 4px 4px !important;
+  background-repeat: no-repeat !important;
+}
+.field-hint { font-size: 11px; }
+.field-slider {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  .range-input { flex: 1; min-width: 0; }
+  .slider-val { flex: 0 0 auto; min-width: 34px; text-align: right; }
+}
+
+/* ── Folded settings ───────────────────────────────────────────────── */
+.panel-details {
+  margin: 10px 14px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  > summary {
+    padding: 7px 10px;
+    font-size: 12px; font-weight: 600;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+    &:hover { color: var(--color-text-primary); }
+  }
+  &[open] > summary { color: var(--color-text-primary); border-bottom: 1px solid var(--color-border); }
+  > :not(summary) { margin-left: 10px; margin-right: 10px; }
+  > .panel-subhead { width: calc(100% - 20px); }
+  > summary + * { margin-top: 10px; }
+  > :last-child:not(summary) { margin-bottom: 10px; }
+  .field-hint { margin-top: 8px; }
+}
+
+/* ── Mode tiles: what this tab does, one pane per tile ─────────────── */
+.mode-tiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  margin: 12px 14px 0;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--input-bg-weak);
+}
+.mode-tile {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  &:hover { color: var(--color-text-primary); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+  &[aria-selected="true"] {
+    background: var(--color-bg-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    .mode-tile-icon { color: var(--color-accent); }
+  }
+}
+.mode-tile-icon { flex: 0 0 auto; }
+.mode-tile-text {
+  display: flex; flex-direction: column; min-width: 0; line-height: 1.25;
+  strong { font-size: 12px; font-weight: 650; }
+  small { font-size: 11px; color: var(--color-text-secondary); }
+}
+.mode-pane {
+  padding-bottom: 14px;
+  &[hidden] { display: none; }
+  > .panel-actions { display: block; padding: 0 14px; }
+  > .panel-actions .sidebar-action-btn { width: 100%; max-width: none; padding: 9px 12px; font-size: 13px; justify-content: center; }
+  > .birdnet-status:not(:empty) { margin-top: 6px; }
+}
+.mode-desc {
+  margin: 10px 14px;
+  font-size: 12px; line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+/* ── Upload: to-do list instead of an error log ────────────────────── */
+// Open steps are neutral (nothing went wrong yet); only the next one is highlighted.
+.ua-checklist { padding: 2px 14px 10px; gap: 4px; }
+.ua-step {
+  border-radius: 4px;
+  &.ua-error { border-left-color: var(--color-border-strong); }
+  &.ua-error .ua-icon { color: var(--color-text-secondary); }
+  &.ua-next { border-left-color: var(--color-accent); }
+  &.ua-next .ua-icon { color: var(--color-accent); }
+}
+.ua-step-hdr { padding: 7px 8px; }
+.ua-step-body { padding: 0 10px 10px 28px; }
+.ua-issue { font-size: 12px; }
+.ua-issue.ua-issue-error { color: var(--color-text-primary); }
+#panelXc .xc-actions {
+  padding: 10px 14px;
+  .sidebar-action-btn { width: 100%; max-width: none; flex: none; padding: 9px 12px; font-size: 13px; justify-content: center; }
+  .xc-action-row { margin: 0; align-items: center; gap: 6px; }
+  .xc-action-row .field-hint { margin: 0 0 0 auto; cursor: help; white-space: nowrap; }
+  .field-hint { margin: 0; }
+}
+.ua-summary-line { color: var(--color-text-secondary); }
+.xc-key-input-row { display: flex; gap: 6px; align-items: stretch; }
+.xc-key-input-row .xc-key-input-wrap { flex: 1 1 auto; min-width: 0; }
+.xc-key-input-row .sidebar-action-btn { flex: 0 0 auto; width: auto; padding: 0 12px; min-height: 28px; }
+.set-meta-field { grid-template-columns: 96px 1fr; align-items: center; }
+.set-meta-field .field-label { font-size: 12px; }
+
+/* ── Project: add first, storage as a status line ──────────────────── */
+.project-add { padding: 2px 14px 12px; gap: 8px; }
+.project-add-ways { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.project-add-file {
+  padding: 9px 8px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 12px; font-weight: 600;
+  svg { color: var(--color-accent); flex: 0 0 auto; }
+  & + & { margin-top: 0; }
+  &.is-recording svg { color: inherit; }
+}
+.project-add .xc-load-row .input { height: 30px; }
+.project-hub { margin: 0; border: 0; border-radius: 0; background: none; }
+.project-location { padding: 2px 14px 12px; }
+.project-location .pl-actions { gap: 8px; }
+.project-location .pl-why { font-size: 11px; color: var(--color-text-secondary); cursor: help; }
+.project-rec-actions .tb-btn { padding: 2px 8px; font-size: 11px; }
+.rec-multi-start { border-style: solid; border-color: var(--color-border-strong); }
+.rec-multi-start-title { font-size: 12px; }
+.rec-multi-start-sub { font-size: 11px; }
+
+/* ── Display + Properties: same header and field sizes as the other tabs ── */
+.spectrogram-settings-panel .settings-section-title,
+.props-section-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 650;
+  text-transform: none; letter-spacing: 0;
+  color: var(--color-text-primary); opacity: 1;
+}
+.spectrogram-settings-panel .settings-section-title::before {
+  content: ''; width: 3px; height: 10px; border-radius: 2px;
+  background: var(--color-accent); opacity: 0.75;
+}
+.spectrogram-settings-panel {
+  .settings-section { padding: 12px 14px; }
+  .settings-label { font-size: 12px; min-width: 72px; }
+  .settings-select, .settings-number { font-size: 12px; }
+  .settings-value { font-size: 11px; }
+  .field-check { margin-bottom: 6px; }
+  .field-check:last-child { margin-bottom: 0; }
+  .field-check + .settings-row { margin-top: 8px; }
+  // A checkbox that sits inside a row label: full width, same look as .field-check
+  .settings-label:has(> input[type="checkbox"]) {
+    display: flex; align-items: center; gap: 6px;
+    min-width: 0; flex: 1;
+    color: var(--color-text-primary);
+    cursor: pointer;
+  }
+}
+.props-grid, .props-empty, .props-locked-hint { font-size: 12px; }
+
+/* ── Activity bar: labels fit ──────────────────────────────────────── */
+.activity-bar { width: 58px; }
+.activity-btn-label { font-size: 10px; letter-spacing: 0; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Visual pass: calmer, larger, one look for every control
+   ══════════════════════════════════════════════════════════════════════ */
+$pad: 12px;
+
+/* ── Tab title + what the tab is for ───────────────────────────────── */
+.sidebar-header {
+  flex-direction: row; align-items: baseline; gap: 8px;
+  padding: 9px $pad 8px;
+  min-height: 0;
+}
+.sidebar-title {
+  flex: 0 0 auto;
+  font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+.sidebar-hint {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; line-height: 1.35;
+  color: var(--color-text-secondary);
+  &[hidden] { display: none; }
+}
+
+/* ── Activity bar: quiet icons, the active tab is a filled block ───── */
+.activity-bar { width: 56px; }
+.activity-btn-group { padding: 4px 3px; gap: 1px; }
+.activity-btn {
+  padding: 7px 0 6px; gap: 3px;
+  border-radius: 6px;
+  &:hover { background: var(--input-bg-weak); }
+  &.active {
+    background: var(--color-accent-faint);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+}
+.activity-btn-icon svg { width: 18px; height: 18px; }
+.activity-btn-label { font-size: 9.5px; font-weight: 600; }
+.activity-badge { top: 2px; right: 4px; }
+
+/* ── Sections ──────────────────────────────────────────────────────── */
+.sidebar-section-header {
+  padding: 10px $pad 6px;
+  margin-top: 0;
+  font-size: 12px; font-weight: 700;
+  border-top: 1px solid var(--color-border);
+  // no accent bar: the size carries the hierarchy
+  > span:first-child::before,
+  &:not(:has(> span))::before { content: none; }
+}
+.spectrogram-settings-panel .settings-section-title,
+.props-section-title { font-size: 12px; font-weight: 700; }
+.spectrogram-settings-panel .settings-section-title { margin-bottom: 7px; &::before { content: none; } }
+.spectrogram-settings-panel .settings-section { padding: 10px $pad; }
+.props-section-title { padding: 10px $pad 6px; }
+.props-section-body { padding: 0 $pad 10px; }
+.panel-section { padding: 6px $pad; }
+
+/* ── Controls: one height, one border, a visible focus ring ────────── */
+.sidebar-body {
+  .input, .field-select, .settings-select, .settings-number, .props-select, .props-input, .lt-filter {
+    height: 26px;
+    padding: 0 7px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 5px;
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 12px;
+    transition: border-color 0.12s, box-shadow 0.12s;
+    &:hover { border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border-strong)); }
+    &:focus, &:focus-visible {
+      outline: none;
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 2px var(--color-accent-faint);
+    }
+    &::placeholder { color: var(--color-text-secondary); opacity: 0.8; }
+  }
+  .settings-number { padding: 0 6px; }
+  input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: var(--color-accent); flex: 0 0 auto; }
+  input[type="range"] { accent-color: var(--color-accent); }
+}
+.field-grid { gap: 5px 8px; .input, .field-select { height: 26px; padding: 0 7px; } }
+.field-check { gap: 6px; line-height: 1.3; }
+.slider-val {
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--input-bg-weak);
+  font-size: 11px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.sidebar-body .sidebar-action-btn {
+  min-height: 28px;
+  border-radius: 5px;
+  font-size: 12px;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-accent-faint); }
+}
+.mode-pane > .panel-actions .sidebar-action-btn,
+#panelXc .xc-actions > .sidebar-action-btn {
+  min-height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; font-weight: 700; border-radius: 6px;
+}
+.sidebar-body .tb-btn {
+  min-height: 24px; padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--color-bg-surface);
+}
+
+/* ── Segmented control (model, later others) ───────────────────────── */
+.seg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  gap: 2px; padding: 2px;
+  border-radius: 6px;
+  background: var(--input-bg-weak);
+}
+.seg-btn {
+  min-width: 0; height: 22px; padding: 0 4px;
+  border: 0; border-radius: 4px;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit; font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  &:hover { color: var(--color-text-primary); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+  &[aria-checked="true"] {
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--color-border);
+  }
+}
+.model-picker {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 0 $pad 8px;
+  .input[hidden] { display: none; }
+}
+.model-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.model-picker-head .field-label { margin: 0; font-weight: 600; color: var(--color-text-primary); }
+.model-picker-note { font-size: 11px; color: var(--color-text-secondary); text-align: right; }
+// Audio method uses the same look
+.audio-seg { padding: 2px; gap: 2px; border-radius: 6px; background: var(--input-bg-weak); }
+.audio-seg-btn {
+  height: 22px; border: 0;
+  &[aria-checked="true"] {
+    background: var(--color-bg-surface); border: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--color-border);
+    .audio-seg-title { color: var(--color-text-primary); }
+  }
+  .audio-seg-title { font-size: 12px; font-weight: 600; color: var(--color-text-secondary); }
+}
+.audio-section { padding: 0 $pad 10px; }
+
+/* ── Mode tiles: icon in a tinted square, the chosen one framed ────── */
+.mode-tiles { margin: 10px $pad 0; padding: 0; gap: 6px; background: none; }
+.mode-tile {
+  gap: 8px; padding: 6px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-bg-surface);
+  transition: border-color 0.12s, background 0.12s;
+  &:hover { border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border-strong)); }
+  &[aria-selected="true"] {
+    border-color: var(--color-accent);
+    background: var(--color-accent-faint);
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+    .mode-tile-icon { background: var(--color-accent); color: var(--color-on-accent); }
+  }
+}
+.mode-tile-icon {
+  width: 24px; height: 24px; padding: 4px; box-sizing: border-box;
+  border-radius: 5px;
+  background: var(--input-bg-weak);
+  color: var(--color-text-secondary);
+}
+.mode-tile-text strong { font-size: 12px; font-weight: 700; }
+.mode-desc { margin: 8px $pad; font-size: 12px; line-height: 1.4; }
+.mode-pane { padding-bottom: 10px; }
+.mode-pane > .panel-actions { padding: 0 $pad; }
+.mode-pane > .birdnet-status { padding: 0 $pad; }
+.mode-pane > .birdnet-progress { margin: 8px $pad; }
+.panel-details {
+  margin: 8px $pad 0;
+  border-radius: 6px;
+  background: none;
+  > summary { padding: 5px 9px; }
+  > :not(summary) { margin-left: 9px; margin-right: 9px; }
+  > .panel-subhead { width: calc(100% - 18px); }
+  > summary + * { margin-top: 8px; }
+  > :last-child:not(summary) { margin-bottom: 8px; }
+}
+
+/* ── Tab specifics on the new spacing ──────────────────────────────── */
+.project-add { padding: 0 $pad 10px; gap: 6px; }
+.project-add-file { min-height: 30px; padding: 0 8px; border-radius: 6px; background: var(--color-bg-surface); }
+.project-add .xc-load-row .input { height: 28px; border-radius: 5px 0 0 5px; }
+.project-add .project-add-src { display: none; }
+.project-add .xc-load-row .xc-load-primary { min-height: 28px; border-radius: 0 5px 5px 0; }
+.project-location { padding: 0 $pad 10px; gap: 6px; }
+.ua-checklist { padding: 0 $pad 8px; gap: 3px; }
+.ua-step { border-radius: 5px; }
+.ua-step-hdr { padding: 5px 8px; }
+.ua-title { font-size: 12px; }
+#panelXc .xc-actions { padding: 8px $pad; gap: 5px; }
+#panelLabels > .panel-toolbar, .lt-toolbar { padding-left: $pad; padding-right: $pad; }
+.ep-tab { font-size: 12px; padding: 6px 4px; }
+
+/* Native controls (checkboxes, select lists, scrollbars) follow the theme */
+html[data-theme="light"], html[data-theme="light"] body { color-scheme: light; }
+html[data-theme="dark"], html[data-theme="dark"] body { color-scheme: dark; }
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]), html:not([data-theme="dark"]) body { color-scheme: light; }
+}
+
+/* Label/recording/set forms: same grid as .field-grid */
+.sidebar-body .props-grid {
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+  overflow: visible;
+  dt { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
+  .props-input, .props-select { width: 100%; min-width: 0; }
+}
+.spectrogram-settings-panel .settings-label { min-width: 64px; }
+.spectrogram-settings-panel .settings-select { padding: 0 4px 0 8px; }
+
+/* Compact pass: tighter rows inside the dense tabs */
+.spectrogram-settings-panel .settings-row { margin-bottom: 4px; }
+.spectrogram-settings-panel .field-check { margin-bottom: 3px; }
+.project-add-ways { gap: 6px; }
+.project-add .xc-load-row .input { height: 28px; }
+.sidebar-body .props-grid .props-input, .sidebar-body .props-grid .props-select { height: 24px; }
+.mode-tile-text small { font-size: 10.5px; }
+.model-picker-note { font-size: 10.5px; }
