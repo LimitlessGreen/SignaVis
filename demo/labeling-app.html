@@ -352,6 +352,32 @@
     <div class="panel-actions">
       <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
     </div>
+
+    <!-- BirdBox call boxes: one run per recording, the sliders re-fuse the boxes instantly -->
+    <div class="sidebar-section-header">Call boxes (BirdBox)</div>
+    <div class="panel-section">
+      <p class="field-hint" style="margin:0 0 10px">Draws a box around every bird call (time and frequency) with the
+        <a href="https://github.com/birdnet-team/BirdBox" target="_blank" rel="noopener">BirdBox</a> Just-Bird model
+        (BirdNET-Team, AGPL-3.0). Runs once; the sliders change the boxes without a new run.</p>
+      <div class="slider-row">
+        <label class="field-label" for="birdboxConf" style="margin:0">Min. Confidence</label>
+        <span class="slider-val" id="birdboxConfVal">0.15</span>
+      </div>
+      <input id="birdboxConf" type="range" min="0.05" max="0.95" step="0.01" value="0.15" class="range-input" />
+      <div class="slider-row" style="margin-top:6px">
+        <label class="field-label" for="birdboxGap" style="margin:0"
+          title="Join calls closer than this into one phrase box; 0 keeps single calls">Phrase gap</label>
+        <span class="slider-val" id="birdboxGapVal">0.05 s</span>
+      </div>
+      <input id="birdboxGap" type="range" min="0" max="1" step="0.05" value="0.05" class="range-input" />
+    </div>
+    <div class="birdnet-progress" id="birdboxProgressWrap" style="display:none" role="progressbar" aria-label="BirdBox progress">
+      <div class="birdnet-progress-bar" id="birdboxProgressBar"></div>
+    </div>
+    <span id="birdboxStatus" class="meta birdnet-status" aria-live="polite"></span>
+    <div class="panel-actions">
+      <button class="sidebar-action-btn" id="birdboxRunBtn" type="button">▶ Detect calls</button>
+    </div>
   </div>
 
   <!-- ── Sidebar panel: Project (storage + adding + recordings as one block) ── -->
@@ -695,6 +721,7 @@
     import { LabelGrid } from '../src/ui/panels/label-grid.ts';
     import { buildLabelExport } from '../src/infrastructure/export/labelTableFormats.ts';
     import { BirdNETPanel } from '../src/ui/panels/birdnet-panel.ts';
+    import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../src/ui/panels/birdbox-panel.ts';
     import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../src/app/session-sets.ts';
     import { ProjectConflictError } from '../src/infrastructure/project/DirectoryProjectStore.ts';
     import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../src/infrastructure/project/FolderAccess.ts';
@@ -3384,6 +3411,31 @@
         for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
         syncToPlayer();
         if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
+      },
+    });
+
+    // ── BirdBox panel (call boxes) ────────────────────────────────────
+    // Its labels live in one locked set; every update replaces the recording's boxes.
+    const birdboxPanel = new BirdBoxPanel({
+      confInput:    document.getElementById('birdboxConf'),
+      confVal:      document.getElementById('birdboxConfVal'),
+      gapInput:     document.getElementById('birdboxGap'),
+      gapVal:       document.getElementById('birdboxGapVal'),
+      runBtn:       document.getElementById('birdboxRunBtn'),
+      progressWrap: document.getElementById('birdboxProgressWrap'),
+      progressBar:  document.getElementById('birdboxProgressBar'),
+      statusEl:     document.getElementById('birdboxStatus'),
+      getAudioBuffer: () => player._state?.audioBuffer,
+      getRecordingId: () => recordingManager?.activeId || null,
+      getAuthor:      () => annotatorProfile.name || '',
+      onBoxes: (recordingId, labels, { running }) => {
+        let setId = [...state.labelSets.entries()].find(([, s]) => s.origin === BIRDBOX_ORIGIN)?.[0];
+        if (!setId) setId = createLabelSet({ name: 'BirdBox', origin: BIRDBOX_ORIGIN, locked: true }, { silent: true }).id;
+        // Only the labels of the recording on screen are in state.labels
+        if (recordingId !== (recordingManager?.activeId || null)) return;
+        state.labels = state.labels.filter((l) => l.setId !== setId);
+        for (const lbl of labels) state.labels.push({ ...lbl, setId, recordingId });
+        if (running) syncToPlayerSoft(); else syncToPlayer();
       },
     });
 

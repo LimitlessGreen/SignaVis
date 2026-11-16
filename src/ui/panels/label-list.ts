@@ -83,6 +83,7 @@ function getAnnotationSet(lbl: any) {
 function originBadge(origin: string) {
   if (origin === 'xeno-canto') return 'XC';
   if (origin === 'BirdNET') return 'BN';
+  if (origin === 'BirdBox') return 'BB';
   if (origin === 'manual') return 'ME';
   return 'IM';
 }

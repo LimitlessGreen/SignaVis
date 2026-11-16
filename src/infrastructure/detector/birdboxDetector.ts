@@ -12,12 +12,13 @@
 
 import { RAW_COLS } from '../../domain/detector/fusion.ts';
 import { fileEnd, HOP_SECONDS, SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
-import { vendorUrl } from '../tauri/runtime.ts';
+import { onDemandUrl, vendorUrl } from '../tauri/runtime.ts';
 import BirdBoxWorker from './birdbox.worker.ts?worker&inline';
 
 const ORT_VERSION = '1.30.0';
 const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
-export const BIRDBOX_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/models/birdbox-just-bird/';
+/** Like the BirdNET presets: relative to the demo page in the browser, the data protocol in Lite. */
+export const BIRDBOX_MODEL_URL = onDemandUrl('models/birdbox-just-bird/', '../models/birdbox-just-bird/');
 /** The run's confidence: the lowest the slider allows; fusion filters above it. */
 export const BIRDBOX_RAW_CONF = 0.05;
 

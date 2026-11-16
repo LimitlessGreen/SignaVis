@@ -390,7 +390,7 @@ async function fetchOnnxConfig(baseUrl: string): Promise<any | null> {
 // ---------------------------------------------------------------------------
 // Audio resampling helper (browser only — uses OfflineAudioContext)
 // ---------------------------------------------------------------------------
-async function resampleTo(channelData: Float32Array | number[], sourceSampleRate: number, TARGET_SR: number): Promise<Float32Array> {
+export async function resampleTo(channelData: Float32Array | number[], sourceSampleRate: number, TARGET_SR: number): Promise<Float32Array> {
   if (sourceSampleRate === TARGET_SR) return channelData instanceof Float32Array ? channelData : Float32Array.from(channelData as any);
   const duration = (channelData as any).length / sourceSampleRate;
   const targetLength = Math.ceil(duration * TARGET_SR);
