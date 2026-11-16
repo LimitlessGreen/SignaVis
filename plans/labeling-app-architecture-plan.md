@@ -134,4 +134,8 @@ größter Rest ist `LabelList.render()` (~35 ms bei 200, ~200 ms bei 1500) bei U
 zurück. Jetzt übernimmt `main.js` beide Ereignisse in `state.labels` (Name heißt auf der Spur `species`); das Umbenennen
 auf der Spur übernimmt wie im Spektrogramm auch den wissenschaftlichen Namen. Test: `tools/e2e/waveform-track-edits.py`.
 
-Noch offen (Verhalten, kein Fehler im engeren Sinn): Escape bricht ein Ziehen im Spektrogramm nicht ab.
+**Escape bricht Ziehen ab** (Spektrogramm und Wellenform, auch Grab-Modus `g`): `_cancelEditInteraction` in der
+Basisklasse setzt das Label auf den Stand vor dem Ziehen, meldet das per Vorschau-Ereignis an die andere Ebene und
+schickt **kein** Update an die App. Dabei behoben: Der Leucht-Rahmen `linked-live` auf dem gespiegelten Label blieb nach
+jedem Ziehen stehen (der Player setzte ihn nur bei Layer-eigenen Update-Ereignissen zurück) → neues Ereignis
+`previewend`, der Player nimmt die Hervorhebung auf beiden Ebenen weg. Test: `tools/e2e/escape-cancels-drag.py`.

@@ -425,6 +425,29 @@ class AnnotationLayerBase extends EventTarget {
     }
 
     // ── Edit interaction shared finish ───────────────────────────────
+    /**
+     * Escape during a drag/resize: put the item back where it started and end the interaction.
+     * Nothing is committed (no update event); the preview event resets the other layer.
+     */
+    _cancelEditInteraction() {
+        if (!this._editing) return;
+        const editing = this._editing as any;
+        const item = this._items.find((i: any) => i.id === editing.id);
+        const start = editing.startLabel ?? editing.startRegion;
+        if (item && start) Object.assign(item, start);
+        editing.element?.classList?.remove('editing');
+        (this as any)._hideEditLoupe?.();
+        this._editing = null;
+        this._axisConstraint = null;
+        this._suppressClickUntil = performance.now() + 250;
+        if (item && editing.moved) { this._emitPreview(item); this._emitPreviewEnd(editing.id); }
+        this.render();
+    }
+    /** Live position during an interaction (the player mirrors it to the other layer). */
+    _emitPreview(_item: any) {}
+    /** Interaction over: the player drops the live highlight on the mirrored label. */
+    _emitPreviewEnd(id: string) { this.dispatchEvent(new CustomEvent('previewend', { detail: { id } })); }
+
     _finishEditInteraction() {
         if (!this._editing) return;
         const editing = this._editing as any;
@@ -434,6 +457,7 @@ class AnnotationLayerBase extends EventTarget {
         const item = this._items.find((i: any) => i.id === editing.id);
         if (item && editing.moved) this._emitUpdate(item);
         this._editing = null;
+        if (editing.moved) this._emitPreviewEnd(editing.id);
         if (shouldSuppressClick) {
             this._suppressClickUntil = performance.now() + 250;
             this.render();
@@ -523,6 +547,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
 
     _emitCreate(region: any) { this.player?._emit?.('annotationcreate', { annotation: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('annotationupdate', { annotation: { ...(item as any) } }); }
+    _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('annotationpreview', { detail: { annotation: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
     get annotations() { return this._items; }
@@ -772,6 +797,16 @@ export class AnnotationLayer extends AnnotationLayerBase {
             e.stopPropagation();
         };
 
+        // Escape while dragging/resizing: back to where it started (grab has its own handler)
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || !this._editing || this._grabbing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._cancelEditInteraction();
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+        this._domCleanups.push(() => document.removeEventListener('keydown', onKeyDown, true));
+
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);
@@ -877,11 +912,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
-            Object.assign(region, snapshot);
-            el.classList.remove('editing');
-            this._editing = null;
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
+            this._cancelEditInteraction();   // back to the snapshot, other layer included
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') cancel(e as Event);
@@ -1055,6 +1086,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
+    _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('spectrogramlabelpreview', { detail: { label: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
     get labels() { return this._items; }
@@ -1964,6 +1996,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const tag = ((e.target as HTMLElement)?.tagName || '').toLowerCase();
             if (tag === 'input' || tag === 'textarea' || (e.target as any)?.isContentEditable) return;
 
+            // Escape while dragging/resizing a label: back to where it started (grab has its own handler)
+            if (e.key === 'Escape' && this._editing && !this._grabbing) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._cancelEditInteraction();
+                return;
+            }
+
             if (this.snapMode && (e.key === 'Escape' || e.key === 'Enter')) {
                 e.preventDefault();
                 if (e.key === 'Enter') this._commitSnap();
@@ -2825,13 +2865,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             e?.preventDefault?.();
             e?.stopPropagation?.();
             cleanup();
-            // Restore original position
-            Object.assign(label, snapshot);
-            el.classList.remove('editing');
-            this._hideEditLoupe();
-            this._editing = null;
-            this._suppressClickUntil = performance.now() + 250;
-            this.render();
+            this._cancelEditInteraction();   // back to the snapshot, other layer included
         };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') cancel(e as Event);
