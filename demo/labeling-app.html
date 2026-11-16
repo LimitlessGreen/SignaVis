@@ -3272,6 +3272,20 @@
       getLabels: () => state.labels,
       resolveName,
       addFile: () => document.getElementById('fileInput')?.click(),
+      analysis: {
+        confInput: document.getElementById('birdnetConfidence'),
+        overlapSelect: document.getElementById('birdnetOverlap'),
+        mergeCheckbox: document.getElementById('birdnetMerge'),
+        geoCheckbox: document.getElementById('birdnetGeoFilterEnabled'),
+        locationLine: document.getElementById('birdnetLocationLine'),
+        analyzeBtn: document.getElementById('birdnetAnalyzeBtn'),
+        status: document.getElementById('birdnetStatus'),
+        progressBar: document.getElementById('birdnetProgressBar'),
+        birdboxBtn: document.getElementById('birdboxRunBtn'),
+        birdboxStatus: document.getElementById('birdboxStatus'),
+        birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
+        birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+      },
       onModeChange: (phone) => {
         // No label editing on phones: draw mode goes off there.
         const drawBtn = player?._drawBtn;

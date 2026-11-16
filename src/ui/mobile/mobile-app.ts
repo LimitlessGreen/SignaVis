@@ -36,9 +36,29 @@ export interface MobileAppHost {
   addFile(): void;
   /** Called when phone mode is entered (true) or left (false). */
   onModeChange?(phone: boolean): void;
+  /**
+   * The app's analysis controls (desktop Analyse panel). The phone screen drives these
+   * elements, so BirdNET / BirdBox keep one implementation.
+   */
+  analysis?: AnalysisControls;
 }
 
-type Screen = 'recordings' | 'review' | 'live' | 'species';
+export interface AnalysisControls {
+  confInput: HTMLInputElement;
+  overlapSelect?: HTMLSelectElement | null;
+  mergeCheckbox?: HTMLInputElement | null;
+  geoCheckbox?: HTMLInputElement | null;
+  locationLine?: HTMLElement | null;
+  analyzeBtn: HTMLButtonElement;
+  status?: HTMLElement | null;
+  progressBar?: HTMLElement | null;
+  birdboxBtn?: HTMLButtonElement | null;
+  birdboxStatus?: HTMLElement | null;
+  birdboxProgressWrap?: HTMLElement | null;
+  birdboxProgressBar?: HTMLElement | null;
+}
+
+type Screen = 'recordings' | 'review' | 'analyse' | 'live' | 'species';
 
 const FALLBACK_IMG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
@@ -47,6 +67,8 @@ const I = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>',
   bird: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h.01"/><path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20"/><path d="m20 7 2 .5-2 .5"/><path d="M10 18v3M14 17.75V21M7 18a6 6 0 0 0 3.84-10.61"/></svg>',
+  analyse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
@@ -118,6 +140,25 @@ export class MobileApp {
   private currentDetId: string | null = null;
   private loopSeg: { start: number; end: number } | null = null;
 
+  // Analyse
+  private anSub!: HTMLElement;
+  private anProgress!: HTMLElement;
+  private anProgressText!: HTMLElement;
+  private anProgressBar!: HTMLElement;
+  private anBirdnet!: HTMLInputElement;
+  private anBirdbox!: HTMLInputElement;
+  private anGeo!: HTMLInputElement;
+  private anGeoRow!: HTMLElement;
+  private anLocation!: HTMLElement;
+  private anConf!: HTMLInputElement;
+  private anConfVal!: HTMLElement;
+  private anRun!: HTMLButtonElement;
+  private anExpert!: HTMLElement;
+  private anBackTo: Screen = 'review';
+  private anJob: 'idle' | 'birdnet' | 'birdbox' = 'idle';
+  private anJobStarted = false;
+  private anJobAt = 0;
+
   // Where the player root lives on the desktop
   private playerHome: { parent: Node; next: Node | null } | null = null;
   private raf = 0;
@@ -129,7 +170,7 @@ export class MobileApp {
     this.root = el('div', 'm-app');
     this.root.setAttribute('aria-label', 'SignaVis');
     const body = el('div', 'm-screens');
-    body.append(this.buildRecordings(), this.buildReview(), this.buildPlaceholder('live', 'Live',
+    body.append(this.buildRecordings(), this.buildReview(), this.buildAnalyse(), this.buildPlaceholder('live', 'Live',
       'Live-Erkennung mit dem Mikrofon kommt hier hin.'), this.buildPlaceholder('species', 'Arten',
       'Hier entsteht die Artenliste über alle Aufnahmen.'));
     const nav = el('nav', 'm-nav');
@@ -218,7 +259,9 @@ export class MobileApp {
   show(screen: Screen) {
     this.screen = screen;
     for (const [id, s] of this.screens) s.hidden = id !== screen;
-    for (const [id, b] of this.navBtns) b.classList.toggle('on', id === screen);
+    const navOn = screen === 'analyse' ? this.anBackTo : screen;
+    for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
+    if (screen === 'analyse') this.renderAnalyse();
     if (screen === 'recordings') this.renderRecordings();
     if (screen === 'review') {
       this.renderReview();
@@ -261,7 +304,8 @@ export class MobileApp {
       card.append(main, st);
       card.addEventListener('click', async () => {
         if (!r.active) await this.h.openRecording(r.id);
-        this.show('review');
+        if (!r.labels.length && this.h.analysis) this.openAnalyse('recordings');
+        else this.show('review');
       });
       this.recList.appendChild(card);
     }
@@ -278,6 +322,7 @@ export class MobileApp {
     this.rvSub = el('small', '', '');
     t.append(this.rvTitle, this.rvSub);
     bar.appendChild(t);
+    if (this.h.analysis) bar.appendChild(button('m-icon-btn', I.analyse, 'Analysieren', () => this.openAnalyse('review')));
 
     this.playerSlot = el('div', 'm-player');
 
@@ -348,7 +393,11 @@ export class MobileApp {
     const main = el('div', 'm-det-main');
     const { display } = this.h.resolveName(lbl) || { display: '' };
     main.appendChild(el('div', 'm-det-name', display || lbl.label || 'Unbekannt'));
-    main.appendChild(el('div', 'm-det-meta', `${fmtClock(lbl.start, false)}–${fmtClock(lbl.end, false)} · ${sourceName(lbl)}`));
+    // Time windows (BirdNET) as a range; calls and boxes as start with tenths + length.
+    const when = lbl.fullBand
+      ? `${fmtClock(lbl.start, false)}–${fmtClock(lbl.end, false)}`
+      : `${fmtClock(lbl.start)} · ${Math.max(0, lbl.end - lbl.start).toFixed(1)} s`;
+    main.appendChild(el('div', 'm-det-meta', `${when} · ${sourceName(lbl)}`));
     if (lbl.confidence != null) {
       const pct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
       const bar = el('div', 'm-conf');
@@ -422,6 +471,7 @@ export class MobileApp {
   private startTicker() {
     const tick = () => {
       this.raf = requestAnimationFrame(tick);
+      this.tickAnalyse();
       if (this.screen !== 'review') return;
       const p = this.h.player;
       const playing = !!p?.isPlaying;
@@ -438,6 +488,217 @@ export class MobileApp {
   }
 
   private stopTicker() { cancelAnimationFrame(this.raf); }
+
+  // ── Analyse ─────────────────────────────────────────────────────────
+
+  openAnalyse(from: Screen) {
+    this.anBackTo = from === 'analyse' ? 'review' : from;
+    this.show('analyse');
+  }
+
+  private buildAnalyse(): HTMLElement {
+    const s = el('section', 'm-screen m-analyse');
+    const bar = el('header', 'm-appbar');
+    bar.appendChild(button('m-icon-btn', I.back, 'Zurück', () => this.show(this.anBackTo)));
+    const t = el('div', 'm-appbar-title');
+    t.append(el('h2', '', 'Analysieren'), (this.anSub = el('small', '', '')));
+    bar.appendChild(t);
+
+    const body = el('div', 'm-scroll m-an-body');
+
+    this.anProgress = el('div', 'm-an-progress');
+    this.anProgressText = el('div', '', '');
+    const track = el('div', 'm-an-bar');
+    this.anProgressBar = el('i');
+    track.appendChild(this.anProgressBar);
+    this.anProgress.append(this.anProgressText, track);
+    this.anProgress.hidden = true;
+
+    const what = el('div', 'm-card');
+    this.anBirdnet = this.toggleRow(what, 'Vogelarten (BirdNET)', 'Erkennt Arten in 3-s-Fenstern', true);
+    this.anBirdbox = this.toggleRow(what, 'Rufe einzeln finden (BirdBox)', 'Box um jeden Ruf, ohne Art', false);
+    if (!this.h.analysis?.birdboxBtn) this.anBirdbox.closest('.m-row')?.setAttribute('hidden', '');
+    this.anGeoRow = el('div', 'm-row');
+    const geoText = el('div', 'm-row-text');
+    geoText.appendChild(el('span', '', 'Arten nach Ort filtern'));
+    this.anLocation = el('small', '', '');
+    geoText.appendChild(this.anLocation);
+    this.anGeo = this.switchInput(false);
+    this.anGeo.addEventListener('change', () => this.mirrorCheckbox(this.h.analysis?.geoCheckbox, this.anGeo.checked));
+    this.anGeoRow.append(geoText, this.anGeo.parentElement!);
+    what.appendChild(this.anGeoRow);
+
+    const conf = el('div', 'm-card');
+    const head = el('div', 'm-row m-row--plain');
+    const ht = el('div', 'm-row-text');
+    ht.append(el('span', '', 'Mindest-Konfidenz'), el('small', '', 'Niedriger = mehr Treffer, mehr zu prüfen'));
+    this.anConfVal = el('span', 'm-row-val', '');
+    head.append(ht, this.anConfVal);
+    this.anConf = el('input', 'm-range');
+    this.anConf.type = 'range';
+    this.anConf.addEventListener('input', () => {
+      const src = this.h.analysis?.confInput;
+      if (!src) return;
+      src.value = this.anConf.value;
+      src.dispatchEvent(new Event('input', { bubbles: true }));
+      src.dispatchEvent(new Event('change', { bubbles: true }));
+      this.anConfVal.textContent = Number(this.anConf.value).toFixed(2);
+    });
+    conf.append(head, this.anConf);
+
+    const expertCard = el('div', 'm-card');
+    const expertBtn = el('button', 'm-row m-row--btn');
+    expertBtn.type = 'button';
+    expertBtn.innerHTML = `<span class="m-row-text"><span>Expertenoptionen</span></span><span class="m-chev">${I.chevron}</span>`;
+    this.anExpert = el('div', 'm-expert');
+    this.anExpert.hidden = true;
+    expertBtn.addEventListener('click', () => {
+      this.anExpert.hidden = !this.anExpert.hidden;
+      expertBtn.classList.toggle('open', !this.anExpert.hidden);
+    });
+    this.buildExpert();
+    expertCard.append(expertBtn, this.anExpert);
+
+    body.append(this.anProgress, what, conf, expertCard);
+
+    const foot = el('div', 'm-an-foot');
+    this.anRun = el('button', 'm-cta', 'Analyse starten');
+    this.anRun.type = 'button';
+    this.anRun.addEventListener('click', () => this.runAnalysis());
+    foot.appendChild(this.anRun);
+
+    s.append(bar, body, foot);
+    this.screens.set('analyse', s);
+    return s;
+  }
+
+  private buildExpert() {
+    const a = this.h.analysis;
+    if (a?.overlapSelect) {
+      const row = el('div', 'm-row');
+      row.appendChild(el('div', 'm-row-text', 'Überlappung der Fenster'));
+      const sel = el('select', 'm-select');
+      for (const o of Array.from(a.overlapSelect.options)) sel.appendChild(new Option(o.text, o.value));
+      sel.addEventListener('change', () => {
+        a.overlapSelect!.value = sel.value;
+        a.overlapSelect!.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      sel.dataset.mirror = 'overlap';
+      row.appendChild(sel);
+      this.anExpert.appendChild(row);
+    }
+    if (a?.mergeCheckbox) {
+      const cb = this.toggleRow(this.anExpert, 'Überlappende Treffer zusammenfassen', '', a.mergeCheckbox.checked);
+      cb.dataset.mirror = 'merge';
+      cb.addEventListener('change', () => this.mirrorCheckbox(a.mergeCheckbox, cb.checked));
+    }
+    this.anExpert.appendChild(el('p', 'm-hint', 'Modell und Analyse-Backend werden in der Desktop-Ansicht eingestellt.'));
+  }
+
+  private toggleRow(parent: HTMLElement, label: string, hint: string, checked: boolean): HTMLInputElement {
+    const row = el('label', 'm-row');
+    const text = el('div', 'm-row-text');
+    text.appendChild(el('span', '', label));
+    if (hint) text.appendChild(el('small', '', hint));
+    const input = this.switchInput(checked);
+    row.append(text, input.parentElement!);
+    parent.appendChild(row);
+    return input;
+  }
+
+  private switchInput(checked: boolean): HTMLInputElement {
+    const wrap = el('span', 'm-switch');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    wrap.append(input, el('i'));
+    return input;
+  }
+
+  private mirrorCheckbox(target: HTMLInputElement | null | undefined, checked: boolean) {
+    if (!target || target.disabled || target.checked === checked) return;
+    target.checked = checked;
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /** Pull the current values from the desktop controls into the phone screen. */
+  private renderAnalyse() {
+    const a = this.h.analysis;
+    const rec = this.h.getRecordings().find((r) => r.active);
+    const dur = Number(this.h.player?.duration) || 0;
+    this.anSub.textContent = rec ? `${rec.title}${dur ? ` · ${fmtClock(dur, false)}` : ''}` : 'Keine Aufnahme';
+    if (!a) return;
+    const c = a.confInput;
+    this.anConf.min = c.min; this.anConf.max = c.max; this.anConf.step = c.step; this.anConf.value = c.value;
+    this.anConfVal.textContent = Number(c.value).toFixed(2);
+    const geo = a.geoCheckbox;
+    this.anGeo.checked = !!geo?.checked;
+    this.anGeo.disabled = !geo || geo.disabled;
+    const loc = (a.locationLine?.textContent || '').trim();
+    this.anLocation.textContent = this.anGeo.disabled ? 'Braucht das Gebietsmodell von BirdNET' : (loc || 'Kein Ort gesetzt');
+    const ov = this.anExpert.querySelector<HTMLSelectElement>('[data-mirror="overlap"]');
+    if (ov && a.overlapSelect) ov.value = a.overlapSelect.value;
+    const mg = this.anExpert.querySelector<HTMLInputElement>('[data-mirror="merge"]');
+    if (mg && a.mergeCheckbox) mg.checked = a.mergeCheckbox.checked;
+    this.anRun.disabled = !rec || this.anJob !== 'idle';
+  }
+
+  private runAnalysis() {
+    const a = this.h.analysis;
+    if (!a || this.anJob !== 'idle') return;
+    if (this.anBirdnet.checked) this.startJob('birdnet');
+    else if (this.anBirdbox.checked) this.startJob('birdbox');
+  }
+
+  private startJob(job: 'birdnet' | 'birdbox') {
+    const a = this.h.analysis!;
+    const btn = job === 'birdnet' ? a.analyzeBtn : a.birdboxBtn;
+    if (!btn || btn.disabled) { this.anJob = 'idle'; return; }
+    this.anJob = job;
+    this.anJobStarted = false;
+    this.anJobAt = performance.now();
+    this.anRun.disabled = true;
+    this.anProgress.hidden = false;
+    btn.click();
+  }
+
+  private jobRunning(job: 'birdnet' | 'birdbox'): boolean {
+    const a = this.h.analysis!;
+    if (job === 'birdnet') return a.analyzeBtn.disabled;
+    const w = a.birdboxProgressWrap;
+    return !!w && w.style.display !== 'none';
+  }
+
+  /** Follow the running job (called from the ticker). */
+  private tickAnalyse() {
+    if (this.anJob === 'idle' || !this.h.analysis) return;
+    const a = this.h.analysis;
+    const job = this.anJob;
+    const running = this.jobRunning(job);
+    if (running) this.anJobStarted = true;
+    const status = (job === 'birdnet' ? a.status : a.birdboxStatus)?.textContent?.trim() || '';
+    const bar = job === 'birdnet' ? a.progressBar : a.birdboxProgressBar;
+    this.anProgressText.textContent = `${job === 'birdnet' ? 'BirdNET' : 'BirdBox'} läuft …${status ? ` ${status}` : ''}`;
+    this.anProgressBar.style.width = bar?.style.width || '0%';
+    if (running) return;
+    if (!this.anJobStarted) {
+      // The click did not start a run (no audio, model failed…): give up after a few seconds.
+      if (performance.now() - this.anJobAt < 4000) return;
+      this.anJob = 'idle';
+      this.anProgressText.textContent = status || 'Analyse konnte nicht starten';
+      this.anRun.disabled = false;
+      return;
+    }
+
+    // Finished: chain BirdBox after BirdNET if asked, else show the results.
+    if (job === 'birdnet' && this.anBirdbox.checked && a.birdboxBtn) { this.startJob('birdbox'); return; }
+    this.anJob = 'idle';
+    this.anProgressText.textContent = status || 'Fertig';
+    this.anProgressBar.style.width = '100%';
+    this.anRun.disabled = false;
+    setTimeout(() => { this.anProgress.hidden = true; }, 1500);
+    if (this.screen === 'analyse') this.show('review');
+  }
 
   // ── Placeholders ────────────────────────────────────────────────────
 
