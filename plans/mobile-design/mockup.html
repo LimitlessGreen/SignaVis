@@ -148,6 +148,22 @@
   .exr .i b { color: var(--text); font-family: inherit; }
   .sort { display: flex; justify-content: space-between; padding: 0 14px 6px; font-size: 11.5px; color: var(--muted); }
   .sort b { color: var(--text); font-weight: 600; }
+
+  /* BirdNET detections: time segments without frequency → full-height bands */
+  .band { position: absolute; top: 0; bottom: 0; z-index: 2; background: rgba(245,158,11,.10); border-left: 2px solid var(--warn); border-right: 2px solid var(--warn); }
+  .band.sel { background: rgba(56,189,248,.12); border-color: var(--accent); }
+  .band .tags { position: absolute; top: 4px; left: 3px; display: flex; flex-direction: column; gap: 3px; }
+  .band .tags span { height: 18px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; background: var(--warn); color: #1a1205; padding: 0 6px; border-radius: 4px; white-space: nowrap; width: max-content; }
+  .band .tags span b { font-family: var(--mono); }
+  .band .tags span.dim { background: rgba(245,158,11,.55); }
+  .band.sel .tags span { background: var(--accent); color: var(--accent-ink); }
+  .lanes { background: var(--surface); border-top: 1px solid var(--line); padding: 4px 0 5px; }
+  .lane { position: relative; height: 16px; margin: 2px 0; }
+  .lane .nm { position: absolute; left: 6px; top: 0; font-size: 10px; font-weight: 700; color: #fff; line-height: 16px; z-index: 1; text-shadow: 0 0 2px #000, 0 0 4px #000, 0 0 6px #000; pointer-events: none; }
+  .lane i { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; background: rgba(245,158,11,.45); }
+  .lane i.sel { background: rgba(56,189,248,.7); }
+  .lane i.ok { background: rgba(74,222,128,.7); }
+  .lanes .ph2 { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--playhead); }
 </style>
 </head>
 <body>
@@ -322,6 +338,51 @@
       <a><span class="pill"><svg><use href="#i-check"/></svg></span><span class="badge">12</span>Prüfen</a>
       <a><span class="pill"><svg><use href="#i-mic"/></svg></span>Live</a>
       <a class="on"><span class="pill"><svg><use href="#i-bird"/></svg></span>Arten</a>
+    </nav>
+  </div>
+</div>
+
+<div class="frame">
+  <p class="cap">6 · Prüfen – BirdNET-Erkennungen</p>
+  <p class="sub">BirdNET liefert nur 3-s-Fenster ohne Frequenz: Band über die volle Höhe, mehrere Arten gestapelt, darunter Spuren pro Art.</p>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>82%</span></div>
+    <div class="appbar"><span class="icon-btn"><svg><use href="#i-back"/></svg></span><h2>Morgenchor Auwald<small>3/12 geprüft</small></h2><span class="icon-btn"><svg><use href="#i-tune"/></svg></span><span class="icon-btn"><svg><use href="#i-more"/></svg></span></div>
+    <div class="content">
+      <div class="spec" data-seed="8" style="height:206px">
+        <span class="axis" style="top:4px;left:auto;right:4px">10 kHz</span><span class="axis" style="bottom:3px;left:auto;right:4px">0 Hz</span>
+        <div class="band sel" style="left:40px;width:110px"><div class="tags"><span>Zilpzalp <b>92%</b></span></div></div>
+        <div class="band" style="left:150px;width:110px"><div class="tags"><span>Amsel <b>61%</b></span><span class="dim">Kohlmeise <b>40%</b></span></div></div>
+        <div class="playhead" style="left:96px;z-index:3"></div>
+      </div>
+      <div class="lanes" style="position:relative">
+        <div class="lane"><span class="nm">Zilpzalp</span><i class="sel" style="left:40px;width:108px"></i><i style="left:300px;width:60px"></i></div>
+        <div class="lane"><span class="nm">Amsel</span><i style="left:150px;width:108px"></i><i class="ok" style="left:320px;width:30px"></i></div>
+        <div class="lane"><span class="nm">Kohlmeise</span><i style="left:150px;width:108px"></i><i style="left:262px;width:54px"></i></div>
+        <span class="ph2" style="left:96px"></span>
+      </div>
+      <div class="time"><span>01:12.4</span><span>04:12.0</span></div>
+      <div class="transport">
+        <span class="sm">1×</span>
+        <span class="sm"><svg><use href="#i-rw"/></svg></span>
+        <span class="play"><svg><use href="#i-pause"/></svg></span>
+        <span class="sm"><svg><use href="#i-fw"/></svg></span>
+        <span class="sm">Loop</span>
+      </div>
+      <div class="sheet">
+        <div class="grip"></div>
+        <div class="sheet-h"><b>Zu prüfen · 9</b><span>Alle anzeigen</span></div>
+        <div class="det cur"><img src="../../demo/data/species_images/Phylloscopus collybita.webp"><div><div class="n">Zilpzalp</div><div class="s">01:09–01:12 · BirdNET</div><div class="conf"><i style="width:92%"></i></div></div><div class="acts"><span class="sq no"><svg><use href="#i-x"/></svg></span><span class="sq yes"><svg><use href="#i-ok"/></svg></span></div></div>
+        <div class="det"><img src="../../demo/data/species_images/Turdus merula.webp"><div><div class="n">Amsel</div><div class="s">01:12–01:15 · BirdNET</div><div class="conf"><i style="width:61%;background:var(--warn)"></i></div></div><div class="acts"><span class="sq no"><svg><use href="#i-x"/></svg></span><span class="sq yes"><svg><use href="#i-ok"/></svg></span></div></div>
+        <div class="det"><img src="../../demo/data/species_images/Parus major.webp"><div><div class="n">Kohlmeise</div><div class="s">01:12–01:15 · BirdNET</div><div class="conf"><i style="width:40%;background:var(--warn)"></i></div></div><div class="acts"><span class="sq no"><svg><use href="#i-x"/></svg></span><span class="sq yes"><svg><use href="#i-ok"/></svg></span></div></div>
+        <div style="height:6px"></div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a><span class="pill"><svg><use href="#i-lib"/></svg></span>Aufnahmen</a>
+      <a class="on"><span class="pill"><svg><use href="#i-check"/></svg></span><span class="badge">12</span>Prüfen</a>
+      <a><span class="pill"><svg><use href="#i-mic"/></svg></span>Live</a>
+      <a><span class="pill"><svg><use href="#i-bird"/></svg></span>Arten</a>
     </nav>
   </div>
 </div>
