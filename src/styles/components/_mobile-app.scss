@@ -97,6 +97,10 @@ html.is-mobile {
   .m-player .waveform-container { flex: 0 0 0 !important; height: 0 !important; min-height: 0 !important; border: none !important; }
   .m-player .spectrogram-container { flex: 1 1 auto !important; height: auto !important; }
 
+  // Species tracks under the overview: a few rows, the rest scrolls.
+  .m-player .overview-label-tracks { max-height: 76px; overflow-y: auto; flex: 0 0 auto !important; }
+  .m-player .overview-label-row, .m-player .overview-label-group-header { flex-shrink: 0 !important; min-height: 16px; }
+
   .m-time { display: flex; justify-content: space-between; padding: 4px 16px 0; font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); flex-shrink: 0; }
   .m-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 0 8px; flex-shrink: 0; }
   .m-tbtn { width: 42px; height: 42px; display: grid; place-items: center; border: none; border-radius: 6px; background: transparent; color: var(--m-text); }
@@ -128,44 +132,51 @@ html.is-mobile {
   .m-det-pct { flex-shrink: 0; font-family: var(--m-mono); font-size: 12px; font-weight: 700; color: var(--m-muted); }
 }
 
-/* BirdNET detections (time only, "lanes") as full-height bands with a name tag,
-   see mockup screen 6. Tripled class to win over the desktop lane rules. */
+/* BirdNET detections (time only, "lanes") — same strategy as the desktop (_assignLanes):
+   overlapping windows go to the next lane down, so their name tags stack; only the
+   current one (under the playhead / selected / focused) shades its column as a band
+   over the full height (mockup screen 6). Tripled class to win over the desktop lane rules. */
 html.is-mobile .m-player .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
   --m-band: var(--color-detection, #f59e0b);
   overflow: visible;
-  border: none;
-  border-left: 2px solid var(--m-band);
-  border-right: 2px solid var(--m-band);
-  border-top: 0; border-bottom: 0; border-image: none;
-  outline: none;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--m-band) 10%, transparent);
+  border: none; border-image: none; outline: none;
+  border-width: 0 !important;    // _ui-clarity forces a dashed frame on locked labels
+  opacity: 1;
+  border-radius: 4px;
+  background: transparent;
   box-shadow: none;
 
+  // Column below the tag: hidden unless current (desktop rule), drawn as a band then.
   &::after {
-    opacity: 1;
-    left: -2px; right: -2px;
-    background: color-mix(in srgb, var(--m-band) 10%, transparent);
+    left: 0; right: 0;
+    background: color-mix(in srgb, var(--m-band) 11%, transparent);
     border-left: 2px solid var(--m-band);
     border-right: 2px solid var(--m-band);
   }
-  &::before { display: none; }   // the confidence edge — the tag shows the number
+  &::before { display: none; }   // confidence edge — the tag shows the number
 
   .spectrogram-label-text {
     display: inline-flex; align-items: center; gap: 5px;
-    width: max-content; max-width: calc(100% - 4px);
+    width: max-content; max-width: 100%;
     overflow: hidden; white-space: nowrap;
-    margin: 2px 0 0 2px; padding: 0 6px;
-    height: 17px; line-height: 17px;
+    padding: 0 6px; height: 100%;
     border-radius: 4px;
-    background: var(--m-band); color: #1a1205;
-    font-size: 11px; font-weight: 700;
+    background: color-mix(in srgb, var(--m-band) 78%, #000);
+    color: #1a1205;
+    font-size: 11px; font-weight: 700; line-height: 1;
     text-shadow: none;
   }
   .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .spectrogram-label-conf-meter { display: none; }
 
-  &.selected, &.focused { --m-band: var(--color-accent); background: color-mix(in srgb, var(--m-band) 12%, transparent); }
-  &.selected .spectrogram-label-text, &.focused .spectrogram-label-text { color: #04111b; }
+  // Under the playhead: edges only — several overlapping windows share one band
+  // instead of stacking their fills. Selected / focused: filled band.
+  &.active, &.selected, &.focused {
+    z-index: 12;
+    .spectrogram-label-text { background: var(--m-band); }
+    &::after { opacity: 1; }
+  }
+  &.active:not(.selected):not(.focused)::after { background: transparent; }
+  &.selected, &.focused { --m-band: var(--color-accent); .spectrogram-label-text { color: #04111b; } }
 }
