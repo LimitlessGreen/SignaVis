@@ -55,6 +55,14 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
   Prüfen-Bildschirm; Live-Stop landet direkt im Prüfen.
 - Aufnahmen-Karten zeigen „x offen“ bzw. „✓ geprüft“; Arten zählt übernommene Erkennungen nur einmal.
 
+## Sprache
+
+- Texte der Handy-UI in `src/ui/mobile/i18n.ts` (`t(key, vars)`), Englisch Standard + Fallback, Deutsch fertig.
+  Wahl: `?lang=de` oder localStorage `signavis.lang`. Neue Sprache = weiteres Wörterbuch.
+- Noch englisch/fest: Texte, die aus dem Desktop kommen (BirdNET-Status, Ortszeile, Überlappungs-Optionen),
+  Desktop-UI hat noch keine i18n. Artnamen kommen bereits lokalisiert über `resolveName`.
+- Später: Sprachwahl in einer Einstellungen-Ansicht; Desktop auf dieselben Wörterbücher umstellen.
+
 ## Offen / nächste Schritte
 
 1. **Live** — gebaut (Screenshot `mobile-design/stand-live.png`): Mikrofon (`LiveRecorder.ondata`), laufendes

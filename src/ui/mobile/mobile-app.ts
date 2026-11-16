@@ -14,6 +14,7 @@
 import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
+import { t } from './i18n.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -139,7 +140,7 @@ function sourceName(lbl: any) {
   if (o === 'BirdNET') return 'BirdNET';
   if (o === 'BirdBox') return 'BirdBox';
   if (o === 'xeno-canto') return 'Xeno-canto';
-  return o && o !== 'manual' ? o : 'Eigenes Label';
+  return o && o !== 'manual' ? o : t('source.own');
 }
 
 /** Review state of one recording's labels: detections, which are confirmed (copied into own labels), which are open. */
@@ -245,9 +246,9 @@ export class MobileApp {
     const body = el('div', 'm-screens');
     body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies());
     const nav = el('nav', 'm-nav');
-    nav.setAttribute('aria-label', 'Navigation');
-    for (const [id, icon, label] of [['recordings', I.lib, 'Aufnahmen'], ['queue', I.check, 'Prüfen'],
-      ['live', I.mic, 'Live'], ['species', I.bird, 'Arten']] as [Screen, string, string][]) {
+    nav.setAttribute('aria-label', t('nav.label'));
+    for (const [id, icon, label] of [['recordings', I.lib, t('nav.recordings')], ['queue', I.check, t('nav.review')],
+      ['live', I.mic, t('nav.live')], ['species', I.bird, t('nav.species')]] as [Screen, string, string][]) {
       const b = el('button', 'm-nav-btn');
       b.type = 'button';
       b.innerHTML = `<span class="m-nav-pill">${icon}</span><span>${label}</span>`;
@@ -359,9 +360,9 @@ export class MobileApp {
   private buildRecordings(): HTMLElement {
     const s = el('section', 'm-screen m-recordings');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(el('h1', '', 'Aufnahmen'));
+    bar.appendChild(el('h1', '', t('nav.recordings')));
     this.recList = el('div', 'm-scroll m-rec-list');
-    const fab = button('m-fab', `${I.plus}<span>Neu</span>`, 'Aufnahme hinzufügen', () => {
+    const fab = button('m-fab', `${I.plus}<span>${t('rec.new')}</span>`, t('rec.add'), () => {
       // The new file is analysed as soon as it is loaded (see the player 'ready' handler).
       this.autoAnalyse = !!this.h.analysis;
       this.h.addFile();
@@ -375,7 +376,7 @@ export class MobileApp {
     const recs = this.h.getRecordings();
     this.recList.replaceChildren();
     if (!recs.length) {
-      this.recList.appendChild(el('p', 'm-empty', 'Noch keine Aufnahmen. Mit „Neu“ eine Audiodatei öffnen.'));
+      this.recList.appendChild(el('p', 'm-empty', t('rec.empty')));
       return;
     }
     for (const r of recs) {
@@ -385,11 +386,11 @@ export class MobileApp {
       const species = new Set(r.labels.map((l) => l.scientificName || l.label).filter(Boolean)).size;
       const main = el('div', 'm-rec-main');
       main.appendChild(el('div', 'm-rec-title', r.title));
-      main.appendChild(el('div', 'm-rec-meta', [r.meta, species ? `${species} Arten` : ''].filter(Boolean).join(' · ')));
+      main.appendChild(el('div', 'm-rec-meta', [r.meta, species ? t('rec.species', { n: species }) : ''].filter(Boolean).join(' · ')));
       const st = open.length
-        ? el('span', 'm-status todo', `${open.length} offen`)
-        : detections.length ? el('span', 'm-status done', '✓ geprüft')
-        : r.labels.length ? el('span', 'm-status done', `${r.labels.length} Labels`) : el('span', 'm-status new', 'Nicht analysiert');
+        ? el('span', 'm-status todo', t('rec.open', { n: open.length }))
+        : detections.length ? el('span', 'm-status done', t('rec.reviewed'))
+        : r.labels.length ? el('span', 'm-status done', t('common.labels', { n: r.labels.length })) : el('span', 'm-status new', t('rec.notAnalysed'));
       card.append(main, st);
       card.addEventListener('click', async () => {
         this.autoAnalyse = false;
@@ -414,7 +415,7 @@ export class MobileApp {
   private buildQueue(): HTMLElement {
     const s = el('section', 'm-screen m-queue');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(el('h1', '', 'Prüfen'));
+    bar.appendChild(el('h1', '', t('queue.title')));
     this.qHead = el('div', 'm-q-sum');
     this.qList = el('div', 'm-scroll m-q-list');
     s.append(bar, this.qHead, this.qList);
@@ -439,7 +440,7 @@ export class MobileApp {
       const group = el('div', 'm-q-rec');
       const head = el('button', 'm-q-rec-h');
       head.type = 'button';
-      head.append(el('b', '', rec.title), el('span', 'm-status todo', `${open.length} offen`));
+      head.append(el('b', '', rec.title), el('span', 'm-status todo', t('rec.open', { n: open.length })));
       head.addEventListener('click', () => this.openReview(rec, null));
       group.appendChild(head);
       const bySp = new Map<string, any[]>();
@@ -456,7 +457,7 @@ export class MobileApp {
         row.type = 'button';
         row.append(this.speciesImg(top));
         const main = el('div', 'm-det-main');
-        main.appendChild(el('div', 'm-det-name', this.h.resolveName(top)?.display || top.label || 'Unbekannt'));
+        main.appendChild(el('div', 'm-det-name', this.h.resolveName(top)?.display || top.label || t('common.unknown')));
         const lo = Math.round(Math.min(...ls.map((l) => Number(l.confidence) || 0)) * 100);
         const hi = Math.round((Number(top.confidence) || 0) * 100);
         main.appendChild(el('div', 'm-det-meta', `${ls.length}× · ${lo === hi ? `${hi}%` : `${lo}–${hi}%`} · ${sourceName(top)}`));
@@ -468,12 +469,12 @@ export class MobileApp {
       this.qList.appendChild(group);
     }
     this.qHead.textContent = total
-      ? `${total} offene Treffer in ${shown} ${shown === 1 ? 'Aufnahme' : 'Aufnahmen'}${done ? ` · ${done} fertig` : ''}`
+      ? t('queue.summary', { total, recs: shown, done })
       : '';
     if (!shown) {
       this.qList.appendChild(el('p', 'm-empty', recs.length
-        ? (done ? 'Alles geprüft. ✓' : 'Noch nichts zu prüfen. Analysiere eine Aufnahme unter „Aufnahmen“.')
-        : 'Noch keine Aufnahmen. Unter „Aufnahmen“ eine Datei öffnen oder mit „Live“ aufnehmen.'));
+        ? (done ? t('queue.allDone') : t('queue.nothing'))
+        : t('queue.noRecs')));
     }
   }
 
@@ -501,13 +502,13 @@ export class MobileApp {
   private buildReview(): HTMLElement {
     const s = el('section', 'm-screen m-review');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(button('m-icon-btn', I.back, 'Zurück', () => this.show(this.rvFrom)));
-    const t = el('div', 'm-appbar-title');
+    bar.appendChild(button('m-icon-btn', I.back, t('common.back'), () => this.show(this.rvFrom)));
+    const titleBox = el('div', 'm-appbar-title');
     this.rvTitle = el('h2', '', '');
     this.rvSub = el('small', '', '');
-    t.append(this.rvTitle, this.rvSub);
-    bar.appendChild(t);
-    if (this.h.analysis) bar.appendChild(button('m-icon-btn', I.analyse, 'Analysieren', () => this.openAnalyse('review')));
+    titleBox.append(this.rvTitle, this.rvSub);
+    bar.appendChild(titleBox);
+    if (this.h.analysis) bar.appendChild(button('m-icon-btn', I.analyse, t('rv.analyse'), () => this.openAnalyse('review')));
 
     this.playerSlot = el('div', 'm-player');
     this.rvProgress = el('div', 'm-rv-progress');
@@ -519,21 +520,21 @@ export class MobileApp {
     time.append(this.timeCur, this.timeDur);
 
     const tr = el('div', 'm-transport');
-    this.rateBtn = button('m-tbtn m-tbtn--txt', '1×', 'Wiedergabetempo', () => this.cycleRate());
-    this.playBtn = button('m-play', I.play, 'Abspielen', () => this.togglePlay());
-    this.loopBtn = button('m-tbtn m-tbtn--txt', 'Loop', 'Schleife', () => this.toggleLoop());
+    this.rateBtn = button('m-tbtn m-tbtn--txt', '1×', t('rv.rate'), () => this.cycleRate());
+    this.playBtn = button('m-play', I.play, t('rv.play'), () => this.togglePlay());
+    this.loopBtn = button('m-tbtn m-tbtn--txt', 'Loop', t('rv.loop'), () => this.toggleLoop());
     tr.append(
       this.rateBtn,
-      button('m-tbtn', I.rw, `${SKIP_SEC} s zurück`, () => this.skip(-SKIP_SEC)),
+      button('m-tbtn', I.rw, t('rv.skipBack', { s: SKIP_SEC }), () => this.skip(-SKIP_SEC)),
       this.playBtn,
-      button('m-tbtn', I.fw, `${SKIP_SEC} s vor`, () => this.skip(SKIP_SEC)),
+      button('m-tbtn', I.fw, t('rv.skipFwd', { s: SKIP_SEC }), () => this.skip(SKIP_SEC)),
       this.loopBtn,
     );
 
     const sheet = el('div', 'm-sheet');
     sheet.appendChild(el('div', 'm-grip'));
     this.detHead = el('div', 'm-sheet-h', '');
-    for (const [id, label] of [['open', 'Offen'], ['all', 'Alle']] as const) {
+    for (const [id, label] of [['open', t('rv.open')], ['all', t('common.all')]] as const) {
       const c = button('m-chip', label, label, () => { this.rvFilter = id; this.renderReview(); });
       c.dataset.label = label;
       this.rvChips.set(id, c);
@@ -549,11 +550,11 @@ export class MobileApp {
   private renderReview() {
     this.renderQueue();
     const rec = this.h.getRecordings().find((r) => r.active);
-    this.rvTitle.textContent = rec?.title || 'Keine Aufnahme';
+    this.rvTitle.textContent = rec?.title || t('common.noRecording');
     const labels = [...this.h.getLabels()].sort((a, b) => (a.start - b.start) || (a.end - b.end));
     const { adopted, detections, open } = reviewState(labels, this.isOwn);
     this.rvSub.textContent = rec
-      ? (detections.length ? `${detections.length} Treffer · ${open.length} offen` : `${labels.length} Labels`)
+      ? (detections.length ? t('rv.sub', { det: detections.length, open: open.length }) : t('common.labels', { n: labels.length }))
       : '';
 
     // Copies in „Meine Labels“ are shown on their detection (✓), not as a second card.
@@ -563,7 +564,7 @@ export class MobileApp {
     const shown = this.rvFilter === 'open' ? items.filter((l) => openIds.has(String(l.id))) : items;
 
     const head = el('div', 'm-sheet-row');
-    head.appendChild(el('b', '', 'Erkennungen'));
+    head.appendChild(el('b', '', t('rv.detections')));
     if (detections.length) {
       const chips = el('div', 'm-rv-chips');
       for (const [id, c] of this.rvChips) {
@@ -575,21 +576,21 @@ export class MobileApp {
       }
       head.appendChild(chips);
     } else {
-      head.firstElementChild!.textContent = `Erkennungen · ${labels.length}`;
+      head.firstElementChild!.textContent = `${t('rv.detections')} · ${labels.length}`;
     }
     this.detHead.replaceChildren(head);
     this.detList.replaceChildren();
     if (!rec) {
-      this.detList.appendChild(el('p', 'm-empty', 'Wähle unter „Aufnahmen“ eine Aufnahme aus.'));
+      this.detList.appendChild(el('p', 'm-empty', t('rv.pickRecording')));
       return;
     }
     if (!labels.length) {
       this.detList.appendChild(el('p', 'm-empty', this.h.analysis
-        ? 'Noch keine Erkennungen. Oben rechts analysieren.' : 'Noch keine Erkennungen.'));
+        ? t('rv.noDetectionsAnalyse') : t('rv.noDetections')));
       return;
     }
     if (!shown.length) {
-      this.detList.appendChild(el('p', 'm-empty', 'Alles in dieser Aufnahme geprüft. ✓'));
+      this.detList.appendChild(el('p', 'm-empty', t('rv.allDone')));
       return;
     }
     for (const lbl of shown) this.detList.appendChild(this.detCard(lbl, adopted.has(String(lbl.id)), openIds.has(String(lbl.id))));
@@ -607,12 +608,12 @@ export class MobileApp {
 
     const main = el('div', 'm-det-main');
     const { display } = this.h.resolveName(lbl) || { display: '' };
-    main.appendChild(el('div', 'm-det-name', display || lbl.label || 'Unbekannt'));
+    main.appendChild(el('div', 'm-det-name', display || lbl.label || t('common.unknown')));
     // Time windows (BirdNET) as a range; calls and boxes as start with tenths + length.
     const when = lbl.fullBand
       ? `${fmtClock(lbl.start, false)}–${fmtClock(lbl.end, false)}`
       : `${fmtClock(lbl.start)} · ${Math.max(0, lbl.end - lbl.start).toFixed(1)} s`;
-    main.appendChild(el('div', 'm-det-meta', `${when} · ${confirmed ? 'bestätigt' : sourceName(lbl)}`));
+    main.appendChild(el('div', 'm-det-meta', `${when} · ${confirmed ? t('rv.confirmed') : sourceName(lbl)}`));
     card.append(this.speciesImg(lbl), main);
     if (lbl.confidence != null) {
       const pct = Math.min(100, Math.round(Number(lbl.confidence) * 100));
@@ -628,11 +629,11 @@ export class MobileApp {
       const acts = el('div', 'm-det-acts');
       if (open) {
         acts.append(
-          button('m-act no', I.x, 'Verwerfen', () => this.discard(lbl)),
-          button('m-act yes', I.ok, 'Übernehmen', () => this.accept(lbl)),
+          button('m-act no', I.x, t('rv.discard'), () => this.discard(lbl)),
+          button('m-act yes', I.ok, t('rv.accept'), () => this.accept(lbl)),
         );
       } else {
-        acts.appendChild(button('m-act yes on', I.ok, 'Bestätigt – tippen zum Zurücknehmen', () => this.unaccept(lbl)));
+        acts.appendChild(button('m-act yes on', I.ok, t('rv.unaccept'), () => this.unaccept(lbl)));
       }
       for (const b of acts.children) b.addEventListener('click', (e) => e.stopPropagation());
       card.appendChild(acts);
@@ -662,7 +663,7 @@ export class MobileApp {
   private accept(lbl: any) {
     const next = this.nextOpen(lbl);
     this.h.acceptLabel!(String(lbl.id));
-    this.toast(`✓ ${this.h.resolveName(lbl)?.display || lbl.label} übernommen`, () => this.unaccept(lbl, true));
+    this.toast(t('rv.accepted', { name: this.h.resolveName(lbl)?.display || lbl.label }), () => this.unaccept(lbl, true));
     this.afterDecision(next);
   }
 
@@ -670,7 +671,7 @@ export class MobileApp {
     const copy = this.h.getLabels().find((l) => this.isOwn(l) && String(l.adoptedFrom?.id) === String(lbl.id));
     if (!copy || !this.h.discardLabel) return;
     this.h.discardLabel(String(copy.id));
-    if (!quiet) this.toast('Bestätigung zurückgenommen', () => this.h.restoreLabel?.(copy));
+    if (!quiet) this.toast(t('rv.unaccepted'), () => this.h.restoreLabel?.(copy));
     this.renderReview();
     this.renderRecordings();
   }
@@ -679,7 +680,7 @@ export class MobileApp {
     if (!this.h.discardLabel) return;
     const next = this.nextOpen(lbl);
     const removed = this.h.discardLabel(String(lbl.id));
-    this.toast(`${this.h.resolveName(lbl)?.display || lbl.label} verworfen`, removed && this.h.restoreLabel
+    this.toast(t('rv.discarded', { name: this.h.resolveName(lbl)?.display || lbl.label }), removed && this.h.restoreLabel
       ? () => { this.h.restoreLabel!(removed); this.renderReview(); this.renderRecordings(); }
       : null);
     this.afterDecision(next);
@@ -690,7 +691,7 @@ export class MobileApp {
     clearTimeout(this.snackTimer);
     this.snack.replaceChildren(el('span', '', msg));
     if (undo) {
-      this.snack.appendChild(button('m-snack-btn', 'Rückgängig', 'Rückgängig', () => {
+      this.snack.appendChild(button('m-snack-btn', t('common.undo'), t('common.undo'), () => {
         this.snack.hidden = true;
         undo();
       }));
@@ -763,7 +764,7 @@ export class MobileApp {
       if (this.playBtn.dataset.state !== String(playing)) {
         this.playBtn.dataset.state = String(playing);
         this.playBtn.innerHTML = playing ? I.pause : I.play;
-        this.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Abspielen');
+        this.playBtn.setAttribute('aria-label', playing ? t('rv.pause') : t('rv.play'));
       }
       this.timeCur.textContent = fmtClock(p?.currentTime);
       this.timeDur.textContent = fmtClock(p?.duration);
@@ -779,19 +780,19 @@ export class MobileApp {
   private buildSpecies(): HTMLElement {
     const s = el('section', 'm-screen m-species');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(el('h1', '', 'Arten'));
+    bar.appendChild(el('h1', '', t('sp.title')));
 
     const search = el('label', 'm-search');
     search.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
     this.spSearch = el('input');
     this.spSearch.type = 'search';
-    this.spSearch.placeholder = 'Art suchen';
-    this.spSearch.setAttribute('aria-label', 'Art suchen');
+    this.spSearch.placeholder = t('sp.search');
+    this.spSearch.setAttribute('aria-label', t('sp.search'));
     this.spSearch.addEventListener('input', () => this.renderSpecies());
     search.appendChild(this.spSearch);
 
     const chips = el('div', 'm-chips');
-    for (const [id, label] of [['all', 'Alle'], ['confirmed', 'Bestätigt'], ['detected', 'Nur erkannt']] as const) {
+    for (const [id, label] of [['all', t('common.all')], ['confirmed', t('sp.confirmed')], ['detected', t('sp.detected')]] as const) {
       const b = el('button', 'm-chip');
       b.type = 'button';
       b.addEventListener('click', () => { this.spFilter = id; this.renderSpecies(); });
@@ -860,8 +861,8 @@ export class MobileApp {
       b.classList.toggle('on', id === this.spFilter);
       b.setAttribute('aria-pressed', String(id === this.spFilter));
     }
-    this.spSortBtn.innerHTML = `Sortiert nach <b>${{ count: 'Anzahl', conf: 'Konfidenz', name: 'Name' }[this.spSort]} ▾</b>`;
-    this.spMeta.textContent = `${recCount} Aufnahmen`;
+    this.spSortBtn.innerHTML = `${t('sp.sortBy')} <b>${t(`sp.sort.${this.spSort}` as const)} ▾</b>`;
+    this.spMeta.textContent = t('sp.recs', { n: recCount });
 
     const q = this.spSearch.value.trim().toLowerCase();
     let items = list.filter((sp) => this.spFilter === 'all' || (this.spFilter === 'confirmed' ? sp.confirmed > 0 : sp.confirmed === 0));
@@ -873,8 +874,8 @@ export class MobileApp {
     this.spList.replaceChildren();
     if (!items.length) {
       this.spList.appendChild(el('p', 'm-empty', list.length
-        ? 'Keine Art passt zum Filter.'
-        : 'Noch keine Arten. Analysiere eine Aufnahme, dann erscheinen die erkannten Arten hier.'));
+        ? t('sp.noMatch')
+        : t('sp.empty')));
       return;
     }
     for (const sp of items) {
@@ -892,7 +893,7 @@ export class MobileApp {
       n.appendChild(el('span', 'm-sp-sci', ` ${sp.sci}`));
       const meta = el('div', 'm-sp-meta');
       if (sp.confirmed) meta.appendChild(el('span', 'm-ok', `✓ ${sp.confirmed}`));
-      meta.appendChild(document.createTextNode(`${sp.confirmed ? ' · ' : ''}${sp.detected} erkannt · ${sp.recs.size} Aufn.`));
+      meta.appendChild(document.createTextNode(`${sp.confirmed ? ' · ' : ''}${t('sp.meta', { det: sp.detected, recs: sp.recs.size })}`));
       main.append(n, meta);
       head.append(img, main);
       head.addEventListener('click', () => {
@@ -914,12 +915,12 @@ export class MobileApp {
           b.innerHTML = `<span class="m-ex-play">${I.play}</span>`;
           const info = el('span', 'm-ex-info');
           info.append(el('b', '', pct), document.createTextNode(` · ${e.rec.title}`), el('br'),
-            document.createTextNode(`${fmtClock(e.lbl.start)}${i === 0 ? ' · bester Beleg' : ''}`));
+            document.createTextNode(`${fmtClock(e.lbl.start)}${i === 0 ? ` · ${t('sp.best')}` : ''}`));
           b.appendChild(info);
           b.addEventListener('click', () => this.playExample(e.rec, e.lbl));
           ex.appendChild(b);
         });
-        if (sp.examples.length > 3) ex.appendChild(el('div', 'm-ex-more', `+ ${sp.examples.length - 3} weitere`));
+        if (sp.examples.length > 3) ex.appendChild(el('div', 'm-ex-more', t('sp.more', { n: sp.examples.length - 3 })));
         row.appendChild(ex);
       }
       this.spList.appendChild(row);
@@ -945,10 +946,10 @@ export class MobileApp {
   private buildAnalyse(): HTMLElement {
     const s = el('section', 'm-screen m-analyse');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(button('m-icon-btn', I.back, 'Zurück', () => this.show(this.anBackTo)));
-    const t = el('div', 'm-appbar-title');
-    t.append(el('h2', '', 'Analysieren'), (this.anSub = el('small', '', '')));
-    bar.appendChild(t);
+    bar.appendChild(button('m-icon-btn', I.back, t('common.back'), () => this.show(this.anBackTo)));
+    const titleBox = el('div', 'm-appbar-title');
+    titleBox.append(el('h2', '', t('an.title')), (this.anSub = el('small', '', '')));
+    bar.appendChild(titleBox);
 
     const body = el('div', 'm-scroll m-an-body');
 
@@ -961,12 +962,12 @@ export class MobileApp {
     this.anProgress.hidden = true;
 
     const what = el('div', 'm-card');
-    this.anBirdnet = this.toggleRow(what, 'Vogelarten (BirdNET)', 'Erkennt Arten in 3-s-Fenstern', true);
-    this.anBirdbox = this.toggleRow(what, 'Rufe einzeln finden (BirdBox)', 'Box um jeden Ruf, ohne Art', false);
+    this.anBirdnet = this.toggleRow(what, t('an.birdnet'), t('an.birdnetHint'), true);
+    this.anBirdbox = this.toggleRow(what, t('an.birdbox'), t('an.birdboxHint'), false);
     if (!this.h.analysis?.birdboxBtn) this.anBirdbox.closest('.m-row')?.setAttribute('hidden', '');
     this.anGeoRow = el('div', 'm-row');
     const geoText = el('div', 'm-row-text');
-    geoText.appendChild(el('span', '', 'Arten nach Ort filtern'));
+    geoText.appendChild(el('span', '', t('an.geo')));
     this.anLocation = el('small', '', '');
     geoText.appendChild(this.anLocation);
     this.anGeo = this.switchInput(false);
@@ -977,7 +978,7 @@ export class MobileApp {
     const conf = el('div', 'm-card');
     const head = el('div', 'm-row m-row--plain');
     const ht = el('div', 'm-row-text');
-    ht.append(el('span', '', 'Mindest-Konfidenz'), el('small', '', 'Niedriger = mehr Treffer, mehr zu prüfen'));
+    ht.append(el('span', '', t('an.minConf')), el('small', '', t('an.minConfHint')));
     this.anConfVal = el('span', 'm-row-val', '');
     head.append(ht, this.anConfVal);
     this.anConf = el('input', 'm-range');
@@ -995,7 +996,7 @@ export class MobileApp {
     const expertCard = el('div', 'm-card');
     const expertBtn = el('button', 'm-row m-row--btn');
     expertBtn.type = 'button';
-    expertBtn.innerHTML = `<span class="m-row-text"><span>Expertenoptionen</span></span><span class="m-chev">${I.chevron}</span>`;
+    expertBtn.innerHTML = `<span class="m-row-text"><span>${t('an.expert')}</span></span><span class="m-chev">${I.chevron}</span>`;
     this.anExpert = el('div', 'm-expert');
     this.anExpert.hidden = true;
     expertBtn.addEventListener('click', () => {
@@ -1008,7 +1009,7 @@ export class MobileApp {
     body.append(this.anProgress, what, conf, expertCard);
 
     const foot = el('div', 'm-an-foot');
-    this.anRun = el('button', 'm-cta', 'Analyse starten');
+    this.anRun = el('button', 'm-cta', t('an.run'));
     this.anRun.type = 'button';
     this.anRun.addEventListener('click', () => this.runAnalysis());
     foot.appendChild(this.anRun);
@@ -1022,7 +1023,7 @@ export class MobileApp {
     const a = this.h.analysis;
     if (a?.overlapSelect) {
       const row = el('div', 'm-row');
-      row.appendChild(el('div', 'm-row-text', 'Überlappung der Fenster'));
+      row.appendChild(el('div', 'm-row-text', t('an.overlap')));
       const sel = el('select', 'm-select');
       for (const o of Array.from(a.overlapSelect.options)) sel.appendChild(new Option(o.text, o.value));
       sel.addEventListener('change', () => {
@@ -1034,11 +1035,11 @@ export class MobileApp {
       this.anExpert.appendChild(row);
     }
     if (a?.mergeCheckbox) {
-      const cb = this.toggleRow(this.anExpert, 'Überlappende Treffer zusammenfassen', '', a.mergeCheckbox.checked);
+      const cb = this.toggleRow(this.anExpert, t('an.merge'), '', a.mergeCheckbox.checked);
       cb.dataset.mirror = 'merge';
       cb.addEventListener('change', () => this.mirrorCheckbox(a.mergeCheckbox, cb.checked));
     }
-    this.anExpert.appendChild(el('p', 'm-hint', 'Modell und Analyse-Backend werden in der Desktop-Ansicht eingestellt.'));
+    this.anExpert.appendChild(el('p', 'm-hint', t('an.desktopHint')));
   }
 
   private toggleRow(parent: HTMLElement, label: string, hint: string, checked: boolean): HTMLInputElement {
@@ -1072,7 +1073,7 @@ export class MobileApp {
     const a = this.h.analysis;
     const rec = this.h.getRecordings().find((r) => r.active);
     const dur = Number(this.h.player?.duration) || 0;
-    this.anSub.textContent = rec ? `${rec.title}${dur ? ` · ${fmtClock(dur, false)}` : ''}` : 'Keine Aufnahme';
+    this.anSub.textContent = rec ? `${rec.title}${dur ? ` · ${fmtClock(dur, false)}` : ''}` : t('common.noRecording');
     if (!a) return;
     const c = a.confInput;
     this.anConf.min = c.min; this.anConf.max = c.max; this.anConf.step = c.step; this.anConf.value = c.value;
@@ -1081,7 +1082,7 @@ export class MobileApp {
     this.anGeo.checked = !!geo?.checked;
     this.anGeo.disabled = !geo || geo.disabled;
     const loc = (a.locationLine?.textContent || '').trim();
-    this.anLocation.textContent = this.anGeo.disabled ? 'Braucht das Gebietsmodell von BirdNET' : (loc || 'Kein Ort gesetzt');
+    this.anLocation.textContent = this.anGeo.disabled ? t('an.geoNeedsModel') : (loc || t('an.noLocation'));
     const ov = this.anExpert.querySelector<HTMLSelectElement>('[data-mirror="overlap"]');
     if (ov && a.overlapSelect) ov.value = a.overlapSelect.value;
     const mg = this.anExpert.querySelector<HTMLInputElement>('[data-mirror="merge"]');
@@ -1133,7 +1134,7 @@ export class MobileApp {
     if (running) this.anJobStarted = true;
     const status = (job === 'birdnet' ? a.status : a.birdboxStatus)?.textContent?.trim() || '';
     const bar = job === 'birdnet' ? a.progressBar : a.birdboxProgressBar;
-    this.anProgressText.textContent = `${job === 'birdnet' ? 'BirdNET' : 'BirdBox'} läuft …${status ? ` ${status}` : ''}`;
+    this.anProgressText.textContent = `${t('an.running', { job: job === 'birdnet' ? 'BirdNET' : 'BirdBox' })}${status ? ` ${status}` : ''}`;
     this.anProgressBar.style.width = bar?.style.width || '0%';
     this.rvProgress.hidden = false;
     this.rvProgress.textContent = this.anProgressText.textContent;
@@ -1143,7 +1144,7 @@ export class MobileApp {
       // The click did not start a run (no audio, model failed…): give up after a few seconds.
       if (performance.now() - this.anJobAt < 4000) return;
       this.anJob = 'idle';
-      this.anProgressText.textContent = status || 'Analyse konnte nicht starten';
+      this.anProgressText.textContent = status || t('an.failed');
       this.anRun.disabled = false;
       this.rvProgress.hidden = true;
       return;
@@ -1152,7 +1153,7 @@ export class MobileApp {
     // Finished: chain BirdBox after BirdNET if asked, else show the results.
     if (job === 'birdnet' && this.anBirdbox.checked && a.birdboxBtn) { this.startJob('birdbox'); return; }
     this.anJob = 'idle';
-    this.anProgressText.textContent = status || 'Fertig';
+    this.anProgressText.textContent = status || t('an.done');
     this.anProgressBar.style.width = '100%';
     this.anRun.disabled = false;
     setTimeout(() => { this.anProgress.hidden = true; this.rvProgress.hidden = true; }, 1500);
@@ -1166,20 +1167,20 @@ export class MobileApp {
   private buildLive(): HTMLElement {
     const s = el('section', 'm-screen m-live');
     const bar = el('header', 'm-appbar');
-    bar.appendChild(el('h1', '', 'Live'));
+    bar.appendChild(el('h1', '', t('live.title')));
     const top = el('div', 'm-live-top');
     const meter = el('div', 'm-live-meter');
-    meter.innerHTML = '<span>Pegel</span><i><b></b></i>';
+    meter.innerHTML = `<span>${t('live.level')}</span><i><b></b></i>`;
     this.lvMeter = meter.querySelector('b')!;
     this.lvInfo = el('span', 'm-live-info');
     top.append(meter, this.lvInfo);
     this.lvSpec = el('div', 'm-live-spec');
-    this.lvSpec.appendChild(el('span', 'm-live-hint', 'Aufnahme starten – das Spektrogramm läuft hier von rechts nach links.'));
+    this.lvSpec.appendChild(el('span', 'm-live-hint', t('live.hint')));
     this.lvList = el('div', 'm-scroll m-live-list');
     const foot = el('div', 'm-live-foot');
     this.lvTime = el('div', 'm-live-time', '00:00');
-    this.lvDiscard = button('m-live-discard', 'Verwerfen', 'Aufnahme verwerfen', () => this.stopLive(false));
-    this.lvBtn = button('m-live-rec', '<i></i>', 'Aufnahme starten', () => {
+    this.lvDiscard = button('m-live-discard', t('live.discard'), t('live.discardLabel'), () => this.stopLive(false));
+    this.lvBtn = button('m-live-rec', '<i></i>', t('live.start'), () => {
       if (this.lvRec) void this.stopLive(true); else void this.startLive();
     });
     const spacer = el('span', 'm-live-discard-spacer');
@@ -1192,15 +1193,15 @@ export class MobileApp {
   private renderLive() {
     const on = !!this.lvRec;
     this.lvBtn.classList.toggle('on', on);
-    this.lvBtn.setAttribute('aria-label', on ? 'Stoppen und speichern' : 'Aufnahme starten');
+    this.lvBtn.setAttribute('aria-label', on ? t('live.stop') : t('live.start'));
     this.lvDiscard.hidden = !on;
     this.lvTime.classList.toggle('on', on);
-    if (!on && !this.lvInfo.textContent) this.lvInfo.textContent = this.h.live?.describe?.() || 'BirdNET · alle 3 s';
+    if (!on && !this.lvInfo.textContent) this.lvInfo.textContent = this.h.live?.describe?.() || t('live.every3s');
     const rows = [...this.lvSpecies.values()].sort((a, b) => b.last - a.last || b.max - a.max);
     this.lvList.replaceChildren();
     if (!rows.length) {
-      this.lvList.appendChild(el('p', 'm-empty', on ? 'Noch keine Art erkannt …'
-        : this.h.live ? 'Erkannte Arten erscheinen hier, während aufgenommen wird.' : 'Live-Erkennung ist hier nicht verfügbar.'));
+      this.lvList.appendChild(el('p', 'm-empty', on ? t('live.noneYet')
+        : this.h.live ? t('live.emptyHint') : t('live.unavailable')));
       return;
     }
     const now = this.lvRec?.elapsed ?? Infinity;
@@ -1222,15 +1223,15 @@ export class MobileApp {
   }
 
   private ago(sec: number) {
-    if (sec < 6) return 'gerade eben';
-    if (sec < 60) return `vor ${Math.round(sec / 5) * 5} s`;
-    return `vor ${Math.floor(sec / 60)} min`;
+    if (sec < 6) return t('live.justNow');
+    if (sec < 60) return t('live.agoS', { n: Math.round(sec / 5) * 5 });
+    return t('live.agoMin', { n: Math.floor(sec / 60) });
   }
 
   private async startLive() {
     const live = this.h.live;
     if (!live || this.lvRec) return;
-    if (!LiveRecorder.supported) { this.lvInfo.textContent = 'Mikrofon wird hier nicht unterstützt.'; return; }
+    if (!LiveRecorder.supported) { this.lvInfo.textContent = t('live.noMic'); return; }
     try { this.h.player?.pause?.(); } catch { /* ignore */ }
     this.lvBtn.disabled = true;
     let classify: Awaited<ReturnType<LiveHost['prepare']>>;
@@ -1288,13 +1289,13 @@ export class MobileApp {
     try {
       await rec.start();
     } catch (err: any) {
-      this.lvInfo.textContent = err?.name === 'NotAllowedError' ? 'Kein Zugriff aufs Mikrofon.' : `Mikrofon: ${err?.message || err}`;
+      this.lvInfo.textContent = err?.name === 'NotAllowedError' ? t('live.micDenied') : t('live.mic', { msg: err?.message || err });
       this.lvBtn.disabled = false;
       return;
     }
     this.lvRec = rec;
     this.lvBtn.disabled = false;
-    this.lvInfo.textContent = live.describe?.() || 'BirdNET · alle 3 s';
+    this.lvInfo.textContent = live.describe?.() || t('live.every3s');
     this.lvSpec.querySelector('.m-live-hint')?.remove();
     const view = new LiveSpectrogramView(this.lvSpec, { spanSeconds: 15, getMaxFreq: () => 12000 });
     view.attach(rec);
@@ -1331,17 +1332,17 @@ export class MobileApp {
     const recording = keep ? await rec.stop('user') : null;
     this.lvView?.detach();
     this.lvView = null;
-    this.lvSpec.replaceChildren(el('span', 'm-live-hint', keep ? 'Aufnahme gespeichert.' : 'Aufnahme verworfen.'));
+    this.lvSpec.replaceChildren(el('span', 'm-live-hint', keep ? t('live.saved') : t('live.discarded')));
     this.renderLive();
     if (recording && this.h.live) {
-      this.lvInfo.textContent = 'Wird gespeichert …';
+      this.lvInfo.textContent = t('live.saving');
       try {
         // The saved recording opens in „Prüfen“ and is analysed there (player 'ready' handler).
         this.autoAnalyse = !!this.h.analysis;
         await this.h.live.save(recording.file);
-        this.lvInfo.textContent = `Gespeichert: ${recording.file.name}`;
+        this.lvInfo.textContent = t('live.savedAs', { name: recording.file.name });
       } catch (err: any) {
-        this.lvInfo.textContent = `Speichern fehlgeschlagen: ${err?.message || err}`;
+        this.lvInfo.textContent = t('live.saveFailed', { msg: err?.message || err });
       }
     }
   }

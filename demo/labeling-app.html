@@ -717,6 +717,7 @@
 
     import { Sidebar } from '../src/ui/panels/sidebar.ts';
     import { MobileApp } from '../src/ui/mobile/mobile-app.ts';
+    import { t as mt } from '../src/ui/mobile/i18n.ts';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
     import { LabelGrid } from '../src/ui/panels/label-grid.ts';
@@ -3254,14 +3255,14 @@
     };
 
     // ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
-    // View and listen only for now; accept/discard is planned, not built.
+    // Review queue with accept (copy into My labels) / discard; strings in src/ui/mobile/i18n.ts.
     const mobileApp = new MobileApp({
       player,
       playerRoot: document.getElementById('playerRoot'),
       getRecordings: () => recordingManager.getAll().map((e) => ({
         id: e.id,
         title: e.xcId ? `${e.xcId}${e.xcRecordingMeta?.en ? ' · ' + e.xcRecordingMeta.en : ''}` : (e.filename || 'Aufnahme'),
-        meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : 'Audiodatei'),
+        meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : mt('rec.audioFile')),
         labels: e.id === recordingManager.activeId ? state.labels : (e.annotations || []),
         active: e.id === recordingManager.activeId,
       })),
@@ -3311,7 +3312,7 @@
         describe: () => {
           const c = birdnetPanel.getCoords?.();
           const geo = document.getElementById('birdnetGeoFilterEnabled')?.checked && c;
-          return `BirdNET · ${geo ? `Ort ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : 'ohne Ortsfilter'}`;
+          return geo ? mt('live.geo', { lat: c.lat.toFixed(2), lon: c.lon.toFixed(2) }) : mt('live.noGeo');
         },
       },
       onModeChange: (phone) => {
