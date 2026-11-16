@@ -244,8 +244,6 @@
       <input id="importSetInput" type="file" accept=".json,application/json" hidden />
       <button class="tb-btn" id="exportMenuBtn" type="button" aria-haspopup="menu" title="Export labels">Export ▾</button>
     </div>
-    <!-- Phones: review cards instead of the label tree (src/ui/panels/review-list.ts) -->
-    <div class="review-host" id="reviewHost"></div>
     <div class="label-list-scroll">
       <div class="panel-toolbar lt-toolbar">
         <input class="lt-filter" id="labelFilterInput" type="search" placeholder="Filter: species, tag…" aria-label="Filter labels" autocomplete="off" />
@@ -718,8 +716,7 @@
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
 
     import { Sidebar } from '../src/ui/panels/sidebar.ts';
-    import { MobileShell } from '../src/ui/panels/mobile-shell.ts';
-    import { ReviewList } from '../src/ui/panels/review-list.ts';
+    import { MobileApp } from '../src/ui/mobile/mobile-app.ts';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
     import { LabelGrid } from '../src/ui/panels/label-grid.ts';
@@ -1522,28 +1519,6 @@
     rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
     rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
     rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
-
-    // ── Phones: bottom tab bar + bottom sheets instead of the two side columns ──
-    // No label editing on phones (review, listen, analyse only): draw mode goes off there.
-    const mobileShell = new MobileShell({
-      host: document.querySelector('.app'),
-      tabs: [
-        { id: 'project',     bar: sidebar,  label: 'Project',  icon: ICONS.project },
-        { id: 'labels',      bar: sidebar,  label: 'Labels',   icon: ICONS.labels },
-        { id: 'analyse',     bar: sidebar,  label: 'Analyse',  icon: ICONS.birdnet },
-        { id: 'spectrogram', bar: rightBar, label: 'Display',  icon: SlidersHorizontal },
-      ],
-      more: [
-        { id: 'audio',      bar: rightBar, label: 'Audio',      icon: ICONS.audio },
-        { id: 'properties', bar: rightBar, label: 'Properties', icon: Info },
-        { id: 'upload',     bar: sidebar,  label: 'Upload',     icon: ICONS.xc },
-      ],
-      onLayout: () => requestAnimationFrame(() => player?.resize?.()),
-      onModeChange: (phone) => {
-        const drawBtn = player?._drawBtn;
-        if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
-      },
-    });
 
     // ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
     function buildAudioPanel() {
@@ -3278,43 +3253,37 @@
       syncToPlayer();
     };
 
-    // ── Phones: review cards (play · accept · discard) in the Labels tab ──
-    const reviewList = new ReviewList({
-      container: document.getElementById('reviewHost'),
-      resolveName,
-      isOwn: (l) => l.setId === OWN_SOURCE_ID,
-      isAccepted: (l) => labelsToAdopt([l], state.labels, OWN_SOURCE_ID).length === 0,
-      // Machine detections (BirdNET/BirdBox sets are locked against editing) may still be
-      // discarded here — that is what reviewing is for. Imported sets of other people stay.
-      isLocked: (l) => {
-        const set = l.setId ? state.labelSets.get(l.setId) : null;
-        const machine = set?.origin === 'BirdNET' || set?.origin === BIRDBOX_ORIGIN;
-        return !!(l.readonly || (set?.locked && !machine) || set?.origin === 'xeno-canto');
+    // ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
+    // View and listen only for now; accept/discard is planned, not built.
+    const mobileApp = new MobileApp({
+      player,
+      playerRoot: document.getElementById('playerRoot'),
+      getRecordings: () => recordingManager.getAll().map((e) => ({
+        id: e.id,
+        title: e.xcId ? `${e.xcId}${e.xcRecordingMeta?.en ? ' · ' + e.xcRecordingMeta.en : ''}` : (e.filename || 'Aufnahme'),
+        meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : 'Audiodatei'),
+        labels: e.id === recordingManager.activeId ? state.labels : (e.annotations || []),
+        active: e.id === recordingManager.activeId,
+      })),
+      openRecording: async (id) => {
+        const entry = recordingManager.getById(id);
+        if (entry) await activateRecordingEntry(entry);
       },
-      onPlay: (l) => toggleSegmentPlay(l),
-      onAccept: (l) => adoptOneLabel(l.id),
-      onDiscard: (l) => {
-        const idx = state.labels.findIndex((x) => x.id === l.id);
-        if (idx < 0) return;
-        if (_segPlay?.id === l.id) { player.pause(); stopSegmentTracking(); }
-        state.labels = state.labels.filter((x) => x.id !== l.id);
-        syncToPlayer();
-        saveCurrentAnnotationsIfNeeded();
-        return () => {
-          if (state.labels.some((x) => x.id === l.id)) return;
-          state.labels.splice(Math.min(idx, state.labels.length), 0, l);
-          syncToPlayer();
-          saveCurrentAnnotationsIfNeeded();
-        };
+      getLabels: () => state.labels,
+      resolveName,
+      addFile: () => document.getElementById('fileInput')?.click(),
+      onModeChange: (phone) => {
+        // No label editing on phones: draw mode goes off there.
+        const drawBtn = player?._drawBtn;
+        if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
       },
     });
     {
-      // Keep the cards in step with the label tree (every change ends in labelList.render).
+      // Every label change ends in labelList.render — keep the phone UI in step.
       const render = labelList.render.bind(labelList);
-      labelList.render = (labels) => { render(labels); reviewList.render(state.labels); };
-      const setPlaying = labelList.setPlaying.bind(labelList);
-      labelList.setPlaying = (id) => { setPlaying(id); reviewList.setPlaying(id); };
-      reviewList.render(state.labels);
+      labelList.render = (labels) => { render(labels); mobileApp.refresh(); };
+      recordingManager.addEventListener('change', () => mobileApp.refresh());
+      recordingManager.addEventListener('activechange', () => mobileApp.refresh());
     }
 
     // ── Label table ("Table" tab below the overview) — plans/label-table-view-plan.md ──

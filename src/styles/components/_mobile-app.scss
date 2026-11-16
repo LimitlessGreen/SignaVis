@@ -1,0 +1,129 @@
+/* SignaVis mobile (src/ui/mobile/mobile-app.ts) — design: plans/mobile-design/mockup.html.
+   Active while html.is-mobile is set; the desktop shell is hidden then. */
+
+.m-app { display: none; }
+
+html.is-mobile {
+  --m-bg: var(--color-toolbar, #12121f);
+  --m-surface: var(--color-bg-surface, #1a1a2e);
+  --m-surface-2: color-mix(in srgb, var(--color-bg-surface, #1a1a2e) 82%, #fff 6%);
+  --m-line: var(--color-border, rgba(255, 255, 255, 0.09));
+  --m-text: var(--color-text-primary);
+  --m-muted: var(--color-text-secondary);
+  --m-accent: var(--color-accent);
+  --m-accent-ink: #04111b;
+  --m-ok: var(--color-success, #4ade80);
+  --m-warn: var(--color-detection, #f59e0b);
+  --m-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --m-nav-h: calc(60px + env(safe-area-inset-bottom, 0px));
+
+  body > .app, .app-footer { display: none !important; }
+
+  .m-app {
+    display: flex; flex-direction: column;
+    position: fixed; inset: 0; z-index: 10;
+    background: var(--m-bg); color: var(--m-text);
+    font-size: 13px;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .m-screens { flex: 1; min-height: 0; position: relative; }
+  .m-screen { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+  .m-screen[hidden] { display: none; }
+  .m-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .m-empty { margin: 24px 16px; color: var(--m-muted); font-size: 13.5px; line-height: 1.45; text-align: center; }
+
+  /* ── App bar ── */
+  .m-appbar { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 12px 6px 14px; flex-shrink: 0; }
+  .m-appbar h1 { margin: 0; font-size: 21px; font-weight: 700; flex: 1; }
+  .m-appbar-title { flex: 1; min-width: 0; }
+  .m-appbar-title h2 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-appbar-title small { display: block; font-family: var(--m-mono); font-size: 11.5px; color: var(--m-muted); }
+  .m-icon-btn {
+    width: 38px; height: 38px; flex-shrink: 0;
+    display: grid; place-items: center;
+    border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-text);
+  }
+  .m-icon-btn svg { width: 18px; height: 18px; }
+
+  /* ── Bottom nav ── */
+  .m-nav { display: flex; height: var(--m-nav-h); padding-bottom: env(safe-area-inset-bottom, 0px); background: var(--m-surface); border-top: 1px solid var(--m-line); flex-shrink: 0; }
+  .m-nav-btn {
+    flex: 1; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: none; background: transparent; color: var(--m-muted);
+    font-size: 10.5px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-nav-pill { width: 52px; height: 26px; border-radius: 6px; display: grid; place-items: center; }
+  .m-nav-pill svg { width: 21px; height: 21px; }
+  .m-nav-btn.on { color: var(--m-text); }
+  .m-nav-btn.on .m-nav-pill { background: color-mix(in srgb, var(--m-accent) 16%, transparent); color: var(--m-accent); }
+  .m-nav-badge { position: absolute; top: 5px; left: calc(50% + 8px); height: 15px; padding: 0 4px; border-radius: 4px; background: var(--m-accent); color: var(--m-accent-ink); font-size: 9.5px; font-weight: 700; line-height: 15px; }
+  .m-nav-badge[hidden] { display: none; }
+
+  /* ── Recordings ── */
+  .m-rec-list { padding: 4px 14px 80px; display: flex; flex-direction: column; gap: 8px; }
+  .m-rec {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 10px 12px; text-align: left;
+    border-radius: 8px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-text);
+  }
+  .m-rec.active { box-shadow: inset 3px 0 0 var(--m-accent); }
+  .m-rec-main { flex: 1; min-width: 0; }
+  .m-rec-title { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-rec-meta { font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); margin-top: 2px; }
+  .m-status { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 4px; white-space: nowrap; }
+  .m-status.todo { background: color-mix(in srgb, var(--m-warn) 15%, transparent); color: var(--m-warn); }
+  .m-status.done { background: color-mix(in srgb, var(--m-ok) 14%, transparent); color: var(--m-ok); }
+  .m-status.new { background: var(--m-surface-2); color: var(--m-muted); }
+  .m-fab {
+    position: absolute; right: 14px; bottom: 14px;
+    display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px 0 12px;
+    border: none; border-radius: 8px; background: var(--m-accent); color: var(--m-accent-ink);
+    font-weight: 700; font-size: 14px; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  }
+  .m-fab svg { width: 20px; height: 20px; }
+
+  /* ── Review: player ── */
+  .m-player { flex: 0 0 auto; height: min(46dvh, 380px); min-height: 220px; position: relative; }
+  .m-player #playerRoot { width: 100%; height: 100%; border: none; border-radius: 0; }
+  /* Desktop chrome inside the player is not used on phones. */
+  .m-player {
+    [data-aw="toolbarRoot"], .waveform-container .time-aligned-row, .view-split-handle, .spectrogram-resize-handle, .zoom-widget,
+    .statusbar, .overview-label-tabs, .overview-label-table, .overview-label-table-resize,
+    .overview-label-tools, [data-aw="settingsPanel"] { display: none !important; }
+  }
+
+  .m-player .waveform-container { flex: 0 0 0 !important; height: 0 !important; min-height: 0 !important; border: none !important; }
+  .m-player .spectrogram-container { flex: 1 1 auto !important; height: auto !important; }
+
+  .m-time { display: flex; justify-content: space-between; padding: 4px 16px 0; font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); flex-shrink: 0; }
+  .m-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 0 8px; flex-shrink: 0; }
+  .m-tbtn { width: 42px; height: 42px; display: grid; place-items: center; border: none; border-radius: 6px; background: transparent; color: var(--m-text); }
+  .m-tbtn svg { width: 21px; height: 21px; }
+  .m-tbtn--txt { font-size: 12px; font-weight: 700; }
+  .m-tbtn.on { background: color-mix(in srgb, var(--m-accent) 16%, transparent); color: var(--m-accent); }
+  .m-play { width: 52px; height: 52px; display: grid; place-items: center; border: none; border-radius: 12px; background: var(--m-accent); color: var(--m-accent-ink); }
+  .m-play svg { width: 24px; height: 24px; }
+
+  /* ── Review: detection sheet ── */
+  .m-sheet { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--m-surface); border-radius: 12px 12px 0 0; border-top: 1px solid var(--m-line); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35); }
+  .m-grip { width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); margin: 7px auto 4px; flex-shrink: 0; }
+  .m-sheet-h { padding: 2px 14px 8px; font-size: 14.5px; flex-shrink: 0; }
+  .m-det-list { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .m-det {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 7px 10px 7px 8px; text-align: left;
+    border: none; border-radius: 8px; background: var(--m-surface-2); color: var(--m-text);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-det.cur { box-shadow: inset 0 0 0 1.5px var(--m-accent); }
+  .m-det img { width: 38px; height: 38px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: #252525; }
+  .m-det-main { flex: 1; min-width: 0; }
+  .m-det-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-det-meta { font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); margin-top: 1px; }
+  .m-conf { margin-top: 4px; height: 3px; width: 96px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+  .m-conf i { display: block; height: 100%; background: var(--m-ok); }
+  .m-conf i.low { background: var(--m-warn); }
+  .m-det-pct { flex-shrink: 0; font-family: var(--m-mono); font-size: 12px; font-weight: 700; color: var(--m-muted); }
+}
