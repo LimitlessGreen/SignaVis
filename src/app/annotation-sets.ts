@@ -37,10 +37,11 @@ function newLabelId() {
  * Copy labels (e.g. from an imported XC/BirdNET set) into the own source.
  * Copies get new IDs and become editable manual labels; the source is kept in `adoptedFrom`.
  * `layer`: own layer for the copies (see label-sources.ts).
+ * A source's `adoptBox` (adopt-detection.ts: the call box as detected) is kept as `adoptedFrom.box`.
  */
 export function adoptLabels(labels: any[], targetSetId: string, now = new Date(), layer?: string) {
     return (labels || []).map((l) => {
-        const { readonly, annotationSet, ...rest } = l || {};
+        const { readonly, annotationSet, adoptBox, ...rest } = l || {};
         return {
             ...rest,
             id: newLabelId(),
@@ -48,22 +49,28 @@ export function adoptLabels(labels: any[], targetSetId: string, now = new Date()
             origin: 'manual',
             readonly: false,
             createdAt: now.toISOString(),
-            adoptedFrom: { id: l?.id ?? null, setId: l?.setId ?? null, origin: l?.origin ?? null },
+            adoptedFrom: { id: l?.id ?? null, setId: l?.setId ?? null, origin: l?.origin ?? null, ...(adoptBox ? { box: { ...adoptBox } } : {}) },
             ...(layer ? { layer } : {}),
         };
     });
 }
 
+/** Which detection (and which of its call boxes) a copy came from. */
+function adoptKey(id: any, box: any) {
+    return box ? `${id}|${Number(box.start).toFixed(3)}|${Number(box.end).toFixed(3)}` : String(id);
+}
+
 /**
- * Labels of `src` that have no copy in `targetSetId` yet (a copy carries adoptedFrom.id).
+ * Labels of `src` that have no copy in `targetSetId` yet (a copy carries adoptedFrom.id,
+ * and adoptedFrom.box when it took a call box).
  * Makes "copy into my labels" idempotent: pressing it twice adds nothing.
  * A copy the user deleted again counts as not adopted, so it can be copied once more.
  */
 export function labelsToAdopt(src: any[], existing: any[], targetSetId: string) {
     const done = new Set((existing || [])
         .filter((l) => l?.setId === targetSetId && l.adoptedFrom?.id != null)
-        .map((l) => l.adoptedFrom.id));
-    return (src || []).filter((l) => !done.has(l?.id));
+        .map((l) => adoptKey(l.adoptedFrom.id, l.adoptedFrom.box)));
+    return (src || []).filter((l) => !done.has(adoptKey(l?.id, l?.adoptBox)));
 }
 
 const LEGACY_MODE_KEY = 'audio-workbench.mode.v1';

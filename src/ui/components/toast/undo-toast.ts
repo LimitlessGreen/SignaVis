@@ -12,8 +12,10 @@ function dismiss() {
 /**
  * Show a toast with an Undo button. Only one toast at a time — a new one replaces
  * (and thereby commits) the previous action.
+ * `action`: an optional second button before Undo (e.g. "All 4").
  */
-export function showUndoToast(message: string, onUndo: () => void, { timeoutMs = 8000 } = {}) {
+export function showUndoToast(message: string, onUndo: () => void,
+    { timeoutMs = 8000, action = null }: { timeoutMs?: number; action?: { label: string; run: () => void } | null } = {}) {
     dismiss();
     const el = document.createElement('div');
     el.className = 'undo-toast';
@@ -30,7 +32,16 @@ export function showUndoToast(message: string, onUndo: () => void, { timeoutMs =
     btn.textContent = 'Undo';
     btn.addEventListener('click', () => { dismiss(); onUndo(); });
 
-    el.append(text, btn);
+    el.append(text);
+    if (action) {
+        const extra = document.createElement('button');
+        extra.type = 'button';
+        extra.className = 'undo-toast__btn';
+        extra.textContent = action.label;
+        extra.addEventListener('click', () => { dismiss(); action.run(); });
+        el.append(extra);
+    }
+    el.append(btn);
     document.body.appendChild(el);
     current = { el, timer: setTimeout(dismiss, timeoutMs) };
     return dismiss;

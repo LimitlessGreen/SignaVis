@@ -40,6 +40,7 @@ import { buildRavenSelectionTable, ravenTablePath } from '../../infrastructure/e
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
 import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
@@ -1799,18 +1800,47 @@ function scheduleOwnSetStatus() {
   }, 400);
 }
 
-/** Copy a single imported label into the own labels (✓ in the label list). */
-function adoptOneLabel(labelId) {
+/** Label template (top bar) for copies of detections: species for unnamed call boxes, tags. */
+function adoptTemplate() {
+  try { return player.getSpeciesBarSelection?.() || null; } catch { return null; }
+}
+
+/** Sources for adoptLabels(): detections get their call box / species (adopt-detection.ts), copies already made are left out. */
+function adoptSources(labels, all, mode) {
+  const template = adoptTemplate();
+  const sources = labels.flatMap((l) => adoptionPlan(l, all, { mode, template }).sources);
+  return withoutKnownBoxes(labelsToAdopt(sources, all, OWN_SOURCE_ID), all, OWN_SOURCE_ID);
+}
+
+/**
+ * Copy a single imported label into the own labels (✓ in the label list / on the box).
+ * A BirdNET detection becomes its best BirdBox call box not copied yet (`mode: 'all'`: every
+ * box in its window); a BirdBox box gets the species of the BirdNET detection around it.
+ */
+function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   const lbl = state.labels.find((l) => l.id === labelId);
   if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
-  const todo = labelsToAdopt([lbl], state.labels, OWN_SOURCE_ID);
+  const plan = adoptionPlan(lbl, state.labels, { mode, template: adoptTemplate() });
+  // Boxes not copied yet, best first: every further ✓ takes the next one
+  const open = adoptSources([lbl], state.labels, 'all');
+  const todo = mode === 'all' ? open : open.slice(0, 1);
   if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+  const more = mode === 'best' && open.length > 1
+    ? { label: open.length === plan.candidates ? `All ${open.length}` : `Other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
+  const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   state.labels.push(...copies);
   touchOwnSet(OWN_SOURCE_ID);
   syncToPlayer();
   saveCurrentAnnotationsIfNeeded();
-  selectionMeta.textContent = `Copied 1 label into my labels`;
+  const n = copies.length;
+  selectionMeta.textContent = `Copied ${n} label${n === 1 ? '' : 's'} into my labels`;
+  if (plan.candidates > 1) {
+    showUndoToast(mode === 'all' || n > 1 ? `Copied ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
+      : `Copied 1 of ${plan.candidates} call boxes as ${lbl.label}`, undo, { action: more });
+  }
+  // A call box nobody could name: ask right away
+  if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
 }
 
 function adoptSetLabels(setId) {
@@ -1821,7 +1851,7 @@ function adoptSetLabels(setId) {
     const all = entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
     const inSet = all.filter((l) => l.setId === setId);
     found += inSet.length;
-    const src = labelsToAdopt(inSet, all, OWN_SOURCE_ID);   // already copied ones are skipped
+    const src = adoptSources(inSet, all, 'all');   // already copied ones are skipped
     if (!src.length) continue;
     const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
@@ -1831,7 +1861,7 @@ function adoptSetLabels(setId) {
   if (!recordingManager.activeId) {
     const inSet = state.labels.filter((l) => l.setId === setId);
     found += inSet.length;
-    const copies = adoptLabels(labelsToAdopt(inSet, state.labels, OWN_SOURCE_ID), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+    const copies = adoptLabels(adoptSources(inSet, state.labels, 'all'), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
     state.labels.push(...copies);
   }
