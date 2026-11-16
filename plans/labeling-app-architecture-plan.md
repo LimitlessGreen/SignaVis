@@ -28,7 +28,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
 | 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, die selbst `labelViews.invalidate` auslösen) – war ursprünglich Teil von Schritt 2 | offen |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
-| 5 | Keyed-Render der Label-Ebenen | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`; offen: `LabelList`, nur sichtbaren Zeitbereich rendern |
+| 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
 ## Schritt 1 – Details
 
@@ -139,3 +139,25 @@ Basisklasse setzt das Label auf den Stand vor dem Ziehen, meldet das per Vorscha
 schickt **kein** Update an die App. Dabei behoben: Der Leucht-Rahmen `linked-live` auf dem gespiegelten Label blieb nach
 jedem Ziehen stehen (der Player setzte ihn nur bei Layer-eigenen Update-Ereignissen zurück) → neues Ereignis
 `previewend`, der Player nimmt die Hervorhebung auf beiden Ebenen weg. Test: `tools/e2e/escape-cancels-drag.py`.
+
+## Schritt 5, Teil 3 – Labelliste
+
+- Profil (1500 Labels): `_buildRow` ~200 von 242 ms, davon ~110 ms `iconBtn` (jedes SVG per `innerHTML` neu geparst,
+  3–4 Buttons pro Zeile) – und die meisten Zeilen liegen in zugeklappten Art-Gruppen, unsichtbar.
+- Icons: jedes SVG einmal in ein `<template>` parsen, danach klonen.
+- Zeilen zugeklappter Gruppen werden erst beim Aufklappen gebaut (`group.__buildRows`), oder wenn eine Zeile gebraucht
+  wird (`_rowFor`: Auswahl, Hover vom Spektrogramm). Beim späten Bauen: aktuelles Label aus `this._labels`
+  (Tags können per `updateBadges` ohne Render geändert sein), Auswahl/Mehrfachauswahl/Abspielen nachtragen
+  (`_decorateRow`). Shift-Bereichsauswahl nutzt `_rowOrder` (alle Zeilen in Listenreihenfolge, wie vorher das DOM).
+- Prüfung: `tools/e2e/label-list-behaviour.py` gegen alten und neuen Stand → Ausgabe identisch (inkl. HTML aller Zeilen,
+  Zeitansicht); übrige E2E/Gleichwertigkeit/Handy unverändert.
+
+| Aktion | 1500 Labels vorher → nachher | 200 Labels |
+|---|---|---|
+| Umbenennen | 437 → 249 ms (Liste 236 → 19 ms) | 72 → 43 ms (Liste 39 → 6 ms) |
+| Ziehen/Größe | 425 → 262 ms | 75 → 43 ms |
+| `syncToPlayer()` | 333 → 177 ms | 51 → 34 ms |
+
+**Gesamt seit Beginn (200 Labels): ~380 ms → 30–43 ms pro Bearbeitung; 1500 Labels: ~3 s → 0,17–0,26 s.**
+Größter Rest jetzt die Spektrogramm-Ebenen (~110–130 ms bei 1500: Layout + Signaturen aller Labels). Nächster Hebel
+dort: nur den sichtbaren Zeitbereich rendern. Die Zeitansicht der Liste baut weiterhin alle Zeilen (nur Icons schneller).
