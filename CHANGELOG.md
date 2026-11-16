@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.0] - Unreleased
+## [1.2.0] - 2026-11-16
 
 ### Added
 - `overviewMode: 'spectrogram'` (and `player.setOverviewMode()`): the overview
