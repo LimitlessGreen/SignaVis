@@ -55,6 +55,8 @@ export function defaultRecordingEntry(partial = {}) {
         /** When true, activateRecordingEntry will re-import XC labels on next switch */
         needsXcImport: false,
         path: null,
+        /** When the entry was created (fallback date for lists). */
+        addedAt: new Date().toISOString(),
         ...partial,
     };
 }
@@ -255,6 +257,7 @@ export class RecordingManager extends EventTarget {
         for (const partial of entries || []) {
             const entry: any = defaultRecordingEntry(partial);
             entry.xcId = toXcId(entry.xcId);
+            if (!partial?.addedAt) entry.addedAt = null;
             entry.source = inferSource(entry);
             this._entries.set(entry.id, entry);
         }
@@ -296,6 +299,7 @@ export class RecordingManager extends EventTarget {
             for (const e of entries) {
                 const entry: any = defaultRecordingEntry(e);
                 entry.xcId = toXcId(entry.xcId);   // older sessions stored the bare number
+                if (!e.addedAt) entry.addedAt = null;   // unknown; do not stamp the restore time
                 entry.source = inferSource({ ...e, isBlobUrl: e.isBlobUrl || (e.source === 'file') });
                 this._entries.set(entry.id, entry);
             }

@@ -716,6 +716,8 @@
     import { initDailyTips, showTip } from '../src/ui/components/daily-tips/daily-tips.ts';
 
     import { Sidebar } from '../src/ui/panels/sidebar.ts';
+    import { MobileApp } from '../src/ui/mobile/mobile-app.ts';
+    import { t as mt } from '../src/ui/mobile/i18n.ts';
     import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../src/ui/components/taxonomy-ui/taxonomy-ui.ts';
     import { LabelList } from '../src/ui/panels/label-list.ts';
     import { LabelGrid } from '../src/ui/panels/label-grid.ts';
@@ -2025,6 +2027,7 @@
       if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
       try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
       if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
+      document.querySelectorAll('.daily-tip-backdrop .daily-tip-close').forEach((b) => b.click());   // onboarding wins over the daily tip
       const title = projectFolderModal.querySelector('.pf-option-title');
       title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
       projectFolderDismiss.checked = false;
@@ -2811,6 +2814,8 @@
       if (recordingExplorer.isMultiMode()) return { replace: null };
       const old = recordingManager.getAll()[0];
       if (!old) return { replace: null };
+      // Phone UI: „New“ always adds to the list (no replace dialog there).
+      if (mobileApp?.isActive) { recordingExplorer.setMultiMode(true); return { replace: null }; }
       // state.labels belong to the entry only once it is loaded (at startup it may be active but not loaded yet)
       const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
       const anns = (live ? state.labels : old.annotations) || [];
@@ -3251,6 +3256,98 @@
       syncToPlayer();
     };
 
+    // ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
+    // Review queue with accept (copy into My labels) / discard; strings in src/ui/mobile/i18n.ts.
+    const mobileApp = new MobileApp({
+      player,
+      playerRoot: document.getElementById('playerRoot'),
+      getRecordings: () => recordingManager.getAll().map((e) => ({
+        id: e.id,
+        title: e.xcId ? `${e.xcId}${e.xcRecordingMeta?.en ? ' · ' + e.xcRecordingMeta.en : ''}` : (e.filename || 'Aufnahme'),
+        meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : mt('rec.audioFile')),
+        labels: e.id === recordingManager.activeId ? state.labels : (e.annotations || []),
+        active: e.id === recordingManager.activeId,
+        duration: e.duration ?? null,
+        thumb: e.thumb ?? null,
+        audioUrl: e.audioUrl ?? null,
+        ...(() => {
+          const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, filename: e.filename });
+          const c = ctx.coords.value;
+          return {
+            date: ctx.date.value, time: ctx.time.value, addedAt: e.addedAt ?? null,
+            place: ctx.locality.value || (c ? `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : null),
+          };
+        })(),
+      })),
+      openRecording: async (id) => {
+        const entry = recordingManager.getById(id);
+        if (entry) await activateRecordingEntry(entry);
+      },
+      getLabels: () => state.labels,
+      resolveName,
+      isOwn: (l) => l.setId === OWN_SOURCE_ID,
+      addFile: () => document.getElementById('fileInput')?.click(),
+      addXenoCanto: (raw) => {
+        // Same path as the desktop Xeno-canto field (dedupe, duration check, label import).
+        xcIdInput.value = raw;
+        xcLoadBtn.click();
+      },
+      setRecordingInfo: (id, info) => { recordingManager.update(id, info); mobileApp.refresh(); },
+      acceptLabel: (id) => adoptOneLabel(id),
+      discardLabel: (id) => {
+        const lbl = state.labels.find((l) => l.id === id);
+        if (!lbl) return null;
+        snrComputer.invalidate(id);
+        touchOwnSet(lbl.setId);
+        state.labels = state.labels.filter((l) => l.id !== id);
+        syncToPlayer();
+        saveCurrentAnnotationsIfNeeded();
+        return { ...lbl };
+      },
+      restoreLabel: (lbl) => {
+        if (!lbl || state.labels.some((l) => l.id === lbl.id)) return;
+        state.labels.push({ ...lbl });
+        touchOwnSet(lbl.setId);
+        syncToPlayer();
+        saveCurrentAnnotationsIfNeeded();
+      },
+      analysis: {
+        confInput: document.getElementById('birdnetConfidence'),
+        overlapSelect: document.getElementById('birdnetOverlap'),
+        mergeCheckbox: document.getElementById('birdnetMerge'),
+        geoCheckbox: document.getElementById('birdnetGeoFilterEnabled'),
+        locationLine: document.getElementById('birdnetLocationLine'),
+        analyzeBtn: document.getElementById('birdnetAnalyzeBtn'),
+        status: document.getElementById('birdnetStatus'),
+        progressBar: document.getElementById('birdnetProgressBar'),
+        birdboxBtn: document.getElementById('birdboxRunBtn'),
+        birdboxStatus: document.getElementById('birdboxStatus'),
+        birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
+        birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+      },
+      live: {
+        prepare: (onStatus) => birdnetPanel.prepareLive(onStatus),
+        save: (file) => loadLocalAudioFile(file),
+        describe: () => {
+          const c = birdnetPanel.getCoords?.();
+          const geo = document.getElementById('birdnetGeoFilterEnabled')?.checked && c;
+          return geo ? mt('live.geo', { lat: c.lat.toFixed(2), lon: c.lon.toFixed(2) }) : mt('live.noGeo');
+        },
+      },
+      onModeChange: (phone) => {
+        // No label editing on phones: draw mode goes off there.
+        const drawBtn = player?._drawBtn;
+        if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
+      },
+    });
+    {
+      // Every label change ends in labelList.render — keep the phone UI in step.
+      const render = labelList.render.bind(labelList);
+      labelList.render = (labels) => { render(labels); mobileApp.refresh(); };
+      recordingManager.addEventListener('change', () => mobileApp.refresh());
+      recordingManager.addEventListener('activechange', () => mobileApp.refresh());
+    }
+
     // ── Label table ("Table" tab below the overview) — plans/label-table-view-plan.md ──
     const labelTableHost = player.enableLabelTable?.();
     const labelTable = labelTableHost ? new LabelGrid({
@@ -3404,14 +3501,26 @@
           commonName: det.common,
         };
       },
-      onResults: (labels) => {
+      getRecordingId: () => recordingManager?.activeId || null,
+      onResults: (labels, startedFor) => {
         // Find or lazily create the shared BirdNET set
         let birdnetSetId = [...state.labelSets.entries()].find(([, s]) => s.origin === 'BirdNET')?.[0];
         if (!birdnetSetId) {
           const set = createLabelSet({ name: 'BirdNET', origin: 'BirdNET', locked: true });
           birdnetSetId = set.id;
         }
-        const _bnRecordingId = recordingManager?.activeId || null;
+        const _bnRecordingId = startedFor ?? recordingManager?.activeId ?? null;
+        // Another recording was opened while BirdNET ran: the results belong to the one analysed.
+        if (_bnRecordingId && _bnRecordingId !== recordingManager?.activeId) {
+          const entry = recordingManager.getById(_bnRecordingId);
+          if (entry) {
+            const add = labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId }));
+            recordingManager.update(_bnRecordingId, { annotations: [...(entry.annotations || []), ...add] });
+            recordingExplorer.render?.();
+            mobileApp.refresh();
+          }
+          return;
+        }
         for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
         syncToPlayer();
         if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
@@ -4750,6 +4859,11 @@
         const _ab = player._state?.audioBuffer;
         if (_ab) snrComputer.request(lbl, _ab, _ab.sampleRate);
       }
+    });
+    // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
+    player.on('spectrogramlabeladopt', (e) => {
+      const id = e.detail?.label?.id;
+      if (id) adoptOneLabel(id);
     });
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;

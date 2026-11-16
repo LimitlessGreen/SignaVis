@@ -100,6 +100,8 @@ export class BirdNETPanel {
     modelUrlInput: any;
     modelPresetSelect: any;
     onResults: any;
+    /** Id of the open recording; results are handed back with the id the run started for. */
+    getRecordingId?: () => string | null;
     openBtn: any;
     overlapSelect: any;
     progressBar: any;
@@ -129,7 +131,8 @@ export class BirdNETPanel {
   * @param {import('../../src/domain/analysis/types.ts').AnalysisBackend} opts.birdnet
    * @param {() => AudioBuffer|null} opts.getAudioBuffer
    * @param {(det: any, audioBuffer: AudioBuffer) => any} opts.resolveLabel
-   * @param {(labels: any[]) => void} opts.onResults
+   * @param {(labels: any[], recordingId: string|null) => void} opts.onResults
+   * @param {() => string|null} [opts.getRecordingId]
    * -- Geo / location (all optional) --
    * @param {() => {coords: {lat:number,lon:number}|null, date: string|null}|null} [opts.getContext]
    *        Recording context (single coordinate/date source); replaces the lat/lon inputs when given
@@ -410,11 +413,39 @@ export class BirdNETPanel {
     });
   }
 
+  /**
+   * Live detection (phone Live screen): loads the selected model and applies the location
+   * filter for today, then returns a function that classifies one 3 s chunk of microphone
+   * audio with the panel's confidence / geo settings.
+   */
+  async prepareLive(onStatus?: (msg: string) => void) {
+    const modelUrl = String(this.modelUrlInput.value || '').trim();
+    if (!modelUrl) throw new Error('No BirdNET model selected.');
+    if (!this.birdnet.loaded || this._loadedModelUrl !== modelUrl) {
+      onStatus?.('Modell wird geladen …');
+      const r = await this.birdnet.load({ modelUrl, onProgress: (msg: any) => onStatus?.(String(msg)) });
+      this._loadedModelUrl = modelUrl;
+      this._setGeoFilterAvailable(!!r.hasAreaModel);
+    }
+    const coords = this._getCoords();
+    const geoEnabled = (this.geoFilterCheckbox?.checked ?? false) && !!coords && this.birdnet.hasAreaModel;
+    if (geoEnabled) await this.birdnet.setLocation(coords!.lat, coords!.lon, { date: new Date() });
+    const minConfidence = parseFloat(this.confidenceInput.value) || 0.25;
+    const geoThreshold = geoEnabled ? (parseFloat(this.geoThresholdInput?.value) || 0.01) : 0;
+    return {
+      minConfidence,
+      analyze: (pcm: Float32Array, sampleRate: number) =>
+        this.birdnet.analyze(pcm, { sampleRate, overlap: 0, minConfidence, geoThreshold }) as Promise<
+          { start: number; end: number; scientific: string; common: string; confidence: number }[]>,
+    };
+  }
+
   /** Analyze the loaded recording (same as the button). Resolves when done; errors go to the status line. */
   analyze() { return this._analyze(); }
 
   async _analyze() {
     const audioBuffer = this.getAudioBuffer();
+    const recordingId = this.getRecordingId?.() ?? null;
     if (!audioBuffer) {
       this.statusEl.textContent = 'No audio loaded.';
       return;
@@ -500,7 +531,7 @@ export class BirdNETPanel {
       }));
 
       const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
-      this.onResults(labelsToAdd);
+      this.onResults(labelsToAdd, recordingId);
       this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
     } catch (err) {
       this.statusEl.textContent = `Error: ${(err as any)?.message || String(err)}`;
