@@ -6,13 +6,14 @@
  * is the ground truth; the TS port must reproduce it from raw_all alone.
  *
  * Needs a BirdBox checkout (https://github.com/birdnet-team/BirdBox) at the
- * commit the BirdNET website pins, with `npm ci` run in its tests/js:
+ * commit the BirdNET website pins (for the model and its onnx-graph.js):
  *   node scripts/birdbox/make-fusion-fixtures.mjs --birdbox=/path/to/BirdBox \
  *        [--audio=x.wav] [--seconds=120] [--name=test-wav-120s]
  */
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
@@ -25,7 +26,11 @@ const NAME = opt('name', `${basename(AUDIO, '.wav')}-${SECONDS}s`);
 const MODEL = join(BB, 'docs/models/Just-Bird_fp16.onnx');
 const OUT = resolve(new URL('../../tests/fixtures/birdbox-fusion/', import.meta.url).pathname);
 
-const ort = await import(pathToFileURL(join(BB, 'tests/js/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs')).href);
+// The runtime SignaVis ships (package.json), unless --ort=<ort.wasm.min.mjs>: FP16 results differ
+// slightly between runtime versions, and the stream parity needs the same one
+const require = createRequire(import.meta.url);
+const ORT = opt('ort', require.resolve('onnxruntime-web').replace(/ort\.[^/]*$/, 'ort.wasm.min.mjs'));
+const ort = await import(pathToFileURL(ORT).href);
 const { addGraphOutput, FLOAT } = await import(pathToFileURL(join(BB, 'docs/javascripts/demo/onnx-graph.js')).href);
 
 function readWav(path) {
@@ -76,7 +81,8 @@ const rawData = new Float32Array(raw.data);
 writeFileSync(join(OUT, `${NAME}.raw.f32`), Buffer.from(rawData.buffer));
 writeFileSync(join(OUT, `${NAME}.json`), JSON.stringify({
   source: { audio: basename(AUDIO), seconds: SECONDS, model: basename(MODEL),
-    modelSha256: createHash('sha256').update(modelBytes).digest('hex') },
+    modelSha256: createHash('sha256').update(modelBytes).digest('hex'),
+    onnxruntimeWeb: ort.env.versions?.web },
   columns: ['t0', 't1', 'flo', 'fhi', 'avg', 'max', 'n', 'cls'],
   rawRows: raw.dims[0], rawFile: `${NAME}.raw.f32`, settings,
 }));

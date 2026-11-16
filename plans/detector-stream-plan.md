@@ -142,6 +142,29 @@ Ablauf wie Datei, nur wächst die Quelle:
   BirdBox `tests/test.wav`, erste 120 s, 4 conf × 4 gap).
 - Phase 2: `src/domain/detector/pacer.ts` + `tests/detector-pacer.test.ts` (Port von `demo_pacer.mjs`), grün.
 - Phase 3: `src/domain/detector/birdboxStream.ts` (Fensterplanung, `BlockSource`, `Frames`, `RollingFloor`, `finishRows`) + `tests/detector-birdbox-stream.test.ts`, grün. `StreamGraph` (ONNX-Sitzungen, `run`/`live`) folgt in Phase 4 unter `infrastructure/detector/`.
+- Phase 4:
+  - `scripts/birdbox/fetch-model.mjs` (`npm run models:birdbox`): Just-Bird_fp16 von BirdBox
+    `24632a5` holen, SHA-256 prüfen, Cache `.cache/birdbox/`, in `spectrogram.onnx` (1,2 MB) +
+    `detect.onnx` (19 MB) zerlegen (`lib/stream-graphs.mjs`, aus `fetch-models.mjs` der Website) →
+    `models/birdbox-just-bird/` + `model_config.json`. Pages-CI ruft es vor dem Demo-Build (mit Cache).
+  - `src/infrastructure/detector/birdboxGraph.ts` (`BirdBoxGraph.run`/`live`, ORT wird hineingereicht),
+    `birdbox.worker.ts` (Vite-Modul-Worker, ORT per `vendorUrl` wie BirdNET), `birdboxDetector.ts`
+    (Hauptthread: Blöcke an den Worker, Rohzeilen sammeln, Live mit `stop()` = Rest wie Datei).
+  - Paritätstest `npm run test:birdbox-stream -- --audio=<BirdBox>/tests/test.wav`: Stream (Datei
+    1 Fenster/Lauf, BlockSource 4/Lauf, Live in ungleichen Stücken) == Rohzeilen des ganzen Graphen.
+  - **Befund:** onnxruntime-web 1.20.1 vs. 1.30.0 ändert FP16-Ergebnisse leicht (~1e-4, eine Box nahe
+    0,05 mehr). Mit gleicher Laufzeit ist der Stream exakt. Fixtures deshalb mit der Laufzeit von
+    SignaVis (1.30.0) erzeugt; Version steht in der Fixture, Paritätsskript warnt bei Abweichung.
+  - Noch offen: Browser-Test des Workers (Vite `?worker&inline` im Demo-, Lib- und Lite-Build).
+
+## Auslieferung des Modells (Entscheidung 2026-11-16)
+- Nicht ins Repo (21 MB, AGPL-Gewichte fremder Herkunft): beim Build holen, per SHA-256 an den
+  BirdBox-Commit gebunden, wie die BirdNET-Website.
+- Web/Pages: liegt unter `/SignaVis/models/birdbox-just-bird/`, wird erst beim ersten Klick auf
+  „BirdBox testen“ geladen (HTTP-Cache; später ggf. Cache Storage mit Hash wie `model-store.js`).
+- Lite/Desktop: gleiche URL bei Bedarf (offen: mitliefern, wie bei der Paketgrößen-Frage in Lite).
+- Lizenz: Gewichte AGPL-3.0 (BirdNET-Team) — passt zu SignaVis (AGPL-3.0-only). Hinweis in About/Docs
+  mit Link auf BirdBox und den Commit; Modellname + Commit in Export-Metadaten.
 
 ## Lizenz
 Website-Code MIT → in AGPL-SignaVis zulässig. Kopfkommentar je portierter Datei wie in
@@ -149,6 +172,5 @@ Website-Code MIT → in AGPL-SignaVis zulässig. Kopfkommentar je portierter Dat
 `THIRD_PARTY`/About.
 
 ## Offene Entscheidungen
-- BirdBox-Modell in SignaVis anbieten oder nur unseren call-detector? (beeinflusst Phase 4)
-- Fusion Weg A oder B — erst nach Paritätstest.
-- Live-Modus jetzt mitplanen oder erst nach Datei-Modus?
+- Fusion für den call-detector: Weg A oder B — erst nach Paritätstest mit dessen Fixtures.
+- Lite: BirdBox-Modell mitliefern oder bei Bedarf laden?
