@@ -55,6 +55,8 @@ export function defaultRecordingEntry(partial = {}) {
         /** When true, activateRecordingEntry will re-import XC labels on next switch */
         needsXcImport: false,
         path: null,
+        /** When the entry was created (fallback date for lists). */
+        addedAt: new Date().toISOString(),
         ...partial,
     };
 }

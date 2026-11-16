@@ -3270,6 +3270,14 @@
         duration: e.duration ?? null,
         thumb: e.thumb ?? null,
         audioUrl: e.audioUrl ?? null,
+        ...(() => {
+          const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, filename: e.filename });
+          const c = ctx.coords.value;
+          return {
+            date: ctx.date.value, time: ctx.time.value, addedAt: e.addedAt ?? null,
+            place: ctx.locality.value || (c ? `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : null),
+          };
+        })(),
       })),
       openRecording: async (id) => {
         const entry = recordingManager.getById(id);

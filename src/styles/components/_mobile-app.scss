@@ -80,7 +80,8 @@ html.is-mobile {
   .m-rec-body { display: flex; align-items: center; gap: 10px; padding: 7px 10px 8px 12px; }
   .m-rec-main { flex: 1; min-width: 0; }
   .m-rec-title { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .m-rec-meta { font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); margin-top: 2px; }
+  .m-rec-meta { font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-rec-place { font-family: inherit; }
   .m-status { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 4px; white-space: nowrap; }
   .m-status.todo { background: color-mix(in srgb, var(--m-warn) 15%, transparent); color: var(--m-warn); }
   .m-status.done { background: color-mix(in srgb, var(--m-ok) 14%, transparent); color: var(--m-ok); }
@@ -168,6 +169,10 @@ html.is-mobile {
   .m-det-pct { flex-shrink: 0; font-family: var(--m-mono); font-size: 12px; font-weight: 700; color: var(--m-muted); }
   .m-det { cursor: pointer; }
   .m-det.ok { box-shadow: inset 3px 0 0 var(--m-ok); }
+  .m-det { touch-action: pan-y; transition: transform 0.18s ease, background-color 0.12s; }
+  .m-det.sw-drag { transition: background-color 0.12s; }
+  .m-det.sw-yes { background: color-mix(in srgb, var(--m-ok) 28%, var(--m-surface-2)); }
+  .m-det.sw-no { background: color-mix(in srgb, #ef4444 26%, var(--m-surface-2)); }
   .m-det.ok.cur { box-shadow: inset 3px 0 0 var(--m-ok), inset 0 0 0 1.5px var(--m-accent); }
   .m-det-acts { display: flex; gap: 6px; flex-shrink: 0; margin-left: 2px; }
   .m-act {

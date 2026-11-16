@@ -73,10 +73,12 @@ Screenshots vom Stand: `plans/mobile-design/stand-schritt1.png`, `stand-analysie
 2. **Aufnahmen-Karten** — gebaut (`stand-aufnahmen-karten.png`): Mini-Spektrogramm (`thumb.ts`, einmal gerendert,
    als `thumb`/`duration` am RecordingEntry gespeichert), Treffer-Striche (orange offen, grün bestätigt), Dauer.
    „Neu“-Menü: Datei, Xeno-canto (Desktop-Ladeweg), Mikrofon → Live. Auf dem Handy kein Ersetzen-Dialog.
-   Unanalysierte Aufnahme antippen = sofort analysieren. Offen: Datum/Ort in der Metazeile, XC auf dem Gerät testen.
+   Unanalysierte Aufnahme antippen = sofort analysieren. Datum/Zeit + Ort aus `resolveRecordingContext`
+   (Rückfall: `addedAt`), als „today 05:42“. Offen: XC auf dem Gerät testen.
 3. **Arten:** Spektrogramm-Ausschnitte bei den Belegen; anzeigen, welcher Beleg gerade läuft.
 4. **Prüfen:** Sheet hochziehbar; Spuren-Optik wie Mockup (schmaler).
-5. **Später:** Wischgesten für ✓/✕, Tablet-Touch (Zeichenmodus, langer Druck).
+5. **Wischen** gebaut: rechts = übernehmen, links = verwerfen (nur offene Treffer).
+6. **Später:** Sprachwahl + Desktop-i18n (zusammen), Tablet-Touch (Zeichenmodus, langer Druck).
 6. Test auf echtem Gerät; dann Push + PR.
 
 ## Testen

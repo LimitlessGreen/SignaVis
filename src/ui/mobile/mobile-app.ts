@@ -14,7 +14,7 @@
 import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
-import { t } from './i18n.ts';
+import { t, getLang } from './i18n.ts';
 import { renderThumb, thumbFromUrl } from './thumb.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
@@ -32,6 +32,13 @@ export interface MobileRecording {
   thumb?: string | null;
   /** Audio source, used to render the thumbnail of a recording that is not open. */
   audioUrl?: string | null;
+  /** Recording date (YYYY-MM-DD) and time (HH:MM), if known. */
+  date?: string | null;
+  time?: string | null;
+  /** When it was added to the project (ISO); shown when the recording date is unknown. */
+  addedAt?: string | null;
+  /** Place name or coordinates. */
+  place?: string | null;
 }
 
 export interface MobileAppHost {
@@ -148,6 +155,25 @@ export function fmtClock(sec: number, tenths = true) {
   return `${String(m).padStart(2, '0')}:${tenths ? r.toFixed(1).padStart(4, '0') : String(Math.floor(r)).padStart(2, '0')}`;
 }
 
+/** „today 05:42“, „yesterday 20:15“, „14 Nov 06:10“ (older years with the year). */
+export function fmtWhen(r: { date?: string | null; time?: string | null; addedAt?: string | null }, now = new Date()) {
+  let d: Date | null = null;
+  let time = r.time || '';
+  if (r.date) d = new Date(`${r.date}T${time || '12:00'}:00`);
+  else if (r.addedAt) {
+    d = new Date(r.addedAt);
+    time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  const lang = getLang();
+  const label = diff === 0 ? t('date.today') : diff === 1 ? t('date.yesterday')
+    : d.toLocaleDateString(lang, d.getFullYear() === now.getFullYear()
+      ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  return time ? `${label} ${time}` : label;
+}
+
 function sourceName(lbl: any) {
   const o = String(lbl.origin || '');
   if (o === 'BirdNET') return 'BirdNET';
@@ -200,6 +226,7 @@ export class MobileApp {
   private xcInput!: HTMLInputElement;
   /** Thumbnails being rendered in the background (ids), and ones that failed. */
   private thumbBusy = false;
+  private swipedAt = 0;
   private thumbFailed = new Set<string>();
   private snackTimer = 0;
   private rvProgress!: HTMLElement;
@@ -477,8 +504,12 @@ export class MobileApp {
       const body = el('div', 'm-rec-body');
       const main = el('div', 'm-rec-main');
       main.appendChild(el('div', 'm-rec-title', r.title));
-      main.appendChild(el('div', 'm-rec-meta', [r.meta, dur ? fmtClock(dur, false) : '', species ? t('rec.species', { n: species }) : '']
+      const when = fmtWhen(r);
+      main.appendChild(el('div', 'm-rec-meta', [when || r.meta, dur ? fmtClock(dur, false) : '', species ? t('rec.species', { n: species }) : '']
         .filter(Boolean).join(' · ')));
+      // Source (Xeno-canto) and place on a second line when there is something to say.
+      const where = [when && r.meta === 'Xeno-canto' ? r.meta : '', r.place || ''].filter(Boolean).join(' · ');
+      if (where) main.appendChild(el('div', 'm-rec-meta m-rec-place', where));
       const st = open.length
         ? el('span', 'm-status todo', t('rec.open', { n: open.length }))
         : detections.length ? el('span', 'm-status done', t('rec.reviewed'))
@@ -764,12 +795,55 @@ export class MobileApp {
       for (const b of acts.children) b.addEventListener('click', (e) => e.stopPropagation());
       card.appendChild(acts);
     }
-    card.addEventListener('click', () => this.playLabel(lbl));
+    if (open && this.h.acceptLabel) this.swipeable(card, () => this.accept(lbl), () => this.discard(lbl));
+    card.addEventListener('click', () => { if (performance.now() - this.swipedAt > 350) this.playLabel(lbl); });
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.playLabel(lbl); } });
     return card;
   }
 
   // ── Accept / discard ────────────────────────────────────────────────
+
+  /** Swipe right = accept, left = discard (horizontal drags only; vertical scrolling stays). */
+  private swipeable(card: HTMLElement, onRight: () => void, onLeft: () => void) {
+    let x0 = 0, y0 = 0, dx = 0, id = -1, mode: 'idle' | 'maybe' | 'drag' = 'idle';
+    const reset = () => {
+      card.style.transform = '';
+      card.classList.remove('sw-yes', 'sw-no', 'sw-drag');
+      mode = 'idle';
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest('.m-det-acts')) return;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; id = e.pointerId; mode = 'maybe';
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== id || mode === 'idle') return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (mode === 'maybe') {
+        if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { mode = 'idle'; return; }   // scrolling
+        if (Math.abs(mx) < 12) return;
+        mode = 'drag';
+        card.setPointerCapture(id);
+        card.classList.add('sw-drag');
+      }
+      dx = mx;
+      card.style.transform = `translateX(${dx}px)`;
+      const far = Math.abs(dx) > card.offsetWidth * 0.3;
+      card.classList.toggle('sw-yes', far && dx > 0);
+      card.classList.toggle('sw-no', far && dx < 0);
+    });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      const was = mode;
+      const far = Math.abs(dx) > card.offsetWidth * 0.3;
+      reset();
+      if (was !== 'drag') return;
+      // The click after a drag must not play the label.
+      this.swipedAt = performance.now();
+      if (far) (dx > 0 ? onRight : onLeft)();
+    };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', (e) => { if (e.pointerId === id) reset(); });
+  }
 
   /** The open detection after `lbl` (by time), for „weiter zum nächsten“. */
   private nextOpen(lbl: any) {
