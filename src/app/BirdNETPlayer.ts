@@ -392,6 +392,23 @@ export class BirdNETPlayer {
     playSegment(startSec: number, endSec: number, options?: PlaySegmentOptions) { this._state?.playSegment(startSec, endSec, options); }
 
     /**
+     * Whether playing a label filters the sound to the label's frequency band (default on).
+     * Off plays the plain segment.
+     */
+    labelBandpass = true;
+
+    /**
+     * Play a label's time range — bandpassed to its frequency range when `labelBandpass` is on
+     * and the label has one.
+     */
+    playLabelSegment(label: { start: number; end: number; freqMin?: number | null; freqMax?: number | null }, options?: PlaySegmentOptions) {
+        const lo = label.freqMin ?? 0;
+        const hi = label.freqMax ?? 0;
+        if (this.labelBandpass && hi > lo) this.playBandpassedSegment(label.start, label.end, lo, hi, options);
+        else this.playSegment(label.start, label.end, options);
+    }
+
+    /**
      * Play a segment through a bandpass filter centered on the given frequency range.
      * @param {number} startSec
      * @param {number} endSec
