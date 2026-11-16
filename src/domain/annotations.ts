@@ -911,11 +911,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
             initialValue: current,
             initialColor: region.color,
             initialScientificName: region.scientificName || '',
-            onSubmit: ({ name, color }: any) => {
+            onSubmit: ({ name, color, scientificName = '' }: any) => {
                 const currentHex = getOverlayColorStyle(region.color)?.hex || '';
-                if (name === current && color === currentHex) return;
+                const nextSci = String(scientificName || '').trim();
+                if (name === current && color === currentHex && (!nextSci || nextSci === (region.scientificName || ''))) return;
                 region.species = name;
                 region.color = color;
+                if (nextSci) region.scientificName = nextSci;   // as on the spectrogram
                 this.dispatchEvent(new CustomEvent('annotationupdate', { detail: { annotation: { ...region } } }));
                 this.render();
             },

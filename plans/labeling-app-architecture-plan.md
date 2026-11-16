@@ -128,7 +128,10 @@ Umbenennen); ein Layout-Durchlauf (~90 ms). Außerdem `highlightActiveLabel` lä
 Gesamt seit Beginn (200 Labels): ~380 ms → 29–73 ms pro Bearbeitung. Player-Anteil jetzt 13–19 ms;
 größter Rest ist `LabelList.render()` (~35 ms bei 200, ~200 ms bei 1500) bei Umbenennen/Ziehen.
 
-**Gefunden, nicht behoben (war schon vorher so):** Ein Label auf der Wellenform-Spur verschieben ändert nur die
-Spur (`dataset`/Position, z. B. 2 s → 3,73 s); `state.labels` und das Spektrogramm bleiben beim alten Wert.
-Vermutlich verarbeitet die App `annotationupdate` für gespiegelte Labels nicht. Escape bricht ein Ziehen im
-Spektrogramm nicht ab (Label bleibt verschoben).
+**Behoben (war schon vorher so):** Auf der Wellenform-Spur gingen Verschieben/Größe ändern, Umbenennen
+(Doppelklick/Kontextmenü) und Löschen (Kontextmenü) an der App vorbei: Der Player meldet sie als `annotationupdate` /
+`annotationremove`, die App hörte nur auf die `spectrogramlabel*`-Ereignisse, der nächste Sync setzte den alten Stand
+zurück. Jetzt übernimmt `main.js` beide Ereignisse in `state.labels` (Name heißt auf der Spur `species`); das Umbenennen
+auf der Spur übernimmt wie im Spektrogramm auch den wissenschaftlichen Namen. Test: `tools/e2e/waveform-track-edits.py`.
+
+Noch offen (Verhalten, kein Fehler im engeren Sinn): Escape bricht ein Ziehen im Spektrogramm nicht ab.
