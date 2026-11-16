@@ -120,14 +120,19 @@ onBeforeUnmount(() => player?.destroy())
 ```
 
 The spectrogram DSP runs in WebAssembly, shipped as `dist/aw_dsp_wasm_bg.wasm`
-and fetched on first use from the same folder as the bundle (the ESM and IIFE
-builds both resolve it relative to their own URL). If you self-host the bundle,
-copy the `.wasm` file next to it. If the file lives elsewhere, or the bundle is
-inlined into a page without a script URL, set the location before the player
-starts:
+and fetched on first use from the same folder as the bundle. The ESM build
+references it as `new URL('./aw_dsp_wasm_bg.wasm', import.meta.url)`, so app
+bundlers (Vite, webpack 5, Rollup) copy it into your build automatically. The
+IIFE build resolves it against its own `<script>` URL; if you self-host it, copy
+the `.wasm` file next to it.
+
+If the file lives elsewhere, or the bundle is inlined into a page without a
+script URL, set the location **before the bundle is loaded** (it is read while
+the bundle initialises):
 
 ```html
 <script>globalThis.SIGNAVIS_WASM_URL = '/static/aw_dsp_wasm_bg.wasm'</script>
+<script src="/static/birdnet-player.iife.js"></script>
 ```
 
 The BirdNET models are not part of the npm package; `BirdNETInference` loads

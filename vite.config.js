@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { versionDefines } from './scripts/build-version.mjs';
-import { resolve, dirname, basename } from 'path';
+import { resolve, dirname } from 'path';
 import { readFileSync } from 'fs';
 
 // Library build only: Vite inlines every asset as base64 in lib mode, which
@@ -8,6 +8,9 @@ import { readFileSync } from 'fs';
 // both copies of the inline worker). Emit it once as a real file instead and
 // resolve it at runtime next to the bundle.
 const WASM_PREFIX = '\0wasm-file:';
+const WASM_FILE = 'aw_dsp_wasm_bg.wasm';
+const WASM_URL_PLACEHOLDER = '__SIGNAVIS_WASM_URL_PLACEHOLDER__';
+const IIFE_INTRO = "var __signavisScriptSrc = typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '';";
 function wasmAsFile() {
     return {
         name: 'signavis:wasm-as-file',
@@ -21,17 +24,28 @@ function wasmAsFile() {
         load(id) {
             if (!id.startsWith(WASM_PREFIX)) return;
             const file = id.slice(WASM_PREFIX.length);
-            const name = basename(file);
-            this.emitFile({ type: 'asset', fileName: name, source: readFileSync(file) });
-            // Non-literal URL argument so Vite's import.meta.url asset plugin
-            // leaves it alone. ESM: import.meta.url; IIFE: the <script> src,
-            // captured by output.intro while the bundle is evaluated synchronously.
+            this.emitFile({ type: 'asset', fileName: WASM_FILE, source: readFileSync(file) });
+            // Placeholder, filled per output format in renderChunk (the asset
+            // plugin would otherwise inline a literal new URL(…) again).
             return `
-const base = (typeof globalThis !== 'undefined' && globalThis.__SIGNAVIS_SCRIPT_SRC__)
-    || import.meta.url || globalThis.location?.href;
 const override = typeof globalThis !== 'undefined' && globalThis.SIGNAVIS_WASM_URL;
-export default override || new URL(${JSON.stringify('./' + name)} + '', base).href;
+export default override || ${WASM_URL_PLACEHOLDER};
 `;
+        },
+        renderChunk(code, _chunk, outputOptions) {
+            if (outputOptions.format === 'es' && code.includes(IIFE_INTRO)) {
+                code = code.replace(IIFE_INTRO, ''); // output.intro is shared by both formats
+                if (!code.includes(WASM_URL_PLACEHOLDER)) return { code, map: null };
+            }
+            if (!code.includes(WASM_URL_PLACEHOLDER)) return null;
+            // ESM: a literal new URL('./x.wasm', import.meta.url), so bundlers
+            // of consuming apps (Vite, webpack 5, Rollup) detect and copy it.
+            // IIFE: no import.meta — resolve against the <script> src that
+            // output.intro captured into a variable local to this bundle.
+            const url = outputOptions.format === 'es'
+                ? `new URL('./${WASM_FILE}', import.meta.url).href`
+                : `new URL('./${WASM_FILE}', __signavisScriptSrc || globalThis.location.href).href`;
+            return { code: code.split(WASM_URL_PLACEHOLDER).join(url), map: null };
         },
     };
 }
@@ -87,9 +101,9 @@ export default defineConfig({
                 },
                 // Ensure IIFE wraps exports on the right global
                 exports: 'named',
-                // IIFE has no import.meta.url: remember the <script> src for
-                // locating aw_dsp_wasm_bg.wasm (null for ES modules, harmless).
-                intro: "if (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) globalThis.__SIGNAVIS_SCRIPT_SRC__ = document.currentScript.src;",
+                // IIFE has no import.meta.url: remember this bundle's <script>
+                // src (local to the bundle) for locating aw_dsp_wasm_bg.wasm.
+                intro: (chunk) => (chunk.isEntry ? IIFE_INTRO : ''),
             },
         },
         target: 'es2020',
