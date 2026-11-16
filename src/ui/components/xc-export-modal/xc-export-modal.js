@@ -1,4 +1,5 @@
-import ModalManager from '../src/ui/components/modal/modal-manager.ts';
+// @ts-nocheck — legacy JS, not type-checked yet.
+import ModalManager from '../modal/modal-manager.ts';
 import JSONEditor from 'jsoneditor';
 import 'jsoneditor/dist/jsoneditor.css';
 

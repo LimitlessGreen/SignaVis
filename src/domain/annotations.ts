@@ -198,6 +198,14 @@ export type { AnnotationRegion } from '../shared/label.types.ts';
 // annotation/label overlay layers.
 // ═══════════════════════════════════════════════════════════════════════
 
+/** True when `set` holds exactly the ids in `ids`. */
+function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
+    const next = new Set(ids);   // distinct ids: ['a', 'a'] must not match {a, b}
+    if (next.size !== set.size) return false;
+    for (const id of next) if (!set.has(id)) return false;
+    return true;
+}
+
 class AnnotationLayerBase extends EventTarget {
     declare player: any;
     declare overlay: HTMLElement | null;
@@ -336,6 +344,7 @@ class AnnotationLayerBase extends EventTarget {
     }
 
     setLockedIds(ids: string[] = []): void {
+        if (sameIdSet(this._lockedIds, ids)) return;   // unchanged: the overlay is already up to date
         this._lockedIds = new Set(ids);
         this.render();
     }
@@ -996,6 +1005,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * @param {Set<string>|string[]} ids
      */
     setLockedIds(ids = []) {
+        if (sameIdSet(this._lockedIds, ids)) return;   // unchanged: the overlay is already up to date
         this._lockedIds = new Set(ids);
         this.render();
     }
@@ -1137,11 +1147,26 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * frequency). Shift its name into the visible part, staying inside the box.
      */
     _pinLabelText(el: HTMLElement) {
+        const view = this._pinView();
+        if (view) this._applyPin(el, this._measurePin(el, view));
+    }
+    /** Pins every name. Reads all layout first, then writes: one reflow instead of one per label. */
+    _pinAllLabelTexts() {
+        if (!this.overlay) return;
+        const view = this._pinView();
+        if (!view) return;
+        const els = [...this.overlay.querySelectorAll('.spectrogram-label-region')] as HTMLElement[];
+        const pins = els.map((el) => this._measurePin(el, view));
+        for (let i = 0; i < els.length; i++) this._applyPin(els[i], pins[i]);
+    }
+    _pinView(): { viewL: number; viewR: number; viewH: number } | null {
         const wrap = this._getRoot() as HTMLElement | null;
-        if (!wrap) return;
+        if (!wrap) return null;
         const viewL = wrap.scrollLeft;
-        const viewR = viewL + wrap.clientWidth;
-        const viewH = this.overlay?.offsetHeight || wrap.clientHeight;
+        return { viewL, viewR: viewL + wrap.clientWidth, viewH: this.overlay?.offsetHeight || wrap.clientHeight };
+    }
+    /** Layout reads only (no writes), so measuring many labels in a row costs a single reflow. */
+    _measurePin(el: HTMLElement, { viewL, viewR, viewH }: { viewL: number; viewR: number; viewH: number }) {
         const left = el.offsetLeft, top = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
         const TEXT_W = 60, TEXT_H = 16;
         // Horizontal: start at the left edge of the visible part
@@ -1151,17 +1176,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const compact = el.classList.contains('label-compact');
         // Compact names sit above the box; if that is off-screen, put them inside.
         const inside = compact && top < TEXT_H;
-        el.classList.toggle('label-text-inside', inside);
         let dy = 0;
         if (atBottom && !compact) dy = -clamp(top + h - viewH, 0, Math.max(0, h - TEXT_H));
         else if (!compact || inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
-        el.style.setProperty('--label-text-dx', `${Math.round(dx)}px`);
-        el.style.setProperty('--label-text-dy', `${Math.round(dy)}px`);
+        return { dx: Math.round(dx), dy: Math.round(dy), inside };
     }
-
-    _pinAllLabelTexts() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) this._pinLabelText(el as HTMLElement);
+    _applyPin(el: HTMLElement, { dx, dy, inside }: { dx: number; dy: number; inside: boolean }) {
+        el.classList.toggle('label-text-inside', inside);
+        el.style.setProperty('--label-text-dx', `${dx}px`);
+        el.style.setProperty('--label-text-dy', `${dy}px`);
     }
 
     _textPinScrollBound: HTMLElement | null = null;

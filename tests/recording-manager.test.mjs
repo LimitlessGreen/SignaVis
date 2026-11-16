@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RecordingManager } from '../demo/lib/recording-manager.js';
+import { RecordingManager } from '../src/app/recording-manager.ts';
 
 function createSessionStorage() {
   let store = Object.create(null);

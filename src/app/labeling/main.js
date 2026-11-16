@@ -1,0 +1,4705 @@
+// @ts-nocheck — not type-checked yet (930 strict errors when moved here); types follow as
+// parts are split out into their own modules.
+//
+// SignaVis labeling app: wires the panels from src/ui and the logic from src/app and
+// src/domain together. Markup lives in demo/labeling-app.html.
+
+import '../../styles/main.scss';
+import { BirdNETPlayer } from '../../app/BirdNETPlayer.ts';
+import { colorForName, getOverlayColorStyle } from '../../domain/annotations.ts';
+import { TaxonomyResolver } from '../../infrastructure/taxonomyResolver.ts';
+import { AnalysisBackendProxy, resolveAnalysisBackend } from '../../infrastructure/analysis/index.ts';
+import ModalManager from '../../ui/components/modal/modal-manager.ts';
+import { appAlert, appConfirm, appPrompt } from '../../ui/components/modal/dialogs.ts';
+import { showUploadSuccess } from '../../ui/components/upload-success/upload-success.ts';
+import { createXcExportModal } from '../../ui/components/xc-export-modal/xc-export-modal.js';
+import { createReferenceCallsModal } from '../../ui/components/reference-calls-modal/reference-calls-modal.ts';
+import { initDailyTips, showTip } from '../../ui/components/daily-tips/daily-tips.ts';
+
+import { Sidebar } from '../../ui/panels/sidebar.ts';
+import { MobileApp } from '../../ui/mobile/mobile-app.ts';
+import { t as mt } from '../../ui/mobile/i18n.ts';
+import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
+import { LabelList } from '../../ui/panels/label-list.ts';
+import { LabelGrid } from '../../ui/panels/label-grid.ts';
+import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
+import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
+import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
+import { saveSessionSets as saveSessionSetsLegacy, restoreSessionSets } from '../../app/session-sets.ts';
+import { ProjectConflictError } from '../../infrastructure/project/DirectoryProjectStore.ts';
+import { isFolderAccessSupported, folderStore, pickProjectFolder, ensurePermission, rememberFolder, recentFolder, openDefaultProjectStore } from '../../infrastructure/project/FolderAccess.ts';
+import { isLite, installExternalLinkHandler } from '../../infrastructure/tauri/runtime.ts';
+import { pickAudioFile, readAudioPath } from '../../infrastructure/tauri/nativeFiles.ts';
+import { saveFile } from '../../infrastructure/saveFile.ts';
+import { ProjectAutosaver, acquireTabLock } from '../../app/project-autosave.ts';
+import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../../domain/project/workspaceProject.ts';
+import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
+import { buildRavenSelectionTable, ravenTablePath } from '../../infrastructure/export/ravenSelectionTable.ts';
+import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
+import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
+import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
+import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
+import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
+import { UploadSelectionPanel } from '../../ui/panels/upload-selection-panel.ts';
+import { XenoCantoPanel, defaultSetInfo, xcUploadTarget } from '../../ui/panels/xc-panel.ts';
+import { AnnotatorProfile } from '../../app/annotator-profile.ts';
+import { RecordingManager, defaultRecordingEntry } from '../../app/recording-manager.ts';
+import { toXcId, xcNumber, sameXcId } from '../../domain/xc/xcId.ts';
+import { RecordingExplorer } from '../../ui/panels/recording-explorer.ts';
+import { SpectrogramSettingsPanel } from '../../ui/panels/spectrogram-panel.ts';
+import { spectrogramCache } from '../../infrastructure/SpectrogramCache.js';
+import { PropertiesPanel } from '../../ui/panels/properties-panel.ts';
+import { SnrComputer } from '../../ui/components/snr-computer/snr-computer.ts';
+import { CustomTagStore } from '../../app/custom-tag-store.ts';
+import { TAG_PRESETS, setTagPresetOptions } from '../../ui/panels/label-table.ts';
+import { TagVocabularyCache, recordingGroup } from '../../app/tag-vocabulary.ts';
+import { fetchXcGroupProperties } from '../../infrastructure/xeno-canto/xcGroupProperties.ts';
+import { createAboutPanel } from '../../ui/panels/about-panel.ts';
+import { ExplorePanel } from '../../ui/panels/explore-panel.ts';
+import { showContextMenu } from '../../ui/components/context-menu/context-menu.ts';
+import { showUndoToast } from '../../ui/components/toast/undo-toast.ts';
+import { buildUploadChecklist } from '../../app/upload-checklist.ts';
+import { UploadAssistant } from '../../ui/panels/upload-assistant.ts';
+import { resolveRecordingContext, formatCoords, CONTEXT_SOURCE_TEXT } from '../../app/recording-context.ts';
+import { RecordingContextBlock } from '../../ui/panels/recording-context-block.ts';
+import {
+  loadAnalysisBackendConfig,
+  normalizeAnalysisBackendConfig,
+  saveAnalysisBackendConfig,
+  loadPlatformLocalFlag,
+} from '../../app/analysis-backend-config.ts';
+import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
+import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen } from 'lucide-static';
+import {
+  buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
+  getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
+} from '../../app/lite-handoff.ts';
+import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
+import { RenderScheduler } from './render-scheduler.ts';
+
+// ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
+// Runs before anything is loaded: with "always open in the app" switched on, the page
+// hands its link (?xc=, ?lang=) to Lite and stops here, so nothing is downloaded twice.
+{
+  const available = isHandoffAvailable(navigator.userAgent, '__TAURI_INTERNALS__' in window);
+  const ls = (() => { try { return localStorage; } catch { return null; } })();
+  const ss = (() => { try { return sessionStorage; } catch { return null; } })();
+  const currentLink = () => {
+    const target = linkTargetFromSearch(window.location.search);
+    let lang = target.lang || document.getElementById('taxonomyLangSelect')?.value || null;
+    if (!target.lang) { try { lang = localStorage.getItem('birdnet-taxonomy-lang') || lang; } catch { /* ignore */ } }
+    return { link: buildLiteLink({ xc: target.xc, lang }), xc: target.xc };
+  };
+
+  const banner = document.getElementById('liteBanner');
+  const bannerText = document.getElementById('liteBannerText');
+  const stayBtn = document.getElementById('liteBannerStay');
+  const offBtn = document.getElementById('liteBannerOff');
+  const reloadHere = () => { setStayInBrowser(ss); window.location.reload(); };
+  function showBanner(kind) {
+    if (kind === 'opened') {
+      // Focus loss = the browser's "open SignaVis Lite?" prompt or the app itself — a page cannot tell which.
+      bannerText.textContent = 'Handed over to SignaVis Lite — confirm the browser’s prompt if it asks.';
+      stayBtn.textContent = 'Continue in the browser';
+      stayBtn.onclick = reloadHere;
+      offBtn.onclick = () => { setAutoOpen(ls, false); reloadHere(); };
+    } else {
+      bannerText.textContent = 'SignaVis Lite did not open — is it installed on this computer?';
+      stayBtn.textContent = 'Dismiss';
+      stayBtn.onclick = () => { banner.hidden = true; };
+      offBtn.onclick = () => { setAutoOpen(ls, false); banner.hidden = true; };
+    }
+    banner.hidden = false;
+  }
+
+  // Button + dialog
+  const btn = document.getElementById('liteOpenBtn');
+  const modal = document.getElementById('liteHandoffModal');
+  const status = document.getElementById('liteHandoffStatus');
+  const auto = document.getElementById('liteHandoffAuto');
+  const openText = document.getElementById('liteHandoffOpenText');
+  const modalManager = new ModalManager({ backdrop: modal, dialog: modal.querySelector('.app-modal') });
+  btn.hidden = !available;
+  btn.addEventListener('click', () => {
+    const { xc } = currentLink();
+    openText.textContent = xc ? `Opens ${xc} in the app.` : 'Starts the app.';
+    auto.checked = getAutoOpen(ls);
+    status.textContent = '';
+    modalManager.open();
+  });
+  auto.addEventListener('change', () => {
+    setAutoOpen(ls, auto.checked);
+    status.textContent = auto.checked
+      ? 'SignaVis links will open in the app. Add ?browser=1 to a link to stay in the browser.'
+      : 'SignaVis links stay in the browser.';
+  });
+  document.getElementById('liteHandoffOpenBtn').addEventListener('click', async () => {
+    status.textContent = 'Opening SignaVis Lite…';
+    const opened = await openLiteLink(currentLink().link, { timeoutMs: 4000 });
+    status.textContent = opened
+      ? 'Handed over to SignaVis Lite (confirm the browser’s prompt if it asks).'
+      : 'SignaVis Lite did not respond. Install it (Download above), then try again.';
+  });
+
+  if (available && shouldAutoRedirect({ autoOpen: getAutoOpen(ls), stay: getStayInBrowser(ss), search: window.location.search })) {
+    const opened = await openLiteLink(currentLink().link, { timeoutMs: 4000 });
+    if (opened) {
+      showBanner('opened');
+      await new Promise(() => {});   // the app has it — do not load anything here
+    }
+    showBanner('missing');
+  }
+}
+
+// ── Player ────────────────────────────────────────────────────────
+// Waveform above the spectrogram is optional; applied on load. The overview below shows a waveform or the whole spectrogram.
+const SHOW_WAVEFORM_KEY = 'signavis.labeling.show-waveform.v1';
+const OVERVIEW_MODE_KEY = 'signavis.labeling.overview-mode.v1';
+const SHOW_CONF_KEY = 'signavis.labeling.show-confidence.v1';
+const AUTO_FREQ_VIEW_KEY = 'signavis.labeling.auto-freq-view.v1';
+const NORMALIZE_KEY = 'signavis.labeling.normalize.v1';
+const ULTRASOUND_PROMPT_KEY = 'signavis.labeling.ultrasound-prompt.v1';
+const BIRDNET_SHOW_LABELS_KEY = 'signavis.labeling.birdnet-show-labels.v1';
+const readFlag = (key, fallback) => { try { const v = localStorage.getItem(key); return v == null ? fallback : v === '1'; } catch { return fallback; } };
+const writeFlag = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* ignore */ } };
+const showMainWaveform = (() => { try { return localStorage.getItem(SHOW_WAVEFORM_KEY) !== '0'; } catch { return true; } })();
+const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
+  showFileOpen: false,
+  enableProgressiveSpectrogram: true,
+  showOverview: true,
+  overviewMode: (() => { try { return localStorage.getItem(OVERVIEW_MODE_KEY) === 'spectrogram' ? 'spectrogram' : 'waveform'; } catch { return 'waveform'; } })(),
+  viewMode: showMainWaveform ? 'both' : 'spectrogram',
+  showTransport: true,
+  // BirdNET detections (no frequency bounds) as strips along the top edge
+  labelDisplay: 'lanes',
+  labelConfidence: readFlag(SHOW_CONF_KEY, true),
+  normalize: readFlag(NORMALIZE_KEY, false),
+});
+await player.ready;
+if (player._state) {
+  player._state.autoFreqView = readFlag(AUTO_FREQ_VIEW_KEY, true);
+  player._state.ultrasoundPrompt = readFlag(ULTRASOUND_PROMPT_KEY, true);
+}
+
+// Initialize daily tips (shows one tip per day unless disabled)
+try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ }
+
+// Show daily tips on demand from Help panel (always force-show)
+const helpShowDailyTipsBtn = document.getElementById('helpShowDailyTipsBtn');
+if (helpShowDailyTipsBtn) {
+  helpShowDailyTipsBtn.addEventListener('click', () => {
+    try {
+      initDailyTips({ host: player.root, force: true });
+    } catch (e) { /* ignore */ }
+  });
+}
+
+// ── XC download progress bar ──────────────────────────────────────
+const _xcBar  = document.getElementById('xcDownloadBar');
+const _xcFill = document.getElementById('xcDownloadFill');
+let   _xcHideTimer = null;
+
+function xcProgressStart() {
+  clearTimeout(_xcHideTimer);
+  if (_xcFill) { _xcFill.style.width = '0%'; _xcFill.style.opacity = '1'; }
+}
+function xcProgressUpdate(fraction) {
+  if (!_xcFill) return;
+  if (fraction == null) {
+    // Indeterminate: animate a shimmer by cycling 0→70→0
+    _xcFill.style.transition = 'width 1.2s ease-in-out';
+    _xcFill.style.width = '70%';
+  } else {
+    _xcFill.style.transition = 'width 0.15s ease';
+    _xcFill.style.width = `${Math.min(95, fraction * 100).toFixed(1)}%`; // cap at 95% until done
+  }
+}
+function xcProgressDone() {
+  if (!_xcFill) return;
+  _xcFill.style.transition = 'width 0.2s ease';
+  _xcFill.style.width = '100%';
+  _xcHideTimer = setTimeout(() => {
+    _xcFill.style.transition = 'opacity 0.4s ease';
+    _xcFill.style.opacity = '0';
+    setTimeout(() => { _xcFill.style.width = '0%'; }, 450);
+  }, 300);
+}
+
+// ── Long-recording warning modal ─────────────────────────────────
+const MAX_SUPPORTED_DURATION_SEC = 10 * 60; // 10 minutes
+
+const longRecordingModal     = document.getElementById('longRecordingModal');
+const longRecordingMsg       = document.getElementById('longRecordingMsg');
+const longRecordingCloseBtn  = document.getElementById('longRecordingCloseBtn');
+const longRecordingManager   = new ModalManager({
+  backdrop: longRecordingModal,
+  dialog:   longRecordingModal?.querySelector('.app-modal'),
+});
+longRecordingCloseBtn?.addEventListener('click', () => longRecordingManager.close());
+
+// ── XC not-found modal ────────────────────────────────────────────
+const xcNotFoundModal      = document.getElementById('xcNotFoundModal');
+const xcNotFoundMsg        = document.getElementById('xcNotFoundMsg');
+const xcNotFoundCloseBtn   = document.getElementById('xcNotFoundCloseBtn');
+const xcNotFoundManager    = new ModalManager({
+  backdrop: xcNotFoundModal,
+  dialog:   xcNotFoundModal?.querySelector('.app-modal'),
+});
+xcNotFoundCloseBtn?.addEventListener('click', () => xcNotFoundManager.close());
+
+// Audio URLs of other recordings for own references (one blob per recording).
+const _ownRefAudio = new Map();
+async function ownRefAudioUrl(entry) {
+  if (_ownRefAudio.has(entry.id)) return _ownRefAudio.get(entry.id);
+  let url = null;
+  const folderFile = entry.path && projectStore ? await projectStore.readAudio(entry.path) : null;
+  if (folderFile) {
+    url = URL.createObjectURL(folderFile);
+  } else if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
+    const audio = await xcPanel.fetchAudio(entry.xcId);
+    url = URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' }));
+  } else if (entry.audioUrl) {
+    url = entry.audioUrl;  // blob URLs of local files live for this session only
+  }
+  if (url) _ownRefAudio.set(entry.id, url);
+  return url;
+}
+
+// ── Reference Calls modal (lazy init after xcPanel + taxonomy are ready) ─
+let _referenceCallsModal = null;
+function getRefCallsModal() {
+  if (!_referenceCallsModal) {
+    _referenceCallsModal = createReferenceCallsModal({
+      xcPanel,
+      // Wrap so the modal always calls the current getSuggestions —
+      // avoids capturing the empty fallback if modal is opened before taxonomy loads.
+      getSuggestions: (q, n) => getSuggestions(q, n),
+      BirdNETPlayer,
+      getMainPlayer: () => player,
+      getCoords: () => birdnetPanel?.getCoords?.() ?? null,
+      isLabelLocked: (id) => _computeLockedIds().includes(id),
+      onUpdateLabel: (patch) => {
+        if (!state.labels.some((l) => l.id === patch.id) || _computeLockedIds().includes(patch.id)) return null;
+        upsertLabel(patch);
+        syncToPlayer();
+        return state.labels.find((l) => l.id === patch.id) || null;
+      },
+      // Confirmed labels of the same species: current recording + other recordings.
+      getOwnReferences: (sci, excludeId) => {
+        if (!sci) return [];
+        const same = (l) => l && l.id !== excludeId && l.scientificName === sci && l.tags?.verified === 'yes'
+          && Number.isFinite(l.start) && Number.isFinite(l.end);
+        const active = recordingManager.getActive();
+        const refs = state.labels.filter(same).map((l) => ({
+          ...l, recordingName: active?.filename || 'This recording', soundType: l.tags?.soundType || '',
+          getAudioUrl: async () => _lastAudioUrl,
+        }));
+        for (const entry of recordingManager.getAll()) {
+          if (entry.id === recordingManager.activeId) continue;
+          for (const l of (entry.annotations || []).filter(same)) {
+            refs.push({
+              ...l, recordingName: entry.filename || toXcId(entry.xcId) || 'Recording',
+              soundType: l.tags?.soundType || '',
+              getAudioUrl: () => ownRefAudioUrl(entry),
+            });
+          }
+        }
+        return refs;
+      },
+      // Next unconfirmed, editable label in time order (wraps around).
+      getNextLabel: (currentId) => {
+        const locked = new Set(_computeLockedIds());
+        const open = state.labels
+          .filter((l) => !locked.has(l.id) && (l.scientificName || l.label) && l.tags?.verified !== 'yes')
+          .sort((a, b) => a.start - b.start);
+        if (!open.length) return null;
+        const cur = state.labels.find((l) => l.id === currentId);
+        return open.find((l) => l.id !== currentId && cur && l.start > cur.start)
+          || open.find((l) => l.id !== currentId) || null;
+      },
+      taxonomy,
+      getLang: () => state.taxonomyLang,
+      // Resolve vernacular → scientific name by searching all taxonomy records.
+      resolveSci: (name) => {
+        if (!taxonomy?.records) return '';
+        const q = name.trim().toLowerCase();
+        for (const rec of taxonomy.records) {
+          const names = rec.n ? Object.values(rec.n) : [];
+          if (names.some(n => n.toLowerCase() === q) || rec.s?.toLowerCase() === q) {
+            return rec.s || '';
+          }
+        }
+        return '';
+      },
+    });
+  }
+  return _referenceCallsModal;
+}
+
+function showXcError(err) {
+  const isNotFound = err?.code === 'XC_NOT_FOUND';
+  const msg = err?.message || String(err);
+  if (isNotFound) {
+    if (xcNotFoundMsg) xcNotFoundMsg.textContent = msg;
+    xcNotFoundManager.open();
+  } else {
+    showLoadError(msg, 'XC load failed');
+  }
+}
+
+/** Header status for a failed load: short prefix + reason (full text in the tooltip). */
+function showLoadError(msg, prefix = 'Could not load audio') {
+  const esc = String(msg).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  fileLabel.innerHTML = `<span style="color:var(--color-error,#ef4444)" title="${esc}">&#9888; ${prefix}: ${esc}</span>`;
+}
+
+/**
+ * If an API key is available, fetch the XC recording duration and show the
+ * "too long" modal early (before download). Returns true if the load should
+ * continue, false if the caller should abort.
+ * Falls back silently (returns true) on any error so download still proceeds.
+ */
+async function checkXcDuration(xcId) {
+  // Long recordings are rendered by the WASM tile pipeline when available — no need to
+  // block, so skip the API round-trip entirely and start the download right away.
+  const wasmTiling = typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
+  if (wasmTiling) return true;
+  if (xcPanel.apiKey) player.showLoadingOverlay(`Checking ${toXcId(xcId)}…`, { detail: 'Fetching recording metadata', progress: null });
+  const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
+  if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
+    player.hideLoadingOverlay();
+    const mins  = Math.floor(durationSec / 60);
+    const secs  = Math.round(durationSec % 60);
+    const limit = MAX_SUPPORTED_DURATION_SEC / 60;
+    if (longRecordingMsg) longRecordingMsg.textContent =
+      `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
+      `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
+    longRecordingManager.open();
+    return false;
+  }
+  // API check ran (even if within limit) — suppress the fallback ready-event check.
+  if (durationSec !== null) state._longRecordingChecked = true;
+  return true;
+}
+
+function fmtMB(bytes) {
+  const mb = bytes / 1048576;
+  return mb.toFixed(mb < 10 ? 1 : 0);
+}
+
+/**
+ * Progress reporter for an XC load: download (bytes, speed, source) → decode → spectrogram.
+ * Writes to the top bar, the file label and the spectrogram overlay.
+ */
+function makeXcProgress(xcId) {
+  xcProgressStart();
+  const title = `Downloading XC${String(xcId).replace(/^xc/i, '')}…`;
+  let source = 'Direct';
+  let t0 = performance.now();
+  let lastPaint = 0;
+  const show = (text, opts = {}) => {
+    fileLabel.textContent = opts.detail ? `${text} ${opts.detail}` : text;
+    player.showLoadingOverlay(text, opts);
+  };
+  show(title, { detail: 'Connecting…', progress: null });
+  return {
+    onStatus: (msg) => {
+      // xcPanel reports "Loading XC123 (Direct)…" / "(CorsProxy)…" when it (re)tries a source.
+      const m = /\(([^)]+)\)/.exec(msg);
+      if (m && m[1] !== source) { source = m[1]; t0 = performance.now(); }
+      show(title, { detail: source === 'Direct' ? 'Connecting…' : `Direct download failed — trying ${source}…`, progress: null });
+    },
+    onProgress: (fraction, received = 0, total = 0) => {
+      xcProgressUpdate(fraction);
+      if (!received) return;
+      const now = performance.now();
+      if (now - lastPaint < 100) return;
+      lastPaint = now;
+      const secs = (now - t0) / 1000;
+      const parts = [total > 0 ? `${fmtMB(received)} / ${fmtMB(total)} MB` : `${fmtMB(received)} MB`];
+      if (total > 0) parts.push(`${Math.round(fraction * 100)}%`);
+      if (secs > 0.3) parts.push(`${fmtMB(received / secs)} MB/s`);
+      if (source !== 'Direct') parts.push(`via ${source}`);
+      show(title, { detail: parts.join(' · '), progress: total > 0 ? fraction : null });
+    },
+    decoding: (bytes) => {
+      xcProgressDone();
+      show(`Decoding XC${String(xcId).replace(/^xc/i, '')}…`, { detail: `${fmtMB(bytes)} MB downloaded`, progress: null });
+    },
+    fail: () => {
+      xcProgressDone();
+      player.hideLoadingOverlay();
+    },
+  };
+}
+
+// ── DOM refs ──────────────────────────────────────────────────────
+const fileLabel       = document.getElementById('fileLabel');
+const fileInput       = document.getElementById('fileInput');
+const browseBtn       = document.getElementById('browseBtn');
+const loadSampleBtn   = document.getElementById('loadSampleBtn');
+const exportMenuBtn   = document.getElementById('exportMenuBtn');
+const selectionMeta   = document.getElementById('selectionMeta');
+const taxonomyLangSelect = document.getElementById('taxonomyLangSelect');
+const taxonomyMeta    = document.getElementById('taxonomyMeta');
+const themeToggleBtn  = document.getElementById('themeToggleBtn');
+const analysisModeSelect = document.getElementById('analysisModeSelect');
+const analysisEndpointInput = document.getElementById('analysisEndpointInput');
+const analysisApplyBtn = document.getElementById('analysisApplyBtn');
+
+const taxonomy = new TaxonomyResolver();
+installExternalLinkHandler();   // Lite: web links open in the system browser
+const projectRuntime = await createProjectRepositoryRuntime();
+const PROJECT_AUTOSAVE_ID = 'labeling-app-autosave';
+let projectCreatedAt = Date.now();
+
+// Debounced autosave to avoid writing on every single UI event.
+let _projectAutosaveTimer = null;
+
+const platformLocalFlag = loadPlatformLocalFlag();
+const initialAnalysisConfig = normalizeAnalysisBackendConfig(loadAnalysisBackendConfig());
+const desktopRuntimeInfo = await getDesktopRuntimeInfo();
+const canUseDesktopGrpc = Boolean(desktopRuntimeInfo?.grpcEnabled);
+const initialResolvedBackend = resolveAnalysisBackend({
+  mode: initialAnalysisConfig.mode,
+  endpoint: initialAnalysisConfig.endpoint,
+  useTauriGrpc: canUseDesktopGrpc,
+});
+const birdnet = new AnalysisBackendProxy(initialResolvedBackend.backend);
+
+function describeResolvedMode(resolved) {
+  if (resolved.requestedMode === resolved.effectiveMode) {
+    return resolved.effectiveMode;
+  }
+  return `${resolved.requestedMode} -> ${resolved.effectiveMode}`;
+}
+
+function applyAnalysisBackendConfig(config, { persist = true } = {}) {
+  const normalized = normalizeAnalysisBackendConfig(config);
+  const resolved = resolveAnalysisBackend({
+    mode: normalized.mode,
+    endpoint: normalized.endpoint,
+    useTauriGrpc: canUseDesktopGrpc,
+  });
+  birdnet.setBackend(resolved.backend);
+  if (analysisModeSelect) analysisModeSelect.value = normalized.mode;
+  if (analysisEndpointInput) analysisEndpointInput.value = normalized.endpoint;
+  if (persist) saveAnalysisBackendConfig(normalized);
+  const modeLabel = describeResolvedMode(resolved);
+  const endpointSuffix = resolved.effectiveMode === 'local' ? '' : ` @ ${normalized.endpoint || 'desktop'}`;
+  selectionMeta.textContent = `Analysis backend: ${modeLabel}${endpointSuffix}`;
+  return normalized;
+}
+
+// Apply config from URL/localStorage and sync controls.
+applyAnalysisBackendConfig(initialAnalysisConfig, { persist: false });
+
+// If running in desktop mode with configured passthrough endpoint,
+// prefill the endpoint input for easier backend switching.
+if (desktopRuntimeInfo?.analysisHttpEndpoint && analysisEndpointInput && !analysisEndpointInput.value) {
+  analysisEndpointInput.value = desktopRuntimeInfo.analysisHttpEndpoint;
+}
+
+if (desktopRuntimeInfo?.grpcEnabled) {
+  const parts = [];
+  if (selectionMeta.textContent) parts.push(selectionMeta.textContent);
+  parts.push(`Desktop gRPC: ${desktopRuntimeInfo.grpcAddr || 'enabled'}`);
+  if (desktopRuntimeInfo.analysisHttpEndpoint) {
+    parts.push(`passthrough: ${desktopRuntimeInfo.analysisHttpEndpoint}`);
+  }
+  selectionMeta.textContent = parts.join(' | ');
+}
+
+if (platformLocalFlag) {
+  const parts = [];
+  if (selectionMeta.textContent) parts.push(selectionMeta.textContent);
+  parts.push('Platform Local API: enabled');
+  selectionMeta.textContent = parts.join(' | ');
+}
+
+analysisApplyBtn?.addEventListener('click', () => {
+  try {
+    applyAnalysisBackendConfig({
+      mode: analysisModeSelect?.value || 'local',
+      endpoint: analysisEndpointInput?.value || '',
+    });
+  } catch (err) {
+    selectionMeta.textContent = `Backend config error: ${err?.message || String(err)}`;
+  }
+});
+
+// ── Sidebar ───────────────────────────────────────────────────────
+const ICONS = {
+  labels:  Tags,
+  birdnet: Bird,
+  xc:      Globe,
+  about:   Info,
+  help:    CircleHelp,
+  audio:   Volume2,
+  // Binoculars / explore icon (inline SVG string — same format as lucide-static exports)
+  project: FolderOpen,
+  explore: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><path d="M2 14h4M18 14h4M10 14a2 2 0 0 1 2-2 2 2 0 0 1 2 2"/><path d="M6 10V6l6-2 6 2v4"/></svg>`,
+};
+
+const sidebar = new Sidebar(document.getElementById('workspace'), {
+  onResize: () => player?.resize?.(),
+});
+
+// Tabs follow the XC model: Project (set + recordings) → Labels → Analyse → Upload.
+sidebar.addPanel('project', { icon: ICONS.project, label: 'Project', element: document.getElementById('panelProject') });
+sidebar.addPanel('labels',  { icon: ICONS.labels,  label: 'Labels',  element: document.getElementById('panelLabels') });
+sidebar.addPanel('analyse', {
+  icon: ICONS.birdnet, label: 'Analyse', element: document.getElementById('panelBirdnet'),
+  // Explore ("expected species here") lives below the BirdNET run; created further down.
+  onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
+});
+sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  element: document.getElementById('panelXc'),
+  // May fire during startup (restored last tab) before `state` exists; refreshed later anyway.
+  onActivate: () => { try { refreshUploadChecklist(); } catch (e) { /* not initialised yet */ } } });
+
+// ── "?" menu: help, about and tips open in a dialog instead of sidebar tabs ──
+const aboutPanelEl = createAboutPanel();
+const helpPanelEl = document.getElementById('panelHelp');
+const privacyPanelEl = document.getElementById('panelPrivacy');
+function openInfoDialog(el, title) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'app-modal-backdrop';
+  const dialog = document.createElement('div');
+  dialog.className = 'app-modal help-dialog';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-label', title);
+  const placeholder = document.createComment('info-dialog');
+  el.replaceWith(placeholder);
+  el.hidden = false;
+  dialog.append(el);
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+  // Put the panel back where it was so it can be shown again next time
+  const mm = new ModalManager({ backdrop, dialog, onClose: () => {
+    mm.close(); mm.dispose();
+    el.hidden = true; placeholder.replaceWith(el); backdrop.remove();
+  } });
+  mm.open();
+}
+document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  showContextMenu({
+    x: r.right - 200, y: r.bottom + 4,
+    items: [
+      { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
+      { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
+      { label: 'Load demo recording', action: () => document.getElementById('loadSampleBtn')?.click() },
+      { separator: true },
+      { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
+      { label: 'Privacy policy', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
+      { label: '♥ Sponsor SignaVis', action: () => window.open('https://github.com/sponsors/LimitlessGreen', '_blank', 'noopener') },
+    ],
+  });
+});
+
+// About panel simplified to a GitHub link (no extra runtime handlers)
+
+// ── Custom tag persistence ─────────────────────────────────────
+const tagStore = new CustomTagStore();
+
+function syncTagPresets() {
+  const presets = TAG_PRESETS.map((p) => ({
+    key: p.key,
+    label: p.key,
+    options: [...p.options, ...tagStore.getCustom(p.key)],
+  }));
+  player.setTagPresets(presets);
+}
+syncTagPresets();
+
+// Re-sync player presets whenever the CustomTagStore changes (e.g. from PropertiesPanel)
+window.addEventListener('aw:customTagStoreChanged', () => {
+  try { syncTagPresets(); } catch (e) { /* ignore */ }
+});
+
+// ── Tag vocabulary: XC value lists (sound type / sex / life stage) per species group ──
+const tagVocab = new TagVocabularyCache();
+const _vocabRequested = new Set();
+
+/** Use the lists of the active recording's group; load them from XC once per group. */
+function applyTagVocabulary() {
+  const entry = recordingManager?.getActive?.();
+  const group = recordingGroup(entry?.xcRecordingMeta);
+  setTagPresetOptions(tagVocab.get(group));
+  syncTagPresets();
+  try { propsPanel.refreshTagOptions(); } catch (e) { /* not ready yet */ }
+
+  const nr = entry?.xcId;
+  if (!nr || !xcPanel?.apiKey || (group && tagVocab.has(group)) || _vocabRequested.has(nr)) return;
+  _vocabRequested.add(nr);
+  fetchXcGroupProperties(nr, { apiKey: xcPanel.apiKey })
+    .then((r) => {
+      if (!r) return;
+      tagVocab.set(r.group || group, r.vocab);
+      if (recordingManager.getActive()?.xcId === nr) applyTagVocabulary();
+    })
+    .catch(() => { /* keep fallback lists */ });
+}
+
+// Keys 1–9 set the selected label's sound type to the n-th value of the current list
+document.addEventListener('keydown', (e) => {
+  if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const lbl = propsPanel.displayedLabel;
+  if (!lbl || lbl.readonly || state.labelSets.get(lbl.setId)?.locked) return;
+  const value = TAG_PRESETS.find((p) => p.key === 'soundType')?.options[Number(e.key) - 1];
+  if (!value) return;
+  e.preventDefault();
+  propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
+  selectionMeta.textContent = `Sound type: ${value} (key ${e.key})`;
+});
+
+// N / P next / previous recording, B BirdNET on the current one, U upload assistant
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n' || k === 'p') {
+    const all = recordingManager.getAll();
+    const i = all.findIndex((r) => r.id === recordingManager.getActive()?.id);
+    const next = all[i + (k === 'n' ? 1 : -1)];
+    if (!next) return;
+    e.preventDefault();
+    activateRecordingEntry(next);
+  } else if (k === 'b') {
+    const btn = document.getElementById('birdnetAnalyzeBtn');
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    sidebar.setActive('analyse');
+    btn.click();
+  } else if (k === 'u') {
+    e.preventDefault();
+    sidebar.setActive('upload');
+  }
+});
+
+// ── Right sidebar ─────────────────────────────────────────────────
+const specPanel = new SpectrogramSettingsPanel(player);
+specPanel.relocate();
+
+// Add "Clear spectrogram cache" button at the bottom of the spectrogram settings panel
+(() => {
+  const sec = document.createElement('div');
+  sec.className = 'settings-section';
+  sec.dataset.expert = '';
+  sec.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'sidebar-action-btn secondary';
+  btn.textContent = 'Clear spectrogram cache';
+  btn.title = 'Delete all cached spectrogram data from IndexedDB';
+  btn.addEventListener('click', async () => {
+    await spectrogramCache.clear();
+    btn.textContent = 'Cache cleared ✓';
+    setTimeout(() => { btn.textContent = 'Clear spectrogram cache'; }, 2000);
+  });
+  sec.appendChild(btn);
+  specPanel.el.appendChild(sec);
+
+  const wf = document.createElement('div');
+  wf.className = 'settings-section';
+  wf.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+  wf.innerHTML = `
+    <label class="field-check"><input type="checkbox" /> Show waveform above spectrogram</label>
+    <p class="field-hint" hidden>Takes effect after reloading the page.</p>`;
+  const check = wf.querySelector('input');
+  check.checked = showMainWaveform;
+  check.addEventListener('change', () => {
+    try { localStorage.setItem(SHOW_WAVEFORM_KEY, check.checked ? '1' : '0'); } catch { /* ignore */ }
+    wf.querySelector('.field-hint').hidden = check.checked === showMainWaveform;
+  });
+  specPanel.el.insertBefore(wf, sec);
+
+  const ov = document.createElement('div');
+  ov.className = 'settings-section';
+  ov.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+  ov.innerHTML = `
+    <label class="field-label" for="overviewModeSelect">Overview</label>
+    <select id="overviewModeSelect" class="field-select" title="What the overview strip below the player shows. Spectrogram: the whole recording, with short calls kept visible.">
+      <option value="waveform">Waveform</option>
+      <option value="spectrogram">Spectrogram</option>
+    </select>`;
+  const ovSel = ov.querySelector('select');
+  ovSel.value = player.overviewMode;
+  ovSel.addEventListener('change', () => {
+    try { localStorage.setItem(OVERVIEW_MODE_KEY, ovSel.value); } catch { /* ignore */ }
+    player.setOverviewMode(ovSel.value);
+  });
+  specPanel.el.insertBefore(ov, sec);
+
+  // ── Automatic behaviour: what the app does by itself, each one switchable ──
+  const auto = document.createElement('div');
+  auto.className = 'settings-section';
+  auto.style.cssText = 'padding:8px 14px;border-top:1px solid var(--color-border)';
+  auto.innerHTML = '<h3 class="settings-section-title">Automatic behaviour</h3>';
+  const addToggle = (text, hint, get, set) => {
+    const row = document.createElement('label');
+    row.className = 'field-check';
+    row.title = hint;
+    row.innerHTML = '<input type="checkbox" /> ';
+    row.append(text);
+    const box = row.querySelector('input');
+    box.checked = get();
+    box.addEventListener('change', () => set(box.checked));
+    auto.appendChild(row);
+    return box;
+  };
+  // Auto contrast is the player's gain mode (saved with the spectrogram settings); kept in sync both ways.
+  const gainSel = player._state?.d?.gainModeSelect;
+  const contrastBox = addToggle('Auto contrast for each recording',
+    'Sets floor and range from the recording when it is loaded. Off: keeps your floor/range values.',
+    () => (gainSel?.value || 'auto') === 'auto',
+    (on) => { if (gainSel) { gainSel.value = on ? 'auto' : 'fixed'; gainSel.dispatchEvent(new Event('change', { bubbles: true })); } });
+  gainSel?.addEventListener('change', () => { contrastBox.checked = gainSel.value === 'auto'; });
+  addToggle('Fit frequency zoom to the calls',
+    'Zooms the frequency axis to where the calls are when a recording is loaded. Off: shows the full range.',
+    () => readFlag(AUTO_FREQ_VIEW_KEY, true),
+    (on) => { writeFlag(AUTO_FREQ_VIEW_KEY, on); if (player._state) player._state.autoFreqView = on; });
+  addToggle('Normalize playback',
+    'Plays every recording normalized to -1 dBFS peak (up to +40 dB). Same as the toolbar button, remembered.',
+    () => readFlag(NORMALIZE_KEY, false),
+    (on) => { writeFlag(NORMALIZE_KEY, on); player.setNormalize(on); });
+  addToggle('Ask how to play ultrasound recordings',
+    'Offers slowed-down playback for bat/ultrasound recordings. Off: plays them as they are, unless you saved a choice in that dialog.',
+    () => readFlag(ULTRASOUND_PROMPT_KEY, true),
+    (on) => { writeFlag(ULTRASOUND_PROMPT_KEY, on); if (player._state) player._state.ultrasoundPrompt = on; });
+  addToggle('Open the label list after BirdNET analysis',
+    'Switches the sidebar to Labels when BirdNET has added its detections.',
+    () => readFlag(BIRDNET_SHOW_LABELS_KEY, true),
+    (on) => writeFlag(BIRDNET_SHOW_LABELS_KEY, on));
+  addToggle('Show confidence on detections',
+    'Shows each detection\'s confidence as a number and a coloured bar.',
+    () => player.options.labelConfidence === true,
+    (on) => { writeFlag(SHOW_CONF_KEY, on); player.options.labelConfidence = on; syncToPlayerSoft(); });
+  specPanel.el.insertBefore(auto, sec);
+})();
+
+const propsPanel = new PropertiesPanel({
+  getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
+});
+propsPanel.setTagStore(tagStore);
+
+const snrComputer = new SnrComputer();
+snrComputer.setOnResult((id, status, value) => {
+  propsPanel.setSnr(id, status, value);
+  // Keep the value on the label (shown in the table). Not an edit: updatedAt stays.
+  const lbl = state.labels.find((l) => l.id === id);
+  if (!lbl || lbl.readonly) return;
+  const next = status === 'done' && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+  if ((lbl.snr ?? null) === next) return;
+  if (next == null) delete lbl.snr; else lbl.snr = next;
+  try { labelTable?.updateLabel(lbl); } catch (e) { /* table not ready */ }
+  saveCurrentAnnotationsIfNeeded();
+});
+/** Compute the SNR of every own label that has none yet (worker, debounced per label). */
+function requestMissingSnr() {
+  const ab = player._state?.audioBuffer;
+  if (!ab) return;
+  for (const l of state.labels) {
+    if (l.readonly || Number.isFinite(l.snr)) continue;
+    const st = snrComputer.getStatus(l.id);
+    if (st && st.status !== 'done') continue;   // pending or failed (e.g. silence)
+    snrComputer.request(l, ab, ab.sampleRate);
+  }
+}
+
+// Closed by default (v2 key drops the old always-open state); opens on label selection
+const rightBar = new Sidebar(document.getElementById('workspace'), {
+  side: 'right',
+  storageKey: 'signavis.sidebar-right.v2',
+  onResize: () => player?.resize?.(),
+});
+
+rightBar.addPanel('spectrogram', { icon: SlidersHorizontal, label: 'Display',     element: specPanel.el });
+rightBar.addPanel('properties',  { icon: Info,              label: 'Properties',  element: propsPanel.el });
+rightBar.addPanel('audio',       { icon: ICONS.audio,       label: 'Audio',       element: buildAudioPanel() });
+
+// ── Audio panel: make ultrasound audible (playback only, the recording is untouched) ──
+function buildAudioPanel() {
+  const el = document.createElement('div');
+  el.className = 'scroll-panel';
+  el.innerHTML = `
+    <div class="sidebar-section-header" title="Make ultrasonic calls audible. Only playback changes — spectrogram, labels and times stay in the original recording."><span>Playback</span><span class="audio-info" aria-hidden="true">ⓘ</span></div>
+    <div class="audio-section">
+      <select id="audioModeSelect" hidden aria-hidden="true" tabindex="-1">
+        <option value="expansion">Time expansion</option>
+        <option value="heterodyne">Heterodyne</option>
+        <option value="division">Frequency division</option>
+        <option value="pitch">Pitch shift</option>
+      </select>
+      <div class="audio-seg" id="audioModeSeg" role="radiogroup" aria-label="Method">
+        <button type="button" class="audio-seg-btn" role="radio" data-value="expansion" title="Slow the recording down — keeps every detail of a call">
+          <span class="audio-seg-title">Expand</span><span class="audio-seg-sub">Slowed down</span></button>
+        <button type="button" class="audio-seg-btn" role="radio" data-value="heterodyne" title="Real-time detector tuned to one frequency">
+          <span class="audio-seg-title">Heterodyne</span><span class="audio-seg-sub">Tuned, real time</span></button>
+        <button type="button" class="audio-seg-btn" role="radio" data-value="division" title="Real-time detector, all calls at once">
+          <span class="audio-seg-title">Divide</span><span class="audio-seg-sub">All calls, real time</span></button>
+        <button type="button" class="audio-seg-btn" role="radio" data-value="pitch" title="Real-time pitch shift that keeps the rhythm">
+          <span class="audio-seg-title">Pitch</span><span class="audio-seg-sub">Rhythm preserved</span></button>
+      </div>
+      <div class="audio-mode-opts">
+        <div data-mode="expansion">
+          <div class="audio-row" title="Pitch drops by the same factor: a 45 kHz call plays at 4.5 kHz with ×10.">
+            <label class="field-label" for="audioExpansionSelect">Slowdown</label>
+            <select id="audioExpansionSelect" class="field-select">
+              ${[1, 2, 4, 8, 10, 16].map((f) => `<option value="${f}">×${f}</option>`).join('')}
+            </select>
+          </div>
+          <p class="field-hint audio-hint">×10: 45 kHz → 4.5 kHz</p>
+        </div>
+        <div data-mode="heterodyne" hidden>
+          <div class="audio-row" title="Calls within about ±6 kHz of the tuning sound as the difference tone.">
+            <label class="field-label" for="audioCarrierInput">Tuning</label>
+            <span class="audio-suffix">
+              <input id="audioCarrierInput" class="input" type="number" min="10" max="150" step="1" value="40" /> kHz
+            </span>
+          </div>
+          <p class="field-hint audio-hint">Drag the dashed line or Alt+click a call to tune</p>
+        </div>
+        <div data-mode="division" hidden>
+          <div class="audio-row" title="Like a frequency-division detector: every call at once, all frequencies divided. Sounds rough by nature; quiet background stays silent.">
+            <label class="field-label" for="audioDivisorSelect">Divide by</label>
+            <select id="audioDivisorSelect" class="field-select">
+              ${[5, 8, 10, 16, 20].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
+            </select>
+          </div>
+          <label class="field-check"><input id="audioEnvelopeCheck" type="checkbox" /> Keep loudness envelope</label>
+        </div>
+        <div data-mode="pitch" hidden>
+          <div class="audio-row" title="Every frequency divided in real time — keeps the rhythm of a pass (pulse rate, feeding buzz). Single calls come out short; for their shape use time expansion.">
+            <label class="field-label" for="audioPitchSelect">Lower pitch by</label>
+            <select id="audioPitchSelect" class="field-select">
+              ${[4, 8, 10, 16, 20, 32].map((n) => `<option value="${n}">÷${n}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section-header">Recording</div>
+    <div class="audio-section audio-section--facts">
+      <div id="audioDetectStatus" class="audio-empty">No audio loaded.</div>
+      <dl id="audioFacts" class="audio-facts"></dl>
+      <div class="panel-actions">
+        <button class="sidebar-action-btn" id="audioApplySuggestionBtn" type="button" hidden></button>
+      </div>
+      <details id="audioGuanoDetails" class="audio-guano" hidden>
+        <summary>GUANO metadata</summary>
+        <dl id="audioGuanoList" class="audio-facts"></dl>
+      </details>
+    </div>`;
+  const modeSel = el.querySelector('#audioModeSelect');
+  const expansionSel = el.querySelector('#audioExpansionSelect');
+  const carrierInput = el.querySelector('#audioCarrierInput');
+  const divisorSel = el.querySelector('#audioDivisorSelect');
+  const envelopeCheck = el.querySelector('#audioEnvelopeCheck');
+  const pitchSel = el.querySelector('#audioPitchSelect');
+  divisorSel.value = '10';
+  pitchSel.value = '10';
+  const statusEl = el.querySelector('#audioDetectStatus');
+  const applyBtn = el.querySelector('#audioApplySuggestionBtn');
+  const guanoDetails = el.querySelector('#audioGuanoDetails');
+  const guanoList = el.querySelector('#audioGuanoList');
+
+  const factsEl = el.querySelector('#audioFacts');
+  const segBtns = [...el.querySelectorAll('.audio-seg-btn')];
+  const showModeFields = (kind) => {
+    for (const box of el.querySelectorAll('[data-mode]')) box.hidden = box.dataset.mode !== kind;
+    for (const b of segBtns) {
+      const on = b.dataset.value === kind;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+  };
+  for (const b of segBtns) {
+    b.addEventListener('click', () => {
+      if (modeSel.value === b.dataset.value) return;
+      modeSel.value = b.dataset.value;
+      modeSel.dispatchEvent(new Event('change'));
+    });
+  }
+  el.querySelector('#audioModeSeg').addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const i = segBtns.findIndex((b) => b.dataset.value === modeSel.value);
+    const next = segBtns[(i + step + segBtns.length) % segBtns.length];
+    next.click();
+    next.focus();
+  });
+  const addFact = (list, label, value) => {
+    const dt = document.createElement('dt'); dt.textContent = label;
+    const dd = document.createElement('dd');
+    if (value instanceof Node) dd.append(value); else dd.textContent = value;
+    list.append(dt, dd);
+  };
+  const badge = (text, active) => {
+    const s = document.createElement('span');
+    s.className = 'audio-badge' + (active ? ' is-active' : '');
+    s.textContent = text;
+    return s;
+  };
+  showModeFields(modeSel.value);
+  const modeFromFields = () => {
+    switch (modeSel.value) {
+      case 'heterodyne': return { kind: 'heterodyne', carrierHz: (Number(carrierInput.value) || 40) * 1000 };
+      case 'division': return { kind: 'division', divisor: Number(divisorSel.value), envelope: envelopeCheck.checked };
+      case 'pitch': return { kind: 'pitch', factor: Number(pitchSel.value) };
+      default: return { kind: 'expansion', factor: Number(expansionSel.value) };
+    }
+  };
+  const applyFields = () => {
+    showModeFields(modeSel.value);
+    player.setListenMode(modeFromFields());
+  };
+  modeSel.addEventListener('change', () => {
+    // Switching to time expansion from a detector: start with the suggestion, not ×1.
+    if (modeSel.value === 'expansion' && Number(expansionSel.value) === 1) {
+      expansionSel.value = String(player.ultrasoundInfo?.suggestedExpansion ?? 1);
+    }
+    applyFields();
+  });
+  for (const input of [expansionSel, carrierInput, divisorSel, envelopeCheck, pitchSel]) {
+    input.addEventListener('change', applyFields);
+  }
+  applyBtn.addEventListener('click', () => {
+    const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
+    if (f > 1) player.setTimeExpansion(f);
+  });
+
+  const syncSuggestion = () => {
+    const f = player.ultrasoundInfo?.suggestedExpansion ?? 1;
+    const mode = player.listenMode;
+    applyBtn.hidden = !(f > 1 && !(mode.kind === 'expansion' && mode.factor === f));
+    applyBtn.textContent = `Play ×${f} slower`;
+  };
+
+  // The transport bar can change the mode too: mirror whatever is active.
+  const syncFields = (mode) => {
+    modeSel.value = mode.kind;
+    if (mode.kind === 'expansion') expansionSel.value = String(mode.factor);
+    if (mode.kind === 'heterodyne') carrierInput.value = String(Math.round(mode.carrierHz / 1000));
+    if (mode.kind === 'division') {
+      divisorSel.value = String(mode.divisor);
+      envelopeCheck.checked = !!mode.envelope;
+    }
+    if (mode.kind === 'pitch') pitchSel.value = String(mode.factor);
+    showModeFields(mode.kind);
+    syncSuggestion();
+  };
+  player.on('listenmodechange', (e) => syncFields(e.detail.mode));
+
+  player.on('ultrasoundinfo', (e) => {
+    const info = e.detail;
+    if (info?.peakHz) carrierInput.value = String(Math.round(info.peakHz / 1000));
+    syncFields(player.listenMode);
+    factsEl.replaceChildren();
+    if (!info) {
+      statusEl.hidden = false;
+      statusEl.textContent = 'No audio loaded.';
+      guanoDetails.hidden = true;
+      syncSuggestion();
+      return;
+    }
+    statusEl.hidden = true;
+    if (info.storedExpansion > 1) {
+      addFact(factsEl, 'Ultrasound', badge(`Already expanded ×${info.storedExpansion}`, false));
+    } else if (info.isUltrasonic) {
+      addFact(factsEl, 'Ultrasound', badge('Detected', true));
+    } else {
+      addFact(factsEl, 'Ultrasound', badge('Not detected', false));
+    }
+    if (info.peakHz != null) {
+      addFact(factsEl, 'Peak frequency',
+        `${(info.peakHz / 1000).toFixed(1)} kHz (${info.source === 'guano' ? 'GUANO' : 'spectrum'})`);
+    }
+    if (info.ultrasonicFraction > 0) addFact(factsEl, 'Energy > 18 kHz', `${Math.round(info.ultrasonicFraction * 100)} %`);
+    if (info.device) addFact(factsEl, 'Device', info.device);
+
+    guanoDetails.hidden = !info.guano;
+    guanoList.replaceChildren(...Object.entries(info.guano || {}).flatMap(([k, v]) => {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      return [dt, dd];
+    }));
+    syncSuggestion();
+  });
+
+  return el;
+}
+
+// ── App state ─────────────────────────────────────────────────────
+// Views that show state.labels. Changes call labelViews.invalidate(…) (usually via
+// syncToPlayer / syncToPlayerSoft); all invalidations of one synchronous run are drawn
+// once, in a microtask. Call labelViews.flush() before reading the views (rows, overlay).
+const labelViews = new RenderScheduler([
+  ['player', () => {
+    player.setSpectrogramLabels(_playerLabels());
+    _pushLockedIds(_computeLockedIds());
+  }],
+  ['list', () => labelList.render(state.labels)],      // also redraws the table (see labelTable below)
+  ['table', (pending) => {
+    if (pending.has('list')) return;                   // already drawn with the list
+    try { labelTable?.render(state.labels); } catch (e) { /* table not ready */ }
+  }],
+  ['badge', () => sidebar.setBadge('labels', state.labels.length || '')],
+  ['explore', () => explorePanel.notifyLabelsChanged()],
+  ['props', () => {
+    // Keep properties panel in sync with fresh label reference
+    if (!propsPanel._pinnedLabel) return;
+    const fresh = state.labels.find((l) => l.id === propsPanel._pinnedLabel.id);
+    if (fresh) propsPanel.refreshLabel(fresh);
+    else propsPanel.pinLabel(null);
+  }],
+]);
+
+let getSuggestions = (q, n) => [];  // populated after taxonomy loads
+let _lastAudioUrl = null;           // track current audio URL for reference player
+
+const state = {
+  labels: [],
+  /** @type {Map<string, ReturnType<typeof defaultSetInfo>>} */
+  labelSets: new Map(),
+  /** ID of the currently active annotation set (new labels are assigned to it) */
+  activeSetId: null,
+  /** @type {Set<string>} setIds whose labels are hidden from the spectrogram */
+  hiddenSetIds: new Set(),
+  /** @type {Set<string>} `${setId}|${speciesName}` keys whose labels are hidden */
+  hiddenSpeciesKeys: new Set(),
+  /** @type {Set<string>} own layers hidden on the spectrogram */
+  hiddenLayers: new Set(),
+  /** Editable recording metadata for XC upload context */
+  xcLabelPool: [],
+  recordingMeta: null,
+  selected: null,
+  selectedLabelId: null,
+  sampleRate: 32000,
+  activeObjectUrl: null,
+  taxonomyLang: 'en_uk',
+  /**
+   * RecordingEntry id whose annotations are currently loaded into state.labels.
+   * null on page load until an entry's annotations have been explicitly loaded.
+   * Guards against saving the empty initial state over persisted annotations.
+   */
+  _labelsEntryId: null,
+};
+
+function serializeOverlayAnnotations() {
+  const anns = player.annotations?.annotations;
+  if (!Array.isArray(anns)) return [];
+  return anns.map((a) => ({
+    id: a.id,
+    start: a.start,
+    end: a.end,
+    species: a.species,
+    label: a.label,
+    confidence: a.confidence,
+    color: a.color,
+    scientificName: a.scientificName,
+    commonName: a.commonName,
+    origin: a.origin,
+    author: a.author,
+    tags: a.tags || {},
+  }));
+}
+
+function serializeAudioSource() {
+  const active = recordingManager?.getActive?.();
+  if (active?.xcId) {
+    return { type: 'xeno-canto', xcId: toXcId(active.xcId), name: active.filename || '' };
+  }
+  if (active?.filename) {
+    return { type: 'file', name: active.filename };
+  }
+  return { type: 'file', name: fileLabel?.textContent || 'Untitled' };
+}
+
+function buildProjectSnapshot() {
+  return {
+    id: PROJECT_AUTOSAVE_ID,
+    name: 'Labeling App Autosave',
+    createdAt: projectCreatedAt,
+    updatedAt: Date.now(),
+    audioSource: serializeAudioSource(),
+    annotations: serializeOverlayAnnotations(),
+    labels: state.labels.map((l) => ({ ...l })),
+    settings: {
+      taxonomyLang: state.taxonomyLang,
+      activeSetId: state.activeSetId,
+      labelSets: [...state.labelSets.values()].map((s) => ({ ...s })),
+    },
+  };
+}
+
+async function saveProjectSnapshotNow() {
+  if (projectAutosaver) return;   // the project store replaces the old autosave
+  try {
+    await projectRuntime.repo.save(buildProjectSnapshot());
+  } catch (e) {
+    // Non-fatal: autosave should never break the labeling flow.
+  }
+}
+
+// ── Project storage: browser project (OPFS) or a project folder (File System Access).
+// Recordings, sets and labels survive closing the tab. Replaces sessionStorage
+// (RecordingManager), localStorage sets and the autosave above; those only serve
+// as a one-time migration source (plans/project-folder-plan.md).
+// Switching the location reloads the page, like "New…" does.
+const PROJECT_LOCATION_KEY = 'signavis.project.location.v1';   // 'browser' | 'folder'
+const XC_TO_FOLDER_KEY = 'signavis.project.xc-to-folder.v1';
+let projectAutosaver = null;
+let projectStore = null;
+let projectKind = 'none';            // 'browser' | 'folder' | 'none'
+let projectStatus = '';
+let projectMeta = { id: 'browser-default', name: 'Browser project', createdAt: '' };
+let projectFolderFiles = [];         // audio files found in the folder
+let projectScanning = false;
+let recentFolderHandle = null;       // remembered folder that still needs a click
+let projectLocationPanel = null;
+let _projectConflictOpen = false;
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+const xcToFolder = () => lsGet(XC_TO_FOLDER_KEY) !== '0';
+
+function buildWorkspaceProject() {
+  saveCurrentAnnotationsIfNeeded();
+  return serializeProject({
+    ...recordingManager.snapshot(),
+    labelSets: state.labelSets,
+    ownSetId: OWN_SOURCE_ID,
+    activeSetId: state.activeSetId,
+    settings: { taxonomyLang: state.taxonomyLang },
+  }, projectMeta);
+}
+
+function saveSessionSets(st) {
+  if (projectAutosaver) projectAutosaver.schedule();
+  else saveSessionSetsLegacy(st);   // no OPFS: old localStorage sets
+}
+
+function renderProjectLocation() {
+  projectLocationPanel?.render({
+    kind: projectKind,
+    label: projectStore?.label || '',
+    status: projectStatus,
+    folderSupported: isFolderAccessSupported(),
+    recentFolder: recentFolderHandle?.name || null,
+    xcToFolder: xcToFolder(),
+    unadded: projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : [],
+    scanning: projectScanning,
+    lite: isLite(),
+  });
+  try { recordingExplorer.render(); } catch (e) { /* explorer not created yet */ }
+}
+
+async function scanProjectFolder() {
+  if (projectKind !== 'folder') return;
+  projectScanning = true; renderProjectLocation();
+  try { projectFolderFiles = await projectStore.listAudio(); }
+  catch (e) { console.warn('[project] folder scan failed', e); projectFolderFiles = []; }
+  projectScanning = false; renderProjectLocation();
+}
+
+async function handleProjectConflict() {
+  if (_projectConflictOpen) return;
+  _projectConflictOpen = true;
+  projectStatus = 'conflict'; renderProjectLocation();
+  const reload = await appConfirm(
+    `project.signavis.json in “${projectStore.label}” was changed outside this tab (another program or device).\n\n` +
+    'Reload from folder: changes made here since the last save are lost.\n' +
+    'Keep mine: keep this version and overwrite the file.',
+    { title: 'Project changed elsewhere', okLabel: 'Reload from folder', cancelLabel: 'Keep mine' });
+  if (reload) { window.location.reload(); return; }
+  await projectStore.acceptExternalChange();
+  _projectConflictOpen = false;
+  projectAutosaver.flush({ force: true });
+}
+
+/** Session state from a stored project (recordings, sets, language). */
+function applyWorkspaceProject(project) {
+  projectMeta = { id: project.id || projectMeta.id, name: project.name || projectMeta.name, createdAt: project.createdAt };
+  const snap = deserializeProject(project);
+  forgetBirdboxResults();
+  recordingManager.replaceAll(snap.entries, snap.activeId);
+  if (snap.labelSets.size) {
+    state.labelSets.clear();
+    for (const [id, set] of snap.labelSets) state.labelSets.set(id, normalizeSet(set));
+  }
+  ensureOwnSource(snap.ownSetId);
+  setActiveSet(OWN_SOURCE_ID);
+  if (snap.settings?.taxonomyLang && taxonomyLangSelect) {
+    state.taxonomyLang = snap.settings.taxonomyLang;
+    taxonomyLangSelect.value = state.taxonomyLang;
+  }
+  state.labels = [];
+  state._labelsEntryId = null;
+}
+
+function showReadOnlyBanner() {
+  const banner = document.createElement('div');
+  banner.className = 'project-readonly-banner';
+  banner.setAttribute('role', 'status');
+  banner.textContent = 'This project is open in another tab — changes made here are not saved.';
+  banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;'
+    + 'padding:6px 12px;border-radius:6px;font-size:13px;background:#b45309;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+  document.body.appendChild(banner);
+}
+
+/** Open the stored project location. Returns true when session state was restored from it. */
+async function openProject() {
+  projectLocationPanel = new ProjectLocationPanel(document.getElementById('projectLocationMount'), {
+    onOpenFolder: () => chooseProjectFolder(),
+    onReopenRecent: () => reopenRecentFolder(),
+    onUseBrowserProject: async () => {
+      await projectAutosaver?.flush();
+      lsSet(PROJECT_LOCATION_KEY, 'browser');
+      window.location.reload();
+    },
+    onToggleXcToFolder: (on) => {
+      lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
+      renderProjectLocation();
+      if (on) copyAllXcToFolder();
+    },
+    onAddFiles: (paths) => addFolderFiles(paths),
+    onRescan: () => scanProjectFolder(),
+  });
+
+  if (isFolderAccessSupported()) {
+    const handle = await recentFolder();
+    if (handle && lsGet(PROJECT_LOCATION_KEY) === 'folder' && await ensurePermission(handle) === 'granted') {
+      projectStore = folderStore(handle);
+      projectKind = 'folder';
+      projectMeta = { id: projectMeta.id, name: handle.name, createdAt: '' };
+    } else {
+      recentFolderHandle = handle;
+    }
+  }
+  if (!projectStore) {
+    projectStore = await openDefaultProjectStore();
+    projectKind = projectStore ? 'browser' : 'none';
+  }
+  if (!projectStore) { renderProjectLocation(); return false; }  // no OPFS → legacy storage only
+
+  const owner = await acquireTabLock(projectKind === 'folder' ? `signavis-folder:${projectStore.label}` : 'signavis-browser-project');
+  projectAutosaver = new ProjectAutosaver({
+    store: projectStore,
+    build: buildWorkspaceProject,
+    onStatus: (status, err) => {
+      if (status === 'error' && err instanceof ProjectConflictError) { handleProjectConflict(); return; }
+      if (status === 'error') console.warn('[project] save failed', err);
+      if (status === 'pending' && projectStatus === 'pending') return;
+      projectStatus = status;
+      renderProjectLocation();
+    },
+  });
+  recordingManager.disableSessionPersistence();   // sessionStorage was only the migration source
+  recordingManager.addEventListener('change', () => { projectAutosaver.schedule(); renderProjectLocation(); });
+  recordingManager.addEventListener('activechange', () => projectAutosaver.schedule());
+  if (!owner) {
+    projectAutosaver.setReadOnly(true);
+    showReadOnlyBanner();
+  }
+  let project = null;
+  try { project = await projectStore.loadProject(); }
+  catch (e) {
+    console.warn('[project] cannot read project', e);
+    if (projectKind === 'folder') {
+      await appAlert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\n\nSwitching back to the browser project.`, { title: 'Project could not be read' });
+      lsSet(PROJECT_LOCATION_KEY, 'browser');
+      window.location.reload();
+      return false;
+    }
+  }
+  renderProjectLocation();
+  if (projectKind === 'folder') scanProjectFolder();
+  if (!project) {
+    projectAutosaver.schedule();  // first save = migration of the legacy session state
+    return false;
+  }
+  applyWorkspaceProject(project);
+  return true;
+}
+
+// ── Project folder recommendation: once per session while the project lives in the browser.
+// "Don't show this again" hides it for good; the Project tab keeps the same offer.
+const PROJECT_FOLDER_HINT_KEY = 'signavis.project-folder-hint.dismissed.v1';
+const projectFolderModal = document.getElementById('projectFolderModal');
+const projectFolderDismiss = document.getElementById('projectFolderDismiss');
+function closeProjectFolderModal() {
+  if (projectFolderDismiss.checked) lsSet(PROJECT_FOLDER_HINT_KEY, '1');
+  projectFolderModalManager.close();
+}
+const projectFolderModalManager = new ModalManager({
+  backdrop: projectFolderModal,
+  dialog: projectFolderModal?.querySelector('.app-modal'),
+  onClose: closeProjectFolderModal,
+});
+document.getElementById('projectFolderBrowserBtn').addEventListener('click', closeProjectFolderModal);
+document.getElementById('projectFolderChooseBtn').addEventListener('click', () => {
+  closeProjectFolderModal();
+  if (recentFolderHandle) reopenRecentFolder(); else chooseProjectFolder();
+});
+function maybeShowProjectFolderModal() {
+  if (projectKind !== 'browser' || !isFolderAccessSupported()) return;
+  if (isLite()) return;   // Lite's default project already is a folder on disk
+  if (lsGet(PROJECT_FOLDER_HINT_KEY) === '1') return;
+  try { if (sessionStorage.getItem(PROJECT_FOLDER_HINT_KEY)) return; sessionStorage.setItem(PROJECT_FOLDER_HINT_KEY, '1'); } catch { /* ignore */ }
+  if (document.querySelector('.app-modal-backdrop:not([hidden])')) return;   // another dialog is open
+  document.querySelectorAll('.daily-tip-backdrop .daily-tip-close').forEach((b) => b.click());   // onboarding wins over the daily tip
+  const title = projectFolderModal.querySelector('.pf-option-title');
+  title.firstChild.textContent = recentFolderHandle ? `Reopen “${recentFolderHandle.name}” ` : 'Project folder ';
+  projectFolderDismiss.checked = false;
+  projectFolderModalManager.open();
+  setTimeout(() => document.getElementById('projectFolderChooseBtn').focus(), 60);
+}
+
+/**
+ * Pick a folder; a folder without project gets one (current session or empty). Then reload into it.
+ * `preset`: a known folder handle (Lite "Open Recent") instead of the picker.
+ */
+async function chooseProjectFolder(preset = null) {
+  let handle = preset;
+  if (!handle) {
+    try { handle = await pickProjectFolder(); }
+    catch (e) { await appAlert(`Could not open the folder: ${e?.message || e}`, { title: 'Folder error' }); return; }
+  }
+  if (!handle) return;
+  if (await ensurePermission(handle, { request: true }) !== 'granted') return;
+  const store = folderStore(handle);
+  let existing = null;
+  try { existing = await store.loadProject(); }
+  catch (e) { await appAlert(`“${handle.name}” contains a project.signavis.json that cannot be read: ${e?.message || e}`, { title: 'Project could not be read' }); return; }
+  await projectAutosaver?.flush();
+  if (!existing) {
+    saveCurrentAnnotationsIfNeeded();
+    let nFiles = 0;
+    try { nFiles = (await store.listAudio()).length; } catch { /* count is only informative */ }
+    const found = nFiles
+      ? `“${handle.name}” contains ${nFiles} audio file${nFiles === 1 ? '' : 's'}. They stay where they are — nothing is moved or renamed; they appear in the recordings tree.`
+      : `“${handle.name}” has no audio files yet.`;
+    const adds = 'The app only adds project.signavis.json (labels) and, for Xeno-canto downloads, an xc/ folder.';
+    const n = recordingManager.size;
+    let takeOver = false;
+    if (n > 0) {
+      takeOver = await appConfirm(
+        `${found}\n\n${adds}\n\nTake over the ${n} recording${n === 1 ? '' : 's'} open now (with labels; audio is copied into the folder), or start without them?`,
+        { title: 'Create project in this folder', okLabel: `Take over ${n} recording${n === 1 ? '' : 's'}`, cancelLabel: 'Start without them' });
+    } else if (!await appConfirm(`${found}\n\n${adds}`, { title: 'Create project in this folder', okLabel: 'Create project' })) {
+      return;
+    }
+    const meta = { id: `folder-${Date.now().toString(36)}`, name: handle.name };
+    const snap = takeOver
+      ? { ...recordingManager.snapshot(), labelSets: state.labelSets, ownSetId: OWN_SOURCE_ID, activeSetId: state.activeSetId }
+      : { entries: [], activeId: null, labelSets: new Map(), ownSetId: null, activeSetId: null };
+    if (takeOver) snap.entries = await copyEntriesIntoFolder(store, snap.entries);
+    try { await store.saveProject(serializeProject({ ...snap, settings: { taxonomyLang: state.taxonomyLang } }, meta)); }
+    catch (e) { await appAlert(`Could not write to “${handle.name}”: ${e?.message || e}`, { title: 'Folder error' }); return; }
+  }
+  await rememberFolder(handle);
+  lsSet(PROJECT_LOCATION_KEY, 'folder');
+  window.location.reload();
+}
+
+/**
+ * Free project path for a local file: an equal file (same name + size) already in the folder is reused,
+ * otherwise audio/<name>, audio/<name> (2), …
+ */
+async function folderPathForFile(store, file, folderFiles = []) {
+  const same = folderFiles.find((f) => f.path.split('/').pop() === file.name && f.size === file.size);
+  if (same) return { path: same.path, exists: true };
+  const dot = file.name.lastIndexOf('.');
+  const stem = dot > 0 ? file.name.slice(0, dot) : file.name, ext = dot > 0 ? file.name.slice(dot) : '';
+  for (let i = 1; ; i++) {
+    const path = `audio/${i === 1 ? file.name : `${stem} (${i})${ext}`}`;
+    const there = await store.readAudio(path);
+    if (!there) return { path, exists: false };
+    if (there.size === file.size) return { path, exists: true };
+  }
+}
+
+/** Copy a local file into the project folder (unless it is already there). Returns its project path. */
+async function copyFileIntoFolder(store, file, folderFiles = []) {
+  const { path, exists } = await folderPathForFile(store, file, folderFiles);
+  if (!exists) await store.writeAudio(path, await file.arrayBuffer());
+  return path;
+}
+
+/**
+ * "Take over" into a new project folder: session files (blob URLs, still alive before the reload) are copied
+ * to audio/, XC downloads to xc/ (when switched on). Entries that cannot be copied stay as they are.
+ */
+async function copyEntriesIntoFolder(store, entries) {
+  let folderFiles = [];
+  try { folderFiles = await store.listAudio(); } catch { /* empty */ }
+  const out = [];
+  for (const [i, entry] of entries.entries()) {
+    const e = { ...entry };
+    selectionMeta.textContent = `Copying recordings into “${store.label}” (${i + 1}/${entries.length})…`;
+    try {
+      if (!e.path && e.xcId && e.source === 'xc' && xcToFolder()) {
+        const audio = await xcPanel.fetchAudio(e.xcId);
+        await store.writeAudio(xcRecordingPath(e.xcId), audio.buffer);
+        const meta = e.xcRecordingMeta || { id: toXcId(e.xcId), url: `https://xeno-canto.org/${xcNumber(e.xcId)}` };
+        await store.writeText(xcMetaPath(e.xcId), JSON.stringify(meta, null, 2) + '\n');
+        e.path = xcRecordingPath(e.xcId);
+      } else if (!e.path && typeof e.audioUrl === 'string' && e.audioUrl.startsWith('blob:')) {
+        const blob = await (await fetch(e.audioUrl)).blob();
+        const file = new File([blob], e.filename || 'recording.wav', { type: blob.type });
+        e.path = await copyFileIntoFolder(store, file, folderFiles);
+        e.source = 'file';
+      }
+    } catch (err) {
+      console.warn('[project] could not copy recording into folder', e.filename, err);
+    }
+    out.push(e);
+  }
+  selectionMeta.textContent = '';
+  return out;
+}
+
+/** Folder project: a picked local file is copied to audio/ (or matched in the folder) so it survives a reload. */
+async function keepFileInProjectFolder(entry, file) {
+  if (projectKind !== 'folder' || projectAutosaver?.readOnly || !entry || entry.path) return;
+  try {
+    const path = await copyFileIntoFolder(projectStore, file, projectFolderFiles);
+    recordingManager.update(entry.id, { path, source: 'file' });
+    if (!projectFolderFiles.some((f) => f.path === path)) {
+      projectFolderFiles = [...projectFolderFiles, { path, size: file.size, lastModified: Date.now() }];
+    }
+    selectionMeta.textContent = `${file.name} is kept in the project folder (${path})`;
+    renderProjectLocation();
+  } catch (e) {
+    console.warn('[project] could not copy file into folder', e);
+    selectionMeta.textContent = `Could not copy ${file.name} into the project folder — it is kept for this session only`;
+  }
+}
+
+async function reopenRecentFolder() {
+  if (!recentFolderHandle) return;
+  const perm = await ensurePermission(recentFolderHandle, { request: true });
+  if (perm !== 'granted') return;
+  await projectAutosaver?.flush();
+  lsSet(PROJECT_LOCATION_KEY, 'folder');
+  window.location.reload();
+}
+
+/**
+ * BirdNET over a folder: open each recording in turn and run the BirdNET panel on it
+ * (same settings, geo filter from each recording's context). Unopened files are kept (pinned)
+ * because they get labels. Stop = click the status toast.
+ */
+let _folderBirdnetStop = null;
+async function runBirdnetOnFolder({ entries, paths }) {
+  if (_folderBirdnetStop) { _folderBirdnetStop(); return; }
+  const total = entries.length + paths.length;
+  if (!total || !await appConfirm(`Run BirdNET on ${total} recording${total === 1 ? '' : 's'}? Each one is opened and analyzed in turn with the settings of the BirdNET tab.`, { title: 'Run BirdNET', okLabel: 'Run' })) return;
+  let stopped = false;
+  _folderBirdnetStop = () => { stopped = true; };
+  const todo = [...entries];
+  for (const path of paths) {
+    const existing = recordingManager.getAll().find((e) => e.path === path);
+    todo.push(existing || recordingManager.add(folderFileEntry(path)));
+  }
+  let done = 0;
+  try {
+    for (const entry of todo) {
+      if (stopped) break;
+      selectionMeta.textContent = `BirdNET ${done + 1}/${todo.length}: ${entry.filename || toXcId(entry.xcId) || ''} — click "Run BirdNET" again to stop`;
+      const before = player._state?.audioBuffer || null;
+      const wasActive = recordingManager.activeId === entry.id;
+      if (!wasActive) await activateRecordingEntry(entry);
+      // Wait until the player has decoded this recording (the 'ready' event may come later)
+      const t0 = Date.now();
+      while (!stopped && Date.now() - t0 < 120000) {
+        const buf = player._state?.audioBuffer;
+        if (buf && (wasActive || buf !== before)) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      if (stopped) break;
+      if (!player._state?.audioBuffer) continue;
+      await birdnetPanel.analyze();
+      recordingManager.update(entry.id, { pinned: true });
+      done++;
+    }
+  } finally {
+    _folderBirdnetStop = null;
+    selectionMeta.textContent = stopped
+      ? `BirdNET stopped after ${done} of ${todo.length} recordings`
+      : `BirdNET done for ${done} of ${todo.length} recordings`;
+    renderProjectLocation();
+  }
+}
+
+async function addFolderFiles(paths) {
+  const added = [];
+  for (const path of paths) {
+    if (recordingManager.getAll().some((e) => e.path === path)) continue;
+    // pinned false: kept in the project once it has a label or "+" is clicked (workspaceProject.keepRecording)
+    added.push(recordingManager.add(folderFileEntry(path, { pinned: false })));
+  }
+  renderProjectLocation();
+  if (added.length === 1) await activateRecordingEntry(added[0]);
+}
+
+/** Folder recordings: read the audio file from the project folder into a blob URL. */
+async function resolveProjectAudio(entry) {
+  // Lite: a local file outside the project, remembered by its absolute path.
+  if (isLite() && entry?.filePath && !entry.path && !entry.audioUrl) {
+    try {
+      const file = await readAudioPath(entry.filePath);
+      if (file) recordingManager.update(entry.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+      else selectionMeta.textContent = `File not found: ${entry.filePath}`;
+    } catch (e) {
+      selectionMeta.textContent = `Could not read ${entry.filePath}: ${e?.message || e}`;
+    }
+    return;
+  }
+  if (!projectStore || !entry?.path) return;
+  if (entry.audioUrl?.startsWith('blob:')) return;
+  const file = await projectStore.readAudio(entry.path);
+  if (!file) {
+    if (entry.source !== 'xc') selectionMeta.textContent = `File missing in project folder: ${entry.path}`;
+    return;
+  }
+  recordingManager.update(entry.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true });
+}
+
+/** After switching "XC downloads in folder" on: copy the XC recordings already in the project. */
+async function copyAllXcToFolder() {
+  const todo = recordingManager.getAll().filter((e) => e.source === 'xc' && e.xcId && !e.path);
+  for (const [i, entry] of todo.entries()) {
+    selectionMeta.textContent = `Copying ${toXcId(entry.xcId)} to the project folder (${i + 1}/${todo.length})…`;
+    await persistXcToFolder(entry);
+  }
+  if (todo.length) selectionMeta.textContent = `${todo.length} XC recording${todo.length === 1 ? '' : 's'} copied to xc/`;
+  renderProjectLocation();
+}
+
+// ── Raven selection tables (one per audio file) ──────────────────
+const ravenSetName = (id) => state.labelSets.get(id)?.name || id;
+function entryLabels(entry) {
+  return entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
+}
+function downloadRavenTable() {
+  const entry = recordingManager.getActive();
+  const name = entry?.filename || fileLabel.textContent || 'labels';
+  const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName, recordingStart: entry?.recordingStart || player.recordingStart });
+  saveFile(text, ravenTablePath(name.split('/').pop()), 'text/plain')
+    .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
+}
+/** Folder project: write <audio>.Table.1.selections.txt next to every labeled recording. */
+async function writeRavenTablesToFolder() {
+  saveCurrentAnnotationsIfNeeded();
+  let written = 0;
+  try {
+    for (const entry of recordingManager.getAll()) {
+      const labels = entryLabels(entry);
+      if (!labels.length) continue;
+      const target = entry.path ? ravenTablePath(entry.path) : `exports/raven/${ravenTablePath(entry.filename)}`;
+      await projectStore.writeText(target, buildRavenSelectionTable(labels, { sampleRate: entry.sampleRate, setName: ravenSetName, recordingStart: entry.recordingStart || null }));
+      written++;
+    }
+    selectionMeta.textContent = written
+      ? `${written} Raven table${written === 1 ? '' : 's'} written to “${projectStore.label}”`
+      : 'No labels to export';
+  } catch (e) {
+    selectionMeta.textContent = `Raven export failed: ${e?.message || e}`;
+  }
+}
+
+/** Copy an XC download (from the audio cache) into the folder: xc/XC123.mp3 + .json metadata. */
+async function persistXcToFolder(entry) {
+  if (projectKind !== 'folder' || !xcToFolder() || projectAutosaver?.readOnly) return;
+  if (!entry?.xcId || entry.path || entry.source !== 'xc') return;
+  try {
+    const audio = await xcPanel.fetchAudio(entry.xcId);   // cache hit right after loading
+    const path = xcRecordingPath(entry.xcId);
+    await projectStore.writeAudio(path, audio.buffer);
+    const meta = entry.xcRecordingMeta || {
+      id: toXcId(entry.xcId), url: `https://xeno-canto.org/${xcNumber(entry.xcId)}`,
+      note: 'Full metadata (license, recordist) needs an XC API key; see the URL.',
+    };
+    await projectStore.writeText(xcMetaPath(entry.xcId), JSON.stringify(meta, null, 2) + '\n');
+    recordingManager.update(entry.id, { path });
+    if (!projectFolderFiles.some((f) => f.path === path)) {
+      projectFolderFiles = [...projectFolderFiles, { path, size: audio.buffer.byteLength, lastModified: Date.now() }];
+    }
+    projectAutosaver?.schedule();
+  } catch (e) {
+    console.warn('[project] could not save XC audio to folder', e);
+  }
+}
+
+function scheduleProjectAutosave() {
+  projectAutosaver?.schedule();
+  clearTimeout(_projectAutosaveTimer);
+  _projectAutosaveTimer = setTimeout(() => {
+    saveProjectSnapshotNow();
+  }, 250);
+}
+
+async function restoreProjectSnapshotIfPossible() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const hasExternalLoad =
+      params.has('xc') || params.has('XC') || params.has('xcid') || params.has('XCID');
+    if (hasExternalLoad) return;
+
+    const project = await projectRuntime.repo.load(PROJECT_AUTOSAVE_ID);
+    if (!project) return;
+
+    projectCreatedAt = Number(project.createdAt) || Date.now();
+
+    if (project.settings?.taxonomyLang && taxonomyLangSelect) {
+      state.taxonomyLang = project.settings.taxonomyLang;
+      taxonomyLangSelect.value = state.taxonomyLang;
+    }
+
+    if (Array.isArray(project.settings?.labelSets) && project.settings.labelSets.length) {
+      state.labelSets.clear();
+      for (const s of project.settings.labelSets) {
+        if (s?.id) state.labelSets.set(s.id, normalizeSet(s));
+      }
+      ensureOwnSource(project.settings?.activeSetId || null);
+    }
+
+    if (Array.isArray(project.labels) && project.labels.length) {
+      state.labels = dedupeLabels(project.labels.map((l) => ({ ...l })));
+      ensureOwnSource();
+      state._labelsEntryId = recordingManager?.activeId || null;
+      selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
+    }
+
+    if (project.settings?.activeSetId) {
+      state.activeSetId = project.settings.activeSetId;
+    }
+  } catch (e) {
+    // Ignore malformed autosave content.
+  }
+}
+
+// Old multi-file/standalone mode is gone: a session always holds 1…n recordings.
+migrateSessionState(state);
+
+// ── Label set CRUD ────────────────────────────────────────────────
+function _genSetId() { return 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
+
+/** Set the active annotation set ID. With single-set model, this is called once on init. */
+function setActiveSet(id) {
+  state.activeSetId = id || null;
+}
+
+function createLabelSet(partial = {}, { silent = false } = {}) {
+  const set = normalizeSet(defaultSetInfo({ id: _genSetId(), ...partial }));
+  if (!set.id) set.id = _genSetId();
+  state.labelSets.set(set.id, set);
+  if (!silent) {
+    syncToPlayer();
+    xcPanel._rebuildSetSection?.();
+    try { saveSessionSets(state); } catch (e) { /* ignore */ }
+  }
+  return set;
+}
+
+function renameLabelSet(id, newName) {
+  // Route name changes through the central updateSet path so all
+  // dependent UI (label list, XC panel, recording explorer, props)
+  // is notified and persistence happens via the debounced updateSet.
+  updateSet(id, { name: newName });
+}
+
+function deleteLabelSet(id) {
+  // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
+  if (state.labelSets.get(id)?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
+  // Remove the set's labels along with the set itself — orphaned
+  // labels would otherwise float in the unassigned bucket.
+  state.labels = state.labels.filter((lbl) => lbl.setId !== id);
+  state.labelSets.delete(id);
+  state.hiddenSetIds?.delete(id);
+  if (state.activeSetId === id) state.activeSetId = null;
+  syncToPlayer();
+  xcPanel._rebuildSetSection?.();
+}
+
+function assignLabelToSet(labelId, setId) {
+  const lbl = state.labels.find((l) => l.id === labelId);
+  if (!lbl) return;
+  // Move all occurrences of the same species from the same source set together,
+  // so the species group doesn't appear split across two sets.
+  const sourceSetId = lbl.setId ?? null;
+  const speciesName = lbl.label || null;
+  const siblings = speciesName
+    ? state.labels.filter(l => l.label === speciesName && (l.setId ?? null) === sourceSetId)
+    : [lbl];
+  for (const l of siblings) l.setId = setId || null;
+  syncToPlayer();
+}
+
+function convertSetToManual(setId) {
+  const s = state.labelSets.get(setId);
+  if (s) { s.origin = 'manual'; updateSet(setId, {}); }
+}
+
+/**
+ * Note a change to own labels or the upload metadata: re-run the local check.
+ * Changes after an upload show up in the Upload tab ("changed" snapshot).
+ */
+function touchOwnSet(setId) {
+  const s = state.labelSets.get(setId);
+  if (!isOwnSet(s)) return;
+  scheduleOwnSetStatus();
+}
+
+// Re-check the own set like XC's "Verify" (debounced): no errors → 'ready', else 'draft'.
+let _setStatusTimer = null;
+function scheduleOwnSetStatus() {
+  clearTimeout(_setStatusTimer);
+  _setStatusTimer = setTimeout(() => {
+    const s = state.labelSets.get(OWN_SOURCE_ID);
+    if (!s) return;
+    try {
+      const payload = xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets);
+      setStatusFromValidation(s, validateAnnotaPayload(payload));
+    } catch (e) { /* keep previous status */ }
+    try { saveSessionSets(state); } catch (e) { /* ignore */ }
+    try { recordingExplorer.render(); } catch (e) { /* not ready yet */ }
+    refreshUploadChecklist();
+  }, 400);
+}
+
+/** Copy a single imported label into the own labels (✓ in the label list). */
+function adoptOneLabel(labelId) {
+  const lbl = state.labels.find((l) => l.id === labelId);
+  if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
+  const todo = labelsToAdopt([lbl], state.labels, OWN_SOURCE_ID);
+  if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+  const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+  state.labels.push(...copies);
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  saveCurrentAnnotationsIfNeeded();
+  selectionMeta.textContent = `Copied 1 label into my labels`;
+}
+
+function adoptSetLabels(setId) {
+  if (!OWN_SOURCE_ID || setId === OWN_SOURCE_ID) return;
+  saveCurrentAnnotationsIfNeeded();
+  let total = 0, found = 0;
+  for (const entry of recordingManager.getAll()) {
+    const all = entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
+    const inSet = all.filter((l) => l.setId === setId);
+    found += inSet.length;
+    const src = labelsToAdopt(inSet, all, OWN_SOURCE_ID);   // already copied ones are skipped
+    if (!src.length) continue;
+    const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+    total += copies.length;
+    if (entry.id === recordingManager.activeId) state.labels.push(...copies);
+    else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...copies] });
+  }
+  if (!recordingManager.activeId) {
+    const inSet = state.labels.filter((l) => l.setId === setId);
+    found += inSet.length;
+    const copies = adoptLabels(labelsToAdopt(inSet, state.labels, OWN_SOURCE_ID), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+    total += copies.length;
+    state.labels.push(...copies);
+  }
+  if (!total) {
+    if (found) selectionMeta.textContent = 'These labels are already in my labels';
+    return 0;
+  }
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  saveCurrentAnnotationsIfNeeded();
+  selectionMeta.textContent = `Copied ${total} label${total === 1 ? '' : 's'} into my labels`;
+  return total;
+}
+
+// ── Central set update — call whenever any set field changes ──────
+// Debounced so fast typing doesn't re-render on every keystroke.
+let _setRenderTimer = null;
+function updateSet(setId, updates) {
+  const s = state.labelSets.get(setId);
+  if (!s) return;
+  Object.assign(s, updates);
+  if (Object.keys(updates || {}).length) touchOwnSet(setId);
+  saveSetProfile(s);
+  clearTimeout(_setRenderTimer);
+  _setRenderTimer = setTimeout(() => {
+    syncToPlayer();                                      // incl. set header name/license in label list
+    xcPanel._rebuildSetSection?.();                      // set form in XC tab
+    // Ensure the recording explorer header updates live when a set field changes
+    try { recordingExplorer?.render?.(); } catch (e) {}
+    const displayed = propsPanel.displayedLabel;
+    if (displayed) propsPanel.refreshLabel(displayed);  // set section in Properties tab
+    saveSessionSets(state);
+  }, 300);
+}
+
+// Persist labeler-profile fields (creator, license, …) from manual sets
+const PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
+const PROFILE_KEY = 'audio-workbench.labeler-profile.v1';
+function saveSetProfile(s) {
+  if (s.origin !== 'manual') return;
+  try {
+    const prev = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+    let changed = false;
+    for (const k of PROFILE_FIELDS) {
+      if (s[k] != null && s[k] !== '') { prev[k] = s[k]; changed = true; }
+    }
+    if (changed) localStorage.setItem(PROFILE_KEY, JSON.stringify(prev));
+  } catch {}
+}
+function loadSetProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; }
+}
+
+// Persist/restore session sets — delegated to src/app/session-sets.ts
+
+// No local last-click tracking needed; clear/add highlight by querying overlay.
+
+// ── Annotator profile ─────────────────────────────────────────────
+const annotatorProfile = new AnnotatorProfile();
+
+// ── Xeno-canto panel ──────────────────────────────────────────────
+/** XC ID of the currently loaded recording (survives failed label import). */
+let currentXcId = null;
+
+const xcPanel = new XenoCantoPanel({
+  keyInput:              document.getElementById('xcApiKeyInput'),
+  saveBtn:               document.getElementById('xcApiSaveBtn'),
+  setContainerEl:        document.getElementById('xcSetContainer'),
+  authorContainerEl:     document.getElementById('xcAuthorContainer'),
+  onboardingBannerEl:    document.getElementById('xcOnboardingBanner'),
+  uploadBtn:             document.getElementById('xcUploadBtn'),
+  exportSetBtn:          document.getElementById('xcExportSetBtn'),
+  statusEl:              document.getElementById('xcStatus'),
+  annotatorProfile,
+  getLabelSets:          () => state.labelSets,
+  onSetChange:           (setId, updates) => updateSet(setId, updates),
+  onCreateSet:           (partial) => createLabelSet(partial),
+  getUploadBlockReason:  () => uploadBlockReason(),
+});
+
+xcPanel.onKeyChange = () => {
+  updateXcKeyIndicator();
+  refreshUploadChecklist();
+  applyTagVocabulary();
+  try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
+};
+
+// ── Recording Manager + Session Set ─────────────────────────────
+const recordingManager = new RecordingManager();
+
+// One own (editable) annotation set for the whole session — shared across all recordings,
+// new labels land there. Imported XC/BirdNET sets are separate and locked.
+function createOwnSet({ silent = false } = {}) {
+  const _sp = loadSetProfile();
+  return createLabelSet({
+    id: OWN_SOURCE_ID,
+    name: annotatorProfile.name ? `${annotatorProfile.name}'s Annotations` : 'My Annotations',
+    origin: 'manual',
+    creator:   _sp.creator   || annotatorProfile.name      || '',
+    creatorId: _sp.creatorId || annotatorProfile.xcUsername || '',
+    license:   _sp.license   || annotatorProfile.license   || '',
+    owner:     _sp.owner     || annotatorProfile.owner     || '',
+  }, { silent });
+}
+/**
+ * Own labels live in the fixed source OWN_SOURCE_ID (no own set to create or pick).
+ * Migrates older data: own set → own source, further own sets → layers (see label-sources.ts).
+ */
+function ensureOwnSource(preferredId = null) {
+  let entries = [];
+  try { entries = recordingManager.getAll(); } catch { /* manager not created yet */ }
+  const lists = [state.labels, ...entries.map((e) => e.annotations || [])];
+  const changed = migrateToOwnSource(state.labelSets, lists, { preferredId, create: () => createOwnSet({ silent: true }) });
+  if (changed) for (const e of entries) recordingManager.update(e.id, {});
+  return OWN_SOURCE_ID;
+}
+ensureOwnSource(); // UI not ready yet — skip syncToPlayer
+setActiveSet(OWN_SOURCE_ID);
+
+/**
+ * Switch the player to a different RecordingEntry.
+ * Saves current labels, loads the new entry's audio, restores its labels.
+ */
+async function activateRecordingEntry(entry) {
+  // 1. Save current labels into the leaving entry (guarded helper avoids
+  //    accidental overwrites on page reload and handles edge-cases).
+  saveCurrentAnnotationsIfNeeded();
+
+  // 2. Reset per-recording state (keep labelSets — session set + imported XC sets persist)
+  state.labels = [];
+  state._labelsEntryId = null;
+  state.xcLabelPool = [];
+  state.recordingMeta = entry.xcRecordingMeta || null;
+  // Use the stored sample rate for this recording immediately so any UI reads
+  // before player.on('ready') fires still see the correct value.
+  state.sampleRate = entry.sampleRate || 0;
+  state.selected = null;
+  selectionMeta.textContent = '';
+  currentXcId = entry.xcId || null;
+  xcPanel._activeSetId = OWN_SOURCE_ID;
+  setActiveSet(OWN_SOURCE_ID);
+  // Revoke any previous blob object URL
+  if (state.activeObjectUrl) {
+    try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+    state.activeObjectUrl = null;
+  }
+
+  // 3. Mark new entry as active
+  recordingManager.setActive(entry.id);
+
+  // 4. Load audio
+  await resolveProjectAudio(entry);
+  let _audioFailed = false;
+  if (entry.audioUrl || entry.xcId) {
+    try {
+      // Local files linked to an XC number keep playing their own audio
+      if (entry.xcId && (!entry.audioUrl || /xeno-canto\.org/i.test(entry.audioUrl))) {
+        // Re-fetch through xcPanel so CORS proxy fallback is active
+        if (!await checkXcDuration(entry.xcId)) return;
+        const _xcp1 = makeXcProgress(entry.xcId);
+        const audio = await xcPanel.fetchAudio(entry.xcId, _xcp1.onStatus, _xcp1.onProgress);
+        _xcp1.decoding(audio.buffer.byteLength);
+        const blob = new Blob([audio.buffer], { type: 'audio/mpeg' });
+        _lastAudioUrl = URL.createObjectURL(blob);
+        await player.loadFile(new File([blob], entry.filename, { type: 'audio/mpeg' }));
+      } else {
+        // Blob URL (local file) — same origin, no CORS issue
+        _lastAudioUrl = entry.audioUrl?.startsWith('blob:') ? entry.audioUrl : null;
+        player.showLoadingOverlay('Loading…');
+        if (_lastAudioUrl) {
+          // As a File with its name, so a start time in the file name is found again.
+          const blob = await (await fetch(entry.audioUrl)).blob();
+          await player.loadFile(new File([blob], (entry.filename || 'audio').split('/').pop(), { type: blob.type }));
+        } else {
+          await player.loadUrl(entry.audioUrl);
+        }
+      }
+    } catch (e) {
+      _audioFailed = true;
+      xcProgressDone();
+      player.hideLoadingOverlay();
+      if (e?.code === 'XC_NOT_FOUND') showXcError(e);
+      else {
+        selectionMeta.textContent = `Could not load audio: ${e?.message || e}`;
+        showLoadError(e?.message || e);
+      }
+    }
+  }
+  // Keep the status bar's load error visible instead of the plain filename.
+  if (!_audioFailed) fileLabel.textContent = entry.filename;
+
+  // 5. Restore annotations — mark state.labels as belonging to this entry
+  state.labels = (entry.annotations || []).map(a => ({ ...a }));
+  state._labelsEntryId = entry.id;
+  relocalizeAllLabels();
+
+  // 6. Update all per-recording displays
+  if (entry.xcId) {
+    xcPanel.xcId = entry.xcId;
+    xcPanel.recordingMeta = entry.xcRecordingMeta || null;
+    xcPanel._updateUploadState?.();
+    updateUrlXcId(entry.xcId);
+
+    // Restore species bar and background species from stored XC metadata
+    const meta = entry.xcRecordingMeta;
+    const gen = meta?.gen || '';
+    const sp  = meta?.sp  || '';
+    const en  = meta?.en  || '';
+    const isSoundscape = gen.toLowerCase() === 'sonus';
+    if (!isSoundscape && en) {
+      const sciName = (gen && sp) ? `${gen} ${sp}`.trim() : '';
+      const localizedName = localizeSpeciesName(sciName, en);
+      player.setSpeciesBar(localizedName, { scientificName: sciName });
+    } else {
+      player.setSpeciesBar('', {});
+    }
+    const also = meta?.also;
+    player.setBackgroundSpecies(Array.isArray(also) ? also : []);
+    birdnetPanel.setLocationFromMeta(meta);
+  } else {
+    updateUrlXcId(null);
+    player.setSpeciesBar('', {});
+    player.setBackgroundSpecies([]);
+    birdnetPanel.setLocationFromMeta(null);
+  }
+  xcPanel._rebuildSetSection?.();
+  try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
+  try { applyTagVocabulary(); } catch (e) { /* not initialized yet */ }
+  const _entryMeta = entry.xcRecordingMeta;
+  const _entryGen  = _entryMeta?.gen || '';
+  const _entryEn   = _entryMeta?.en  || '';
+  const _isSoundscape = _entryGen.toLowerCase() === 'sonus';
+  propsPanel.setRecordingMeta(state.recordingMeta, {
+    source: toXcId(entry.xcId) || '',
+    sampleRate: entry.sampleRate || state.sampleRate,
+    duration: player.duration || 0,
+    filename: entry.filename,
+    species: _isSoundscape ? '' : _entryEn,
+  });
+
+  syncToPlayer();
+
+  // 7. If this recording was flagged for re-import (e.g. after a reset), do it now
+  if (entry.needsXcImport && entry.xcId) {
+    recordingManager.update(entry.id, { needsXcImport: false });
+    player.showLoadingOverlay('Importing XC labels…');
+    try {
+      const r = await importXenoCantoLabels(entry.xcId);
+      selectionMeta.textContent = r.imported > 0
+        ? `Imported ${r.imported} XC labels`
+        : `No XC labels for XC${r.xcId}`;
+    } catch (err) {
+      if (!handleInvalidKeyError(err))
+        selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+    } finally {
+      player.hideLoadingOverlay();
+    }
+  }
+}
+
+/**
+ * Snapshot of all labels + sets of the session; returns a function restoring it (for Undo).
+ */
+function snapshotLabels() {
+  saveCurrentAnnotationsIfNeeded();
+  const sets = new Map([...state.labelSets].map(([id, s]) => [id, { ...s }]));
+  const perEntry = recordingManager.getAll().map((e) => [e.id, (e.annotations || []).map((a) => ({ ...a })), e.needsXcImport]);
+  const labels = state.labels.map((l) => ({ ...l }));
+  const labelsEntryId = state._labelsEntryId;
+  return () => {
+    state.labelSets = sets;
+    for (const [id, anns, needsXcImport] of perEntry) {
+      if (recordingManager.getById(id)) recordingManager.update(id, { annotations: anns, needsXcImport });
+    }
+    state.labels = labels;
+    state._labelsEntryId = labelsEntryId;
+    saveSessionSets(state);
+    syncToPlayer();
+    recordingExplorer.render();
+    xcPanel._rebuildSetSection?.();
+  };
+}
+
+// ── Single- vs. multi-recording loading ──
+// Single mode: a new recording replaces the current one — always ask first, never replace silently;
+// "keep both" switches multi-recording labeling on deliberately.
+function removeRecordingWithUndo(entry) {
+  saveCurrentAnnotationsIfNeeded();
+  const wasActive = entry.id === recordingManager.activeId;
+  const snapshot = { ...recordingManager.getById(entry.id) };
+  recordingManager.remove(entry.id);
+  forgetBirdboxResults(entry.id);
+  showUndoToast(`Removed ${toXcId(entry.xcId) || entry.filename} from the session`, () => {
+    recordingManager.add(snapshot);
+    if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
+  });
+}
+
+function askReplaceOrKeep(oldName, nLabels) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'app-modal-backdrop';
+    back.innerHTML = `<div class="app-modal" role="dialog" aria-modal="true">
+      <h3>Open another recording</h3>
+      <p></p>
+      <div class="app-modal-actions">
+        <button class="tb-btn" type="button" data-v="replace">Replace</button>
+        <button class="tb-btn" type="button" data-v="keep">Keep both (label several recordings)</button>
+        <button class="tb-btn ghost" type="button" data-v="cancel">Cancel</button>
+      </div></div>`;
+    back.querySelector('p').textContent = nLabels
+      ? `${oldName} has ${nLabels} label${nLabels === 1 ? '' : 's'} of yours. Replace it (undo possible) or keep both?`
+      : `Replace ${oldName} with the new recording (undo possible) or keep both?`;
+    const done = (v) => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done('cancel'); } };
+    back.addEventListener('click', (e) => {
+      const v = e.target.closest?.('[data-v]')?.dataset.v;
+      if (v) done(v); else if (e.target === back) done('cancel');
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(back);
+    back.querySelector('[data-v="keep"]').focus();
+  });
+}
+
+/** Before loading a new recording: returns { cancel } or { replace: entry|null }. */
+async function prepareRecordingLoad() {
+  if (recordingExplorer.isMultiMode()) return { replace: null };
+  const old = recordingManager.getAll()[0];
+  if (!old) return { replace: null };
+  // Phone UI: „New“ always adds to the list (no replace dialog there).
+  if (mobileApp?.isActive) { recordingExplorer.setMultiMode(true); return { replace: null }; }
+  // state.labels belong to the entry only once it is loaded (at startup it may be active but not loaded yet)
+  const live = old.id === recordingManager.activeId && state._labelsEntryId === old.id;
+  const anns = (live ? state.labels : old.annotations) || [];
+  const n = anns.filter((a) => a.setId === OWN_SOURCE_ID).length;
+  const v = await askReplaceOrKeep(toXcId(old.xcId) || old.filename, n);
+  if (v === 'cancel') return { cancel: true };
+  if (v === 'keep') { recordingExplorer.setMultiMode(true); return { replace: null }; }
+  return { replace: old };
+}
+
+/** After the new recording is active: drop the one it replaces. */
+function finishRecordingLoad(prep) {
+  if (prep?.replace && recordingManager.getById(prep.replace.id)) removeRecordingWithUndo(prep.replace);
+}
+
+const recordingExplorer = new RecordingExplorer({
+  container:  document.getElementById('recordingExplorerMount'),
+  manager:    recordingManager,
+  getProjectName: () => projectMeta?.name || 'Project',
+  isProjectFolder: () => projectKind === 'folder',
+  getFolderFiles: () => (projectKind === 'folder' ? filesNotInProject(projectFolderFiles, recordingManager.getAll()) : []),
+  onOpenFile: (path) => addFolderFiles([path]),
+  onFolderKeepAll: ({ entries, paths }) => {
+    for (const e of entries) recordingManager.update(e.id, { pinned: true });
+    for (const path of paths) {
+      if (recordingManager.getAll().some((e) => e.path === path)) continue;
+      recordingManager.add(folderFileEntry(path));
+    }
+    selectionMeta.textContent = `${entries.length + paths.length} file${entries.length + paths.length === 1 ? '' : 's'} kept in the project`;
+    renderProjectLocation();
+    scheduleProjectAutosave?.();
+  },
+  onFolderBirdnet: (what) => runBirdnetOnFolder(what),
+  getMissingContext: (entry) => {
+    const ctx = resolveRecordingContext({
+      manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, filename: entry.filename,
+    });
+    return [!ctx.coords.value && 'location', !ctx.date.value && 'date'].filter(Boolean);
+  },
+  onOpenContext: async (entry) => {
+    if (entry.id !== recordingManager.activeId) await activateRecordingEntry(entry);
+    rightBar.setActive('properties');
+    propsPanel.showRecordingContext();
+  },
+  getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
+  getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
+  getOwnSetId: () => OWN_SOURCE_ID,
+  onRenameSet: (name) => renameLabelSet(OWN_SOURCE_ID, name),
+  onActivate: (entry) => activateRecordingEntry(entry),
+  getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
+  getSetInfo: (setId) => state.labelSets.get(setId),
+  isSetHidden: (setId) => state.hiddenSetIds.has(setId),
+  onToggleSetHidden: (setId) => {
+    if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
+    else state.hiddenSetIds.add(setId);
+    syncToPlayer();
+    recordingExplorer.render();
+  },
+  onAdoptSet: (setId) => {
+    const undo = snapshotLabels();
+    const n = adoptSetLabels(setId);
+    recordingExplorer.render();
+    if (n) showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
+  },
+  onRemoveRecording: (entry) => removeRecordingWithUndo(entry),
+  onResetRecording: async (entry) => {
+    const undo = snapshotLabels();
+    showUndoToast(`Cleared labels of ${toXcId(entry.xcId) || entry.filename}`, undo);
+    // Remove XC fallback sets tied to this recording (named XC sets stay — re-import matches by uri/name)
+    for (const [id, s] of [...state.labelSets]) {
+      if (s.origin === 'xeno-canto' && sameXcId(s.xcFallbackId, entry.xcId)) state.labelSets.delete(id);
+    }
+    if (entry.id === recordingManager.activeId) {
+      // Active recording: clear live state, sync, then re-import from XC
+      state.labels = [];
+      state._labelsEntryId = entry.id;
+      recordingManager.update(entry.id, { annotations: [], needsXcImport: false });
+      syncToPlayer();
+      if (entry.xcId) {
+        player.showLoadingOverlay('Importing XC labels…');
+        try {
+          const r = await importXenoCantoLabels(entry.xcId);
+          selectionMeta.textContent = r.imported > 0
+            ? `Imported ${r.imported} XC labels`
+            : `No XC labels for XC${r.xcId}`;
+        } catch (err) {
+          if (!handleInvalidKeyError(err))
+            selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+        } finally {
+          player.hideLoadingOverlay();
+        }
+      }
+    } else {
+      // Not active: clear stored annotations and mark for re-import on next activation
+      recordingManager.update(entry.id, { annotations: [], needsXcImport: !!entry.xcId });
+    }
+  },
+  onResetSet: async () => {
+    const undo = snapshotLabels();
+    showUndoToast('Cleared all labels in this session', undo);
+    // Remove all XC fallback sets (named sets stay — re-import will match them by uri/name)
+    for (const [id, s] of [...state.labelSets]) {
+      if (s.origin === 'xeno-canto') state.labelSets.delete(id);
+    }
+    // Clear all entries; mark non-active XC recordings for re-import
+    for (const e of recordingManager.getAll()) {
+      const isActive = e.id === recordingManager.activeId;
+      recordingManager.update(e.id, { annotations: [], needsXcImport: !isActive && !!e.xcId });
+    }
+    if (recordingManager.activeId) {
+      state.labels = [];
+      state._labelsEntryId = recordingManager.activeId;
+      syncToPlayer();
+      const _active = recordingManager.getActive();
+      if (_active?.xcId) {
+        player.showLoadingOverlay('Importing XC labels…');
+        try {
+          const r = await importXenoCantoLabels(_active.xcId);
+          selectionMeta.textContent = r.imported > 0
+            ? `Imported ${r.imported} XC labels`
+            : `No XC labels for XC${r.xcId}`;
+        } catch (err) {
+          if (!handleInvalidKeyError(err))
+            selectionMeta.textContent = `XC import failed: ${err?.message || err}`;
+        } finally {
+          player.hideLoadingOverlay();
+        }
+      }
+    }
+  },
+});
+recordingExplorer.render();
+
+// Keep session set metadata in sync with annotator profile changes
+annotatorProfile.addEventListener('change', () => {
+  const s = state.labelSets.get(OWN_SOURCE_ID);
+  if (s) {
+    if (annotatorProfile.name) s.name = `${annotatorProfile.name}'s Annotations`;
+    if (annotatorProfile.name)      s.creator   = annotatorProfile.name;
+    if (annotatorProfile.xcUsername) s.creatorId = annotatorProfile.xcUsername;
+    if (annotatorProfile.license)   s.license   = annotatorProfile.license;
+    if (annotatorProfile.owner)     s.owner     = annotatorProfile.owner;
+  }
+  recordingExplorer.render();
+  xcPanel._rebuildSetSection?.();
+  scheduleOwnSetStatus();
+});
+
+// ── XC key visibility toggle (eye button inside input) ────────────
+const xcKeyToggleVisibility = document.getElementById('xcKeyToggleVisibility');
+const xcApiKeyInput = document.getElementById('xcApiKeyInput');
+function updateXcKeySavedDisplay() {
+  // Populate input from saved key on load / after external save
+  if (xcPanel.apiKey && !xcApiKeyInput.value) {
+    xcApiKeyInput.value = xcPanel.apiKey;
+  }
+  const visible = !xcApiKeyInput.classList.contains('xc-key-masked');
+  xcKeyToggleVisibility.classList.toggle('revealed', visible);
+}
+xcKeyToggleVisibility.addEventListener('click', () => {
+  const isHidden = xcApiKeyInput.classList.contains('xc-key-masked');
+  xcApiKeyInput.classList.toggle('xc-key-masked', !isHidden);
+  xcKeyToggleVisibility.title = isHidden ? 'Hide key' : 'Show key';
+  xcKeyToggleVisibility.classList.toggle('revealed', isHidden);
+  xcApiKeyInput.focus();
+});
+// Pre-fill if key was previously saved
+if (xcPanel.apiKey) xcApiKeyInput.value = xcPanel.apiKey;
+updateXcKeySavedDisplay();
+
+// ── Helpers ───────────────────────────────────────────────────────
+function fmt(sec) { return Number(sec).toFixed(2) + 's'; }
+
+function resolveName(lbl) {
+  const record = lbl.scientificName ? taxonomy.resolve(lbl.scientificName) : null;
+  const lang = state.taxonomyLang;
+  const localized = record
+    ? (lang === 'scientific' ? record.s : taxonomy.resolveCommonName(record, lang))
+    : '';
+  return {
+    display: localized || lbl.commonName || lbl.label || 'Label',
+    scientific: lbl.scientificName || '',
+  };
+}
+
+// ── Theme toggle (persists in localStorage, overrides prefers-color-scheme)
+function setTheme(theme) {
+  if (!theme) return;
+  document.documentElement.setAttribute('data-theme', theme);
+  if (themeToggleBtn) {
+    // Use Lucide SVG icons (injected as raw SVG strings)
+    try {
+      themeToggleBtn.innerHTML = theme === 'light' ? Sun : Moon;
+    } catch (e) {
+      themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
+    }
+    themeToggleBtn.setAttribute('aria-pressed', String(theme === 'light'));
+  }
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('aw:theme');
+  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  const theme = saved || (prefersLight ? 'light' : 'dark');
+  setTheme(theme);
+}
+
+if (themeToggleBtn) {
+  initTheme();
+  themeToggleBtn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    const next = current === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    localStorage.setItem('aw:theme', next);
+  });
+}
+
+// Centralized selection helper — seeks, highlights list rows, and pins
+// the properties panel. Overlay highlight is owned by SpectrogramLabelLayer
+// via the .selected CSS class (driven by labelfocus interaction:'click').
+const DEFAULT_SEEK_MODE = 'middle'; // 'middle' | 'start' | 'none'
+function selectLabel(labelId, opts = {}) {
+  labelViews.flush();   // a label added just now needs its row before it can be highlighted
+  const seekMode = (opts && typeof opts.seekMode !== 'undefined') ? opts.seekMode : DEFAULT_SEEK_MODE;
+  const lbl = labelId ? state.labels.find((l) => l.id === labelId) : null;
+
+  if (!lbl) {
+    try { propsPanel.clearHover(); } catch (e) {}
+    return;
+  }
+
+  // Seek to label (middle by default). If seekMode === 'none', skip seeking.
+  if (seekMode !== 'none') {
+    const start = Number(lbl.start) || 0;
+    const end = Number(lbl.end) || start;
+    const targetTime = (seekMode === 'start') ? start : ((start + end) / 2);
+    if (player?._state?._seekToTime) {
+      try { player._state._seekToTime(targetTime, true); } catch (e) { /* ignore */ }
+    } else if (player?._state?.wavesurfer?.seekTo) {
+      const dur = player.duration || player._state?.audioBuffer?.duration || 1;
+      try { player._state.wavesurfer.seekTo(Math.max(0, Math.min(1, targetTime / dur))); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Highlight list/table rows
+  try { labelList.highlightRow(labelId); } catch (e) {}
+  if (typeof labelTable !== 'undefined' && labelTable && typeof labelTable.highlightRow === 'function') {
+    try { labelTable.highlightRow(labelId); } catch (e) {}
+  }
+
+  // Pin properties (open the right bar if it is closed)
+  try { propsPanel.pinLabel(lbl); } catch (e) {}
+  if (rightBar.collapsed) rightBar.setActive('properties');
+
+  // Trigger non-blocking SNR computation for the selected label
+  const _audioBuffer = player._state?.audioBuffer;
+  if (lbl && _audioBuffer) {
+    snrComputer.request(lbl, _audioBuffer, _audioBuffer.sampleRate);
+  }
+}
+
+// ── Label list ────────────────────────────────────────────────────
+const labelList = new LabelList({
+  container: document.getElementById('labelList'),
+  emptyEl:   document.getElementById('labelsEmpty'),
+  badgeEl:   document.getElementById('labelListCount'),
+  resolveName,
+  taxonomy,
+  tagStore,
+  accordion: true,
+  onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
+  onEdit:  (id) => {
+    selectLabel(id, {});
+    sidebar.setActive('properties');
+    sidebar.flashTab('properties');
+    // Delay so the panel is visible before scrolling + highlighting
+    setTimeout(() => propsPanel.highlightLabelSection(), 60);
+  },
+  onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
+  onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
+  onFocus: (id, src) => {
+    player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
+    try { selectLabel(id, { seekMode: 'start' }); } catch (e) { /* ignore */ }
+  },
+  onHover: (id, on) => {
+    player._emit?.('labelfocus', { id: on ? id : null, source: 'list', interaction: 'hover' });
+  },
+  // ── Set management ──
+  getSets: () => state.labelSets,
+  onCreateSet: (partial) => createLabelSet(partial),
+  onRenameSet: (id, name) => renameLabelSet(id, name),
+  onDeleteSet: (id) => deleteLabelSet(id),
+  canDeleteSet: (id) => id !== OWN_SOURCE_ID,
+  onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
+  onAssignSpecies: (labelId, representative) => {
+    const lbl = state.labels.find(l => l.id === labelId);
+    if (!lbl) return;
+    // Don't do anything if dropped onto its own group
+    if (lbl.label === representative.label) return;
+    lbl.label = representative.label || lbl.label;
+    lbl.scientificName = representative.scientificName || '';
+    lbl.commonName = representative.commonName || '';
+    lbl.color = representative.color || lbl.color;
+    syncToPlayer();
+  },
+  // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
+  onAdoptSet: (setId) => adoptSetLabels(setId),
+  onAdoptLabel: (labelId) => adoptOneLabel(labelId),
+  onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
+  onOpenRefCalls: (lbl) => openRefCalls(lbl),
+  onToggleLockSet: (setId, lock) => {
+    const s = state.labelSets.get(setId);
+    if (s) {
+      s.locked = lock;
+      _pushLockedIds(_computeLockedIds());
+      labelViews.invalidate('list');
+    }
+  },
+  onToggleSetVisibility: (setId, hide) => {
+    if (hide) state.hiddenSetIds.add(setId);
+    else state.hiddenSetIds.delete(setId);
+    labelList.setHiddenSets(state.hiddenSetIds);
+    syncToPlayer();
+  },
+  onToggleSpeciesVisibility: (speciesKey, hide) => {
+    if (hide) state.hiddenSpeciesKeys.add(speciesKey);
+    else state.hiddenSpeciesKeys.delete(speciesKey);
+    labelList.setHiddenSpecies(state.hiddenSpeciesKeys);
+    syncToPlayer();
+  },
+  layers: {
+    get: () => ({ layers: ownLayers(state.labelSets), active: activeLayerId(state.labelSets), hidden: state.hiddenLayers }),
+    onSetActive: (id) => { setActiveLayer(state.labelSets, id); afterLayerChange(); },
+    onAdd: async () => {
+      const name = await appPrompt('Name of the new layer (e.g. annotator or pass):', '', { title: 'New layer', okLabel: 'Add' });
+      if (name == null) return;
+      const l = addLayer(state.labelSets, name);
+      if (l) selectionMeta.textContent = `New labels now go to layer "${l.name}"`;
+      afterLayerChange();
+    },
+    onRename: async (id) => {
+      const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+      const name = await appPrompt('Layer name:', cur?.name || '', { title: 'Rename layer', okLabel: 'Rename' });
+      if (name == null) return;
+      renameLayer(state.labelSets, id, name);
+      afterLayerChange();
+    },
+    onSetAnnotator: async (id) => {
+      const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+      const name = await appPrompt('Annotator of this layer (name as on Xeno-canto; empty = use your profile):', cur?.annotator || '', { title: 'Layer annotator' });
+      if (name == null) return;
+      let xcId = '';
+      if (name.trim()) {
+        const v = await appPrompt(`XC user ID of ${name.trim()} (optional):`, cur?.annotatorXcId || '', { title: 'Layer annotator' });
+        if (v == null) return;
+        xcId = v;
+      }
+      setLayerAnnotator(state.labelSets, id, name, xcId);
+      afterLayerChange();
+    },
+    onRemove: async (id) => {
+      const cur = ownLayers(state.labelSets).find((l) => l.id === id);
+      if (!await appConfirm(`Its labels move to "${ownLayers(state.labelSets)[0].name}".`, { title: `Remove layer "${cur?.name || id}"?`, okLabel: 'Remove', danger: true })) return;
+      saveCurrentAnnotationsIfNeeded();
+      removeLayer(state.labelSets, id, [state.labels, ...recordingManager.getAll().map((e) => e.annotations || [])]);
+      for (const e of recordingManager.getAll()) recordingManager.update(e.id, {});
+      state.hiddenLayers.delete(id);
+      afterLayerChange();
+    },
+    onMove: (ids, layerId) => {
+      const set = new Set(ids);
+      for (const l of state.labels) if (set.has(l.id) && l.setId === OWN_SOURCE_ID) l.layer = layerId;
+      touchOwnSet(OWN_SOURCE_ID);
+      afterLayerChange();
+    },
+    onToggleHidden: (id) => {
+      if (state.hiddenLayers.has(id)) state.hiddenLayers.delete(id);
+      else state.hiddenLayers.add(id);
+      afterLayerChange();
+    },
+  },
+});
+
+/** Redraw after a layer change (layer list lives on the own source entry → saved with the sets). */
+function afterLayerChange() {
+  saveSessionSets(state);
+  syncToPlayer();
+  try { refreshUploadChecklist(); } catch (e) { /* not ready yet */ }
+}
+// ── Label list: play one segment (▶ in a row), filter, view switch ──
+let _segPlay = null;   // { id, start, end, raf, t0, lastT, lastMove }
+function stopSegmentTracking() {
+  if (_segPlay?.raf) cancelAnimationFrame(_segPlay.raf);
+  _segPlay = null;
+  labelList.setPlaying(null);
+}
+function toggleSegmentPlay(lbl) {
+  if (_segPlay?.id === lbl.id) { player.pause(); player.stop?.(); stopSegmentTracking(); return; }
+  stopSegmentTracking();
+  selectLabel(lbl.id, {});
+  labelViews.flush();
+  labelList.highlightRow(lbl.id);
+  player.playSegment(lbl.start, lbl.end, { labelId: lbl.id });
+  const now = performance.now();
+  _segPlay = { id: lbl.id, start: lbl.start, end: lbl.end, raf: 0, t0: now, lastT: NaN, lastMove: now };
+  labelList.setPlaying(lbl.id);
+  const tick = () => {
+    if (!_segPlay || _segPlay.id !== lbl.id) return;
+    const t = Number(player.currentTime) || 0;
+    const ts = performance.now();
+    if (t !== _segPlay.lastT) { _segPlay.lastT = t; _segPlay.lastMove = ts; }
+    const span = Math.max(0.01, _segPlay.end - _segPlay.start);
+    labelList.setPlayProgress((t - _segPlay.start) / span);
+    const ended = t >= _segPlay.end - 0.02 || t < _segPlay.start - 0.05;
+    const stalled = ts - _segPlay.t0 > 600 && ts - _segPlay.lastMove > 500;
+    if (ended || stalled) { stopSegmentTracking(); return; }
+    _segPlay.raf = requestAnimationFrame(tick);
+  };
+  _segPlay.raf = requestAnimationFrame(tick);
+}
+
+const labelFilterInput = document.getElementById('labelFilterInput');
+labelFilterInput?.addEventListener('input', () => labelList.setFilter(labelFilterInput.value));
+labelFilterInput?.addEventListener('keydown', (e) => {
+  e.stopPropagation();   // typing must not trigger player shortcuts
+  if (e.key === 'Escape') { labelFilterInput.value = ''; labelList.setFilter(''); }
+});
+const labelViewBtns = { source: document.getElementById('labelViewSourceBtn'), time: document.getElementById('labelViewTimeBtn') };
+function applyLabelView(view) {
+  for (const [k, b] of Object.entries(labelViewBtns)) b?.setAttribute('aria-pressed', String(k === view));
+}
+for (const [k, b] of Object.entries(labelViewBtns)) {
+  b?.addEventListener('click', () => { labelList.setView(k); applyLabelView(k); });
+}
+applyLabelView(labelList.view);
+
+labelList.onRemove = (lbl) => {
+  state.labels = state.labels.filter((l) => l.id !== lbl.id);
+  syncToPlayer();
+};
+
+// ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
+// Review queue with accept (copy into My labels) / discard; strings in src/ui/mobile/i18n.ts.
+const mobileApp = new MobileApp({
+  player,
+  playerRoot: document.getElementById('playerRoot'),
+  getRecordings: () => recordingManager.getAll().map((e) => ({
+    id: e.id,
+    title: e.xcId ? `${e.xcId}${e.xcRecordingMeta?.en ? ' · ' + e.xcRecordingMeta.en : ''}` : (e.filename || 'Aufnahme'),
+    meta: e.xcId ? 'Xeno-canto' : (e.sampleRate ? `${Math.round(e.sampleRate / 100) / 10} kHz` : mt('rec.audioFile')),
+    labels: e.id === recordingManager.activeId ? state.labels : (e.annotations || []),
+    active: e.id === recordingManager.activeId,
+    duration: e.duration ?? null,
+    thumb: e.thumb ?? null,
+    audioUrl: e.audioUrl ?? null,
+    ...(() => {
+      const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, filename: e.filename });
+      const c = ctx.coords.value;
+      return {
+        date: ctx.date.value, time: ctx.time.value, addedAt: e.addedAt ?? null,
+        place: ctx.locality.value || (c ? `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : null),
+      };
+    })(),
+  })),
+  openRecording: async (id) => {
+    const entry = recordingManager.getById(id);
+    if (entry) await activateRecordingEntry(entry);
+  },
+  getLabels: () => state.labels,
+  resolveName,
+  isOwn: (l) => l.setId === OWN_SOURCE_ID,
+  addFile: () => document.getElementById('fileInput')?.click(),
+  addXenoCanto: (raw) => {
+    // Same path as the desktop Xeno-canto field (dedupe, duration check, label import).
+    xcIdInput.value = raw;
+    xcLoadBtn.click();
+  },
+  setRecordingInfo: (id, info) => { recordingManager.update(id, info); mobileApp.refresh(); },
+  acceptLabel: (id) => adoptOneLabel(id),
+  discardLabel: (id) => {
+    const lbl = state.labels.find((l) => l.id === id);
+    if (!lbl) return null;
+    snrComputer.invalidate(id);
+    touchOwnSet(lbl.setId);
+    state.labels = state.labels.filter((l) => l.id !== id);
+    syncToPlayer();
+    saveCurrentAnnotationsIfNeeded();
+    return { ...lbl };
+  },
+  restoreLabel: (lbl) => {
+    if (!lbl || state.labels.some((l) => l.id === lbl.id)) return;
+    state.labels.push({ ...lbl });
+    touchOwnSet(lbl.setId);
+    syncToPlayer();
+    saveCurrentAnnotationsIfNeeded();
+  },
+  analysis: {
+    confInput: document.getElementById('birdnetConfidence'),
+    overlapSelect: document.getElementById('birdnetOverlap'),
+    mergeCheckbox: document.getElementById('birdnetMerge'),
+    geoCheckbox: document.getElementById('birdnetGeoFilterEnabled'),
+    locationLine: document.getElementById('birdnetLocationLine'),
+    analyzeBtn: document.getElementById('birdnetAnalyzeBtn'),
+    status: document.getElementById('birdnetStatus'),
+    progressBar: document.getElementById('birdnetProgressBar'),
+    birdboxBtn: document.getElementById('birdboxRunBtn'),
+    birdboxStatus: document.getElementById('birdboxStatus'),
+    birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
+    birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+  },
+  live: {
+    prepare: (onStatus) => birdnetPanel.prepareLive(onStatus),
+    save: (file) => loadLocalAudioFile(file),
+    describe: () => {
+      const c = birdnetPanel.getCoords?.();
+      const geo = document.getElementById('birdnetGeoFilterEnabled')?.checked && c;
+      return geo ? mt('live.geo', { lat: c.lat.toFixed(2), lon: c.lon.toFixed(2) }) : mt('live.noGeo');
+    },
+  },
+  onModeChange: (phone) => {
+    // No label editing on phones: draw mode goes off there.
+    const drawBtn = player?._drawBtn;
+    if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
+  },
+});
+{
+  // Every label change ends in labelList.render — keep the phone UI in step.
+  const render = labelList.render.bind(labelList);
+  labelList.render = (labels) => { render(labels); mobileApp.refresh(); };
+  recordingManager.addEventListener('change', () => mobileApp.refresh());
+  recordingManager.addEventListener('activechange', () => mobileApp.refresh());
+}
+
+// ── Label table ("Table" tab below the overview) — plans/label-table-view-plan.md ──
+const labelTableHost = player.enableLabelTable?.();
+const labelTable = labelTableHost ? new LabelGrid({
+  host: labelTableHost,
+  tools: player.getLabelTableTools?.(),
+  resolveName,
+  tagStore,
+  isLocked: (l) => !!(l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked)),
+  layerName: (l) => {
+    if (!l.setId || l.setId === OWN_SOURCE_ID) {
+      const layers = ownLayers(state.labelSets);
+      return layers.length > 1 ? (layers.find((x) => x.id === (l.layer || DEFAULT_LAYER_ID))?.name || '') : '';
+    }
+    return state.labelSets.get(l.setId)?.name || '';
+  },
+  getViewRange: () => player.getVisibleTimeRange?.() ?? null,
+  getDuration: () => player._state?.audioBuffer?.duration || 0,
+  getMaxFreq: () => (player._state?.audioBuffer?.sampleRate || 0) / 2,
+  onChange: (id, updates) => propsPanel.onChange?.(id, updates),
+  onFocus: (id) => player._emit?.('labelfocus', { id, source: 'table', interaction: 'click' }),
+  onHover: (id) => player._emit?.('labelfocus', { id, source: 'table', interaction: 'hover' }),
+  onMultiSelectionChange: (ids) => {
+    labelList._multiSelectedIds = new Set(ids);
+    labelList._updateMultiVisual?.();
+    labelList._updateBulkToolbar?.();
+    syncMultiSelected(ids);
+  },
+  onDelete: async (ids) => {
+    if (ids.length > 1 && !await appConfirm(`Delete ${ids.length} labels?`, { title: 'Delete labels', okLabel: 'Delete', danger: true })) return;
+    const del = new Set(ids);
+    for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
+    state.labels = state.labels.filter((l) => !del.has(l.id));
+    syncToPlayer();
+    selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
+  },
+  onNotice: (msg) => { selectionMeta.textContent = msg; },
+  onTogglePlay: () => { if (player.isPlaying) player.pause(); else player.play(); },
+  onExport: (format, labels, columns) => {
+    const entry = recordingManager.getActive();
+    const file = (entry?.filename || fileLabel.textContent || 'labels').split('/').pop();
+    const base = file.replace(/\.[^.]+$/, '') || 'labels';
+    const out = buildLabelExport(format, labels, base, {
+      sampleRate: entry?.sampleRate || state.sampleRate,
+      setName: ravenSetName,
+      recordingStart: entry?.recordingStart || player.recordingStart,
+      columns,
+      displayName: (l) => resolveName(l).display,
+    });
+    saveFile(out.text, out.name, out.mime).then((r) => {
+      if (r) selectionMeta.textContent = `Exported ${labels.length} label${labels.length === 1 ? '' : 's'} → ${r.target}`;
+    }).catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
+  },
+}) : null;
+if (labelTable) {
+  // Every place that redraws the label list redraws the table as well.
+  const renderList = labelList.render.bind(labelList);
+  labelList.render = (labels) => { renderList(labels); labelTable.render(labels); };
+  player.on('timeupdate', (e) => labelTable.setPlayhead(Number(e.detail?.currentTime) || 0));
+  player.on('labelfocus', (e) => {
+    const d = e.detail || {};
+    if (d.source === 'table') return;
+    const interaction = d.interaction ?? ((d.source === 'list') ? 'click' : 'hover');
+    if (interaction === 'hover') labelTable.setHover(d.id || null);
+  });
+  labelTable.render(state.labels);
+}
+propsPanel.onEditSet = () => sidebar.setActive('project');
+
+player.on('labelfocus', (e) => {
+  const id = e.detail?.id || null;
+  // If the emitter didn't include an explicit interaction, treat
+  // selections coming from the list/table as clicks so they trigger
+  // the same click-path (row + overlay highlight).
+  const rawInteraction = e.detail?.interaction;
+  const source = e.detail?.source;
+  const interaction = rawInteraction ?? ((source === 'list' || source === 'table') ? 'click' : 'hover');
+  labelList.highlightHover(id);
+
+  if (interaction === 'ctrl-click') {
+    // Ctrl+Click: toggle multi-selection across all views.
+    // On first ctrl-click, carry the currently single-selected label into the set.
+    if (id) {
+      if (labelList.multiSelectedIds.size === 0 && labelList.selectedId && labelList.selectedId !== id) {
+        labelList.multiSelectedIds.add(labelList.selectedId);
+      }
+      if (labelList.multiSelectedIds.has(id)) {
+        labelList.multiSelectedIds.delete(id);
+      } else {
+        labelList.multiSelectedIds.add(id);
+      }
+      labelList._updateMultiVisual();
+      labelList._updateBulkToolbar();
+      syncMultiSelected([...labelList.multiSelectedIds]);
+    }
+  } else if (interaction === 'click') {
+    // Plain click clears any multi-selection in all views
+    if (labelList.multiSelectedIds.size > 0) {
+      labelList.clearMultiSelection();
+      syncMultiSelected([]);
+    }
+    // Centralized selection: pick seek mode based on source to preserve
+    // existing UX (overview=center, lists= start), but keep it
+    // configurable via event.detail.seekMode.
+    const source = e.detail?.source;
+    const seekMode = e.detail?.seekMode || ((source === 'overview') ? 'middle' : 'start');
+    selectLabel(id, { seekMode });
+  } else {
+    // hover
+    if (id) {
+      const lbl = state.labels.find((l) => l.id === id) || null;
+      propsPanel.hoverLabel(lbl);
+    } else {
+      propsPanel.clearHover();
+    }
+  }
+});
+
+// ── BirdNET panel ─────────────────────────────────────────────────
+const birdnetBackendToggle = document.getElementById('birdnetBackendToggle');
+birdnetBackendToggle?.addEventListener('click', () => {
+  const wrap = document.getElementById('birdnetBackendWrap');
+  if (!wrap) return;
+  wrap.hidden = !wrap.hidden;
+  birdnetBackendToggle.setAttribute('aria-expanded', String(!wrap.hidden));
+});
+const birdnetPanel = new BirdNETPanel({
+  modelUrlInput:      document.getElementById('birdnetModelUrl'),
+  modelPresetSelect:  document.getElementById('birdnetModelPreset'),
+  confidenceInput:    document.getElementById('birdnetConfidence'),
+  confidenceVal:      document.getElementById('birdnetConfidenceVal'),
+  overlapSelect:      document.getElementById('birdnetOverlap'),
+  mergeCheckbox:      document.getElementById('birdnetMerge'),
+  getAuthor:          () => annotatorProfile.name || '',
+  progressWrap:       document.getElementById('birdnetProgressWrap'),
+  progressBar:        document.getElementById('birdnetProgressBar'),
+  statusEl:           document.getElementById('birdnetStatus'),
+  analyzeBtn:         document.getElementById('birdnetAnalyzeBtn'),
+  getContext:         () => recordingContextForAnalysis(),
+  geoThresholdInput:   document.getElementById('birdnetGeoThreshold'),
+  geoThresholdVal:     document.getElementById('birdnetGeoThresholdVal'),
+  geoFilterCheckbox:   document.getElementById('birdnetGeoFilterEnabled'),
+  geoFilterSliderWrap: document.getElementById('birdnetGeoFilterSliderWrap'),
+  birdnet,
+  getAudioBuffer: () => player._state?.audioBuffer,
+  resolveLabel: (det, audioBuffer) => {
+    const record = det.scientific ? taxonomy.resolve(det.scientific) : null;
+    const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : null;
+    return {
+      label: localized || det.common || det.scientific,
+      scientificName: det.scientific,
+      commonName: det.common,
+    };
+  },
+  getRecordingId: () => recordingManager?.activeId || null,
+  onResults: (labels, startedFor) => {
+    // Find or lazily create the shared BirdNET set
+    let birdnetSetId = [...state.labelSets.entries()].find(([, s]) => s.origin === 'BirdNET')?.[0];
+    if (!birdnetSetId) {
+      const set = createLabelSet({ name: 'BirdNET', origin: 'BirdNET', locked: true });
+      birdnetSetId = set.id;
+    }
+    const _bnRecordingId = startedFor ?? recordingManager?.activeId ?? null;
+    // Another recording was opened while BirdNET ran: the results belong to the one analysed.
+    if (_bnRecordingId && _bnRecordingId !== recordingManager?.activeId) {
+      const entry = recordingManager.getById(_bnRecordingId);
+      if (entry) {
+        const add = labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId }));
+        recordingManager.update(_bnRecordingId, { annotations: [...(entry.annotations || []), ...add] });
+        recordingExplorer.render?.();
+        mobileApp.refresh();
+      }
+      return;
+    }
+    for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
+    syncToPlayer();
+    if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
+  },
+});
+
+// ── BirdBox panel (call boxes) ────────────────────────────────────
+// Its labels live in one locked set; every update replaces the recording's boxes.
+const birdboxPanel = new BirdBoxPanel({
+  confInput:    document.getElementById('birdboxConf'),
+  confVal:      document.getElementById('birdboxConfVal'),
+  gapInput:     document.getElementById('birdboxGap'),
+  gapVal:       document.getElementById('birdboxGapVal'),
+  runBtn:       document.getElementById('birdboxRunBtn'),
+  progressWrap: document.getElementById('birdboxProgressWrap'),
+  progressBar:  document.getElementById('birdboxProgressBar'),
+  statusEl:     document.getElementById('birdboxStatus'),
+  getAudioBuffer: () => player._state?.audioBuffer,
+  getRecordingId: () => recordingManager?.activeId || null,
+  getAuthor:      () => annotatorProfile.name || '',
+  onBoxes: (recordingId, labels, { running }) => {
+    let setId = [...state.labelSets.entries()].find(([, s]) => s.origin === BIRDBOX_ORIGIN)?.[0];
+    if (!setId) setId = createLabelSet({ name: 'BirdBox', origin: BIRDBOX_ORIGIN, locked: true }, { silent: true }).id;
+    const own = labels.map((lbl) => ({ ...lbl, setId, recordingId }));
+    // Only the recording on screen has its labels in state.labels; another one (switched
+    // away during detection) gets them in its stored entry
+    if (recordingId !== (recordingManager?.activeId || null)) {
+      const entry = recordingId ? recordingManager.getById(recordingId) : null;
+      if (!entry) return;
+      const kept = (entry.annotations || []).filter((l) => l.setId !== setId);
+      recordingManager.update(recordingId, { annotations: [...kept, ...own] });
+      if (!running) scheduleProjectAutosave();
+      return;
+    }
+    state.labels = state.labels.filter((l) => l.setId !== setId);
+    state.labels.push(...own);
+    if (running) syncToPlayerSoft(); else syncToPlayer();
+  },
+});
+
+/** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
+function forgetBirdboxResults(recordingId) {
+  let panel;
+  try { panel = birdboxPanel; } catch { return; }   // a project restored before the panel exists
+  if (recordingId === undefined) panel.forgetAll(); else panel.forget(recordingId);
+}
+
+// ── Recording context (date/time, location, device) ──────────────
+// One source for BirdNET's geo filter and Explore; manual values override XC / GUANO / file name.
+const recordingContextBlock = new RecordingContextBlock({
+  el: propsPanel.contextEl,
+  mapEl: propsPanel.contextMapEl,
+  onChange: (field, value) => {
+    const entry = recordingManager.getActive();
+    if (!entry) return;
+    const manual = { ...(entry.context || {}) };
+    if (value == null || value === '') delete manual[field]; else manual[field] = value;
+    recordingManager.update(entry.id, { context: manual });
+    renderRecordingContext();
+  },
+});
+
+function currentRecordingContext() {
+  const entry = recordingManager.getActive();
+  if (!entry) return null;
+  return resolveRecordingContext({
+    manual: entry.context,
+    xc: entry.xcRecordingMeta || state.recordingMeta,
+    guano: entry.guano,
+    filename: entry.filename,
+  });
+}
+
+function recordingContextForAnalysis() {
+  const ctx = currentRecordingContext();
+  return ctx ? { coords: ctx.coords.value, date: ctx.date.value } : null;
+}
+
+function renderRecordingContext() {
+  const ctx = currentRecordingContext();
+  recordingContextBlock.render(ctx);
+  const line = document.getElementById('birdnetLocationLine');
+  if (ctx?.coords.value) {
+    const date = ctx.date.value ? ` · ${ctx.date.value}` : '';
+    line.textContent = `📍 ${formatCoords(ctx.coords.value, 3)}${date} (${CONTEXT_SOURCE_TEXT[ctx.coords.source]})`;
+  } else {
+    line.textContent = 'No location set — the geo filter needs one.';
+  }
+}
+
+document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => { rightBar.setActive('properties'); propsPanel.showRecordingContext(); });
+recordingManager.addEventListener('activechange', () => renderRecordingContext());
+recordingManager.addEventListener('change', () => renderRecordingContext());
+renderRecordingContext();
+
+// GUANO metadata arrives with the ultrasound analysis of a loaded WAV
+player.on('ultrasoundinfo', (e) => {
+  const entry = recordingManager.getActive();
+  const guano = e.detail?.guano || null;
+  if (entry && JSON.stringify(entry.guano || null) !== JSON.stringify(guano)) {
+    recordingManager.update(entry.id, { guano });
+  }
+  renderRecordingContext();
+});
+
+// ── Explore panel (species cards) ─────────────────────────────────
+const explorePanel = new ExplorePanel({
+  birdnet,
+  getLabels:        () => state.labels,
+  getLang:          () => state.taxonomyLang,
+  taxonomy,
+  getCoords:        () => birdnetPanel.getCoords(),
+  getRecordingDate: () => birdnetPanel.getRecordingDate(),
+  loadModel:        (onProgress) => birdnetPanel.loadModel(onProgress),
+  onSpeciesSelect:  (item) => {
+    player.setSpeciesBar(item.name, {
+      color: colorForName(item.name),
+      scientificName: item.scientificName || '',
+    });
+  },
+  onOpenRefCalls: (item) => openRefCalls({ scientificName: item.scientificName, label: item.name }),
+});
+explorePanel.el.classList.add('analyse-explore');
+document.getElementById('panelBirdnet').appendChild(explorePanel.el);
+// Project is the starting point: set + recordings
+sidebar.setActive('project');
+
+// ── Sync & export ─────────────────────────────────────────────────
+let _skipPropsRefresh = false;
+/**
+ * Save current state.labels into the active RecordingEntry when appropriate.
+ * Guards against overwriting stored annotations with an empty in-memory state
+ * on page reload. Also handles the case where state.labels contains labels
+ * but state._labelsEntryId wasn't set (race/edge cases) by saving them
+ * into the currently active entry and marking ownership.
+ */
+function saveCurrentAnnotationsIfNeeded() {
+  if (!recordingManager?.activeId) return;
+  // If the in-memory labels are already marked as belonging to the active
+  // entry, persist them (including the empty-array case when user cleared).
+  if (state._labelsEntryId === recordingManager.activeId) {
+    recordingManager.saveAnnotations(state.labels);
+    return;
+  }
+  // If we have labels in memory but they aren't marked as belonging to the
+  // active entry, assume they should be saved to the active entry and mark
+  // ownership to avoid future ambiguity.
+  if (Array.isArray(state.labels) && state.labels.length > 0) {
+    recordingManager.saveAnnotations(state.labels);
+    state._labelsEntryId = recordingManager.activeId;
+  }
+}
+// Remove duplicate labels while preserving order. Keys by `id` when present,
+// otherwise falls back to a composite key of setId/start/end/scientificName.
+function dedupeLabels(labels) {
+  if (!Array.isArray(labels)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const l of labels) {
+    const key = l && (l.id || `${l.setId || ''}:${l.start || ''}:${l.end || ''}:${l.scientificName || ''}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(l);
+  }
+  return out;
+}
+function _computeLockedIds() {
+  return state.labels
+    .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
+    .map(l => l.id);
+}
+
+function _pushLockedIds(lockedIds) {
+  player.spectrogramLabels?.setLockedIds?.(lockedIds);
+  player.annotations?.setLockedIds?.(lockedIds);
+  propsPanel.setLockedIds?.(lockedIds);
+  labelList.setLockedIds?.(lockedIds);
+}
+
+function _visibleLabels() {
+  const hSets = state.hiddenSetIds;
+  const hSpecies = state.hiddenSpeciesKeys;
+  const hLayers = state.hiddenLayers;
+  if (!hSets.size && !hSpecies.size && !hLayers.size) return state.labels;
+  return state.labels.filter((l) => {
+    const setKey = l.setId || '';
+    if (setKey && hSets.has(setKey)) return false;
+    if (setKey === OWN_SOURCE_ID && hLayers.has(l.layer || DEFAULT_LAYER_ID)) return false;
+    if (hSpecies.has(`${setKey}|${l.label || '(unlabeled)'}`)) return false;
+    return true;
+  });
+}
+
+// BirdNET detections cover the whole band; labels saved before 'fullBand' existed get it here
+function _playerLabels() {
+  return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
+}
+
+/** Labels changed: save them to the active recording now, redraw every view in the next microtask. */
+function syncToPlayer() {
+  saveCurrentAnnotationsIfNeeded();
+  labelViews.invalidate('player', 'list', 'badge', 'explore');
+  if (!_skipPropsRefresh) labelViews.invalidate('props');
+  scheduleProjectAutosave();
+}
+
+/** Like syncToPlayer, but leaves the label list alone (spectrogram, table, badge, properties). */
+function syncToPlayerSoft() {
+  labelViews.invalidate('player', 'table', 'badge');
+  if (!_skipPropsRefresh) labelViews.invalidate('props');
+}
+
+/** Push a multi-selection change to every view that can show it. */
+function syncMultiSelected(ids) {
+  try { labelTable?.setMultiSelected(ids); } catch (e) {}
+  try { player.spectrogramLabels?.setMultiSelected(ids); } catch (e) {}
+  try { player.annotations?.setMultiSelected(ids); } catch (e) {}
+  try { player.setMultiSelectedOverview?.(ids); } catch (e) {}
+}
+
+function toLabelExport() {
+  const out = {
+    labels: state.labels.map((l) => ({
+      id: l.id,
+      label: l.label,
+      scientificName: l.scientificName || '',
+      commonName: l.commonName || '',
+      start: l.start,
+      end: l.end,
+      freqMin: l.freqMin,
+      freqMax: l.freqMax,
+      color: l.color || '',
+      confidence: l.confidence != null ? l.confidence : '',
+      origin: l.origin || '',
+      author: l.author || '',
+      tags: l.tags || {},
+    })),
+  };
+  if (state.recordingMeta) out.recordingMeta = state.recordingMeta;
+  return out;
+}
+
+// ── File loading ──────────────────────────────────────────────────
+async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
+  // Reset per-recording state; the session set is kept intact
+  state.labels = [];
+  state._labelsEntryId = null;  // labels no longer belong to any entry
+  state.xcLabelPool = [];
+  xcPanel._activeSetId = OWN_SOURCE_ID;
+  setActiveSet(OWN_SOURCE_ID);
+
+  xcPanel._rebuildSetSection?.();
+  syncToPlayer();
+  if (state.activeObjectUrl) {
+    try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+    state.activeObjectUrl = null;
+  }
+  const blob = new Blob([arrayBuffer], { type: mimeType });
+  // Always create a blob URL so the reference player can load without CORS issues.
+  const blobUrl = URL.createObjectURL(blob);
+  state.activeObjectUrl = blobUrl;
+  _lastAudioUrl = blobUrl;
+  // Fixed lastModified keeps the WASM spectrogram cache key stable across re-downloads.
+  // A decode error propagates to the caller (no loadUrl retry: it would decode the same bytes again).
+  const file = new File([blob], filename, { type: mimeType, lastModified: 0 });
+  await player.loadFile(file);
+  fileLabel.textContent = filename;
+}
+
+/**
+ * Move each label's embedded annotationSet into the set registry (one locked set per original
+ * XC set, matched by URI or name); labels without one go to a locked "XC{nr} Imported" set.
+ */
+function promoteXcAnnotationSets(labels, xcId) {
+  const setIdMap = new Map(); // "uri||name" → setId
+  // Fallback set key for XC labels without per-annotation set metadata
+  const _xcFallbackKey = `xc-fallback-${xcId}`;
+  for (const lbl of labels) {
+    if (lbl.annotationSet) {
+      const as = lbl.annotationSet;
+      const key = as.uri || as.name || '';
+      if (key && !setIdMap.has(key)) {
+        // Find existing matching set in registry (by uri or name)
+        let existingId = null;
+        for (const [id, s] of state.labelSets) {
+          if ((as.uri && s.uri === as.uri) || (as.name && s.name === as.name)) {
+            existingId = id;
+            // Ensure existing XC sets are locked
+            if (!s.locked) s.locked = true;
+            break;
+          }
+        }
+        if (!existingId) {
+          const newSet = createLabelSet({
+            name: as.name || `XC${xcId}`,
+            license: as.license || '',
+            creator: as.creator || '',
+            uri: as.uri || '',
+            date: as.date || '',
+            origin: 'xeno-canto',
+            locked: true,
+          });
+          existingId = newSet.id;
+        }
+        setIdMap.set(key, existingId);
+      }
+      lbl.setId = key ? (setIdMap.get(key) || null) : null;
+      delete lbl.annotationSet; // migrate to flat setId reference
+    } else {
+      // No per-annotation set metadata — group under a fallback "XC{id} Imported" set
+      if (!setIdMap.has(_xcFallbackKey)) {
+        let existingFallbackId = null;
+        for (const [id, s] of state.labelSets) {
+          if (s.origin === 'xeno-canto' && s.xcFallbackId === xcId) {
+            existingFallbackId = id;
+            if (!s.locked) s.locked = true;
+            break;
+          }
+        }
+        if (!existingFallbackId) {
+          const fallbackSet = createLabelSet({
+            name: `XC${xcId} Imported`,
+            origin: 'xeno-canto',
+            locked: true,
+            xcFallbackId: xcId,
+          });
+          existingFallbackId = fallbackSet.id;
+        }
+        setIdMap.set(_xcFallbackKey, existingFallbackId);
+      }
+      lbl.setId = setIdMap.get(_xcFallbackKey);
+    }
+  }
+}
+
+async function importXenoCantoLabels(xcId) {
+  const result = await xcPanel.importLabels(xcId, state.sampleRate);
+  state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
+  state.recordingMeta = result.recordingMeta || null;
+  birdnetPanel.setLocationFromMeta(state.recordingMeta);
+  try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
+  try { applyTagVocabulary(); } catch (e) { /* not initialized yet */ }
+  const recGen = result.recording?.gen || '';
+  const recEn = result.recording?.en || '';
+  propsPanel.setRecordingMeta(state.recordingMeta, {
+    source: `XC${result.xcId}`,
+    sampleRate: state.sampleRate,
+    duration: player.duration || 0,
+    species: recGen.toLowerCase() === 'sonus' ? '' : recEn,
+    filename: fileLabel.textContent || '',
+  });
+
+  // Set species search bar to main species — skip soundscape pseudo-taxa (Sonus naturalis)
+  const mainGen = result.recording?.gen || '';
+  const isSoundscape = mainGen.toLowerCase() === 'sonus';
+  if (!isSoundscape) {
+    const mainSciName = mainGen && result.recording?.sp
+      ? `${mainGen} ${result.recording.sp}`.trim() : '';
+    const mainSpeciesEn = result.recording?.en || '';
+    const mainSpecies = localizeSpeciesName(mainSciName, mainSpeciesEn);
+    if (mainSpecies) {
+      player.setSpeciesBar(mainSpecies, { scientificName: mainSciName });
+    }
+  }
+
+  // Add XC "also" (background species) to search suggestions
+  const also = result.recording?.also;
+  if (Array.isArray(also) && also.length) {
+    player.setBackgroundSpecies(also);
+  }
+
+  // Always persist XC recording metadata regardless of whether labels were found.
+  // This ensures species info + location survive page reload via sessionStorage.
+  const _activeEntryAfterImport = recordingManager.getActive();
+  if (_activeEntryAfterImport) {
+    const _metaToSave = result.recordingMeta ? { ...result.recordingMeta } : {};
+    if (result.recording) {
+      if (result.recording.gen)  _metaToSave.gen  = result.recording.gen;
+      if (result.recording.sp)   _metaToSave.sp   = result.recording.sp;
+      if (result.recording.en)   _metaToSave.en   = result.recording.en;
+      if (result.recording.also) _metaToSave.also = result.recording.also;
+    }
+    recordingManager.update(_activeEntryAfterImport.id, {
+      xcId: result.xcId,
+      xcRecordingMeta: Object.keys(_metaToSave).length ? _metaToSave : null,
+    });
+  }
+
+  if (!result.labels.length) return { xcId: result.xcId, imported: 0 };
+
+  promoteXcAnnotationSets(result.labels, result.xcId);
+
+  state.labels = result.labels;
+  if (recordingManager?.activeId) state._labelsEntryId = recordingManager.activeId;
+  relocalizeAllLabels();
+  syncToPlayer();
+  return { xcId: result.xcId, imported: result.labels.length };
+}
+
+/** Check if an error looks like an invalid API key and guide the user. */
+function isInvalidKeyError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('invalid') || msg.includes('expired')
+    || msg.includes('401') || msg.includes('403')
+    || msg.includes('unauthorized') || msg.includes('forbidden');
+}
+function handleInvalidKeyError(err) {
+  if (!isInvalidKeyError(err)) return false;
+  selectionMeta.textContent = 'API key invalid — please update your key.';
+  sidebar.setActive('upload');
+  setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
+  return true;
+}
+
+// ── XC API key topbar indicator ────────────────────────────────────
+const xcKeyIndicator = document.getElementById('xcKeyIndicator');
+const xcKeyLabel = document.getElementById('xcKeyLabel');
+function updateXcKeyIndicator() {
+  const hasKey = !!xcPanel.apiKey;
+  xcKeyIndicator.classList.toggle('has-key', hasKey);
+  xcKeyLabel.textContent = hasKey ? 'XC API ✓' : 'XC API Key';
+  xcKeyIndicator.title = hasKey ? 'Xeno-canto API Key active' : 'Set Xeno-canto API Key';
+}
+updateXcKeyIndicator();
+xcKeyIndicator.addEventListener('click', () => {
+  sidebar.setActive('upload');
+  setTimeout(() => document.getElementById('xcApiKeyInput')?.focus(), 120);
+});
+
+// ── XC no-key modal ───────────────────────────────────────────────
+const XC_NOKEY_DISMISSED_KEY = 'audio-workbench.xc-nokey-dismissed.v1';
+const xcNokeyModal = document.getElementById('xcNokeyModal');
+const xcNokeyDismiss = document.getElementById('xcNokeyDismiss');
+const xcNokeyCloseBtn = document.getElementById('xcNokeyCloseBtn');
+const xcNokeySetKeyBtn = document.getElementById('xcNokeySetKeyBtn');
+const xcNokeyKeyInput = document.getElementById('xcNokeyKeyInput');
+const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: xcNokeyModal?.querySelector('.app-modal') });
+
+// XC export modal is provided by src/ui/components/xc-export-modal/xc-export-modal.js (instantiated later)
+
+let _xcNokeyShownThisSession = false;
+function showXcNokeyModal() {
+  if (xcPanel.apiKey) return false;
+  const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
+  if (dismissed || _xcNokeyShownThisSession) {
+    selectionMeta.textContent = 'No XC API key — add one in the Xeno Canto tab to load and upload annotations.';
+    return false;
+  }
+  _xcNokeyShownThisSession = true;
+  xcNokeyKeyInput.value = '';
+  xcNokeySetKeyBtn.disabled = true;
+  xcNokeyModalManager.open();
+  setTimeout(() => xcNokeyKeyInput.focus(), 60);
+  return true;
+}
+function closeXcNokeyModal() {
+  if (xcNokeyDismiss.checked) {
+    try { localStorage.setItem(XC_NOKEY_DISMISSED_KEY, '1'); } catch {}
+  }
+  xcNokeyModalManager.close();
+}
+xcNokeyKeyInput.addEventListener('input', () => {
+  xcNokeySetKeyBtn.disabled = !xcNokeyKeyInput.value.trim();
+});
+xcNokeyKeyInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && xcNokeyKeyInput.value.trim()) xcNokeySetKeyBtn.click();
+});
+xcNokeyCloseBtn.addEventListener('click', closeXcNokeyModal);
+xcNokeySetKeyBtn.addEventListener('click', async () => {
+  const key = xcNokeyKeyInput.value.trim();
+  if (!key) return;
+  // Save through xcPanel so localStorage + state + callbacks stay in sync
+  xcPanel.keyInput.value = key;
+  xcPanel.saveBtn.click();
+  updateXcKeyIndicator();
+  closeXcNokeyModal();
+  // Re-import labels now that a key is available
+  const xcId = currentXcId || xcPanel.xcId;
+  if (xcId) {
+    try {
+      const labelResult = await importXenoCantoLabels(xcId);
+      selectionMeta.textContent = labelResult.imported > 0
+        ? `Imported ${labelResult.imported} XC labels`
+        : `No XC labels for XC${labelResult.xcId}`;
+      sidebar.setActive('labels');
+    } catch (err) {
+      if (!handleInvalidKeyError(err)) {
+        selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+      }
+    }
+  }
+});
+// Backdrop click handled by ModalManager (focus trap, Escape key, backdrop click)
+
+/** Update URL to reflect current XC ID (or clear it). */
+function updateUrlXcId(xcId) {
+  const url = new URL(window.location.href);
+  if (xcId) {
+    url.searchParams.set('xcid', xcId);
+  } else {
+    url.searchParams.delete('xcid');
+    url.searchParams.delete('XCID');
+    url.searchParams.delete('xc');
+    url.searchParams.delete('XC');
+  }
+  history.replaceState(null, '', url);
+}
+
+// ── Xeno-canto load from sidebar ──────────────────────────────────
+const xcIdInput = document.getElementById('xcIdInput');
+const xcLoadBtn = document.getElementById('xcLoadBtn');
+xcLoadBtn.addEventListener('click', async () => {
+  const raw = xcIdInput.value.trim();
+  if (!raw) return;
+  // Deduplicate: if this XC ID is already in the session, just switch to it
+  const _preCheckId = raw.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
+  const _preExisting = recordingManager.findByXcId(_preCheckId);
+  if (_preExisting) {
+    if (_preExisting.id !== recordingManager.activeId) await activateRecordingEntry(_preExisting);
+    sidebar.setActive('labels');
+    return;
+  }
+  const _prep = await prepareRecordingLoad();
+  if (_prep.cancel) return;
+  xcLoadBtn.disabled = true;
+  xcLoadBtn.textContent = '…';
+  try {
+    if (!await checkXcDuration(raw)) { xcLoadBtn.disabled = false; xcLoadBtn.textContent = 'Load'; return; }
+    const _xcp2 = makeXcProgress(raw);
+    xcPanel.prefetchRecording(raw); // labels/metadata load in parallel with the audio
+    const audio = await xcPanel.fetchAudio(raw, _xcp2.onStatus, _xcp2.onProgress);
+    _xcp2.decoding(audio.buffer.byteLength);
+    currentXcId = audio.xcId;
+    updateUrlXcId(audio.xcId);
+    // Save current annotations to the leaving entry, then create a new RecordingEntry
+    saveCurrentAnnotationsIfNeeded();
+    const _xcEntry = recordingManager.add({
+      xcId: audio.xcId,
+      filename: `XC${audio.xcId}.mp3`,
+      audioUrl: audio.audioUrl || `https://xeno-canto.org/${audio.xcId}/download`,
+      isBlobUrl: false,
+    });
+    recordingManager.setActive(_xcEntry.id);
+    state._labelsEntryId = _xcEntry.id;  // empty labels now belong to the new entry
+    await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+    finishRecordingLoad(_prep);
+    showXcNokeyModal();
+    try {
+      const labelResult = await importXenoCantoLabels(audio.xcId);
+      selectionMeta.textContent = labelResult.imported > 0
+        ? `Imported ${labelResult.imported} XC labels`
+        : `No XC labels for XC${labelResult.xcId}`;
+    } catch (err) {
+      if (!handleInvalidKeyError(err)) {
+        selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+      }
+    }
+    // Stay in the Project tab: the explorer now shows the XC set (read-only) under the recording.
+    recordingExplorer.render();
+  } catch (err) {
+    xcProgressDone();
+    player.hideLoadingOverlay();
+    showXcError(err);
+  } finally {
+    xcLoadBtn.disabled = false;
+    xcLoadBtn.textContent = 'Load';
+  }
+});
+xcIdInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); xcLoadBtn.click(); }
+});
+
+// ── Xeno-canto export & upload ────────────────────────────────────
+const xcExportSetBtn = document.getElementById('xcExportSetBtn');
+const xcUploadBtn = document.getElementById('xcUploadBtn');
+
+/**
+ * Labels of one annotation set across all recordings of the session, each tagged with
+ * the recording's xc_nr / sound_file. Without a set (or without recording entries)
+ * the labels of the current recording are used. Shared by export, upload and the upload button.
+ */
+/**
+ * Labels of the next XC set: the upload selection (recordings with XC ID, species, layers,
+ * sources) over all recordings, tagged with their recording's xc_nr / sound_file.
+ */
+function collectSetLabels() {
+  // Persist in-memory labels first so per-entry `annotations` include the active recording.
+  saveCurrentAnnotationsIfNeeded();
+  const { items } = selectUploadLabels(recordingManager.getAll(), getUploadSelection(), state.labelSets);
+  return dedupeLabels(items.map(({ label, entry }) => {
+    // Labels on a layer with its own annotator are uploaded under that name (else: profile)
+    const copy = { ...label, ...(layerAnnotatorFields(state.labelSets, label) || {}) };
+    if (!copy.xc_nr) copy.xc_nr = xcNumber(entry.xcId);
+    if (entry.filename && !copy.sound_file) copy.sound_file = entry.filename;
+    return copy;
+  }));
+}
+
+function getUploadSelection() {
+  return normalizeUploadSelection(state.labelSets.get(OWN_SOURCE_ID)?.uploadSelection);
+}
+
+function setUploadSelection(sel) {
+  const own = state.labelSets.get(OWN_SOURCE_ID);
+  if (!own) return;
+  own.uploadSelection = normalizeUploadSelection(sel);
+  saveSessionSets(state);
+  refreshUploadChecklist();
+}
+
+function allRecordingLabels() {
+  saveCurrentAnnotationsIfNeeded();
+  return recordingManager.getAll().flatMap((e) => e.annotations || []);
+}
+
+/** Remember what went out (labels + content hash) to show "changed since upload" later. */
+function onSetUploaded() {
+  const own = state.labelSets.get(OWN_SOURCE_ID);
+  if (own) {
+    const { items } = selectUploadLabels(recordingManager.getAll(), getUploadSelection(), state.labelSets);
+    const snap = makeUploadSnapshot(items.map((x) => x.label), items.map((x) => x.entry),
+      { name: own.name, license: own.license, env: xcUploadTarget().env });
+    own.uploads = [...(own.uploads || []), snap];
+  }
+  saveSessionSets(state);
+  refreshUploadChecklist();
+  recordingExplorer.render();
+  labelViews.invalidate('list');
+}
+
+// Initialize extracted export modal and wire it to xcPanel
+window.xcExportModalApi = createXcExportModal({
+  buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets),
+  upload: async () => {
+    const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets);
+    if (result?.ok) onSetUploaded();
+    return result;
+  },
+  getApiKey: () => xcPanel.apiKey,
+  getFilename: () => (toXcId(xcPanel.xcId) ? `${toXcId(xcPanel.xcId)}_annotation_set.json` : 'annotation_set.json'),
+  defaultCollapseDepth: 1,
+});
+
+function openXcExportModal() { try { window.xcExportModalApi.open(); } catch (e) {} }
+
+xcExportSetBtn.addEventListener('click', () => openXcExportModal());
+
+// Test server (?xcenv=acc): say so on the button so nobody mistakes it for a real upload
+{
+  const target = xcUploadTarget();
+  const hint = document.getElementById('xcUploadTargetHint');
+  if (target.env !== 'live') {
+    xcUploadBtn.textContent = `Send to ${target.env.toUpperCase()} test server`;
+    hint.textContent = `Uploads go to ${target.label}. Open the app with ?xcenv=live to switch back.`;
+    hint.hidden = false;
+  }
+}
+
+xcUploadBtn.addEventListener('click', async () => {
+  xcUploadBtn.disabled = true;
+  xcPanel._setStatus('Uploading…', 'info');
+  try {
+    const sent = collectSetLabels();
+    const result = await xcPanel.uploadToXenoCanto(sent, state.labelSets);
+    if (result.ok) {
+      onSetUploaded();
+      xcPanel._setStatus(result.message, 'success');
+      const target = xcUploadTarget();
+      showUploadSuccess({
+        labelCount: sent.length,
+        recordingCount: new Set(sent.map((l) => l.xc_nr || l.sound_file || '')).size,
+        setName: state.labelSets.get(OWN_SOURCE_ID)?.name || '',
+        message: result.message,
+        endpoint: target.endpoint,
+        testServer: target.env !== 'live' ? `${target.env.toUpperCase()} test server` : '',
+      });
+    } else {
+      const msgs = [result.message, ...(result.errors || [])].filter(Boolean).join('; ');
+      xcPanel._setStatus(msgs, 'error');
+    }
+  } catch (err) {
+    xcPanel._setStatus(err?.message || 'Upload failed', 'error');
+  } finally {
+    refreshUploadChecklist();
+  }
+});
+
+document.getElementById('xcDownloadSetBtn').addEventListener('click', () => {
+  xcPanel.exportAnnotationSetJSON(collectSetLabels(), state.labelSets);
+});
+
+// ── Set contents (selection) + uploaded sets ──
+const uploadSelectionPanel = new UploadSelectionPanel({
+  el: document.getElementById('xcSelection'),
+  uploadsEl: document.getElementById('xcUploads'),
+  onChange: (sel) => setUploadSelection(sel),
+  onForgetSnapshot: (id) => {
+    const own = state.labelSets.get(OWN_SOURCE_ID);
+    if (!own) return;
+    own.uploads = (own.uploads || []).filter((u) => u.id !== id);
+    saveSessionSets(state);
+    refreshUploadChecklist();
+  },
+  onAssignXc: async (id) => {
+    const entry = recordingManager.getById(id);
+    if (!entry) return;
+    const val = await appPrompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '', { title: 'Assign XC number', placeholder: 'XC123456' });
+    if (val == null) return;
+    if (!recordingManager.assignXcId(id, val)) await appAlert('Not a valid XC number.', { title: 'Assign XC number' });
+    refreshUploadChecklist();
+  },
+  layerName: (id) => ownLayers(state.labelSets).find((l) => l.id === id)?.name || id,
+  localName: () => projectMeta?.name || 'Project folder',
+});
+
+// ── Upload assistant (live checklist, XC "Verify" done locally) ──
+const uploadAssistant = new UploadAssistant({
+  el: document.getElementById('xcChecklist'),
+  keyEl: document.getElementById('xcKeySection'),
+  profileEl: document.getElementById('xcAuthorContainer'),
+  onJump: (target) => jumpToChecklistTarget(target),
+});
+let _lastChecklist = null;
+
+function uploadBlockReason() {
+  if (!_lastChecklist || _lastChecklist.ready) return '';
+  const first = _lastChecklist.steps.flatMap((st) => st.issues).find((i) => i.level === 'error');
+  return first ? `Fix first: ${first.message}` : '';
+}
+
+/** Re-run the local "Verify" for the own set and redraw checklist, summary and buttons. */
+function refreshUploadChecklist() {
+  if (!OWN_SOURCE_ID) return;
+  try {
+    const set = state.labelSets.get(OWN_SOURCE_ID);
+    const sel = getUploadSelection();
+    const labels = collectSetLabels();
+    const payload = xcPanel.buildAnnotationSetPayload(labels, state.labelSets);
+    const picked = selectUploadLabels(recordingManager.getAll(), sel, state.labelSets).items;
+    const recordings = recordingManager.getAll()
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.filename,
+        xcNr: entry.xcId || '',
+        recordist: entry.xcRecordingMeta?.rec || '',
+        labelCount: picked.filter((x) => x.entry === entry).length,
+      }))
+      .filter((r) => r.labelCount > 0);
+    const all = allRecordingLabels();
+    uploadSelectionPanel.render(
+      uploadCandidates(recordingManager.getAll(), sel, state.labelSets),
+      sel,
+      (set?.uploads || []).map((snap) => ({ snap, ...snapshotState(snap, all) })),
+    );
+    _lastChecklist = buildUploadChecklist({
+      apiKey: xcPanel.apiKey,
+      profile: { name: annotatorProfile.name, xcUsername: annotatorProfile.xcUsername },
+      set, recordings, payload, validation: validateAnnotaPayload(payload),
+    });
+    uploadAssistant.render(_lastChecklist);
+    const c = _lastChecklist;
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    document.getElementById('xcUploadSummary').textContent = [
+      `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
+      c.errorCount ? plural(c.errorCount, 'error') : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+    ].filter(Boolean).join(' · ');
+  } catch (e) { /* app still initializing */ }
+  xcPanel._updateUploadState();
+}
+
+async function jumpToChecklistTarget(target) {
+  if (target.kind === 'set') {
+    sidebar.setActive('upload');
+    document.getElementById('xcSetContainer')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  if (target.kind === 'recording') {
+    const entry = recordingManager.getById(target.id);
+    if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+    sidebar.setActive('project');
+    return;
+  }
+  if (target.kind === 'label') {
+    saveCurrentAnnotationsIfNeeded();
+    const entry = recordingManager.getAll().find((e) => (e.annotations || []).some((a) => a.id === target.id));
+    if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
+    selectLabel(target.id, { seekMode: 'start' });
+  }
+}
+
+
+// ── Taxonomy ──────────────────────────────────────────────────────
+const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
+
+function getLangParam() {
+  const p = new URLSearchParams(window.location.search || '');
+  return p.get('lang') || p.get('LANG') || localStorage.getItem(LANG_STORAGE_KEY) || '';
+}
+
+/** Resolve a scientific name to the current language, falling back to the English name. */
+function localizeSpeciesName(sciName, fallbackEn = '') {
+  if (!sciName || !taxonomy.data) return fallbackEn;
+  const record = taxonomy.resolve(sciName);
+  if (!record) return fallbackEn;
+  return taxonomy.resolveCommonName(record, state.taxonomyLang) || record.s || fallbackEn;
+}
+
+/** Re-resolve all label display names to the current taxonomy language. */
+function relocalizeAllLabels() {
+  if (!taxonomy.data) return;
+  for (const lbl of state.labels) {
+    if (!lbl.scientificName) continue;
+    if (state.taxonomyLang === 'scientific') {
+      lbl.label = lbl.scientificName;
+    } else {
+      const record = taxonomy.resolve(lbl.scientificName);
+      const localized = record ? taxonomy.resolveCommonName(record, state.taxonomyLang) : '';
+      if (localized) lbl.label = localized;
+    }
+  }
+}
+
+async function loadBirdnetTaxonomy() {
+  try {
+    taxonomyMeta.textContent = 'Taxonomy loading…';
+    const res = await fetch('./data/birdnet-taxonomy.v2.4.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    taxonomy.load(data);
+    state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
+    taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp${taxonomy.data?.extraCount ? ` + ${taxonomy.data.extraCount} birds` : ""} · ${state.taxonomyLang}`;
+    // Re-resolve any labels that were loaded before taxonomy was ready,
+    // then push updated names to the player (overview + spectrogram).
+    if (state.labels.length) {
+      relocalizeAllLabels();
+      syncToPlayer();
+    }
+    // Wire species search widget factory into label list + properties panel
+    getSuggestions = createSuggestionProvider({
+      taxonomy,
+      getLang: () => state.taxonomyLang,
+      getLabels: () => state.labels,
+      getPool: () => state.xcLabelPool,
+    });
+    const speciesSearchFactory = (anchor, onSelect) =>
+      createSpeciesSearchWidget({ getSuggestions, onSelect });
+    labelList.setSpeciesSearchFactory(speciesSearchFactory);
+    propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
+    labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
+    labelViews.invalidate('list');
+  } catch (err) {
+    taxonomy.clear();
+    taxonomyMeta.textContent = `Taxonomy unavailable: ${err?.message || String(err)}`;
+  }
+}
+
+// ── URL params & startup ──────────────────────────────────────────
+/** Open the XC recording named in `p` (page URL by default; Lite deep links pass their own). */
+async function autoLoadFromParams(p = new URLSearchParams(window.location.search || '')) {
+  const xcid = p.get('xcid') || p.get('XCID') || p.get('xc') || p.get('XC');
+  if (!xcid) return;
+  // Deduplicate: entry already in session (e.g. from previous page load) — just activate it
+  const _autoNorm = xcid.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
+  const _autoExisting = recordingManager.findByXcId(_autoNorm);
+  if (_autoExisting) {
+    await activateRecordingEntry(_autoExisting);
+    return;
+  }
+  // Restored session in single mode: the linked recording replaces the current one (ask if it has labels)
+  const _prep = await prepareRecordingLoad();
+  if (_prep.cancel) {
+    // Keep the current recording: open it (startup skipped that because of the URL) and point the URL at it
+    const _cur = recordingManager.getActive() || recordingManager.getAll()[0];
+    updateUrlXcId(_cur?.xcId || null);
+    if (_cur && (_cur.xcId || _cur.audioUrl || _cur.path)) await activateRecordingEntry(_cur);
+    return;
+  }
+  try {
+    if (!await checkXcDuration(xcid)) return;
+    const _xcp3 = makeXcProgress(xcid);
+    xcPanel.prefetchRecording(xcid); // labels/metadata load in parallel with the audio
+    const audio = await xcPanel.fetchAudio(xcid, _xcp3.onStatus, _xcp3.onProgress);
+    _xcp3.decoding(audio.buffer.byteLength);
+    currentXcId = audio.xcId;
+    updateUrlXcId(audio.xcId);
+    // Create a RecordingEntry for this auto-loaded XC recording
+    const _autoEntry = recordingManager.add({
+      xcId: audio.xcId,
+      filename: `XC${audio.xcId}.mp3`,
+      audioUrl: audio.audioUrl || `https://xeno-canto.org/${audio.xcId}/download`,
+      isBlobUrl: false,
+    });
+    recordingManager.setActive(_autoEntry.id);
+    state._labelsEntryId = _autoEntry.id;  // empty labels now belong to the new entry
+    await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
+    finishRecordingLoad(_prep);
+    showXcNokeyModal();
+    try {
+      const labelResult = await importXenoCantoLabels(audio.xcId);
+      selectionMeta.textContent = labelResult.imported > 0
+        ? `Imported ${labelResult.imported} XC labels`
+        : `No XC labels found for XC${labelResult.xcId}`;
+    } catch (err) {
+      if (!handleInvalidKeyError(err)) {
+        selectionMeta.textContent = `XC label import failed: ${err?.message || String(err)}`;
+      }
+    }
+  } catch (err) {
+    xcProgressDone();
+    player.hideLoadingOverlay();
+    showXcError(err);
+  }
+}
+
+// ── Event listeners ───────────────────────────────────────────────
+// "New" is the only way to drop recordings: loading a file/XC/demo always adds to the session.
+document.getElementById('newSessionBtn')?.addEventListener('click', async () => {
+  const nRec = recordingManager.getAll().length;
+  saveCurrentAnnotationsIfNeeded();
+  const nLabels = recordingManager.getAll().reduce((n, e) => n + (e.annotations?.length || 0), 0) || state.labels.length;
+  if ((nRec || nLabels) && !await appConfirm(
+    `This removes ${nRec} recording${nRec === 1 ? '' : 's'} and ${nLabels} label${nLabels === 1 ? '' : 's'} from this browser. ` +
+    'Export first if you want to keep them.',
+    { title: 'Start a new session?', okLabel: 'Remove and start new', danger: true })) return;
+  recordingManager.setActive(null);
+  recordingManager.clear();
+  forgetBirdboxResults();
+  state.labels = [];
+  state._labelsEntryId = null;
+  state.xcLabelPool = [];
+  state.recordingMeta = null;
+  state.hiddenSetIds?.clear?.();
+  state.labelSets.clear();
+  ensureOwnSource();
+  setActiveSet(OWN_SOURCE_ID);
+  saveSessionSets(state);
+  clearTimeout(_projectAutosaveTimer);
+  await saveProjectSnapshotNow();
+  await projectAutosaver?.flush({ force: true });
+  // Reload without ?xc= so player, panels and caches start from the empty session.
+  window.location.replace(window.location.pathname);
+});
+
+browseBtn.addEventListener('click', async () => {
+  if (!isLite()) { fileInput.click(); return; }
+  // Lite: native dialog; the path is kept so the file reopens after a restart.
+  let picked;
+  try { picked = await pickAudioFile(); }
+  catch (e) { showLoadError(e?.message || e, 'Cannot open'); return; }
+  if (picked) await loadLocalAudioFile(picked.file, { filePath: picked.path });
+});
+// ── Microphone recording: live spectrogram, then added like a local file ──
+const recordBtn = document.getElementById('recordBtn');
+if (recordBtn && BirdNETPlayer.recordingSupported) {
+  recordBtn.hidden = false;
+  const recordText = recordBtn.querySelector('.record-btn-text');
+  const setRecording = (on) => {
+    recordBtn.classList.toggle('is-recording', on);
+    recordText.textContent = on ? 'Stop recording' : 'Record from microphone';
+  };
+  recordBtn.addEventListener('click', async () => {
+    if (player.isRecording) { await player.stopRecording(); return; }
+    try {
+      await player.startRecording({ maxSeconds: 300, loadWhenDone: false });
+      setRecording(true);
+    } catch (e) {
+      showLoadError(e?.name === 'NotAllowedError' ? 'Microphone access was denied.' : (e?.message || e), 'Cannot record');
+    }
+  });
+  player.on('recordingstop', () => setRecording(false));
+  player.on('recordingcomplete', async (e) => {
+    setRecording(false);
+    const file = e.detail?.file;
+    if (file) await loadLocalAudioFile(file);
+  });
+}
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  try { await loadLocalAudioFile(file); } finally { fileInput.value = ''; }
+});
+
+/**
+ * Load a local audio file (file picker or drag & drop).
+ * `extra.filePath` (Lite): absolute path, stored on the recording so it reopens after a restart.
+ */
+async function loadLocalAudioFile(file, extra = {}) {
+  if (extra.filePath) liteRecentAdd({ kind: 'file', path: extra.filePath });
+  // Re-picked session-only file from a restored project: reattach audio, keep its labels.
+  const _orphan = recordingManager.getAll().find((e) =>
+    e.source === 'file' && !e.audioUrl
+    && (extra.filePath ? (e.filePath === extra.filePath || (!e.filePath && e.filename === file.name)) : e.filename === file.name));
+  if (_orphan) {
+    recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true, ...extra });
+    fileInput.value = '';
+    await activateRecordingEntry(_orphan);
+    await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
+    return;
+  }
+  const _prep = await prepareRecordingLoad();
+  if (_prep.cancel) { fileInput.value = ''; return; }
+  // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
+  saveCurrentAnnotationsIfNeeded();
+  recordingManager.setActive(null);
+  state.xcLabelPool = [];
+  state.labels = [];
+  state._labelsEntryId = null;
+  state.recordingMeta = null;
+  currentXcId = null;
+  updateUrlXcId(null);
+  syncToPlayer();
+  // Set before loading: the 'ready' event reads it for the properties panel.
+  fileLabel.textContent = file.name;
+  try {
+    await player.loadFile(file);
+  } catch (err) {
+    fileInput.value = '';
+    selectionMeta.textContent = `Could not load audio: ${err?.message || err}`;
+    showLoadError(err?.message || err);
+    return;
+  }
+  // Clear any saved original when a new file is explicitly loaded by the user
+  try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
+  player.__originalAudioBuffer = null;
+  // Create a RecordingEntry for this local file (blob URL for in-session re-activation)
+  const _blobUrl = URL.createObjectURL(file);
+  const _fileEntry = recordingManager.add({
+    filename: file.name,
+    audioUrl: _blobUrl,
+    isBlobUrl: true,
+    ...extra,
+    recordingStart: player.recordingStart || null,
+  });
+  recordingManager.setActive(_fileEntry.id);
+  state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
+  fileInput.value = '';
+  finishRecordingLoad(_prep);
+  await keepFileInProjectFolder(_fileEntry, file);
+}
+
+// ── Drag & drop of audio files anywhere on the page ──────────────
+const AUDIO_EXT = /\.(wav|mp3|flac|ogg|oga|opus|m4a|aac|webm|aif|aiff)$/i;
+const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+const dropOverlay = document.createElement('div');
+dropOverlay.className = 'file-drop-overlay';
+dropOverlay.innerHTML = '<div class="file-drop-card"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><div class="file-drop-title">Drop audio file to open</div><div class="file-drop-hint">WAV, MP3, FLAC, OGG, M4A …</div></div>';
+// Popover = browser top layer, so it also covers open <dialog> modals.
+dropOverlay.popover = 'manual';
+document.body.appendChild(dropOverlay);
+const showDropOverlay = () => { try { if (!dropOverlay.matches(':popover-open')) dropOverlay.showPopover(); } catch (e) {} };
+let _dragDepth = 0;
+const hideDropOverlay = () => { _dragDepth = 0; try { dropOverlay.hidePopover(); } catch (e) {} };
+window.addEventListener('dragenter', (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  _dragDepth++;
+  showDropOverlay();
+});
+window.addEventListener('dragover', (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault(); // otherwise the browser opens the file itself
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', (e) => {
+  if (!isFileDrag(e)) return;
+  if (--_dragDepth <= 0) hideDropOverlay();
+});
+window.addEventListener('drop', async (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  hideDropOverlay();
+  const files = Array.from(e.dataTransfer.files || []);
+  const file = files.find((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name));
+  if (!file) {
+    showLoadError(files.length ? `"${files[0].name}" is not an audio file` : 'no file', 'Cannot open');
+    return;
+  }
+  await loadLocalAudioFile(file);
+});
+
+loadSampleBtn.addEventListener('click', async () => {
+  // Sample already in the session — just switch to it
+  const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/birdsong.wav');
+  if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
+  const _prep = await prepareRecordingLoad();
+  if (_prep.cancel) return;
+  // Save then detach so syncToPlayer doesn't clobber the leaving entry
+  saveCurrentAnnotationsIfNeeded();
+  recordingManager.setActive(null);
+  state.xcLabelPool = [];
+  state.labels = [];
+  state._labelsEntryId = null;
+  state.recordingMeta = null;
+  currentXcId = null;
+  updateUrlXcId(null);
+  syncToPlayer();
+  fileLabel.textContent = 'birdsong.wav';
+  await player.loadUrl('./samples/birdsong.wav');
+  const _sampleEntry = recordingManager.add({
+    filename: 'birdsong.wav',
+    audioUrl: './samples/birdsong.wav',
+    isBlobUrl: false,
+  });
+  recordingManager.setActive(_sampleEntry.id);
+  state._labelsEntryId = _sampleEntry.id;  // empty labels now belong to the new entry
+  finishRecordingLoad(_prep);
+  // Clear any previously saved original when loading the demo sample
+  try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
+  player.__originalAudioBuffer = null;
+});
+
+player.on('ready', (e) => {
+  setTimeout(() => requestMissingSnr(), 500);
+  if (e.detail?.sampleRate) {
+    state.sampleRate = e.detail.sampleRate;
+    if (recordingManager?.activeId) {
+      // Keep a known start when this load could not tell (e.g. metadata stripped).
+      const known = recordingManager.getById(recordingManager.activeId)?.recordingStart || null;
+      recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known });
+    }
+  }
+  propsPanel.setRecordingMeta(state.recordingMeta, {
+    sampleRate: state.sampleRate,
+    duration: player.duration || 0,
+    filename: fileLabel.textContent || '',
+  });
+
+  // Show long-recording warning unless it was already shown via the API pre-check.
+  // Not needed when the WASM tile pipeline handles the file.
+  const duration = player.duration || 0;
+  if (duration > MAX_SUPPORTED_DURATION_SEC && !state._longRecordingChecked && !e.detail?.wasmTiles) {
+    const mins = Math.floor(duration / 60);
+    const secs = Math.round(duration % 60);
+    const limit = MAX_SUPPORTED_DURATION_SEC / 60;
+    if (longRecordingMsg) longRecordingMsg.textContent =
+      `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
+      `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
+    longRecordingManager.open();
+  }
+  state._longRecordingChecked = false; // reset for next load
+});
+
+player.on('selection', (e) => {
+  const start = Number(e.detail?.start ?? 0);
+  const end = Number(e.detail?.end ?? start);
+  state.selected = { start, end };
+  if (end > start) selectionMeta.textContent = `${fmt(start)} – ${fmt(end)}`;
+});
+
+
+function downloadLabelsJson() {
+  const data = JSON.stringify(toLabelExport(), null, 2);
+  saveFile(data, 'labels.json', 'application/json')
+    .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
+}
+
+async function copyLabelsJson() {
+  const data = JSON.stringify(toLabelExport(), null, 2);
+  try {
+    await navigator.clipboard.writeText(data);
+    selectionMeta.textContent = `Copied ${state.labels.length} labels to the clipboard`;
+  } catch {
+    selectionMeta.textContent = 'Copy to clipboard failed';
+  }
+}
+
+// One export menu, each entry named by format and showing its scope
+exportMenuBtn.addEventListener('click', () => {
+  const r = exportMenuBtn.getBoundingClientRect();
+  const setLabels = OWN_SOURCE_ID ? collectSetLabels().length : 0;
+  const n = state.labels.length;
+  showContextMenu({
+    x: r.left, y: r.bottom + 2,
+    items: [
+      { label: `Annota-JSON (XC) — upload selection, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
+      { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
+      { label: `Raven table — this recording, ${n} labels`, action: downloadRavenTable },
+      ...(projectKind === 'folder' ? [{
+        label: `Raven tables — all recordings → folder “${projectStore.label}”`,
+        action: writeRavenTablesToFolder,
+      }] : []),
+      { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
+    ],
+  });
+});
+
+// ── Import an Annota-JSON set file (XC "Download set" or own export) ──
+// Labels go to the recordings with the same XC number, each original set as a locked set.
+const importSetInput = document.getElementById('importSetInput');
+document.getElementById('importSetBtn').addEventListener('click', () => importSetInput.click());
+importSetInput.addEventListener('change', async () => {
+  const file = importSetInput.files?.[0];
+  importSetInput.value = '';
+  if (file) await importAnnotaSetFile(file);
+});
+
+async function importAnnotaSetFile(file) {
+  let parsed = null;
+  try { parsed = readAnnotaSetFile(JSON.parse(await file.text())); } catch { /* reported below */ }
+  if (!parsed) { selectionMeta.textContent = `${file.name}: not an Annota-JSON annotation set`; return; }
+
+  saveCurrentAnnotationsIfNeeded();
+  const setsBefore = new Set(state.labelSets.keys());
+  const labelsBefore = state.labels;
+  const entriesBefore = [];
+  const missing = [];
+  let imported = 0;
+  let activeTouched = false;
+  for (const [nr, raw] of parsed.byXcNr) {
+    const entry = recordingManager.findByXcId(nr);
+    if (!entry) { missing.push(`XC${nr}`); continue; }
+    const isActive = entry.id === recordingManager.activeId;
+    const { labels } = mapXenoCantoLabelsToSpectrogram(raw, {
+      xcId: nr, recording: entry.xcRecordingMeta || {},
+      sampleRate: (isActive ? state.sampleRate : entry.sampleRate) || state.sampleRate,
+    });
+    promoteXcAnnotationSets(labels, nr);
+    const ids = new Set(labels.map((l) => l.id));
+    if (isActive) {
+      state.labels = [...state.labels.filter((l) => !ids.has(l.id)), ...labels];
+      state._labelsEntryId = entry.id;
+      activeTouched = true;
+    } else {
+      entriesBefore.push([entry.id, entry.annotations || []]);
+      recordingManager.update(entry.id, { annotations: [...(entry.annotations || []).filter((a) => !ids.has(a.id)), ...labels] });
+    }
+    imported += labels.length;
+  }
+
+  const refresh = () => {
+    relocalizeAllLabels();
+    syncToPlayer();
+    recordingExplorer?.render?.();
+    saveSessionSets(state);
+  };
+  if (imported) refresh();
+  const parts = [`${imported} label${imported === 1 ? '' : 's'} imported from ${file.name}`];
+  if (missing.length) parts.push(`no recording for ${missing.join(', ')} — add it under Project → Recordings, then import again`);
+  if (parsed.skipped) parts.push(`${parsed.skipped} without XC number skipped`);
+  selectionMeta.textContent = parts.join(' · ');
+  if (!imported) return;
+  showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
+    if (activeTouched) state.labels = labelsBefore;
+    for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
+    for (const id of [...state.labelSets.keys()]) if (!setsBefore.has(id)) state.labelSets.delete(id);
+    refresh();
+    selectionMeta.textContent = `Import of ${file.name} undone`;
+  });
+  sidebar.setActive('labels');
+}
+
+function upsertLabel(label) {
+  if (!label?.id) return;
+  const idx = state.labels.findIndex((l) => l.id === label.id);
+  if (idx >= 0) {
+    const prev = state.labels[idx];
+    let merged = { ...prev, ...label, updatedAt: new Date().toISOString() };
+    // When a non-manual label is accepted (origin → 'manual'), move it to the active set
+    const wasNonManual = prev.origin && prev.origin !== 'manual';
+    if (wasNonManual && label.origin === 'manual') {
+      merged = asOwnLabel(merged, state.labelSets);
+    }
+    state.labels[idx] = merged;
+  } else {
+    // Assign the active annotation set to newly created labels
+    const setId = label.setId ?? (state.activeSetId || OWN_SOURCE_ID);
+    const created = { ...label, origin: label.origin || 'manual', setId };
+    if (setId === OWN_SOURCE_ID && !created.layer) created.layer = activeLayerId(state.labelSets);
+    state.labels.push(created);
+  }
+  touchOwnSet(state.labels.find((l) => l.id === label.id)?.setId);
+  labelViews.invalidate('list', 'badge');
+  // Refresh properties panel if this label is displayed (pinned or hovered)
+  const displayed = propsPanel.displayedLabel;
+  if (displayed?.id === label.id) {
+    propsPanel.refreshLabel(state.labels.find((l) => l.id === label.id) || null);
+  }
+}
+
+// Properties panel → edit a label field inline
+propsPanel.onChange = (id, updates) => {
+  const idx = state.labels.findIndex((l) => l.id === id);
+  if (idx < 0) return;
+  const prev = state.labels[idx];
+  state.labels[idx] = { ...prev, ...updates, updatedAt: new Date().toISOString() };
+  touchOwnSet(prev.setId);
+  const nameChanged = updates.label !== undefined || updates.scientificName !== undefined;
+  _skipPropsRefresh = true;
+  if (nameChanged) {
+    // Re-group fully — name change affects which group this label belongs to
+    syncToPlayer();
+  } else {
+    syncToPlayerSoft();
+    labelList.updateBadges(id, state.labels[idx]);
+  }
+  _skipPropsRefresh = false;
+  saveCurrentAnnotationsIfNeeded();
+  // Ensure properties panel UI reflects the latest label object after inline edits.
+  // We intentionally refresh here because we temporarily suppressed automatic
+  // propsPanel sync while updating the player/list to avoid redundant reflows.
+  if (propsPanel.displayedLabel?.id === id) {
+    propsPanel.refreshLabel(state.labels[idx]);
+  }
+  // Re-compute SNR when time or frequency bounds change
+  const snrAffected = updates.start !== undefined || updates.end !== undefined ||
+    updates.freqMin !== undefined || updates.freqMax !== undefined;
+  if (snrAffected) {
+    const _ab = player._state?.audioBuffer;
+    if (_ab) snrComputer.request(state.labels[idx], _ab, _ab.sampleRate);
+  }
+};
+
+player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); requestMissingSnr(); });
+player.on('spectrogramlabelupdate', (e) => {
+  upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  // Re-compute SNR when a label is resized/moved on the spectrogram
+  const lbl = e.detail?.label;
+  if (lbl) {
+    const _ab = player._state?.audioBuffer;
+    if (_ab) snrComputer.request(lbl, _ab, _ab.sampleRate);
+  }
+});
+// ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
+player.on('spectrogramlabeladopt', (e) => {
+  const id = e.detail?.label?.id;
+  if (id) adoptOneLabel(id);
+});
+player.on('spectrogramlabelremove', (e) => {
+  const id = e.detail?.label?.id;
+  if (!id) return;
+  snrComputer.invalidate(id);
+  touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
+  state.labels = state.labels.filter((l) => l.id !== id);
+  labelViews.invalidate('list', 'badge');
+  saveCurrentAnnotationsIfNeeded();
+});
+
+// Undo/redo inside the player: mirror the restored state into state.labels
+// (diff only — hidden labels are not part of the player's snapshot).
+player.on('labelrestore', (e) => {
+  const before = e.detail?.before || [];
+  const after = e.detail?.after || [];
+  const afterIds = new Set(after.map((l) => l.id));
+  const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
+  for (const id of removed) snrComputer.invalidate(id);
+  state.labels = state.labels.filter((l) => !removed.has(l.id));
+  for (const lbl of after) {
+    const idx = state.labels.findIndex((l) => l.id === lbl.id);
+    if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...lbl };
+    else state.labels.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
+  }
+  labelViews.invalidate('list', 'badge');
+  saveCurrentAnnotationsIfNeeded();
+});
+
+player.on('spectrogramlabelrefcalls', (e) => {
+  const label = e.detail?.label;
+  if (label) openRefCalls(label);
+});
+
+// ── Context menus on label surfaces ─────────────────────────────────────
+const ICON_RENAME = '<svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>';
+const ICON_DELETE = '<svg viewBox="0 0 16 16"><polyline points="3,4 13,4"/><path d="M6,4V2h4v2M5,4v9a1,1,0,0,0,1,1h4a1,1,0,0,0,1-1V4"/></svg>';
+const ICON_REFS   = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 8h5M8 5.5v5"/></svg>';
+
+function openRefCalls(label) {
+  getRefCallsModal().open(label, _lastAudioUrl);
+}
+// Docked reference view follows the label selection; only one player plays.
+player.on('labelfocus', (e) => {
+  const m = _referenceCallsModal;
+  if (!m?.isDocked?.() || !m.isOpen?.()) return;
+  const interaction = e.detail?.interaction ?? (e.detail?.source === 'list' || e.detail?.source === 'table' ? 'click' : 'hover');
+  if (interaction !== 'click' || !e.detail?.id) return;
+  const lbl = state.labels.find((l) => l.id === e.detail.id);
+  if (lbl) m.follow(lbl, _lastAudioUrl);
+});
+player.on('play', () => { _referenceCallsModal?.pauseAll?.(); });
+
+/** Show rename/delete context menu for a spectrogram label id. */
+function showLabelContextMenu(e, id) {
+  const lbl = state.labels.find((l) => l.id === id);
+  if (!lbl) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showContextMenu({
+    x: e.clientX, y: e.clientY,
+    items: [
+      { label: 'Rename', icon: ICON_RENAME,
+        action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
+      { label: 'Reference Calls', icon: ICON_REFS,
+        action: () => openRefCalls(lbl) },
+      { separator: true },
+      { label: 'Delete', icon: ICON_DELETE, danger: true,
+        action: () => {
+          player.spectrogramLabels?.remove(id);
+          player._emit?.('spectrogramlabelremove', { label: { ...lbl } });
+        } },
+    ],
+  });
+}
+
+// Spectrogram view
+player.spectrogramLabels?.overlay?.addEventListener('contextmenu', (e) => {
+  const region = e.target.closest('.spectrogram-label-region');
+  if (region) showLabelContextMenu(e, region.dataset.id);
+});
+
+// Amplitude / waveform view — annotations use their own rename/remove API
+player.annotations?.overlay?.addEventListener('contextmenu', (e) => {
+  const region = e.target.closest('.annotation-region');
+  if (!region) return;
+  const id = region.dataset.id;
+  const ann = player.annotations?.annotations?.find?.((a) => a.id === id);
+  if (!ann) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showContextMenu({
+    x: e.clientX, y: e.clientY,
+    items: [
+      { label: 'Rename', icon: ICON_RENAME,
+        action: () => player.annotations?._renameRegionPrompt?.(id) },
+      { label: 'Reference Calls', icon: ICON_REFS,
+        action: () => openRefCalls({ ...ann, scientificName: ann.scientificName || ann.species || '' }) },
+      { separator: true },
+      { label: 'Delete', icon: ICON_DELETE, danger: true,
+        action: () => {
+          player.annotations?.remove(id);
+          player._emit?.('annotationremove', { annotation: { ...ann } });
+        } },
+    ],
+  });
+});
+
+// Overview label tracks
+player._state?.d?.overviewLabelTracks?.addEventListener('contextmenu', (e) => {
+  const seg = e.target.closest('.overview-label-segment');
+  if (seg) showLabelContextMenu(e, seg.dataset.id);
+});
+
+taxonomyLangSelect.addEventListener('change', () => {
+  taxonomyLangSelect.blur();  // closes the ⚙ popover on narrow screens
+  state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
+  try { localStorage.setItem(LANG_STORAGE_KEY, state.taxonomyLang); } catch {}
+  if (taxonomy.data) {
+    taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp${taxonomy.data?.extraCount ? ` + ${taxonomy.data.extraCount} birds` : ""} · ${state.taxonomyLang}`;
+  }
+  relocalizeAllLabels();
+  // Re-localize the species bar if it has a selection with a known sci name
+  const barSel = player.getSpeciesBarSelection?.();
+  if (barSel?.scientificName) {
+    const localized = localizeSpeciesName(barSel.scientificName, barSel.name || '');
+    if (localized && localized !== barSel.name) {
+      player.setSpeciesBar(localized, { scientificName: barSel.scientificName });
+      topbarWidget?.setValue?.(localized);
+    }
+  }
+  syncToPlayer();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') projectAutosaver?.flush();
+});
+player.on('ready', () => { persistXcToFolder(recordingManager.getActive()); });
+window.addEventListener('beforeunload', () => {
+  saveProjectSnapshotNow();
+  projectAutosaver?.flush();
+  if (state.activeObjectUrl) {
+    try { URL.revokeObjectURL(state.activeObjectUrl); } catch {}
+    state.activeObjectUrl = null;
+  }
+  birdnet.dispose();
+});
+
+// ── Suggestion provider ───────────────────────────────────────────
+player.setLabelTaxonomy([]);
+player.setLabelEditorSuggestionMode('custom-only');
+
+// Listen for custom tag additions from the label editor modal (annotations.js)
+player.on('tagcustomadd', (e) => {
+  const { key, value } = e.detail || {};
+  if (key && value) {
+    tagStore.add(key, value);
+    syncTagPresets();
+  }
+});
+
+player.setLabelSuggestionProvider(
+  createSuggestionProvider({
+    taxonomy,
+    getLang:   () => state.taxonomyLang,
+    getLabels: () => state.labels,
+    // Include both XC label pool and background species so the overlay
+    // shows all contextually relevant species as suggestions.
+    getPool:   () => [...state.xcLabelPool, ...player.getBackgroundSpecies()],
+  }),
+);
+
+// ── Species search bar (topbar) ───────────────────────────────────
+let topbarWidget = null;
+{
+  // Remember the last explicitly-set foreground species so it stays
+  // available as a suggestion even after the user clears the bar.
+  let lastForegroundSpecies = null;
+
+  /**
+   * Build the merged suggestion list for the topbar search:
+   * - foreground species (last set, persists after clear)
+   * - existing drawn labels
+   * - background species (XC "also" field)
+   * - taxonomy results merged in for non-empty queries
+   */
+  function getTopbarSuggestions(query, limit = 20) {
+    // Use a Map keyed by canonical scientific name (when available) or
+    // normalised display name so that the same species from different
+    // sources (linked label + background) is deduplicated correctly even
+    // when first-load labels still carry their scientific name as display.
+    const byKey = new Map();
+    const lang  = state.taxonomyLang;
+
+    function resolveEntry(rawName, rawSci, color, originDetail) {
+      const sci    = rawSci || (taxonomy.data ? taxonomy.resolve(rawName)?.s : '') || '';
+      const record = sci ? taxonomy.resolve(sci) : null;
+      const name   = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : rawName;
+      const finalSci = record?.s || sci;
+      const key    = finalSci ? `sci:${finalSci}` : `name:${name.toLowerCase()}`;
+      if (byKey.has(key)) return;                        // first source wins for color/detail
+      byKey.set(key, {
+        name,
+        scientificName: finalSci,
+        color: color || colorForName(name),
+        detail: originDetail,
+      });
+    }
+
+    // Foreground species: persists across clears so the user can re-select it
+    if (lastForegroundSpecies?.name) {
+      const c = lastForegroundSpecies.color
+        ? (getOverlayColorStyle(lastForegroundSpecies.color)?.hex || lastForegroundSpecies.color)
+        : colorForName(lastForegroundSpecies.name);
+      resolveEntry(lastForegroundSpecies.name, lastForegroundSpecies.scientificName || '', c, 'foreground');
+    }
+
+    // All current labels (state.labels is the authoritative source in this app)
+    for (const lbl of state.labels) {
+      const rawName = (lbl.label || lbl.species || '').trim();
+      if (!rawName) continue;
+      const c = lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : null;
+      const detail = lbl.origin && lbl.origin !== 'manual' ? lbl.origin : '';
+      resolveEntry(rawName, lbl.scientificName || '', c, detail);
+    }
+
+    // Background species (XC "also" field) — deduplicated against above via sci key
+    for (const bg of player.getBackgroundSpecies()) {
+      const rawName = (bg.name || '').trim();
+      if (!rawName) continue;
+      resolveEntry(rawName, bg.scientificName || '', null, 'background');
+    }
+
+    const labelEntries = [...byKey.values()];
+
+    if (!query) return labelEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
+
+    const lq = query.toLowerCase();
+    const matchingLabels = labelEntries.filter(
+      (l) => l.name.toLowerCase().includes(lq) || l.scientificName.toLowerCase().includes(lq),
+    );
+    const labelSciKeys = new Set(matchingLabels.map((l) => l.scientificName?.toLowerCase()).filter(Boolean));
+    const labelNameKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
+    const taxonomyResults = player.getLabelEditorSuggestions(query, limit);
+    const taxonomyOnly = taxonomyResults
+      .filter((s) => !labelNameKeys.has(s.name.toLowerCase()) && (!s.scientificName || !labelSciKeys.has(s.scientificName.toLowerCase())))
+      .map((s) => ({
+        name: s.name,
+        color: s.color ? (getOverlayColorStyle(s.color)?.hex || s.color) : colorForName(s.name),
+        scientificName: s.scientificName || '',
+        detail: s.detail || 'taxonomy',
+      }));
+    return [...matchingLabels, ...taxonomyOnly];
+  }
+
+  topbarWidget = createSpeciesSearchWidget({
+    getSuggestions: getTopbarSuggestions,
+    onSelect: (item) => {
+      lastForegroundSpecies = item;
+      player.setSpeciesBar(item.name, { color: item.color || '', scientificName: item.scientificName || '' });
+    },
+    onClear: () => player.setSpeciesBar(''),
+    placeholder: 'Species / Label…',
+  });
+
+  // Mount into the placeholder div, applying topbar layout class
+  const mount = document.getElementById('speciesSearchMount');
+  topbarWidget.el.classList.add('species-search');
+  mount.replaceWith(topbarWidget.el);
+
+  // Sync display value when player updates species bar programmatically (e.g. XC import).
+  // Also cache the species so it persists in suggestions after a clear.
+  player.on('speciesbarchange', (e) => {
+    const sel = e?.detail?.selection;
+    if (sel?.name) lastForegroundSpecies = sel;
+    const name = sel?.name || '';
+    if (topbarWidget.input.value !== name) topbarWidget.setValue(name);
+  });
+
+  // Refresh open dropdown when labels change (only if already visible).
+  // Do NOT dispatch a synthetic 'input' event — that would be mistaken for a
+  // real user edit and would clear the confirmed species selection.
+  player.on('labelsync', () => topbarWidget.refresh());
+}
+
+// ── Lite: "open this" from outside (signavis:// links, Open with, 2nd start) ──
+// The shell queues requests (src-tauri-lite/src/launch.rs) and emits 'lite-launch';
+// they are pulled here once at start and on every event, one after the other.
+let _liteLaunchChain = Promise.resolve();
+function applyLiteLanguage(lang) {
+  try { localStorage.setItem(LANG_STORAGE_KEY, lang); } catch { /* ignore */ }
+  if (![...taxonomyLangSelect.options].some((o) => o.value === lang)) return;  // taxonomy not loaded yet
+  taxonomyLangSelect.value = lang;
+  taxonomyLangSelect.dispatchEvent(new Event('change'));
+}
+async function takeLiteLaunchRequests() {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke('take_launch_requests');
+}
+async function runLiteLaunchRequests(requests) {
+  for (const req of requests) {
+    try {
+      if (req.kind === 'xc') {
+        if (req.lang) applyLiteLanguage(req.lang);
+        await autoLoadFromParams(new URLSearchParams({ xc: req.xc }));
+      } else if (req.kind === 'file') {
+        const file = await readAudioPath(req.path);
+        if (file) await loadLocalAudioFile(file, { filePath: req.path });
+        else showLoadError(`File not found: ${req.path}`, 'Cannot open');
+      }
+    } catch (e) {
+      console.warn('[lite] launch request failed', req, e);
+      showLoadError(e?.message || e, 'Cannot open');
+    }
+  }
+}
+// ── Lite: native menu (src-tauri-lite/src/menu.rs) and "Open Recent" ─
+const _lsLite = (() => { try { return localStorage; } catch { return null; } })();
+function liteRecentSync() {
+  if (!isLite()) return;
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('set_recent_items', { items: recentMenuItems(loadRecent(_lsLite)) }))
+    .catch((e) => console.warn('[lite] recent menu', e));
+}
+function liteRecentAdd(item) {
+  if (!isLite()) return;
+  saveRecent(_lsLite, addRecent(loadRecent(_lsLite), item));
+  liteRecentSync();
+}
+async function openLiteRecent(index) {
+  const item = loadRecent(_lsLite)[index];
+  if (!item) return;
+  if (item.kind === 'folder') {
+    await chooseProjectFolder({ kind: 'native', name: item.name, path: item.path });
+    return;
+  }
+  const file = await readAudioPath(item.path).catch(() => null);
+  if (!file) {
+    showLoadError(`File not found: ${item.path}`, 'Cannot open');
+    saveRecent(_lsLite, loadRecent(_lsLite).filter((i) => i !== item && i.path !== item.path));
+    liteRecentSync();
+    return;
+  }
+  await loadLocalAudioFile(file, { filePath: item.path });
+}
+async function useDefaultProject() {
+  await projectAutosaver?.flush();
+  lsSet(PROJECT_LOCATION_KEY, 'browser');
+  window.location.reload();
+}
+/** File › Download BirdNET Model for Offline Use: fill the shell's data cache (data_cache.rs). */
+let _litePrefetching = false;
+async function prefetchBirdnetModel() {
+  if (_litePrefetching) return;
+  _litePrefetching = true;
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { listen } = await import('@tauri-apps/api/event');
+  const mb = (b) => (b / 1e6).toFixed(0);
+  const unlisten = await listen('lite-prefetch', ({ payload: p }) => {
+    selectionMeta.textContent = `Downloading BirdNET model for offline use… ${p.done}/${p.total} files, ${mb(p.bytes)} MB`;
+  });
+  try {
+    selectionMeta.textContent = 'Downloading BirdNET model for offline use…';
+    const r = await invoke('prefetch_model');
+    selectionMeta.textContent = `BirdNET model is available offline (${r.total} files, ${mb(r.bytes)} MB)`;
+    await appAlert('The BirdNET model is now stored on this computer. BirdNET analysis works without an internet connection.', { title: 'BirdNET available offline' });
+  } catch (e) {
+    selectionMeta.textContent = '';
+    await appAlert(`The BirdNET model could not be downloaded: ${e?.message || e}
+
+Check the internet connection and try again.`, { title: 'Download failed' });
+  } finally {
+    unlisten();
+    _litePrefetching = false;
+  }
+}
+/** Help › Check for Updates… and a quiet daily check at start (updater.rs). */
+const LITE_UPDATE_CHECK_KEY = 'signavis-lite-update-checked';
+let _liteUpdating = false;
+async function checkLiteUpdate({ quiet = false } = {}) {
+  if (_liteUpdating) return;
+  _liteUpdating = true;
+  const { invoke } = await import('@tauri-apps/api/core');
+  try {
+    let info;
+    try {
+      info = await invoke('update_check');
+      lsSet(LITE_UPDATE_CHECK_KEY, String(Date.now()));
+    } catch (e) {
+      if (!quiet) await appAlert(`Could not check for updates: ${e?.message || e}`, { title: 'Check for updates' });
+      return;
+    }
+    if (!info) {
+      if (!quiet) await appAlert(`SignaVis Lite ${window.__SIGNAVIS_LITE__?.version || ''} is up to date.`, { title: 'Check for updates' });
+      return;
+    }
+    const notes = info.notes ? `\n\n${info.notes.slice(0, 600)}${info.notes.length > 600 ? '…' : ''}` : '';
+    if (!await appConfirm(`SignaVis Lite ${info.version} is available (installed: ${info.current}). Install it now? The app saves the project and restarts.${notes}`,
+      { title: 'Update available', okLabel: 'Install and restart' })) return;
+    await projectAutosaver?.flush({ force: true });
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen('lite-update-progress', ({ payload: p }) => {
+      const mb = (p.done / 1e6).toFixed(1);
+      selectionMeta.textContent = p.total
+        ? `Downloading update… ${Math.round((100 * p.done) / p.total)} % (${mb} MB)`
+        : `Downloading update… ${mb} MB`;
+    });
+    try {
+      selectionMeta.textContent = 'Downloading update…';
+      await invoke('update_install');
+    } catch (e) {
+      selectionMeta.textContent = '';
+      await appAlert(`The update could not be installed: ${e?.message || e}`, { title: 'Update failed' });
+    } finally {
+      unlisten();
+    }
+  } finally {
+    _liteUpdating = false;
+  }
+}
+function maybeCheckLiteUpdate() {
+  if (window.__SIGNAVIS_LITE__?.store) return; // the Microsoft Store updates the app
+  const last = Number(lsGet(LITE_UPDATE_CHECK_KEY) || 0);
+  if (Date.now() - last < 24 * 3600 * 1000) return;
+  setTimeout(() => checkLiteUpdate({ quiet: true }).catch(() => {}), 5000);
+}
+async function installLiteMenu() {
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen('lite-menu', async ({ payload: id }) => {
+    try {
+      if (id === 'open-file') browseBtn.click();
+      else if (id === 'open-folder') await chooseProjectFolder();
+      else if (id === 'default-project') await useDefaultProject();
+      else if (id === 'export-labels') downloadLabelsJson();
+      else if (id === 'prefetch-model') await prefetchBirdnetModel();
+      else if (id === 'check-updates') await checkLiteUpdate();
+      else if (id === 'recent-clear') { saveRecent(_lsLite, []); liteRecentSync(); }
+      else if (typeof id === 'string' && id.startsWith('recent:')) await openLiteRecent(Number(id.slice(7)));
+      else if (id === 'about') {
+        await appAlert(`SignaVis Lite ${window.__SIGNAVIS_LITE__?.version || ''}
+
+The SignaVis labeling app as a desktop program.
+AGPL-3.0 · github.com/LimitlessGreen/SignaVis`, { title: 'About SignaVis Lite' });
+      }
+    } catch (e) {
+      console.warn('[lite] menu action failed', id, e);
+    }
+  });
+  if (projectKind === 'folder' && projectStore?.rootPath) {
+    liteRecentAdd({ kind: 'folder', path: projectStore.rootPath, name: projectStore.label });
+  } else {
+    liteRecentSync();
+  }
+}
+
+// ── Lite: window title and close guard ──────────────────────────────
+async function installLiteWindow() {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const win = getCurrentWindow();
+  // Title: "<recording> — <project> — SignaVis Lite"
+  const updateTitle = () => {
+    const rec = fileLabel.textContent?.trim();
+    const parts = [rec && rec !== 'No file loaded' ? rec : '', projectStore?.label || '', 'SignaVis Lite'];
+    win.setTitle(parts.filter(Boolean).join(' — ')).catch(() => {});
+  };
+  new MutationObserver(updateTitle).observe(fileLabel, { childList: true, characterData: true, subtree: true });
+  updateTitle();
+  // Closing: save what is pending first; if that fails, ask before losing it.
+  await win.onCloseRequested(async (event) => {
+    if (!projectAutosaver || projectAutosaver.readOnly) return;
+    await projectAutosaver.flush({ force: true });
+    if (!projectAutosaver.hasUnsavedChanges) return;
+    const close = await appConfirm(
+      `The latest changes could not be saved to “${projectStore?.label || 'the project'}”.
+
+Close anyway and lose them?`,
+      { title: 'Unsaved changes', okLabel: 'Close without saving', cancelLabel: 'Keep open' });
+    if (!close) event.preventDefault();
+  });
+}
+
+/** `initial`: requests of this start, taken before the last recording would be restored. */
+async function startLiteLaunchHandling(initial) {
+  const run = (requests) => { _liteLaunchChain = _liteLaunchChain.then(() => runLiteLaunchRequests(requests)); };
+  const pull = () => { _liteLaunchChain = _liteLaunchChain.then(async () => runLiteLaunchRequests(await takeLiteLaunchRequests())); };
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen('lite-launch', pull);
+  run(initial);
+  pull();   // anything queued between taking `initial` and listening
+}
+
+// ── Startup ───────────────────────────────────────────────────────
+const _startParams = new URLSearchParams(window.location.search);
+const _hasXcParam = ['xc', 'XC', 'xcid', 'XCID'].some((k) => _startParams.has(k));
+// Lite: a link / file that started the app opens instead of the last recording (like ?xc= above).
+const _liteInitialLaunch = isLite() ? await takeLiteLaunchRequests().catch(() => []) : [];
+const _restoredFromProject = await openProject();
+if (!_restoredFromProject) {
+  await restoreProjectSnapshotIfPossible();
+  // Restore sets from last session (only if no URL params will load a recording)
+  if (!_startParams.has('xc') && !_startParams.has('XC')) {
+    // Pass `state` so the module can restore into the current runtime state
+    // and allow a UI rebuild callback to re-render set sections.
+    restoreSessionSets(state, { rebuild: () => xcPanel._rebuildSetSection?.() });
+    ensureOwnSource();   // older sessions: own set → own source, also in the recordings' labels
+  }
+}
+xcPanel._rebuildSetSection?.();  // the own set was created silently before the panel existed
+labelViews.invalidate('list');
+// Reopen the last recording of the browser project (XC audio comes from the cache).
+// Session-only local files have no audio after a restart — they stay listed until re-picked.
+if (_restoredFromProject && !_hasXcParam && !_liteInitialLaunch.length) {
+  const _last = recordingManager.getActive();
+  if (_last && (_last.xcId || _last.audioUrl || _last.path || _last.filePath)) activateRecordingEntry(_last);
+  else recordingManager.setActive(null);
+}
+setTimeout(maybeShowProjectFolderModal, 400);
+// Start the XC download right away — the 7 MB taxonomy loads in parallel and
+// re-localizes any labels imported before it finished.
+autoLoadFromParams();
+if (isLite()) {
+  startLiteLaunchHandling(_liteInitialLaunch);
+  installLiteWindow().catch((e) => console.warn('[lite] window setup failed', e));
+  installLiteMenu().catch((e) => console.warn('[lite] menu setup failed', e));
+  maybeCheckLiteUpdate();
+}
+// Dev server only (stripped from builds): handles for scripts in tools/perf/.
+if (import.meta.env.DEV) {
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer() };
+}
+await loadBirdnetTaxonomy();
