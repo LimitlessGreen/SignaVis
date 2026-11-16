@@ -3271,6 +3271,7 @@
       },
       getLabels: () => state.labels,
       resolveName,
+      isOwn: (l) => l.setId === OWN_SOURCE_ID,
       addFile: () => document.getElementById('fileInput')?.click(),
       analysis: {
         confInput: document.getElementById('birdnetConfidence'),
@@ -4799,6 +4800,11 @@
         const _ab = player._state?.audioBuffer;
         if (_ab) snrComputer.request(lbl, _ab, _ab.sampleRate);
       }
+    });
+    // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
+    player.on('spectrogramlabeladopt', (e) => {
+      const id = e.detail?.label?.id;
+      if (id) adoptOneLabel(id);
     });
     player.on('spectrogramlabelremove', (e) => {
       const id = e.detail?.label?.id;

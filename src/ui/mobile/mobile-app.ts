@@ -32,6 +32,8 @@ export interface MobileAppHost {
   /** Labels of the active recording. */
   getLabels(): any[];
   resolveName(lbl: any): { display: string; scientific?: string };
+  /** True for labels in "My labels" (confirmed by the user). */
+  isOwn?(lbl: any): boolean;
   /** Open the file picker to add audio. */
   addFile(): void;
   /** Called when phone mode is entered (true) or left (false). */
@@ -140,6 +142,16 @@ export class MobileApp {
   private currentDetId: string | null = null;
   private loopSeg: { start: number; end: number } | null = null;
 
+  // Species
+  private spList!: HTMLElement;
+  private spSearch!: HTMLInputElement;
+  private spChips = new Map<string, HTMLButtonElement>();
+  private spSortBtn!: HTMLButtonElement;
+  private spMeta!: HTMLElement;
+  private spFilter: 'all' | 'confirmed' | 'detected' = 'all';
+  private spSort: 'count' | 'name' | 'conf' = 'count';
+  private spOpen = new Set<string>();
+
   // Analyse
   private anSub!: HTMLElement;
   private anProgress!: HTMLElement;
@@ -171,8 +183,7 @@ export class MobileApp {
     this.root.setAttribute('aria-label', 'SignaVis');
     const body = el('div', 'm-screens');
     body.append(this.buildRecordings(), this.buildReview(), this.buildAnalyse(), this.buildPlaceholder('live', 'Live',
-      'Live-Erkennung mit dem Mikrofon kommt hier hin.'), this.buildPlaceholder('species', 'Arten',
-      'Hier entsteht die Artenliste über alle Aufnahmen.'));
+      'Live-Erkennung mit dem Mikrofon kommt hier hin.'), this.buildSpecies());
     const nav = el('nav', 'm-nav');
     nav.setAttribute('aria-label', 'Navigation');
     for (const [id, icon, label] of [['recordings', I.lib, 'Aufnahmen'], ['review', I.check, 'Prüfen'],
@@ -204,6 +215,7 @@ export class MobileApp {
     if (!this.active) return;
     this.renderRecordings();
     this.renderReview();
+    if (this.screen === 'species') this.renderSpecies();
   }
 
   // ── Mode ────────────────────────────────────────────────────────────
@@ -262,6 +274,7 @@ export class MobileApp {
     const navOn = screen === 'analyse' ? this.anBackTo : screen;
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
     if (screen === 'analyse') this.renderAnalyse();
+    if (screen === 'species') this.renderSpecies();
     if (screen === 'recordings') this.renderRecordings();
     if (screen === 'review') {
       this.renderReview();
@@ -488,6 +501,165 @@ export class MobileApp {
   }
 
   private stopTicker() { cancelAnimationFrame(this.raf); }
+
+  // ── Species ─────────────────────────────────────────────────────────
+
+  private buildSpecies(): HTMLElement {
+    const s = el('section', 'm-screen m-species');
+    const bar = el('header', 'm-appbar');
+    bar.appendChild(el('h1', '', 'Arten'));
+
+    const search = el('label', 'm-search');
+    search.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+    this.spSearch = el('input');
+    this.spSearch.type = 'search';
+    this.spSearch.placeholder = 'Art suchen';
+    this.spSearch.setAttribute('aria-label', 'Art suchen');
+    this.spSearch.addEventListener('input', () => this.renderSpecies());
+    search.appendChild(this.spSearch);
+
+    const chips = el('div', 'm-chips');
+    for (const [id, label] of [['all', 'Alle'], ['confirmed', 'Bestätigt'], ['detected', 'Nur erkannt']] as const) {
+      const b = el('button', 'm-chip');
+      b.type = 'button';
+      b.addEventListener('click', () => { this.spFilter = id; this.renderSpecies(); });
+      b.dataset.label = label;
+      this.spChips.set(id, b);
+      chips.appendChild(b);
+    }
+
+    const sortRow = el('div', 'm-sortrow');
+    this.spSortBtn = el('button', 'm-sort');
+    this.spSortBtn.type = 'button';
+    this.spSortBtn.addEventListener('click', () => {
+      this.spSort = this.spSort === 'count' ? 'conf' : this.spSort === 'conf' ? 'name' : 'count';
+      this.renderSpecies();
+    });
+    this.spMeta = el('span', '', '');
+    sortRow.append(this.spSortBtn, this.spMeta);
+
+    this.spList = el('div', 'm-scroll m-sp-list');
+    s.append(bar, search, chips, sortRow, this.spList);
+    this.screens.set('species', s);
+    return s;
+  }
+
+  /** Species across all recordings: confirmed (own labels) and detected (everything else). */
+  private collectSpecies() {
+    const isOwn = this.h.isOwn ?? ((l: any) => !l.origin || l.origin === 'manual');
+    const map = new Map<string, {
+      key: string; sci: string; sample: any; confirmed: number; detected: number;
+      recs: Set<string>; best: number; examples: { lbl: any; rec: MobileRecording; score: number }[];
+    }>();
+    const recs = this.h.getRecordings();
+    for (const rec of recs) {
+      for (const l of rec.labels) {
+        const key = l.scientificName || '';
+        if (!key) continue;                   // species-less boxes (BirdBox "Bird") are no species
+        let sp = map.get(key);
+        if (!sp) {
+          sp = { key, sci: key, sample: l, confirmed: 0, detected: 0, recs: new Set(), best: 0, examples: [] };
+          map.set(key, sp);
+        }
+        if (isOwn(l)) sp.confirmed++; else sp.detected++;
+        sp.recs.add(rec.id);
+        const conf = l.confidence != null ? Number(l.confidence) : (isOwn(l) ? 1 : 0);
+        sp.best = Math.max(sp.best, conf);
+        sp.examples.push({ lbl: l, rec, score: conf + (isOwn(l) ? 0.001 : 0) });
+      }
+    }
+    for (const sp of map.values()) sp.examples.sort((a, b) => b.score - a.score);
+    return { list: [...map.values()], recCount: recs.length };
+  }
+
+  private renderSpecies() {
+    if (!this.spList) return;
+    const { list, recCount } = this.collectSpecies();
+    const name = (sp: any) => this.h.resolveName(sp.sample)?.display || sp.sample.label || sp.sci;
+    const counts = {
+      all: list.length,
+      confirmed: list.filter((x) => x.confirmed > 0).length,
+      detected: list.filter((x) => x.confirmed === 0).length,
+    };
+    for (const [id, b] of this.spChips) {
+      b.replaceChildren(document.createTextNode(`${b.dataset.label} `), el('i', '', String(counts[id as keyof typeof counts])));
+      b.classList.toggle('on', id === this.spFilter);
+      b.setAttribute('aria-pressed', String(id === this.spFilter));
+    }
+    this.spSortBtn.innerHTML = `Sortiert nach <b>${{ count: 'Anzahl', conf: 'Konfidenz', name: 'Name' }[this.spSort]} ▾</b>`;
+    this.spMeta.textContent = `${recCount} Aufnahmen`;
+
+    const q = this.spSearch.value.trim().toLowerCase();
+    let items = list.filter((sp) => this.spFilter === 'all' || (this.spFilter === 'confirmed' ? sp.confirmed > 0 : sp.confirmed === 0));
+    if (q) items = items.filter((sp) => name(sp).toLowerCase().includes(q) || sp.sci.toLowerCase().includes(q));
+    items.sort((a, b) => this.spSort === 'name' ? name(a).localeCompare(name(b))
+      : this.spSort === 'conf' ? b.best - a.best
+      : (b.confirmed + b.detected) - (a.confirmed + a.detected) || name(a).localeCompare(name(b)));
+
+    this.spList.replaceChildren();
+    if (!items.length) {
+      this.spList.appendChild(el('p', 'm-empty', list.length
+        ? 'Keine Art passt zum Filter.'
+        : 'Noch keine Arten. Analysiere eine Aufnahme, dann erscheinen die erkannten Arten hier.'));
+      return;
+    }
+    for (const sp of items) {
+      const open = this.spOpen.has(sp.key);
+      const row = el('div', `m-sp${open ? ' open' : ''}`);
+      const head = el('button', 'm-sp-head');
+      head.type = 'button';
+      head.setAttribute('aria-expanded', String(open));
+      const img = el('img');
+      img.alt = ''; img.loading = 'lazy';
+      img.src = `${speciesImageBase()}${encodeURIComponent(sp.sci)}.webp`;
+      img.addEventListener('error', () => { img.src = FALLBACK_IMG; }, { once: true });
+      const main = el('div', 'm-sp-main');
+      const n = el('div', 'm-sp-name', name(sp));
+      n.appendChild(el('span', 'm-sp-sci', ` ${sp.sci}`));
+      const meta = el('div', 'm-sp-meta');
+      if (sp.confirmed) meta.appendChild(el('span', 'm-ok', `✓ ${sp.confirmed}`));
+      meta.appendChild(document.createTextNode(`${sp.confirmed ? ' · ' : ''}${sp.detected} erkannt · ${sp.recs.size} Aufn.`));
+      main.append(n, meta);
+      head.append(img, main);
+      head.addEventListener('click', () => {
+        if (this.spOpen.has(sp.key)) this.spOpen.delete(sp.key); else this.spOpen.add(sp.key);
+        this.renderSpecies();
+      });
+      const best = sp.examples[0];
+      const play = button('m-sp-play', I.play, `Besten Beleg von ${name(sp)} abspielen`, () => this.playExample(best.rec, best.lbl));
+      const top = el('div', 'm-sp-top');
+      top.append(head, play);
+      row.appendChild(top);
+
+      if (open) {
+        const ex = el('div', 'm-sp-ex');
+        sp.examples.slice(0, 3).forEach((e, i) => {
+          const b = el('button', `m-ex${i === 0 ? ' best' : ''}`);
+          b.type = 'button';
+          const pct = e.lbl.confidence != null ? `${Math.round(Number(e.lbl.confidence) * 100)}%` : '✓';
+          b.innerHTML = `<span class="m-ex-play">${I.play}</span>`;
+          const info = el('span', 'm-ex-info');
+          info.append(el('b', '', pct), document.createTextNode(` · ${e.rec.title}`), el('br'),
+            document.createTextNode(`${fmtClock(e.lbl.start)}${i === 0 ? ' · bester Beleg' : ''}`));
+          b.appendChild(info);
+          b.addEventListener('click', () => this.playExample(e.rec, e.lbl));
+          ex.appendChild(b);
+        });
+        if (sp.examples.length > 3) ex.appendChild(el('div', 'm-ex-more', `+ ${sp.examples.length - 3} weitere`));
+        row.appendChild(ex);
+      }
+      this.spList.appendChild(row);
+    }
+  }
+
+  /** Play one example; opens its recording first if needed (stays on the species screen). */
+  private async playExample(rec: MobileRecording, lbl: any) {
+    if (!rec.active) {
+      await this.h.openRecording(rec.id);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    this.h.player?.playSegment?.(lbl.start, lbl.end, { labelId: lbl.id });
+  }
 
   // ── Analyse ─────────────────────────────────────────────────────────
 
