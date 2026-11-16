@@ -56,6 +56,8 @@ const I = {
 };
 
 const SKIP_SEC = 5;
+/** Seconds visible in the spectrogram on phones (the desktop default is far too zoomed in there). */
+const VIEW_SEC = 10;
 const RATES = [1, 0.5, 0.25];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
@@ -119,6 +121,8 @@ export class MobileApp {
   // Where the player root lives on the desktop
   private playerHome: { parent: Node; next: Node | null } | null = null;
   private raf = 0;
+  /** A recording was loaded while the player was hidden: fit the time span once it shows. */
+  private needsFit = true;
 
   constructor(host: MobileAppHost) {
     this.h = host;
@@ -143,6 +147,9 @@ export class MobileApp {
     this.navBtns.get('review')!.appendChild(this.navBadge);
     this.root.append(body, nav);
     document.body.appendChild(this.root);
+
+    // A newly loaded recording starts with the phone time span.
+    host.player?.on?.('ready', () => { this.needsFit = true; if (this.active) setTimeout(() => this.fitTime(), 250); });
 
     this.mql = window.matchMedia(PHONE_QUERY);
     this.mql.addEventListener('change', () => this.applyMode());
@@ -175,6 +182,21 @@ export class MobileApp {
     }
     this.h.onModeChange?.(phone);
     this.resizePlayer();
+    if (phone) { this.needsFit = true; setTimeout(() => this.fitTime(), 250); }
+  }
+
+  /** Show VIEW_SEC seconds around the playhead (or all of a shorter recording). */
+  private fitTime() {
+    const p = this.h.player;
+    const st = p?._state;
+    const dur = Number(p?.duration) || 0;
+    if (!st?._setPixelsPerSecond || !dur) return;
+    const span = Math.min(VIEW_SEC, dur);
+    const start = Math.max(0, Math.min(dur - span, (Number(p.currentTime) || 0) - span / 3));
+    const w = st._getViewportWidth();
+    if (w < 50) return;                       // player not visible yet — retried when Prüfen opens
+    this.needsFit = false;
+    st._setPixelsPerSecond(w / span, true, start, 0);
   }
 
   private mountPlayer() {
@@ -198,7 +220,11 @@ export class MobileApp {
     for (const [id, s] of this.screens) s.hidden = id !== screen;
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === screen);
     if (screen === 'recordings') this.renderRecordings();
-    if (screen === 'review') { this.renderReview(); this.resizePlayer(); }
+    if (screen === 'review') {
+      this.renderReview();
+      this.resizePlayer();
+      if (this.needsFit) setTimeout(() => this.fitTime(), 120);
+    }
   }
 
   // ── Recordings ──────────────────────────────────────────────────────
