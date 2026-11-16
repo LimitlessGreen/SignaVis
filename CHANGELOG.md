@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.2.0] - Unreleased
 
 ### Added
 - `overviewMode: 'spectrogram'` (and `player.setOverviewMode()`): the overview
@@ -19,6 +19,18 @@ All notable changes to this project will be documented in this file.
   the recording (a WAV with its start time in the INFO chunk). Events
   `recordingstart`, `recordingcomplete`, `recordingstop`. The labeling app
   adds "Record from microphone" under Add recordings.
+
+### Changed
+- npm package: much smaller. The library build is minified, the aw-dsp WASM
+  ships once as `dist/aw_dsp_wasm_bg.wasm` (loaded on demand, next to the
+  bundle; override with `globalThis.SIGNAVIS_WASM_URL`) instead of being
+  inlined three times, and the BirdNET models are no longer part of the
+  package.
+
+### Removed
+- The `signavis/models/birdnet-v2.4` export. Pass `BIRDNET_V24_MODEL_URL`
+  (now exported, GitHub Pages) or a URL you host the model at to
+  `BirdNETInference.load({ modelUrl })` instead.
 
 ## [1.1.3] - 2026-11-14
 

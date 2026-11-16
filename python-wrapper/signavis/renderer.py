@@ -18,6 +18,13 @@ _PLAYER_JS = (
     .read_text(encoding="utf-8")
     .replace("</script>", "<\\/script>")
 )
+# The bundle loads the aw-dsp WASM from a separate file. Inlined into an
+# iframe srcdoc / anywidget module it has no URL to resolve that file
+# against, so it is handed over as a data URL via SIGNAVIS_WASM_URL.
+_WASM_DATA_URL = "data:application/wasm;base64," + base64.b64encode(
+    files("signavis.assets").joinpath("aw_dsp_wasm_bg.wasm").read_bytes()
+).decode("ascii")
+_WASM_URL_JS = f"globalThis.SIGNAVIS_WASM_URL ??= {json.dumps(_WASM_DATA_URL)};"
 _PLAYER_CSS = (
     files("signavis.assets")
     .joinpath("birdnet-player.css")
@@ -353,6 +360,7 @@ def render_daw_player(
 </head>
 <body>
   <div id='player'></div>
+  <script>{_WASM_URL_JS}</script>
   <script>{_PLAYER_JS}</script>
   <script>
     (async function() {{

@@ -34,4 +34,4 @@ where = ["."]
 include = ["signavis*"]
 
 [tool.setuptools.package-data]
-"signavis.assets" = ["*.js", "*.css", "*.txt"]
+"signavis.assets" = ["*.js", "*.css", "*.txt", "*.wasm"]

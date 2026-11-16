@@ -119,6 +119,35 @@ onBeforeUnmount(() => player?.destroy())
 </script>
 ```
 
+The spectrogram DSP runs in WebAssembly, shipped as `dist/aw_dsp_wasm_bg.wasm`
+and fetched on first use from the same folder as the bundle. The ESM build
+references it as `new URL('./aw_dsp_wasm_bg.wasm', import.meta.url)`, which Vite
+and webpack 5 detect and copy into your build automatically. Plain Rollup does
+not: add an asset plugin such as `@web/rollup-plugin-import-meta-assets`, or copy
+`node_modules/signavis/dist/aw_dsp_wasm_bg.wasm` next to the output chunk. The
+IIFE build resolves it against its own `<script>` URL; if you self-host it, copy
+the `.wasm` file next to it.
+
+If the file lives elsewhere, or the bundle is inlined into a page without a
+script URL, set the location **before the bundle is loaded** (it is read while
+the bundle initialises):
+
+```html
+<script>globalThis.SIGNAVIS_WASM_URL = '/static/aw_dsp_wasm_bg.wasm'</script>
+<script src="/static/birdnet-player.iife.js"></script>
+```
+
+The BirdNET models are not part of the npm package. `BirdNETInference.load()`
+requires a `modelUrl`: pass `BIRDNET_MODEL_URL` (BirdNET+ V3.0 on GitHub Pages),
+`BIRDNET_V24_MODEL_URL` (legacy v2.4) or any URL you host the model at.
+
+```js
+import { BirdNETInference, BIRDNET_MODEL_URL } from 'signavis'
+
+const birdnet = new BirdNETInference()
+await birdnet.load({ modelUrl: BIRDNET_MODEL_URL })
+```
+
 ## Streamlit (Python)
 
 ```python

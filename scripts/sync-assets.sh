@@ -17,6 +17,9 @@ fi
 echo "▸ Syncing dist → python-wrapper assets …"
 cp dist/birdnet-player.iife.js "${ASSETS_DIR}/birdnet-player.iife.js"
 cp dist/birdnet-player.css     "${ASSETS_DIR}/birdnet-player.css"
+# The bundle loads the aw-dsp WASM from a separate file (next to the script,
+# or from SIGNAVIS_WASM_URL when the bundle is inlined).
+cp dist/aw_dsp_wasm_bg.wasm    "${ASSETS_DIR}/aw_dsp_wasm_bg.wasm"
 # Embeds (signavis.gradio) load tokens + player styles scoped to the player root.
 node scripts/scope-css.mjs dist/tokens.css dist/birdnet-player.css "${ASSETS_DIR}/birdnet-player.embed.css"
 # Gradio embeds run offline, so WaveSurfer ships alongside (BSD-3-Clause).
