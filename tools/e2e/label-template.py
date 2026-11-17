@@ -10,7 +10,7 @@ with sync_playwright() as p:
     errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
     page.goto(url, wait_until='networkidle'); page.wait_for_function('window.__signavis')
     page.evaluate("document.getElementById('loadSampleBtn')?.click()"); page.wait_for_timeout(3500); page.keyboard.press('Escape')
-    page.evaluate("() => { const sv = window.__signavis; sv.state.labels = []; sv.syncToPlayer(); }")
+    page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll([]); sv.syncToPlayer(); }")
     box = page.evaluate("() => { const r = window.__signavis.player.spectrogramLabels.overlay.parentElement.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }")
     def draw(x0, alt=False):
         y = box['y'] + box['height'] * 0.3

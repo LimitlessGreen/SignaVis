@@ -93,6 +93,7 @@ import {
 } from '../../app/lite-handoff.ts';
 import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
 import { RenderScheduler } from './render-scheduler.ts';
+import { LabelStore } from './label-store.ts';
 
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -298,8 +299,7 @@ function getRefCallsModal() {
       isLabelLocked: (id) => _computeLockedIds().includes(id),
       onUpdateLabel: (patch) => {
         if (!state.labels.some((l) => l.id === patch.id) || _computeLockedIds().includes(patch.id)) return null;
-        upsertLabel(patch);
-        syncToPlayer();
+        upsertLabel(patch, ALL_LABEL_VIEWS);
         return state.labels.find((l) => l.id === patch.id) || null;
       },
       // Confirmed labels of the same species: current recording + other recordings.
@@ -1108,8 +1108,26 @@ const labelViews = new RenderScheduler([
 let getSuggestions = (q, n) => [];  // populated after taxonomy loads
 let _lastAudioUrl = null;           // track current audio URL for reference player
 
+// Labels of the recording on screen and which recording they belong to. Change them only
+// through labelStore (the array is frozen in development); state.labels reads it.
+const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
+
+// Every label change: save it to its recording now, redraw the views in the next microtask.
+// A change can name the views it needs (meta.views), e.g. leave out the player when the
+// player made the change itself. load/clear show stored labels: nothing to save back.
+const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props'];
+/** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
+const EDIT_VIEWS = ['player', 'list', 'badge', 'props'];
+labelStore.subscribe((change) => {
+  if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
+  labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
+  scheduleProjectAutosave();
+});
+
 const state = {
-  labels: [],
+  get labels() { return labelStore.labels; },
+  /** Recording the labels belong to (see labelStore.entryId) */
+  get _labelsEntryId() { return labelStore.entryId; },
   /** @type {Map<string, ReturnType<typeof defaultSetInfo>>} */
   labelSets: new Map(),
   /** ID of the currently active annotation set (new labels are assigned to it) */
@@ -1133,7 +1151,6 @@ const state = {
    * null on page load until an entry's annotations have been explicitly loaded.
    * Guards against saving the empty initial state over persisted annotations.
    */
-  _labelsEntryId: null,
 };
 
 function serializeOverlayAnnotations() {
@@ -1283,8 +1300,7 @@ function applyWorkspaceProject(project) {
     state.taxonomyLang = snap.settings.taxonomyLang;
     taxonomyLangSelect.value = state.taxonomyLang;
   }
-  state.labels = [];
-  state._labelsEntryId = null;
+  labelStore.clear();
 }
 
 function showReadOnlyBanner() {
@@ -1716,9 +1732,8 @@ async function restoreProjectSnapshotIfPossible() {
     }
 
     if (Array.isArray(project.labels) && project.labels.length) {
-      state.labels = dedupeLabels(project.labels.map((l) => ({ ...l })));
+      labelStore.load(dedupeLabels(project.labels.map((l) => ({ ...l }))), recordingManager?.activeId || null);
       ensureOwnSource();
-      state._labelsEntryId = recordingManager?.activeId || null;
       selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
     }
 
@@ -1765,7 +1780,7 @@ function deleteLabelSet(id) {
   if (state.labelSets.get(id)?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
   // Remove the set's labels along with the set itself — orphaned
   // labels would otherwise float in the unassigned bucket.
-  state.labels = state.labels.filter((lbl) => lbl.setId !== id);
+  labelStore.replaceAll(state.labels.filter((lbl) => lbl.setId !== id));
   state.labelSets.delete(id);
   state.hiddenSetIds?.delete(id);
   if (state.activeSetId === id) state.activeSetId = null;
@@ -1848,16 +1863,14 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
     ? { label: open.length === plan.candidates ? `All ${open.length}` : `Other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
   const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
-  state.labels.push(...copies);
+  labelStore.add(copies);
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
     feedSimilarDecisions([lbl.id], true);
-    state.labels = state.labels.filter((l) => l.id !== lbl.id);
+    labelStore.remove(lbl.id);
     similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
   }
   touchOwnSet(OWN_SOURCE_ID);
-  syncToPlayer();
-  saveCurrentAnnotationsIfNeeded();
   const n = copies.length;
   selectionMeta.textContent = `Copied ${n} label${n === 1 ? '' : 's'} into my labels`;
   if (plan.candidates > 1) {
@@ -1880,7 +1893,7 @@ function adoptSetLabels(setId) {
     if (!src.length) continue;
     const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
-    if (entry.id === recordingManager.activeId) state.labels.push(...copies);
+    if (entry.id === recordingManager.activeId) labelStore.add(copies);
     else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...copies] });
   }
   if (!recordingManager.activeId) {
@@ -1888,7 +1901,7 @@ function adoptSetLabels(setId) {
     found += inSet.length;
     const copies = adoptLabels(adoptSources(inSet, state.labels, 'all'), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
-    state.labels.push(...copies);
+    labelStore.add(copies);
   }
   if (!total) {
     if (found) selectionMeta.textContent = 'These labels are already in my labels';
@@ -2019,8 +2032,7 @@ async function activateRecordingEntry(entry) {
   saveCurrentAnnotationsIfNeeded();
 
   // 2. Reset per-recording state (keep labelSets — session set + imported XC sets persist)
-  state.labels = [];
-  state._labelsEntryId = null;
+  labelStore.clear();
   state.xcLabelPool = [];
   state.recordingMeta = entry.xcRecordingMeta || null;
   // Use the stored sample rate for this recording immediately so any UI reads
@@ -2082,8 +2094,7 @@ async function activateRecordingEntry(entry) {
   if (!_audioFailed) fileLabel.textContent = entry.filename;
 
   // 5. Restore annotations — mark state.labels as belonging to this entry
-  state.labels = (entry.annotations || []).map(a => ({ ...a }));
-  state._labelsEntryId = entry.id;
+  labelStore.load((entry.annotations || []).map(a => ({ ...a })), entry.id);
   relocalizeAllLabels();
 
   // 6. Update all per-recording displays
@@ -2167,15 +2178,13 @@ function snapshotLabels() {
     }
     const active = recordingManager.activeId || null;
     if (active === activeAt) {
-      state.labels = labels;
-      state._labelsEntryId = labelsEntryId;
+      labelStore.load(labels, labelsEntryId);
     } else {
       // Another recording is on screen by now: `labels` belong to the one active at snapshot
       // time and would be saved into this one. Show this recording's own restored labels.
       const own = perEntry.find(([id]) => id === active);
       if (own) {
-        state.labels = own[1].map((a) => ({ ...a }));
-        state._labelsEntryId = active;
+        labelStore.load(own[1].map((a) => ({ ...a })), active);
       }
     }
     saveSessionSets(state);
@@ -2196,7 +2205,7 @@ function removeRecordingWithUndo(entry) {
   forgetBirdboxResults(entry.id);
   showUndoToast(`Removed ${toXcId(entry.xcId) || entry.filename} from the session`, () => {
     recordingManager.add(snapshot);
-    if (wasActive) { recordingManager.setActive(snapshot.id); state._labelsEntryId = snapshot.id; }
+    if (wasActive) { recordingManager.setActive(snapshot.id); labelStore.claim(snapshot.id); }
   });
 }
 
@@ -2310,8 +2319,7 @@ const recordingExplorer = new RecordingExplorer({
     }
     if (entry.id === recordingManager.activeId) {
       // Active recording: clear live state, sync, then re-import from XC
-      state.labels = [];
-      state._labelsEntryId = entry.id;
+      labelStore.clear(entry.id);
       recordingManager.update(entry.id, { annotations: [], needsXcImport: false });
       syncToPlayer();
       if (entry.xcId) {
@@ -2346,8 +2354,7 @@ const recordingExplorer = new RecordingExplorer({
       recordingManager.update(e.id, { annotations: [], needsXcImport: !isActive && !!e.xcId });
     }
     if (recordingManager.activeId) {
-      state.labels = [];
-      state._labelsEntryId = recordingManager.activeId;
+      labelStore.clear(recordingManager.activeId);
       syncToPlayer();
       const _active = recordingManager.getActive();
       if (_active?.xcId) {
@@ -2674,8 +2681,7 @@ for (const [k, b] of Object.entries(labelViewBtns)) {
 applyLabelView(labelList.view);
 
 labelList.onRemove = (lbl) => {
-  state.labels = state.labels.filter((l) => l.id !== lbl.id);
-  syncToPlayer();
+  labelStore.remove(lbl.id);
 };
 
 // ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
@@ -2722,17 +2728,13 @@ const mobileApp = new MobileApp({
     if (!lbl) return null;
     snrComputer.invalidate(id);
     touchOwnSet(lbl.setId);
-    state.labels = state.labels.filter((l) => l.id !== id);
-    syncToPlayer();
-    saveCurrentAnnotationsIfNeeded();
+    labelStore.remove(id);
     return { ...lbl };
   },
   restoreLabel: (lbl) => {
     if (!lbl || state.labels.some((l) => l.id === lbl.id)) return;
-    state.labels.push({ ...lbl });
+    labelStore.add({ ...lbl });
     touchOwnSet(lbl.setId);
-    syncToPlayer();
-    saveCurrentAnnotationsIfNeeded();
   },
   analysis: {
     confInput: document.getElementById('birdnetConfidence'),
@@ -2802,8 +2804,7 @@ const labelTable = labelTableHost ? new LabelGrid({
     if (ids.length > 1 && !await appConfirm(`Delete ${ids.length} labels?`, { title: 'Delete labels', okLabel: 'Delete', danger: true })) return;
     const del = new Set(ids);
     for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
-    state.labels = state.labels.filter((l) => !del.has(l.id));
-    syncToPlayer();
+    labelStore.remove(del);
     selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
   },
   onNotice: (msg) => { selectionMeta.textContent = msg; },
@@ -2945,8 +2946,7 @@ const birdnetPanel = new BirdNETPanel({
       }
       return;
     }
-    for (const lbl of labels) state.labels.push({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId });
-    syncToPlayer();
+    labelStore.add(labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId })));
     if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
   },
 });
@@ -2985,9 +2985,9 @@ const birdboxPanel = new BirdBoxPanel({
       if (!running) scheduleProjectAutosave();
       return;
     }
-    state.labels = state.labels.filter((l) => l.setId !== setId);
-    state.labels.push(...own);
-    if (running) syncToPlayerSoft(); else syncToPlayer();
+    // While BirdBox runs, the list waits for the end (boxes arrive every few seconds)
+    labelStore.replaceAll([...state.labels.filter((l) => l.setId !== setId), ...own],
+      running ? { views: ['player', 'table', 'badge', 'props'] } : undefined);
   },
 });
 
@@ -3112,7 +3112,7 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
       onPick: (sug, i) => _similarHitOf.set(sug.id, i),
     });
     // One exemplar at a time: its suggestions replace earlier ones
-    state.labels = state.labels.filter((l) => l.setId !== setId).concat(suggestions);
+    labelStore.replaceAll(state.labels.filter((l) => l.setId !== setId).concat(suggestions));
     state.hiddenSetIds?.delete(setId);
     syncToPlayer();
     if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
@@ -3171,14 +3171,12 @@ function acceptSimilar(ids) {
   const picked = state.labels.filter((l) => want.has(l.id) && l.origin === SIMILAR_ORIGIN);
   const src = labelsToAdopt(picked, state.labels, OWN_SOURCE_ID);   // ✓ on the box may have copied it already
   if (!picked.length) return;
-  if (!src.length) { state.labels = state.labels.filter((l) => !want.has(l.id)); syncToPlayer(); return; }
+  if (!src.length) { labelStore.remove(want); return; }
   feedSimilarDecisions(picked.map((l) => l.id), true);
   const undo = snapshotLabels();
   const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
-  state.labels = state.labels.filter((l) => !want.has(l.id)).concat(copies);
+  labelStore.replaceAll(state.labels.filter((l) => !want.has(l.id)).concat(copies));
   touchOwnSet(OWN_SOURCE_ID);
-  syncToPlayer();
-  saveCurrentAnnotationsIfNeeded();
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
@@ -3191,8 +3189,7 @@ function rejectSimilar(ids) {
   feedSimilarDecisions(ids, false);
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
-  state.labels = state.labels.filter((l) => !want.has(l.id));
-  syncToPlayer();
+  labelStore.remove(want);
   similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
 }
 
@@ -3216,7 +3213,7 @@ const groupReview = new GroupReview({
   onRegroup: (cut) => regroup(cut),
   onClose: () => {
     // Unnamed group previews go; named suggestions stay until copied or rejected
-    state.labels = state.labels.filter((l) => !l.similar?.preview);
+    labelStore.replaceAll(state.labels.filter((l) => !l.similar?.preview));
     _groups = null;
     syncToPlayer();
   },
@@ -3291,7 +3288,7 @@ function showGroup(gi) {
       similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true },
     };
   });
-  state.labels = state.labels.filter((l) => !l.similar?.preview).concat(preview);
+  labelStore.replaceAll(state.labels.filter((l) => !l.similar?.preview).concat(preview));
   state.hiddenSetIds?.delete(setId);
   syncToPlayer();
   player.selectLabel(preview[0].id);
@@ -3483,7 +3480,6 @@ if (isLite()) {
 sidebar.setActive('project');
 
 // ── Sync & export ─────────────────────────────────────────────────
-let _skipPropsRefresh = false;
 /**
  * Save current state.labels into the active RecordingEntry when appropriate.
  * Guards against overwriting stored annotations with an empty in-memory state
@@ -3495,7 +3491,7 @@ function saveCurrentAnnotationsIfNeeded() {
   if (!recordingManager?.activeId) return;
   // If the in-memory labels are already marked as belonging to the active
   // entry, persist them (including the empty-array case when user cleared).
-  if (state._labelsEntryId === recordingManager.activeId) {
+  if (labelStore.entryId === recordingManager.activeId) {
     recordingManager.saveAnnotations(state.labels);
     scheduleProjectAutosave();   // saveAnnotations only updates the entry, not the project store
     return;
@@ -3505,7 +3501,7 @@ function saveCurrentAnnotationsIfNeeded() {
   // ownership to avoid future ambiguity.
   if (Array.isArray(state.labels) && state.labels.length > 0) {
     recordingManager.saveAnnotations(state.labels);
-    state._labelsEntryId = recordingManager.activeId;
+    labelStore.claim(recordingManager.activeId);
     scheduleProjectAutosave();
   }
 }
@@ -3555,18 +3551,16 @@ function _playerLabels() {
   return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
 }
 
-/** Labels changed: save them to the active recording now, redraw every view in the next microtask. */
+/** Something besides the labels changed (sets, visibility, locks): save, redraw every view. */
 function syncToPlayer() {
   saveCurrentAnnotationsIfNeeded();
-  labelViews.invalidate('player', 'list', 'badge', 'explore');
-  if (!_skipPropsRefresh) labelViews.invalidate('props');
+  labelViews.invalidate('player', 'list', 'badge', 'explore', 'props');
   scheduleProjectAutosave();
 }
 
 /** Like syncToPlayer, but leaves the label list alone (spectrogram, table, badge, properties). */
 function syncToPlayerSoft() {
-  labelViews.invalidate('player', 'table', 'badge');
-  if (!_skipPropsRefresh) labelViews.invalidate('props');
+  labelViews.invalidate('player', 'table', 'badge', 'props');
 }
 
 /** Push a multi-selection change to every view that can show it. */
@@ -3602,8 +3596,7 @@ function toLabelExport() {
 // ── File loading ──────────────────────────────────────────────────
 async function loadFromArrayBuffer(arrayBuffer, filename = 'audio.wav', mimeType = 'audio/mpeg') {
   // Reset per-recording state; the session set is kept intact
-  state.labels = [];
-  state._labelsEntryId = null;  // labels no longer belong to any entry
+  labelStore.clear();  // labels no longer belong to any entry
   state.xcLabelPool = [];
   xcPanel._activeSetId = OWN_SOURCE_ID;
   setActiveSet(OWN_SOURCE_ID);
@@ -3749,8 +3742,8 @@ async function importXenoCantoLabels(xcId) {
 
   promoteXcAnnotationSets(result.labels, result.xcId);
 
-  state.labels = result.labels;
-  if (recordingManager?.activeId) state._labelsEntryId = recordingManager.activeId;
+  if (recordingManager?.activeId) labelStore.load(result.labels, recordingManager.activeId);
+  else labelStore.replaceAll(result.labels);
   relocalizeAllLabels();
   syncToPlayer();
   return { xcId: result.xcId, imported: result.labels.length };
@@ -3940,7 +3933,7 @@ xcLoadBtn.addEventListener('click', async () => {
       isBlobUrl: false,
     });
     recordingManager.setActive(_xcEntry.id);
-    state._labelsEntryId = _xcEntry.id;  // empty labels now belong to the new entry
+    labelStore.claim(_xcEntry.id);  // empty labels now belong to the new entry
     await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
     finishRecordingLoad(_prep);
     showXcNokeyModal();
@@ -4299,7 +4292,7 @@ async function autoLoadFromParams(p = new URLSearchParams(window.location.search
       isBlobUrl: false,
     });
     recordingManager.setActive(_autoEntry.id);
-    state._labelsEntryId = _autoEntry.id;  // empty labels now belong to the new entry
+    labelStore.claim(_autoEntry.id);  // empty labels now belong to the new entry
     await loadFromArrayBuffer(audio.buffer, `XC${audio.xcId}.mp3`, 'audio/mpeg');
     finishRecordingLoad(_prep);
     showXcNokeyModal();
@@ -4333,8 +4326,7 @@ document.getElementById('newSessionBtn')?.addEventListener('click', async () => 
   recordingManager.setActive(null);
   recordingManager.clear();
   forgetBirdboxResults();
-  state.labels = [];
-  state._labelsEntryId = null;
+  labelStore.clear();
   state.xcLabelPool = [];
   state.recordingMeta = null;
   state.hiddenSetIds?.clear?.();
@@ -4411,8 +4403,7 @@ async function loadLocalAudioFile(file, extra = {}) {
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
-  state.labels = [];
-  state._labelsEntryId = null;
+  labelStore.clear();
   state.recordingMeta = null;
   currentXcId = null;
   updateUrlXcId(null);
@@ -4440,7 +4431,7 @@ async function loadLocalAudioFile(file, extra = {}) {
     recordingStart: player.recordingStart || null,
   });
   recordingManager.setActive(_fileEntry.id);
-  state._labelsEntryId = _fileEntry.id;  // empty labels now belong to the new entry
+  labelStore.claim(_fileEntry.id);  // empty labels now belong to the new entry
   fileInput.value = '';
   finishRecordingLoad(_prep);
   await keepFileInProjectFolder(_fileEntry, file);
@@ -4496,8 +4487,7 @@ loadSampleBtn.addEventListener('click', async () => {
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
-  state.labels = [];
-  state._labelsEntryId = null;
+  labelStore.clear();
   state.recordingMeta = null;
   currentXcId = null;
   updateUrlXcId(null);
@@ -4510,7 +4500,7 @@ loadSampleBtn.addEventListener('click', async () => {
     isBlobUrl: false,
   });
   recordingManager.setActive(_sampleEntry.id);
-  state._labelsEntryId = _sampleEntry.id;  // empty labels now belong to the new entry
+  labelStore.claim(_sampleEntry.id);  // empty labels now belong to the new entry
   finishRecordingLoad(_prep);
   // Clear any previously saved original when loading the demo sample
   try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
@@ -4625,8 +4615,8 @@ async function importAnnotaSetFile(file) {
     promoteXcAnnotationSets(labels, nr);
     const ids = new Set(labels.map((l) => l.id));
     if (isActive) {
-      state.labels = [...state.labels.filter((l) => !ids.has(l.id)), ...labels];
-      state._labelsEntryId = entry.id;
+      labelStore.claim(entry.id);
+      labelStore.replaceAll([...state.labels.filter((l) => !ids.has(l.id)), ...labels]);
       activeTouched = true;
     } else {
       entriesBefore.push([entry.id, entry.annotations || []]);
@@ -4648,7 +4638,7 @@ async function importAnnotaSetFile(file) {
   selectionMeta.textContent = parts.join(' · ');
   if (!imported) return;
   showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
-    if (activeTouched) state.labels = labelsBefore;
+    if (activeTouched) labelStore.replaceAll(labelsBefore);
     for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
     for (const id of [...state.labelSets.keys()]) if (!setsBefore.has(id)) state.labelSets.delete(id);
     refresh();
@@ -4657,7 +4647,7 @@ async function importAnnotaSetFile(file) {
   sidebar.setActive('labels');
 }
 
-function upsertLabel(label) {
+function upsertLabel(label, views = EDIT_VIEWS) {
   if (!label?.id) return;
   const idx = state.labels.findIndex((l) => l.id === label.id);
   if (idx >= 0) {
@@ -4668,16 +4658,15 @@ function upsertLabel(label) {
     if (wasNonManual && label.origin === 'manual') {
       merged = asOwnLabel(merged, state.labelSets);
     }
-    state.labels[idx] = merged;
+    labelStore.update(prev.id, () => merged, { views });
   } else {
     // Assign the active annotation set to newly created labels
     const setId = label.setId ?? (state.activeSetId || OWN_SOURCE_ID);
     const created = { ...label, origin: label.origin || 'manual', setId };
     if (setId === OWN_SOURCE_ID && !created.layer) created.layer = activeLayerId(state.labelSets);
-    state.labels.push(created);
+    labelStore.add(created, { views });
   }
   touchOwnSet(state.labels.find((l) => l.id === label.id)?.setId);
-  labelViews.invalidate('list', 'badge');
   // Refresh properties panel if this label is displayed (pinned or hovered)
   const displayed = propsPanel.displayedLabel;
   if (displayed?.id === label.id) {
@@ -4690,19 +4679,13 @@ propsPanel.onChange = (id, updates) => {
   const idx = state.labels.findIndex((l) => l.id === id);
   if (idx < 0) return;
   const prev = state.labels[idx];
-  state.labels[idx] = { ...prev, ...updates, updatedAt: new Date().toISOString() };
-  touchOwnSet(prev.setId);
   const nameChanged = updates.label !== undefined || updates.scientificName !== undefined;
-  _skipPropsRefresh = true;
-  if (nameChanged) {
-    // Re-group fully — name change affects which group this label belongs to
-    syncToPlayer();
-  } else {
-    syncToPlayerSoft();
-    labelList.updateBadges(id, state.labels[idx]);
-  }
-  _skipPropsRefresh = false;
-  saveCurrentAnnotationsIfNeeded();
+  // A name change regroups the list; otherwise only the row's badges change (updateBadges).
+  // The properties panel is refreshed below, not by the views.
+  labelStore.patch(id, { ...updates, updatedAt: new Date().toISOString() },
+    { views: nameChanged ? ['player', 'list', 'badge', 'explore'] : ['player', 'table', 'badge'] });
+  touchOwnSet(prev.setId);
+  if (!nameChanged) labelList.updateBadges(id, state.labels[idx]);
   // Ensure properties panel UI reflects the latest label object after inline edits.
   // We intentionally refresh here because we temporarily suppressed automatic
   // propsPanel sync while updating the player/list to avoid redundant reflows.
@@ -4718,9 +4701,9 @@ propsPanel.onChange = (id, updates) => {
   }
 };
 
-player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); requestMissingSnr(); });
+player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); requestMissingSnr(); });
 player.on('spectrogramlabelupdate', (e) => {
-  upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  upsertLabel(e.detail?.label);
   // Re-compute SNR when a label is resized/moved on the spectrogram
   const lbl = e.detail?.label;
   if (lbl) {
@@ -4738,7 +4721,7 @@ player.on('annotationupdate', (e) => {
   if (a.species && a.species !== prev.label) changes.label = a.species;   // the track calls the name "species"
   if (a.color && a.color !== prev.color) changes.color = a.color;
   if (a.scientificName && a.scientificName !== prev.scientificName) changes.scientificName = a.scientificName;
-  upsertLabel(changes); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  upsertLabel(changes);
   if (changes.start !== prev.start || changes.end !== prev.end) {
     const _ab = player._state?.audioBuffer;
     const fresh = state.labels.find((l) => l.id === a.id);
@@ -4750,10 +4733,7 @@ player.on('annotationremove', (e) => {
   if (!id || !state.labels.some((l) => l.id === id)) return;
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
-  state.labels = state.labels.filter((l) => l.id !== id);
-  syncToPlayerSoft();   // the context-menu path removes it from the track only, not from the spectrogram
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
+  labelStore.remove(id, { views: EDIT_VIEWS });   // the context-menu path removes it from the track only, not from the spectrogram
 });
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {
@@ -4767,9 +4747,7 @@ player.on('spectrogramlabelremove', (e) => {
   if (e.detail?.label?.origin === SIMILAR_ORIGIN) { rejectSimilar([id]); return; }
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
-  state.labels = state.labels.filter((l) => l.id !== id);
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
+  labelStore.remove(id, { views: ['list', 'badge'] });   // the player removed it already
 });
 
 // Undo/redo inside the player: mirror the restored state into state.labels
@@ -4780,14 +4758,15 @@ player.on('labelrestore', (e) => {
   const afterIds = new Set(after.map((l) => l.id));
   const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
   for (const id of removed) snrComputer.invalidate(id);
-  state.labels = state.labels.filter((l) => !removed.has(l.id));
+  // One change (one save); the player shows the restored state already
+  const next = state.labels.filter((l) => !removed.has(l.id));
+  const at = new Map(next.map((l, i) => [l.id, i]));
   for (const lbl of after) {
-    const idx = state.labels.findIndex((l) => l.id === lbl.id);
-    if (idx >= 0) state.labels[idx] = { ...state.labels[idx], ...lbl };
-    else state.labels.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
+    const i = at.get(lbl.id);
+    if (i != null) next[i] = { ...next[i], ...lbl };
+    else next.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
   }
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
+  labelStore.replaceAll(next, { views: ['list', 'badge'] });
 });
 
 player.on('spectrogramlabelrefcalls', (e) => {
@@ -5348,7 +5327,7 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+  window.__signavis = { state, labelStore, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
     groupedCalls: () => _groups?.boxes.length ?? null };
 }

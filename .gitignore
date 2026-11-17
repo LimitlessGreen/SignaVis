@@ -91,3 +91,6 @@ models/birdnet-v3.0-12k/
 # BirdBox model: fetched at build time (scripts/birdbox/fetch-model.mjs)
 .cache/
 models/birdbox-just-bird/
+
+# merge leftovers
+*.orig

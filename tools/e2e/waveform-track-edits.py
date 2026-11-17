@@ -23,7 +23,7 @@ with sync_playwright() as p:
     page.evaluate("document.getElementById('loadSampleBtn')?.click()"); page.wait_for_timeout(3500)
     page.keyboard.press('Escape')
     page.evaluate("""() => { const sv = window.__signavis;
-      sv.state.labels = [{ id: 'w1', start: 2, end: 3.5, freqMin: 3000, freqMax: 7000, label: 'Wave', origin: 'manual', setId: 'own', tags: {} }];
+      sv.labelStore.replaceAll([{ id: 'w1', start: 2, end: 3.5, freqMin: 3000, freqMax: 7000, label: 'Wave', origin: 'manual', setId: 'own', tags: {} }]);
       sv.syncToPlayer(); }""")
     show(page, 'start')
     box = lambda: page.evaluate("() => { const r = document.querySelector('.annotation-region[data-id=\"w1\"]').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }")

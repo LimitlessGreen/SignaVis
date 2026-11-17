@@ -27,7 +27,7 @@ with sync_playwright() as p:
     page.wait_for_function(f"{SV}.activeRecordingId() !== null", timeout=30000); page.keyboard.press('Escape')   # recording registered
     page.evaluate(f"""boxes => {{ const sv = {SV};
         sv.state.labelSets.set('bb', {{ id: 'bb', name: 'BirdBox', origin: 'BirdBox', locked: true, visible: true }});
-        boxes.forEach((t, i) => sv.state.labels.push({{ id: 'bb' + i, setId: 'bb', origin: 'BirdBox', label: 'Bird', confidence: 0.5,
+        boxes.forEach((t, i) => sv.labelStore.add({{ id: 'bb' + i, setId: 'bb', origin: 'BirdBox', label: 'Bird', confidence: 0.5,
           start: t.start, end: t.end, freqMin: t.freqMin, freqMax: t.freqMax }}));
         sv.syncToPlayer(); }}""", truth)
     page.evaluate("document.getElementById('birdboxGroupBtn').click()")

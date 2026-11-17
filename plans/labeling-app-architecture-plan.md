@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-16 · Branch `refactor/labeling-app-module` (lokal, noch nicht gepusht, kein PR) · Schritte 1–2 fertig, Schritt 5 Teile 1–2 auf Branch `perf/spectrogram-labels-keyed`
+Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 in Arbeit auf Branch `refactor/label-commands`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -26,7 +26,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 |---|---|---|
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
-| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, die selbst `labelViews.invalidate` auslösen) – war ursprünglich Teil von Schritt 2 | offen |
+| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 offen (Befehle) |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
@@ -161,3 +161,41 @@ jedem Ziehen stehen (der Player setzte ihn nur bei Layer-eigenen Update-Ereignis
 **Gesamt seit Beginn (200 Labels): ~380 ms → 30–43 ms pro Bearbeitung; 1500 Labels: ~3 s → 0,17–0,26 s.**
 Größter Rest jetzt die Spektrogramm-Ebenen (~110–130 ms bei 1500: Layout + Signaturen aller Labels). Nächster Hebel
 dort: nur den sichtbaren Zeitbereich rendern. Die Zeitansicht der Liste baut weiterhin alle Zeilen (nur Icons schneller).
+
+## Schritt 3 – Details
+
+Muster (bewusst schlank): ein kleiner Store mit Methoden + `subscribe`, Befehle als einfache Funktionen.
+Kein Redux/Reducer, keine Command-Klassen (erst bei Bedarf für Undo/Redo), kein String-Event-Bus.
+
+### Teil 1a – `LabelStore` (Branch `refactor/label-commands`)
+
+- `src/app/labeling/label-store.ts` (+ `tests/label-store.test.ts`): `load(labels, entryId)`, `clear(entryId?)`,
+  `claim(entryId)`, `add`, `update(ids, fn)`, `patch(id, p)`, `remove(ids | pred)`, `replaceAll`, `changed()`, `subscribe`.
+  Jede Änderung setzt ein **neues** Array (in DEV eingefroren → vergessenes `push` wirft sofort).
+- Labels und Besitzer-Aufnahme (`entryId`, vorher `state._labelsEntryId`) ändern sich zusammen (`load`/`clear`),
+  die frühere Zwei-Zeilen-Regel „Labels leeren + Besitzer setzen“ ist an einer Stelle.
+- `main.js`: alle Schreibstellen (~50) laufen über `labelStore`; `state.labels`/`state._labelsEntryId` sind nur noch Getter
+  (Zuweisung wirft im Modul). Verhalten unverändert: `syncToPlayer()`-Aufrufe bleiben wie sie sind (→ Teil 1b).
+- Gefunden: Die Labelliste verließ sich darauf, dass die App geänderte Labels im **selben** Array ersetzt
+  (Tags-Änderung ohne Render, danach Gruppe aufklappen / Zeitansicht → alter Stand). `updateBadges` ersetzt das Label
+  jetzt selbst in `this._labels`. Abgedeckt durch `tools/e2e/label-list-behaviour.py`.
+- E2E-/Perf-Skripte schreiben über `window.__signavis.labelStore` statt `state.labels`.
+- Prüfung: Typcheck, Tests 745/745; `label-list-behaviour`, `similar-calls/-carry/-groups` gegen `main` identisch;
+  `adopt-detection`, `escape-cancels-drag`, `waveform-track-edits`, `label-template`, Render-Gleichwertigkeit ok,
+  Smoke (zwei Aufnahmen, Wechsel, Reload, Handy-Breite) wie `main`, keine Seitenfehler. Benchmark 1500 Labels unverändert
+  (170–270 ms). Lite-Build braucht lokal `npm run taxonomy:build` (auch auf `main`).
+
+### Teil 1b – Speichern und Ansichten per `subscribe`
+
+- Ein Abonnent direkt nach `labelStore`: jede Änderung speichert sofort in die Aufnahme (`saveCurrentAnnotationsIfNeeded`,
+  außer `load`/`clear` – die zeigen ja den gespeicherten Stand), invalidiert die Ansichten, plant den Projekt-Autosave.
+- Entscheidung: Teil-Neuzeichnen per Hinweis an der Änderung, `{ views }` (Standard: alle). Genutzt bei Ereignissen,
+  die der Player selbst ausgelöst hat (`spectrogramlabelremove`, `labelrestore`: nur Liste+Badge), Bearbeitungen im
+  Spektrogramm/Wellenform (`EDIT_VIEWS`), Properties-Edit (ohne `props`; ohne Liste, wenn der Name gleich bleibt) und
+  laufender BirdBox-Erkennung (Liste erst am Ende). `_skipPropsRefresh` entfällt.
+- Weggefallen: die `syncToPlayer()`/`syncToPlayerSoft()`/`saveCurrentAnnotationsIfNeeded()`-Aufrufe direkt nach
+  Label-Änderungen. `syncToPlayer()` bleibt für Änderungen **neben** den Labels (Sets, Sichtbarkeit, Sperren) und
+  für Stellen, die Label-Objekte direkt ändern (`l.layer = …`) – Kandidat für `labelStore.changed()`.
+- `add` nimmt ein Label oder ein Array (`add(labels, meta?)`), nicht mehr `add(...labels)`.
+- Prüfung: wie 1a – alle E2E gegen `main` identisch (Reihenfolge der Artzählung in `similar-groups` schwankt auch auf `main`),
+  Render-Gleichwertigkeit ok, Benchmark unverändert (Ziehen 250–285 ms auf beiden).
