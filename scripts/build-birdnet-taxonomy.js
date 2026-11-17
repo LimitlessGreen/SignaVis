@@ -5,9 +5,16 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
 
-const CORNELL_TAXONOMY_URL = 'https://birdnet.cornell.edu/taxonomy/api/download/json';
+// BirdNET taxonomy API (birdnet.cornell.edu/taxonomy/docs). The species list
+// with only the fields we use is ~34 MB instead of the 124 MB full download.
+const CORNELL_API = 'https://birdnet.cornell.edu/taxonomy/api';
+const CORNELL_FIELDS = [
+    'scientific_name', 'birdnet_id', 'taxon_group', 'record_type', 'common_name', 'common_names',
+    'scientific_name_aliases', 'xc_name', 'ebird_code', 'inat_id', 'image',
+];
+const CORNELL_PER_PAGE = 500; // API maximum
+const USER_AGENT = 'signavis-taxonomy-build/1.0';
 // BirdNET+ V3.0 Global 12K labels (Zenodo record, Apache-2.0): the model's full
 // class list with birdnet_id, taxon group and common names in ~35 languages.
 const V3_RECORD = '24162518';
@@ -16,13 +23,10 @@ const V3_LABELS_URL = `https://zenodo.org/records/${V3_RECORD}/files/${V3_LABELS
 const V3_MODEL_VERSION = 'BirdNET+ V3.0';
 
 // V3 / Cornell language codes -> the codes the app has used since V2.4.
-const LANG_ALIASES = { en: 'en_uk', pt: 'pt_BR', 'zh-CN': 'zh' };
+const LANG_ALIASES = { en: 'en_uk', pt: 'pt_BR', 'zh-CN': 'zh', id: 'in' };
 // Regional variants we do not offer as separate UI languages.
 const SKIP_LANGS = new Set(['es_EC', 'es_ES', 'es_MX', 'zh-CN']);
 
-const IMAGE_WIDTH = 480;
-const IMAGE_HEIGHT = 320;
-const WEBP_QUALITY = 70;
 
 const CURATED_LABEL_ALIASES = {
     "Hypsiboas albomarginatus": "Boana albomarginata",
@@ -145,25 +149,72 @@ export function mergeNames(...sources) {
     return out;
 }
 
+async function fetchWithRetry(fetchFn, url, tries = 4) {
+    for (let i = 1; ; i++) {
+        try {
+            const res = await fetchFn(url, { headers: { 'User-Agent': USER_AGENT } });
+            if (res.ok || res.status === 404 || i >= tries) return res;
+            await res.body?.cancel(); // release the connection before retrying
+        } catch (e) {
+            if (i >= tries) throw e;
+        }
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+    }
+}
+
+/**
+ * All species of the BirdNET taxonomy, page by page, only the fields we use.
+ * Returns { taxonomy_version, species }.
+ */
+export async function fetchCornellSpecies(fetchFn = fetch, log = console.log) {
+    const species = [];
+    let version = '';
+    for (let page = 1; ; page++) {
+        const url = `${CORNELL_API}/species?fields=${CORNELL_FIELDS.join(',')}&per_page=${CORNELL_PER_PAGE}&page=${page}`;
+        const res = await fetchWithRetry(fetchFn, url);
+        if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status} ${res.statusText}`);
+        const body = await res.json();
+        if (version && body.taxonomy_version !== version) {
+            throw new Error(`BirdNET taxonomy changed while downloading (${version} -> ${body.taxonomy_version}); rebuild.`);
+        }
+        version = body.taxonomy_version;
+        species.push(...(body.results || []));
+        if (page === 1) log(`Loading BirdNET taxonomy ${version}: ${body.total} species ...`);
+        if (!body.results?.length || species.length >= body.total) {
+            if (species.length !== body.total) throw new Error(`BirdNET taxonomy: got ${species.length} of ${body.total} species`);
+            return { taxonomy_version: version, species };
+        }
+    }
+}
+
+/** Cached taxonomy; an old full download (plain array, no version) is replaced. */
+async function loadCornell(cacheFile) {
+    if (fs.existsSync(cacheFile)) {
+        const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (cached?.taxonomy_version && Array.isArray(cached.species)) return cached;
+        console.log(`Ignoring outdated ${cacheFile}`);
+    }
+    const data = await fetchCornellSpecies();
+    fs.writeFileSync(cacheFile, JSON.stringify(data), 'utf8');
+    return data;
+}
+
 async function downloadFile(url, dest) {
     if (fs.existsSync(dest)) return;
     console.log(`Downloading ${url} to ${dest} ...`);
-    const res = await fetch(url, { headers: { 'User-Agent': 'signavis-taxonomy-build/1.0' } });
+    const res = await fetchWithRetry(fetch, url);
     if (!res.ok) throw new Error(`Failed to download ${url}: ${res.statusText}`);
     const fileStream = fs.createWriteStream(dest);
     await finished(Readable.fromWeb(res.body).pipe(fileStream));
 }
 
-async function downloadAndResizeImage(url, dest) {
+/** The API serves ready-made 480x320 WebP thumbnails (`size=medium`). */
+async function downloadImage(url, dest) {
     if (fs.existsSync(dest)) return true;
     try {
-        const res = await fetch(url, { headers: { 'User-Agent': 'BirdNET-Live-Builder/1.0' } });
-        if (!res.ok) return false;
-        const buffer = await res.arrayBuffer();
-        await sharp(Buffer.from(buffer))
-            .resize(IMAGE_WIDTH, IMAGE_HEIGHT, { fit: 'cover' })
-            .webp({ quality: WEBP_QUALITY })
-            .toFile(dest);
+        const res = await fetchWithRetry(fetch, url);
+        if (!res.ok || !String(res.headers.get('content-type')).startsWith('image/webp')) return false;
+        fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
         return true;
     } catch (e) {
         console.warn(`Failed to process image ${url}: ${e.message}`);
@@ -202,6 +253,13 @@ function buildTaxonomyFromDir(labelsDir) {
         languages: [...new Set(languages)].sort((a, b) => a.localeCompare(b)),
         byScientific,
     };
+}
+
+/** Image credit; the BirdNET taxonomy nests it in `image` (older dumps: top level). */
+export function imageCredit(entry) {
+    const author = entry?.image?.author || entry?.image_author || '';
+    const license = entry?.image?.license || entry?.image_license || '';
+    return { author, license };
 }
 
 const genusOf = (name) => String(name || '').trim().split(/\s+/)[0];
@@ -266,7 +324,7 @@ export function assertSameIdScheme(v3, cornell, minShare = 0.9) {
  *  - V3 12K classes are the base (x unset).
  *  - V2.4-only species stay labelable (legacy model, older label files), x: 1.
  *  - Every other Cornell species is available for manual labeling, x: 1.
- * Names: V2.4 label files < Cornell taxonomy < V3 labels CSV.
+ * Names: V2.4 label files < V3 labels CSV < Cornell taxonomy (the curated source).
  * `a`: alternative scientific names (synonyms, V2.4 spelling) for lookup.
  */
 export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
@@ -317,7 +375,7 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         if (!row.s || used.has(normalizeSci(row.s))) continue;
         const c = findCornell(row.s);
         const legacy = v24ByKey.get(normalizeSci(row.s)) || (c && v24ByKey.get(normalizeSci(c.scientific_name)));
-        const rec = { s: row.s, n: mergeNames(legacy?.names, c?.common_names, row.names) };
+        const rec = { s: row.s, n: mergeNames(legacy?.names, row.names, c?.common_names) };
         rec.birdnet_id = row.birdnet_id || c?.birdnet_id;
         rec.taxon_group = row.taxon_group || c?.taxon_group;
         addAliases(rec, c, legacy?.sci);
@@ -377,10 +435,9 @@ async function main() {
     const v3Labels = args['v3-labels'] || path.join(dataDir, V3_LABELS_FILE);
     fs.mkdirSync(imageDir, { recursive: true });
 
-    await downloadFile(CORNELL_TAXONOMY_URL, cornellCache);
+    const { taxonomy_version: taxonomyVersion, species: cornell } = await loadCornell(cornellCache);
     await downloadFile(V3_LABELS_URL, v3Labels);
 
-    const cornell = JSON.parse(fs.readFileSync(cornellCache, 'utf8'));
     const v3 = parseV3Labels(fs.readFileSync(v3Labels, 'utf8'));
     const v24 = v24Dir && fs.existsSync(v24Dir) ? buildTaxonomyFromDir(v24Dir).byScientific : new Map();
     if (!v24.size) console.warn('No V2.4 label files: building without V2.4-only species and names.');
@@ -394,13 +451,14 @@ async function main() {
         for (const rec of records) {
             if (rec.x) continue;
             const c = findCornell(rec.s);
-            const imageUrl = c?.image?.medium || c?.image?.thumb;
+            const imageUrl = c?.image?.medium;
             if (!imageUrl) continue;
-            const ok = await downloadAndResizeImage(imageUrl, path.join(imageDir, `${rec.s}.webp`));
+            const ok = await downloadImage(imageUrl, path.join(imageDir, `${rec.s}.webp`));
             if (!ok) continue;
             rec.img = true;
-            rec.img_author = c.image_author;
-            rec.img_license = c.image_license;
+            const credit = imageCredit(c);
+            if (credit.author) rec.img_author = credit.author;
+            if (credit.license) rec.img_license = credit.license;
             imageCount++;
         }
     }
@@ -421,6 +479,7 @@ async function main() {
     const payload = {
         modelVersion: V3_MODEL_VERSION,
         sourceUrl: `https://zenodo.org/records/${V3_RECORD}`,
+        taxonomyVersion,
         sources: ['BirdNET+ V3.0 Global 12K labels', 'BirdNET taxonomy (birdnet.cornell.edu)', ...(v24.size ? ['BirdNET V2.4 labels'] : [])],
         updatedAt: new Date().toISOString(),
         languages,

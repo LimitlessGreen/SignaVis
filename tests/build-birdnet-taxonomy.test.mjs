@@ -2,7 +2,7 @@
 // synonyms and species outside the model.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRecords, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
+import { buildRecords, fetchCornellSpecies, imageCredit, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
 
 const V3_CSV = [
     'ix,birdnet_id,scientific_name,common_name,taxon_group,inat_id,ebird_code,common_name_en,common_name_de,common_name_pt,common_name_zh-CN,common_name_es_MX',
@@ -97,4 +97,39 @@ test('assertSameIdScheme rejects a BirdNET taxonomy with another ID numbering', 
     const v3 = parseV3Labels(V3_CSV);
     assert.doesNotThrow(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN1' }]));
     assert.throws(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN15446' }]), /outdated/);
+});
+
+test('imageCredit reads author and license from the nested image object', () => {
+    const c = { image: { medium: 'x', author: 'Daniel Mérida', license: '© Macaulay Library' } };
+    assert.deepEqual(imageCredit(c), { author: 'Daniel Mérida', license: '© Macaulay Library' });
+    assert.deepEqual(imageCredit({ image_author: 'A', image_license: 'CC BY' }), { author: 'A', license: 'CC BY' });
+    assert.deepEqual(imageCredit({}), { author: '', license: '' });
+});
+
+test('buildRecords: Cornell names win, V3 names only fill gaps, Indonesian id -> in', () => {
+    const v3 = parseV3Labels(V3_CSV);
+    const cornell = [{ scientific_name: 'Turdus merula', birdnet_id: 'BN1', record_type: 'species', taxon_group: 'Aves', common_names: { en: 'Eurasian Blackbird', id: 'Burung hitam' } }];
+    const { records } = buildRecords({ v3, cornell });
+    const blackbird = records.find((r) => r.s === 'Turdus merula');
+    assert.equal(blackbird.n.en_uk, 'Eurasian Blackbird');
+    assert.equal(blackbird.n.de, 'Amsel');
+    assert.equal(blackbird.n.in, 'Burung hitam');
+    assert.equal(blackbird.n.id, undefined);
+});
+
+test('fetchCornellSpecies pages through the API and keeps the taxonomy version', async () => {
+    const pages = [
+        { taxonomy_version: 'v0.5', total: 3, results: [{ scientific_name: 'A a' }, { scientific_name: 'B b' }] },
+        { taxonomy_version: 'v0.5', total: 3, results: [{ scientific_name: 'C c' }] },
+    ];
+    const urls = [];
+    const fetchFn = async (url) => { urls.push(url); const p = Number(new URL(url).searchParams.get('page')); return { ok: true, json: async () => pages[p - 1] }; };
+    const data = await fetchCornellSpecies(fetchFn, () => {});
+    assert.equal(data.taxonomy_version, 'v0.5');
+    assert.deepEqual(data.species.map((s) => s.scientific_name), ['A a', 'B b', 'C c']);
+    assert.equal(urls.length, 2);
+    assert.match(urls[0], /fields=scientific_name,.*&per_page=500&page=1/);
+
+    pages[1] = { ...pages[1], taxonomy_version: 'v0.6' };
+    await assert.rejects(fetchCornellSpecies(fetchFn, () => {}), /changed while downloading/);
 });
