@@ -2,7 +2,7 @@
 // synonyms and species outside the model.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRecords, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
+import { buildRecords, imageCredit, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
 
 const V3_CSV = [
     'ix,birdnet_id,scientific_name,common_name,taxon_group,inat_id,ebird_code,common_name_en,common_name_de,common_name_pt,common_name_zh-CN,common_name_es_MX',
@@ -97,4 +97,11 @@ test('assertSameIdScheme rejects a BirdNET taxonomy with another ID numbering', 
     const v3 = parseV3Labels(V3_CSV);
     assert.doesNotThrow(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN1' }]));
     assert.throws(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN15446' }]), /outdated/);
+});
+
+test('imageCredit reads author and license from the nested image object', () => {
+    const c = { image: { medium: 'x', author: 'Daniel Mérida', license: '© Macaulay Library' } };
+    assert.deepEqual(imageCredit(c), { author: 'Daniel Mérida', license: '© Macaulay Library' });
+    assert.deepEqual(imageCredit({ image_author: 'A', image_license: 'CC BY' }), { author: 'A', license: 'CC BY' });
+    assert.deepEqual(imageCredit({}), { author: '', license: '' });
 });

@@ -204,6 +204,13 @@ function buildTaxonomyFromDir(labelsDir) {
     };
 }
 
+/** Image credit; the BirdNET taxonomy nests it in `image` (older dumps: top level). */
+export function imageCredit(entry) {
+    const author = entry?.image?.author || entry?.image_author || '';
+    const license = entry?.image?.license || entry?.image_license || '';
+    return { author, license };
+}
+
 const genusOf = (name) => String(name || '').trim().split(/\s+/)[0];
 const epithetStem = (name) => (String(name || '').trim().split(/\s+/)[1] || '').slice(0, 4).toLowerCase();
 
@@ -399,8 +406,9 @@ async function main() {
             const ok = await downloadAndResizeImage(imageUrl, path.join(imageDir, `${rec.s}.webp`));
             if (!ok) continue;
             rec.img = true;
-            rec.img_author = c.image_author;
-            rec.img_license = c.image_license;
+            const credit = imageCredit(c);
+            if (credit.author) rec.img_author = credit.author;
+            if (credit.license) rec.img_license = credit.license;
             imageCount++;
         }
     }
