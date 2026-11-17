@@ -1138,18 +1138,22 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   // Name that found recordings per species (later pages reuse it).
   const _xcQueryName = new Map<string, string>();
 
-  /** XC recordings for a species: taxonomy name first, Xeno-canto's spelling if that finds nothing. */
-  async function fetchXcRecordings(sciName: string, page = 1) {
+  /**
+   * XC recordings for a species: taxonomy name first, Xeno-canto's spelling if
+   * that finds nothing. `isCurrent` guards the remembered name against stale
+   * requests (an older search finishing after a newer one).
+   */
+  async function fetchXcRecordings(sciName: string, page = 1, isCurrent: () => boolean = () => true) {
     const known = _xcQueryName.get(sciName);
     if (page > 1 && known) return fetchXcRecordingsFor(known, page);
     const names = xcSearchNames(sciName ? taxonomy?.resolve(sciName) : null, sciName);
     let result: Awaited<ReturnType<typeof fetchXcRecordingsFor>> | null = null;
+    let chosen = names[0];
     for (const name of names) {
       result = await fetchXcRecordingsFor(name, page);
-      _xcQueryName.set(sciName, name);
-      if (result.recordings.length > 0) break;
+      if (result.recordings.length > 0) { chosen = name; break; }
     }
-    if (result && result.recordings.length === 0 && names.length > 1) _xcQueryName.set(sciName, names[0]);
+    if (isCurrent()) _xcQueryName.set(sciName, chosen);
     return result!;
   }
 
@@ -1324,7 +1328,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     pageInfo.textContent = '';
 
     try {
-      const { recordings, numPages, numRecordings, qualityLabel, fallback } = await fetchXcRecordings(_sciName, page);
+      const { recordings, numPages, numRecordings, qualityLabel, fallback } = await fetchXcRecordings(_sciName, page, () => token === _loadToken);
       if (token !== _loadToken) return;
       _totalPages = numPages;
       listBody.innerHTML = '';

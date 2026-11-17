@@ -14,4 +14,7 @@ test('xcSearchNames tries the taxonomy name first, Xeno-canto spelling second', 
   assert.deepEqual(xcSearchNames({ xc: 'Accipiter tachiro' }, 'Aerospiza tachiro'), ['Aerospiza tachiro', 'Accipiter tachiro']);
   assert.deepEqual(xcSearchNames({ xc: 'Turdus merula' }, 'Turdus merula'), ['Turdus merula']);
   assert.deepEqual(xcSearchNames(null, 'Turdus merula'), ['Turdus merula']);
+  // An older synonym resolves to the canonical record: query the canonical name first.
+  assert.deepEqual(xcSearchNames({ s: 'Aerospiza tachiro', xc: 'Accipiter tachiro' }, 'Accipiter tachiro'), ['Aerospiza tachiro', 'Accipiter tachiro']);
+  assert.deepEqual(xcSearchNames({ s: 'Leuconotopicus villosus' }, 'Dryobates villosus'), ['Leuconotopicus villosus', 'Dryobates villosus']);
 });

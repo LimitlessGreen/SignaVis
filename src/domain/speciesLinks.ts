@@ -19,8 +19,9 @@ export function speciesLinks(record: any): SpeciesLink[] {
  * replace a name that already finds recordings.
  */
 export function xcSearchNames(record: any, sciName: string): string[] {
-  const names = [sciName.trim()];
+  const supplied = String(sciName || '').trim();
+  const canonical = record?.s ? String(record.s).trim() : '';
   const xc = record?.xc ? String(record.xc).trim() : '';
-  if (xc && xc !== names[0]) names.push(xc);
-  return names.filter(Boolean);
+  // Canonical name first (the supplied one may be an older synonym), XC spelling last.
+  return [...new Set([canonical, supplied, xc].filter(Boolean))];
 }
