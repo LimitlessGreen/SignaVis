@@ -326,6 +326,13 @@ export class LabelList {
 
   /** Update only the tag text of a label row (no full re-render). */
   updateBadges(labelId: any, lbl: any) {
+    // Keep the label for rows built later (closed groups, view switch): the app hands out a
+    // new array on every change, not the rendered one with the label replaced in place.
+    const i = this._indexOf.get(labelId);
+    if (lbl && i != null && this._labels[i]?.id === labelId) {
+      this._labels = this._labels.slice();
+      this._labels[i] = lbl;
+    }
     const row = this._cardMap.get(labelId);
     const old = row?.querySelector('.lt-tags');
     if (old) old.replaceWith(this._buildTagText(lbl, this._view === 'time'));
@@ -787,7 +794,7 @@ export class LabelList {
     return group;
   }
 
-  /** The label as it is now: the app replaces edited labels in the same array between renders. */
+  /** The label as it is now (updateBadges replaces edited labels in this._labels). */
   _currentLabel(lbl: any) {
     const i = this._indexOf.get(lbl.id);
     const cur = i != null ? this._labels[i] : null;
