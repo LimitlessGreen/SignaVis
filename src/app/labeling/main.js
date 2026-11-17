@@ -43,6 +43,13 @@ import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPay
 import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
+import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
+import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
+import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
+import { GroupReview } from '../../ui/components/similar-review/group-review.ts';
+import { openLabelNameEditor } from '../../domain/annotations.ts';
+import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
 import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
@@ -446,6 +453,9 @@ function makeXcProgress(xcId) {
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const fileLabel       = document.getElementById('fileLabel');
+// Recording switches (activateRecordingEntry): a carried-label search drops a 'ready' that is out of date.
+// Up here because a session restore can switch before the similar-calls code below has run.
+let _activations = 0;
 const fileInput       = document.getElementById('fileInput');
 const browseBtn       = document.getElementById('browseBtn');
 const loadSampleBtn   = document.getElementById('loadSampleBtn');
@@ -670,7 +680,7 @@ document.addEventListener('keydown', (e) => {
   selectionMeta.textContent = `Sound type: ${value} (key ${e.key}${targets.length > 1 ? `, ${targets.length} labels` : ''})`;
 });
 
-// N / P next / previous recording, B BirdNET on the current one, U upload assistant
+// N / P next / previous recording, B BirdNET on the current one, U upload assistant, F similar calls to the selected label
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
@@ -692,6 +702,13 @@ document.addEventListener('keydown', (e) => {
   } else if (k === 'u') {
     e.preventDefault();
     sidebar.setActive('upload');
+  } else if (k === 'f') {
+    let lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
+    if (!lbl) return;
+    // On a suggestion: search again from the label it was found from
+    if (lbl.origin === SIMILAR_ORIGIN) lbl = state.labels.find((l) => l.id === lbl.similar?.sourceLabelId) || lbl;
+    e.preventDefault();
+    findSimilarCalls(lbl);   // explains in the status line when this label can't be an exemplar
   }
 });
 
@@ -1832,6 +1849,12 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   state.labels.push(...copies);
+  // A copied similar-call suggestion is done: drop it from the suggestions and the review
+  if (lbl.origin === SIMILAR_ORIGIN) {
+    feedSimilarDecisions([lbl.id], true);
+    state.labels = state.labels.filter((l) => l.id !== lbl.id);
+    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+  }
   touchOwnSet(OWN_SOURCE_ID);
   syncToPlayer();
   saveCurrentAnnotationsIfNeeded();
@@ -1988,6 +2011,9 @@ setActiveSet(OWN_SOURCE_ID);
  * Saves current labels, loads the new entry's audio, restores its labels.
  */
 async function activateRecordingEntry(entry) {
+  _activations++;
+  closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   // 1. Save current labels into the leaving entry (guarded helper avoids
   //    accidental overwrites on page reload and handles edge-cases).
   saveCurrentAnnotationsIfNeeded();
@@ -2984,6 +3010,328 @@ if (player.spectrogramLabels) {
   };
 }
 
+// ── Similar calls: suggestions from one own label (plans/similar-calls-plan.md) ──
+// Correlation over the whole recording (app/similarSpectrogram.ts), BirdBox only refines
+// bounds (app/suggest-similar.ts). Suggestions sit in a locked 'Similar' set, so they show and
+// copy (✓) like detections; the review bar walks through them best first.
+const _similarRejected = new Map();   // recordingId → Set of suggestionKey()
+let _similarRun = 0;                  // newer search cancels an older one
+let _similarSession = null;           // worker of the current search: re-ranks after each decision
+const _similarHitOf = new Map();      // suggestion id → hit index in the session
+
+function similarSetId() {
+  let id = [...state.labelSets.entries()].find(([, s]) => s.origin === SIMILAR_ORIGIN)?.[0];
+  if (!id) id = createLabelSet({ name: 'Similar calls', origin: SIMILAR_ORIGIN, locked: true }, { silent: true }).id;
+  return id;
+}
+
+/** An own, named label with a box can be an exemplar. */
+function canFindSimilar(lbl) {
+  return !!lbl && lbl.origin !== SIMILAR_ORIGIN && !lbl.readonly && !state.labelSets.get(lbl.setId)?.locked
+    && !!String(lbl.label || '').trim()
+    && lbl.end > lbl.start && !lbl.fullBand && lbl.freqMax > lbl.freqMin;
+}
+
+const similarReview = new SimilarReview({
+  onFocus: (id) => {
+    const lbl = state.labels.find((l) => l.id === id);
+    if (!lbl) return;
+    player.selectLabel(id);
+    player.playLabelSegment(lbl);
+  },
+  onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
+  onAccept: (ids) => acceptSimilar(ids),
+  onReject: (ids) => rejectSimilar(ids),
+  onClose: () => { endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
+  anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
+});
+
+function closeSimilarReview() {
+  // A session restore can switch recordings before the similar-calls code below has run (its lets are not set yet)
+  try {
+    similarReview.close();
+    endSimilarSession();
+    _similarRun++;
+  } catch { /* before the review exists */ }
+}
+
+function endSimilarSession() {
+  _similarSession?.dispose();
+  _similarSession = null;
+  _similarHitOf.clear();
+}
+
+/** Tell the search about decisions (accepted = more exemplars, rejected = counter-examples), then re-rank the review. */
+let _similarFeed = Promise.resolve();
+function feedSimilarDecisions(ids, accepted) {
+  const session = _similarSession;
+  const idx = ids.map((id) => _similarHitOf.get(id)).filter((i) => i !== undefined);
+  if (!session || !idx.length) return;
+  _similarFeed = _similarFeed.then(async () => {
+    let ranks = null;
+    for (const i of idx) ranks = await session.decide(i, accepted);
+    if (session !== _similarSession || !ranks) return;
+    const scores = new Map();
+    for (const [id, i] of _similarHitOf) scores.set(id, ranks[i]);
+    similarReview.rescore(scores);
+  }).catch(() => { /* search closed meanwhile */ });
+}
+
+async function findSimilarCalls(exemplar, { template = null } = {}) {
+  // With a template the exemplar is a label of another recording (carried)
+  if (!template && !canFindSimilar(exemplar)) { selectionMeta.textContent = 'Find similar: needs a named label with a box (not full band)'; return; }
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  const run = ++_similarRun, recordingId = recordingManager?.activeId || null;
+  const searchToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  // One review at a time: both would take Enter
+  try { groupReview.close(); } catch { /* before the overview exists */ }
+  // A recording that gets its id only now (just loaded) is no switch
+  const stale = () => run !== _similarRun || (!!recordingId && (recordingManager?.activeId || null) !== recordingId);
+  selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
+  try {
+    const spec = await bandSpectrogram(audio, ...searchBand(exemplar, audio.sampleRate), {
+      yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: stale,
+    });
+    if (!spec || stale()) return;
+    endSimilarSession();
+    const session = _similarSession = new SimilarSession();
+    const hits = await session.find(spec, template ? { template }
+      : { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
+    if (stale()) { if (session === _similarSession) endSimilarSession(); return; }
+    const setId = similarSetId();
+    if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
+    let n = 0;
+    const suggestions = buildSuggestions(exemplar, hits, {
+      labels: state.labels.filter((l) => l.setId !== setId),
+      boxes: state.labels.filter((l) => l.origin === BIRDBOX_ORIGIN),
+      rejected: _similarRejected.get(recordingId),
+      // Unique beyond this page load: copies keep adoptedFrom.id, a reused id would count as copied
+      setId, recordingId, newId: () => `similar_${searchToken}_${++n}`,
+      onPick: (sug, i) => _similarHitOf.set(sug.id, i),
+    });
+    // One exemplar at a time: its suggestions replace earlier ones
+    state.labels = state.labels.filter((l) => l.setId !== setId).concat(suggestions);
+    state.hiddenSetIds?.delete(setId);
+    syncToPlayer();
+    if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
+    selectionMeta.textContent = `${suggestions.length} call${suggestions.length === 1 ? '' : 's'} like ${exemplar.label}${template ? ' (label from another recording)' : ''}: Enter copies, X rejects`;
+    similarReview.open(exemplar.label, suggestions.map((s) => ({ id: s.id, score: s.similar.score })));
+  } catch (err) {
+    console.error('Find similar failed', err);
+    if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
+  }
+}
+
+// ── Carry a label to other recordings ─────────────────────────────
+// Its patch (template) goes along; every other recording opened afterwards is searched for it
+// once and its review opens. In Lite, "Find similar in project" first lets Perch pick the
+// recordings and spots (Similar panel); opening a hit then runs this search there.
+let _carried = null;   // { exemplar, template, recordingId, searched: Set<recordingId> }
+
+async function carrySimilarExemplar(lbl, { perch = false } = {}) {
+  if (!canFindSimilar(lbl)) { selectionMeta.textContent = 'Needs a named label with a box (not full band)'; return; }
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  const spec = await bandSpectrogram(audio, ...searchBand(lbl, audio.sampleRate));
+  const template = spec && templateFrom(spec, lbl);
+  if (!template) { selectionMeta.textContent = 'This label is too small to look for'; return; }
+  const recordingId = recordingManager?.activeId || null;
+  const exemplar = { id: lbl.id, label: lbl.label, scientificName: lbl.scientificName || '', commonName: lbl.commonName,
+    color: lbl.color, start: lbl.start, end: lbl.end, freqMin: lbl.freqMin, freqMax: lbl.freqMax };
+  _carried = { exemplar, template, recordingId, searched: new Set([recordingId]) };
+  selectionMeta.textContent = perch
+    ? `Perch looks for ${lbl.label} in the project; open a hit to check the calls there`
+    : `Looking for ${lbl.label} in every recording you open next`;
+  if (perch && similarPanel) {
+    const entry = recordingManager.getActive();
+    if (entry?.path) { sidebar.setActive('similar'); similarPanel.searchFor({ path: entry.path, start: lbl.start, end: lbl.end }); }
+  }
+}
+
+function stopCarrying() {
+  if (_carried) selectionMeta.textContent = `Stopped looking for ${_carried.exemplar.label}`;
+  _carried = null;
+}
+
+/** A recording became ready: search it for the carried label once. */
+function searchCarried(readyAudio, epoch) {
+  const id = recordingManager?.activeId || null;   // a local file gets its id only after 'ready'
+  // Only the audio that became ready, and no switch to another recording since (its own 'ready' follows)
+  if (!_carried || !id || _carried.searched.has(id) || !readyAudio
+    || player._state?.audioBuffer !== readyAudio || epoch !== _activations) return;
+  _carried.searched.add(id);
+  findSimilarCalls(_carried.exemplar, { template: _carried.template });
+}
+
+function acceptSimilar(ids) {
+  if (!OWN_SOURCE_ID) return;
+  const want = new Set(ids);
+  const picked = state.labels.filter((l) => want.has(l.id) && l.origin === SIMILAR_ORIGIN);
+  const src = labelsToAdopt(picked, state.labels, OWN_SOURCE_ID);   // ✓ on the box may have copied it already
+  if (!picked.length) return;
+  if (!src.length) { state.labels = state.labels.filter((l) => !want.has(l.id)); syncToPlayer(); return; }
+  feedSimilarDecisions(picked.map((l) => l.id), true);
+  const undo = snapshotLabels();
+  const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+  state.labels = state.labels.filter((l) => !want.has(l.id)).concat(copies);
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  saveCurrentAnnotationsIfNeeded();
+  const n = copies.length;
+  showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
+    undo();
+    similarReview.close();
+  });
+}
+
+function rejectSimilar(ids) {
+  const want = new Set(ids);
+  feedSimilarDecisions(ids, false);
+  const rejected = _similarRejected.get(recordingManager?.activeId || null);
+  for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
+  state.labels = state.labels.filter((l) => !want.has(l.id));
+  syncToPlayer();
+  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+}
+
+// ── Overview: groups of similar calls (domain/similar/cluster.ts) ──
+// BirdBox's boxes not yet labelled are grouped; the bar walks through the groups, largest first.
+// The current group shows as dotted suggestions; naming it gives them the species and opens the
+// member review (Enter / X / Shift+Enter as for similar calls). Strays are rejected there.
+let _groups = null;          // { recordingId, boxes, features, groups, token, capped }
+const MAX_GROUP_BOXES = 1500; // n × n distances: 1500 → 18 MB, about a second
+let _groupNamed = false;     // member review was opened by naming a group
+
+const groupReview = new GroupReview({
+  onShow: (i) => showGroup(i),
+  onPlay: (i) => {
+    const g = _groups?.groups[i];
+    const lbl = g && state.labels.find((l) => l.id === groupLabelId(i, 0));
+    if (lbl) player.playLabelSegment(lbl);
+    else if (g) player.playLabelSegment(_groups.boxes[g.members[0]]);
+  },
+  onName: (i) => nameGroup(i),
+  onRegroup: (cut) => regroup(cut),
+  onClose: () => {
+    // Unnamed group previews go; named suggestions stay until copied or rejected
+    state.labels = state.labels.filter((l) => !l.similar?.preview);
+    _groups = null;
+    syncToPlayer();
+  },
+  anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
+});
+
+// Unique per grouping run: copies keep adoptedFrom.id, and a later run's group 0 must not look copied
+const groupLabelId = (gi, k) => `group_${_groups?.token}_${gi}_${k}`;
+
+/** BirdBox boxes of the recording on screen that no own label covers yet. */
+/** Own labels; a call box with one over it (time IoU ≥ 0.5, overlapping band) counts as labelled. */
+function coveredByOwn() {
+  const own = state.labels.filter((l) => l.origin !== SIMILAR_ORIGIN && l.origin !== BIRDBOX_ORIGIN && !l.readonly);
+  return (b) => own.some((l) => timeIoU(b, l) >= 0.5 && Math.min(b.freqMax, l.freqMax) > Math.max(b.freqMin, l.freqMin));
+}
+
+function unlabelledBoxes() {
+  const covered = coveredByOwn();
+  return state.labels.filter((b) => b.origin === BIRDBOX_ORIGIN && !covered(b));
+}
+
+async function groupSimilarCalls(cut = DEFAULT_CUT) {
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  closeSimilarReview();
+  let boxes = unlabelledBoxes();
+  // Grouping keeps an n × n distance matrix: the most confident boxes only on very dense recordings
+  const capped = boxes.length > MAX_GROUP_BOXES;
+  if (capped) boxes = [...boxes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, MAX_GROUP_BOXES);
+  if (boxes.length < 2) {
+    selectionMeta.textContent = boxes.length ? 'Only one call box without a label' : 'No call boxes yet: run "Detect calls" first';
+    return;
+  }
+  const recordingId = recordingManager?.activeId || null;
+  selectionMeta.textContent = `Grouping ${boxes.length} calls…`;
+  const patches = await callPatches(audio, boxes, { yieldEvery: () => new Promise((r) => setTimeout(r, 0)) });
+  if (!patches || (recordingManager?.activeId || null) !== recordingId) return;
+  const keep = boxes.map((_, i) => i).filter((i) => patches[i]);
+  const features = keep.map((i) => callFeature(patches[i]));
+  _groups = { recordingId, boxes: keep.map((i) => boxes[i]), features, groups: [], token: '', capped };
+  regroup(cut);
+}
+
+function regroup(cut) {
+  if (!_groups) return;
+  // Calls copied since the grouping started are labelled now: never offer them again (by geometry,
+  // since a new run gives them new ids)
+  const covered = coveredByOwn();
+  const keep = _groups.boxes.map((_, i) => i).filter((i) => !covered(_groups.boxes[i]));
+  _groups.boxes = keep.map((i) => _groups.boxes[i]);
+  _groups.features = keep.map((i) => _groups.features[i]);
+  _groups.groups = groupCalls(_groups.features, { cut });
+  _groups.token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const n = _groups.groups.length, inGroups = _groups.groups.reduce((s, g) => s + g.members.length, 0);
+  const cap = _groups.capped ? ` (the ${MAX_GROUP_BOXES} most confident boxes)` : '';
+  if (!n) { selectionMeta.textContent = `No groups: every call is different at this setting${cap}`; groupReview.close(); return; }
+  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}${cap}: Enter names a group`;
+  groupReview.open(_groups.groups.map((g) => ({ size: g.members.length })), cut);
+}
+
+/** The group's members as dotted, unnamed suggestions (replacing the previous preview). */
+function showGroup(gi) {
+  const g = _groups?.groups[gi];
+  if (!g) return;
+  const setId = similarSetId();
+  const preview = g.members.map((m, k) => {
+    const b = _groups.boxes[m];
+    return {
+      id: groupLabelId(gi, k), start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax, fullBand: false,
+      label: `Group ${gi + 1}`, origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(g.scores[k] * 1000) / 1000,
+      setId, ...(_groups.recordingId ? { recordingId: _groups.recordingId } : {}),
+      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true },
+    };
+  });
+  state.labels = state.labels.filter((l) => !l.similar?.preview).concat(preview);
+  state.hiddenSetIds?.delete(setId);
+  syncToPlayer();
+  player.selectLabel(preview[0].id);
+  player.playLabelSegment(preview[0]);
+}
+
+/** Name the group (template species, else the name dialog), then review its members. */
+function nameGroup(gi) {
+  const g = _groups?.groups[gi];
+  if (!g) return;
+  const apply = ({ name, color, scientificName = '', tags = {} }) => {
+    if (!String(name || '').trim()) return;
+    const ids = new Set(g.members.map((_, k) => groupLabelId(gi, k)));
+    const items = [];
+    for (const l of state.labels) {
+      if (!ids.has(l.id)) continue;
+      Object.assign(l, { label: name, scientificName: scientificName || '', ...(color ? { color } : {}),
+        ...(tags && Object.keys(tags).length ? { tags: { ...tags } } : {}) });
+      l.similar = { ...l.similar, preview: false };
+      items.push({ id: l.id, score: l.similar.score });
+    }
+    syncToPlayer();
+    _groupNamed = true;
+    groupReview.suspend();
+    similarReview.open(name, items);
+  };
+  const tpl = adoptTemplate();
+  if (tpl?.name) { apply({ name: tpl.name, color: tpl.color, scientificName: tpl.scientificName, tags: tpl.tags }); return; }
+  const layer = player.spectrogramLabels;
+  openLabelNameEditor({
+    layer, player,
+    anchorEl: layer?.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${groupLabelId(gi, 0)}"]`) || layer?.overlay,
+    initialValue: '', initialColor: null, initialTags: {}, initialScientificName: '',
+    title: `Name ${g.members.length} similar calls`,
+    onSubmit: apply,
+  });
+}
+
+document.getElementById('birdboxGroupBtn')?.addEventListener('click', () => groupSimilarCalls());
+
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
 function forgetBirdboxResults(recordingId) {
   let panel;
@@ -3103,8 +3451,9 @@ function createGeoAwareSpeciesSearch(opts) {
 }
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 // ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
+let similarPanel = null;   // Lite + folder project: Perch search over the project
 if (isLite()) {
-  const similarPanel = new SimilarPanel({
+  similarPanel = new SimilarPanel({
     getRoot: () => (projectKind === 'folder' && projectStore?.rootPath) || null,
     getQuery: () => {
       const entry = recordingManager.getActive();
@@ -4414,6 +4763,8 @@ player.on('spectrogramlabeladopt', (e) => {
 player.on('spectrogramlabelremove', (e) => {
   const id = e.detail?.label?.id;
   if (!id) return;
+  // ✗ on a similar-call suggestion = reject it (not proposed again)
+  if (e.detail?.label?.origin === SIMILAR_ORIGIN) { rejectSimilar([id]); return; }
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
   state.labels = state.labels.filter((l) => l.id !== id);
@@ -4492,6 +4843,13 @@ function showLabelContextMenu(e, id) {
         action: () => openRefCalls(lbl) },
       { label: 'Use as template', icon: ICON_TEMPLATE,
         action: () => useLabelAsTemplate(lbl) },
+      ...(canFindSimilar(lbl) ? [{ label: 'Find similar calls (F)', icon: ICON_REFS,
+        action: () => findSimilarCalls(lbl) }] : []),
+      ...(canFindSimilar(lbl) ? [{ label: 'Look for it in other recordings', icon: ICON_REFS,
+        action: () => carrySimilarExemplar(lbl) }] : []),
+      ...(canFindSimilar(lbl) && similarPanel && recordingManager.getActive()?.path ? [{ label: 'Find similar in project (Perch)', icon: ICON_REFS,
+        action: () => carrySimilarExemplar(lbl, { perch: true }) }] : []),
+      ...(_carried ? [{ label: `Stop looking for ${_carried.exemplar.label}`, icon: ICON_REFS, action: () => stopCarrying() }] : []),
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
@@ -4564,6 +4922,11 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') projectAutosaver?.flush();
 });
 player.on('ready', () => { persistXcToFolder(recordingManager.getActive()); });
+// A label carried from another recording: look for it here (after the view has settled)
+player.on('ready', () => {
+  const audio = player._state?.audioBuffer, epoch = _activations;
+  setTimeout(() => searchCarried(audio, epoch), 300);
+});
 window.addEventListener('beforeunload', () => {
   saveProjectSnapshotNow();
   projectAutosaver?.flush();
@@ -4985,6 +5348,8 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer() };
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+    activeRecordingId: () => recordingManager?.activeId || null,
+    groupedCalls: () => _groups?.boxes.length ?? null };
 }
 await loadBirdnetTaxonomy();

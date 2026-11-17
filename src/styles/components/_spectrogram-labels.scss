@@ -136,6 +136,12 @@
     opacity: 1;
 }
 
+/* Similar-call suggestions: dotted frame: neither an own label (solid) nor an imported one (dashed) */
+.spectrogram-label-region.suggestion.spectrogram-label-region--similar {
+    border-style: dotted;
+    opacity: 0.75;
+}
+
 /* ── Accept / Discard buttons (suggestion labels) ── */
 .label-accept-btn,
 .label-discard-btn {
