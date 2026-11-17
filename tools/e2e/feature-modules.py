@@ -1,6 +1,6 @@
 """Feature modules split out of main.js (architecture step 4): theme toggle, Raven export, Annota-JSON import.
 
-Dev server needed:  uv run --with playwright python -I tools/e2e/feature-modules.py http://localhost:5191/demo/labeling-app.html <set.json> <not-a-set.json>
+Dev server needed:  uv run --with playwright python -I tools/e2e/feature-modules.py http://localhost:5191/demo/labeling-app.html <set.json> <not-a-set.json> [clip.wav]
 <set.json>: an Annota-JSON set with annotations for XC1159843 (2), XC999 (1, no such recording) and one without
 XC number. The demo recording gets XC number 1159843 for the test. Exits non-zero on failure.
 """
@@ -8,6 +8,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 url, set_file, bad_file = sys.argv[1:4]
+clip = sys.argv[4] if len(sys.argv) > 4 else None
 fails = []
 
 
@@ -72,6 +73,34 @@ with sync_playwright() as p:
     page.click('.undo-toast__btn'); page.wait_for_timeout(500)
     check('Annota import undo', ids() == ['r0', 'r1', 'r2'] and not page.evaluate("[...window.__signavis.state.labelSets.values()].some((s) => /Test set/.test(s.name || ''))"),
           f'{ids()} · {meta()!r}')
+
+    # Undo keeps sets created after the import
+    page.set_input_files('#importSetInput', set_file); page.wait_for_timeout(800)
+    page.evaluate("() => { window.__signavis.state.labelSets.set('later', { id: 'later', name: 'Later set' }); }")
+    page.click('.undo-toast__btn'); page.wait_for_timeout(500)
+    check('Annota undo keeps a set created later', page.evaluate("window.__signavis.state.labelSets.has('later')") and ids() == ['r0', 'r1', 'r2'], str(ids()))
+    page.evaluate("() => { window.__signavis.state.labelSets.delete('later'); }")
+
+    # Undo after switching to another recording restores the imported one, leaves the other alone
+    if clip:
+        a_id = page.evaluate("window.__signavis.activeRecordingId()")
+        page.set_input_files('#fileInput', clip)
+        for _ in range(20):
+            page.wait_for_timeout(500)
+            keep = page.locator('[data-v="keep"]')
+            if keep.count() and keep.first.is_visible(): keep.first.click()
+            if page.evaluate("window.__signavis.recordingCount()") >= 2: break
+        page.wait_for_timeout(2500)
+        b_id = page.evaluate("window.__signavis.activeRecordingId()")
+        page.evaluate("() => window.__signavis.labelStore.replaceAll([{ id: 'b0', start: 1, end: 2, freqMin: 1000, freqMax: 3000, label: 'B', origin: 'manual', setId: 'own', tags: {} }])")
+        page.evaluate("(id) => window.__signavis.mobileApp.h.openRecording(id)", a_id); page.wait_for_timeout(2500)
+        page.set_input_files('#importSetInput', set_file); page.wait_for_timeout(800)
+        page.evaluate("(id) => window.__signavis.mobileApp.h.openRecording(id)", b_id); page.wait_for_timeout(2500)
+        page.click('.undo-toast__btn'); page.wait_for_timeout(500)
+        stored = page.evaluate("""([a, b]) => { const rs = window.__signavis.recordings();
+            const ids = (id) => (id === window.__signavis.activeRecordingId() ? window.__signavis.state.labels : rs.find((e) => e.id === id).annotations).map((l) => l.id).sort();
+            return [ids(a), ids(b)]; }""", [a_id, b_id])
+        check('Annota undo after a recording switch', stored == [['r0', 'r1', 'r2'], ['b0']], str(stored))
 
     check('page errors', not errs, str(errs))
     b.close()

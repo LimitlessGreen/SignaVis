@@ -34,10 +34,10 @@ export function installAnnotaImport(ctx: AppContext, deps: AnnotaImportDeps) {
         ctx.saveCurrentAnnotations();
         const setsBefore = new Set(state.labelSets.keys());
         const labelsBefore = state.labels;
+        let activeEntryId: string | null = null;   // recording whose live labels were changed
         const entriesBefore: [string, AppLabel[]][] = [];
         const missing: string[] = [];
         let imported = 0;
-        let activeTouched = false;
         for (const [nr, raw] of parsed.byXcNr) {
             const entry = recordingManager.findByXcId(nr);
             if (!entry) { missing.push(`XC${nr}`); continue; }
@@ -51,7 +51,7 @@ export function installAnnotaImport(ctx: AppContext, deps: AnnotaImportDeps) {
             if (isActive) {
                 labelStore.claim(entry.id);
                 labelStore.replaceAll([...state.labels.filter((l) => !ids.has(l.id)), ...labels]);
-                activeTouched = true;
+                activeEntryId = entry.id;
             } else {
                 const anns: AppLabel[] = entry.annotations || [];
                 entriesBefore.push([entry.id, anns]);
@@ -60,6 +60,8 @@ export function installAnnotaImport(ctx: AppContext, deps: AnnotaImportDeps) {
             imported += labels.length;
         }
 
+        // Undo removes only the sets this import created (later ones, e.g. from BirdNET, stay)
+        const setsCreated = [...state.labelSets.keys()].filter((id) => !setsBefore.has(id));
         const refresh = () => {
             deps.relocalizeLabels();
             ctx.syncToPlayer();
@@ -73,9 +75,13 @@ export function installAnnotaImport(ctx: AppContext, deps: AnnotaImportDeps) {
         selectionMeta.textContent = parts.join(' · ');
         if (!imported) return;
         showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
-            if (activeTouched) labelStore.replaceAll(labelsBefore);
+            if (activeEntryId) {
+                // Another recording may be open by now: restore the imported one's stored labels instead
+                if (recordingManager.activeId === activeEntryId && labelStore.entryId === activeEntryId) labelStore.replaceAll(labelsBefore);
+                else recordingManager.update(activeEntryId, { annotations: [...labelsBefore] });
+            }
             for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
-            for (const id of [...state.labelSets.keys()]) if (!setsBefore.has(id)) state.labelSets.delete(id);
+            for (const id of setsCreated) state.labelSets.delete(id);
             refresh();
             selectionMeta.textContent = `Import of ${file.name} undone`;
         });

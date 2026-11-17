@@ -234,7 +234,7 @@ Module liegen in `src/app/labeling/features/`, typisiert, ohne `@ts-nocheck`.
 
 - `features/theme.ts` (`installThemeToggle`), `features/raven-export.ts` (`createRavenExport`: Download, Ordner,
   Set-Namen für die Tabelle), `features/annota-import.ts` (`installAnnotaImport`).
-- Test: `tools/e2e/feature-modules.py <set.json> <kein-set.json>` – Design umschalten + nach Reload, Raven-Download,
+- Test: `uv run --with playwright python -I tools/e2e/feature-modules.py http://localhost:5191/demo/labeling-app.html <set.json> <kein-set.json>` – Design umschalten + nach Reload, Raven-Download,
   Annota-Import (Ablehnung, Import in die offene Aufnahme, Meldung fehlende/ohne XC-Nummer, gesperrtes Set, Undo).
   Raven in den Projektordner nicht getestet (braucht Ordner-Projekt). Übrige E2E wie `main`.
 - Nächste Kandidaten (abgeschlossen, wenig geteilter Zustand): Drag & Drop, Mikrofon-Aufnahme, XC-Export/-Upload,
