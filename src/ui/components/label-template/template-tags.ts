@@ -43,6 +43,8 @@ export function createTemplateTags({ getPresets, getTags, onChange }: TemplateTa
 
     function render() {
         const tags = getTags();
+        // Rebuilding removes the focused control: remember it and focus its successor
+        const focusKey = pop.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.focusKey : undefined;
         pop.innerHTML = '';
         const head = document.createElement('div');
         head.className = 'template-tags-head';
@@ -54,6 +56,7 @@ export function createTemplateTags({ getPresets, getTags, onChange }: TemplateTa
             const name = document.createElement('span');
             name.textContent = TITLES[preset.key] || preset.label || preset.key;
             const sel = document.createElement('select');
+            sel.dataset.focusKey = preset.key;
             const cur = tags[preset.key] || '';
             const options = cur && !preset.options.includes(cur) ? [...preset.options, cur] : preset.options;
             for (const v of ['', ...options]) {
@@ -74,10 +77,12 @@ export function createTemplateTags({ getPresets, getTags, onChange }: TemplateTa
         const clear = document.createElement('button');
         clear.type = 'button';
         clear.className = 'template-tags-clear';
+        clear.dataset.focusKey = 'clear';
         clear.textContent = 'Clear tags';
         clear.disabled = !Object.keys(tags).length;
         clear.addEventListener('click', () => onChange({}));
         pop.appendChild(clear);
+        if (focusKey) [...pop.querySelectorAll<HTMLElement>('[data-focus-key]')].find((el) => el.dataset.focusKey === focusKey && !(el as HTMLButtonElement).disabled)?.focus();
     }
 
     function place() {

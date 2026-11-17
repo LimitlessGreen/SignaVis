@@ -658,8 +658,8 @@ document.addEventListener('keydown', (e) => {
   if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const editable = (l) => l && !l.readonly && !state.labelSets.get(l.setId)?.locked;
   // A multi-selection gets the value on every label, otherwise the one shown in Properties
-  const multi = [...(labelList?.multiSelectedIds || [])].map((id) => state.labels.find((l) => l.id === id)).filter(editable);
-  const targets = multi.length > 1 ? multi : [propsPanel.displayedLabel].filter(editable);
+  const selected = [...(labelList?.multiSelectedIds || [])].map((id) => state.labels.find((l) => l.id === id));
+  const targets = (selected.length > 1 ? selected : [propsPanel.displayedLabel]).filter(editable);
   if (!targets.length) return;
   const value = TAG_PRESETS.find((p) => p.key === 'soundType')?.options[Number(e.key) - 1];
   if (!value) return;
@@ -2131,13 +2131,22 @@ function snapshotLabels() {
   const perEntry = recordingManager.getAll().map((e) => [e.id, (e.annotations || []).map((a) => ({ ...a })), e.needsXcImport]);
   const labels = state.labels.map((l) => ({ ...l }));
   const labelsEntryId = state._labelsEntryId;
+  const activeAt = recordingManager.activeId || null;
   return () => {
+    // Another recording is on screen by now: its labels stay as they are (state.labels is
+    // theirs), only the stored recordings go back. Putting the snapshot's labels on screen
+    // would save them into the wrong recording.
+    const switched = (recordingManager.activeId || null) !== activeAt;
+    if (switched) saveCurrentAnnotationsIfNeeded();
     state.labelSets = sets;
     for (const [id, anns, needsXcImport] of perEntry) {
+      if (switched && id === recordingManager.activeId) continue;
       if (recordingManager.getById(id)) recordingManager.update(id, { annotations: anns, needsXcImport });
     }
-    state.labels = labels;
-    state._labelsEntryId = labelsEntryId;
+    if (!switched) {
+      state.labels = labels;
+      state._labelsEntryId = labelsEntryId;
+    }
     saveSessionSets(state);
     syncToPlayer();
     recordingExplorer.render();
@@ -2969,6 +2978,8 @@ function forgetBirdboxResults(recordingId) {
   let panel;
   try { panel = birdboxPanel; } catch { return; }   // a project restored before the panel exists
   if (recordingId === undefined) panel.forgetAll(); else panel.forget(recordingId);
+  // Snap may start the detection for these recordings again
+  if (recordingId === undefined) _snapDetectionAsked.clear(); else _snapDetectionAsked.delete(recordingId);
 }
 
 // ── Recording context (date/time, location, device) ──────────────

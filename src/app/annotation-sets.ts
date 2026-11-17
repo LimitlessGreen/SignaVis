@@ -55,9 +55,19 @@ export function adoptLabels(labels: any[], targetSetId: string, now = new Date()
     });
 }
 
-/** Which detection (and which of its call boxes) a copy came from. */
+/**
+ * Identity of a call box copied under a name: time and frequency bounds as detected plus
+ * the name it was copied as (`adoptBox` of a source, `adoptedFrom.box` of a copy).
+ * The same box may be copied once per species.
+ */
+export function adoptBoxKey(box: any) {
+    const n = (v: any, digits: number) => (Number.isFinite(Number(v)) ? Number(v).toFixed(digits) : '');
+    return `${String(box?.label ?? '').trim().toLowerCase()}|${n(box?.start, 3)}|${n(box?.end, 3)}|${n(box?.freqMin, 0)}|${n(box?.freqMax, 0)}`;
+}
+
+/** Which detection (and which of its call boxes, under which name) a copy came from. */
 function adoptKey(id: any, box: any) {
-    return box ? `${id}|${Number(box.start).toFixed(3)}|${Number(box.end).toFixed(3)}` : String(id);
+    return box ? `${id}|${adoptBoxKey(box)}` : String(id);
 }
 
 /**

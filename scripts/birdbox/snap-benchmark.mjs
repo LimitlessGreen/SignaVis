@@ -13,7 +13,8 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { BirdBoxGraph } from '../../src/infrastructure/detector/birdboxGraph.ts';
 import { fuseBoxes } from '../../src/domain/detector/fusion.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY } from '../../src/domain/snapToCall.ts';
@@ -34,8 +35,12 @@ const ort = await import(require.resolve('onnxruntime-web').replace(/ort\.[^/]*$
 ort.env.wasm.numThreads = 1;
 ort.env.logLevel = 'error';
 let graph = null;
+// Rows hold every prediction above the lowest confidence asked for; fusion filters above it
+const RAW_CONF = Math.min(0.05, ...CONFS);
 async function rawRows(wav, audio) {
-    const file = CACHE ? `${CACHE}/${basename(wav)}.rows.f32` : '';
+    // One cache file per recording path, model and confidence floor
+    const key = createHash('sha256').update(`${resolve(wav)}\0${modelDir.href}\0${RAW_CONF}`).digest('hex').slice(0, 16);
+    const file = CACHE ? `${CACHE}/${basename(wav)}.${key}.rows.f32` : '';
     if (file && existsSync(file)) {
         const b = readFileSync(file);
         const data = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
@@ -46,7 +51,7 @@ async function rawRows(wav, audio) {
         detect: readFileSync(new URL('detect.onnx', modelDir)),
     }, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }, JSON.parse(readFileSync(new URL('model_config.json', modelDir))));
     const chunks = [];
-    for await (const c of graph.run(audio, 0.05, 4)) chunks.push(c);
+    for await (const c of graph.run(audio, RAW_CONF, 4)) chunks.push(c);
     const data = new Float32Array(chunks.reduce((s, c) => s + c.rows * 9, 0));
     let o = 0;
     for (const c of chunks) { data.set(c.data.subarray(0, c.rows * 9), o); o += c.rows * 9; }

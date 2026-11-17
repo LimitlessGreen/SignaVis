@@ -7,7 +7,10 @@
 // - BirdBox box       → the species of the BirdNET detection it lies in, else the
 //                       label template's species, else it still needs a name.
 // The results are sources for adoptLabels() (annotation-sets.ts); `adoptBox` records
-// the box as detected, so a later edit of the copy does not make it look new.
+// the box as detected and the name it is copied under, so a later edit of the copy
+// does not make it look new, and the same box can still be copied as another species.
+
+import { adoptBoxKey } from './annotation-sets.ts';
 
 export const SPECIES_ORIGIN = 'BirdNET';
 export const BOX_ORIGIN = 'BirdBox';
@@ -59,7 +62,7 @@ export function adoptionPlan(lbl: any, all: any[], { mode = 'best', template = n
         ? { ...l, tags: { ...(l.tags || {}), ...tplTags } } : l);
     const asBox = (l: any, box: any) => ({
         ...l, start: box.start, end: box.end, freqMin: box.freqMin, freqMax: box.freqMax, fullBand: false,
-        adoptBox: { start: box.start, end: box.end },
+        adoptBox: { start: box.start, end: box.end, freqMin: box.freqMin, freqMax: box.freqMax, label: l.label },
     });
 
     if (lbl?.origin === SPECIES_ORIGIN) {
@@ -80,21 +83,19 @@ export function adoptionPlan(lbl: any, all: any[], { mode = 'best', template = n
     return { sources: [lbl], candidates: 0, needsName: false };
 }
 
-const boxKey = (label: any, box: any) => `${String(label || '').trim().toLowerCase()}|${box.start.toFixed(3)}|${box.end.toFixed(3)}`;
-
 /**
- * Drop sources whose call box is already in `targetSetId` under the same name, or
+ * Drop sources whose call box (time, frequency) is already in `targetSetId` under the same name, or
  * twice in `sources`: overlapping detections of one species share their boxes, and
  * a box's id changes when the detector's sliders move.
  */
 export function withoutKnownBoxes(sources: any[], existing: any[], targetSetId: string): any[] {
     const known = new Set<string>();
     for (const l of existing || []) {
-        if (l?.setId === targetSetId && l.adoptedFrom?.box) known.add(boxKey(l.label, l.adoptedFrom.box));
+        if (l?.setId === targetSetId && l.adoptedFrom?.box) known.add(adoptBoxKey(l.adoptedFrom.box));
     }
     return (sources || []).filter((s) => {
         if (!s?.adoptBox) return true;
-        const k = boxKey(s.label, s.adoptBox);
+        const k = adoptBoxKey(s.adoptBox);
         if (known.has(k)) return false;
         known.add(k);
         return true;
