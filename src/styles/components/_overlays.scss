@@ -195,6 +195,21 @@
   letter-spacing: 0.01em;
 }
 
+.label-search-keep {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 10px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.label-search-keep + .label-search-confirm,
+.label-search-keep + .label-search-delete { margin-left: 0; }
+
 .label-search-delete {
   border: 1px solid rgba(239,68,68,0.5);
   background: transparent;

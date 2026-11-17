@@ -106,6 +106,13 @@ export interface StartRecordingOptions extends LiveRecorderOptions {
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
 export { BirdNETInference, BIRDNET_MODEL_URL, BIRDNET_V24_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
+/** Copy of `tags` without empty values. */
+function cleanTags(tags: Record<string, string> | null | undefined): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(tags || {})) if (k && v) out[k] = String(v);
+    return out;
+}
+
 export class BirdNETPlayer {
     container: any;
     options: Record<string, any>;
@@ -127,6 +134,7 @@ export class BirdNETPlayer {
     _onLabelFocus: ((e: Event) => void) | null;
     _backgroundSpecies: any;
     _speciesBarSelection: any;
+    _templateTags: Record<string, string> = {};
     on: any;
     off: any;
     ready: any;
@@ -214,6 +222,7 @@ export class BirdNETPlayer {
         this._backgroundSpecies = [];
         /** @type {{ name: string, color: string, scientificName: string } | null} */
         this._speciesBarSelection = null;
+        this._templateTags = {};
 
         // Public API keeps the CustomEvent-style signature (e.detail.xxx) for
         // backward compat with external consumers and demo code.
@@ -514,7 +523,7 @@ export class BirdNETPlayer {
     clearSpectrogramLabels() {
         this._linkedLabels.clear();
         this._backgroundSpecies = [];
-        this.setSpeciesBar('');
+        this.setSpeciesBar('', { tags: null });
         this._syncLinkedLabelsToLayers();
     }
     /**
@@ -1294,7 +1303,7 @@ export class BirdNETPlayer {
         // Snap to call — click a call to box it automatically
         const snapBtn = document.createElement('button');
         snapBtn.className = 'toolbar-btn toggle-btn';
-        snapBtn.title = 'Snap to call: click a call to box it (Shift+wheel = sensitivity, click/Enter = add, Esc = cancel)';
+        snapBtn.title = 'Snap to call: click a call to box it — BirdBox call box if there is one, else from the signal (Shift+wheel = confidence / sensitivity, click/Enter = add, Alt = ask for the name, Esc = cancel)';
         snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 15c2-6 4-6 5-3s3 3 5-3"/></svg><span class="tb-label">Snap</span>`;
         this._snapBtn = snapBtn;
         snapBtn.addEventListener('click', () => {
@@ -1369,22 +1378,36 @@ export class BirdNETPlayer {
         st._setPixelsPerSecond(prev.pps, true, prev.startTime, 0);
     }
 
-    /** Public getter for current species bar selection. */
+    /**
+     * Label template: species (name, colour, scientific name) and tags that every new
+     * label gets without the dialog. Null when neither a species nor a tag is set;
+     * `name` is empty for a tags-only template (the dialog then opens with these tags).
+     */
     getSpeciesBarSelection() {
-        return this._speciesBarSelection ? { ...this._speciesBarSelection } : null;
+        const sel = this._speciesBarSelection, tags = this._templateTags;
+        if (!sel && !Object.keys(tags).length) return null;
+        return { name: '', color: '', scientificName: '', ...(sel || {}), tags: { ...tags } };
     }
 
     /**
-     * Programmatically set the species search bar (e.g. after loading XC recording).
+     * Set the template's species (e.g. after loading an XC recording); '' clears it.
+     * The template's tags stay unless `opts.tags` is given.
      * @param {string} name
-     * @param {{ color?: string, scientificName?: string }} [opts]
+     * @param {{ color?: string, scientificName?: string, tags?: Record<string, string> }} [opts]
      */
-    setSpeciesBar(name: string, opts: { color?: string; scientificName?: string } = {}) {
+    setSpeciesBar(name: string, opts: { color?: string; scientificName?: string; tags?: Record<string, string> | null } = {}) {
         const trimmed = (name || '').trim();
         this._speciesBarSelection = trimmed
             ? { name: trimmed, color: opts.color || colorForName(trimmed), scientificName: opts.scientificName || '' }
             : null;
-        this._emit('speciesbarchange', { selection: this._speciesBarSelection ? { ...this._speciesBarSelection } : null });
+        if (opts.tags !== undefined) this._templateTags = cleanTags(opts.tags);
+        this._emit('speciesbarchange', { selection: this.getSpeciesBarSelection() });
+    }
+
+    /** Set the template's tags (sex, life stage, sound type, custom); the species stays. */
+    setTemplateTags(tags: Record<string, string> | null) {
+        this._templateTags = cleanTags(tags);
+        this._emit('speciesbarchange', { selection: this.getSpeciesBarSelection() });
     }
 
     /**

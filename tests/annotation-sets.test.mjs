@@ -68,3 +68,12 @@ test('labelsToAdopt: labels already copied into the target set are skipped', () 
     assert.equal(labelsToAdopt(src, all, 'own').length, 0);          // second click adds nothing
     assert.equal(labelsToAdopt(src, all, 'other').length, 2);        // other target set: not adopted there
 });
+
+test('labelsToAdopt: a detection copied as one call box can still give its other boxes', () => {
+    const det = { id: 'bn1', setId: 'bn', origin: 'BirdNET' };
+    const boxA = { ...det, adoptBox: { start: 1, end: 1.4 } }, boxB = { ...det, adoptBox: { start: 2, end: 2.3 } };
+    const [copy] = adoptLabels([boxA], 'own');
+    assert.deepEqual(copy.adoptedFrom, { id: 'bn1', setId: 'bn', origin: 'BirdNET', box: { start: 1, end: 1.4 } });
+    assert.equal('adoptBox' in copy, false);
+    assert.deepEqual(labelsToAdopt([boxA, boxB], [copy], 'own'), [boxB]);
+});

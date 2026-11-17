@@ -1,6 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // snapToCall.ts — "Snap to call": box a call from a single click
 //
+// The label layer asks a call detector first (SnapBoxSource, BirdBox); this is the
+// signal-based answer where the detector has no box, no results or no model
+// (ultrasound, offline).
+//
 // Works on a linear-frequency dB patch around the click: values are taken
 // relative to the per-band noise floor (median over the patch), the seed is
 // the strongest cell near the click, and an 8-connected region growing with
@@ -31,6 +35,14 @@ export interface SnapBox { start: number; end: number; freqMin: number; freqMax:
 export type SnapResult =
     | { ok: true; box: SnapBox; peakDb: number; thresholdDb: number; touchesEdge: boolean }
     | { ok: false; reason: 'noise' | 'spread' };
+
+/**
+ * Boxes of a call detector (BirdBox) for Snap: the box under a click at confidence `conf`;
+ * `weaker`: no box at `conf`, but one below it. Null: no detector results for this recording.
+ */
+export type SnapBoxSource = (time: number, freq: number, conf: number) => { box: SnapBox | null; weaker: boolean } | null;
+/** Start confidence for detector boxes (BirdBox default; see scripts/birdbox/snap-benchmark.mjs). */
+export const SNAP_BOX_DEFAULT_CONF = 0.15;
 
 export const SNAP_DEFAULT_SENSITIVITY = 0.75;
 /** Seed must stand this far above the band floor. */

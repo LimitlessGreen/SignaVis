@@ -40,6 +40,7 @@ import { buildRavenSelectionTable, ravenTablePath } from '../../infrastructure/e
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
+import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
 import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
@@ -56,6 +57,7 @@ import { PropertiesPanel } from '../../ui/panels/properties-panel.ts';
 import { SnrComputer } from '../../ui/components/snr-computer/snr-computer.ts';
 import { CustomTagStore } from '../../app/custom-tag-store.ts';
 import { TAG_PRESETS, setTagPresetOptions } from '../../ui/panels/label-table.ts';
+import { createTemplateTags } from '../../ui/components/label-template/template-tags.ts';
 import { TagVocabularyCache, recordingGroup } from '../../app/tag-vocabulary.ts';
 import { fetchXcGroupProperties } from '../../infrastructure/xeno-canto/xcGroupProperties.ts';
 import { createAboutPanel } from '../../ui/panels/about-panel.ts';
@@ -654,13 +656,16 @@ document.addEventListener('keydown', (e) => {
   if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-  const lbl = propsPanel.displayedLabel;
-  if (!lbl || lbl.readonly || state.labelSets.get(lbl.setId)?.locked) return;
+  const editable = (l) => l && !l.readonly && !state.labelSets.get(l.setId)?.locked;
+  // A multi-selection gets the value on every label, otherwise the one shown in Properties
+  const selected = [...(labelList?.multiSelectedIds || [])].map((id) => state.labels.find((l) => l.id === id));
+  const targets = (selected.length > 1 ? selected : [propsPanel.displayedLabel]).filter(editable);
+  if (!targets.length) return;
   const value = TAG_PRESETS.find((p) => p.key === 'soundType')?.options[Number(e.key) - 1];
   if (!value) return;
   e.preventDefault();
-  propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
-  selectionMeta.textContent = `Sound type: ${value} (key ${e.key})`;
+  for (const lbl of targets) propsPanel.onChange(lbl.id, { tags: { ...(lbl.tags || {}), soundType: value } });
+  selectionMeta.textContent = `Sound type: ${value} (key ${e.key}${targets.length > 1 ? `, ${targets.length} labels` : ''})`;
 });
 
 // N / P next / previous recording, B BirdNET on the current one, U upload assistant
@@ -1795,18 +1800,47 @@ function scheduleOwnSetStatus() {
   }, 400);
 }
 
-/** Copy a single imported label into the own labels (✓ in the label list). */
-function adoptOneLabel(labelId) {
+/** Label template (top bar) for copies of detections: species for unnamed call boxes, tags. */
+function adoptTemplate() {
+  try { return player.getSpeciesBarSelection?.() || null; } catch { return null; }
+}
+
+/** Sources for adoptLabels(): detections get their call box / species (adopt-detection.ts), copies already made are left out. */
+function adoptSources(labels, all, mode) {
+  const template = adoptTemplate();
+  const sources = labels.flatMap((l) => adoptionPlan(l, all, { mode, template }).sources);
+  return withoutKnownBoxes(labelsToAdopt(sources, all, OWN_SOURCE_ID), all, OWN_SOURCE_ID);
+}
+
+/**
+ * Copy a single imported label into the own labels (✓ in the label list / on the box).
+ * A BirdNET detection becomes its best BirdBox call box not copied yet (`mode: 'all'`: every
+ * box in its window); a BirdBox box gets the species of the BirdNET detection around it.
+ */
+function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   const lbl = state.labels.find((l) => l.id === labelId);
   if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
-  const todo = labelsToAdopt([lbl], state.labels, OWN_SOURCE_ID);
+  const plan = adoptionPlan(lbl, state.labels, { mode, template: adoptTemplate() });
+  // Boxes not copied yet, best first: every further ✓ takes the next one
+  const open = adoptSources([lbl], state.labels, 'all');
+  const todo = mode === 'all' ? open : open.slice(0, 1);
   if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+  const more = mode === 'best' && open.length > 1
+    ? { label: open.length === plan.candidates ? `All ${open.length}` : `Other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
+  const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   state.labels.push(...copies);
   touchOwnSet(OWN_SOURCE_ID);
   syncToPlayer();
   saveCurrentAnnotationsIfNeeded();
-  selectionMeta.textContent = `Copied 1 label into my labels`;
+  const n = copies.length;
+  selectionMeta.textContent = `Copied ${n} label${n === 1 ? '' : 's'} into my labels`;
+  if (plan.candidates > 1) {
+    showUndoToast(mode === 'all' || n > 1 ? `Copied ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
+      : `Copied 1 of ${plan.candidates} call boxes as ${lbl.label}`, undo, { action: more });
+  }
+  // A call box nobody could name: ask right away
+  if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
 }
 
 function adoptSetLabels(setId) {
@@ -1817,7 +1851,7 @@ function adoptSetLabels(setId) {
     const all = entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
     const inSet = all.filter((l) => l.setId === setId);
     found += inSet.length;
-    const src = labelsToAdopt(inSet, all, OWN_SOURCE_ID);   // already copied ones are skipped
+    const src = adoptSources(inSet, all, 'all');   // already copied ones are skipped
     if (!src.length) continue;
     const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
@@ -1827,7 +1861,7 @@ function adoptSetLabels(setId) {
   if (!recordingManager.activeId) {
     const inSet = state.labels.filter((l) => l.setId === setId);
     found += inSet.length;
-    const copies = adoptLabels(labelsToAdopt(inSet, state.labels, OWN_SOURCE_ID), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+    const copies = adoptLabels(adoptSources(inSet, state.labels, 'all'), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
     state.labels.push(...copies);
   }
@@ -2097,13 +2131,25 @@ function snapshotLabels() {
   const perEntry = recordingManager.getAll().map((e) => [e.id, (e.annotations || []).map((a) => ({ ...a })), e.needsXcImport]);
   const labels = state.labels.map((l) => ({ ...l }));
   const labelsEntryId = state._labelsEntryId;
+  const activeAt = recordingManager.activeId || null;
   return () => {
     state.labelSets = sets;
     for (const [id, anns, needsXcImport] of perEntry) {
       if (recordingManager.getById(id)) recordingManager.update(id, { annotations: anns, needsXcImport });
     }
-    state.labels = labels;
-    state._labelsEntryId = labelsEntryId;
+    const active = recordingManager.activeId || null;
+    if (active === activeAt) {
+      state.labels = labels;
+      state._labelsEntryId = labelsEntryId;
+    } else {
+      // Another recording is on screen by now: `labels` belong to the one active at snapshot
+      // time and would be saved into this one. Show this recording's own restored labels.
+      const own = perEntry.find(([id]) => id === active);
+      if (own) {
+        state.labels = own[1].map((a) => ({ ...a }));
+        state._labelsEntryId = active;
+      }
+    }
     saveSessionSets(state);
     syncToPlayer();
     recordingExplorer.render();
@@ -2212,6 +2258,8 @@ const recordingExplorer = new RecordingExplorer({
   getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
   getSetInfo: (setId) => state.labelSets.get(setId),
   isSetHidden: (setId) => state.hiddenSetIds.has(setId),
+  // Same rule as "Copy to mine": detections count by the call boxes still to copy
+  countAdoptable: (labels, all) => adoptSources(labels, all, 'all').length,
   onToggleSetHidden: (setId) => {
     if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
     else state.hiddenSetIds.add(setId);
@@ -2913,11 +2961,30 @@ const birdboxPanel = new BirdBoxPanel({
   },
 });
 
+// ── Snap to call: BirdBox box under the click, else the signal (annotations.ts _runSnap) ──
+// The first snap on a recording without BirdBox rows starts the detection in the background;
+// until its rows reach the click (and where it finds nothing) Snap follows the signal.
+const _snapDetectionAsked = new Set();
+if (player.spectrogramLabels) {
+  player.spectrogramLabels.snapBoxSource = (time, freq, conf) => {
+    const id = recordingManager?.activeId || null;
+    const found = birdboxPanel.boxAt(id, time, freq, conf);
+    if (!found && !birdboxPanel.running && !_snapDetectionAsked.has(id) && player._state?.audioBuffer) {
+      _snapDetectionAsked.add(id);
+      selectionMeta.textContent = 'Snap: BirdBox call detection started (progress in the Analyse tab)';
+      birdboxPanel.run();
+    }
+    return found;
+  };
+}
+
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
 function forgetBirdboxResults(recordingId) {
   let panel;
   try { panel = birdboxPanel; } catch { return; }   // a project restored before the panel exists
   if (recordingId === undefined) panel.forgetAll(); else panel.forget(recordingId);
+  // Snap may start the detection for these recordings again
+  if (recordingId === undefined) _snapDetectionAsked.clear(); else _snapDetectionAsked.delete(recordingId);
 }
 
 // ── Recording context (date/time, location, device) ──────────────
@@ -4350,6 +4417,20 @@ player.on('labelfocus', (e) => {
 player.on('play', () => { _referenceCallsModal?.pauseAll?.(); });
 
 /** Show rename/delete context menu for a spectrogram label id. */
+const ICON_TEMPLATE = '<svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3-2 2-3-3 2-2zM7.5 6.5l2 2L5 13H3v-2l4.5-4.5z"/></svg>';
+
+/** Make a label the template: new labels get its species and tags (not XC metadata tags). */
+function useLabelAsTemplate(lbl) {
+  const name = (lbl.label || '').trim();
+  if (!name) return;
+  player.setSpeciesBar(name, {
+    color: lbl.color || '',
+    scientificName: lbl.scientificName || '',
+    tags: lbl.origin === 'xeno-canto' ? {} : { ...(lbl.tags || {}) },
+  });
+  selectionMeta.textContent = `New labels: ${name}`;
+}
+
 function showLabelContextMenu(e, id) {
   const lbl = state.labels.find((l) => l.id === id);
   if (!lbl) return;
@@ -4362,6 +4443,8 @@ function showLabelContextMenu(e, id) {
         action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
       { label: 'Reference Calls', icon: ICON_REFS,
         action: () => openRefCalls(lbl) },
+      { label: 'Use as template', icon: ICON_TEMPLATE,
+        action: () => useLabelAsTemplate(lbl) },
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
@@ -4566,6 +4649,16 @@ let topbarWidget = null;
   topbarWidget.el.classList.add('species-search');
   mount.replaceWith(topbarWidget.el);
 
+  // Label template: the species above plus these tags go onto every new label
+  const inner = topbarWidget.el.querySelector('.species-search-inner');
+  if (inner) { inner.style.width = 'auto'; inner.style.flex = '1 1 0'; inner.style.minWidth = '0'; }
+  const templateTags = createTemplateTags({
+    getPresets: () => player.getTagPresets?.() || TAG_PRESETS,
+    getTags: () => player.getSpeciesBarSelection?.()?.tags || {},
+    onChange: (tags) => player.setTemplateTags(tags),
+  });
+  topbarWidget.el.appendChild(templateTags.el);
+
   // Sync display value when player updates species bar programmatically (e.g. XC import).
   // Also cache the species so it persists in suggestions after a clear.
   player.on('speciesbarchange', (e) => {
@@ -4573,6 +4666,7 @@ let topbarWidget = null;
     if (sel?.name) lastForegroundSpecies = sel;
     const name = sel?.name || '';
     if (topbarWidget.input.value !== name) topbarWidget.setValue(name);
+    templateTags.refresh();
   });
 
   // Refresh open dropdown when labels change (only if already visible).

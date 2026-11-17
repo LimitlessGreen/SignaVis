@@ -53,6 +53,8 @@ export class RecordingExplorer {
     _getEntryLabels: any;
     _getSetInfo: any;
     _isSetHidden: any;
+    /** Copies "Copy to mine" would still make of these labels (`all`: the recording's labels). */
+    _countAdoptable: ((labels: any[], all: any[]) => number) | null = null;
     _onToggleSetHidden: any;
     _onAdoptSet: any;
     _multiMode: boolean;
@@ -94,6 +96,7 @@ export class RecordingExplorer {
         this._getEntryLabels   = opts.getEntryLabels || null;
         this._getSetInfo       = opts.getSetInfo || null;
         this._isSetHidden      = opts.isSetHidden || null;
+        this._countAdoptable   = opts.countAdoptable || null;
         this._onToggleSetHidden = opts.onToggleSetHidden || null;
         this._onAdoptSet       = opts.onAdoptSet || null;
         this._collapsed        = false;
@@ -576,7 +579,8 @@ export class RecordingExplorer {
             const nRec = set.recs.length;
             const readOnly = !set.own;
             const pending = readOnly && ownSetId
-                ? set.recs.reduce((s: number, r: any) => s + labelsToAdopt(r.labels, r.all, ownSetId).length, 0) : 0;
+                ? set.recs.reduce((s: number, r: any) => s + (this._countAdoptable
+                    ? this._countAdoptable(r.labels, r.all) : labelsToAdopt(r.labels, r.all, ownSetId).length), 0) : 0;
 
             const li = document.createElement('li');
             li.className = 'rec-set';
