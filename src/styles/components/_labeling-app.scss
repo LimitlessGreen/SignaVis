@@ -843,6 +843,7 @@ html[data-theme="light"] { @include sponsor-light; }
   white-space: nowrap;
 }
 
+.similar-review[hidden] { display: none; }
 .similar-review__title { font-weight: 600; }
 .similar-review__pos,
 .similar-review__score { color: var(--color-text-secondary, #9ca3af); font-variant-numeric: tabular-nums; }

@@ -1,6 +1,6 @@
 # Similar calls: label one, confirm the rest
 
-Status: steps 1–2 built (2026-11-17), branch `feat/similar-calls`, not pushed.
+Status: steps 1–3 built (2026-11-17), branch `feat/similar-calls`, not pushed.
 
 ## Idea
 
@@ -104,6 +104,33 @@ correlation score. In the browser clip one accepted song lifted 6 suggestions ab
 Open: no thumbnails; threshold not calibrated; suggestions are saved with the session like BirdBox boxes;
 undo of a copy restores the suggestions but not the review; own labels of the species found before the search
 are not used as extra exemplars yet.
+
+## Step 3 as built: overview (groups of similar calls)
+
+Simulated on Powdermill (`scripts/similar/cluster-sim.py`, 9 segments): a group is named in one action with its
+majority species, strays fixed one by one; effort relative to labelling each candidate. Patch = box ±margin
+resampled to 16 × 24, cells below the floor as 0 dB; distance = 1 − r + 0.3·|Δ log duration| + 1.0·|Δ log centre freq|;
+average linkage.
+
+| Candidates | cut 0.8: effort / purity | cut 1.0 | cut 1.2 |
+|---|---|---|---|
+| annotated boxes (perfect finder) | 0.44 / 0.98 | **0.27 / 0.92** | 0.27 / 0.79 |
+| BirdBox boxes | 0.58 / 0.95 | **0.43 / 0.84** | 0.36 / 0.71 |
+
+Without the duration / frequency terms groups mix far more (BirdBox, cut 0.8: purity 0.77). Default cut 1.0, slider
+0.6–1.4 in the bar. Calls BirdBox misses are not in the overview; F finds them from a labelled one.
+
+Built: `domain/similar/cluster.ts` (features, NN-chain average linkage = scipy fcluster 'distance', groups with medoid),
+`callPatches` in `app/similarSpectrogram.ts` (STFT around each box, floor = row median of ±0.5 s),
+`ui/components/similar-review/group-review.ts`. Analyse → Call boxes → "Group similar calls": BirdBox boxes no own
+label covers are grouped; the bar walks the groups largest first (↓/↑, Space, X skip, Esc); the current group shows
+as dotted suggestions "Group n"; Enter names it (template species, else the name dialog) and opens the member review
+(Shift+Enter copies, X rejects strays); after it the next group follows. Copies keep `adoptedFrom.similar.group`.
+Tests: `tests/similar-groups.test.mjs`; browser: `tools/e2e/similar-groups.py` (annotated boxes as BirdBox boxes;
+first group 4 WOTH + 1 EATO, stray rejected, all checks pass).
+
+Open: the BirdBox box is drawn under the group box; grouping runs on the main thread (O(n²), fine for a few hundred
+boxes); no own labels as seeds yet.
 
 ## Steps
 

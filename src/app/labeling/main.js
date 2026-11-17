@@ -44,7 +44,11 @@ import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
-import { bandSpectrogram, SimilarSession } from '../../app/similarSpectrogram.ts';
+import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
+import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
+import { timeIoU } from '../../domain/similar/ncc.ts';
+import { GroupReview } from '../../ui/components/similar-review/group-review.ts';
+import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
@@ -2005,6 +2009,7 @@ setActiveSet(OWN_SOURCE_ID);
  */
 async function activateRecordingEntry(entry) {
   closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   // 1. Save current labels into the leaving entry (guarded helper avoids
   //    accidental overwrites on page reload and handles edge-cases).
   saveCurrentAnnotationsIfNeeded();
@@ -3033,7 +3038,7 @@ const similarReview = new SimilarReview({
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
-  onClose: () => endSimilarSession(),
+  onClose: () => { endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
@@ -3136,6 +3141,124 @@ function rejectSimilar(ids) {
   syncToPlayer();
   similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
 }
+
+// ── Overview: groups of similar calls (domain/similar/cluster.ts) ──
+// BirdBox's boxes not yet labelled are grouped; the bar walks through the groups, largest first.
+// The current group shows as dotted suggestions; naming it gives them the species and opens the
+// member review (Enter / X / Shift+Enter as for similar calls). Strays are rejected there.
+let _groups = null;          // { recordingId, boxes, features, groups }
+let _groupNamed = false;     // member review was opened by naming a group
+
+const groupReview = new GroupReview({
+  onShow: (i) => showGroup(i),
+  onPlay: (i) => {
+    const g = _groups?.groups[i];
+    const lbl = g && state.labels.find((l) => l.id === groupLabelId(i, 0));
+    if (lbl) player.playLabelSegment(lbl);
+    else if (g) player.playLabelSegment(_groups.boxes[g.members[0]]);
+  },
+  onName: (i) => nameGroup(i),
+  onRegroup: (cut) => regroup(cut),
+  onClose: () => {
+    // Unnamed group previews go; named suggestions stay until copied or rejected
+    state.labels = state.labels.filter((l) => !l.similar?.preview);
+    _groups = null;
+    syncToPlayer();
+  },
+  anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
+});
+
+const groupLabelId = (gi, k) => `group_${gi}_${k}`;
+
+/** BirdBox boxes of the recording on screen that no own label covers yet. */
+function unlabelledBoxes() {
+  const own = state.labels.filter((l) => l.origin !== SIMILAR_ORIGIN && l.origin !== BIRDBOX_ORIGIN && !l.readonly);
+  return state.labels.filter((b) => b.origin === BIRDBOX_ORIGIN
+    && !own.some((l) => timeIoU(b, l) >= 0.5 && Math.min(b.freqMax, l.freqMax) > Math.max(b.freqMin, l.freqMin)));
+}
+
+async function groupSimilarCalls(cut = DEFAULT_CUT) {
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  closeSimilarReview();
+  const boxes = unlabelledBoxes();
+  if (boxes.length < 2) {
+    selectionMeta.textContent = boxes.length ? 'Only one call box without a label' : 'No call boxes yet: run "Detect calls" first';
+    return;
+  }
+  const recordingId = recordingManager?.activeId || null;
+  selectionMeta.textContent = `Grouping ${boxes.length} calls…`;
+  const patches = await callPatches(audio, boxes, { yieldEvery: () => new Promise((r) => setTimeout(r, 0)) });
+  if (!patches || (recordingManager?.activeId || null) !== recordingId) return;
+  const keep = boxes.map((_, i) => i).filter((i) => patches[i]);
+  const features = keep.map((i) => callFeature(patches[i]));
+  _groups = { recordingId, boxes: keep.map((i) => boxes[i]), features, groups: [] };
+  regroup(cut);
+}
+
+function regroup(cut) {
+  if (!_groups) return;
+  _groups.groups = groupCalls(_groups.features, { cut });
+  const n = _groups.groups.length, inGroups = _groups.groups.reduce((s, g) => s + g.members.length, 0);
+  if (!n) { selectionMeta.textContent = 'No groups: every call is different at this setting'; groupReview.close(); return; }
+  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}: Enter names a group`;
+  groupReview.open(_groups.groups.map((g) => ({ size: g.members.length })), cut);
+}
+
+/** The group's members as dotted, unnamed suggestions (replacing the previous preview). */
+function showGroup(gi) {
+  const g = _groups?.groups[gi];
+  if (!g) return;
+  const setId = similarSetId();
+  const preview = g.members.map((m, k) => {
+    const b = _groups.boxes[m];
+    return {
+      id: groupLabelId(gi, k), start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax, fullBand: false,
+      label: `Group ${gi + 1}`, origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(g.scores[k] * 1000) / 1000,
+      setId, ...(_groups.recordingId ? { recordingId: _groups.recordingId } : {}),
+      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true },
+    };
+  });
+  state.labels = state.labels.filter((l) => !l.similar?.preview).concat(preview);
+  state.hiddenSetIds?.delete(setId);
+  syncToPlayer();
+  player.selectLabel(preview[0].id);
+  player.playLabelSegment(preview[0]);
+}
+
+/** Name the group (template species, else the name dialog), then review its members. */
+function nameGroup(gi) {
+  const g = _groups?.groups[gi];
+  if (!g) return;
+  const apply = ({ name, color, scientificName = '', tags = {} }) => {
+    if (!String(name || '').trim()) return;
+    const ids = new Set(g.members.map((_, k) => groupLabelId(gi, k)));
+    const items = [];
+    for (const l of state.labels) {
+      if (!ids.has(l.id)) continue;
+      Object.assign(l, { label: name, scientificName: scientificName || '', ...(color ? { color } : {}),
+        ...(tags && Object.keys(tags).length ? { tags: { ...tags } } : {}) });
+      l.similar = { ...l.similar, preview: false };
+      items.push({ id: l.id, score: l.similar.score });
+    }
+    syncToPlayer();
+    _groupNamed = true;
+    groupReview.suspend();
+    similarReview.open(name, items);
+  };
+  const tpl = adoptTemplate();
+  if (tpl?.name) { apply({ name: tpl.name, color: tpl.color, scientificName: tpl.scientificName, tags: tpl.tags }); return; }
+  const layer = player.spectrogramLabels;
+  openLabelNameEditor({
+    layer, player,
+    anchorEl: layer?.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${groupLabelId(gi, 0)}"]`) || layer?.overlay,
+    initialValue: '', initialColor: null, initialTags: {}, initialScientificName: '',
+    title: `Name ${g.members.length} similar calls`,
+    onSubmit: apply,
+  });
+}
+
+document.getElementById('birdboxGroupBtn')?.addEventListener('click', () => groupSimilarCalls());
 
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
 function forgetBirdboxResults(recordingId) {

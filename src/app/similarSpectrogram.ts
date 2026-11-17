@@ -7,6 +7,7 @@
 
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { channelData } from '../shared/utils.ts';
+import type { CallPatch } from '../domain/similar/cluster.ts';
 import { createSearch, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
 
 const WINDOW_SECONDS = 0.016;
@@ -124,4 +125,55 @@ export class SimilarSession {
         for (const p of this.pending.values()) p.reject(new Error('search closed'));
         this.pending.clear();
     }
+}
+
+// ── Call patches for the overview (domain/similar/cluster.ts) ─────
+// Same STFT as above, computed around each box only: ±0.5 s for the floor (row median of
+// that window), then the box's band (±1 bin) and duration (±2 frames).
+
+const FLOOR_PAD_S = 0.5;
+
+/** One patch per box (null where the box is empty or outside the recording); null before aw-dsp is ready. */
+export async function callPatches(audio: AudioBuffer, boxes: Box[], opts: BandOptions = {}): Promise<(CallPatch | null)[] | null> {
+    const wasm = wasmMain();
+    if (!wasm) return null;
+    const sr = audio.sampleRate;
+    const winLen = 2 ** Math.round(Math.log2(sr * WINDOW_SECONDS));
+    const hop = winLen / 4;
+    const params = { winLen, hop, nFft: winLen, window: { kind: 'hann' }, scale: { kind: 'linear' },
+        pcen: null, reassign: false, output: 'db', sampleRate: sr };
+    const stft = new wasm.WasmStft(JSON.stringify(params));
+    const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+    try {
+        const total = stft.nFrames(audio.length), bins = stft.outBins(), freqs = stft.binFrequencies();
+        const df = freqs.length > 1 ? freqs[1] - freqs[0] : sr / winLen, dt = hop / sr;
+        const out: (CallPatch | null)[] = [];
+        for (const [k, b] of boxes.entries()) {
+            if (opts.cancelled?.()) return null;
+            const f0 = Math.max(0, Math.floor((b.start - FLOOR_PAD_S) / dt));
+            const n = Math.min(total - f0, Math.ceil((b.end - b.start + 2 * FLOOR_PAD_S) / dt) + 1);
+            if (n < 3 || b.end <= b.start || b.freqMax <= b.freqMin) { out.push(null); continue; }
+            const [lo, hi] = stft.blockFrameRange(f0, n, total);
+            const [start, len] = stft.sampleRange(lo, hi - lo);
+            const first = Math.max(0, start), last = Math.min(audio.length, start + len);
+            const mono = new Float32Array(Math.max(0, last - first));
+            for (const ch of channels) for (let i = 0; i < mono.length; i++) mono[i] += ch[first + i] / channels.length;
+            const block = stft.blockValues(mono, first, f0, n, total);   // n × bins
+            const r0 = Math.max(0, Math.floor((b.freqMin - freqs[0]) / df) - 1);
+            const r1 = Math.min(bins, Math.ceil((b.freqMax - freqs[0]) / df) + 2);
+            const c0 = Math.max(0, Math.floor(b.start / dt) - 2 - f0), c1 = Math.min(n, Math.floor(b.end / dt) + 3 - f0);
+            const rows = r1 - r0, cols = c1 - c0;
+            if (rows < 2 || cols < 2) { out.push(null); continue; }
+            const values = new Float32Array(rows * cols), col = new Float32Array(n);
+            for (let r = 0; r < rows; r++) {
+                for (let f = 0; f < n; f++) col[f] = block[f * bins + r0 + r];
+                col.sort();
+                const floor = col[n >> 1];
+                for (let c = 0; c < cols; c++) values[r * cols + c] = block[(c0 + c) * bins + r0 + r] - floor;
+            }
+            out.push({ values, rows, cols, duration: b.end - b.start, centreHz: (b.freqMin + b.freqMax) / 2 });
+            if (k % 25 === 24) await opts.yieldEvery?.();
+        }
+        return out;
+    } finally { stft.free(); }
 }
