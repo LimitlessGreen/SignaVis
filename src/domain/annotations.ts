@@ -8,7 +8,7 @@ import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
-import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, type SnapPatch, type SnapResult } from './snapToCall.ts';
+import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
 const LANE_H = 18;
@@ -1006,7 +1006,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     /** Snap to call: click a call → preview box, Shift+wheel = sensitivity, click/Enter = commit. */
     snapMode: boolean = false;
     _snapSensitivity: number = SNAP_DEFAULT_SENSITIVITY;
-    _snap: { time: number; freq: number; result: SnapResult } | null = null;
+    /**
+     * Detector boxes for Snap (BirdBox): asked first; without a box under the click the
+     * signal-based region growing answers. Null: Snap uses the signal only.
+     */
+    snapBoxSource: SnapBoxSource | null = null;
+    _snapBoxConf: number = SNAP_BOX_DEFAULT_CONF;
+    /** `source`: who drew the box; `tune`: what Shift+wheel changes for this click. */
+    _snap: { time: number; freq: number; result: SnapResult; source: 'detector' | 'signal'; tune: 'conf' | 'sensitivity'; detector: boolean } | null = null;
     _snapEl: HTMLElement | null = null;
     /** Zoom box ("Lupe"): drag a field → 'zoomboxselect', right-click → 'zoomboxback'. */
     zoomBoxMode: boolean = false;
@@ -1719,8 +1726,19 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     // ── Snap to call ─────────────────────────────────────────────────
 
-    /** Box the call at (time, freq); widens the analysed span while the call reaches its edge. */
+    /**
+     * Box the call at (time, freq): the detector's box under the click if there is one,
+     * else region growing on the signal (widens the analysed span while the call reaches its edge).
+     */
     _runSnap(time: number, freq: number) {
+        let det: { box: SnapBox | null; weaker: boolean } | null = null;
+        try { det = this.snapBoxSource?.(time, freq, this._snapBoxConf) ?? null; } catch { det = null; }
+        if (det?.box) {
+            const result: SnapResult = { ok: true, box: det.box, peakDb: 0, thresholdDb: 0, touchesEdge: false };
+            this._snap = { time, freq, result, source: 'detector', tune: 'conf', detector: true };
+            this._renderSnapPreview();
+            return;
+        }
         let result: SnapResult | null = null;
         for (let half = 1.5; half <= 12; half *= 2) {
             const patch: SnapPatch | null = this.player?.computeSnapPatch?.(time, half) ?? null;
@@ -1728,7 +1746,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             result = snapToCall(patch, time, freq, this._snapSensitivity, bandMedians(patch));
             if (!result.ok || !result.touchesEdge) break;
         }
-        this._snap = result ? { time, freq, result } : null;
+        // A detector box exists below the current confidence: the wheel lowers that first
+        this._snap = result ? { time, freq, result, source: 'signal', tune: det?.weaker ? 'conf' : 'sensitivity', detector: !!det } : null;
         this._renderSnapPreview();
     }
 
@@ -1741,19 +1760,31 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const el = this._snapEl;
         const width = parseFloat(this.overlay.style.width) || 1;
         const height = parseFloat(this.overlay.style.height) || 1;
-        const { result, time, freq } = this._snap;
+        const { result, time, freq, source, tune, detector } = this._snap;
         const pct = Math.round(this._snapSensitivity * 100);
+        const conf = this._snapBoxConf.toFixed(2);
         if (result.ok) {
             const g = this._toGeometry(this._normalize({ ...result.box, label: '' }), width, height);
             const fresh = !el.classList.contains('snap-box');
-            el.className = 'snap-box' + (fresh ? ' snap-box--in' : '');
+            el.className = 'snap-box' + (fresh ? ' snap-box--in' : '') + (source === 'detector' ? ' snap-box--detector' : '');
             Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
-            // Viewfinder corners + a compact chip: sensitivity meter and key hints
+            // Viewfinder corners + a compact chip: where the box comes from, what the wheel tunes, key hints
             const bars = Array.from({ length: 5 }, (_, i) =>
                 `<i class="snap-meter-bar${i < Math.round(this._snapSensitivity * 5) ? ' on' : ''}"></i>`).join('');
+            const meter = `<span class="snap-meter" aria-label="Sensitivity ${pct} %">${bars}</span><span class="snap-pct">${pct}%</span>`;
+            let body: string, title: string;
+            if (source === 'detector') {
+                body = `<span class="snap-src">BirdBox</span><span class="snap-pct">≥ ${conf}</span>`;
+                title = `Call box from BirdBox, confidence at least ${conf} — Shift + mouse wheel to change. Click or Enter adds the label.`;
+            } else if (tune === 'conf') {
+                body = `<span class="snap-src">Signal</span><span class="snap-pct">BirdBox ≥ ${conf}: none</span>`;
+                title = `No BirdBox box here at confidence ${conf}, so the box follows the signal — Shift + mouse wheel lowers the confidence. Click or Enter adds the label.`;
+            } else {
+                body = (detector ? '<span class="snap-src">Signal</span>' : '') + meter;
+                title = `${detector ? 'No BirdBox box here, so the box follows the signal. ' : ''}Sensitivity ${pct} % — Shift + mouse wheel to change. Click or Enter adds the label.`;
+            }
             el.innerHTML = '<i class="snap-corner tl"></i><i class="snap-corner tr"></i><i class="snap-corner bl"></i><i class="snap-corner br"></i>'
-                + `<span class="snap-chip" title="Sensitivity ${pct} % — Shift + mouse wheel to change. Click or Enter adds the label.">`
-                + `<span class="snap-meter" aria-label="Sensitivity ${pct} %">${bars}</span><span class="snap-pct">${pct}%</span>`
+                + `<span class="snap-chip" title="${title}">${body}`
                 + '<span class="snap-sep"></span><kbd>⇧ scroll</kbd><kbd>↵</kbd></span>';
             const chip = el.querySelector('.snap-chip') as HTMLElement;
             // Above the box; below it at the top edge; inside when it spans the full height
@@ -1764,9 +1795,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const g = this._toGeometry(this._normalize({ start: time, end: time, freqMin: freq, freqMax: freq, label: '' }), width, height);
             el.className = 'snap-miss';
             Object.assign(el.style, { left: `${g.left}px`, top: `${g.top}px`, width: '', height: '' });
-            const text = 'reason' in result && result.reason === 'noise'
-                ? 'No call here — try a brighter trace'
-                : `Merges with background · ${pct}% — ⇧ scroll to lower`;
+            const text = tune === 'conf'
+                ? `No call here · BirdBox ≥ ${conf}: none — ⇧ scroll to lower`
+                : 'reason' in result && result.reason === 'noise'
+                    ? 'No call here — try a brighter trace'
+                    : `Merges with background · ${pct}% — ⇧ scroll to lower`;
             el.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>';
             el.append(text);
         }
@@ -1852,7 +1885,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 return;
             }
             if (this.snapMode && e.button === 0) {
-                if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
+                // Own labels keep their clicks; detections (locked: BirdBox / BirdNET boxes shown
+                // on the spectrogram) let the snap through, except on their ✓ / ✕ buttons
+                const overLabel = (e.target as Element)?.closest?.('.spectrogram-label-region') as HTMLElement | null;
+                if (overLabel) {
+                    if (!this._lockedIds.has(overLabel.dataset.id || '') || (e.target as Element)?.closest?.('button')) return;
+                    this._suppressClickUntil = performance.now() + 400;
+                }
                 if (!this.player?._state?.audioBuffer) return;
                 this.player?._state?._blockSeekClicks?.(400);
                 if (this._snapContains(e.clientX, e.clientY)) this._commitSnap(e.altKey);
@@ -2077,13 +2116,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         wrapper.addEventListener('contextmenu', onContextMenu, true);
         document.addEventListener('keydown', onKeyDown, true);
 
-        // Shift+wheel tunes the snap sensitivity while a preview is shown
+        // Shift+wheel tunes the snap (detector confidence or signal sensitivity) while a preview is shown
         const onWheel = (e: WheelEvent) => {
             if (!this.snapMode || !this._snap || !e.shiftKey) return;
             e.preventDefault();
             e.stopPropagation();
-            const step = (e.deltaY || e.deltaX) < 0 ? 0.02 : -0.02;
-            this._snapSensitivity = Math.min(0.99, Math.max(0.01, this._snapSensitivity + step));
+            const up = (e.deltaY || e.deltaX) < 0;
+            // Up = more sensitive: a lower detector confidence, or a higher signal sensitivity
+            if (this._snap.tune === 'conf') {
+                this._snapBoxConf = Math.min(0.95, Math.max(0.05, Math.round((this._snapBoxConf + (up ? -0.05 : 0.05)) * 100) / 100));
+            } else {
+                this._snapSensitivity = Math.min(0.99, Math.max(0.01, this._snapSensitivity + (up ? 0.02 : -0.02)));
+            }
             this._runSnap(this._snap.time, this._snap.freq);
         };
         wrapper.addEventListener('wheel', onWheel, { capture: true, passive: false });

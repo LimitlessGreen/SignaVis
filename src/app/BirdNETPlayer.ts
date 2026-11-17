@@ -1303,7 +1303,7 @@ export class BirdNETPlayer {
         // Snap to call — click a call to box it automatically
         const snapBtn = document.createElement('button');
         snapBtn.className = 'toolbar-btn toggle-btn';
-        snapBtn.title = 'Snap to call: click a call to box it (Shift+wheel = sensitivity, click/Enter = add, Esc = cancel)';
+        snapBtn.title = 'Snap to call: click a call to box it — BirdBox call box if there is one, else from the signal (Shift+wheel = confidence / sensitivity, click/Enter = add, Alt = ask for the name, Esc = cancel)';
         snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 15c2-6 4-6 5-3s3 3 5-3"/></svg><span class="tb-label">Snap</span>`;
         this._snapBtn = snapBtn;
         snapBtn.addEventListener('click', () => {

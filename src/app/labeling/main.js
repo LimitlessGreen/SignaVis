@@ -2947,6 +2947,23 @@ const birdboxPanel = new BirdBoxPanel({
   },
 });
 
+// ── Snap to call: BirdBox box under the click, else the signal (annotations.ts _runSnap) ──
+// The first snap on a recording without BirdBox rows starts the detection in the background;
+// until its rows reach the click (and where it finds nothing) Snap follows the signal.
+const _snapDetectionAsked = new Set();
+if (player.spectrogramLabels) {
+  player.spectrogramLabels.snapBoxSource = (time, freq, conf) => {
+    const id = recordingManager?.activeId || null;
+    const found = birdboxPanel.boxAt(id, time, freq, conf);
+    if (!found && !birdboxPanel.running && !_snapDetectionAsked.has(id) && player._state?.audioBuffer) {
+      _snapDetectionAsked.add(id);
+      selectionMeta.textContent = 'Snap: BirdBox call detection started (progress in the Analyse tab)';
+      birdboxPanel.run();
+    }
+    return found;
+  };
+}
+
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
 function forgetBirdboxResults(recordingId) {
   let panel;

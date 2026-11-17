@@ -12,9 +12,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { fuseBoxes, type FusedBox, type FusionCache } from '../../domain/detector/fusion.ts';
+import { boxUnder, type BoxUnderCache } from '../../domain/detector/boxUnder.ts';
 import { Pacer } from '../../domain/detector/pacer.ts';
 import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
-import { BirdBoxDetector, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
+import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
@@ -48,6 +49,7 @@ export class BirdBoxPanel {
     private abort: AbortController | null = null;
     private pacer: Pacer<RawRows> | null = null;
     private runningId: string | null = null;
+    private readonly snapCache: BoxUnderCache = new Map();
 
     constructor(opts: BirdBoxPanelOptions) {
         this.o = opts;
@@ -66,6 +68,19 @@ export class BirdBoxPanel {
 
     /** Detection results of a recording (e.g. after switching back to it). */
     hasResult(recordingId: string | null): boolean { return this.results.has(key(recordingId)); }
+
+    /**
+     * The most confident box under a point at confidence `conf` (Snap to call), fused with the
+     * panel's gap setting. `weaker`: none at `conf`, but one at the lowest confidence.
+     * Null without rows for the recording.
+     */
+    boxAt(recordingId: string | null, time: number, freq: number, conf: number): { box: { start: number; end: number; freqMin: number; freqMax: number } | null; weaker: boolean } | null {
+        const res = this.results.get(key(recordingId));
+        if (!res) return null;
+        const { box, weaker } = boxUnder(res.raw.data, res.raw.rows, time, freq,
+            { conf, gap: this.gap, minConf: BIRDBOX_RAW_CONF, later: laterOf(res.raw), cache: this.snapCache });
+        return { box: box && { start: box.t0, end: box.t1, freqMin: box.flo, freqMax: box.fhi }, weaker };
+    }
 
     /** Fuse the active recording's rows again with the slider settings. */
     refuse(): void {

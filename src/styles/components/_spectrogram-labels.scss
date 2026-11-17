@@ -895,3 +895,7 @@
   // The bottom edge already is the meter
   .spectrogram-label-conf-meter { display: none; }
 }
+
+/* Snap preview: where the box comes from (BirdBox call box / signal) */
+.snap-src { font-weight: 700; letter-spacing: 0.02em; }
+.snap-box--detector .snap-src { color: var(--snap); }
