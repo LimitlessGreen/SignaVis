@@ -57,7 +57,8 @@ Found at any rank, by SNR third (quiet / middle / loud): NCC 0.81 / 0.84 / 0.82,
 BirdBox-gated 0.66 / 0.81 / 0.86.
 
 Region metric (interval contains a target centre): NCC 0.41, Perch 0.39 recall @ P ≥ 0.8;
-top-400 recall 0.94 / 0.96. Not strictly comparable: a 5-s Perch window holds several calls.
+top-400 recall 0.94 / 0.99 (rerun after review: overlapping Perch windows suppressed to one per 2.5 s; recall @ P ≥ 0.8
+unchanged, top-400 was 0.96). Not strictly comparable: a 5-s Perch window holds several calls.
 
 Conclusions:
 - NCC alone is the best basis for within-recording suggestions; it works equally for quiet calls.
