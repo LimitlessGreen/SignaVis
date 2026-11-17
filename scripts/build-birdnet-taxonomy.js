@@ -292,12 +292,21 @@ export function plausibleAliases(entry, genusGroups) {
     return (entry.scientific_name_aliases || []).filter((n) => isSameGroup(entry.taxon_group, n, genusGroups));
 }
 
+// Xeno-canto names in the BirdNET taxonomy that point to another species
+// (same epithet, unrelated genus). Found by querying the XC API for all 455
+// xc names of taxonomy v0.5-Nov2026; the other genus changes are real revisions.
+const WRONG_XC_NAMES = {
+    'Stenella frontalis': 'Bos frontalis',              // dolphin -> gaur
+    'Zhangixalus omeimontis': 'Boulenophrys omeimontis', // tree frog -> horned toad
+};
+
 /**
  * Stricter for Xeno-canto names (they drive the reference search): outside
  * birds the epithet must match, and for reptiles the genus too — every reptile
  * genus change in the data was a mismatch (checked against the XC API).
  */
 export function isPlausibleXcName(rec, name, genusGroups) {
+    if (WRONG_XC_NAMES[rec.s] === name) return false;
     if (!isSameGroup(rec.taxon_group, name, genusGroups)) return false;
     if (rec.taxon_group === 'Aves') return true;
     if (epithetStem(name) !== epithetStem(rec.s)) return false;

@@ -2,7 +2,7 @@
 // synonyms and species outside the model.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRecords, fetchCornellSpecies, imageCredit, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
+import { buildRecords, isPlausibleXcName, fetchCornellSpecies, imageCredit, mergeNames, parseV3Labels } from '../scripts/build-birdnet-taxonomy.js';
 
 const V3_CSV = [
     'ix,birdnet_id,scientific_name,common_name,taxon_group,inat_id,ebird_code,common_name_en,common_name_de,common_name_pt,common_name_zh-CN,common_name_es_MX',
@@ -132,4 +132,10 @@ test('fetchCornellSpecies pages through the API and keeps the taxonomy version',
 
     pages[1] = { ...pages[1], taxonomy_version: 'v0.6' };
     await assert.rejects(fetchCornellSpecies(fetchFn, () => {}), /changed while downloading/);
+});
+
+test('isPlausibleXcName rejects known wrong Xeno-canto names, keeps genus revisions', () => {
+    const groups = new Map([['Bos', new Set(['Mammalia'])], ['Stenella', new Set(['Mammalia'])], ['Eptesicus', new Set(['Mammalia'])]]);
+    assert.equal(isPlausibleXcName({ s: 'Stenella frontalis', taxon_group: 'Mammalia' }, 'Bos frontalis', groups), false);
+    assert.equal(isPlausibleXcName({ s: 'Cnephaeus serotinus', taxon_group: 'Mammalia' }, 'Eptesicus serotinus', groups), true);
 });
