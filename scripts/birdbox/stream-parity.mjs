@@ -109,6 +109,22 @@ let ok = true;
     console.log(`${pass ? 'PASS' : 'FAIL'} resumed at window ${FROM}: ${rows} rows (graph ${n}), max rel deviation ${dev}`);
     ok = pass && ok;
 }
+// 2c. Only windows 50–59 (Snap's detectNear): its rows are the graph's for those windows
+{
+    const FROM = 50, TO = 60, chunks = [];
+    for await (const c of graph.run(audio, RAW_CONF, 4, FROM, TO)) chunks.push(c);
+    const { data, rows } = concat(chunks);
+    let first = 0;
+    while (first < fx.rawRows && ref[first * 9 + 7] < FROM * 1.5) first++;
+    let last = first;
+    while (last < fx.rawRows && ref[last * 9 + 7] < TO * 1.5) last++;
+    const want = ref.subarray(first * 9, last * 9), n = last - first;
+    let dev = rows === n ? 0 : Infinity;
+    for (let i = 0; dev < Infinity && i < rows * 9; i++) dev = Math.max(dev, Math.abs(data[i] - want[i]) / Math.max(1, Math.abs(want[i])));
+    const pass = dev <= 1e-5 && n > 0;
+    console.log(`${pass ? 'PASS' : 'FAIL'} windows ${FROM}–${TO - 1} only: ${rows} rows (graph ${n}), max rel deviation ${dev}`);
+    ok = pass && ok;
+}
 // 3. A recording pushed in uneven pieces; windows as soon as they are ready
 {
     const live = graph.live(), chunks = [];

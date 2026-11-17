@@ -112,9 +112,10 @@ export class BirdBoxGraph {
      * @param samples mono audio at 32 kHz, or a source of it (BlockSource in a worker)
      * @param conf    run at the lowest confidence the sliders allow; fusion filters above it
      * @param from    windows already done
+     * @param to      stop before this window (a stretch of the recording; its rows equal the whole run's)
      */
-    async* run(samples: Float32Array | SampleSource, conf: number, step: number, from = 0): AsyncGenerator<RowsChunk> {
-        const source = sourceOf(samples), n = source.length, target = paddedLength(n), total = windowCount(n);
+    async* run(samples: Float32Array | SampleSource, conf: number, step: number, from = 0, to = Infinity): AsyncGenerator<RowsChunk> {
+        const source = sourceOf(samples), n = source.length, target = paddedLength(n), total = Math.min(windowCount(n), to);
         // A resumed run starts at the floor window of its first window, not at the file start
         const frames = new Frames();
         frames.base = floorFirstFrame(from, this.grid);

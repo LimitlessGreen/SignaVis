@@ -7,7 +7,7 @@
 //
 // Messages in:
 //   { type: 'init', modelUrl, ortBase, threads }
-//   { type: 'file', id, length, conf, step, from }      then 'block' replies to 'ask'
+//   { type: 'file', id, length, conf, step, from, to }      then 'block' replies to 'ask'
 //   { type: 'block', id, from, data }
 //   { type: 'cancel', id }
 //   { type: 'live-start', id, conf } / { type: 'live-push', id, pcm } / { type: 'live-stop', id }
@@ -58,7 +58,7 @@ async function runFile(msg: any) {
     const source = new BlockSource(msg.length, (from, to) => post({ type: 'ask', id, from, to }));
     sources.set(id, source);
     try {
-        for await (const chunk of graph!.run(source, msg.conf, msg.step ?? 1, msg.from ?? 0)) {
+        for await (const chunk of graph!.run(source, msg.conf, msg.step ?? 1, msg.from ?? 0, msg.to ?? Infinity)) {
             if (cancelled.has(id)) return;
             post({ type: 'rows', id, ...chunk }, [chunk.data.buffer]);
         }

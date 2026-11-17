@@ -2966,17 +2966,19 @@ const birdboxPanel = new BirdBoxPanel({
 });
 
 // ── Snap to call: BirdBox box under the click, else the signal (annotations.ts _runSnap) ──
-// The first snap on a recording without BirdBox rows starts the detection in the background;
-// until its rows reach the click (and where it finds nothing) Snap follows the signal.
-const _snapDetectionAsked = new Set();
+// Without a BirdBox run on the recording, a snap runs BirdBox on the seconds around the
+// click only (no boxes shown) and snaps again once its rows are there; until then, and
+// where BirdBox finds nothing, Snap follows the signal.
 if (player.spectrogramLabels) {
-  player.spectrogramLabels.snapBoxSource = (time, freq, conf) => {
+  const layer = player.spectrogramLabels;
+  layer.snapBoxSource = (time, freq, conf) => {
     const id = recordingManager?.activeId || null;
     const found = birdboxPanel.boxAt(id, time, freq, conf);
-    if (!found && !birdboxPanel.running && !_snapDetectionAsked.has(id) && player._state?.audioBuffer) {
-      _snapDetectionAsked.add(id);
-      selectionMeta.textContent = 'Snap: BirdBox call detection started (progress in the Analyse tab)';
-      birdboxPanel.run();
+    if (!found && !birdboxPanel.running && player._state?.audioBuffer) {
+      selectionMeta.textContent = 'Snap: BirdBox looks for calls around the click…';
+      birdboxPanel.detectNear(id, time)
+        .then((ran) => { if (ran && (recordingManager?.activeId || null) === id) layer.refreshSnap(); })
+        .catch((err) => { selectionMeta.textContent = `Snap: BirdBox failed (${err?.message || err})`; });
     }
     return found;
   };
@@ -2987,8 +2989,6 @@ function forgetBirdboxResults(recordingId) {
   let panel;
   try { panel = birdboxPanel; } catch { return; }   // a project restored before the panel exists
   if (recordingId === undefined) panel.forgetAll(); else panel.forget(recordingId);
-  // Snap may start the detection for these recordings again
-  if (recordingId === undefined) _snapDetectionAsked.clear(); else _snapDetectionAsked.delete(recordingId);
 }
 
 // ── Recording context (date/time, location, device) ──────────────

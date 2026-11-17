@@ -65,6 +65,8 @@ export interface DetectOptions {
     signal?: AbortSignal;
     /** Windows per network run (1 = boxes appear soonest). */
     step?: number;
+    /** Stop before this window (with detect's `from`: only a stretch of the recording). */
+    to?: number;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -138,7 +140,7 @@ export class BirdBoxDetector {
                     }
                 },
             });
-            worker.postMessage({ type: 'file', id, length: pcm.length, conf: BIRDBOX_RAW_CONF, from, step: opts.step ?? 1 });
+            worker.postMessage({ type: 'file', id, length: pcm.length, conf: BIRDBOX_RAW_CONF, from, to: opts.to, step: opts.step ?? 1 });
         });
     }
 
