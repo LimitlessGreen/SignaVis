@@ -8,7 +8,7 @@
  */
 import { defineConfig } from 'vite';
 import { versionDefines } from '../scripts/build-version.mjs';
-import { resolve } from 'path';
+import { basename, resolve } from 'path';
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
@@ -36,9 +36,8 @@ function copyStaticPlugin(pairs) {
  * - In build: rewrites fetch URLs in HTML, copies hashed file to output.
  * - In dev: no-op (original filename works via dev server).
  */
-export function taxonomyHashPlugin() {
-  const ORIGINAL = 'birdnet-taxonomy.v2.4.json';
-  const taxonomySrc = resolve(__dirname, 'data', ORIGINAL);
+export function taxonomyHashPlugin(taxonomySrc = resolve(__dirname, 'data', 'birdnet-taxonomy.v2.4.json')) {
+  const ORIGINAL = basename(taxonomySrc);
   let isBuild = false;
   let hashedName = '';
 
