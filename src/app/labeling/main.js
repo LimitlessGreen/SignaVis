@@ -3028,6 +3028,8 @@ const similarReview = new SimilarReview({
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
+  // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
+  anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
 
 function closeSimilarReview() {
@@ -3040,7 +3042,8 @@ async function findSimilarCalls(exemplar) {
   const audio = player._state?.audioBuffer;
   if (!audio) return;
   const run = ++_similarRun, recordingId = recordingManager?.activeId || null;
-  const stale = () => run !== _similarRun || (recordingManager?.activeId || null) !== recordingId;
+  // A recording that gets its id only now (just loaded) is no switch
+  const stale = () => run !== _similarRun || (!!recordingId && (recordingManager?.activeId || null) !== recordingId);
   selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
   try {
     const spec = await bandSpectrogram(audio, ...searchBand(exemplar, audio.sampleRate), {
@@ -3096,6 +3099,7 @@ function rejectSimilar(ids) {
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(suggestionKey(l.scientificName || l.label, l.start));
   state.labels = state.labels.filter((l) => !want.has(l.id));
   syncToPlayer();
+  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
 }
 
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
@@ -4528,6 +4532,8 @@ player.on('spectrogramlabeladopt', (e) => {
 player.on('spectrogramlabelremove', (e) => {
   const id = e.detail?.label?.id;
   if (!id) return;
+  // ✗ on a similar-call suggestion = reject it (not proposed again)
+  if (e.detail?.label?.origin === SIMILAR_ORIGIN) { rejectSimilar([id]); return; }
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
   state.labels = state.labels.filter((l) => l.id !== id);

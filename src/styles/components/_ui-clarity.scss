@@ -251,3 +251,9 @@ html[data-theme="light"] { @include light-tokens; }
 }
 .rec-set-rename { width: 100%; font-size: 11px; padding: 0 3px; }
 .rec-set--editing .rec-set-actions { display: none !important; }
+
+// Similar-call suggestions (app/suggest-similar.ts): dotted in the waveform track too
+.annotation-region.suggestion.annotation-region--similar {
+  border-style: dotted;
+  opacity: 0.75;
+}

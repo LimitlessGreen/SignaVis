@@ -706,6 +706,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         if (isLocked) el.classList.add('annotation-region--locked');
         // Machine detections (BirdNET / BirdBox): locked, but no dashed read-only frame.
         if (region.origin && region.origin !== 'manual' && region.origin !== 'xeno-canto') el.classList.add('suggestion');
+        if (region.origin === 'Similar') el.classList.add('annotation-region--similar');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -1389,6 +1390,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (isReadonly) el.classList.add('spectrogram-label-region--readonly');
         const isSuggestion = label.origin && label.origin !== 'manual' && label.origin !== 'xeno-canto';
         if (isSuggestion) el.classList.add('suggestion');
+        // Found as a repeat of an own label (app/suggest-similar.ts): dotted until copied or rejected
+        if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');

@@ -15,6 +15,8 @@ export interface SimilarReviewHandlers {
     onAccept: (ids: string[]) => void;
     onReject: (ids: string[]) => void;
     onClose?: () => void;
+    /** Area to sit at the bottom of (e.g. the spectrogram); fixed near the window bottom without. */
+    anchor?: () => DOMRect | null;
 }
 
 // Real recordings score lower than clean tests (Powdermill: correct repeats mostly 0.2–0.6)
@@ -27,6 +29,7 @@ export class SimilarReview {
     private threshold = DEFAULT_THRESHOLD;
     private title = '';
     private readonly onKey = (e: KeyboardEvent) => this.handleKey(e);
+    private readonly onResize = () => this.place();
 
     constructor(private readonly h: SimilarReviewHandlers) {}
 
@@ -41,14 +44,18 @@ export class SimilarReview {
             this.el = this.build();
             document.body.appendChild(this.el);
             document.addEventListener('keydown', this.onKey, true);
+            window.addEventListener('resize', this.onResize);
         }
         this.render();
         this.focusCurrent();
+        // The new 'Similar calls' track shrinks the spectrogram after this frame: place again
+        requestAnimationFrame(() => requestAnimationFrame(() => this.place()));
     }
 
     close() {
         if (!this.el) return;
         document.removeEventListener('keydown', this.onKey, true);
+        window.removeEventListener('resize', this.onResize);
         this.el.remove();
         this.el = null;
         this.h.onClose?.();
@@ -156,6 +163,16 @@ export class SimilarReview {
         return el;
     }
 
+    /** Bottom centre of the anchor, kept inside the window. */
+    private place() {
+        const el = this.el, r = this.h.anchor?.();
+        if (!el || !r || !r.width || !r.height) return;
+        const h = el.offsetHeight || 36;
+        el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+        el.style.top = `${Math.round(Math.min(window.innerHeight - h - 4, Math.max(4, r.bottom - h - 8)))}px`;
+        el.style.bottom = 'auto';
+    }
+
     private render() {
         const el = this.el;
         if (!el) return;
@@ -168,5 +185,6 @@ export class SimilarReview {
         all.textContent = `Copy ${n}`;
         all.title = `Copy the ${n} suggestion${n === 1 ? '' : 's'} with score ≥ ${this.threshold.toFixed(2)} (Shift+Enter)`;
         all.disabled = !n;
+        this.place();   // after the text: its height decides the top
     }
 }

@@ -38,6 +38,10 @@ with sync_playwright() as p:
     check(good >= 6, f'{good}/8 best suggestions are Wood Thrush songs')
     check(page.locator('.similar-review__title').inner_text() == 'Similar to Wood Thrush', 'review bar title')
     if shots: page.screenshot(path=f'{shots}/similar-review.png')
+    styles = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar, .annotation-region--similar')].map(e => getComputedStyle(e).borderTopStyle)")
+    check(styles and all(x == 'dotted' for x in styles), f'suggestions are dotted {styles}')
+    bar, spec = page.locator('.similar-review').bounding_box(), page.evaluate(f"() => {{ const r = {SV}.player._state.d.canvasWrapper.getBoundingClientRect(); return [r.top, r.bottom]; }}")
+    check(spec[0] < bar['y'] and bar['y'] + bar['height'] <= spec[1], f'review bar sits inside the spectrogram (bar {bar}, spectrogram {spec})')
 
     n0 = len(s)
     page.keyboard.press('Enter'); page.wait_for_timeout(300)
@@ -47,6 +51,12 @@ with sync_playwright() as p:
     check(len(page.evaluate(SUGG)) == n0 - 1, 'copied suggestion leaves the suggestions')
     page.keyboard.press('x'); page.wait_for_timeout(300)
     check(len(page.evaluate(SUGG)) == n0 - 2, 'X rejects one suggestion')
+    # ✗ on a suggestion box rejects it too, and the review drops it
+    sid = page.evaluate(f"() => {SV}.state.labels.filter(l => l.origin === 'Similar').at(-1).id")
+    page.evaluate(f"id => {SV}.player.spectrogramLabels.dispatchEvent(new CustomEvent('spectrogramlabelremove', {{ detail: {{ label: {SV}.state.labels.find(l => l.id === id) }} }}))", sid)
+    page.wait_for_timeout(300)
+    pos = page.locator('.similar-review__pos').inner_text()
+    check(len(page.evaluate(SUGG)) == n0 - 3 and pos.endswith(f'/ {n0 - 3}'), f'✗ on the box rejects it (bar: {pos})')
     check(page.evaluate(f"() => {SV}.state.labels.some(l => l.id === 'ex')"), 'X did not delete the exemplar')
     # Threshold to 0.25, Shift+Enter copies everything at or above it
     page.evaluate("() => { const r = document.querySelector('.similar-review input'); r.value = '0.25'; r.dispatchEvent(new Event('input')); }")
@@ -61,7 +71,7 @@ with sync_playwright() as p:
     page.wait_for_function("!document.getElementById('selectionMeta')?.textContent.startsWith('Looking')", timeout=30000)
     page.wait_for_timeout(300)
     print('meta after 2nd search:', page.evaluate("document.getElementById('selectionMeta')?.textContent"))
-    check(len(page.evaluate(SUGG)) == n0 - 2, 'new search: the copied and the rejected one stay out')
+    check(len(page.evaluate(SUGG)) == n0 - 3, 'new search: the copied and the two rejected ones stay out')
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
     check(page.locator('.similar-review').count() == 0, 'Esc closes the bar')
     check(not errs, f'page errors: {errs}')
