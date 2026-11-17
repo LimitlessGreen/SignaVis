@@ -44,7 +44,7 @@ import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
-import { bandSpectrogram, findSimilarOffThread } from '../../app/similarSpectrogram.ts';
+import { bandSpectrogram, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
@@ -696,10 +696,12 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     sidebar.setActive('upload');
   } else if (k === 'f') {
-    const lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
-    if (!canFindSimilar(lbl)) return;
+    let lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
+    if (!lbl) return;
+    // On a suggestion: search again from the label it was found from
+    if (lbl.origin === SIMILAR_ORIGIN) lbl = state.labels.find((l) => l.id === lbl.similar?.sourceLabelId) || lbl;
     e.preventDefault();
-    findSimilarCalls(lbl);
+    findSimilarCalls(lbl);   // explains in the status line when this label can't be an exemplar
   }
 });
 
@@ -1842,6 +1844,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   state.labels.push(...copies);
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
+    feedSimilarDecisions([lbl.id], true);
     state.labels = state.labels.filter((l) => l.id !== lbl.id);
     similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
   }
@@ -3004,6 +3007,8 @@ if (player.spectrogramLabels) {
 // copy (✓) like detections; the review bar walks through them best first.
 const _similarRejected = new Map();   // recordingId → Set of suggestionKey()
 let _similarRun = 0;                  // newer search cancels an older one
+let _similarSession = null;           // worker of the current search: re-ranks after each decision
+const _similarHitOf = new Map();      // suggestion id → hit index in the session
 
 function similarSetId() {
   let id = [...state.labelSets.entries()].find(([, s]) => s.origin === SIMILAR_ORIGIN)?.[0];
@@ -3028,13 +3033,37 @@ const similarReview = new SimilarReview({
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
+  onClose: () => endSimilarSession(),
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
 
 function closeSimilarReview() {
   try { similarReview.close(); } catch { /* before the review exists */ }
+  endSimilarSession();
   _similarRun++;
+}
+
+function endSimilarSession() {
+  _similarSession?.dispose();
+  _similarSession = null;
+  _similarHitOf.clear();
+}
+
+/** Tell the search about decisions (accepted = more exemplars, rejected = counter-examples), then re-rank the review. */
+let _similarFeed = Promise.resolve();
+function feedSimilarDecisions(ids, accepted) {
+  const session = _similarSession;
+  const idx = ids.map((id) => _similarHitOf.get(id)).filter((i) => i !== undefined);
+  if (!session || !idx.length) return;
+  _similarFeed = _similarFeed.then(async () => {
+    let ranks = null;
+    for (const i of idx) ranks = await session.decide(i, accepted);
+    if (session !== _similarSession || !ranks) return;
+    const scores = new Map();
+    for (const [id, i] of _similarHitOf) scores.set(id, ranks[i]);
+    similarReview.rescore(scores);
+  }).catch(() => { /* search closed meanwhile */ });
 }
 
 async function findSimilarCalls(exemplar) {
@@ -3050,8 +3079,10 @@ async function findSimilarCalls(exemplar) {
       yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: stale,
     });
     if (!spec || stale()) return;
-    const hits = await findSimilarOffThread(spec, { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
-    if (stale()) return;
+    endSimilarSession();
+    const session = _similarSession = new SimilarSession();
+    const hits = await session.find(spec, { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
+    if (stale()) { if (session === _similarSession) endSimilarSession(); return; }
     const setId = similarSetId();
     if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
     let n = 0;
@@ -3060,6 +3091,7 @@ async function findSimilarCalls(exemplar) {
       boxes: state.labels.filter((l) => l.origin === BIRDBOX_ORIGIN),
       rejected: _similarRejected.get(recordingId),
       setId, recordingId, newId: () => `similar_${run}_${++n}`,
+      onPick: (sug, i) => _similarHitOf.set(sug.id, i),
     });
     // One exemplar at a time: its suggestions replace earlier ones
     state.labels = state.labels.filter((l) => l.setId !== setId).concat(suggestions);
@@ -3069,6 +3101,7 @@ async function findSimilarCalls(exemplar) {
     selectionMeta.textContent = `${suggestions.length} call${suggestions.length === 1 ? '' : 's'} like ${exemplar.label}: Enter copies, X rejects`;
     similarReview.open(exemplar.label, suggestions.map((s) => ({ id: s.id, score: s.similar.score })));
   } catch (err) {
+    console.error('Find similar failed', err);
     if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
   }
 }
@@ -3080,6 +3113,7 @@ function acceptSimilar(ids) {
   const src = labelsToAdopt(picked, state.labels, OWN_SOURCE_ID);   // ✓ on the box may have copied it already
   if (!picked.length) return;
   if (!src.length) { state.labels = state.labels.filter((l) => !want.has(l.id)); syncToPlayer(); return; }
+  feedSimilarDecisions(picked.map((l) => l.id), true);
   const undo = snapshotLabels();
   const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   state.labels = state.labels.filter((l) => !want.has(l.id)).concat(copies);
@@ -3095,6 +3129,7 @@ function acceptSimilar(ids) {
 
 function rejectSimilar(ids) {
   const want = new Set(ids);
+  feedSimilarDecisions(ids, false);
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(suggestionKey(l.scientificName || l.label, l.start));
   state.labels = state.labels.filter((l) => !want.has(l.id));

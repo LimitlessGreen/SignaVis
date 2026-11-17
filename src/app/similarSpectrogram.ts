@@ -7,7 +7,7 @@
 
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { channelData } from '../shared/utils.ts';
-import { findSimilar, type BandSpectrogram, type Box, type FindOptions, type SimilarHit } from '../domain/similar/ncc.ts';
+import { createSearch, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
 
 const WINDOW_SECONDS = 0.016;
 const BLOCK_FRAMES = 4096;
@@ -67,7 +67,10 @@ export async function bandSpectrogram(audio: AudioBuffer, loHz: number, hiHz: nu
     } finally { stft.free(); }
 }
 
-// ── Correlation off the main thread ───────────────────────────────
+// ── Search session off the main thread ────────────────────────────
+// find() once, then decide() per accepted / rejected hit for new ranks. The worker keeps the
+// spectrogram; where workers are unavailable (Node tests) everything runs in place.
+
 let _ctor: any;
 async function workerCtor() {
     if (_ctor !== undefined) return _ctor;
@@ -75,16 +78,50 @@ async function workerCtor() {
     return _ctor;
 }
 
-/** findSimilar in a worker (one per search); in place where workers are unavailable. `spec` is consumed. */
-export async function findSimilarOffThread(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): Promise<SimilarHit[]> {
-    const Ctor = await workerCtor();
-    if (!Ctor) return findSimilar(spec, exemplar, opts);
-    const w = new Ctor();
-    try {
-        return await new Promise<SimilarHit[]>((resolve, reject) => {
-            w.onmessage = (e: MessageEvent) => (e.data.error ? reject(new Error(e.data.error)) : resolve(e.data.hits));
-            w.onerror = (e: ErrorEvent) => reject(new Error(e.message || 'similar worker failed'));
-            w.postMessage({ spec, exemplar, opts }, [spec.values.buffer]);
+export class SimilarSession {
+    private worker: Worker | null = null;
+    private local: SearchState | null = null;
+    private seq = 0;
+    private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+
+    private call(msg: any, transfer: Transferable[] = []): Promise<any> {
+        const id = ++this.seq;
+        return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve, reject });
+            this.worker!.postMessage({ ...msg, id }, transfer);
         });
-    } finally { w.terminate(); }
+    }
+
+    /** Hits for `exemplar`, best first. `spec` is consumed. */
+    async find(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): Promise<SimilarHit[]> {
+        const Ctor = await workerCtor();
+        if (!Ctor) { this.local = createSearch(spec, exemplar, opts); return this.local.hits; }
+        this.worker = new Ctor();
+        this.worker!.onmessage = (e: MessageEvent) => {
+            const p = this.pending.get(e.data.id);
+            if (!p) return;
+            this.pending.delete(e.data.id);
+            if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data);
+        };
+        this.worker!.onerror = (e: ErrorEvent) => {
+            for (const p of this.pending.values()) p.reject(new Error(e.message || 'similar worker failed'));
+            this.pending.clear();
+        };
+        return (await this.call({ type: 'find', spec, exemplar, opts }, [spec.values.buffer])).hits;
+    }
+
+    /** Record a decision on hit i; ranks of all hits (decided ones −Infinity). */
+    async decide(i: number, accepted: boolean): Promise<Float64Array> {
+        if (this.local) return this.local.reranker.decide(i, accepted);
+        if (!this.worker) throw new Error('no search');
+        return (await this.call({ type: 'decide', i, accepted })).ranks;
+    }
+
+    dispose() {
+        this.worker?.terminate();
+        this.worker = null;
+        this.local = null;
+        for (const p of this.pending.values()) p.reject(new Error('search closed'));
+        this.pending.clear();
+    }
 }

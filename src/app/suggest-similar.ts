@@ -37,6 +37,8 @@ export interface BuildOptions {
     setId: string;
     recordingId?: string | null;
     newId: () => string;
+    /** Told which hit (index in `hits`) each suggestion came from. */
+    onPick?: (suggestion: any, hitIndex: number) => void;
 }
 
 /** Suggestion labels for `hits` of `exemplar`, best first. */
@@ -44,7 +46,7 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
     const sp = name(exemplar);
     const own = (opts.labels || []).filter((l) => labelled(l) && name(l) === sp);
     const out: any[] = [];
-    for (const h of hits) {
+    for (const [hi, h] of hits.entries()) {
         if (own.some((l) => timeIoU(h, l) >= 0.3)) continue;
         if (opts.rejected?.has(suggestionKey(sp, h.start))) continue;
         let box: Box = h;
@@ -56,7 +58,7 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
         }
         if (best) sources.push('BirdBox');
         if (out.some((s) => timeIoU(s, box) >= 0.5)) continue;   // two hits on one BirdBox box
-        out.push({
+        const sug = {
             id: opts.newId(),
             start: box.start, end: box.end, freqMin: box.freqMin, freqMax: box.freqMax, fullBand: false,
             label: exemplar.label, scientificName: exemplar.scientificName || '', commonName: exemplar.commonName,
@@ -64,7 +66,9 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
             origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(h.score * 1000) / 1000,
             setId: opts.setId, ...(opts.recordingId ? { recordingId: opts.recordingId } : {}),
             similar: { sourceLabelId: exemplar.id, score: h.score, sources } satisfies SimilarRecord,
-        });
+        };
+        out.push(sug);
+        opts.onPick?.(sug, hi);
     }
     return out;
 }

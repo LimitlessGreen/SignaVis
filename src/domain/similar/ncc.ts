@@ -19,7 +19,12 @@ export interface BandSpectrogram {
 }
 
 export interface Box { start: number; end: number; freqMin: number; freqMax: number }
-export interface SimilarHit extends Box { score: number }
+export interface SimilarHit extends Box {
+    score: number;
+    /** First frame and row shift of the match (for patches / re-ranking). */
+    frame?: number;
+    shift?: number;
+}
 
 export interface FindOptions {
     /** Frequency shift tolerated, in rows (each way). */
@@ -171,13 +176,21 @@ export function timeIoU(a: Box, b: Box): number {
 }
 
 /** Repeats of `exemplar` in `spec`, best first; the exemplar itself is left out. */
-export function findSimilar(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): SimilarHit[] {
-    const { shift = 2, margin = 3, minScore = 0.2, max = 200, minGap = 0.6 } = opts;
+/** Rows and frames of the exemplar's patch in `spec` (band plus margin). */
+export function exemplarWindow(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}) {
+    const { shift = 2, margin = 3 } = opts;
     const row = (hz: number) => Math.round((hz - spec.f0) / spec.df);
     const col = (s: number) => Math.round((s - spec.t0) / spec.dt);
-    const r0 = Math.max(shift, row(exemplar.freqMin) - margin);
-    const r1 = Math.min(spec.rows - shift, row(exemplar.freqMax) + margin + 1);
-    const c0 = Math.max(0, col(exemplar.start)), c1 = Math.min(spec.frames, col(exemplar.end));
+    return {
+        r0: Math.max(shift, row(exemplar.freqMin) - margin),
+        r1: Math.min(spec.rows - shift, row(exemplar.freqMax) + margin + 1),
+        c0: Math.max(0, col(exemplar.start)), c1: Math.min(spec.frames, col(exemplar.end)),
+    };
+}
+
+export function findSimilar(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): SimilarHit[] {
+    const { shift = 2, minScore = 0.2, max = 200, minGap = 0.6 } = opts;
+    const { r0, r1, c0, c1 } = exemplarWindow(spec, exemplar, opts);
     if (r1 - r0 < 1 || c1 - c0 < 2) return [];
     const { score, shiftAt } = nccCurve(spec, r0, r1, c0, c1, shift);
     const T = c1 - c0, dur = T * spec.dt;
@@ -186,10 +199,117 @@ export function findSimilar(spec: BandSpectrogram, exemplar: Box, opts: FindOpti
     const hits: SimilarHit[] = [];
     for (const i of peaks) {
         const start = spec.t0 + i * spec.dt, df = shiftAt[i] * spec.df;
-        const hit = { start, end: start + dur, freqMin: Math.max(0, exemplar.freqMin + df), freqMax: exemplar.freqMax + df, score: score[i] };
+        const hit = { start, end: start + dur, freqMin: Math.max(0, exemplar.freqMin + df), freqMax: exemplar.freqMax + df,
+            score: score[i], frame: i, shift: shiftAt[i] };
         if (timeIoU(hit, exemplar) >= 0.3) continue;
         hits.push(hit);
         if (hits.length >= max) break;
     }
     return hits;
+}
+
+// ── Re-ranking with the user's decisions ──────────────────────────
+// Each accepted suggestion becomes another exemplar, each rejected one a counter-example:
+//   rank = max(similarity to exemplar and accepted) − λ · max(0, similarity to rejected)
+// Similarity of two hits = Pearson r of their patches, best over ±1 row / ±2 frames.
+// Simulated review on Powdermill (scripts/similar/rerank-sim.py, 87 exemplars): calls found
+// in the first 20 reviewed 10.1 → 11.3 (λ = 1), first 10: 6.4 → 7.2.
+
+const PAD_ROWS = 1, PAD_FRAMES = 2;
+
+/** Pearson r of `core` (R × T) against every placement inside `area` ((R+2a) × (T+2b)); best. */
+function bestPearson(area: Float32Array, aRows: number, aCols: number, core: Float32Array, R: number, T: number): number {
+    let best = -1;
+    for (let dr = 0; dr + R <= aRows; dr++) {
+        for (let dc = 0; dc + T <= aCols; dc++) {
+            let sx = 0, sxx = 0, sxy = 0;
+            for (let r = 0; r < R; r++) {
+                const a = (dr + r) * aCols + dc, k = r * T;
+                for (let t = 0; t < T; t++) { const x = area[a + t]; sx += x; sxx += x * x; sxy += x * core[k + t]; }
+            }
+            const n = R * T, v = sxx - sx * sx / n;
+            if (v > 1e-9) { const c = sxy / Math.sqrt(v); if (c > best) best = c; }
+        }
+    }
+    return best;
+}
+
+export class Reranker {
+    private readonly R: number;
+    private readonly T: number;
+    private readonly areas = new Map<number, Float32Array>();
+    private readonly cores = new Map<number, Float32Array>();
+    private readonly pos: Float64Array;
+    private readonly neg: Float64Array;
+    private readonly open: Set<number>;
+
+    constructor(private readonly spec: BandSpectrogram, private readonly win: { r0: number; r1: number; c0: number; c1: number },
+        private readonly hits: SimilarHit[], private readonly lambda = 1) {
+        this.R = win.r1 - win.r0; this.T = win.c1 - win.c0;
+        this.pos = Float64Array.from(hits, (h) => h.score);
+        this.neg = new Float64Array(hits.length).fill(-Infinity);
+        this.open = new Set(hits.map((_, i) => i));
+    }
+
+    /** Hit i's patch with ±PAD margins (rows clamped to the spectrogram, frames to the recording). */
+    private area(i: number): Float32Array {
+        let a = this.areas.get(i);
+        if (a) return a;
+        const { spec, R, T } = this, h = this.hits[i];
+        const rows = R + 2 * PAD_ROWS, cols = T + 2 * PAD_FRAMES;
+        a = new Float32Array(rows * cols);
+        const r0 = this.win.r0 + (h.shift ?? 0) - PAD_ROWS, c0 = (h.frame ?? 0) - PAD_FRAMES;
+        for (let r = 0; r < rows; r++) {
+            const rr = Math.min(spec.rows - 1, Math.max(0, r0 + r));
+            for (let c = 0; c < cols; c++) a[r * cols + c] = spec.values[rr * spec.frames + Math.min(spec.frames - 1, Math.max(0, c0 + c))];
+        }
+        this.areas.set(i, a);
+        return a;
+    }
+
+    /** Hit i's patch without margins, zero mean, unit norm. */
+    private core(i: number): Float32Array {
+        let k = this.cores.get(i);
+        if (k) return k;
+        const { R, T } = this, cols = T + 2 * PAD_FRAMES, a = this.area(i);
+        k = new Float32Array(R * T);
+        let m = 0;
+        for (let r = 0; r < R; r++) for (let t = 0; t < T; t++) m += k[r * T + t] = a[(r + PAD_ROWS) * cols + t + PAD_FRAMES];
+        m /= R * T;
+        let nn = 0;
+        for (let j = 0; j < k.length; j++) { k[j] -= m; nn += k[j] * k[j]; }
+        nn = Math.sqrt(nn) || 1;
+        for (let j = 0; j < k.length; j++) k[j] /= nn;
+        this.cores.set(i, k);
+        return k;
+    }
+
+    similarity(i: number, j: number): number {
+        return bestPearson(this.area(j), this.R + 2 * PAD_ROWS, this.T + 2 * PAD_FRAMES, this.core(i), this.R, this.T);
+    }
+
+    /** Record a decision on hit i; returns the rank of every hit (decided ones: −Infinity). */
+    decide(i: number, accepted: boolean): Float64Array {
+        if (this.open.delete(i)) {
+            for (const j of this.open) {
+                const v = this.similarity(i, j);
+                if (accepted) { if (v > this.pos[j]) this.pos[j] = v; } else if (v > this.neg[j]) this.neg[j] = v;
+            }
+        }
+        return this.ranks();
+    }
+
+    ranks(): Float64Array {
+        const out = new Float64Array(this.hits.length).fill(-Infinity);
+        for (const j of this.open) out[j] = this.pos[j] - this.lambda * Math.max(0, this.neg[j]);
+        return out;
+    }
+}
+
+export interface SearchState { hits: SimilarHit[]; reranker: Reranker }
+
+/** findSimilar plus a Reranker over its hits. */
+export function createSearch(spec: BandSpectrogram, exemplar: Box, opts: FindOptions & { lambda?: number } = {}): SearchState {
+    const hits = findSimilar(spec, exemplar, opts);
+    return { hits, reranker: new Reranker(spec, exemplarWindow(spec, exemplar, opts), hits, opts.lambda ?? 1) };
 }

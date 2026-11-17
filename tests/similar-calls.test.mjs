@@ -7,7 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { fft, nccCurve, pickPeaks, findSimilar, timeIoU } from '../src/domain/similar/ncc.ts';
+import { fft, nccCurve, pickPeaks, findSimilar, timeIoU, Reranker, createSearch } from '../src/domain/similar/ncc.ts';
+import { SimilarSession } from '../src/app/similarSpectrogram.ts';
 import { bandSpectrogram } from '../src/app/similarSpectrogram.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../src/app/suggest-similar.ts';
 import { adoptLabels } from '../src/app/annotation-sets.ts';
@@ -123,4 +124,43 @@ test('suggestions: skip labelled places and rejections, take BirdBox bounds, kee
     assert.equal(copy.origin, 'manual');
     assert.equal(copy.similar, undefined);
     assert.deepEqual(copy.adoptedFrom, { id: 's2', setId: 'sim', origin: SIMILAR_ORIGIN, similar: out[1].similar });
+});
+
+/** Noise spectrogram with type-A calls (rising sweep) and type-B calls (flat tone) at given frames. */
+function twoTypes(frames, rows, a, b) {
+    const r = rng(11), values = new Float32Array(rows * frames);
+    for (let i = 0; i < values.length; i++) values[i] = 3 * r();
+    for (const at of a) for (let t = 0; t < 40; t++) values[(20 + Math.round(t / 4)) * frames + at + t] += 20;
+    for (const at of b) for (let t = 0; t < 40; t++) values[25 * frames + at + t] += 20;
+    return { values, rows, frames, f0: 0, df: 100, t0: 0, dt: 0.01 };
+}
+
+test('Reranker: a rejected call type drops, an accepted one rises', () => {
+    const A = [500, 1500, 2500], B = [1000, 2000, 3000];
+    const spec = twoTypes(3600, 60, [100, ...A], B);
+    const win = { r0: 17, r1: 34, c0: 100, c1: 140 };
+    // Initial scores as if correlation had liked the B calls better
+    const hits = [...B.map((f) => ({ frame: f, shift: 0, score: 0.6 })), ...A.map((f) => ({ frame: f, shift: 0, score: 0.5 }))]
+        .map((h) => ({ ...h, start: h.frame * 0.01, end: h.frame * 0.01 + 0.4, freqMin: 1700, freqMax: 3300 }));
+    const rr = new Reranker(spec, win, hits, 1);
+    assert.ok(rr.similarity(0, 1) > 0.8, 'B calls are alike');
+    assert.ok(rr.similarity(0, 3) < 0.6, 'A and B differ');
+    const ranks = rr.decide(0, false);                       // reject one B
+    assert.equal(ranks[0], -Infinity);
+    for (const b of [1, 2]) for (const a of [3, 4, 5]) assert.ok(ranks[a] > ranks[b], `A ${a} above B ${b}`);
+    const after = rr.decide(3, true);                        // accept one A
+    for (const a of [4, 5]) assert.ok(after[a] > 0.8, 'accepted A lifts the other A calls');
+});
+
+test('SimilarSession runs find + decide in place without workers', async () => {
+    const spec = twoTypes(3600, 60, [100, 500, 1500], [1000]);
+    const session = new SimilarSession();
+    const hits = await session.find(spec, { start: 1, end: 1.4, freqMin: 2000, freqMax: 3000 }, { minScore: 0.3 });
+    assert.ok(hits.length >= 2 && hits.every((h) => Number.isInteger(h.frame)));
+    const ranks = await session.decide(0, true);
+    assert.equal(ranks.length, hits.length);
+    assert.equal(ranks[0], -Infinity);
+    session.dispose();
+    const st = createSearch(twoTypes(3600, 60, [100, 500], []), { start: 1, end: 1.4, freqMin: 2000, freqMax: 3000 }, { minScore: 0.3 });
+    assert.equal(st.hits.length, st.reranker.ranks().length);
 });

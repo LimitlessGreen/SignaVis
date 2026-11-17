@@ -1,6 +1,6 @@
 # Similar calls: label one, confirm the rest
 
-Status: step 1 built (2026-11-17), branch `feat/similar-calls`, not pushed.
+Status: steps 1–2 built (2026-11-17), branch `feat/similar-calls`, not pushed.
 
 ## Idea
 
@@ -80,10 +80,30 @@ Conclusions:
 - Timing, 5-min recording: spectrogram 1.5–2.2 s (yielding), correlation 0.6–1.3 s (worker).
 - Tests: `tests/similar-calls.test.mjs`; browser: `tools/e2e/similar-calls.py` (60-s Powdermill clip, all checks pass).
 
-Open from step 1: suggestions look like normal labels (no dashed ghost style); the bar covers the label
-tracks at the bottom; no thumbnails yet; threshold not calibrated (Powdermill scores mostly 0.2–0.6);
-suggestions are saved with the session like BirdBox boxes; a search started before the recording finished
-registering is cancelled silently.
+Polish after step 1: suggestions have a dotted frame (own = solid, imported = dashed); the bar sits at the
+bottom of the spectrogram; ✗ on a suggestion box rejects it; F on a suggestion searches again from its exemplar.
+
+## Step 2 as built: re-ranking with decisions
+
+Simulated review (`scripts/similar/rerank-sim.py`, 3 Powdermill segments, 87 exemplars, 150 candidates each;
+the simulated user accepts true repeats, rejects the rest):
+
+| Strategy | found after 5 | after 10 | after 20 reviewed |
+|---|---|---|---|
+| fixed order (step 1) | 3.62 | 6.40 | 10.05 |
+| re-rank, λ = 0.5 | 4.01 | 7.01 | 11.24 |
+| re-rank, λ = 1 | **4.11** | **7.17** | **11.34** |
+
+rank = max(similarity to exemplar and accepted) − λ · max(0, similarity to rejected); similarity = Pearson r of
+the two patches, best over ±1 row / ±2 frames. Built with λ = 1: `Reranker` / `createSearch` in
+`domain/similar/ncc.ts`; the worker keeps the spectrogram for the session (`SimilarSession` in
+`app/similarSpectrogram.ts`), each decision returns new ranks (~0.1–0.2 s), the review re-sorts and moves on to
+the new best unless the user has stepped with ↑/↓. The threshold applies to ranks, `similar.score` keeps the first
+correlation score. In the browser clip one accepted song lifted 6 suggestions above 0.25 (before: 2).
+
+Open: no thumbnails; threshold not calibrated; suggestions are saved with the session like BirdBox boxes;
+undo of a copy restores the suggestions but not the review; own labels of the species found before the search
+are not used as extra exemplars yet.
 
 ## Steps
 

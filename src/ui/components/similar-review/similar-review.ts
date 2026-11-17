@@ -26,6 +26,8 @@ export class SimilarReview {
     private el: HTMLElement | null = null;
     private items: ReviewItem[] = [];
     private pos = 0;
+    /** No ↑/↓ since the last decision: a re-rank may move on to the new best. */
+    private fresh = true;
     private threshold = DEFAULT_THRESHOLD;
     private title = '';
     private readonly onKey = (e: KeyboardEvent) => this.handleKey(e);
@@ -71,6 +73,20 @@ export class SimilarReview {
         if (!this.items.length) this.close(); else this.render();
     }
 
+    /**
+     * New scores (e.g. re-ranked after a decision): best first again. The item on screen stays
+     * unless the user has not moved since the last decision, then the new best is shown.
+     */
+    rescore(scores: Map<string, number>) {
+        if (!this.el || !this.items.length) return;
+        const cur = this.current?.id;
+        for (const it of this.items) { const v = scores.get(it.id); if (v !== undefined && Number.isFinite(v)) it.score = v; }
+        this.items.sort((a, b) => b.score - a.score);
+        if (this.fresh) { this.pos = 0; this.render(); if (this.items[0].id !== cur) this.focusCurrent(); return; }
+        this.pos = Math.max(0, this.items.findIndex((i) => i.id === cur));
+        this.render();
+    }
+
     private get current(): ReviewItem | undefined { return this.items[this.pos]; }
     private aboveThreshold(): ReviewItem[] { return this.items.filter((i) => i.score >= this.threshold); }
 
@@ -78,7 +94,7 @@ export class SimilarReview {
         const it = this.current;
         if (!it) return;
         this.items.splice(this.pos, 1);
-        if (this.pos >= this.items.length) this.pos = Math.max(0, this.items.length - 1);
+        this.pos = 0;   // best remaining first
         (accept ? this.h.onAccept : this.h.onReject)([it.id]);
         this.afterChange();
     }
@@ -94,6 +110,7 @@ export class SimilarReview {
     }
 
     private afterChange() {
+        this.fresh = true;
         if (!this.items.length) { this.close(); return; }
         this.render();
         this.focusCurrent();
@@ -101,6 +118,7 @@ export class SimilarReview {
 
     private move(d: number) {
         if (!this.items.length) return;
+        this.fresh = false;
         this.pos = (this.pos + d + this.items.length) % this.items.length;
         this.render();
         this.focusCurrent();
