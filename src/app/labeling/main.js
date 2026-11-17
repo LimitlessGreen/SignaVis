@@ -2133,19 +2133,22 @@ function snapshotLabels() {
   const labelsEntryId = state._labelsEntryId;
   const activeAt = recordingManager.activeId || null;
   return () => {
-    // Another recording is on screen by now: its labels stay as they are (state.labels is
-    // theirs), only the stored recordings go back. Putting the snapshot's labels on screen
-    // would save them into the wrong recording.
-    const switched = (recordingManager.activeId || null) !== activeAt;
-    if (switched) saveCurrentAnnotationsIfNeeded();
     state.labelSets = sets;
     for (const [id, anns, needsXcImport] of perEntry) {
-      if (switched && id === recordingManager.activeId) continue;
       if (recordingManager.getById(id)) recordingManager.update(id, { annotations: anns, needsXcImport });
     }
-    if (!switched) {
+    const active = recordingManager.activeId || null;
+    if (active === activeAt) {
       state.labels = labels;
       state._labelsEntryId = labelsEntryId;
+    } else {
+      // Another recording is on screen by now: `labels` belong to the one active at snapshot
+      // time and would be saved into this one. Show this recording's own restored labels.
+      const own = perEntry.find(([id]) => id === active);
+      if (own) {
+        state.labels = own[1].map((a) => ({ ...a }));
+        state._labelsEntryId = active;
+      }
     }
     saveSessionSets(state);
     syncToPlayer();
@@ -2255,6 +2258,8 @@ const recordingExplorer = new RecordingExplorer({
   getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
   getSetInfo: (setId) => state.labelSets.get(setId),
   isSetHidden: (setId) => state.hiddenSetIds.has(setId),
+  // Same rule as "Copy to mine": detections count by the call boxes still to copy
+  countAdoptable: (labels, all) => adoptSources(labels, all, 'all').length,
   onToggleSetHidden: (setId) => {
     if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
     else state.hiddenSetIds.add(setId);
