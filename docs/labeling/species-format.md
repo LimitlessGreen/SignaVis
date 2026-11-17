@@ -7,13 +7,16 @@ This page documents the BirdNET species label source files and the JSON formats 
 The taxonomy is built from three sources (later ones win for names):
 
 1. **BirdNET V2.4 label files** (optional, `--v24-labels`): `BirdNET_GLOBAL_6K_V2.4_Labels_<lang>.txt`,
-   one `<scientific name>_<common name>` per line. Kept for languages V3 lacks (af, el, ro, th, …)
+   one `<scientific name>_<common name>` per line. Kept for languages the others lack (af, el, ro, th, …)
    and for species only V2.4 knows, so older labels still resolve.
-2. **BirdNET taxonomy** (`https://birdnet.cornell.edu/taxonomy/api/download/json`, cached as
-   `demo/data/cornell-taxonomy.json`): ~16 000 species with names, scientific synonyms, images and
-   IDs for eBird, iNaturalist, GBIF, Xeno-canto and others.
-3. **BirdNET+ V3.0 Global 12K labels** (Zenodo record 24162518, downloaded to
-   `demo/data/BirdNET+_V3.0_Global_12K_Labels.csv`): the model's 11 725 classes with names in ~35 languages.
+2. **BirdNET+ V3.0 Global 12K labels** (Zenodo record 24162518, downloaded to
+   `demo/data/BirdNET+_V3.0_Global_12K_Labels.csv`): the model's 11 725 classes. Its names only fill
+   gaps the BirdNET taxonomy leaves.
+3. **BirdNET taxonomy** (`https://birdnet.cornell.edu/taxonomy/api/species`, paged, only the fields
+   the build uses; cached with its `taxonomy_version` as `demo/data/cornell-taxonomy.json`): ~18 000
+   species with names, scientific synonyms, images and IDs for eBird, iNaturalist and Xeno-canto.
+   Images are the API's ready-made 480×320 WebP thumbnails (`/api/image/<name>?size=medium`).
+   Cornell's `id` (Indonesian) is stored as `in`, the code the app has used since V2.4.
 
 ## 2) Generated taxonomy JSON (input for the Labeling App)
 
@@ -30,6 +33,7 @@ Top-level JSON structure produced:
 {
   "modelVersion": "BirdNET+ V3.0",
   "sourceUrl": "https://zenodo.org/records/24162518",
+  "taxonomyVersion": "v0.5-Nov2026",
   "sources": ["BirdNET+ V3.0 Global 12K labels", "BirdNET taxonomy (birdnet.cornell.edu)", "BirdNET V2.4 labels"],
   "updatedAt": "2026-11-17T00:00:00.000Z",
   "languages": ["en_uk", "de", "fr"],
@@ -45,6 +49,7 @@ Top-level JSON structure produced:
 
 Field mapping:
 - `modelVersion` — the species list's BirdNET version (shown in the app footer).
+- `taxonomyVersion` — release of the BirdNET taxonomy the names and IDs come from.
 - `speciesCount` — classes of the BirdNET+ V3.0 12K model; `extraCount` — further species (`x: 1`).
 - `records[]`:
   - `s`: scientific name (key)
