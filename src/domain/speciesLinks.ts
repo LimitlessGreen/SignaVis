@@ -12,7 +12,15 @@ export function speciesLinks(record: any): SpeciesLink[] {
   return out;
 }
 
-/** Scientific name to query Xeno-canto with: its own spelling when it differs. */
-export function xcSearchName(record: any, sciName: string): string {
-  return (record?.xc && String(record.xc).trim()) || sciName;
+/**
+ * Names to query Xeno-canto with, in order: the taxonomy's own name first,
+ * then Xeno-canto's spelling as a fallback. The BirdNET taxonomy's xc_name is
+ * sometimes outdated or misspelled (e.g. "Falco longipennisr"), so it must not
+ * replace a name that already finds recordings.
+ */
+export function xcSearchNames(record: any, sciName: string): string[] {
+  const names = [sciName.trim()];
+  const xc = record?.xc ? String(record.xc).trim() : '';
+  if (xc && xc !== names[0]) names.push(xc);
+  return names.filter(Boolean);
 }

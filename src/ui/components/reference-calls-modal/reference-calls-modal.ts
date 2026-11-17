@@ -36,7 +36,7 @@
  */
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
-import { speciesLinks, xcSearchName } from '../../../domain/speciesLinks.ts';
+import { speciesLinks, xcSearchNames } from '../../../domain/speciesLinks.ts';
 import ModalManager from '../modal/modal-manager.ts';
 import { speciesImageBase } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
@@ -1135,8 +1135,25 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     };
   }
 
+  // Name that found recordings per species (later pages reuse it).
+  const _xcQueryName = new Map<string, string>();
+
+  /** XC recordings for a species: taxonomy name first, Xeno-canto's spelling if that finds nothing. */
   async function fetchXcRecordings(sciName: string, page = 1) {
-    const xcName = xcSearchName(sciName ? taxonomy?.resolve(sciName) : null, sciName);
+    const known = _xcQueryName.get(sciName);
+    if (page > 1 && known) return fetchXcRecordingsFor(known, page);
+    const names = xcSearchNames(sciName ? taxonomy?.resolve(sciName) : null, sciName);
+    let result: Awaited<ReturnType<typeof fetchXcRecordingsFor>> | null = null;
+    for (const name of names) {
+      result = await fetchXcRecordingsFor(name, page);
+      _xcQueryName.set(sciName, name);
+      if (result.recordings.length > 0) break;
+    }
+    if (result && result.recordings.length === 0 && names.length > 1) _xcQueryName.set(sciName, names[0]);
+    return result!;
+  }
+
+  async function fetchXcRecordingsFor(xcName: string, page = 1) {
     const [genus = '', epithet = ''] = xcName.trim().split(/\s+/);
     if (!genus) throw new Error('Invalid scientific name');
     const apiKey = xcPanel.apiKey;

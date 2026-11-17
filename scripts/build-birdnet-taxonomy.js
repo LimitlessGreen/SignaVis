@@ -204,6 +204,48 @@ function buildTaxonomyFromDir(labelsDir) {
     };
 }
 
+const genusOf = (name) => String(name || '').trim().split(/\s+/)[0];
+const epithetStem = (name) => (String(name || '').trim().split(/\s+/)[1] || '').slice(0, 4).toLowerCase();
+
+/** Genus -> taxon groups, from the valid (not alias) Cornell names. */
+export function buildGenusGroups(cornell) {
+    const m = new Map();
+    for (const e of cornell) {
+        if (!e.taxon_group) continue;
+        const g = genusOf(e.scientific_name);
+        if (!m.has(g)) m.set(g, new Set());
+        m.get(g).add(e.taxon_group);
+    }
+    return m;
+}
+
+/**
+ * The BirdNET taxonomy's xc_name / scientific_name_aliases were partly matched
+ * by epithet alone (Crotalus ruber -> Scinax ruber, Tarentola mauritanica ->
+ * Strix mauritanica). A name whose genus belongs to another taxon group is not
+ * a synonym.
+ */
+function isSameGroup(groupOfRecord, name, genusGroups) {
+    const groups = genusGroups.get(genusOf(name));
+    return !groupOfRecord || !groups || groups.has(groupOfRecord);
+}
+
+export function plausibleAliases(entry, genusGroups) {
+    return (entry.scientific_name_aliases || []).filter((n) => isSameGroup(entry.taxon_group, n, genusGroups));
+}
+
+/**
+ * Stricter for Xeno-canto names (they drive the reference search): outside
+ * birds the epithet must match, and for reptiles the genus too — every reptile
+ * genus change in the data was a mismatch (checked against the XC API).
+ */
+export function isPlausibleXcName(rec, name, genusGroups) {
+    if (!isSameGroup(rec.taxon_group, name, genusGroups)) return false;
+    if (rec.taxon_group === 'Aves') return true;
+    if (epithetStem(name) !== epithetStem(rec.s)) return false;
+    return rec.taxon_group !== 'Reptilia' || genusOf(name) === genusOf(rec.s);
+}
+
 /**
  * Build the taxonomy records. Pure (no I/O) so it can be tested.
  *  - V3 12K classes are the base (x unset).
@@ -213,11 +255,12 @@ function buildTaxonomyFromDir(labelsDir) {
  * `a`: alternative scientific names (synonyms, V2.4 spelling) for lookup.
  */
 export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
+    const genusGroups = buildGenusGroups(cornell);
     const cornellBySci = new Map();
     const cornellByNorm = new Map();
     for (const e of cornell) {
         cornellBySci.set(e.scientific_name, e);
-        for (const n of [e.scientific_name, ...(e.scientific_name_aliases || [])]) {
+        for (const n of [e.scientific_name, ...plausibleAliases(e, genusGroups)]) {
             const k = normalizeSci(n);
             if (k && !cornellByNorm.has(k)) cornellByNorm.set(k, e);
         }
@@ -241,14 +284,14 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         const inat = Number(row?.inat_id || c?.inat_id) || 0;
         if (ebird) rec.ebird = ebird;
         if (inat) rec.inat = inat;
-        if (c?.xc_name && c.xc_name !== rec.s) rec.xc = c.xc_name;
+        if (c?.xc_name && c.xc_name !== rec.s && isPlausibleXcName(rec, c.xc_name, genusGroups)) rec.xc = c.xc_name;
     };
 
     const records = [];
     const used = new Set();
     const usedCornell = new Set();
     const addAliases = (rec, c, legacySci) => {
-        const a = new Set([...(c?.scientific_name_aliases || [])]);
+        const a = new Set(c ? plausibleAliases(c, genusGroups) : []);
         if (c && c.scientific_name !== rec.s) a.add(c.scientific_name);
         if (legacySci && legacySci !== rec.s) a.add(legacySci);
         a.delete(rec.s);

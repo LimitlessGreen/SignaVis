@@ -68,3 +68,26 @@ test('running the script directly executes main() (usage error without --output)
     assert.equal(res.status, 1);
     assert.match(res.stderr, /Usage:/);
 });
+
+test('buildRecords drops implausible synonyms and Xeno-canto names from the BirdNET taxonomy', () => {
+    const cornell = [
+        { scientific_name: 'Strix aluco', taxon_group: 'Aves', record_type: 'species', common_names: {} },
+        { scientific_name: 'Scinax x-signatus', taxon_group: 'Amphibia', record_type: 'species', common_names: {} },
+        { scientific_name: 'Tarentola mauritanica', taxon_group: 'Reptilia', record_type: 'species', common_names: {},
+          scientific_name_aliases: ['Strix mauritanica', 'Tarentola mauritanicus'], xc_name: 'Strix mauritanica' },
+        { scientific_name: 'Crotalus ruber', taxon_group: 'Reptilia', record_type: 'species', common_names: {}, xc_name: 'Scinax ruber' },
+        { scientific_name: 'Masticophis lateralis', taxon_group: 'Reptilia', record_type: 'species', common_names: {}, xc_name: 'Mantophryne lateralis' },
+        { scientific_name: 'Rana aurora', taxon_group: 'Amphibia', record_type: 'species', common_names: {}, xc_name: 'Amerana aurora' },
+        { scientific_name: 'Lithobates sylvaticus', taxon_group: 'Amphibia', record_type: 'species', common_names: {}, xc_name: 'Hylarana daemeli' },
+        { scientific_name: 'Aerospiza tachiro', taxon_group: 'Aves', record_type: 'species', common_names: {}, xc_name: 'Accipiter tachiro' },
+    ];
+    const { records } = buildRecords({ v3: [], cornell });
+    const by = Object.fromEntries(records.map((r) => [r.s, r]));
+    assert.deepEqual(by['Tarentola mauritanica'].a, ['Tarentola mauritanicus']);
+    assert.equal(by['Tarentola mauritanica'].xc, undefined);
+    assert.equal(by['Crotalus ruber'].xc, undefined);
+    assert.equal(by['Masticophis lateralis'].xc, undefined);
+    assert.equal(by['Lithobates sylvaticus'].xc, undefined);
+    assert.equal(by['Rana aurora'].xc, 'Amerana aurora');
+    assert.equal(by['Aerospiza tachiro'].xc, 'Accipiter tachiro');
+});
