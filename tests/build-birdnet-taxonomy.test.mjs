@@ -59,3 +59,12 @@ test('buildRecords: external IDs (eBird, iNaturalist, Xeno-canto name)', () => {
     assert.equal(by['Pseudacris regilla'].inat, 23930);           // from Cornell when V3 has none
     assert.equal(by['Pseudacris regilla'].xc, 'Hyliola regilla');
 });
+
+test('running the script directly executes main() (usage error without --output)', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const { fileURLToPath } = await import('node:url');
+    const script = fileURLToPath(new URL('../scripts/build-birdnet-taxonomy.js', import.meta.url));
+    const res = spawnSync(process.execPath, [script], { encoding: 'utf8' });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /Usage:/);
+});

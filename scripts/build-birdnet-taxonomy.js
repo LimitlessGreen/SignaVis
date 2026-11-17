@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 const CORNELL_TAXONOMY_URL = 'https://birdnet.cornell.edu/taxonomy/api/download/json';
@@ -373,7 +374,7 @@ async function main() {
     console.log(`Processed ${imageCount} images into ${imageDir}`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     main().catch((err) => {
         console.error(err);
         process.exit(1);

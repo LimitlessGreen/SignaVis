@@ -835,11 +835,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const token = ++_gbifToken;
     gbifEl.replaceChildren();
     if (!sciName) return;
-    gbifEl.textContent = 'GBIF …';
+    // eBird / iNaturalist come from the local taxonomy: show them whatever GBIF answers.
+    const links = speciesLinks(taxonomy?.resolve(sciName))
+      .map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗</a>`);
+    const show = (parts: string[]) => { gbifEl.innerHTML = [...parts, ...links].join(''); };
+    show(['<span>GBIF …</span>']);
     try {
       const info = await fetchGbifInfo(sciName, coords());
       if (token !== _gbifToken) return;
-      if (!info) { gbifEl.textContent = 'Not found on GBIF'; return; }
+      if (!info) { show(['<span>Not found on GBIF</span>']); return; }
       const fmt = (n: number) => n.toLocaleString(getLang?.() || undefined);
       const parts: string[] = [];
       if (info.order || info.family) parts.push(`<span>${esc([info.order, info.family].filter(Boolean).join(' › '))}</span>`);
@@ -847,12 +851,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       if (info.total != null) parts.push(`<span><b>${fmt(info.total)}</b> GBIF records</span>`);
       if (info.near != null) parts.push(`<span><b>${fmt(info.near)}</b> within ~300 km</span>`);
       parts.push(`<a href="https://www.gbif.org/species/${encodeURIComponent(info.key)}" target="_blank" rel="noopener noreferrer">GBIF ↗</a>`);
-      for (const l of speciesLinks(taxonomy?.resolve(sciName))) {
-        parts.push(`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗</a>`);
-      }
-      gbifEl.innerHTML = parts.join('');
+      show(parts);
     } catch {
-      if (token === _gbifToken) gbifEl.textContent = 'GBIF not reachable';
+      if (token === _gbifToken) show(['<span>GBIF not reachable</span>']);
     }
   }
 
