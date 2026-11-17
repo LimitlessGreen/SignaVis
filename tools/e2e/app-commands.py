@@ -100,6 +100,21 @@ with sync_playwright() as p:
         await new Promise((r) => setTimeout(r, 4000)); return n; }""")
     check('one Xeno-canto load at a time', calls <= 1, f'fetches {calls}')
 
+    # Folder BirdNET waits for a run it did not start instead of counting the recording as done
+    page.evaluate("""() => { const p = window.__signavis.birdnetPanel; window.__bnRuns = [];
+        p._analyze = async function () {          // stub: 1 s run, button disabled meanwhile
+            this.analyzeBtn.disabled = true; const id = window.__signavis.activeRecordingId(); window.__bnRuns.push(id);
+            await new Promise((r) => setTimeout(r, 1000)); this.analyzeBtn.disabled = false; }; }""")
+    page.evaluate("() => { window.__signavis.birdnetPanel.analyze(); }")   # foreign run
+    page.evaluate("() => { const sv = window.__signavis; window.__folder = sv.runBirdnetOnFolder({ entries: sv.recordings(), paths: [] }); }")
+    page.wait_for_timeout(500)
+    page.locator('button:has-text("Run")').last.click()
+    page.wait_for_function("window.__bnRuns.length >= 1 + window.__signavis.recordings().length", timeout=30000)
+    page.wait_for_timeout(800)
+    runs = page.evaluate("window.__bnRuns.length"); n = page.evaluate("window.__signavis.recordings().length")
+    meta = page.evaluate("document.getElementById('selectionMeta')?.textContent")
+    check('folder BirdNET analyzes every recording', runs == 1 + n, f'runs {runs} for {n} recordings · {meta}')
+
     check('page errors', not errs, str(errs))
     b.close()
 

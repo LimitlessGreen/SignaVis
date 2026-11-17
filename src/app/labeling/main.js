@@ -1564,8 +1564,13 @@ async function runBirdnetOnFolder({ entries, paths }) {
     todo.push(existing || recordingManager.add(folderFileEntry(path)));
   }
   let done = 0;
+  // Another BirdNET run (key b, phone UI) may be going: wait for it, analyze() would skip
+  const birdnetIdle = async () => {
+    while (!stopped && !birdnetPanel.canAnalyze) await new Promise((r) => setTimeout(r, 150));
+  };
   try {
     for (const entry of todo) {
+      await birdnetIdle();
       if (stopped) break;
       selectionMeta.textContent = `BirdNET ${done + 1}/${todo.length}: ${entry.filename || toXcId(entry.xcId) || ''} — click "Run BirdNET" again to stop`;
       const before = player._state?.audioBuffer || null;
@@ -1580,6 +1585,8 @@ async function runBirdnetOnFolder({ entries, paths }) {
       }
       if (stopped) break;
       if (!player._state?.audioBuffer) continue;
+      await birdnetIdle();
+      if (stopped) break;
       await birdnetPanel.analyze();
       recordingManager.update(entry.id, { pinned: true });
       done++;
@@ -5330,7 +5337,8 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, labelStore, mobileApp, birdboxPanel, xcPanel, loadXenoCanto, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+  window.__signavis = { state, labelStore, mobileApp, birdboxPanel, birdnetPanel, xcPanel, loadXenoCanto, runBirdnetOnFolder,
+    recordings: () => recordingManager?.getAll() || [], player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
     recordingCount: () => recordingManager?.getAll().length ?? 0,
     groupedCalls: () => _groups?.boxes.length ?? null };
