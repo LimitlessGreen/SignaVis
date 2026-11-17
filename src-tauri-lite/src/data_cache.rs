@@ -78,7 +78,11 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
         let code = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
         return Err((code, format!("{url}: HTTP {}", res.status())));
     }
+    let keep = worth_caching(res.headers().get(header::CACHE_CONTROL).and_then(|v| v.to_str().ok()));
     let bytes = res.bytes().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("{url}: {e}")))?.to_vec();
+    if !keep {
+        return Ok(bytes);
+    }
     if let Some(dir) = local.parent() {
         let _ = tokio::fs::create_dir_all(dir).await;
     }
@@ -87,6 +91,21 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
         let _ = tokio::fs::remove_file(&tmp).await;
     }
     Ok(bytes)
+}
+
+/// The image API answers a failed download with a placeholder and a short
+/// max-age (5 min); such responses are served but not kept on disk.
+const MIN_CACHE_SECONDS: u64 = 3600;
+
+fn worth_caching(cache_control: Option<&str>) -> bool {
+    let Some(cc) = cache_control else { return true };
+    if cc.split(',').any(|d| matches!(d.trim(), "no-store" | "no-cache")) {
+        return false;
+    }
+    cc.split(',')
+        .filter_map(|d| d.trim().strip_prefix("max-age="))
+        .filter_map(|v| v.parse::<u64>().ok())
+        .all(|secs| secs >= MIN_CACHE_SECONDS)
 }
 
 /// Where a cached path is downloaded from.
@@ -208,6 +227,14 @@ mod tests {
             "https://birdnet.cornell.edu/taxonomy/api/image/Turdus%20merula?size=medium"
         );
         assert_eq!(upstream_url("models/birdnet-v3.0/a.onnx"), format!("{UPSTREAM}/models/birdnet-v3.0/a.onnx"));
+    }
+
+    #[test]
+    fn short_lived_responses_are_not_cached() {
+        assert!(worth_caching(None));
+        assert!(worth_caching(Some("public, max-age=86400")));
+        assert!(!worth_caching(Some("public, max-age=300")));
+        assert!(!worth_caching(Some("no-store")));
     }
 
     #[test]

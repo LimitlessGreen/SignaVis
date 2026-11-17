@@ -685,7 +685,8 @@ export class LabelList {
     wrap.appendChild(img);
     if (sciName) {
       const pop = el('div', 'lbl-img-popover');
-      const pImg = el('img'); pImg.src = src; pImg.alt = sciName;
+      // lazy: the popover stays hidden until hover, so its image loads only then.
+      const pImg = el('img'); pImg.src = src; pImg.alt = sciName; pImg.loading = 'lazy';
       pImg.addEventListener('error', () => { pImg.src = BIRD_IMG_FALLBACK; }, { once: true });
       pop.appendChild(pImg);
       pop.appendChild(el('span', 'lbl-img-popover-caption', attribution ? `${sciName}\n${attribution}` : sciName));
