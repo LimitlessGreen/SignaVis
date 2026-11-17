@@ -105,6 +105,8 @@ export interface AnalysisControls {
   birdboxStatus?: HTMLElement | null;
   birdboxProgressWrap?: HTMLElement | null;
   birdboxProgressBar?: HTMLElement | null;
+  /** Start an analysis (same as the desktop buttons). */
+  run(job: 'birdnet' | 'birdbox'): void;
 }
 
 type Screen = 'recordings' | 'queue' | 'review' | 'analyse' | 'live' | 'species';
@@ -1338,7 +1340,7 @@ export class MobileApp {
     this.anJobAt = performance.now();
     this.anRun.disabled = true;
     this.anProgress.hidden = false;
-    btn.click();
+    a.run(job);
   }
 
   private jobRunning(job: 'birdnet' | 'birdbox'): boolean {

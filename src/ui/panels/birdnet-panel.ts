@@ -355,7 +355,7 @@ export class BirdNETPanel {
         this.geoFilterSliderWrap.hidden = !this.geoFilterCheckbox.checked;
       });
     }
-    this.analyzeBtn.addEventListener('click', () => this._analyze());
+    this.analyzeBtn.addEventListener('click', () => this.analyze());
 
     // ── Geolocation button ──
     this.geoBtn?.addEventListener('click', () => {
@@ -442,6 +442,9 @@ export class BirdNETPanel {
 
   /** Analyze the loaded recording (same as the button). Resolves when done; errors go to the status line. */
   analyze() { return this._analyze(); }
+
+  /** False while an analysis runs (or the panel has disabled it). */
+  get canAnalyze(): boolean { return !this.analyzeBtn.disabled; }
 
   async _analyze() {
     const audioBuffer = this.getAudioBuffer();

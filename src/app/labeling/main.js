@@ -203,15 +203,11 @@ if (player._state) {
 const _onboardingAtStart = onboardingPending();
 if (!_onboardingAtStart) { try { initDailyTips({ host: player.root }); } catch (e) { /* ignore */ } }
 
-// Show daily tips on demand from Help panel (always force-show)
-const helpShowDailyTipsBtn = document.getElementById('helpShowDailyTipsBtn');
-if (helpShowDailyTipsBtn) {
-  helpShowDailyTipsBtn.addEventListener('click', () => {
-    try {
-      initDailyTips({ host: player.root, force: true });
-    } catch (e) { /* ignore */ }
-  });
+/** Show the daily tips now (Help panel, help menu). */
+function showDailyTips() {
+  try { initDailyTips({ host: player.root, force: true }); } catch (e) { /* ignore */ }
 }
+document.getElementById('helpShowDailyTipsBtn')?.addEventListener('click', showDailyTips);
 
 // ── XC download progress bar ──────────────────────────────────────
 const _xcBar  = document.getElementById('xcDownloadBar');
@@ -608,8 +604,8 @@ document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
     x: r.right - 200, y: r.bottom + 4,
     items: [
       { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
-      { label: 'Show daily tips', action: () => document.getElementById('helpShowDailyTipsBtn')?.click() },
-      { label: 'Load demo recording', action: () => document.getElementById('loadSampleBtn')?.click() },
+      { label: 'Show daily tips', action: showDailyTips },
+      { label: 'Load demo recording', action: () => loadDemoRecording() },
       { label: 'Run setup again…', action: () => runOnboarding() },
       { separator: true },
       { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
@@ -694,11 +690,10 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     activateRecordingEntry(next);
   } else if (k === 'b') {
-    const btn = document.getElementById('birdnetAnalyzeBtn');
-    if (!btn || btn.disabled) return;
+    if (!birdnetPanel.canAnalyze) return;
     e.preventDefault();
     sidebar.setActive('analyse');
-    btn.click();
+    birdnetPanel.analyze();
   } else if (k === 'u') {
     e.preventDefault();
     sidebar.setActive('upload');
@@ -2715,12 +2710,8 @@ const mobileApp = new MobileApp({
   resolveName,
   altNames: (sci) => Object.values(taxonomy.resolve(sci)?.n || {}),
   isOwn: (l) => l.setId === OWN_SOURCE_ID,
-  addFile: () => document.getElementById('fileInput')?.click(),
-  addXenoCanto: (raw) => {
-    // Same path as the desktop Xeno-canto field (dedupe, duration check, label import).
-    xcIdInput.value = raw;
-    xcLoadBtn.click();
-  },
+  addFile: () => openFile(),
+  addXenoCanto: (raw) => loadXenoCanto(raw),   // same path as the desktop field
   setRecordingInfo: (id, info) => { recordingManager.update(id, info); mobileApp.refresh(); },
   acceptLabel: (id) => adoptOneLabel(id),
   discardLabel: (id) => {
@@ -2749,6 +2740,7 @@ const mobileApp = new MobileApp({
     birdboxStatus: document.getElementById('birdboxStatus'),
     birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
     birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+    run: (job) => { if (job === 'birdnet') birdnetPanel.analyze(); else birdboxPanel.run(); },
   },
   live: {
     prepare: (onStatus) => birdnetPanel.prepareLive(onStatus),
@@ -2761,8 +2753,7 @@ const mobileApp = new MobileApp({
   },
   onModeChange: (phone) => {
     // No label editing on phones: draw mode goes off there.
-    const drawBtn = player?._drawBtn;
-    if (phone && drawBtn?.classList.contains('active')) drawBtn.click();
+    if (phone) player?.setDrawMode(false);
   },
 });
 {
@@ -3793,8 +3784,7 @@ async function runOnboarding() {
       licenses: SET_LICENSES,
       getApiKey: () => xcPanel.apiKey || '',
       saveApiKey: (key) => {
-        xcPanel.keyInput.value = key;
-        xcPanel.saveBtn.click();
+        xcPanel.setApiKey(key);
         xcApiKeyInput.value = key;
         updateXcKeyIndicator();
       },
@@ -3855,15 +3845,15 @@ xcNokeyKeyInput.addEventListener('input', () => {
   xcNokeySetKeyBtn.disabled = !xcNokeyKeyInput.value.trim();
 });
 xcNokeyKeyInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && xcNokeyKeyInput.value.trim()) xcNokeySetKeyBtn.click();
+  if (e.key === 'Enter') saveNokeyKey();
 });
 xcNokeyCloseBtn.addEventListener('click', closeXcNokeyModal);
-xcNokeySetKeyBtn.addEventListener('click', async () => {
+xcNokeySetKeyBtn.addEventListener('click', () => saveNokeyKey());
+/** "No API key" dialog: save the key, then import the labels of the open XC recording. */
+async function saveNokeyKey() {
   const key = xcNokeyKeyInput.value.trim();
   if (!key) return;
-  // Save through xcPanel so localStorage + state + callbacks stay in sync
-  xcPanel.keyInput.value = key;
-  xcPanel.saveBtn.click();
+  xcPanel.setApiKey(key);   // localStorage + state + callbacks
   updateXcKeyIndicator();
   closeXcNokeyModal();
   // Re-import labels now that a key is available
@@ -3881,7 +3871,7 @@ xcNokeySetKeyBtn.addEventListener('click', async () => {
       }
     }
   }
-});
+}
 // Backdrop click handled by ModalManager (focus trap, Escape key, backdrop click)
 
 /** Update URL to reflect current XC ID (or clear it). */
@@ -3901,8 +3891,13 @@ function updateUrlXcId(xcId) {
 // ── Xeno-canto load from sidebar ──────────────────────────────────
 const xcIdInput = document.getElementById('xcIdInput');
 const xcLoadBtn = document.getElementById('xcLoadBtn');
-xcLoadBtn.addEventListener('click', async () => {
-  const raw = xcIdInput.value.trim();
+xcLoadBtn.addEventListener('click', () => loadXenoCanto(xcIdInput.value));
+xcIdInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); loadXenoCanto(xcIdInput.value); }
+});
+/** Load a Xeno-canto recording (number or URL) with its labels; switches to it if already in the session. */
+async function loadXenoCanto(input) {
+  const raw = String(input || '').trim();
   if (!raw) return;
   // Deduplicate: if this XC ID is already in the session, just switch to it
   const _preCheckId = raw.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
@@ -3957,10 +3952,7 @@ xcLoadBtn.addEventListener('click', async () => {
     xcLoadBtn.disabled = false;
     xcLoadBtn.textContent = 'Load';
   }
-});
-xcIdInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); xcLoadBtn.click(); }
-});
+}
 
 // ── Xeno-canto export & upload ────────────────────────────────────
 const xcExportSetBtn = document.getElementById('xcExportSetBtn');
@@ -4341,14 +4333,16 @@ document.getElementById('newSessionBtn')?.addEventListener('click', async () => 
   window.location.replace(window.location.pathname);
 });
 
-browseBtn.addEventListener('click', async () => {
+browseBtn.addEventListener('click', () => openFile());
+/** Ask for an audio file and load it (browser: file input, Lite: native dialog). */
+async function openFile() {
   if (!isLite()) { fileInput.click(); return; }
   // Lite: native dialog; the path is kept so the file reopens after a restart.
   let picked;
   try { picked = await pickAudioFile(); }
   catch (e) { showLoadError(e?.message || e, 'Cannot open'); return; }
   if (picked) await loadLocalAudioFile(picked.file, { filePath: picked.path });
-});
+}
 // ── Microphone recording: live spectrogram, then added like a local file ──
 const recordBtn = document.getElementById('recordBtn');
 if (recordBtn && BirdNETPlayer.recordingSupported) {
@@ -4477,7 +4471,9 @@ window.addEventListener('drop', async (e) => {
   await loadLocalAudioFile(file);
 });
 
-loadSampleBtn.addEventListener('click', async () => {
+loadSampleBtn.addEventListener('click', () => loadDemoRecording());
+/** Load the bundled demo recording (or switch to it if it is in the session already). */
+async function loadDemoRecording() {
   // Sample already in the session — just switch to it
   const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/birdsong.wav');
   if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
@@ -4505,7 +4501,7 @@ loadSampleBtn.addEventListener('click', async () => {
   // Clear any previously saved original when loading the demo sample
   try { if (player.__originalBlobUrl) { URL.revokeObjectURL(player.__originalBlobUrl); delete player.__originalBlobUrl; } } catch (e) {}
   player.__originalAudioBuffer = null;
-});
+}
 
 player.on('ready', (e) => {
   setTimeout(() => requestMissingSnr(), 500);
@@ -5229,7 +5225,7 @@ async function installLiteMenu() {
   const { listen } = await import('@tauri-apps/api/event');
   await listen('lite-menu', async ({ payload: id }) => {
     try {
-      if (id === 'open-file') browseBtn.click();
+      if (id === 'open-file') await openFile();
       else if (id === 'open-folder') await chooseProjectFolder();
       else if (id === 'default-project') await useDefaultProject();
       else if (id === 'export-labels') downloadLabelsJson();
@@ -5327,8 +5323,9 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, labelStore, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+  window.__signavis = { state, labelStore, mobileApp, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
+    recordingCount: () => recordingManager?.getAll().length ?? 0,
     groupedCalls: () => _groups?.boxes.length ?? null };
 }
 await loadBirdnetTaxonomy();
