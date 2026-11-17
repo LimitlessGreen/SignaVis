@@ -21,7 +21,7 @@ with sync_playwright() as p:
     page.goto(url, wait_until='networkidle'); page.wait_for_function(SV)
     page.set_input_files('#fileInput', clip)
     page.wait_for_function(f"{SV}.player._state?.audioBuffer?.duration > 50", timeout=30000)
-    page.wait_for_timeout(5000); page.keyboard.press('Escape')   # recording registered (a switch cancels a search)
+    page.wait_for_function(f"{SV}.activeRecordingId() !== null", timeout=30000); page.keyboard.press('Escape')   # recording registered
     # One own label: the Wood Thrush song at 2.93–5.15 s
     page.evaluate(f"""() => {{ const sv = {SV}; const own = [...sv.state.labelSets.values()].find(s => s.origin !== 'BirdBox' && !s.locked)?.id;
         sv.state.labels.push({{ id: 'ex', setId: own, origin: 'manual', label: 'Wood Thrush', scientificName: 'Hylocichla mustelina',
@@ -78,6 +78,17 @@ with sync_playwright() as p:
     check(len(page.evaluate(SUGG)) == n0 - 3 and pos.endswith(f'/ {n0 - 3}'), f'✗ on the box rejects it (bar: {pos})')
     search()
     check(len(page.evaluate(SUGG)) == n0 - 3, 'new search: the copied and the two rejected ones stay out')
+    # Narrow window: every control of the bar stays reachable
+    page.set_viewport_size({'width': 320, 'height': 800}); page.wait_for_timeout(400)
+    page.evaluate("window.dispatchEvent(new Event('resize'))"); page.wait_for_timeout(200)
+    out = page.evaluate("[...document.querySelectorAll('.similar-review button, .similar-review input')].map(e => e.getBoundingClientRect()).filter(r => r.left < 0 || r.right > window.innerWidth).length")
+    check(out == 0, f'at 320 px all controls are inside the window ({out} outside)')
+    # The threshold slider keeps its arrow keys
+    pos_before = page.locator('.similar-review__pos').inner_text()
+    page.locator('.similar-review input').focus(); page.keyboard.press('ArrowRight'); page.wait_for_timeout(200)
+    check(page.locator('.similar-review__pos').inner_text() == pos_before and page.locator('.similar-review output').inner_text() != '0.35',
+          'arrow keys on the slider move the threshold, not the suggestions')
+    page.evaluate("document.activeElement?.blur()")
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
     check(page.locator('.similar-review').count() == 0, 'Esc closes the bar')
     check(not errs, f'page errors: {errs}')

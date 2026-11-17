@@ -844,7 +844,8 @@ html[data-theme="light"] { @include sponsor-light; }
 }
 
 .similar-review[hidden] { display: none; }
-.similar-review { max-width: calc(100vw - 8px); }
+// Narrow windows: the controls wrap into further rows instead of leaving the capped bar
+.similar-review { width: max-content; max-width: calc(100vw - 8px); flex-wrap: wrap; justify-content: center; white-space: normal; }
 .similar-review__title { font-weight: 600; min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
 .similar-review__pos,
 .similar-review__score { color: var(--color-text-secondary, #9ca3af); font-variant-numeric: tabular-nums; }

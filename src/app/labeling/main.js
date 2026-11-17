@@ -3227,10 +3227,15 @@ const groupReview = new GroupReview({
 const groupLabelId = (gi, k) => `group_${_groups?.token}_${gi}_${k}`;
 
 /** BirdBox boxes of the recording on screen that no own label covers yet. */
-function unlabelledBoxes() {
+/** Own labels; a call box with one over it (time IoU ≥ 0.5, overlapping band) counts as labelled. */
+function coveredByOwn() {
   const own = state.labels.filter((l) => l.origin !== SIMILAR_ORIGIN && l.origin !== BIRDBOX_ORIGIN && !l.readonly);
-  return state.labels.filter((b) => b.origin === BIRDBOX_ORIGIN
-    && !own.some((l) => timeIoU(b, l) >= 0.5 && Math.min(b.freqMax, l.freqMax) > Math.max(b.freqMin, l.freqMin)));
+  return (b) => own.some((l) => timeIoU(b, l) >= 0.5 && Math.min(b.freqMax, l.freqMax) > Math.max(b.freqMin, l.freqMin));
+}
+
+function unlabelledBoxes() {
+  const covered = coveredByOwn();
+  return state.labels.filter((b) => b.origin === BIRDBOX_ORIGIN && !covered(b));
 }
 
 async function groupSimilarCalls(cut = DEFAULT_CUT) {
@@ -3257,12 +3262,18 @@ async function groupSimilarCalls(cut = DEFAULT_CUT) {
 
 function regroup(cut) {
   if (!_groups) return;
+  // Calls copied since the grouping started are labelled now: never offer them again (by geometry,
+  // since a new run gives them new ids)
+  const covered = coveredByOwn();
+  const keep = _groups.boxes.map((_, i) => i).filter((i) => !covered(_groups.boxes[i]));
+  _groups.boxes = keep.map((i) => _groups.boxes[i]);
+  _groups.features = keep.map((i) => _groups.features[i]);
   _groups.groups = groupCalls(_groups.features, { cut });
   _groups.token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const n = _groups.groups.length, inGroups = _groups.groups.reduce((s, g) => s + g.members.length, 0);
-  if (!n) { selectionMeta.textContent = 'No groups: every call is different at this setting'; groupReview.close(); return; }
-  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}`
-    + `${_groups.capped ? ` (the ${MAX_GROUP_BOXES} most confident boxes)` : ''}: Enter names a group`;
+  const cap = _groups.capped ? ` (the ${MAX_GROUP_BOXES} most confident boxes)` : '';
+  if (!n) { selectionMeta.textContent = `No groups: every call is different at this setting${cap}`; groupReview.close(); return; }
+  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}${cap}: Enter names a group`;
   groupReview.open(_groups.groups.map((g) => ({ size: g.members.length })), cut);
 }
 
@@ -5337,6 +5348,8 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar };
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+    activeRecordingId: () => recordingManager?.activeId || null,
+    groupedCalls: () => _groups?.boxes.length ?? null };
 }
 await loadBirdnetTaxonomy();

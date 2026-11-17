@@ -23,7 +23,7 @@ with sync_playwright() as p:
     page.goto(url, wait_until='networkidle'); page.wait_for_function(SV)
     page.set_input_files('#fileInput', clip_a)
     page.wait_for_function(f"{SV}.player._state?.audioBuffer?.duration > 50", timeout=30000)
-    page.wait_for_timeout(5000); page.keyboard.press('Escape')
+    page.wait_for_function(f"{SV}.activeRecordingId() !== null", timeout=30000); page.keyboard.press('Escape')   # recording registered
     page.evaluate(f"""() => {{ const sv = {SV}; sv.state.labels.push({{ id: 'ex', setId: 'own', origin: 'manual', label: 'Wood Thrush',
         scientificName: 'Hylocichla mustelina', start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); }}""")
     page.evaluate(f"async () => {SV}.carrySimilarExemplar({SV}.state.labels.find(l => l.id === 'ex'))")

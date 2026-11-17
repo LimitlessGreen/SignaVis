@@ -24,7 +24,7 @@ with sync_playwright() as p:
     page.goto(url, wait_until='networkidle'); page.wait_for_function(SV)
     page.set_input_files('#fileInput', clip)
     page.wait_for_function(f"{SV}.player._state?.audioBuffer?.duration > 50", timeout=30000)
-    page.wait_for_timeout(5000); page.keyboard.press('Escape')
+    page.wait_for_function(f"{SV}.activeRecordingId() !== null", timeout=30000); page.keyboard.press('Escape')   # recording registered
     page.evaluate(f"""boxes => {{ const sv = {SV};
         sv.state.labelSets.set('bb', {{ id: 'bb', name: 'BirdBox', origin: 'BirdBox', locked: true, visible: true }});
         boxes.forEach((t, i) => sv.state.labels.push({{ id: 'bb' + i, setId: 'bb', origin: 'BirdBox', label: 'Bird', confidence: 0.5,
@@ -72,13 +72,18 @@ with sync_playwright() as p:
     check(page.locator('.similar-review--groups').is_visible(), 'group bar comes back')
     pos = page.locator('.similar-review--groups .similar-review__pos').inner_text()
     check(pos.startswith('1 /'), f'named group is done, the next is shown ({pos})')
+    # Regrouping with the slider leaves the copied calls out too
+    page.evaluate("() => { const r = document.querySelector('.similar-review--groups input'); r.value = '1.2'; r.dispatchEvent(new Event('change')); }")
+    page.wait_for_timeout(300)
+    left = page.evaluate(f"() => {SV}.groupedCalls()")
+    check(left == len(truth) - n, f'slider regroup leaves the copied calls out ({left} of {len(truth)} grouped)')
     page.keyboard.press('Escape'); page.wait_for_timeout(300)
     check(page.evaluate(f"() => !{SV}.state.labels.some(l => l.similar?.preview)"), 'Esc removes the unnamed previews')
     # Regrouping leaves the labelled calls out
     page.evaluate("document.getElementById('birdboxGroupBtn').click()"); page.wait_for_timeout(1500)
-    total = page.evaluate("document.getElementById('selectionMeta')?.textContent")
-    print('status again:', total)
-    check(f'of {len(truth) - n} calls' in total, 'copied calls are not grouped again')
+    page.wait_for_function(f"{SV}.groupedCalls() !== null", timeout=30000)
+    left = page.evaluate(f"() => {SV}.groupedCalls()")
+    check(left == len(truth) - n, f'copied calls are not grouped again ({left} of {len(truth)} grouped)')
     # The new run's first group gets fresh ids: copying it works (ids of the first run are in adoptedFrom)
     page.wait_for_selector('.similar-review--groups', state='attached', timeout=30000)
     page.keyboard.press('Enter'); page.wait_for_timeout(500)

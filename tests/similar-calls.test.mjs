@@ -223,3 +223,16 @@ function spec_low() {
     for (let c = 0; c < 40; c++) values[2 * frames + 200 + c] += 20;
     return { values, rows, frames, f0: 0, df: 100, t0: 0, dt: 0.01 };
 }
+
+test('a template starting one row below the band is still searched when an upward shift fits', () => {
+    const spec = spec_low();   // call on row 2
+    // Template rows −1..1 (f0 = −100 Hz): only shifts +1, +2 place it inside the band
+    const t = { values: new Float32Array(3 * 40), rows: 3, frames: 40, f0: -100, df: 100, dt: 0.01, freqMin: 0, freqMax: 100 };
+    for (let c = 0; c < 40; c++) t.values[2 * 40 + c] = 20;   // its top row → row 1, +1 shift → row 2
+    const { hits, win } = findWithTemplate(spec, t, { minScore: 0.3 });
+    assert.equal(win.r0, -1);
+    const h = hits.find((x) => Math.abs(x.start - 2) < 0.02);
+    assert.ok(h && h.shift >= 1, JSON.stringify(hits.slice(0, 3)));
+    // Nothing fits at all: no hits, no error
+    assert.deepEqual(findWithTemplate(spec, { ...t, f0: -1000 }).hits, []);
+});

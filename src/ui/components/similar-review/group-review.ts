@@ -101,8 +101,13 @@ export class GroupReview {
         if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
             && !this.el?.contains(t)) return;
         const k = e.key;
-        // A focused button of the bar keeps Enter / Space for itself
-        if ((k === 'Enter' || k === ' ') && t instanceof HTMLElement && t.closest('button') && this.el?.contains(t)) return;
+        if (t instanceof HTMLElement) {
+            // Focused controls keep their own keys: buttons and links anywhere take Enter / Space,
+            // the threshold slider its arrows. (Label boxes are role="button" divs: shortcuts stay on.)
+            const ctl = t.closest('button, a[href], summary');
+            if (ctl && (k === 'Enter' || k === ' ')) return;
+            if (t instanceof HTMLInputElement && t.type === 'range' && this.el?.contains(t) && k.startsWith('Arrow')) return;
+        }
         let handled = true;
         if (k === 'Enter') this.h.onName(this.pos);
         else if (k === 'x' || k === 'X' || k === 'Delete' || k === 'Backspace') { this.done.add(this.pos); this.step(1, true); }
@@ -147,8 +152,11 @@ export class GroupReview {
     }
 
     private place() {
-        const el = this.el, r = this.h.anchor?.();
-        if (!el || !r || !r.width || !r.height) return;
+        const el = this.el;
+        if (!el) return;
+        // Without a visible anchor (e.g. a narrow layout hides it): bottom centre of the window
+        const a = this.h.anchor?.();
+        const r = a && a.width && a.height ? a : { left: 0, width: window.innerWidth, bottom: window.innerHeight - 8 };
         const h = el.offsetHeight || 36;
         const w = el.offsetWidth || 0;   // centred by translateX(-50%): keep both edges in the window
         el.style.left = `${Math.round(Math.min(window.innerWidth - w / 2 - 4, Math.max(w / 2 + 4, r.left + r.width / 2)))}px`;
