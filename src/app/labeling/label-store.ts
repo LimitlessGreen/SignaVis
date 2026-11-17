@@ -82,15 +82,17 @@ export class LabelStore<L extends StoredLabel = StoredLabel> {
      * Returns the new labels in the order of `ids`.
      */
     update(ids: string | Iterable<string>, fn: (old: L) => L, meta?: ChangeMeta): L[] {
-        const want = new Set(typeof ids === 'string' ? [ids] : ids);
-        const out: L[] = [];
+        const want = new Set(typeof ids === 'string' ? [ids] : ids);   // keeps the order asked for
+        const done = new Map<string, L>();
         const next = this._labels.map((l) => {
             if (!want.has(l.id)) return l;
             const n = fn(l);
-            out.push(n);
+            done.set(l.id, n);
             return n;
         });
-        if (out.length) this._set(next, { kind: 'update', ids: out.map((l) => l.id), ...meta });
+        if (!done.size) return [];
+        const out = [...want].filter((id) => done.has(id)).map((id) => done.get(id)!);
+        this._set(next, { kind: 'update', ids: out.map((l) => l.id), ...meta });
         return out;
     }
 

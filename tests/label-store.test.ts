@@ -98,3 +98,9 @@ test('meta travels with the change', () => {
     s.remove('a');
     assert.deepEqual(changes.map((c) => c.views), [['list'], [], ['player'], undefined]);
 });
+
+test('update returns labels in the order of the ids asked for', () => {
+    const { s } = setup();
+    s.add([{ id: 'a' }, { id: 'b' }]);
+    assert.deepEqual(s.update(['b', 'a', 'b'], (l) => ({ ...l, name: 'x' })).map((l) => l.id), ['b', 'a']);
+});

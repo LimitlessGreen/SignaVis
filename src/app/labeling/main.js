@@ -4758,13 +4758,15 @@ player.on('labelrestore', (e) => {
   const afterIds = new Set(after.map((l) => l.id));
   const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
   for (const id of removed) snrComputer.invalidate(id);
-  // The player shows the restored state already
-  const views = ['list', 'badge'];
-  labelStore.remove(removed, { views });
+  // One change (one save); the player shows the restored state already
+  const next = state.labels.filter((l) => !removed.has(l.id));
+  const at = new Map(next.map((l, i) => [l.id, i]));
   for (const lbl of after) {
-    if (labelStore.has(lbl.id)) labelStore.patch(lbl.id, lbl, { views });
-    else labelStore.add({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) }, { views });
+    const i = at.get(lbl.id);
+    if (i != null) next[i] = { ...next[i], ...lbl };
+    else next.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
   }
+  labelStore.replaceAll(next, { views: ['list', 'badge'] });
 });
 
 player.on('spectrogramlabelrefcalls', (e) => {
