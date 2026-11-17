@@ -38,10 +38,7 @@ import { saveFile } from '../../infrastructure/saveFile.ts';
 import { ProjectAutosaver, acquireTabLock } from '../../app/project-autosave.ts';
 import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../../domain/project/workspaceProject.ts';
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
-import { buildRavenSelectionTable, ravenTablePath } from '../../infrastructure/export/ravenSelectionTable.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
-import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
-import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
@@ -85,7 +82,7 @@ import {
 } from '../../app/analysis-backend-config.ts';
 import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
 import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
-import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Sun, Moon, Volume2, FolderOpen, AudioLines } from 'lucide-static';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines } from 'lucide-static';
 import { SimilarPanel } from '../../ui/panels/similar-panel.ts';
 import {
   buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
@@ -94,6 +91,9 @@ import {
 import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
 import { RenderScheduler } from './render-scheduler.ts';
 import { LabelStore } from './label-store.ts';
+import { installThemeToggle } from './features/theme.ts';
+import { createRavenExport } from './features/raven-export.ts';
+import { installAnnotaImport } from './features/annota-import.ts';
 
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -1100,6 +1100,21 @@ const labelViews = new RenderScheduler([
   }],
 ]);
 
+// What feature modules (./features) get; getters, so modules can be installed early.
+/** @type {import('./app-context.ts').AppContext} */
+const appCtx = {
+  get state() { return state; },
+  get labelStore() { return labelStore; },
+  get recordingManager() { return recordingManager; },
+  get player() { return player; },
+  get selectionMeta() { return selectionMeta; },
+  get fileLabel() { return fileLabel; },
+  get projectStore() { return projectStore; },
+  saveCurrentAnnotations: () => saveCurrentAnnotationsIfNeeded(),
+  syncToPlayer: () => syncToPlayer(),
+  showSidebarTab: (id) => sidebar.setActive(id),
+};
+
 let getSuggestions = (q, n) => [];  // populated after taxonomy loads
 let _lastAudioUrl = null;           // track current audio URL for reference player
 
@@ -1660,36 +1675,7 @@ async function copyAllXcToFolder() {
 }
 
 // ── Raven selection tables (one per audio file) ──────────────────
-const ravenSetName = (id) => state.labelSets.get(id)?.name || id;
-function entryLabels(entry) {
-  return entry.id === recordingManager.activeId ? state.labels : (entry.annotations || []);
-}
-function downloadRavenTable() {
-  const entry = recordingManager.getActive();
-  const name = entry?.filename || fileLabel.textContent || 'labels';
-  const text = buildRavenSelectionTable(state.labels, { sampleRate: entry?.sampleRate || state.sampleRate, setName: ravenSetName, recordingStart: entry?.recordingStart || player.recordingStart });
-  saveFile(text, ravenTablePath(name.split('/').pop()), 'text/plain')
-    .catch((e) => { selectionMeta.textContent = `Export failed: ${e?.message || e}`; });
-}
-/** Folder project: write <audio>.Table.1.selections.txt next to every labeled recording. */
-async function writeRavenTablesToFolder() {
-  saveCurrentAnnotationsIfNeeded();
-  let written = 0;
-  try {
-    for (const entry of recordingManager.getAll()) {
-      const labels = entryLabels(entry);
-      if (!labels.length) continue;
-      const target = entry.path ? ravenTablePath(entry.path) : `exports/raven/${ravenTablePath(entry.filename)}`;
-      await projectStore.writeText(target, buildRavenSelectionTable(labels, { sampleRate: entry.sampleRate, setName: ravenSetName, recordingStart: entry.recordingStart || null }));
-      written++;
-    }
-    selectionMeta.textContent = written
-      ? `${written} Raven table${written === 1 ? '' : 's'} written to “${projectStore.label}”`
-      : 'No labels to export';
-  } catch (e) {
-    selectionMeta.textContent = `Raven export failed: ${e?.message || e}`;
-  }
-}
+const ravenExport = createRavenExport(appCtx);
 
 /** Copy an XC download (from the audio cache) into the folder: xc/XC123.mp3 + .json metadata. */
 async function persistXcToFolder(entry) {
@@ -2444,37 +2430,8 @@ function resolveName(lbl) {
   };
 }
 
-// ── Theme toggle (persists in localStorage, overrides prefers-color-scheme)
-function setTheme(theme) {
-  if (!theme) return;
-  document.documentElement.setAttribute('data-theme', theme);
-  if (themeToggleBtn) {
-    // Use Lucide SVG icons (injected as raw SVG strings)
-    try {
-      themeToggleBtn.innerHTML = theme === 'light' ? Sun : Moon;
-    } catch (e) {
-      themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
-    }
-    themeToggleBtn.setAttribute('aria-pressed', String(theme === 'light'));
-  }
-}
-
-function initTheme() {
-  const saved = localStorage.getItem('aw:theme');
-  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-  const theme = saved || (prefersLight ? 'light' : 'dark');
-  setTheme(theme);
-}
-
-if (themeToggleBtn) {
-  initTheme();
-  themeToggleBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    const next = current === 'light' ? 'dark' : 'light';
-    setTheme(next);
-    localStorage.setItem('aw:theme', next);
-  });
-}
+// ── Theme toggle ──
+installThemeToggle(themeToggleBtn);
 
 // Centralized selection helper — seeks, highlights list rows, and pins
 // the properties panel. Overlay highlight is owned by SpectrogramLabelLayer
@@ -2827,7 +2784,7 @@ const labelTable = labelTableHost ? new LabelGrid({
     const base = file.replace(/\.[^.]+$/, '') || 'labels';
     const out = buildLabelExport(format, labels, base, {
       sampleRate: entry?.sampleRate || state.sampleRate,
-      setName: ravenSetName,
+      setName: ravenExport.setName,
       recordingStart: entry?.recordingStart || player.recordingStart,
       columns,
       displayName: (l) => resolveName(l).display,
@@ -4596,10 +4553,10 @@ exportMenuBtn.addEventListener('click', () => {
     items: [
       { label: `Annota-JSON (XC) — upload selection, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
       { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
-      { label: `Raven table — this recording, ${n} labels`, action: downloadRavenTable },
+      { label: `Raven table — this recording, ${n} labels`, action: ravenExport.download },
       ...(projectKind === 'folder' ? [{
         label: `Raven tables — all recordings → folder “${projectStore.label}”`,
-        action: writeRavenTablesToFolder,
+        action: ravenExport.writeToFolder,
       }] : []),
       { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
     ],
@@ -4607,69 +4564,13 @@ exportMenuBtn.addEventListener('click', () => {
 });
 
 // ── Import an Annota-JSON set file (XC "Download set" or own export) ──
-// Labels go to the recordings with the same XC number, each original set as a locked set.
-const importSetInput = document.getElementById('importSetInput');
-document.getElementById('importSetBtn').addEventListener('click', () => importSetInput.click());
-importSetInput.addEventListener('change', async () => {
-  const file = importSetInput.files?.[0];
-  importSetInput.value = '';
-  if (file) await importAnnotaSetFile(file);
+installAnnotaImport(appCtx, {
+  button: document.getElementById('importSetBtn'),
+  input: document.getElementById('importSetInput'),
+  promoteXcSets: (labels, nr) => promoteXcAnnotationSets(labels, nr),
+  relocalizeLabels: () => relocalizeAllLabels(),
+  refreshRecordings: () => recordingExplorer?.render?.(),
 });
-
-async function importAnnotaSetFile(file) {
-  let parsed = null;
-  try { parsed = readAnnotaSetFile(JSON.parse(await file.text())); } catch { /* reported below */ }
-  if (!parsed) { selectionMeta.textContent = `${file.name}: not an Annota-JSON annotation set`; return; }
-
-  saveCurrentAnnotationsIfNeeded();
-  const setsBefore = new Set(state.labelSets.keys());
-  const labelsBefore = state.labels;
-  const entriesBefore = [];
-  const missing = [];
-  let imported = 0;
-  let activeTouched = false;
-  for (const [nr, raw] of parsed.byXcNr) {
-    const entry = recordingManager.findByXcId(nr);
-    if (!entry) { missing.push(`XC${nr}`); continue; }
-    const isActive = entry.id === recordingManager.activeId;
-    const { labels } = mapXenoCantoLabelsToSpectrogram(raw, {
-      xcId: nr, recording: entry.xcRecordingMeta || {},
-      sampleRate: (isActive ? state.sampleRate : entry.sampleRate) || state.sampleRate,
-    });
-    promoteXcAnnotationSets(labels, nr);
-    const ids = new Set(labels.map((l) => l.id));
-    if (isActive) {
-      labelStore.claim(entry.id);
-      labelStore.replaceAll([...state.labels.filter((l) => !ids.has(l.id)), ...labels]);
-      activeTouched = true;
-    } else {
-      entriesBefore.push([entry.id, entry.annotations || []]);
-      recordingManager.update(entry.id, { annotations: [...(entry.annotations || []).filter((a) => !ids.has(a.id)), ...labels] });
-    }
-    imported += labels.length;
-  }
-
-  const refresh = () => {
-    relocalizeAllLabels();
-    syncToPlayer();
-    recordingExplorer?.render?.();
-    saveSessionSets(state);
-  };
-  if (imported) refresh();
-  const parts = [`${imported} label${imported === 1 ? '' : 's'} imported from ${file.name}`];
-  if (missing.length) parts.push(`no recording for ${missing.join(', ')} — add it under Project → Recordings, then import again`);
-  if (parsed.skipped) parts.push(`${parsed.skipped} without XC number skipped`);
-  selectionMeta.textContent = parts.join(' · ');
-  if (!imported) return;
-  showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
-    if (activeTouched) labelStore.replaceAll(labelsBefore);
-    for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
-    for (const id of [...state.labelSets.keys()]) if (!setsBefore.has(id)) state.labelSets.delete(id);
-    refresh();
-    selectionMeta.textContent = `Import of ${file.name} undone`;
-  });
-  sidebar.setActive('labels');
-}
 
 function upsertLabel(label, views = EDIT_VIEWS) {
   if (!label?.id) return;
@@ -5351,7 +5252,7 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, labelStore, mobileApp, birdboxPanel, birdnetPanel, xcPanel, loadXenoCanto, runBirdnetOnFolder,
+  window.__signavis = { state, labelStore, ravenExport, mobileApp, birdboxPanel, birdnetPanel, xcPanel, loadXenoCanto, runBirdnetOnFolder,
     recordings: () => recordingManager?.getAll() || [], player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
     recordingCount: () => recordingManager?.getAll().length ?? 0,

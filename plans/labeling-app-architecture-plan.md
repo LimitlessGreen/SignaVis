@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 Teil 1 gemergt (PR #131), Teil 2 auf Branch `refactor/app-commands`
+Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 gemergt (PR #131, #132) · Schritt 4 begonnen auf Branch `refactor/split-main`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -27,7 +27,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
 | 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 ✅ (Befehle) |
-| 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
+| 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | 🔧 Teil 1: Muster + Design, Raven-Export, Annota-Import |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
 ## Schritt 1 – Details
@@ -211,6 +211,32 @@ Kein Redux/Reducer, keine Command-Klassen (erst bei Bedarf für Undo/Redo), kein
   Tagestipp schließen.
 - Rest-Kopplung für Schritt 4: `MobileApp.analysis` liest weiter Desktop-Eingabefelder (Konfidenz, Overlap, Geo) und
   den Laufzustand aus dem DOM (`jobRunning`).
+- Review (#132): Die deaktivierten Buttons waren eine unsichtbare Sperre (`.click()` auf `disabled` tut nichts).
+  Jetzt in den Befehlen: `loadXenoCanto` lädt nur eins nach dem anderen (sonst importiert ein früherer Ladevorgang
+  Labels in die spätere Aufnahme), `BirdBoxPanel.run()` / `BirdNETPanel.analyze()` tun während eines Laufs nichts.
+  `analyze()` liefert `true` nur, wenn Detektionen übernommen wurden. Ordner-BirdNET wartet auf fremde Läufe, prüft
+  direkt vor der Analyse, dass noch seine Aufnahme offen ist (sonst neu öffnen, bis 3×), zählt/pinnt nur analysierte
+  Aufnahmen und bricht bei einem Fehlschlag (z. B. keine Modell-URL) mit der Meldung ab.
 - Test: `tools/e2e/app-commands.py` (Hilfe-Menü → Demo, Draw-Button, Taste b, API-Key per Enter, Handy schaltet Draw
   aus, Handy-Analyse startet BirdBox ohne Desktop-Klick; optional `<xc-nummer>` für Xeno-canto – lokal ohne Proxy
   nicht ladbar: CORS/403, auch auf `main`). Übrige E2E wie `main`.
+
+## Schritt 4 – Details
+
+Muster: `src/app/labeling/app-context.ts` beschreibt, was Module von `main.js` bekommen (`AppContext`: State,
+`labelStore`, `recordingManager`, Player, Statuszeile, Projektspeicher, Speichern/Sync, Sidebar). `main.js` übergibt
+ein Objekt mit **Gettern** (`appCtx`), damit ein Modul früh installiert werden kann – ein direkter Verweis auf eine
+später deklarierte `const` wirft beim Laden (TDZ; der Typcheck sieht das in `main.js` nicht, E2E schon).
+Funktionsspezifisches (Buttons, XC-Hilfsfunktionen) bekommt ein Modul als zweites Argument (`deps`).
+Module liegen in `src/app/labeling/features/`, typisiert, ohne `@ts-nocheck`.
+
+### Teil 1 (Branch `refactor/split-main`)
+
+- `features/theme.ts` (`installThemeToggle`), `features/raven-export.ts` (`createRavenExport`: Download, Ordner,
+  Set-Namen für die Tabelle), `features/annota-import.ts` (`installAnnotaImport`).
+- Test: `tools/e2e/feature-modules.py <set.json> <kein-set.json>` – Design umschalten + nach Reload, Raven-Download,
+  Annota-Import (Ablehnung, Import in die offene Aufnahme, Meldung fehlende/ohne XC-Nummer, gesperrtes Set, Undo).
+  Raven in den Projektordner nicht getestet (braucht Ordner-Projekt). Übrige E2E wie `main`.
+- Nächste Kandidaten (abgeschlossen, wenig geteilter Zustand): Drag & Drop, Mikrofon-Aufnahme, XC-Export/-Upload,
+  Upload-Assistent, Kontextmenüs, Species-Suche, Lite-Integration. Projektspeicher zuletzt (viele `let`-Variablen,
+  die andere Teile lesen → erst Zustand in ein Objekt bündeln).
