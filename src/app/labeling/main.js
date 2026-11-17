@@ -19,7 +19,8 @@ import { initDailyTips, showTip } from '../../ui/components/daily-tips/daily-tip
 import { Sidebar } from '../../ui/panels/sidebar.ts';
 import { MobileApp } from '../../ui/mobile/mobile-app.ts';
 import { t as mt } from '../../ui/mobile/i18n.ts';
-import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
+import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget, normalizeSearch } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
+import { matchTier, MATCH, LOCAL_THRESHOLD } from '../../ui/components/taxonomy-ui/species-ranking.ts';
 import { LabelList } from '../../ui/panels/label-list.ts';
 import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
@@ -3063,6 +3064,48 @@ const explorePanel = new ExplorePanel({
   onOpenRefCalls: (item) => openRefCalls({ scientificName: item.scientificName, label: item.name }),
 });
 explorePanel.el.classList.add('analyse-explore');
+
+// ── Geo occurrence for species search ranking ─────────────────────
+// Species search ranks locally occurring species first, using the same BirdNET
+// area model, coordinates and recording date as the geo filter / Explore list.
+const speciesGeo = { key: '', scores: new Map(), pending: null };
+function speciesGeoScore(sci) { return speciesGeo.scores.get(sci) ?? null; }
+function refreshSpeciesGeoScores() {
+  const coords = birdnetPanel.getCoords?.();
+  if (!coords) { speciesGeo.key = ''; speciesGeo.scores = new Map(); return Promise.resolve(); }
+  const date = birdnetPanel.getRecordingDate?.() || null;
+  const key = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)},${date ? new Date(date).toISOString().slice(0, 10) : ''}`;
+  if (key === speciesGeo.key) return Promise.resolve();
+  if (speciesGeo.pending) return speciesGeo.pending;
+  speciesGeo.pending = (async () => {
+    try {
+      if (!birdnet.loaded) await birdnetPanel.loadModel();
+      if (!birdnet.hasAreaModel) return;
+      await birdnet.setLocation(coords.lat, coords.lon, { date: date || undefined });
+      const all = await birdnet.getAllSpecies();
+      speciesGeo.scores = new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
+      speciesGeo.key = key;
+      speciesSearchWidgets.forEach((w) => w.refresh?.());
+    } catch (err) {
+      console.warn('[species search] geo ranking unavailable:', err?.message || err);
+      speciesGeo.key = key;           // don't retry on every keystroke
+    } finally {
+      speciesGeo.pending = null;
+    }
+  })();
+  return speciesGeo.pending;
+}
+/** Widgets that should re-render once geo scores arrive. */
+const speciesSearchWidgets = new Set();
+/** createSpeciesSearchWidget + geo refresh on focus. */
+function createGeoAwareSpeciesSearch(opts) {
+  const w = createSpeciesSearchWidget(opts);
+  speciesSearchWidgets.add(w);
+  w.input.addEventListener('focus', () => { refreshSpeciesGeoScores(); });
+  const destroy = w.destroy;
+  w.destroy = () => { speciesSearchWidgets.delete(w); destroy(); };
+  return w;
+}
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 // ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
 if (isLite()) {
@@ -3861,9 +3904,10 @@ async function loadBirdnetTaxonomy() {
       getLang: () => state.taxonomyLang,
       getLabels: () => state.labels,
       getPool: () => state.xcLabelPool,
+      getGeoScore: speciesGeoScore,
     });
     const speciesSearchFactory = (anchor, onSelect) =>
-      createSpeciesSearchWidget({ getSuggestions, onSelect });
+      createGeoAwareSpeciesSearch({ getSuggestions, onSelect });
     labelList.setSpeciesSearchFactory(speciesSearchFactory);
     propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
     labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
@@ -4556,6 +4600,7 @@ player.setLabelSuggestionProvider(
     // Include both XC label pool and background species so the overlay
     // shows all contextually relevant species as suggestions.
     getPool:   () => [...state.xcLabelPool, ...player.getBackgroundSpecies()],
+    getGeoScore: speciesGeoScore,
   }),
 );
 
@@ -4581,19 +4626,23 @@ let topbarWidget = null;
     const byKey = new Map();
     const lang  = state.taxonomyLang;
 
-    function resolveEntry(rawName, rawSci, color, originDetail) {
+    function resolveEntry(rawName, rawSci, color, originDetail, group = 'project') {
       const sci    = rawSci || (taxonomy.data ? taxonomy.resolve(rawName)?.s : '') || '';
       const record = sci ? taxonomy.resolve(sci) : null;
       const name   = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : rawName;
       const finalSci = record?.s || sci;
       const key    = finalSci ? `sci:${finalSci}` : `name:${name.toLowerCase()}`;
-      if (byKey.has(key)) return;                        // first source wins for color/detail
-      byKey.set(key, {
+      if (byKey.has(key)) return byKey.get(key);         // first source wins for color/detail
+      const entry = {
         name,
         scientificName: finalSci,
         color: color || colorForName(name),
         detail: originDetail,
-      });
+        group,
+        count: 0,
+      };
+      byKey.set(key, entry);
+      return entry;
     }
 
     // Foreground species: persists across clears so the user can re-select it
@@ -4601,7 +4650,7 @@ let topbarWidget = null;
       const c = lastForegroundSpecies.color
         ? (getOverlayColorStyle(lastForegroundSpecies.color)?.hex || lastForegroundSpecies.color)
         : colorForName(lastForegroundSpecies.name);
-      resolveEntry(lastForegroundSpecies.name, lastForegroundSpecies.scientificName || '', c, 'foreground');
+      resolveEntry(lastForegroundSpecies.name, lastForegroundSpecies.scientificName || '', c, 'foreground', 'recent');
     }
 
     // All current labels (state.labels is the authoritative source in this app)
@@ -4610,7 +4659,8 @@ let topbarWidget = null;
       if (!rawName) continue;
       const c = lbl.color ? (getOverlayColorStyle(lbl.color)?.hex || lbl.color) : null;
       const detail = lbl.origin && lbl.origin !== 'manual' ? lbl.origin : '';
-      resolveEntry(rawName, lbl.scientificName || '', c, detail);
+      const entry = resolveEntry(rawName, lbl.scientificName || '', c, detail);
+      if (entry) entry.count += 1;
     }
 
     // Background species (XC "also" field) — deduplicated against above via sci key
@@ -4621,28 +4671,37 @@ let topbarWidget = null;
     }
 
     const labelEntries = [...byKey.values()];
+    const q = normalizeSearch(query).trim();
+    const rankRows = (rows) => rows
+      .map((l) => {
+        const rec = l.scientificName ? taxonomy.resolve(l.scientificName) : null;
+        const tier = matchTier(q, l.name, l.scientificName, rec?.n ? Object.values(rec.n) : []);
+        const geo = l.scientificName ? speciesGeoScore(l.scientificName) : null;
+        return { ...l, tier, local: geo != null && geo >= LOCAL_THRESHOLD };
+      })
+      .filter((l) => l.tier !== MATCH.NONE)
+      .sort((a, b) => (q ? a.tier - b.tier : 0) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name))
+      .map(({ tier, ...l }) => l);
+    const recent = rankRows(labelEntries.filter((l) => l.group === 'recent'));
+    const project = rankRows(labelEntries.filter((l) => l.group !== 'recent'));
+    if (!q) return [...recent, ...project];
 
-    if (!query) return labelEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
-
-    const lq = query.toLowerCase();
-    const matchingLabels = labelEntries.filter(
-      (l) => l.name.toLowerCase().includes(lq) || l.scientificName.toLowerCase().includes(lq),
-    );
-    const labelSciKeys = new Set(matchingLabels.map((l) => l.scientificName?.toLowerCase()).filter(Boolean));
-    const labelNameKeys = new Set(matchingLabels.map((l) => l.name.toLowerCase()));
-    const taxonomyResults = player.getLabelEditorSuggestions(query, limit);
-    const taxonomyOnly = taxonomyResults
-      .filter((s) => !labelNameKeys.has(s.name.toLowerCase()) && (!s.scientificName || !labelSciKeys.has(s.scientificName.toLowerCase())))
+    const seenSci = new Set(labelEntries.map((l) => l.scientificName?.toLowerCase()).filter(Boolean));
+    const seenName = new Set(labelEntries.map((l) => l.name.toLowerCase()));
+    const taxonomyOnly = player.getLabelEditorSuggestions(query, limit)
+      .filter((s) => !seenName.has(s.name.toLowerCase()) && (!s.scientificName || !seenSci.has(s.scientificName.toLowerCase())))
       .map((s) => ({
-        name: s.name,
+        ...s,
         color: s.color ? (getOverlayColorStyle(s.color)?.hex || s.color) : colorForName(s.name),
-        scientificName: s.scientificName || '',
-        detail: s.detail || 'taxonomy',
+        group: s.group || 'taxonomy',
       }));
-    return [...matchingLabels, ...taxonomyOnly];
+    // Provider "project" rows (XC pool etc.) that the topbar doesn't list itself join the project group.
+    const extraProject = taxonomyOnly.filter((s) => s.group === 'project');
+    const rest = taxonomyOnly.filter((s) => s.group !== 'project');
+    return [...recent, ...project, ...extraProject, ...rest];
   }
 
-  topbarWidget = createSpeciesSearchWidget({
+  topbarWidget = createGeoAwareSpeciesSearch({
     getSuggestions: getTopbarSuggestions,
     onSelect: (item) => {
       lastForegroundSpecies = item;

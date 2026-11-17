@@ -231,3 +231,99 @@
   cursor: pointer;
 }
 .template-tags-clear:disabled { color: var(--color-text-secondary); opacity: 0.6; cursor: default; }
+
+/* ── Grouped two-line layout (items with `group`) ── */
+.species-search-dropdown:has(.search-group) { padding-bottom: 2px; }
+.search-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px 3px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.search-group-sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.search-group.is-extra { opacity: 0.85; }
+.search-sep { height: 1px; margin: 4px 0; background: var(--color-border); }
+.search-empty { padding: 12px; text-align: center; color: var(--color-text-secondary); }
+
+.species-search-item--rich {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 0;
+  width: calc(100% - 8px);
+  margin: 0 4px;
+  padding: 4px 6px;
+  border-radius: 4px;
+
+  .search-dot { grid-row: 1 / span 2; }
+  .search-name { font-size: 12px; font-weight: 500; }
+  .search-sub {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: var(--color-text-secondary);
+  }
+  .search-meta {
+    grid-row: 1 / span 2;
+    grid-column: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  mark { background: none; color: var(--color-accent); font-weight: 650; }
+  &.active { box-shadow: inset 2px 0 0 var(--color-accent); }
+  &.is-extra .search-name { color: var(--color-text-secondary); }
+}
+.search-dot--hollow { border: 1.5px solid var(--color-text-secondary); opacity: 0.6; }
+.search-alt { opacity: 0.85; }
+.search-code {
+  margin-left: 4px;
+  padding: 0 3px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  border-radius: 3px;
+  color: var(--color-accent);
+  font: 600 9.5px ui-monospace, monospace;
+}
+.search-local { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; opacity: 0.8; }
+
+.species-search-item--create {
+  margin: 0 4px;
+  width: calc(100% - 8px);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  b { color: var(--color-text-primary); }
+  .search-plus { width: 10px; text-align: center; color: var(--color-accent); font-weight: 700; }
+}
+
+.search-keys {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 5px 10px 3px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  kbd {
+    padding: 0 3px;
+    border: 1px solid var(--color-border);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    font: 9.5px ui-monospace, monospace;
+  }
+  @media (pointer: coarse) { display: none; }
+}
