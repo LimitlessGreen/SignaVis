@@ -11,7 +11,7 @@
  * where ✓ copies a detection into „Meine Labels“ and ✕ removes it (both with undo).
  * New files and Live recordings are analysed right away with the current analysis settings.
  */
-import { speciesImageBase } from '../../infrastructure/tauri/runtime.ts';
+import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
 import { t, getLang } from './i18n.ts';
@@ -651,7 +651,7 @@ export class MobileApp {
     const img = el('img');
     img.alt = '';
     img.loading = 'lazy';
-    img.src = lbl.scientificName ? `${speciesImageBase()}${encodeURIComponent(lbl.scientificName)}.webp` : FALLBACK_IMG;
+    img.src = lbl.scientificName ? speciesImageUrl(lbl.scientificName) : FALLBACK_IMG;
     img.addEventListener('error', () => { img.src = FALLBACK_IMG; }, { once: true });
     return img;
   }
@@ -1098,7 +1098,7 @@ export class MobileApp {
       head.setAttribute('aria-expanded', String(open));
       const img = el('img');
       img.alt = ''; img.loading = 'lazy';
-      img.src = `${speciesImageBase()}${encodeURIComponent(sp.sci)}.webp`;
+      img.src = speciesImageUrl(sp.sci);
       img.addEventListener('error', () => { img.src = FALLBACK_IMG; }, { once: true });
       const main = el('div', 'm-sp-main');
       const n = el('div', 'm-sp-name', name(sp));
@@ -1423,7 +1423,7 @@ export class MobileApp {
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
-      img.src = `${speciesImageBase()}${encodeURIComponent(r.sci)}.webp`;
+      img.src = speciesImageUrl(r.sci);
       img.addEventListener('error', () => { img.src = FALLBACK_IMG; }, { once: true });
       const txt = el('div', 'm-live-row-txt');
       txt.append(el('div', 'm-live-row-name', r.common || r.sci),

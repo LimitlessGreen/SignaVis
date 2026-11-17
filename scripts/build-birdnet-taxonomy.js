@@ -208,20 +208,6 @@ async function downloadFile(url, dest) {
     await finished(Readable.fromWeb(res.body).pipe(fileStream));
 }
 
-/** The API serves ready-made 480x320 WebP thumbnails (`size=medium`). */
-async function downloadImage(url, dest) {
-    if (fs.existsSync(dest)) return true;
-    try {
-        const res = await fetchWithRetry(fetch, url);
-        if (!res.ok || !String(res.headers.get('content-type')).startsWith('image/webp')) return false;
-        fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
-        return true;
-    } catch (e) {
-        console.warn(`Failed to process image ${url}: ${e.message}`);
-        return false;
-    }
-}
-
 function buildTaxonomyFromDir(labelsDir) {
     const entries = fs.readdirSync(labelsDir, { withFileTypes: true });
     const files = entries
@@ -432,17 +418,15 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     const outputFile = args.output;
     const v24Dir = args['v24-labels'];
-    const skipImages = args['skip-images'] === 'true';
     if (!outputFile) {
-        console.error('Usage: node scripts/build-birdnet-taxonomy.js --output <json-file> [--v3-labels <csv>] [--v24-labels <labels-dir>] [--skip-images]');
+        console.error('Usage: node scripts/build-birdnet-taxonomy.js --output <json-file> [--v3-labels <csv>] [--v24-labels <labels-dir>]');
         process.exit(1);
     }
 
     const dataDir = path.dirname(outputFile);
     const cornellCache = path.join(dataDir, 'cornell-taxonomy.json');
-    const imageDir = path.join(dataDir, 'species_images');
     const v3Labels = args['v3-labels'] || path.join(dataDir, V3_LABELS_FILE);
-    fs.mkdirSync(imageDir, { recursive: true });
+    fs.mkdirSync(dataDir, { recursive: true });
 
     const { taxonomy_version: taxonomyVersion, species: cornell } = await loadCornell(cornellCache);
     await downloadFile(V3_LABELS_URL, v3Labels);
@@ -454,22 +438,11 @@ async function main() {
     assertSameIdScheme(v3, cornell);
     const { records, modelCount, extraCount, findCornell } = buildRecords({ v3, v24, cornell });
 
-    // Images for the model's classes (as before: not for x: 1 extras).
-    let imageCount = 0;
-    if (!skipImages) {
-        for (const rec of records) {
-            if (rec.x) continue;
-            const c = findCornell(rec.s);
-            const imageUrl = c?.image?.medium;
-            if (!imageUrl) continue;
-            const ok = await downloadImage(imageUrl, path.join(imageDir, `${rec.s}.webp`));
-            if (!ok) continue;
-            rec.img = true;
-            const credit = imageCredit(c);
-            if (credit.author) rec.img_author = credit.author;
-            if (credit.license) rec.img_license = credit.license;
-            imageCount++;
-        }
+    // Images are loaded from the BirdNET taxonomy API at runtime; keep the credit.
+    for (const rec of records) {
+        const credit = imageCredit(findCornell(rec.s));
+        if (credit.author) rec.img_author = credit.author;
+        if (credit.license) rec.img_license = credit.license;
     }
 
     // Offer the languages of the BirdNET label sets; Cornell knows many more
@@ -498,7 +471,6 @@ async function main() {
     };
     fs.writeFileSync(outputFile, JSON.stringify(payload), 'utf8');
     console.log(`Wrote ${modelCount} model classes + ${extraCount} extra species (${languages.length} languages) to ${outputFile}`);
-    console.log(`Processed ${imageCount} images into ${imageDir}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

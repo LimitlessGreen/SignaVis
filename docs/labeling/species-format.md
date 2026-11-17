@@ -15,7 +15,9 @@ The taxonomy is built from three sources (later ones win for names):
 3. **BirdNET taxonomy** (`https://birdnet.cornell.edu/taxonomy/api/species`, paged, only the fields
    the build uses; cached with its `taxonomy_version` as `demo/data/cornell-taxonomy.json`): ~18 000
    species with names, scientific synonyms, images and IDs for eBird, iNaturalist and Xeno-canto.
-   Images are the API's ready-made 480×320 WebP thumbnails (`/api/image/<name>?size=medium`).
+   The app loads species images at runtime from `/api/image/<name>?size=medium` (480×320 WebP;
+   unknown names get a neutral placeholder); Lite caches them for offline use. Only the image
+   credits are stored in the taxonomy.
    Cornell's `id` (Indonesian) is stored as `in`, the code the app has used since V2.4.
 
 ## 2) Generated taxonomy JSON (input for the Labeling App)
@@ -24,7 +26,7 @@ The taxonomy is built from three sources (later ones win for names):
 npm run taxonomy:build
 # or
 node ./scripts/build-birdnet-taxonomy.js --output ./demo/data/birdnet-taxonomy.json \
-  [--v24-labels <BirdNET-Analyzer>/birdnet_analyzer/labels/V2.4] [--v3-labels <csv>] [--skip-images]
+  [--v24-labels <BirdNET-Analyzer>/birdnet_analyzer/labels/V2.4] [--v3-labels <csv>]
 ```
 
 Top-level JSON structure produced:
@@ -56,7 +58,7 @@ Field mapping:
   - `a`: alternative scientific names (synonyms, V2.4 spelling); the resolver matches them too
   - `n`: language code → common name; names equal to `en_uk` are omitted (resolver falls back to `en_uk`)
   - `x: 1`: not a V3 class (V2.4-only or other BirdNET-taxonomy species), still available for manual labels
-  - `birdnet_id`, `taxon_group`, `img*`: from the BirdNET taxonomy
+  - `birdnet_id`, `taxon_group`, `img_author`, `img_license` (image credit): from the BirdNET taxonomy
 
 Who consumes this JSON:
 - The demo and Labeling App load `demo/data/birdnet-taxonomy.json` (see `demo/labeling-app.html`).

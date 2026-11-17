@@ -84,5 +84,15 @@ export function onDemandUrl(sitePath: string, browserUrl: string): string {
     return `${windows ? 'http://svdata.localhost' : 'svdata://localhost'}/${sitePath}`;
 }
 
-/** Base URL of the species thumbnails ('<base><Scientific name>.webp'). */
-export const speciesImageBase = () => onDemandUrl('demo/data/species_images/', './data/species_images/');
+/** 480x320 WebP thumbnails served by the BirdNET taxonomy API. */
+export const SPECIES_IMAGE_API = 'https://birdnet.cornell.edu/taxonomy/api/image/';
+
+/**
+ * URL of a species thumbnail. The web app loads it from the BirdNET taxonomy;
+ * Lite goes through its data cache, which fetches it there once and keeps it
+ * for offline use (src-tauri-lite/src/data_cache.rs).
+ */
+export function speciesImageUrl(scientificName: string): string {
+    const name = encodeURIComponent(scientificName);
+    return onDemandUrl(`demo/data/species_images/${name}.webp`, `${SPECIES_IMAGE_API}${name}?size=medium`);
+}

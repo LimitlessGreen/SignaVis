@@ -4,8 +4,9 @@
 // Species images (~93 MB) and the BirdNET model (~79 MB) are not shipped
 // with Lite. The frontend asks for them under svdata (see onDemandUrl in
 // src/infrastructure/tauri/runtime.ts); this handler serves them from
-// <app data>/data-cache and, on a miss, downloads them once from the
-// SignaVis web app on GitHub Pages and keeps them there.
+// <app data>/data-cache and, on a miss, downloads them once and keeps them
+// there: models from the SignaVis web app on GitHub Pages, species images
+// from the BirdNET taxonomy API (480x320 WebP).
 // ═══════════════════════════════════════════════════════════════════════
 
 use std::path::{Component, Path, PathBuf};
@@ -15,8 +16,10 @@ use tauri::{Emitter, Manager, UriSchemeContext, UriSchemeResponder};
 
 pub const SCHEME: &str = "svdata";
 const UPSTREAM: &str = "https://limitlessgreen.github.io/SignaVis";
+const SPECIES_IMAGES: &str = "demo/data/species_images/";
+const SPECIES_IMAGE_API: &str = "https://birdnet.cornell.edu/taxonomy/api/image/";
 /// Only these subtrees can be fetched (nothing else of the web app).
-const ALLOWED_PREFIXES: &[&str] = &["demo/data/species_images/", "models/"];
+const ALLOWED_PREFIXES: &[&str] = &[SPECIES_IMAGES, "models/"];
 
 /// Percent-decoded, checked site path ("models/birdnet-v2.4/model.json"), or None.
 fn site_path(uri_path: &str) -> Option<String> {
@@ -69,7 +72,7 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
     if let Ok(bytes) = tokio::fs::read(&local).await {
         return Ok(bytes);
     }
-    let url = format!("{UPSTREAM}/{}", path.split('/').map(urlencode).collect::<Vec<_>>().join("/"));
+    let url = upstream_url(&path);
     let res = reqwest::get(&url).await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("{url}: {e}")))?;
     if !res.status().is_success() {
         let code = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -84,6 +87,14 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
         let _ = tokio::fs::remove_file(&tmp).await;
     }
     Ok(bytes)
+}
+
+/// Where a cached path is downloaded from.
+fn upstream_url(path: &str) -> String {
+    if let Some(name) = path.strip_prefix(SPECIES_IMAGES).and_then(|f| f.strip_suffix(".webp")) {
+        return format!("{SPECIES_IMAGE_API}{}?size=medium", urlencode(name));
+    }
+    format!("{UPSTREAM}/{}", path.split('/').map(urlencode).collect::<Vec<_>>().join("/"))
 }
 
 fn urlencode(segment: &str) -> String {
@@ -188,6 +199,15 @@ mod tests {
         let json = br#"{"audioModel":{"onnx":{"modelFile":"a.onnx"},"labels":{"file":"l.csv"},"scoreBlacklistFile":"../evil.json"},"geoModel":{"modelFile":"g.onnx","labelsFile":"a/b.txt"}}"#;
         assert_eq!(config_paths(json).unwrap(), vec!["a.onnx", "l.csv", "g.onnx"]);
         assert!(config_paths(b"{}").is_err());
+    }
+
+    #[test]
+    fn species_images_come_from_the_taxonomy_api() {
+        assert_eq!(
+            upstream_url("demo/data/species_images/Turdus merula.webp"),
+            "https://birdnet.cornell.edu/taxonomy/api/image/Turdus%20merula?size=medium"
+        );
+        assert_eq!(upstream_url("models/birdnet-v3.0/a.onnx"), format!("{UPSTREAM}/models/birdnet-v3.0/a.onnx"));
     }
 
     #[test]
