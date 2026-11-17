@@ -154,6 +154,7 @@ async function fetchWithRetry(fetchFn, url, tries = 4) {
         try {
             const res = await fetchFn(url, { headers: { 'User-Agent': USER_AGENT } });
             if (res.ok || res.status === 404 || i >= tries) return res;
+            await res.body?.cancel(); // release the connection before retrying
         } catch (e) {
             if (i >= tries) throw e;
         }
