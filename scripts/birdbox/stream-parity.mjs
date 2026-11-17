@@ -121,7 +121,8 @@ let ok = true;
     const want = ref.subarray(first * 9, last * 9), n = last - first;
     let dev = rows === n ? 0 : Infinity;
     for (let i = 0; dev < Infinity && i < rows * 9; i++) dev = Math.max(dev, Math.abs(data[i] - want[i]) / Math.max(1, Math.abs(want[i])));
-    const pass = dev <= 1e-5 && n > 0;
+    // A fixture shorter than 90 s has no windows 50–59: both sides empty is then right
+    const pass = dev <= 1e-5 && (n > 0 || audio.length < TO * 1.5 * 32000);
     console.log(`${pass ? 'PASS' : 'FAIL'} windows ${FROM}–${TO - 1} only: ${rows} rows (graph ${n}), max rel deviation ${dev}`);
     ok = pass && ok;
 }

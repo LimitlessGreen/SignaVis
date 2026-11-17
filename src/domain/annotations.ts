@@ -1013,6 +1013,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     snapBoxSource: SnapBoxSource | null = null;
     _snapBoxConf: number = SNAP_BOX_DEFAULT_CONF;
     /** `source`: who drew the box; `tune`: what Shift+wheel changes for this click. */
+    /** The point of the last snap, kept apart from its result for refreshSnap. */
+    _snapAt: { time: number; freq: number } | null = null;
     _snap: { time: number; freq: number; result: SnapResult; source: 'detector' | 'signal'; tune: 'conf' | 'sensitivity'; detector: boolean } | null = null;
     _snapEl: HTMLElement | null = null;
     /** Zoom box ("Lupe"): drag a field → 'zoomboxselect', right-click → 'zoomboxback'. */
@@ -1114,6 +1116,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._stampGhostEl = null;
         this._stampAxisLock = false;
         this._snap = null;
+        this._snapAt = null;
         this._snapEl = null;
     }
 
@@ -1735,6 +1738,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * else region growing on the signal (widens the analysed span while the call reaches its edge).
      */
     _runSnap(time: number, freq: number) {
+        this._snapAt = { time, freq };
         let det: { box: SnapBox | null; weaker: boolean } | null = null;
         try { det = this.snapBoxSource?.(time, freq, this._snapBoxConf) ?? null; } catch { det = null; }
         if (det?.box) {
@@ -1757,12 +1761,19 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     /** Snap again at the last point (e.g. once the detector's rows for it arrived). */
     refreshSnap() {
-        if (!this.snapMode || !this._snap) return;
-        this._runSnap(this._snap.time, this._snap.freq);
+        // From the clicked point, also when the signal gave no preview (aw-dsp not ready yet)
+        if (!this.snapMode || !this._snapAt) return;
+        this._runSnap(this._snapAt.time, this._snapAt.freq);
     }
 
     _renderSnapPreview() {
-        if (!this._snap || !this.overlay) { this._clearSnap(); return; }
+        if (!this._snap || !this.overlay) {
+            // No preview (yet): keep the clicked point for refreshSnap
+            const at = this._snapAt;
+            this._clearSnap();
+            this._snapAt = this.overlay ? at : null;
+            return;
+        }
         if (!this._snapEl) {
             this._snapEl = document.createElement('div');
             this.overlay.appendChild(this._snapEl);
@@ -1817,6 +1828,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _clearSnap() {
         this._snap = null;
+        this._snapAt = null;
         if (this._snapEl?.parentNode) this._snapEl.parentNode.removeChild(this._snapEl);
         this._snapEl = null;
     }
