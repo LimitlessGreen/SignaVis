@@ -1568,28 +1568,37 @@ async function runBirdnetOnFolder({ entries, paths }) {
   const birdnetIdle = async () => {
     while (!stopped && !birdnetPanel.canAnalyze) await new Promise((r) => setTimeout(r, 150));
   };
+  // Open the entry and wait until the player has decoded it ('ready' may come later); returns its buffer
+  const openDecoded = async (entry) => {
+    const before = player._state?.audioBuffer || null;
+    const wasActive = recordingManager.activeId === entry.id;
+    if (!wasActive) await activateRecordingEntry(entry);
+    const t0 = Date.now();
+    while (!stopped && Date.now() - t0 < 120000) {
+      const buf = player._state?.audioBuffer;
+      if (buf && (wasActive || buf !== before)) return buf;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return null;
+  };
   try {
     for (const entry of todo) {
-      await birdnetIdle();
-      if (stopped) break;
-      selectionMeta.textContent = `BirdNET ${done + 1}/${todo.length}: ${entry.filename || toXcId(entry.xcId) || ''} — click "Run BirdNET" again to stop`;
-      const before = player._state?.audioBuffer || null;
-      const wasActive = recordingManager.activeId === entry.id;
-      if (!wasActive) await activateRecordingEntry(entry);
-      // Wait until the player has decoded this recording (the 'ready' event may come later)
-      const t0 = Date.now();
-      while (!stopped && Date.now() - t0 < 120000) {
-        const buf = player._state?.audioBuffer;
-        if (buf && (wasActive || buf !== before)) break;
-        await new Promise((r) => setTimeout(r, 150));
+      // The user may switch recordings while we wait for a foreign run: open the entry again then
+      for (let attempt = 0; attempt < 3 && !stopped; attempt++) {
+        await birdnetIdle();
+        if (stopped) break;
+        selectionMeta.textContent = `BirdNET ${done + 1}/${todo.length}: ${entry.filename || toXcId(entry.xcId) || ''} — click "Run BirdNET" again to stop`;
+        const buf = await openDecoded(entry);
+        if (stopped || !buf) break;
+        await birdnetIdle();
+        if (stopped) break;
+        if (recordingManager.activeId !== entry.id || player._state?.audioBuffer !== buf) continue;
+        await birdnetPanel.analyze();
+        recordingManager.update(entry.id, { pinned: true });
+        done++;
+        break;
       }
       if (stopped) break;
-      if (!player._state?.audioBuffer) continue;
-      await birdnetIdle();
-      if (stopped) break;
-      await birdnetPanel.analyze();
-      recordingManager.update(entry.id, { pinned: true });
-      done++;
     }
   } finally {
     _folderBirdnetStop = null;

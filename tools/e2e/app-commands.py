@@ -1,6 +1,6 @@
 """App commands instead of button clicks (architecture step 3, part 2).
 
-Dev server needed:  uv run --with playwright python -I tools/e2e/app-commands.py http://localhost:5191/demo/labeling-app.html [xc-number]
+Dev server needed:  uv run --with playwright python -I tools/e2e/app-commands.py http://localhost:5191/demo/labeling-app.html [clip.wav] [xc-number]
 Checks: help menu loads the demo, Enter in the Xeno-canto field loads a recording (network), the phone
 view turns draw mode off, the Draw button toggles it, key "b" starts BirdNET, the "no API key" dialog
 stores the key on Enter. Prints one line per check; exits non-zero on failure.
@@ -9,7 +9,8 @@ import sys
 from playwright.sync_api import sync_playwright
 
 url = sys.argv[1]
-xc = sys.argv[2] if len(sys.argv) > 2 else None
+xc = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].endswith('.wav') else None
+CLIP = next((a for a in sys.argv[2:] if a.endswith('.wav')), None)
 fails = []
 
 
@@ -114,6 +115,35 @@ with sync_playwright() as p:
     runs = page.evaluate("window.__bnRuns.length"); n = page.evaluate("window.__signavis.recordings().length")
     meta = page.evaluate("document.getElementById('selectionMeta')?.textContent")
     check('folder BirdNET analyzes every recording', runs == 1 + n, f'runs {runs} for {n} recordings · {meta}')
+
+    # Folder BirdNET: the user opens another recording while the runner waits → the entry is opened again
+    page.set_input_files('#fileInput', CLIP) if CLIP else None
+    if CLIP:
+        for _ in range(20):
+            page.wait_for_timeout(500)
+            keep = page.locator('[data-v="keep"]')
+            if keep.count() and keep.first.is_visible(): keep.first.click()
+            if page.evaluate("window.__signavis.recordingCount()") >= 2: break
+        page.wait_for_timeout(2500)
+        page.evaluate("""() => { const sv = window.__signavis; const p = sv.birdnetPanel; window.__bnRuns = [];
+            const [a, b] = sv.recordings(); window.__ab = [a.id, b.id];
+            let fired = false, busyUntil = 0;
+            Object.defineProperty(p, 'canAnalyze', { configurable: true, get() {
+                // first check after the runner opened A: a foreign run starts and the user opens B
+                if (!fired && window.__folderOn && sv.activeRecordingId() === a.id && sv.player._state?.audioBuffer) {
+                    fired = true; busyUntil = Date.now() + 1500; sv.mobileApp.h.openRecording(b.id); }
+                return Date.now() > busyUntil && !this.analyzeBtn.disabled; } });
+            // the runner should analyze A first: make sure it is not active now
+            sv.mobileApp.h.openRecording(b.id); }""")
+        page.wait_for_timeout(2500)
+        page.evaluate("() => { const sv = window.__signavis; window.__folderOn = true; window.__folder = sv.runBirdnetOnFolder({ entries: sv.recordings(), paths: [] }); }")
+        page.wait_for_timeout(500)
+        page.locator('button:has-text("Run")').last.click()
+        page.wait_for_function("window.__bnRuns.length >= 2", timeout=60000)
+        page.evaluate("() => window.__folder"); page.wait_for_timeout(500)
+        runs = page.evaluate("window.__bnRuns"); ab = page.evaluate("window.__ab")
+        pinned = page.evaluate("window.__signavis.recordings().map((e) => !!e.pinned)")
+        check('folder BirdNET re-opens a recording switched away from', runs == ab and pinned == [True, True], f'runs {runs} expected {ab}, pinned {pinned}')
 
     check('page errors', not errs, str(errs))
     b.close()
