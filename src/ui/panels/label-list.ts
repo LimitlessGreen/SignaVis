@@ -18,6 +18,7 @@
  */
 
 import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
+import { normalizeSearch, matchTier, MATCH } from '../components/taxonomy-ui/species-ranking.ts';
 import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
@@ -163,6 +164,8 @@ export class LabelList {
     _speciesSearchFactory: any;
     _view: 'source' | 'time';
     _filter: string;
+    _filterRaw = '';
+    _altNames: ((sci: string) => string[]) | null;
     _playingId: string | null;
   /**
    * @param {object} opts
@@ -193,6 +196,8 @@ export class LabelList {
     this._emptyEl = opts.emptyEl;
     this._badgeEl = opts.badgeEl || null;
     this._resolveName = opts.resolveName;
+    /** Common names in all languages for a scientific name (optional). */
+    this._altNames = opts.altNames || null;
     this._taxonomy = opts.taxonomy || null;
     this._onSync = opts.onSync;
     this._onSeek = opts.onSeek;
@@ -285,7 +290,8 @@ export class LabelList {
 
   /** Filter by species name, scientific name or tag text (case-insensitive). */
   setFilter(text: string) {
-    this._filter = String(text || '').trim().toLowerCase();
+    this._filterRaw = String(text || '').trim();
+    this._filter = normalizeSearch(text).trim();
     this.render(this._labels);
   }
 
@@ -330,8 +336,11 @@ export class LabelList {
   _matches(lbl: any) {
     if (!this._filter) return true;
     const { display, scientific } = this._resolveName(lbl);
-    const hay = [display, scientific, lbl.label, lbl.scientificName,
-      ...Object.values(lbl.tags || {}).filter((v) => typeof v === 'string')].join(' ').toLowerCase();
+    const sci = scientific || lbl.scientificName || '';
+    // Species: same matching as the species search (diacritics, codes, other languages).
+    if (matchTier(this._filter, display || lbl.label, sci, sci ? (this._altNames?.(sci) || []) : []) !== MATCH.NONE) return true;
+    const hay = normalizeSearch([lbl.label, lbl.scientificName,
+      ...Object.values(lbl.tags || {}).filter((v) => typeof v === 'string')].join(' '));
     return hay.includes(this._filter);
   }
 
@@ -355,7 +364,7 @@ export class LabelList {
     else this._renderSources(visible, labels);
 
     if (this._filter && !visible.length && labels.length) {
-      this._container.appendChild(el('div', 'lt-empty', `No labels match “${this._filter}”.`));
+      this._container.appendChild(el('div', 'lt-empty', `No labels match “${this._filterRaw}”.`));
     }
     if (this._selectedId) this.highlightRow(this._selectedId, { scroll: false });
     if (this._playingId) {

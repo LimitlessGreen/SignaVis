@@ -99,3 +99,15 @@ test('empty query lists project labels only, most used first', () => {
   assert.deepEqual(out.map((r) => r.name), ['Kohlmeise', 'Blaumeise', 'Noise']);
   assert.ok(out.every((r) => r.group === 'project'));
 });
+
+test('label list filter: diacritics, codes, other languages and tags', async () => {
+  const { LabelList } = await import('../src/ui/panels/label-list.ts');
+  const ctx = {
+    _resolveName: (l) => ({ display: l.label, scientific: l.scientificName }),
+    _altNames: (sci) => (sci === 'Parus major' ? ['Kohlmeise', 'Great Tit', 'Mésange charbonnière'] : []),
+  };
+  const lbl = { label: 'Kohlmeise', scientificName: 'Parus major', tags: { sound: 'Gesang' } };
+  const matches = (f) => { ctx._filter = f; return LabelList.prototype._matches.call(ctx, lbl); };
+  for (const f of ['kohl', 'pama', 'parmaj', 'great tit', 'mesange', 'gesang', 'major']) assert.ok(matches(f), f);
+  for (const f of ['amsel', 'tumu']) assert.ok(!matches(f), f);
+});

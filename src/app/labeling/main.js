@@ -2476,6 +2476,7 @@ const labelList = new LabelList({
   emptyEl:   document.getElementById('labelsEmpty'),
   badgeEl:   document.getElementById('labelListCount'),
   resolveName,
+  altNames: (sci) => Object.values(taxonomy.resolve(sci)?.n || {}),
   taxonomy,
   tagStore,
   accordion: true,
