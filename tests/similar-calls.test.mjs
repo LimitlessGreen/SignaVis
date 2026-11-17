@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { fft, nccCurve, pickPeaks, findSimilar, timeIoU, Reranker, createSearch } from '../src/domain/similar/ncc.ts';
+import { fft, nccCurve, pickPeaks, findSimilar, timeIoU, Reranker, createSearch, templateFrom, fitTemplate, findWithTemplate } from '../src/domain/similar/ncc.ts';
 import { SimilarSession } from '../src/app/similarSpectrogram.ts';
 import { bandSpectrogram } from '../src/app/similarSpectrogram.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../src/app/suggest-similar.ts';
@@ -163,4 +163,36 @@ test('SimilarSession runs find + decide in place without workers', async () => {
     session.dispose();
     const st = createSearch(twoTypes(3600, 60, [100, 500], []), { start: 1, end: 1.4, freqMin: 2000, freqMax: 3000 }, { minScore: 0.3 });
     assert.equal(st.hits.length, st.reranker.ranks().length);
+});
+
+test('template from one recording finds the call in another, also at another sample rate', async () => {
+    const chirps = (sr, ats, seed) => {
+        const n = sr * 10, x = new Float32Array(n), r = rng(seed);
+        for (let i = 0; i < n; i++) x[i] = 0.01 * r();
+        for (const at of ats) {
+            let ph = 0;
+            for (let i = 0; i < 0.25 * sr; i++) {
+                const t = i / sr;
+                ph += 2 * Math.PI * (3000 + 4000 * t) / sr;
+                x[Math.round(at * sr) + i] += 0.3 * Math.sin(ph) * Math.sin(Math.PI * t / 0.25);
+            }
+        }
+        return { sampleRate: sr, length: n, numberOfChannels: 1, getChannelData: () => x };
+    };
+    const exemplar = { start: 2, end: 2.25, freqMin: 2900, freqMax: 4100 };
+    const a = await bandSpectrogram(chirps(32000, [2], 1), ...searchBand(exemplar, 32000));
+    const t = templateFrom(a, exemplar);
+    assert.ok(t && t.rows > 5 && t.frames > 40);
+    for (const sr of [32000, 48000]) {
+        const b = await bandSpectrogram(chirps(sr, [1.5, 6.2], 2), ...searchBand(exemplar, sr));
+        const fit = fitTemplate(t, b);
+        assert.ok(Math.abs(fit.T * b.dt - t.frames * t.dt) < 2 * b.dt, `duration kept at ${sr} Hz`);
+        const { hits } = findWithTemplate(b, t, { minScore: 0.3 });
+        const starts = hits.map((h) => h.start).sort((x, y) => x - y);
+        assert.equal(hits.length, 2, `${sr} Hz: ${starts}`);
+        assert.ok(Math.abs(starts[0] - 1.5) < 0.03 && Math.abs(starts[1] - 6.2) < 0.03, `${sr} Hz: ${starts}`);
+        const st = createSearch(b, { template: t }, { minScore: 0.3 });
+        assert.equal(st.hits.length, 2);
+        assert.equal(st.reranker.decide(0, true)[1] > 0.5, true);
+    }
 });

@@ -75,15 +75,25 @@ const nextPow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(2, n)));
  * and the shift that gave it.
  */
 export function nccCurve(spec: BandSpectrogram, r0: number, r1: number, c0: number, c1: number, shift = 2): { score: Float32Array; shiftAt: Int8Array } {
+    const R = r1 - r0, T = c1 - c0, P = new Float32Array(Math.max(0, R * T));
+    for (let r = 0; r < R; r++) for (let t = 0; t < T; t++) P[r * T + t] = spec.values[(r0 + r) * spec.frames + c0 + t];
+    return correlate(spec, P, R, T, r0, shift);
+}
+
+/**
+ * Normalised cross-correlation of patch P (R × T, any scale) placed at rows [r0, r0 + R) of `spec`,
+ * over every frame offset, best over row shifts −shift..shift.
+ */
+export function correlate(spec: BandSpectrogram, patch: Float32Array, R: number, T: number, r0: number, shift = 2): { score: Float32Array; shiftAt: Int8Array } {
     const { values: X, frames: N } = spec;
-    const R = r1 - r0, T = c1 - c0, out = Math.max(0, N - T + 1);
+    const r1 = r0 + R, out = Math.max(0, N - T + 1);
     const score = new Float32Array(out).fill(-1), shiftAt = new Int8Array(out);
     if (R <= 0 || T <= 1 || !out) return { score, shiftAt };
 
     // Zero-mean, unit-norm patch
-    const P = new Float64Array(R * T);
+    const P = Float64Array.from(patch);
     let mean = 0;
-    for (let r = 0; r < R; r++) for (let t = 0; t < T; t++) mean += P[r * T + t] = X[(r0 + r) * N + c0 + t];
+    for (const v of P) mean += v;
     mean /= R * T;
     let norm = 0;
     for (let i = 0; i < P.length; i++) { P[i] -= mean; norm += P[i] * P[i]; }
@@ -309,7 +319,69 @@ export class Reranker {
 export interface SearchState { hits: SimilarHit[]; reranker: Reranker }
 
 /** findSimilar plus a Reranker over its hits. */
-export function createSearch(spec: BandSpectrogram, exemplar: Box, opts: FindOptions & { lambda?: number } = {}): SearchState {
+/** findSimilar (exemplar in this recording) or findWithTemplate (from another) plus a Reranker over the hits. */
+export function createSearch(spec: BandSpectrogram, exemplar: Box | { template: CallTemplate }, opts: FindOptions & { lambda?: number } = {}): SearchState {
+    if ('template' in exemplar) {
+        const { hits, win } = findWithTemplate(spec, exemplar.template, opts);
+        return { hits, reranker: new Reranker(spec, win, hits, opts.lambda ?? 1) };
+    }
     const hits = findSimilar(spec, exemplar, opts);
     return { hits, reranker: new Reranker(spec, exemplarWindow(spec, exemplar, opts), hits, opts.lambda ?? 1) };
+}
+
+// ── Templates: search another recording with a label's patch ───────
+// The exemplar's patch (its band plus margin, dB above the floor) travels with its geometry; a target
+// recording with another sample rate or STFT grid gets it resampled onto its own rows and frames.
+
+export interface CallTemplate {
+    values: Float32Array;   // rows × frames
+    rows: number;
+    frames: number;
+    /** Frequency (Hz) of row 0 and row spacing, frame spacing (s). */
+    f0: number; df: number; dt: number;
+    /** The exemplar's box band (Hz), for the hit boxes. */
+    freqMin: number; freqMax: number;
+}
+
+/** The exemplar's patch as a template (same window as findSimilar uses). */
+export function templateFrom(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): CallTemplate | null {
+    const { r0, r1, c0, c1 } = exemplarWindow(spec, exemplar, opts);
+    const rows = r1 - r0, frames = c1 - c0;
+    if (rows < 1 || frames < 2) return null;
+    const values = new Float32Array(rows * frames);
+    for (let r = 0; r < rows; r++) for (let t = 0; t < frames; t++) values[r * frames + t] = spec.values[(r0 + r) * spec.frames + c0 + t];
+    return { values, rows, frames, f0: spec.f0 + r0 * spec.df, df: spec.df, dt: spec.dt, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax };
+}
+
+/** `t` on the grid of `spec` (bilinear), with the row of `spec` its first row lands on. */
+export function fitTemplate(t: CallTemplate, spec: BandSpectrogram): { patch: Float32Array; R: number; T: number; r0: number } {
+    const r0 = Math.round((t.f0 - spec.f0) / spec.df);
+    const R = Math.max(1, Math.round(((t.rows - 1) * t.df) / spec.df) + 1);
+    const T = Math.max(2, Math.round(((t.frames - 1) * t.dt) / spec.dt) + 1);
+    if (R === t.rows && T === t.frames) return { patch: t.values, R, T, r0 };
+    const patch = new Float32Array(R * T);
+    const at = (r: number, c: number) => t.values[Math.min(t.rows - 1, r) * t.frames + Math.min(t.frames - 1, c)];
+    for (let i = 0; i < R; i++) {
+        const y = R > 1 ? (i * (t.rows - 1)) / (R - 1) : 0, y0 = Math.floor(y), fy = y - y0;
+        for (let j = 0; j < T; j++) {
+            const x = T > 1 ? (j * (t.frames - 1)) / (T - 1) : 0, x0 = Math.floor(x), fx = x - x0;
+            patch[i * T + j] = (1 - fy) * ((1 - fx) * at(y0, x0) + fx * at(y0, x0 + 1)) + fy * ((1 - fx) * at(y0 + 1, x0) + fx * at(y0 + 1, x0 + 1));
+        }
+    }
+    return { patch, R, T, r0 };
+}
+
+/** Repeats of a template (from this or another recording) in `spec`, best first. */
+export function findWithTemplate(spec: BandSpectrogram, t: CallTemplate, opts: FindOptions = {}): { hits: SimilarHit[]; win: { r0: number; r1: number; c0: number; c1: number } } {
+    const { shift = 2, minScore = 0.2, max = 200, minGap = 0.6 } = opts;
+    const fit = fitTemplate(t, spec);
+    const r0 = fit.r0, win = { r0, r1: r0 + fit.R, c0: 0, c1: fit.T };
+    if (r0 < shift || r0 + fit.R > spec.rows - shift) return { hits: [], win };
+    const { score, shiftAt } = correlate(spec, fit.patch, fit.R, fit.T, r0, shift);
+    const dur = fit.T * spec.dt;
+    const hits = pickPeaks(score, Math.max(1, Math.round(minGap * fit.T)), minScore, max).map((i) => {
+        const start = spec.t0 + i * spec.dt, df = shiftAt[i] * spec.df;
+        return { start, end: start + dur, freqMin: Math.max(0, t.freqMin + df), freqMax: t.freqMax + df, score: score[i], frame: i, shift: shiftAt[i] };
+    });
+    return { hits, win };
 }

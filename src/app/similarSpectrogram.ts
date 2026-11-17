@@ -8,7 +8,7 @@
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { channelData } from '../shared/utils.ts';
 import type { CallPatch } from '../domain/similar/cluster.ts';
-import { createSearch, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
+import { createSearch, type CallTemplate, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
 
 const WINDOW_SECONDS = 0.016;
 const BLOCK_FRAMES = 4096;
@@ -94,7 +94,7 @@ export class SimilarSession {
     }
 
     /** Hits for `exemplar`, best first. `spec` is consumed. */
-    async find(spec: BandSpectrogram, exemplar: Box, opts: FindOptions = {}): Promise<SimilarHit[]> {
+    async find(spec: BandSpectrogram, exemplar: Box | { template: CallTemplate }, opts: FindOptions = {}): Promise<SimilarHit[]> {
         const Ctor = await workerCtor();
         if (!Ctor) { this.local = createSearch(spec, exemplar, opts); return this.local.hits; }
         this.worker = new Ctor();

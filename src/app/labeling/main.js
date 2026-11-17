@@ -46,7 +46,7 @@ import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
-import { timeIoU } from '../../domain/similar/ncc.ts';
+import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
 import { GroupReview } from '../../ui/components/similar-review/group-review.ts';
 import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
@@ -3071,8 +3071,9 @@ function feedSimilarDecisions(ids, accepted) {
   }).catch(() => { /* search closed meanwhile */ });
 }
 
-async function findSimilarCalls(exemplar) {
-  if (!canFindSimilar(exemplar)) { selectionMeta.textContent = 'Find similar: needs a named label with a box (not full band)'; return; }
+async function findSimilarCalls(exemplar, { template = null } = {}) {
+  // With a template the exemplar is a label of another recording (carried)
+  if (!template && !canFindSimilar(exemplar)) { selectionMeta.textContent = 'Find similar: needs a named label with a box (not full band)'; return; }
   const audio = player._state?.audioBuffer;
   if (!audio) return;
   const run = ++_similarRun, recordingId = recordingManager?.activeId || null;
@@ -3086,7 +3087,8 @@ async function findSimilarCalls(exemplar) {
     if (!spec || stale()) return;
     endSimilarSession();
     const session = _similarSession = new SimilarSession();
-    const hits = await session.find(spec, { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
+    const hits = await session.find(spec, template ? { template }
+      : { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
     if (stale()) { if (session === _similarSession) endSimilarSession(); return; }
     const setId = similarSetId();
     if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
@@ -3103,12 +3105,51 @@ async function findSimilarCalls(exemplar) {
     state.hiddenSetIds?.delete(setId);
     syncToPlayer();
     if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
-    selectionMeta.textContent = `${suggestions.length} call${suggestions.length === 1 ? '' : 's'} like ${exemplar.label}: Enter copies, X rejects`;
+    selectionMeta.textContent = `${suggestions.length} call${suggestions.length === 1 ? '' : 's'} like ${exemplar.label}${template ? ' (label from another recording)' : ''}: Enter copies, X rejects`;
     similarReview.open(exemplar.label, suggestions.map((s) => ({ id: s.id, score: s.similar.score })));
   } catch (err) {
     console.error('Find similar failed', err);
     if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
   }
+}
+
+// ── Carry a label to other recordings ─────────────────────────────
+// Its patch (template) goes along; every other recording opened afterwards is searched for it
+// once and its review opens. In Lite, "Find similar in project" first lets Perch pick the
+// recordings and spots (Similar panel); opening a hit then runs this search there.
+let _carried = null;   // { exemplar, template, recordingId, searched: Set<recordingId> }
+
+async function carrySimilarExemplar(lbl, { perch = false } = {}) {
+  if (!canFindSimilar(lbl)) { selectionMeta.textContent = 'Needs a named label with a box (not full band)'; return; }
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  const spec = await bandSpectrogram(audio, ...searchBand(lbl, audio.sampleRate));
+  const template = spec && templateFrom(spec, lbl);
+  if (!template) { selectionMeta.textContent = 'This label is too small to look for'; return; }
+  const recordingId = recordingManager?.activeId || null;
+  const exemplar = { id: lbl.id, label: lbl.label, scientificName: lbl.scientificName || '', commonName: lbl.commonName,
+    color: lbl.color, start: lbl.start, end: lbl.end, freqMin: lbl.freqMin, freqMax: lbl.freqMax };
+  _carried = { exemplar, template, recordingId, searched: new Set([recordingId]) };
+  selectionMeta.textContent = perch
+    ? `Perch looks for ${lbl.label} in the project; open a hit to check the calls there`
+    : `Looking for ${lbl.label} in every recording you open next`;
+  if (perch && similarPanel) {
+    const entry = recordingManager.getActive();
+    if (entry?.path) { sidebar.setActive('similar'); similarPanel.searchFor({ path: entry.path, start: lbl.start, end: lbl.end }); }
+  }
+}
+
+function stopCarrying() {
+  if (_carried) selectionMeta.textContent = `Stopped looking for ${_carried.exemplar.label}`;
+  _carried = null;
+}
+
+/** A recording became ready: search it for the carried label once. */
+function searchCarried() {
+  const id = recordingManager?.activeId || null;
+  if (!_carried || !id || _carried.searched.has(id) || !player._state?.audioBuffer) return;
+  _carried.searched.add(id);
+  findSimilarCalls(_carried.exemplar, { template: _carried.template });
 }
 
 function acceptSimilar(ids) {
@@ -3379,8 +3420,9 @@ function createGeoAwareSpeciesSearch(opts) {
 }
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 // ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
+let similarPanel = null;   // Lite + folder project: Perch search over the project
 if (isLite()) {
-  const similarPanel = new SimilarPanel({
+  similarPanel = new SimilarPanel({
     getRoot: () => (projectKind === 'folder' && projectStore?.rootPath) || null,
     getQuery: () => {
       const entry = recordingManager.getActive();
@@ -4772,6 +4814,11 @@ function showLabelContextMenu(e, id) {
         action: () => useLabelAsTemplate(lbl) },
       ...(canFindSimilar(lbl) ? [{ label: 'Find similar calls (F)', icon: ICON_REFS,
         action: () => findSimilarCalls(lbl) }] : []),
+      ...(canFindSimilar(lbl) ? [{ label: 'Look for it in other recordings', icon: ICON_REFS,
+        action: () => carrySimilarExemplar(lbl) }] : []),
+      ...(canFindSimilar(lbl) && similarPanel && recordingManager.getActive()?.path ? [{ label: 'Find similar in project (Perch)', icon: ICON_REFS,
+        action: () => carrySimilarExemplar(lbl, { perch: true }) }] : []),
+      ...(_carried ? [{ label: `Stop looking for ${_carried.exemplar.label}`, icon: ICON_REFS, action: () => stopCarrying() }] : []),
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
@@ -4844,6 +4891,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') projectAutosaver?.flush();
 });
 player.on('ready', () => { persistXcToFolder(recordingManager.getActive()); });
+// A label carried from another recording: look for it here (after the view has settled)
+player.on('ready', () => setTimeout(searchCarried, 300));
 window.addEventListener('beforeunload', () => {
   saveProjectSnapshotNow();
   projectAutosaver?.flush();
@@ -5265,6 +5314,6 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar };
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar };
 }
 await loadBirdnetTaxonomy();
