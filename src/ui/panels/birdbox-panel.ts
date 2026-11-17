@@ -15,6 +15,7 @@ import { fuseBoxes, type FusedBox, type FusionCache } from '../../domain/detecto
 import { boxUnder, type BoxUnderCache } from '../../domain/detector/boxUnder.ts';
 import { Pacer } from '../../domain/detector/pacer.ts';
 import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
+import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
 
@@ -40,7 +41,8 @@ export interface BirdBoxPanelOptions {
     detector?: BirdBoxDetector;
 }
 
-interface Result { raw: RawRows; cache: FusionCache }
+/** `stopped`: Stop ended the run, its rows reach only raw.analyzedTo. */
+interface Result { raw: RawRows; cache: FusionCache; stopped?: boolean }
 
 export class BirdBoxPanel {
     private readonly o: BirdBoxPanelOptions;
@@ -50,6 +52,10 @@ export class BirdBoxPanel {
     private pacer: Pacer<RawRows> | null = null;
     private runningId: string | null = null;
     private readonly snapCache: BoxUnderCache = new Map();
+    private readonly nearby = new NearbyRows<AudioBuffer>({
+        prepare: buf => resampleTo(mono(buf), buf.sampleRate, SAMPLE_RATE),
+        detect: (pcm, from, to) => this.detector.detect(pcm, { to }, from),
+    });
 
     constructor(opts: BirdBoxPanelOptions) {
         this.o = opts;
@@ -72,14 +78,33 @@ export class BirdBoxPanel {
     /**
      * The most confident box under a point at confidence `conf` (Snap to call), fused with the
      * panel's gap setting. `weaker`: none at `conf`, but one at the lowest confidence.
-     * Null without rows for the recording.
+     * Null without rows for the recording at that point (neither a run nor detectNear).
      */
     boxAt(recordingId: string | null, time: number, freq: number, conf: number): { box: { start: number; end: number; freqMin: number; freqMax: number } | null; weaker: boolean } | null {
-        const res = this.results.get(key(recordingId));
-        if (!res) return null;
-        const { box, weaker } = boxUnder(res.raw.data, res.raw.rows, time, freq,
-            { conf, gap: this.gap, minConf: BIRDBOX_RAW_CONF, later: laterOf(res.raw), cache: this.snapCache });
+        const res = this.covering(recordingId, time);
+        const near = res ? null : this.nearby.at(key(recordingId), time);
+        const raw = res?.raw ?? near?.raw;
+        if (!raw) return null;
+        const { box, weaker } = boxUnder(raw.data, raw.rows, time, freq,
+            { conf, gap: this.gap, minConf: BIRDBOX_RAW_CONF, later: laterOf(raw), cache: near?.cache ?? this.snapCache });
         return { box: box && { start: box.t0, end: box.t1, freqMin: box.flo, freqMax: box.fhi }, weaker };
+    }
+
+    /**
+     * BirdBox on the few seconds around `time` only (Snap on a recording without a run):
+     * the windows there plus the 60 s of audio their noise floor needs, so the rows equal
+     * the whole run's. Nothing is shown as boxes; boxAt reads them. False if nothing ran.
+     */
+    detectNear(recordingId: string | null, time: number): Promise<boolean> {
+        const buf = this.o.getAudioBuffer();
+        if (!buf || this.covering(recordingId, time)) return Promise.resolve(false);
+        return this.nearby.detect(key(recordingId), buf, time);
+    }
+
+    /** The run's result if its rows reach the seconds around `time` (a stopped run may not). */
+    private covering(recordingId: string | null, time: number): Result | null {
+        const res = this.results.get(key(recordingId));
+        return res && runCovers(res.raw, !!res.stopped, time) ? res : null;
     }
 
     /** Fuse the active recording's rows again with the slider settings. */
@@ -114,6 +139,7 @@ export class BirdBoxPanel {
             stoppedRun = () => {
                 if (!current()) return;
                 res.raw = { ...latest, done: true };
+                res.stopped = true;
                 this.emit(id, res, false);
             };
             const pacer = this.pacer = new Pacer<RawRows>(raw => {
@@ -159,16 +185,18 @@ export class BirdBoxPanel {
     /** Forget a recording's rows (its labels were removed); a run on it stops without emitting. */
     forget(recordingId: string | null): void {
         this.results.delete(key(recordingId));
+        this.nearby.forget(key(recordingId));
         if (this.runningId === recordingId) this.stop();
     }
 
     /** Forget all rows (the BirdBox set was deleted, or the session was reset). */
     forgetAll(): void {
         this.results.clear();
+        this.nearby.forgetAll();
         this.stop();
     }
 
-    dispose(): void { this.stop(); this.detector.dispose(); }
+    dispose(): void { this.forgetAll(); this.detector.dispose(); }
 
     // ── internals ─────────────────────────────────────────────────────
 
