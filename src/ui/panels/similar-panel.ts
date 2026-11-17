@@ -190,15 +190,13 @@ export class SimilarPanel {
 
     /** Search for a given span (e.g. a label: "find similar in project") instead of the selection. */
     async searchFor(q: SimilarQuery) {
-        this.#override = q;
-        try { await this.refresh(); await this.#search(); } finally { this.#override = null; }
+        await this.refresh();
+        await this.#search(q);
     }
 
-    #override: SimilarQuery | null = null;
-
-    async #search() {
+    async #search(query: SimilarQuery | null = null) {
         const root = this.#opts.getRoot();
-        const q = this.#override || this.#opts.getQuery();
+        const q = query || this.#opts.getQuery();
         if (!root) return;
         if (!q) {
             this.#status = 'Select a region (or place the playhead) in a project recording first.';

@@ -70,7 +70,10 @@ export class SimilarReview {
         const at = cur ? this.items.findIndex((i) => i.id === cur) : -1;
         this.pos = at >= 0 ? at : Math.min(this.pos, Math.max(0, this.items.length - 1));
         if (!this.el) return;
-        if (!this.items.length) this.close(); else this.render();
+        if (!this.items.length) { this.close(); return; }
+        this.render();
+        // The previewed one went: preview the one now in its place
+        if (this.items[this.pos]?.id !== cur) this.focusCurrent();
     }
 
     /**
@@ -135,6 +138,8 @@ export class SimilarReview {
         if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
             && !this.el?.contains(t)) return;
         const k = e.key;
+        // A focused button of the bar keeps Enter / Space for itself
+        if ((k === 'Enter' || k === ' ') && t instanceof HTMLElement && t.closest('button') && this.el?.contains(t)) return;
         let done = true;
         if (k === 'Enter') { if (e.shiftKey) this.acceptAbove(); else this.decide(true); }
         else if (k === 'x' || k === 'X' || k === 'Delete' || k === 'Backspace') this.decide(false);
@@ -186,7 +191,8 @@ export class SimilarReview {
         const el = this.el, r = this.h.anchor?.();
         if (!el || !r || !r.width || !r.height) return;
         const h = el.offsetHeight || 36;
-        el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+        const w = el.offsetWidth || 0;   // centred by translateX(-50%): keep both edges in the window
+        el.style.left = `${Math.round(Math.min(window.innerWidth - w / 2 - 4, Math.max(w / 2 + 4, r.left + r.width / 2)))}px`;
         el.style.top = `${Math.round(Math.min(window.innerHeight - h - 4, Math.max(4, r.bottom - h - 8)))}px`;
         el.style.bottom = 'auto';
     }

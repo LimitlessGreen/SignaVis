@@ -376,7 +376,8 @@ export function findWithTemplate(spec: BandSpectrogram, t: CallTemplate, opts: F
     const { shift = 2, minScore = 0.2, max = 200, minGap = 0.6 } = opts;
     const fit = fitTemplate(t, spec);
     const r0 = fit.r0, win = { r0, r1: r0 + fit.R, c0: 0, c1: fit.T };
-    if (r0 < shift || r0 + fit.R > spec.rows - shift) return { hits: [], win };
+    // correlate() tries only the shifts that fit; no placement at all → no hits
+    if (r0 < 0 || r0 + fit.R > spec.rows) return { hits: [], win };
     const { score, shiftAt } = correlate(spec, fit.patch, fit.R, fit.T, r0, shift);
     const dur = fit.T * spec.dt;
     const hits = pickPeaks(score, Math.max(1, Math.round(minGap * fit.T)), minScore, max).map((i) => {

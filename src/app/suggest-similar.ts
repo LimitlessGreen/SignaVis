@@ -14,7 +14,11 @@ import { timeIoU, type Box, type SimilarHit } from '../domain/similar/ncc.ts';
 
 export const SIMILAR_ORIGIN = 'Similar';
 
-export interface SimilarRecord { sourceLabelId: string; score: number; sources: string[] }
+export interface SimilarRecord {
+    sourceLabelId: string; score: number; sources: string[];
+    /** suggestionKey() of the correlation hit: recorded on reject, checked on the next search. */
+    key?: string;
+}
 
 const name = (l: any) => String(l?.scientificName || l?.label || '').trim().toLowerCase();
 const freqOverlap = (a: Box, b: Box) => Math.max(0, Math.min(a.freqMax, b.freqMax) - Math.max(a.freqMin, b.freqMin));
@@ -48,7 +52,8 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
     const out: any[] = [];
     for (const [hi, h] of hits.entries()) {
         if (own.some((l) => timeIoU(h, l) >= 0.3)) continue;
-        if (opts.rejected?.has(suggestionKey(sp, h.start))) continue;
+        const key = suggestionKey(sp, h.start);   // before BirdBox refines the start
+        if (opts.rejected?.has(key)) continue;
         let box: Box = h;
         const sources = ['correlation'];
         let best = 0;
@@ -65,7 +70,7 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
             ...(exemplar.color ? { color: exemplar.color } : {}),
             origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(h.score * 1000) / 1000,
             setId: opts.setId, ...(opts.recordingId ? { recordingId: opts.recordingId } : {}),
-            similar: { sourceLabelId: exemplar.id, score: h.score, sources } satisfies SimilarRecord,
+            similar: { sourceLabelId: exemplar.id, score: h.score, sources, key } satisfies SimilarRecord,
         };
         out.push(sug);
         opts.onPick?.(sug, hi);

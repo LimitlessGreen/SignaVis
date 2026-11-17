@@ -116,7 +116,7 @@ test('suggestions: skip labelled places and rejections, take BirdBox bounds, kee
     assert.deepEqual(out.map((s) => s.start), [5, 15.02]);
     assert.equal(out[0].origin, SIMILAR_ORIGIN);
     assert.equal(out[0].label, 'Blackbird');
-    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'] });
+    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'], key: suggestionKey('Turdus merula', 5) });
     assert.deepEqual(out[1].similar.sources, ['correlation', 'BirdBox']);
     assert.equal(out[1].freqMin, 2300);
 
@@ -196,3 +196,30 @@ test('template from one recording finds the call in another, also at another sam
         assert.equal(st.reranker.decide(0, true)[1] > 0.5, true);
     }
 });
+
+test('a rejection is checked against the correlation start, even when BirdBox moved the box', () => {
+    const exemplar = { id: 'ex', label: 'Blackbird', start: 1, end: 1.4, freqMin: 2000, freqMax: 3000 };
+    const hit = { start: 15.04, end: 15.44, freqMin: 2000, freqMax: 3000, score: 0.7 };
+    const box = { start: 15.08, end: 15.4, freqMin: 2100, freqMax: 2900 };
+    const opts = { labels: [exemplar], boxes: [box], setId: 'sim', newId: () => 's1' };
+    const [sug] = buildSuggestions(exemplar, [hit], opts);
+    assert.equal(sug.start, 15.08);                                    // bounds from BirdBox
+    assert.equal(sug.similar.key, suggestionKey('Blackbird', 15.04));  // key from the correlation hit
+    assert.equal(buildSuggestions(exemplar, [hit], { ...opts, rejected: new Set([sug.similar.key]) }).length, 0);
+});
+
+test('a template near the bottom of the band still searches with the shifts that fit', () => {
+    const spec = spec_low();
+    const t = { values: new Float32Array(3 * 40), rows: 3, frames: 40, f0: 100, df: 100, dt: 0.01, freqMin: 100, freqMax: 300 };
+    for (let c = 0; c < 40; c++) t.values[1 * 40 + c] = 20;
+    const { hits } = findWithTemplate(spec, t, { minScore: 0.3 });
+    assert.ok(hits.some((h) => Math.abs(h.start - 2) < 0.02), JSON.stringify(hits.slice(0, 3)));
+});
+
+/** Template rows 1–3 of a 0-Hz-based spectrogram: r0 = 1 < shift 2, only shifts −1..2 fit. */
+function spec_low() {
+    const frames = 1000, rows = 20, r = rng(4), values = new Float32Array(rows * frames);
+    for (let i = 0; i < values.length; i++) values[i] = 3 * r();
+    for (let c = 0; c < 40; c++) values[2 * frames + 200 + c] += 20;
+    return { values, rows, frames, f0: 0, df: 100, t0: 0, dt: 0.01 };
+}

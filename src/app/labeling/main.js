@@ -453,6 +453,9 @@ function makeXcProgress(xcId) {
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const fileLabel       = document.getElementById('fileLabel');
+// Recording switches (activateRecordingEntry): a carried-label search drops a 'ready' that is out of date.
+// Up here because a session restore can switch before the similar-calls code below has run.
+let _activations = 0;
 const fileInput       = document.getElementById('fileInput');
 const browseBtn       = document.getElementById('browseBtn');
 const loadSampleBtn   = document.getElementById('loadSampleBtn');
@@ -2008,6 +2011,7 @@ setActiveSet(OWN_SOURCE_ID);
  * Saves current labels, loads the new entry's audio, restores its labels.
  */
 async function activateRecordingEntry(entry) {
+  _activations++;
   closeSimilarReview();
   try { groupReview.close(); } catch { /* before the overview exists */ }
   // 1. Save current labels into the leaving entry (guarded helper avoids
@@ -3044,9 +3048,12 @@ const similarReview = new SimilarReview({
 });
 
 function closeSimilarReview() {
-  try { similarReview.close(); } catch { /* before the review exists */ }
-  endSimilarSession();
-  _similarRun++;
+  // A session restore can switch recordings before the similar-calls code below has run (its lets are not set yet)
+  try {
+    similarReview.close();
+    endSimilarSession();
+    _similarRun++;
+  } catch { /* before the review exists */ }
 }
 
 function endSimilarSession() {
@@ -3077,6 +3084,9 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
   const audio = player._state?.audioBuffer;
   if (!audio) return;
   const run = ++_similarRun, recordingId = recordingManager?.activeId || null;
+  const searchToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  // One review at a time: both would take Enter
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   // A recording that gets its id only now (just loaded) is no switch
   const stale = () => run !== _similarRun || (!!recordingId && (recordingManager?.activeId || null) !== recordingId);
   selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
@@ -3097,7 +3107,8 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
       labels: state.labels.filter((l) => l.setId !== setId),
       boxes: state.labels.filter((l) => l.origin === BIRDBOX_ORIGIN),
       rejected: _similarRejected.get(recordingId),
-      setId, recordingId, newId: () => `similar_${run}_${++n}`,
+      // Unique beyond this page load: copies keep adoptedFrom.id, a reused id would count as copied
+      setId, recordingId, newId: () => `similar_${searchToken}_${++n}`,
       onPick: (sug, i) => _similarHitOf.set(sug.id, i),
     });
     // One exemplar at a time: its suggestions replace earlier ones
@@ -3145,9 +3156,11 @@ function stopCarrying() {
 }
 
 /** A recording became ready: search it for the carried label once. */
-function searchCarried() {
-  const id = recordingManager?.activeId || null;
-  if (!_carried || !id || _carried.searched.has(id) || !player._state?.audioBuffer) return;
+function searchCarried(readyAudio, epoch) {
+  const id = recordingManager?.activeId || null;   // a local file gets its id only after 'ready'
+  // Only the audio that became ready, and no switch to another recording since (its own 'ready' follows)
+  if (!_carried || !id || _carried.searched.has(id) || !readyAudio
+    || player._state?.audioBuffer !== readyAudio || epoch !== _activations) return;
   _carried.searched.add(id);
   findSimilarCalls(_carried.exemplar, { template: _carried.template });
 }
@@ -3177,7 +3190,7 @@ function rejectSimilar(ids) {
   const want = new Set(ids);
   feedSimilarDecisions(ids, false);
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
-  for (const l of state.labels) if (want.has(l.id)) rejected?.add(suggestionKey(l.scientificName || l.label, l.start));
+  for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
   state.labels = state.labels.filter((l) => !want.has(l.id));
   syncToPlayer();
   similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
@@ -3187,7 +3200,8 @@ function rejectSimilar(ids) {
 // BirdBox's boxes not yet labelled are grouped; the bar walks through the groups, largest first.
 // The current group shows as dotted suggestions; naming it gives them the species and opens the
 // member review (Enter / X / Shift+Enter as for similar calls). Strays are rejected there.
-let _groups = null;          // { recordingId, boxes, features, groups }
+let _groups = null;          // { recordingId, boxes, features, groups, token, capped }
+const MAX_GROUP_BOXES = 1500; // n × n distances: 1500 → 18 MB, about a second
 let _groupNamed = false;     // member review was opened by naming a group
 
 const groupReview = new GroupReview({
@@ -3209,7 +3223,8 @@ const groupReview = new GroupReview({
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
 
-const groupLabelId = (gi, k) => `group_${gi}_${k}`;
+// Unique per grouping run: copies keep adoptedFrom.id, and a later run's group 0 must not look copied
+const groupLabelId = (gi, k) => `group_${_groups?.token}_${gi}_${k}`;
 
 /** BirdBox boxes of the recording on screen that no own label covers yet. */
 function unlabelledBoxes() {
@@ -3222,7 +3237,10 @@ async function groupSimilarCalls(cut = DEFAULT_CUT) {
   const audio = player._state?.audioBuffer;
   if (!audio) return;
   closeSimilarReview();
-  const boxes = unlabelledBoxes();
+  let boxes = unlabelledBoxes();
+  // Grouping keeps an n × n distance matrix: the most confident boxes only on very dense recordings
+  const capped = boxes.length > MAX_GROUP_BOXES;
+  if (capped) boxes = [...boxes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, MAX_GROUP_BOXES);
   if (boxes.length < 2) {
     selectionMeta.textContent = boxes.length ? 'Only one call box without a label' : 'No call boxes yet: run "Detect calls" first';
     return;
@@ -3233,16 +3251,18 @@ async function groupSimilarCalls(cut = DEFAULT_CUT) {
   if (!patches || (recordingManager?.activeId || null) !== recordingId) return;
   const keep = boxes.map((_, i) => i).filter((i) => patches[i]);
   const features = keep.map((i) => callFeature(patches[i]));
-  _groups = { recordingId, boxes: keep.map((i) => boxes[i]), features, groups: [] };
+  _groups = { recordingId, boxes: keep.map((i) => boxes[i]), features, groups: [], token: '', capped };
   regroup(cut);
 }
 
 function regroup(cut) {
   if (!_groups) return;
   _groups.groups = groupCalls(_groups.features, { cut });
+  _groups.token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const n = _groups.groups.length, inGroups = _groups.groups.reduce((s, g) => s + g.members.length, 0);
   if (!n) { selectionMeta.textContent = 'No groups: every call is different at this setting'; groupReview.close(); return; }
-  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}: Enter names a group`;
+  selectionMeta.textContent = `${inGroups} of ${_groups.boxes.length} calls in ${n} group${n === 1 ? '' : 's'}`
+    + `${_groups.capped ? ` (the ${MAX_GROUP_BOXES} most confident boxes)` : ''}: Enter names a group`;
   groupReview.open(_groups.groups.map((g) => ({ size: g.members.length })), cut);
 }
 
@@ -4892,7 +4912,10 @@ document.addEventListener('visibilitychange', () => {
 });
 player.on('ready', () => { persistXcToFolder(recordingManager.getActive()); });
 // A label carried from another recording: look for it here (after the view has settled)
-player.on('ready', () => setTimeout(searchCarried, 300));
+player.on('ready', () => {
+  const audio = player._state?.audioBuffer, epoch = _activations;
+  setTimeout(() => searchCarried(audio, epoch), 300);
+});
 window.addEventListener('beforeunload', () => {
   saveProjectSnapshotNow();
   projectAutosaver?.flush();

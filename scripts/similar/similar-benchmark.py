@@ -150,7 +150,12 @@ for seg in segs:
     s = spectrogram(x)
     for g in gt: g['snr'] = snr(s, g)
 
-    cf = f'{os.environ.get("PERCH_CACHE", "/tmp")}/{seg}.perch.npz'
+    # Cache per segment, model and hop (another model or hop must not reuse old embeddings)
+    import hashlib
+    cache_dir = os.environ.get("PERCH_CACHE", "/tmp")
+    os.makedirs(cache_dir, exist_ok=True)
+    tag = hashlib.sha256(f'{os.path.abspath(PERCH)}|{os.path.getsize(PERCH)}|{PERCH_HOP}'.encode()).hexdigest()[:12]
+    cf = f'{cache_dir}/{seg}.{tag}.perch.npz'
     if os.path.exists(cf):
         z = np.load(cf); starts, emb = z['s'], z['e']
     else:
@@ -177,6 +182,11 @@ for seg in segs:
             pscore = perch_query(starts, emb, ex)
             pw = [(st, st + 5, float(v)) for st, v in zip(starts, pscore)
                   if not (st <= (ex['t0'] + ex['t1']) / 2 <= st + 5)]
+            # Overlapping 5-s windows (hop 0.5 s) would each count the same call: keep the best per 2.5 s
+            kept = []
+            for w in sorted(pw, key=lambda w: -w[2]):
+                if all(abs(w[0] - k[0]) >= 2.5 for k in kept): kept.append(w)
+            pw = kept
             def perch_at(t):
                 m = (starts <= t) & (starts + 5 >= t)
                 return float(pscore[m].max()) if m.any() else 0.0

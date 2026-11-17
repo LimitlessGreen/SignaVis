@@ -24,6 +24,7 @@ root, segs = sys.argv[1], sys.argv[2:]
 def load(seg):
     rec = seg.split('_Segment')[0]
     sr, x = wavfile.read(f'{root}/wav_Files/{rec}/{seg}.wav')
+    assert sr == SR, f'{seg}: {sr} Hz, expected {SR}'
     x = x.astype(np.float32) / 32768
     if x.ndim > 1: x = x.mean(1)
     lines = open(f'{root}/annotation_Files/{rec}/{seg}.Table.1.selections.txt').read().splitlines()
@@ -117,7 +118,7 @@ for seg in segs:
     for g in gt: by_sp.setdefault(g['sp'], []).append(g)
     n_ex = 0
     for sp, calls in by_sp.items():
-        if len(calls) < 3: continue
+        if len(calls) < 3 or sp.lower() in ('unknown', '????'): continue   # as in similar-benchmark.py
         for ex in calls[:6]:
             targets = [g for g in calls if g is not ex]
             r0, r1 = band(ex, s)

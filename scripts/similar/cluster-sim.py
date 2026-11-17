@@ -36,6 +36,7 @@ segs = sys.argv[3:]
 def load(seg):
     rec = seg.split('_Segment')[0]
     sr, x = wavfile.read(f'{root}/wav_Files/{rec}/{seg}.wav')
+    assert sr == SR, f'{seg}: {sr} Hz, expected {SR}'
     x = x.astype(np.float32) / 32768
     if x.ndim > 1: x = x.mean(1)
     lines = open(f'{root}/annotation_Files/{rec}/{seg}.Table.1.selections.txt').read().splitlines()
@@ -115,4 +116,4 @@ for seg in segs:
 for src, by in tot.items():
     print(f'\n{src}: effort per candidate (1.00 = label each one) | purity')
     for c, (e, n, p) in by.items():
-        print(f'  cut {c:.1f}: {e / n:.2f} | {p / n:.2f}')
+        print(f'  cut {c:.1f}: {e / n:.2f} | {p / n:.2f}' if n else f'  cut {c:.1f}: no eligible candidates')

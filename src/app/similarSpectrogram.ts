@@ -83,6 +83,7 @@ export class SimilarSession {
     private worker: Worker | null = null;
     private local: SearchState | null = null;
     private seq = 0;
+    private disposed = false;
     private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
 
     private call(msg: any, transfer: Transferable[] = []): Promise<any> {
@@ -96,6 +97,7 @@ export class SimilarSession {
     /** Hits for `exemplar`, best first. `spec` is consumed. */
     async find(spec: BandSpectrogram, exemplar: Box | { template: CallTemplate }, opts: FindOptions = {}): Promise<SimilarHit[]> {
         const Ctor = await workerCtor();
+        if (this.disposed) throw new Error('search closed');   // closed while the worker module loaded
         if (!Ctor) { this.local = createSearch(spec, exemplar, opts); return this.local.hits; }
         this.worker = new Ctor();
         this.worker!.onmessage = (e: MessageEvent) => {
@@ -119,6 +121,7 @@ export class SimilarSession {
     }
 
     dispose() {
+        this.disposed = true;
         this.worker?.terminate();
         this.worker = null;
         this.local = null;

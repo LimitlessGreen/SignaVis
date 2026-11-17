@@ -101,6 +101,8 @@ export class GroupReview {
         if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
             && !this.el?.contains(t)) return;
         const k = e.key;
+        // A focused button of the bar keeps Enter / Space for itself
+        if ((k === 'Enter' || k === ' ') && t instanceof HTMLElement && t.closest('button') && this.el?.contains(t)) return;
         let handled = true;
         if (k === 'Enter') this.h.onName(this.pos);
         else if (k === 'x' || k === 'X' || k === 'Delete' || k === 'Backspace') { this.done.add(this.pos); this.step(1, true); }
@@ -148,7 +150,8 @@ export class GroupReview {
         const el = this.el, r = this.h.anchor?.();
         if (!el || !r || !r.width || !r.height) return;
         const h = el.offsetHeight || 36;
-        el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+        const w = el.offsetWidth || 0;   // centred by translateX(-50%): keep both edges in the window
+        el.style.left = `${Math.round(Math.min(window.innerWidth - w / 2 - 4, Math.max(w / 2 + 4, r.left + r.width / 2)))}px`;
         el.style.top = `${Math.round(Math.min(window.innerHeight - h - 4, Math.max(4, r.bottom - h - 8)))}px`;
         el.style.bottom = 'auto';
     }
