@@ -26,7 +26,7 @@ SETUP = """async (n) => {
     labels.push({ id: 'bench_' + i, start: t, end: t + 0.3, freqMin: 1000 + (i % 7) * 500, freqMax: 3000 + (i % 7) * 500,
       label: 'Species ' + (i % 25), scientificName: '', origin: 'manual', setId: own, tags: {} });
   }
-  sv.state.labels = labels;
+  sv.labelStore.replaceAll(labels);
   sv.syncToPlayer();
   await new Promise((r) => setTimeout(r, 300));
   const counts = { list: 0, table: 0, player: 0 };

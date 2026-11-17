@@ -21,7 +21,7 @@ with sync_playwright() as p:
     page.evaluate("""() => { const sv = window.__signavis; const labels = [];
       for (let i = 0; i < 60; i++) { const t = (i * 0.37) % 7.5;
         labels.push({ id: 'L' + i, start: t, end: t + 0.3, freqMin: 1000, freqMax: 3000, label: 'Species ' + (i % 6), scientificName: '', origin: 'manual', setId: 'own', tags: i % 4 ? {} : { sex: 'male' } }); }
-      sv.state.labels = labels; sv.syncToPlayer(); }""")
+      sv.labelStore.replaceAll(labels); sv.syncToPlayer(); }""")
     page.wait_for_timeout(500)
     document_tab = page.evaluate("() => { document.querySelector('[data-panel=labels]')?.click(); return true; }"); page.wait_for_timeout(300)
     out = []

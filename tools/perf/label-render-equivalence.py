@@ -24,7 +24,7 @@ with sync_playwright() as p:
       for (let i = 0; i < 200; i++) { const t = (i * 0.37) % 7.5;
         labels.push({ id: 'b' + i, start: t, end: t + 0.3 + (i % 3) * 0.2, freqMin: 1000 + (i % 7) * 500, freqMax: 3000 + (i % 7) * 500,
           label: 'Species ' + (i % 25), scientificName: '', origin: i % 5 ? 'manual' : 'BirdNET', setId: 'own', confidence: (i % 10) / 10, tags: {} }); }
-      sv.state.labels = labels; sv.syncToPlayer();
+      sv.labelStore.replaceAll(labels); sv.syncToPlayer();
     }""")
     page.wait_for_timeout(500)
     def check(name):
@@ -46,8 +46,8 @@ with sync_playwright() as p:
     check('baseline')
     page.evaluate("() => window.__signavis.propsPanel.onChange('b7', { label: 'Umbenannt' })"); check('rename one')
     page.evaluate("() => window.__signavis.propsPanel.onChange('b8', { start: 0.05, end: 0.9 })"); check('move one (overlaps)')
-    page.evaluate("() => { const sv = window.__signavis; sv.state.labels = sv.state.labels.filter((l) => l.id !== 'b9'); sv.syncToPlayer(); }"); check('delete one')
-    page.evaluate("() => { const sv = window.__signavis; sv.state.labels.push({ id: 'new1', start: 1, end: 2, freqMin: 2000, freqMax: 6000, label: 'Neu', origin: 'manual', setId: 'own', tags: {} }); sv.syncToPlayer(); }"); check('add one')
+    page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll(sv.state.labels.filter((l) => l.id !== 'b9')); sv.syncToPlayer(); }"); check('delete one')
+    page.evaluate("() => { const sv = window.__signavis; sv.labelStore.add({ id: 'new1', start: 1, end: 2, freqMin: 2000, freqMax: 6000, label: 'Neu', origin: 'manual', setId: 'own', tags: {} }); sv.syncToPlayer(); }"); check('add one')
     page.evaluate("() => { const sv = window.__signavis; sv.player.spectrogramLabels.setLockedIds(['b1', 'b2']); sv.player.annotations.setLockedIds(['b1', 'b2']); }"); check('lock two')
     page.evaluate("() => { const sv = window.__signavis; sv.player.options.labelConfidence = true; sv.syncToPlayer(); }"); check('confidence on (all)')
     page.evaluate("() => { const st = window.__signavis.player._state; st._setPixelsPerSecond(st.pixelsPerSecond * 2.5, true, 2, 0); }"); check('zoom in x2.5')

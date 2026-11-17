@@ -17,7 +17,7 @@ with sync_playwright() as p:
     errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
     page.goto(url, wait_until='networkidle'); page.wait_for_function('window.__signavis')
     page.evaluate("document.getElementById('loadSampleBtn')?.click()"); page.wait_for_timeout(3500); page.keyboard.press('Escape')
-    page.evaluate("() => { const sv = window.__signavis; sv.state.labels = []; sv.syncToPlayer(); }")
+    page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll([]); sv.syncToPlayer(); }")
     page.evaluate("() => window.__signavis.player._snapBtn.click()")
     def click(t, f, **kw):
         pt = page.evaluate(XY, {'t': t, 'f': f}); page.mouse.click(pt['x'], pt['y'], **kw); page.wait_for_timeout(250); return pt

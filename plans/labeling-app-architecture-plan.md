@@ -26,7 +26,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 |---|---|---|
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
-| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, die selbst `labelViews.invalidate` auslösen) – war ursprünglich Teil von Schritt 2 | offen |
+| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b offen (Speichern/Ansichten per `subscribe`), 2 offen (Befehle) |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
@@ -161,3 +161,33 @@ jedem Ziehen stehen (der Player setzte ihn nur bei Layer-eigenen Update-Ereignis
 **Gesamt seit Beginn (200 Labels): ~380 ms → 30–43 ms pro Bearbeitung; 1500 Labels: ~3 s → 0,17–0,26 s.**
 Größter Rest jetzt die Spektrogramm-Ebenen (~110–130 ms bei 1500: Layout + Signaturen aller Labels). Nächster Hebel
 dort: nur den sichtbaren Zeitbereich rendern. Die Zeitansicht der Liste baut weiterhin alle Zeilen (nur Icons schneller).
+
+## Schritt 3 – Details
+
+Muster (bewusst schlank): ein kleiner Store mit Methoden + `subscribe`, Befehle als einfache Funktionen.
+Kein Redux/Reducer, keine Command-Klassen (erst bei Bedarf für Undo/Redo), kein String-Event-Bus.
+
+### Teil 1a – `LabelStore` (Branch `refactor/label-commands`)
+
+- `src/app/labeling/label-store.ts` (+ `tests/label-store.test.ts`): `load(labels, entryId)`, `clear(entryId?)`,
+  `claim(entryId)`, `add`, `update(ids, fn)`, `patch(id, p)`, `remove(ids | pred)`, `replaceAll`, `changed()`, `subscribe`.
+  Jede Änderung setzt ein **neues** Array (in DEV eingefroren → vergessenes `push` wirft sofort).
+- Labels und Besitzer-Aufnahme (`entryId`, vorher `state._labelsEntryId`) ändern sich zusammen (`load`/`clear`),
+  die frühere Zwei-Zeilen-Regel „Labels leeren + Besitzer setzen“ ist an einer Stelle.
+- `main.js`: alle Schreibstellen (~50) laufen über `labelStore`; `state.labels`/`state._labelsEntryId` sind nur noch Getter
+  (Zuweisung wirft im Modul). Verhalten unverändert: `syncToPlayer()`-Aufrufe bleiben wie sie sind (→ Teil 1b).
+- Gefunden: Die Labelliste verließ sich darauf, dass die App geänderte Labels im **selben** Array ersetzt
+  (Tags-Änderung ohne Render, danach Gruppe aufklappen / Zeitansicht → alter Stand). `updateBadges` ersetzt das Label
+  jetzt selbst in `this._labels`. Abgedeckt durch `tools/e2e/label-list-behaviour.py`.
+- E2E-/Perf-Skripte schreiben über `window.__signavis.labelStore` statt `state.labels`.
+- Prüfung: Typcheck, Tests 745/745; `label-list-behaviour`, `similar-calls/-carry/-groups` gegen `main` identisch;
+  `adopt-detection`, `escape-cancels-drag`, `waveform-track-edits`, `label-template`, Render-Gleichwertigkeit ok,
+  Smoke (zwei Aufnahmen, Wechsel, Reload, Handy-Breite) wie `main`, keine Seitenfehler. Benchmark 1500 Labels unverändert
+  (170–270 ms). Lite-Build braucht lokal `npm run taxonomy:build` (auch auf `main`).
+
+### Teil 1b – als Nächstes
+
+Speichern (`saveCurrentAnnotationsIfNeeded`) und Ansichten (`labelViews.invalidate`) per `labelStore.subscribe`;
+die ~50 `syncToPlayer()`/`syncToPlayerSoft()`/`saveCurrentAnnotationsIfNeeded()`-Aufrufe nach Änderungen fallen weg.
+Offene Frage dabei: Stellen, die bewusst nur einen Teil neu zeichnen (z. B. Spektrogramm-Ereignisse ohne `player`,
+weil der Player das Label schon zeigt) – Hinweis an der Änderung (`{ views }`) oder Ansicht prüft selbst per Keyed-Render.

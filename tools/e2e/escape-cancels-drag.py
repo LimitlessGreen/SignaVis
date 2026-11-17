@@ -18,7 +18,7 @@ with sync_playwright() as p:
     page.goto(url, wait_until='networkidle'); page.wait_for_function('window.__signavis')
     page.evaluate("document.getElementById('loadSampleBtn')?.click()"); page.wait_for_timeout(3500); page.keyboard.press('Escape')
     page.evaluate("""() => { const sv = window.__signavis;
-      sv.state.labels = [{ id: 'e1', start: 2, end: 3.5, freqMin: 3000, freqMax: 7000, label: 'Esc', origin: 'manual', setId: 'own', tags: {} }];
+      sv.labelStore.replaceAll([{ id: 'e1', start: 2, end: 3.5, freqMin: 3000, freqMax: 7000, label: 'Esc', origin: 'manual', setId: 'own', tags: {} }]);
       sv.syncToPlayer(); }""")
     page.wait_for_timeout(500)
     touched0 = page.evaluate("() => JSON.stringify(window.__signavis.state.labels[0])")

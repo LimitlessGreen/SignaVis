@@ -8,9 +8,9 @@ OWN = "() => window.__signavis.state.labels.filter(l => l.origin === 'manual').m
 SEED = """() => { const sv = window.__signavis; sv.state.labelSets.set('bn', { id: 'bn', name: 'BirdNET', origin: 'BirdNET', locked: true, visible: true });
   sv.state.labelSets.set('bb', { id: 'bb', name: 'BirdBox', origin: 'BirdBox', locked: true, visible: true });
   const box = (id, s, e, c) => ({ id, setId: 'bb', origin: 'BirdBox', start: s, end: e, freqMin: 3000, freqMax: 7000, label: 'Bird', confidence: c });
-  sv.state.labels = [
+  sv.labelStore.replaceAll([
     { id: 'bn1', setId: 'bn', origin: 'BirdNET', start: 0, end: 3, freqMin: 0, freqMax: 24000, fullBand: true, label: 'Chaffinch', scientificName: 'Fringilla coelebs', confidence: 0.8 },
-    box('b1', 0.5, 0.9, 0.5), box('b2', 1.4, 1.9, 0.9), box('b3', 2.3, 2.6, 0.7), box('b4', 5, 5.5, 0.8)];
+    box('b1', 0.5, 0.9, 0.5), box('b2', 1.4, 1.9, 0.9), box('b3', 2.3, 2.6, 0.7), box('b4', 5, 5.5, 0.8)]);
   sv.syncToPlayer(); }"""
 with sync_playwright() as p:
     b = p.chromium.launch(); page = b.new_page(viewport={'width': 1400, 'height': 900})
@@ -32,7 +32,7 @@ with sync_playwright() as p:
     adopt('b1'); print('✓ box in window:', page.evaluate(OWN)[-1])
     page.evaluate("() => window.__signavis.player.setSpeciesBar('Robin', { tags: { sex: 'male' } })")
     adopt('b4'); print('✓ box, template:', page.evaluate(OWN)[-1])
-    page.evaluate("() => { window.__signavis.player.setSpeciesBar('', { tags: null }); const sv = window.__signavis; sv.state.labels = sv.state.labels.filter(l => l.origin !== 'manual'); sv.syncToPlayer(); }")
+    page.evaluate("() => { window.__signavis.player.setSpeciesBar('', { tags: null }); const sv = window.__signavis; sv.labelStore.replaceAll(sv.state.labels.filter(l => l.origin !== 'manual')); sv.syncToPlayer(); }")
     adopt('b4'); print('✓ box, no name :', page.evaluate(OWN), '| dialog open:', page.locator('.label-name-editor').count())
     page.keyboard.press('Escape')
     print('page errors:', errs)

@@ -24,7 +24,7 @@ with sync_playwright() as p:
     page.wait_for_function(f"{SV}.activeRecordingId() !== null", timeout=30000); page.keyboard.press('Escape')   # recording registered
     # One own label: the Wood Thrush song at 2.93–5.15 s
     page.evaluate(f"""() => {{ const sv = {SV}; const own = [...sv.state.labelSets.values()].find(s => s.origin !== 'BirdBox' && !s.locked)?.id;
-        sv.state.labels.push({{ id: 'ex', setId: own, origin: 'manual', label: 'Wood Thrush', scientificName: 'Hylocichla mustelina',
+        sv.labelStore.add({{ id: 'ex', setId: own, origin: 'manual', label: 'Wood Thrush', scientificName: 'Hylocichla mustelina',
           start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); sv.player.selectLabel('ex'); }}""")
     page.wait_for_timeout(500)
     page.evaluate("document.activeElement?.blur()")
