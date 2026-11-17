@@ -11,6 +11,9 @@ import { versionDefines } from '../scripts/build-version.mjs';
 import { resolve } from 'path';
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createHash } from 'crypto';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 /** Rollup plugin that copies static asset directories into the build output. */
 function copyStaticPlugin(pairs) {
@@ -33,7 +36,7 @@ function copyStaticPlugin(pairs) {
  * - In build: rewrites fetch URLs in HTML, copies hashed file to output.
  * - In dev: no-op (original filename works via dev server).
  */
-function taxonomyHashPlugin() {
+export function taxonomyHashPlugin() {
   const ORIGINAL = 'birdnet-taxonomy.v2.4.json';
   const taxonomySrc = resolve(__dirname, 'data', ORIGINAL);
   let isBuild = false;
@@ -44,16 +47,21 @@ function taxonomyHashPlugin() {
     configResolved(config) {
       isBuild = config.command === 'build';
     },
+    buildStart() {
+      if (!isBuild || !existsSync(taxonomySrc)) return;
+      const hash = createHash('md5').update(readFileSync(taxonomySrc)).digest('hex').slice(0, 8);
+      hashedName = ORIGINAL.replace('.json', `.${hash}.json`);
+    },
+    // The fetch URL lives in the labeling app's JS (src/app/labeling/main.js),
+    // so rewrite JS chunks too — rewriting only HTML left a 404 in production.
+    renderChunk(code) {
+      if (!hashedName || !code.includes(ORIGINAL)) return null;
+      return { code: code.replaceAll(ORIGINAL, hashedName), map: null };
+    },
     transformIndexHtml: {
       order: 'pre',
       handler(html) {
-        if (!isBuild || !existsSync(taxonomySrc)) return html;
-        if (!hashedName) {
-          const content = readFileSync(taxonomySrc);
-          const hash = createHash('md5').update(content).digest('hex').slice(0, 8);
-          hashedName = ORIGINAL.replace('.json', `.${hash}.json`);
-        }
-        return html.replaceAll(ORIGINAL, hashedName);
+        return hashedName ? html.replaceAll(ORIGINAL, hashedName) : html;
       },
     },
     closeBundle() {
