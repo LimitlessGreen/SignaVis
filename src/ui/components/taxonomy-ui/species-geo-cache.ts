@@ -36,7 +36,11 @@ export function createSpeciesGeoCache({ getContext, fetchScores, onUpdate, onErr
   function refresh(): Promise<void> {
     const ctx = getContext();
     const want = geoContextKey(ctx);
-    if (want !== key && scores.size) { scores = new Map(); key = ''; }   // never show another context's scores
+    if (want !== key && scores.size) {
+      // Never show another context's scores; re-render open dropdowns without them.
+      scores = new Map(); key = '';
+      onUpdate?.();
+    }
     if (!ctx) { key = ''; return Promise.resolve(); }
     if (want === key) return Promise.resolve();
     if (pending && pendingKey === want) return pending;

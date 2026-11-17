@@ -3079,7 +3079,9 @@ const speciesGeo = createSpeciesGeoCache({
   fetchScores: async (ctx) => {
     if (!birdnet.loaded) await birdnetPanel.loadModel();
     if (!birdnet.hasAreaModel) return null;
-    await birdnet.setLocation(ctx.lat, ctx.lon, { date: ctx.date || undefined });
+    const res = await birdnet.setLocation(ctx.lat, ctx.lon, { date: ctx.date || undefined });
+    // A failed setLocation would leave the previous location's scores in the worker.
+    if (!res?.ok) throw new Error('setLocation failed');
     const all = await birdnet.getAllSpecies();
     return new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
   },

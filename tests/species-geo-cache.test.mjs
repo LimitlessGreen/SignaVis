@@ -58,3 +58,14 @@ test('removing the location clears scores', async () => {
   await cache.refresh();
   assert.equal(cache.score('a'), null);
 });
+
+test('clearing scores for a new context notifies open dropdowns', async () => {
+  let ctx = A, updates = 0;
+  const cache = createSpeciesGeoCache({ getContext: () => ctx, fetchScores: async () => new Map([['a', 1]]), onUpdate: () => updates++ });
+  await cache.refresh();
+  assert.equal(updates, 1);
+  ctx = null;
+  await cache.refresh();
+  assert.equal(updates, 2);
+  assert.equal(cache.score('a'), null);
+});
