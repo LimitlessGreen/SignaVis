@@ -14,6 +14,8 @@
 import ModalManager from '../modal/modal-manager.ts';
 import { createEditableSelect } from '../editable-select/editable-select.ts';
 import { getOverlayColorStyle } from '../../../domain/annotations.ts';
+import { speciesRowHtml, speciesRowClass, speciesGroupHeaderHtml, EXTRA_TITLE } from '../taxonomy-ui/taxonomy-ui.ts';
+import { normalizeSearch } from '../taxonomy-ui/species-ranking.ts';
 
 export interface LabelEditChangeset {
     name:           boolean;
@@ -373,7 +375,9 @@ export class LabelEditorModal {
         this._activeIndex = -1;
 
         const seen = new Set();
-        const addResult = ({ name, scientificName = '', color = '', detail = '', tags = {} }: any) => {
+        const q = normalizeSearch(this._input.value).trim();
+        let lastGroup = '';
+        const addResult = ({ name, scientificName = '', color = '', detail = '', tags = {}, rich = null }: any) => {
             const label = String(name || '').trim();
             if (!label) return;
             const key = label.toLowerCase();
@@ -382,29 +386,44 @@ export class LabelEditorModal {
 
             const row = document.createElement('button');
             row.type = 'button';
-            row.className = 'label-search-item';
 
-            if (color) {
-                const dot = document.createElement('span');
-                dot.className = 'label-search-dot';
-                dot.style.background = getOverlayColorStyle(color)?.hex || color;
-                row.appendChild(dot);
-            }
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'label-search-name';
-            nameSpan.textContent = label;
-            row.appendChild(nameSpan);
-            if (scientificName) {
-                const sub = document.createElement('span');
-                sub.className = 'label-search-sci';
-                sub.textContent = scientificName;
-                row.appendChild(sub);
-            }
-            if (detail) {
-                const detailSpan = document.createElement('span');
-                detailSpan.className = 'label-search-detail';
-                detailSpan.textContent = detail;
-                row.appendChild(detailSpan);
+            if (rich?.group) {
+                // Grouped two-line layout from the species search provider.
+                if (rich.group !== lastGroup) {
+                    lastGroup = rich.group;
+                    const inGroup = custom.filter((c: any) => c?.group === rich.group).length;
+                    const head = document.createElement('div');
+                    head.className = 'search-group' + (rich.group === 'extra' ? ' is-extra' : '');
+                    head.innerHTML = speciesGroupHeaderHtml(rich.group, inGroup, Math.max(inGroup, rich.groupTotal || 0));
+                    this._results.appendChild(head);
+                }
+                row.className = 'label-search-item ' + speciesRowClass(rich);
+                row.innerHTML = speciesRowHtml({ ...rich, color: color ? (getOverlayColorStyle(color)?.hex || color) : '' }, q);
+                if (rich.group === 'extra') row.title = EXTRA_TITLE;
+            } else {
+                row.className = 'label-search-item';
+                if (color) {
+                    const dot = document.createElement('span');
+                    dot.className = 'label-search-dot';
+                    dot.style.background = getOverlayColorStyle(color)?.hex || color;
+                    row.appendChild(dot);
+                }
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'label-search-name';
+                nameSpan.textContent = label;
+                row.appendChild(nameSpan);
+                if (scientificName) {
+                    const sub = document.createElement('span');
+                    sub.className = 'label-search-sci';
+                    sub.textContent = scientificName;
+                    row.appendChild(sub);
+                }
+                if (detail) {
+                    const detailSpan = document.createElement('span');
+                    detailSpan.className = 'label-search-detail';
+                    detailSpan.textContent = detail;
+                    row.appendChild(detailSpan);
+                }
             }
 
             const select = () => {
@@ -447,7 +466,7 @@ export class LabelEditorModal {
                 else addResult({ name: item.name, color: item.color || '', scientificName: sci, tags: item.tags || {}, detail: item.detail || '' });
             }
         }
-        for (const item of custom) addResult({ name: item?.name, scientificName: item?.scientificName || '', color: item?.color || '', detail: item?.detail || '' });
+        for (const item of custom) addResult({ name: item?.name, scientificName: item?.scientificName || '', color: item?.color || '', detail: item?.detail || '', rich: item?.group ? item : null });
         if (!customOnly) {
             for (const item of taxonomy) addResult({ name: item?.shortcut ? `${item.shortcut}: ${item.name}` : item?.name, color: item?.color || '' });
             for (const name of recent)   addResult({ name });

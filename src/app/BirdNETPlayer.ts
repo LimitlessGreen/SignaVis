@@ -40,6 +40,8 @@ export interface LabelSuggestionItem {
     color?: string;
     scientificName?: string;
     detail?: string;
+    /** Structured fields from the species search provider (group, count, matchedAlt, code, local, …). */
+    [k: string]: unknown;
 }
 
 export type PlayerEventName =
@@ -602,6 +604,7 @@ export class BirdNETPlayer {
                     const scientificName = String(item?.scientificName || '').trim();
                     const detail = String(item?.detail || '').trim();
                     return {
+                        ...item,
                         name,
                         color: color || '',
                         scientificName: scientificName || '',

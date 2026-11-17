@@ -5,6 +5,12 @@
  * Reusable across any app that uses TaxonomyResolver + BirdNETPlayer.
  */
 
+import {
+  normalizeSearch, matchTier, compareRanked, speciesCodes, splitHighlight, MATCH, LOCAL_THRESHOLD,
+} from './species-ranking.ts';
+
+export { normalizeSearch };
+
 /** Map BirdNET language codes to Unicode flag emoji. */
 export const LANG_FLAGS = {
   af: '\u{1F1FF}\u{1F1E6}', ar: '\u{1F1F8}\u{1F1E6}', bg: '\u{1F1E7}\u{1F1EC}',
@@ -21,11 +27,6 @@ export const LANG_FLAGS = {
   sv: '\u{1F1F8}\u{1F1EA}', th: '\u{1F1F9}\u{1F1ED}', tr: '\u{1F1F9}\u{1F1F7}',
   uk: '\u{1F1FA}\u{1F1E6}', zh: '\u{1F1E8}\u{1F1F3}',
 };
-
-/** Normalize text for search: lowercase + strip diacritics (ü→u, é→e, etc.) */
-export function normalizeSearch(text: any) {
-  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
 
 /**
  * Build a detail string with flags of languages that matched the query.
@@ -77,22 +78,83 @@ export function populateLanguageSelect(selectEl: any, taxonomy: any, defaultLang
 }
 
 /**
+ * One row of the species search dropdown. All fields beyond `name` are optional;
+ * `group` switches the widget to the grouped, two-line layout.
+ */
+export interface SpeciesSuggestion {
+  name: string;
+  scientificName?: string;
+  color?: string;
+  /** Short legacy badge text (origin / other-language match) for older renderers. */
+  detail?: string;
+  /** 'recent' | 'project' | 'taxonomy' | 'extra' (species outside the BirdNET model). */
+  group?: string;
+  /** Number of results in this group before truncation. */
+  groupTotal?: number;
+  /** Labels with this species in the project. */
+  count?: number;
+  /** "🇫🇷 Mésange charbonnière" when only another language's name matched. */
+  matchedAlt?: string;
+  /** Upper-case species code when the query matched one (e.g. "PAMA"). */
+  code?: string;
+  /** Species occurs at the recording location according to the geo model. */
+  local?: boolean;
+  [k: string]: any;
+}
+
+/** Up to this many species outside the BirdNET model are shown (own group, at the end). */
+const EXTRA_LIMIT = 4;
+
+const _searchIndex = new WeakMap<object, { hay: string, codes: string[] }[]>();
+/** Normalized haystack (all names + scientific name) and species codes per record, cached per records array. */
+function searchIndex(records: any[]) {
+  let idx = _searchIndex.get(records);
+  if (!idx) {
+    idx = records.map((rec: any) => ({
+      hay: normalizeSearch(`${rec.n ? Object.values(rec.n).join(' ') : ''} ${rec.s}`),
+      codes: speciesCodes(rec.s),
+    }));
+    _searchIndex.set(records, idx);
+  }
+  return idx;
+}
+
+/** First other-language name containing `q`, prefixed with its flag. */
+export function altNameMatch(record: any, q: string, displayLang: string) {
+  if (!q || !record?.n) return '';
+  for (const [lang, name] of Object.entries(record.n)) {
+    if (lang === displayLang) continue;
+    if (!normalizeSearch(name).includes(q)) continue;
+    return `${(LANG_FLAGS as any)[lang] || lang} ${name}`;
+  }
+  return '';
+}
+
+/**
  * Create a label-suggestion provider function.
+ *
+ * Results come in groups: species already used in the project (labels, XC pool,
+ * background species), then taxonomy matches (ranked, see species-ranking.ts),
+ * then species outside the BirdNET model.
  *
  * @param {object} opts
  * @param {import('../../src/infrastructure/taxonomyResolver.ts').TaxonomyResolver} opts.taxonomy
  * @param {() => string} opts.getLang    Returns current display language
  * @param {() => Array}  opts.getLabels  Returns current label array
  * @param {() => Array}  opts.getPool    Returns XC label pool array
- * @returns {(query: string, limit?: number) => Array}
+ * @param {(sci: string) => number|null} [opts.getGeoScore]  Occurrence probability at the recording location
+ * @returns {(query: string, limit?: number) => SpeciesSuggestion[]}
  */
-export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool }: any) {
-  return (query: any, limit = 14) => {
-    const q = normalizeSearch(query);
+export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool, getGeoScore }: any) {
+  return (query: any, limit = 14): SpeciesSuggestion[] => {
+    const q = normalizeSearch(query).trim();
     const lang = getLang();
-    const dedupe = new Map();
+    const project = new Map<string, SpeciesSuggestion>();
 
-    dedupe.set('name:noise', { name: 'Noise', scientificName: '' });
+    const recordFor = (sci: string) => (sci && taxonomy.data ? taxonomy.resolve(sci) : null);
+    const add = (key: string, item: SpeciesSuggestion) => { if (!project.has(key)) project.set(key, item); };
+
+    add('name:noise', { name: 'Noise', scientificName: '', count: 0 });
 
     // Pool items: xeno-canto label pool + background species.
     // Items carry an optional `origin` field ('xeno-canto', 'background', …).
@@ -103,72 +165,131 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       // Resolve via taxonomy so XC English names become localized and bare
       // scientific names (e.g. background species) get a canonical sci: key.
       const resolvedSci  = sci || (taxonomy.data ? taxonomy.resolve(name)?.s : '') || '';
-      const record       = resolvedSci ? taxonomy.resolve(resolvedSci) : null;
+      const record       = recordFor(resolvedSci);
       const localName    = record ? (taxonomy.resolveCommonName(record, lang) || record.s) : name;
       const finalSci     = record?.s || sci;
       const key = finalSci ? `sci:${finalSci}` : `name:${localName.toLowerCase()}`;
-      if (!dedupe.has(key)) {
-        dedupe.set(key, { name: localName, scientificName: finalSci, detail: item?.origin || '' });
-      }
+      add(key, { name: localName, scientificName: finalSci, detail: item?.origin || '', count: 0 });
     }
 
-    // User-drawn labels — show origin for non-manual labels (BirdNET, xeno-canto).
+    // User-drawn labels — count per species; show origin for non-manual labels (BirdNET, xeno-canto).
     for (const lbl of getLabels()) {
-      const sci = String(lbl?.scientificName || '').trim();
-      const record = sci ? taxonomy.resolve(sci) : null;
+      const rawSci = String(lbl?.scientificName || '').trim();
+      const record = recordFor(rawSci);
+      // Canonical name, so labels using an older alias count towards the same species.
+      const sci = record?.s || rawSci;
       const localized = record ? taxonomy.resolveCommonName(record, lang) : '';
       const name = String(localized || lbl?.commonName || lbl?.label || sci).trim();
       if (!name) continue;
       const key = sci ? `sci:${sci}` : `name:${name.toLowerCase()}`;
-      if (!dedupe.has(key)) {
-        const origin = lbl?.origin && lbl.origin !== 'manual' ? lbl.origin : '';
-        dedupe.set(key, { name, scientificName: sci, detail: origin });
-      }
+      const origin = lbl?.origin && lbl.origin !== 'manual' ? lbl.origin : '';
+      add(key, { name, scientificName: sci, detail: origin, count: 0 });
+      project.get(key)!.count = (project.get(key)!.count || 0) + 1;
     }
 
+    // Project group: filter + rank.
+    const projectRows: (SpeciesSuggestion & { tier: number })[] = [];
+    for (const item of project.values()) {
+      const rec = recordFor(item.scientificName || '');
+      const tier = matchTier(q, item.name, item.scientificName, rec?.n ? Object.values(rec.n) : []);
+      if (tier === MATCH.NONE) continue;
+      const geo = item.scientificName ? getGeoScore?.(item.scientificName) : null;
+      projectRows.push({
+        ...item,
+        tier,
+        group: 'project',
+        local: geo != null && geo >= LOCAL_THRESHOLD,
+        matchedAlt: tier === MATCH.ALT ? altNameMatch(rec, q, lang) : '',
+        code: tier === MATCH.CODE ? q.toUpperCase() : '',
+      });
+    }
+    projectRows.sort((a, b) =>
+      (q ? a.tier - b.tier : 0) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
+
+    // Taxonomy: full scan over the cached index (≈11k records), then rank.
+    const taxRows: any[] = [];
+    const extraRows: any[] = [];
     if (q && taxonomy.data) {
-      for (const rec of taxonomy.records) {
-        const allNames = rec.n ? Object.values(rec.n) : [];
-        const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
-        if (!hay.includes(q)) continue;
-        const key = `sci:${rec.s}`;
-        const displayName = taxonomy.resolveCommonName(rec, lang);
-        if (!dedupe.has(key)) {
-          dedupe.set(key, {
-            name: displayName || rec.s,
-            scientificName: rec.s,
-            detail: buildMatchDetail(rec, q, lang),
-          });
-        }
-        if (dedupe.size >= limit * 3) break;
+      const records = taxonomy.records;
+      const idx = searchIndex(records);
+      for (let i = 0; i < records.length; i++) {
+        const { hay, codes } = idx[i];
+        if (!hay.includes(q) && !codes.includes(q)) continue;
+        const rec = records[i];
+        if (project.has(`sci:${rec.s}`)) continue;
+        const name = taxonomy.resolveCommonName(rec, lang) || rec.s;
+        const tier = matchTier(q, name, rec.s, rec.n ? Object.values(rec.n) : []);
+        if (tier === MATCH.NONE) continue;
+        const geo = getGeoScore?.(rec.s) ?? null;
+        const row = {
+          name, scientificName: rec.s, tier, geo,
+          local: geo != null && geo >= LOCAL_THRESHOLD,
+          matchedAlt: tier === MATCH.ALT ? altNameMatch(rec, q, lang) : '',
+          code: tier === MATCH.CODE ? q.toUpperCase() : '',
+        };
+        (rec.x ? extraRows : taxRows).push(row);
       }
+      taxRows.sort(compareRanked);
+      extraRows.sort(compareRanked);
     }
 
-    const out = [];
-    for (const item of dedupe.values()) {
-      if (q) {
-        const sci = item.scientificName;
-        const rec = sci ? taxonomy.resolve(sci) : null;
-        if (rec?.n) {
-          const allNames = Object.values(rec.n);
-          const hay = normalizeSearch(`${allNames.join(' ')} ${rec.s}`);
-          if (!hay.includes(q)) continue;
-          if (!item.detail) item.detail = buildMatchDetail(rec, q, lang);
-        } else {
-          const hay = normalizeSearch(`${item.name} ${sci || ''}`);
-          if (!hay.includes(q)) continue;
-        }
-      }
-      // Species from the Cornell supplement: labelable, but BirdNET cannot detect them.
-      const xrec = item.scientificName ? taxonomy.resolve(item.scientificName) : null;
-      if (xrec?.x && xrec.s === item.scientificName) {
-        item.detail = item.detail ? `${item.detail} · not in BirdNET model` : 'not in BirdNET model';
-      }
-      out.push(item);
-    }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    return out.slice(0, Math.max(1, limit));
+    const finish = (rows: any[], group: string, max: number) => rows.slice(0, max).map(({ tier, geo, ...r }) => ({
+      ...r,
+      group,
+      groupTotal: rows.length,
+      detail: group === 'extra' ? 'not in BirdNET model' : (r.detail || r.matchedAlt || ''),
+    }));
+    const max = Math.max(1, limit);
+    return [
+      ...finish(projectRows, 'project', max),
+      ...finish(taxRows, 'taxonomy', max),
+      ...finish(extraRows, 'extra', Math.min(EXTRA_LIMIT, max)),
+    ];
   };
+}
+
+
+// ── Shared rendering for grouped species rows (search widget + label editor) ──
+
+const GROUP_TITLES: Record<string, string> = {
+  recent: 'Recent',
+  project: 'In this project',
+  taxonomy: 'Taxonomy',
+  extra: 'More species <span class="search-group-sub">· not detected by BirdNET</span>',
+};
+export const EXTRA_TITLE = 'Can be labelled, but BirdNET cannot detect this species';
+
+function esc(s: unknown) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function hl(text: string, q: string) {
+  const [pre, hit, post] = splitHighlight(text, q);
+  return hit ? `${esc(pre)}<mark>${esc(hit)}</mark>${esc(post)}` : esc(text);
+}
+
+/** Inner HTML of a group header; `n` shown, `total` before truncation. */
+export function speciesGroupHeaderHtml(group: string, n: number, total = n) {
+  const title = GROUP_TITLES[group] || esc(group);
+  return `<span>${title}</span><span>${total > n ? `${n} of ${total}` : n}</span>`;
+}
+
+export function speciesRowClass(s: SpeciesSuggestion) {
+  return 'species-search-item species-search-item--rich' + (s.group === 'extra' ? ' is-extra' : '');
+}
+
+/** Inner HTML of a two-line species row; `q` is the normalized query to highlight. */
+export function speciesRowHtml(s: SpeciesSuggestion, q: string) {
+  const dot = s.color && s.group !== 'taxonomy' && s.group !== 'extra'
+    ? `<span class="search-dot" style="background:${esc(s.color)}"></span>`
+    : '<span class="search-dot search-dot--hollow"></span>';
+  const sub = s.scientificName ? `<i>${hl(s.scientificName, q)}</i>` : '';
+  const alt = s.matchedAlt ? `${sub ? ' · ' : ''}<span class="search-alt">${hl(s.matchedAlt, q)}</span>` : '';
+  const code = s.code ? `<span class="search-code">${esc(s.code)}</span>` : '';
+  const meta = (s.local ? '<span class="search-local" title="Occurs at the recording location (BirdNET geo model)"></span>' : '')
+    + (s.count ? `<span class="search-count">${s.count}×</span>` : '');
+  return `${dot}<span class="search-name">${hl(s.name, q)}</span>`
+    + `<span class="search-meta">${meta}</span>`
+    + (sub || alt || code ? `<span class="search-sub">${sub}${alt}${code}</span>` : '');
 }
 
 /**
@@ -193,6 +314,8 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
  * @param {string}  [opts.initialValue]
  * @returns {{ el: HTMLElement, input: HTMLInputElement, setValue: (v:string)=>void, destroy: () => void }}
  */
+let _widgetSeq = 0;
+
 export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, placeholder = 'Species / Label…', initialValue = '' }: any) {
   function escHtml(s: any) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -241,6 +364,11 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
   // ── Floating dropdown (portalled to body) ──
   const dropdown = document.createElement('div');
   dropdown.className = 'species-search-dropdown hidden';
+  dropdown.id = `species-search-${++_widgetSeq}`;
+  dropdown.setAttribute('role', 'listbox');
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-controls', dropdown.id);
   document.body.appendChild(dropdown);
 
   let activeIndex = -1;
@@ -252,13 +380,69 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
     dropdown.style.position = 'fixed';
     dropdown.style.top = (r.bottom + 2) + 'px';
     dropdown.style.left = r.left + 'px';
-    dropdown.style.width = Math.max(r.width, 200) + 'px';
+    dropdown.style.width = Math.min(Math.max(r.width, 280), window.innerWidth - r.left - 8) + 'px';
     dropdown.style.zIndex = '9999';
   }
 
   function updateHighlight() {
     for (let i = 0; i < items.length; i++) items[i].classList.toggle('active', i === activeIndex);
+    if (items[activeIndex]) input.setAttribute('aria-activedescendant', items[activeIndex].id);
     if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
+  }
+
+  function addRow(row: HTMLElement, entry: any) {
+    row.setAttribute('role', 'option');
+    row.id = `${dropdown.id}-opt-${items.length}`;
+    row.addEventListener('mousedown', (e) => { e.preventDefault(); selectEntry(entry); });
+    row.addEventListener('pointerenter', () => { activeIndex = items.indexOf(row); updateHighlight(); });
+    dropdown.appendChild(row);
+    items.push(row);
+  }
+
+  /** Two-line row for grouped results. */
+  function groupedRow(s: any, q: string) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = speciesRowClass(s);
+    row.innerHTML = speciesRowHtml(s, q);
+    if (s.group === 'extra') row.title = EXTRA_TITLE;
+    return row;
+  }
+
+  function renderGrouped(suggestions: any[], rawQuery: string) {
+    const q = normalizeSearch(rawQuery);
+    let current = '';
+    for (const s of suggestions) {
+      const group = s.group || 'project';
+      if (group !== current) {
+        if (current) dropdown.appendChild(Object.assign(document.createElement('div'), { className: 'search-sep' }));
+        current = group;
+        const n = suggestions.filter((x) => (x.group || 'project') === group).length;
+        const total = Math.max(n, s.groupTotal || 0);
+        const head = document.createElement('div');
+        head.className = 'search-group' + (group === 'extra' ? ' is-extra' : '');
+        head.setAttribute('role', 'presentation');
+        head.innerHTML = speciesGroupHeaderHtml(group, n, total);
+        dropdown.appendChild(head);
+      }
+      addRow(groupedRow(s, q), s);
+    }
+    const exact = suggestions.some((s) => normalizeSearch(s.name) === q || normalizeSearch(s.scientificName) === q);
+    if (q && !exact) {
+      if (suggestions.length) dropdown.appendChild(Object.assign(document.createElement('div'), { className: 'search-sep' }));
+      else dropdown.appendChild(Object.assign(document.createElement('div'), { className: 'search-empty', textContent: 'No species found.' }));
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'species-search-item species-search-item--create';
+      row.innerHTML = `<span class="search-plus">+</span><span class="search-name">Use “<b>${escHtml(rawQuery)}</b>” as new label</span>`;
+      addRow(row, { name: rawQuery, scientificName: '' });
+    }
+    if (items.length) {
+      const hint = document.createElement('div');
+      hint.className = 'search-keys';
+      hint.innerHTML = '<span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>Enter</kbd> apply</span><span><kbd>Esc</kbd> close</span>';
+      dropdown.appendChild(hint);
+    }
   }
 
   function renderDropdown() {
@@ -267,18 +451,24 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
     dropdown.innerHTML = '';
     items = [];
     activeIndex = -1;
+    input.removeAttribute('aria-activedescendant');
     positionDropdown();
 
     const suggestions = getSuggestions(query, 16);
 
+    if (suggestions.some((s: any) => s.group)) {
+      renderGrouped(suggestions, query);
+      dropdown.classList.toggle('hidden', items.length === 0);
+      return;
+    }
+
+    // Legacy single-line rows (providers without groups).
     if (suggestions.length === 0 && query) {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'species-search-item';
       row.innerHTML = `<span class="search-name">Create: <b>${escHtml(query)}</b></span>`;
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); selectEntry({ name: query, scientificName: '' }); });
-      dropdown.appendChild(row);
-      items.push(row);
+      addRow(row, { name: query, scientificName: '' });
     }
 
     for (const s of suggestions) {
@@ -291,10 +481,7 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
       if (s.scientificName) html += `<span class="search-sci">${escHtml(s.scientificName)}</span>`;
       if (s.detail) html += `<span class="search-badge">${escHtml(s.detail)}</span>`;
       row.innerHTML = html;
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); selectEntry(s); });
-      row.addEventListener('pointerenter', () => { activeIndex = items.indexOf(row); updateHighlight(); });
-      dropdown.appendChild(row);
-      items.push(row);
+      addRow(row, s);
     }
 
     dropdown.classList.toggle('hidden', items.length === 0);
