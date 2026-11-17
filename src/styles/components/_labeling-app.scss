@@ -823,6 +823,52 @@ html[data-theme="light"] { @include sponsor-light; }
   cursor: pointer;
 }
 
+/* ── Similar calls review bar (similar-review.ts) — above the undo toast ── */
+.similar-review {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  z-index: 2990;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 14px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-bg-secondary, #1f2937);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.similar-review__title { font-weight: 600; }
+.similar-review__pos,
+.similar-review__score { color: var(--color-text-secondary, #9ca3af); font-variant-numeric: tabular-nums; }
+
+.similar-review__btn {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-primary);
+  padding: 2px 8px;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.4; cursor: default; }
+  &--ok { color: var(--color-success, #22c55e); font-weight: 700; }
+  &--no { color: var(--color-danger, #ef4444); font-weight: 700; }
+}
+
+.similar-review__thr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  input { width: 80px; }
+  output { font-variant-numeric: tabular-nums; min-width: 2.5em; }
+}
+
 /* ── Project tab ── */
 .project-rec-header {
   display: flex;

@@ -1,6 +1,6 @@
 # Similar calls: label one, confirm the rest
 
-Status: measured (2026-11-17), implementation not started, branch `feat/similar-calls`.
+Status: step 1 built (2026-11-17), branch `feat/similar-calls`, not pushed.
 
 ## Idea
 
@@ -67,6 +67,23 @@ Conclusions:
   if combined, use it as a second candidate source (union) rather than a score mix — not measured yet.
 - Precision is the limit (40 % recall at 80 % precision): the review strip and negatives (step 2)
   matter more than a better first score.
+
+## Step 1 as built
+
+- `src/domain/similar/ncc.ts`: FFT, blockwise NCC (overlap-save), peak picking, `findSimilar`.
+- `src/app/similarSpectrogram.ts`: band spectrogram via aw-dsp in blocks (yields to the UI), floor removed;
+  `findSimilarOffThread` runs the correlation in `src/infrastructure/similar.worker.ts`.
+- `src/app/suggest-similar.ts`: suggestion labels (set 'Similar calls', origin `Similar`, locked), skip own
+  labels of the species and rejections, BirdBox bounds when a box matches; copies keep `adoptedFrom.similar`.
+- `src/ui/components/similar-review/similar-review.ts`: review bar (Enter / X / Shift+Enter / ↑↓ / Space / Esc),
+  threshold default 0.35. Start: `F` on the selected label or context menu "Find similar calls".
+- Timing, 5-min recording: spectrogram 1.5–2.2 s (yielding), correlation 0.6–1.3 s (worker).
+- Tests: `tests/similar-calls.test.mjs`; browser: `tools/e2e/similar-calls.py` (60-s Powdermill clip, all checks pass).
+
+Open from step 1: suggestions look like normal labels (no dashed ghost style); the bar covers the label
+tracks at the bottom; no thumbnails yet; threshold not calibrated (Powdermill scores mostly 0.2–0.6);
+suggestions are saved with the session like BirdBox boxes; a search started before the recording finished
+registering is cancelled silently.
 
 ## Steps
 

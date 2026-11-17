@@ -1,0 +1,69 @@
+"""Find similar calls: one own label → suggestions → review bar (Enter / X / Shift+Enter) → copies with provenance.
+Dev server needed:  uv run --with playwright python -I tools/e2e/similar-calls.py http://localhost:5197/demo/labeling-app.html <clip.wav> [screenshot-dir]
+The clip: first 60 s of Powdermill Recording_1_Segment_05 (Wood Thrush songs at 2.9, 11.0, 14.5, 19.1 … s).
+Exits non-zero when a check fails.
+"""
+import sys
+from playwright.sync_api import sync_playwright
+url, clip = sys.argv[1], sys.argv[2]
+shots = sys.argv[3] if len(sys.argv) > 3 else None
+SV = 'window.__signavis'
+SUGG = f"() => {SV}.state.labels.filter(l => l.origin === 'Similar').map(l => [l.start, l.similar.score, l.similar.sources.join('+')])"
+OWN = f"() => {SV}.state.labels.filter(l => l.origin === 'manual')"
+fails = []
+def check(ok, what):
+    print(('ok   ' if ok else 'FAIL ') + what)
+    if not ok: fails.append(what)
+
+with sync_playwright() as p:
+    b = p.chromium.launch(); page = b.new_page(viewport={'width': 1500, 'height': 900})
+    errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
+    page.goto(url, wait_until='networkidle'); page.wait_for_function(SV)
+    page.set_input_files('#fileInput', clip)
+    page.wait_for_function(f"{SV}.player._state?.audioBuffer?.duration > 50", timeout=30000)
+    page.wait_for_timeout(5000); page.keyboard.press('Escape')   # recording registered (a switch cancels a search)
+    # One own label: the Wood Thrush song at 2.93–5.15 s
+    page.evaluate(f"""() => {{ const sv = {SV}; const own = [...sv.state.labelSets.values()].find(s => s.origin !== 'BirdBox' && !s.locked)?.id;
+        sv.state.labels.push({{ id: 'ex', setId: own, origin: 'manual', label: 'Wood Thrush', scientificName: 'Hylocichla mustelina',
+          start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); sv.player.selectLabel('ex'); }}""")
+    page.wait_for_timeout(500)
+    page.evaluate("document.activeElement?.blur()")
+    page.keyboard.press('f')
+    page.wait_for_selector('.similar-review', state='attached', timeout=30000)
+    s = page.evaluate(SUGG)
+    print('suggestions (start, score, sources):', [(round(a, 2), round(c, 2), d) for a, c, d in sorted(s, key=lambda x: -x[1])][:10])
+    truth = [11.03, 14.53, 19.14, 23.41, 26.80, 30.97, 35.43, 39.16, 44.40, 47.99, 51.55, 55.40, 58.88]
+    top = sorted(s, key=lambda x: -x[1])[:8]
+    good = sum(any(abs(a - t) < 0.6 for t in truth) for a, _, _ in top)
+    check(good >= 6, f'{good}/8 best suggestions are Wood Thrush songs')
+    check(page.locator('.similar-review__title').inner_text() == 'Similar to Wood Thrush', 'review bar title')
+    if shots: page.screenshot(path=f'{shots}/similar-review.png')
+
+    n0 = len(s)
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    own = page.evaluate(OWN)
+    copied = [l for l in own if l['id'] != 'ex']
+    check(len(copied) == 1 and copied[0]['adoptedFrom']['similar']['sourceLabelId'] == 'ex', 'Enter copies with adoptedFrom.similar')
+    check(len(page.evaluate(SUGG)) == n0 - 1, 'copied suggestion leaves the suggestions')
+    page.keyboard.press('x'); page.wait_for_timeout(300)
+    check(len(page.evaluate(SUGG)) == n0 - 2, 'X rejects one suggestion')
+    check(page.evaluate(f"() => {SV}.state.labels.some(l => l.id === 'ex')"), 'X did not delete the exemplar')
+    # Threshold to 0.25, Shift+Enter copies everything at or above it
+    page.evaluate("() => { const r = document.querySelector('.similar-review input'); r.value = '0.25'; r.dispatchEvent(new Event('input')); }")
+    above = sum(1 for _, c, _ in page.evaluate(SUGG) if c >= 0.25)
+    page.keyboard.press('Shift+Enter'); page.wait_for_timeout(300)
+    check(above > 0 and len(page.evaluate(OWN)) == 2 + above, f'Shift+Enter copies the {above} above 0.25')
+    page.locator('.undo-toast__btn', has_text='Undo').click(); page.wait_for_timeout(300)
+    check(len(page.evaluate(OWN)) == 2, 'Undo takes the group back')
+    # Search again: the rejected one is not proposed again
+    page.evaluate(f"() => {SV}.player.selectLabel('ex')"); page.evaluate("document.activeElement?.blur()")
+    page.keyboard.press('f'); page.wait_for_timeout(300)
+    page.wait_for_function("!document.getElementById('selectionMeta')?.textContent.startsWith('Looking')", timeout=30000)
+    page.wait_for_timeout(300)
+    print('meta after 2nd search:', page.evaluate("document.getElementById('selectionMeta')?.textContent"))
+    check(len(page.evaluate(SUGG)) == n0 - 2, 'new search: the copied and the rejected one stay out')
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check(page.locator('.similar-review').count() == 0, 'Esc closes the bar')
+    check(not errs, f'page errors: {errs}')
+    b.close()
+sys.exit(1 if fails else 0)

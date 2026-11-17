@@ -43,6 +43,9 @@ import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPay
 import { readAnnotaSetFile } from '../../infrastructure/xeno-canto/annotaSetFile.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
+import { bandSpectrogram, findSimilarOffThread } from '../../app/similarSpectrogram.ts';
+import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
 import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
@@ -670,7 +673,7 @@ document.addEventListener('keydown', (e) => {
   selectionMeta.textContent = `Sound type: ${value} (key ${e.key}${targets.length > 1 ? `, ${targets.length} labels` : ''})`;
 });
 
-// N / P next / previous recording, B BirdNET on the current one, U upload assistant
+// N / P next / previous recording, B BirdNET on the current one, U upload assistant, F similar calls to the selected label
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
@@ -692,6 +695,11 @@ document.addEventListener('keydown', (e) => {
   } else if (k === 'u') {
     e.preventDefault();
     sidebar.setActive('upload');
+  } else if (k === 'f') {
+    const lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
+    if (!canFindSimilar(lbl)) return;
+    e.preventDefault();
+    findSimilarCalls(lbl);
   }
 });
 
@@ -1832,6 +1840,11 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   state.labels.push(...copies);
+  // A copied similar-call suggestion is done: drop it from the suggestions and the review
+  if (lbl.origin === SIMILAR_ORIGIN) {
+    state.labels = state.labels.filter((l) => l.id !== lbl.id);
+    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+  }
   touchOwnSet(OWN_SOURCE_ID);
   syncToPlayer();
   saveCurrentAnnotationsIfNeeded();
@@ -1988,6 +2001,7 @@ setActiveSet(OWN_SOURCE_ID);
  * Saves current labels, loads the new entry's audio, restores its labels.
  */
 async function activateRecordingEntry(entry) {
+  closeSimilarReview();
   // 1. Save current labels into the leaving entry (guarded helper avoids
   //    accidental overwrites on page reload and handles edge-cases).
   saveCurrentAnnotationsIfNeeded();
@@ -2982,6 +2996,106 @@ if (player.spectrogramLabels) {
     }
     return found;
   };
+}
+
+// ── Similar calls: suggestions from one own label (plans/similar-calls-plan.md) ──
+// Correlation over the whole recording (app/similarSpectrogram.ts), BirdBox only refines
+// bounds (app/suggest-similar.ts). Suggestions sit in a locked 'Similar' set, so they show and
+// copy (✓) like detections; the review bar walks through them best first.
+const _similarRejected = new Map();   // recordingId → Set of suggestionKey()
+let _similarRun = 0;                  // newer search cancels an older one
+
+function similarSetId() {
+  let id = [...state.labelSets.entries()].find(([, s]) => s.origin === SIMILAR_ORIGIN)?.[0];
+  if (!id) id = createLabelSet({ name: 'Similar calls', origin: SIMILAR_ORIGIN, locked: true }, { silent: true }).id;
+  return id;
+}
+
+/** An own, named label with a box can be an exemplar. */
+function canFindSimilar(lbl) {
+  return !!lbl && lbl.origin !== SIMILAR_ORIGIN && !lbl.readonly && !state.labelSets.get(lbl.setId)?.locked
+    && !!String(lbl.label || '').trim()
+    && lbl.end > lbl.start && !lbl.fullBand && lbl.freqMax > lbl.freqMin;
+}
+
+const similarReview = new SimilarReview({
+  onFocus: (id) => {
+    const lbl = state.labels.find((l) => l.id === id);
+    if (!lbl) return;
+    player.selectLabel(id);
+    player.playLabelSegment(lbl);
+  },
+  onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
+  onAccept: (ids) => acceptSimilar(ids),
+  onReject: (ids) => rejectSimilar(ids),
+});
+
+function closeSimilarReview() {
+  try { similarReview.close(); } catch { /* before the review exists */ }
+  _similarRun++;
+}
+
+async function findSimilarCalls(exemplar) {
+  if (!canFindSimilar(exemplar)) { selectionMeta.textContent = 'Find similar: needs a named label with a box (not full band)'; return; }
+  const audio = player._state?.audioBuffer;
+  if (!audio) return;
+  const run = ++_similarRun, recordingId = recordingManager?.activeId || null;
+  const stale = () => run !== _similarRun || (recordingManager?.activeId || null) !== recordingId;
+  selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
+  try {
+    const spec = await bandSpectrogram(audio, ...searchBand(exemplar, audio.sampleRate), {
+      yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: stale,
+    });
+    if (!spec || stale()) return;
+    const hits = await findSimilarOffThread(spec, { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
+    if (stale()) return;
+    const setId = similarSetId();
+    if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
+    let n = 0;
+    const suggestions = buildSuggestions(exemplar, hits, {
+      labels: state.labels.filter((l) => l.setId !== setId),
+      boxes: state.labels.filter((l) => l.origin === BIRDBOX_ORIGIN),
+      rejected: _similarRejected.get(recordingId),
+      setId, recordingId, newId: () => `similar_${run}_${++n}`,
+    });
+    // One exemplar at a time: its suggestions replace earlier ones
+    state.labels = state.labels.filter((l) => l.setId !== setId).concat(suggestions);
+    state.hiddenSetIds?.delete(setId);
+    syncToPlayer();
+    if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
+    selectionMeta.textContent = `${suggestions.length} call${suggestions.length === 1 ? '' : 's'} like ${exemplar.label}: Enter copies, X rejects`;
+    similarReview.open(exemplar.label, suggestions.map((s) => ({ id: s.id, score: s.similar.score })));
+  } catch (err) {
+    if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
+  }
+}
+
+function acceptSimilar(ids) {
+  if (!OWN_SOURCE_ID) return;
+  const want = new Set(ids);
+  const picked = state.labels.filter((l) => want.has(l.id) && l.origin === SIMILAR_ORIGIN);
+  const src = labelsToAdopt(picked, state.labels, OWN_SOURCE_ID);   // ✓ on the box may have copied it already
+  if (!picked.length) return;
+  if (!src.length) { state.labels = state.labels.filter((l) => !want.has(l.id)); syncToPlayer(); return; }
+  const undo = snapshotLabels();
+  const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+  state.labels = state.labels.filter((l) => !want.has(l.id)).concat(copies);
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  saveCurrentAnnotationsIfNeeded();
+  const n = copies.length;
+  showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
+    undo();
+    similarReview.close();
+  });
+}
+
+function rejectSimilar(ids) {
+  const want = new Set(ids);
+  const rejected = _similarRejected.get(recordingManager?.activeId || null);
+  for (const l of state.labels) if (want.has(l.id)) rejected?.add(suggestionKey(l.scientificName || l.label, l.start));
+  state.labels = state.labels.filter((l) => !want.has(l.id));
+  syncToPlayer();
 }
 
 /** Drop BirdBox's kept rows (of one recording, or all) so no slider change or late update brings removed boxes back. */
@@ -4492,6 +4606,8 @@ function showLabelContextMenu(e, id) {
         action: () => openRefCalls(lbl) },
       { label: 'Use as template', icon: ICON_TEMPLATE,
         action: () => useLabelAsTemplate(lbl) },
+      ...(canFindSimilar(lbl) ? [{ label: 'Find similar calls (F)', icon: ICON_REFS,
+        action: () => findSimilarCalls(lbl) }] : []),
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
@@ -4985,6 +5101,6 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer() };
+  window.__signavis = { state, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar };
 }
 await loadBirdnetTaxonomy();
