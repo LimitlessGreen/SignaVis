@@ -441,7 +441,7 @@ export class BirdNETPanel {
   }
 
   /** Analyze the loaded recording (same as the button). Resolves when done; errors go to the status line. */
-  analyze() { return this._analyze(); }
+  analyze() { return this.canAnalyze ? this._analyze() : Promise.resolve(); }
 
   /** False while an analysis runs (or the panel has disabled it). */
   get canAnalyze(): boolean { return !this.analyzeBtn.disabled; }

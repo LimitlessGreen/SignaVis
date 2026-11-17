@@ -3896,9 +3896,16 @@ xcIdInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); loadXenoCanto(xcIdInput.value); }
 });
 /** Load a Xeno-canto recording (number or URL) with its labels; switches to it if already in the session. */
+// One load at a time: a second one could finish first and the first one's label import
+// would then write into the second recording.
+let _xcLoading = false;
 async function loadXenoCanto(input) {
   const raw = String(input || '').trim();
-  if (!raw) return;
+  if (!raw || _xcLoading) return;
+  _xcLoading = true;
+  try { await _loadXenoCanto(raw); } finally { _xcLoading = false; }
+}
+async function _loadXenoCanto(raw) {
   // Deduplicate: if this XC ID is already in the session, just switch to it
   const _preCheckId = raw.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
   const _preExisting = recordingManager.findByXcId(_preCheckId);
@@ -5323,7 +5330,7 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, labelStore, mobileApp, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
+  window.__signavis = { state, labelStore, mobileApp, birdboxPanel, xcPanel, loadXenoCanto, player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
     recordingCount: () => recordingManager?.getAll().length ?? 0,
     groupedCalls: () => _groups?.boxes.length ?? null };

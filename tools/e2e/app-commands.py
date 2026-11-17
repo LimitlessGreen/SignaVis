@@ -86,6 +86,20 @@ with sync_playwright() as p:
     running = page.evaluate("[window.__signavis.mobileApp.anJob, getComputedStyle(document.getElementById('birdboxProgressWrap')).display, document.getElementById('birdboxStatus')?.textContent]")
     check('phone analyse starts BirdBox', running[0] == 'birdbox', str(running))
 
+    # A second start while BirdBox runs (e.g. phone screen idle after a desktop start) keeps the first run
+    same = page.evaluate("""() => { const sv = window.__signavis; const a = sv.birdboxPanel.abort;
+        sv.mobileApp.anJob = 'idle'; sv.mobileApp.runAnalysis(); return !!a && sv.birdboxPanel.abort === a; }""")
+    check('second BirdBox start ignored while running', same)
+    page.evaluate("() => window.__signavis.birdboxPanel.stop?.()")
+
+    # Xeno-canto: a second load while one runs is ignored (fetch stubbed, never resolves)
+    calls = page.evaluate("""async () => { const sv = window.__signavis; let n = 0;
+        sv.xcPanel.prefetchRecording = () => {};
+        sv.xcPanel.fetchAudio = () => { n++; return new Promise(() => {}); };
+        sv.loadXenoCanto('XC111'); sv.loadXenoCanto('XC222');
+        await new Promise((r) => setTimeout(r, 4000)); return n; }""")
+    check('one Xeno-canto load at a time', calls <= 1, f'fetches {calls}')
+
     check('page errors', not errs, str(errs))
     b.close()
 
