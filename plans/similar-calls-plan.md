@@ -1,6 +1,6 @@
 # Similar calls: label one, confirm the rest
 
-Status: steps 1–3 built (2026-11-17), branch `feat/similar-calls`, not pushed.
+Status: steps 1–4 built (2026-11-17), branch `feat/similar-calls`, not pushed.
 
 ## Idea
 
@@ -131,6 +131,21 @@ first group 4 WOTH + 1 EATO, stray rejected, all checks pass).
 
 Open: the BirdBox box is drawn under the group box; grouping runs on the main thread (O(n²), fine for a few hundred
 boxes); no own labels as seeds yet.
+
+## Step 4 as built: other recordings, Perch in Lite
+
+Perch inside one recording, measured again (`similar-benchmark.py`, BOOSTS): score = NCC + β · (Perch similarity of the
+window − the recording's median) gives AP 0.52 → 0.53 / 0.52 / 0.49 and recall @ P ≥ 0.8 0.40 → 0.41 / 0.41 / 0.36 for
+β = 0.1 / 0.25 / 0.5: no real gain, so **Perch is not used within a recording**. Its place is choosing recordings.
+
+Built: a label's patch travels as a template (`templateFrom`, `fitTemplate` resamples onto another STFT grid /
+sample rate, `findWithTemplate`, `createSearch(spec, { template })`). Context menu "Look for it in other recordings":
+every recording opened next is searched once, the review opens with the label's species (`adoptedFrom.similar.sourceLabelId`
+= the label in the first recording). Lite + folder project: "Find similar in project (Perch)" carries the label and runs
+the Similar panel's Perch search for it (`SimilarPanel.searchFor`); opening a hit runs the template search there.
+"Stop looking for …" ends it. Browser check (`tools/e2e/similar-carry.py`): Wood Thrush label from Powdermill recording 1,
+in recording 2 (another day) 5 of 5 suggestions are Wood Thrush songs. Lite itself not run here (no Rust toolchain on
+PATH): the Perch entry is untested in the app.
 
 ## Steps
 

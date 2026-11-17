@@ -19,6 +19,7 @@ SR, NFFT, HOP = 32000, 512, 128
 DT, DF = HOP / SR, SR / NFFT
 PERCH = os.environ.get('PERCH_MODEL', '../models/perch-v2/perch_v2_embed.onnx')
 PERCH_HOP = 0.5
+BOOSTS = (0.1, 0.25, 0.5)
 
 root, fused_path, segs = sys.argv[1], sys.argv[2], sys.argv[3:]
 fused = json.load(open(fused_path))
@@ -180,6 +181,12 @@ for seg in segs:
                 m = (starts <= t) & (starts + 5 >= t)
                 return float(pscore[m].max()) if m.any() else 0.0
             fuse = [(a, b, 0.5 * v + 0.5 * perch_at((a + b) / 2)) for a, b, v in ncc]
+            # Small Perch boost: similarity above the recording's median window similarity
+            med = float(np.median(pscore))
+            for beta in BOOSTS:
+                boosted = [(a, b, v + beta * (perch_at((a + b) / 2) - med)) for a, b, v in ncc]
+                (ap, r80), _ = call_metric(boosted, targets)
+                res.setdefault(f'boost{beta}', []).append((ap, r80))
             for name, dets in (('ncc', ncc), ('bbox', bb), ('fuse', fuse)):
                 (ap, r80), found = call_metric(dets, targets)
                 res[name].append((ap, r80))
