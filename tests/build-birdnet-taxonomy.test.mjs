@@ -91,3 +91,10 @@ test('buildRecords drops implausible synonyms and Xeno-canto names from the Bird
     assert.equal(by['Rana aurora'].xc, 'Amerana aurora');
     assert.equal(by['Aerospiza tachiro'].xc, 'Accipiter tachiro');
 });
+
+test('assertSameIdScheme rejects a BirdNET taxonomy with another ID numbering', async () => {
+    const { assertSameIdScheme } = await import('../scripts/build-birdnet-taxonomy.js');
+    const v3 = parseV3Labels(V3_CSV);
+    assert.doesNotThrow(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN1' }]));
+    assert.throws(() => assertSameIdScheme(v3, [{ scientific_name: 'Turdus merula', birdnet_id: 'BN15446' }]), /outdated/);
+});

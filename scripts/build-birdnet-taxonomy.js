@@ -247,6 +247,21 @@ export function isPlausibleXcName(rec, name, genusGroups) {
 }
 
 /**
+ * The BirdNET taxonomy renumbered birdnet_id between releases (an older
+ * download used other IDs than the V3 model). Refuse to mix the two schemes.
+ */
+export function assertSameIdScheme(v3, cornell, minShare = 0.9) {
+    const bySci = new Map(cornell.map((e) => [e.scientific_name, e.birdnet_id]));
+    const shared = v3.filter((r) => bySci.has(r.s));
+    if (!shared.length) return;
+    const same = shared.filter((r) => bySci.get(r.s) === r.birdnet_id).length;
+    if (same / shared.length < minShare) {
+        throw new Error(`BirdNET taxonomy IDs do not match the V3 labels (${same}/${shared.length}). `
+            + 'The cached cornell-taxonomy.json is probably outdated: delete it and rebuild.');
+    }
+}
+
+/**
  * Build the taxonomy records. Pure (no I/O) so it can be tested.
  *  - V3 12K classes are the base (x unset).
  *  - V2.4-only species stay labelable (legacy model, older label files), x: 1.
@@ -370,6 +385,7 @@ async function main() {
     const v24 = v24Dir && fs.existsSync(v24Dir) ? buildTaxonomyFromDir(v24Dir).byScientific : new Map();
     if (!v24.size) console.warn('No V2.4 label files: building without V2.4-only species and names.');
 
+    assertSameIdScheme(v3, cornell);
     const { records, modelCount, extraCount, findCornell } = buildRecords({ v3, v24, cornell });
 
     // Images for the model's classes (as before: not for x: 1 extras).
