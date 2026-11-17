@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 in Arbeit auf Branch `refactor/label-commands`
+Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 Teil 1 gemergt (PR #131), Teil 2 auf Branch `refactor/app-commands`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -26,7 +26,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 |---|---|---|
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
-| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 offen (Befehle) |
+| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 ✅ (Befehle) |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
@@ -199,3 +199,18 @@ Kein Redux/Reducer, keine Command-Klassen (erst bei Bedarf für Undo/Redo), kein
 - `add` nimmt ein Label oder ein Array (`add(labels, meta?)`), nicht mehr `add(...labels)`.
 - Prüfung: wie 1a – alle E2E gegen `main` identisch (Reihenfolge der Artzählung in `similar-groups` schwankt auch auf `main`),
   Render-Gleichwertigkeit ok, Benchmark unverändert (Ziehen 250–285 ms auf beiden).
+
+### Teil 2 – Befehle statt Button-Klicks (Branch `refactor/app-commands`)
+
+- `main.js`: `loadXenoCanto(input)`, `openFile()`, `loadDemoRecording()`, `showDailyTips()`, `saveNokeyKey()` – Buttons,
+  Enter-Tasten, Hilfe-Menü, Lite-Menü und Handy-UI rufen dieselben Funktionen. `addXenoCanto` der Handy-UI gibt jetzt
+  das Promise des Ladens zurück (vorher kehrte `.click()` sofort zurück, das `await` dort war wirkungslos).
+- Komponenten: `XcPanel.setApiKey(key)`, `BirdNETPlayer.setDrawMode(on)`, `BirdNETPanel.analyze()` / `canAnalyze`;
+  `MobileApp` startet Analysen über `analysis.run(job)` statt über die Desktop-Buttons.
+- Verbleibende `.click()` sind echt: Datei-Auswahl öffnen (`<input type=file>`), Pfeiltasten in der Segment-Auswahl,
+  Tagestipp schließen.
+- Rest-Kopplung für Schritt 4: `MobileApp.analysis` liest weiter Desktop-Eingabefelder (Konfidenz, Overlap, Geo) und
+  den Laufzustand aus dem DOM (`jobRunning`).
+- Test: `tools/e2e/app-commands.py` (Hilfe-Menü → Demo, Draw-Button, Taste b, API-Key per Enter, Handy schaltet Draw
+  aus, Handy-Analyse startet BirdBox ohne Desktop-Klick; optional `<xc-nummer>` für Xeno-canto – lokal ohne Proxy
+  nicht ladbar: CORS/403, auch auf `main`). Übrige E2E wie `main`.

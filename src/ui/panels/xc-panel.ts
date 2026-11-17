@@ -409,6 +409,16 @@ export class XenoCantoPanel {
     this._refreshCacheInfo();
   }
 
+  /** Store the API key (localStorage) and tell the listeners. */
+  setApiKey(key: string) {
+    this.apiKey = String(key || '').trim();
+    if (this.keyInput) this.keyInput.value = this.apiKey;
+    try { localStorage.setItem(API_KEY_STORAGE, this.apiKey); } catch {}
+    this._updateButtonState();
+    this._updateUploadState();
+    this.onKeyChange?.(this.apiKey);
+  }
+
   open() {
     if (this._modal) { this.keyInput.value = this.apiKey || ''; this._modal.open(); return; }
     if (!this.backdrop) return;
@@ -913,11 +923,7 @@ export class XenoCantoPanel {
     this.openBtn?.addEventListener('click', () => this.open());
     this.cancelBtn?.addEventListener('click', () => this.close());
     this.saveBtn?.addEventListener('click', () => {
-      this.apiKey = String(this.keyInput?.value || '').trim();
-      try { localStorage.setItem(API_KEY_STORAGE, this.apiKey); } catch {}
-      this._updateButtonState();
-      this._updateUploadState();
-      this.onKeyChange?.(this.apiKey);
+      this.setApiKey(String(this.keyInput?.value || ''));
       if (this.backdrop) {
         this.close();
       } else if (this.saveBtn) {

@@ -113,7 +113,9 @@ export class BirdBoxPanel {
         if (res) this.emit(id, res, !res.raw.done);
     }
 
+    /** Detect call boxes on the open recording; does nothing while a run is going. */
     async run(): Promise<void> {
+        if (this.abort) return;
         const audioBuffer = this.o.getAudioBuffer();
         if (!audioBuffer) { this.status('No audio loaded.'); return; }
         const id = this.o.getRecordingId();

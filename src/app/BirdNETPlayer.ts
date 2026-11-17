@@ -1262,18 +1262,7 @@ export class BirdNETPlayer {
         this._drawBtn = drawBtn;
         // Draw mode is on by default
         this.root?.classList.add('draw-mode-active');
-        drawBtn.addEventListener('click', () => {
-            const on = !this.spectrogramLabels.drawMode;
-            this.spectrogramLabels.drawMode = on;
-            // disable stamp mode when entering draw mode
-            if (on && this.spectrogramLabels) {
-                this.spectrogramLabels.exitStampMode();
-                this.spectrogramLabels.exitSnapMode();
-                this.spectrogramLabels.exitZoomBoxMode();
-            }
-            drawBtn.classList.toggle('active', on);
-            this.root?.classList.toggle('draw-mode-active', on);
-        });
+        drawBtn.addEventListener('click', () => this.setDrawMode(!this.spectrogramLabels.drawMode));
         tools.appendChild(drawBtn);
 
         // Stamp mode toggle — click to stamp the last/focused label (Ctrl+D)
@@ -1525,6 +1514,20 @@ export class BirdNETPlayer {
         const rows = snap.map((l: any) => [l.id, l.start, l.end, l.freqMin, l.freqMax, l.label, l.scientificName, l.color, l.tags])
             .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
         return JSON.stringify(rows);
+    }
+
+    /** Draw mode on the spectrogram (drag draws a label); turning it on ends stamp / snap / zoom-box mode. */
+    setDrawMode(on: boolean) {
+        const layer = this.spectrogramLabels;
+        if (!layer) return;
+        layer.drawMode = on;
+        if (on) {
+            layer.exitStampMode();
+            layer.exitSnapMode();
+            layer.exitZoomBoxMode();
+        }
+        this._drawBtn?.classList.toggle('active', on);
+        this.root?.classList.toggle('draw-mode-active', on);
     }
 
     /** Create a deep snapshot of the current _linkedLabels for undo. */

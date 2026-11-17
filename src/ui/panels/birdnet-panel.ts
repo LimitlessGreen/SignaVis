@@ -355,7 +355,7 @@ export class BirdNETPanel {
         this.geoFilterSliderWrap.hidden = !this.geoFilterCheckbox.checked;
       });
     }
-    this.analyzeBtn.addEventListener('click', () => this._analyze());
+    this.analyzeBtn.addEventListener('click', () => this.analyze());
 
     // ── Geolocation button ──
     this.geoBtn?.addEventListener('click', () => {
@@ -440,21 +440,27 @@ export class BirdNETPanel {
     };
   }
 
-  /** Analyze the loaded recording (same as the button). Resolves when done; errors go to the status line. */
-  analyze() { return this._analyze(); }
+  /**
+   * Analyze the loaded recording (same as the button). Resolves true when the detections were added;
+   * false when it did not run (busy, no audio, no model URL) or failed (message in the status line).
+   */
+  analyze(): Promise<boolean> { return this.canAnalyze ? this._analyze() : Promise.resolve(false); }
 
-  async _analyze() {
+  /** False while an analysis runs (or the panel has disabled it). */
+  get canAnalyze(): boolean { return !this.analyzeBtn.disabled; }
+
+  async _analyze(): Promise<boolean> {
     const audioBuffer = this.getAudioBuffer();
     const recordingId = this.getRecordingId?.() ?? null;
     if (!audioBuffer) {
       this.statusEl.textContent = 'No audio loaded.';
-      return;
+      return false;
     }
 
     const modelUrl = String(this.modelUrlInput.value || '').trim();
     if (!modelUrl) {
       this.statusEl.textContent = 'Please enter a model URL.';
-      return;
+      return false;
     }
 
     try { localStorage.setItem(STORAGE_KEY, modelUrl); } catch { /* ignore */ }
@@ -533,9 +539,11 @@ export class BirdNETPanel {
       const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
       this.onResults(labelsToAdd, recordingId);
       this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
+      return true;
     } catch (err) {
       this.statusEl.textContent = `Error: ${(err as any)?.message || String(err)}`;
       this.birdnet.dispose();
+      return false;
     } finally {
       this.analyzeBtn.disabled = false;
     }
