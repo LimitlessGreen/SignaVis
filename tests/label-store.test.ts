@@ -41,7 +41,7 @@ test('claim changes the owner without notifying', () => {
 
 test('add, update, patch, remove swap in a new array and report ids', () => {
     const { s, changes } = setup();
-    s.add({ id: 'a' }, { id: 'b' });
+    s.add([{ id: 'a' }, { id: 'b' }]);
     const before = s.labels;
     assert.deepEqual(s.update(['b', 'zz'], (l) => ({ ...l, name: 'x' })).map((l) => l.id), ['b']);
     assert.notEqual(s.labels, before);
@@ -61,7 +61,7 @@ test('add, update, patch, remove swap in a new array and report ids', () => {
 
 test('no-op changes do not notify', () => {
     const { s, changes } = setup();
-    s.add();
+    s.add([]);
     s.remove('x');
     s.update('x', (l) => l);
     assert.equal(changes.length, 0);
@@ -88,4 +88,13 @@ test('changed() notifies touch; a failing listener does not stop the others; uns
         s.changed();
     } finally { console.error = orig; }
     assert.deepEqual(seen, ['touch']);
+});
+
+test('meta travels with the change', () => {
+    const { s, changes } = setup();
+    s.add({ id: 'a' }, { views: ['list'] });
+    s.patch('a', { name: 'n' }, { views: [] });
+    s.changed({ views: ['player'] });
+    s.remove('a');
+    assert.deepEqual(changes.map((c) => c.views), [['list'], [], ['player'], undefined]);
 });

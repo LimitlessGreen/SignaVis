@@ -299,8 +299,7 @@ function getRefCallsModal() {
       isLabelLocked: (id) => _computeLockedIds().includes(id),
       onUpdateLabel: (patch) => {
         if (!state.labels.some((l) => l.id === patch.id) || _computeLockedIds().includes(patch.id)) return null;
-        upsertLabel(patch);
-        syncToPlayer();
+        upsertLabel(patch, ALL_LABEL_VIEWS);
         return state.labels.find((l) => l.id === patch.id) || null;
       },
       // Confirmed labels of the same species: current recording + other recordings.
@@ -1113,6 +1112,18 @@ let _lastAudioUrl = null;           // track current audio URL for reference pla
 // through labelStore (the array is frozen in development); state.labels reads it.
 const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
 
+// Every label change: save it to its recording now, redraw the views in the next microtask.
+// A change can name the views it needs (meta.views), e.g. leave out the player when the
+// player made the change itself. load/clear show stored labels: nothing to save back.
+const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props'];
+/** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
+const EDIT_VIEWS = ['player', 'list', 'badge', 'props'];
+labelStore.subscribe((change) => {
+  if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
+  labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
+  scheduleProjectAutosave();
+});
+
 const state = {
   get labels() { return labelStore.labels; },
   /** Recording the labels belong to (see labelStore.entryId) */
@@ -1852,7 +1863,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
     ? { label: open.length === plan.candidates ? `All ${open.length}` : `Other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
   const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
-  labelStore.add(...copies);
+  labelStore.add(copies);
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
     feedSimilarDecisions([lbl.id], true);
@@ -1860,8 +1871,6 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
     similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
   }
   touchOwnSet(OWN_SOURCE_ID);
-  syncToPlayer();
-  saveCurrentAnnotationsIfNeeded();
   const n = copies.length;
   selectionMeta.textContent = `Copied ${n} label${n === 1 ? '' : 's'} into my labels`;
   if (plan.candidates > 1) {
@@ -1884,7 +1893,7 @@ function adoptSetLabels(setId) {
     if (!src.length) continue;
     const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
-    if (entry.id === recordingManager.activeId) labelStore.add(...copies);
+    if (entry.id === recordingManager.activeId) labelStore.add(copies);
     else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...copies] });
   }
   if (!recordingManager.activeId) {
@@ -1892,7 +1901,7 @@ function adoptSetLabels(setId) {
     found += inSet.length;
     const copies = adoptLabels(adoptSources(inSet, state.labels, 'all'), OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
     total += copies.length;
-    labelStore.add(...copies);
+    labelStore.add(copies);
   }
   if (!total) {
     if (found) selectionMeta.textContent = 'These labels are already in my labels';
@@ -2673,7 +2682,6 @@ applyLabelView(labelList.view);
 
 labelList.onRemove = (lbl) => {
   labelStore.remove(lbl.id);
-  syncToPlayer();
 };
 
 // ── Phones: own mobile UI (src/ui/mobile/mobile-app.ts) ──
@@ -2721,16 +2729,12 @@ const mobileApp = new MobileApp({
     snrComputer.invalidate(id);
     touchOwnSet(lbl.setId);
     labelStore.remove(id);
-    syncToPlayer();
-    saveCurrentAnnotationsIfNeeded();
     return { ...lbl };
   },
   restoreLabel: (lbl) => {
     if (!lbl || state.labels.some((l) => l.id === lbl.id)) return;
     labelStore.add({ ...lbl });
     touchOwnSet(lbl.setId);
-    syncToPlayer();
-    saveCurrentAnnotationsIfNeeded();
   },
   analysis: {
     confInput: document.getElementById('birdnetConfidence'),
@@ -2801,7 +2805,6 @@ const labelTable = labelTableHost ? new LabelGrid({
     const del = new Set(ids);
     for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
     labelStore.remove(del);
-    syncToPlayer();
     selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
   },
   onNotice: (msg) => { selectionMeta.textContent = msg; },
@@ -2943,8 +2946,7 @@ const birdnetPanel = new BirdNETPanel({
       }
       return;
     }
-    labelStore.add(...labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId })));
-    syncToPlayer();
+    labelStore.add(labels.map((lbl) => ({ ...lbl, setId: birdnetSetId, recordingId: _bnRecordingId })));
     if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
   },
 });
@@ -2983,8 +2985,9 @@ const birdboxPanel = new BirdBoxPanel({
       if (!running) scheduleProjectAutosave();
       return;
     }
-    labelStore.replaceAll([...state.labels.filter((l) => l.setId !== setId), ...own]);
-    if (running) syncToPlayerSoft(); else syncToPlayer();
+    // While BirdBox runs, the list waits for the end (boxes arrive every few seconds)
+    labelStore.replaceAll([...state.labels.filter((l) => l.setId !== setId), ...own],
+      running ? { views: ['player', 'table', 'badge', 'props'] } : undefined);
   },
 });
 
@@ -3168,14 +3171,12 @@ function acceptSimilar(ids) {
   const picked = state.labels.filter((l) => want.has(l.id) && l.origin === SIMILAR_ORIGIN);
   const src = labelsToAdopt(picked, state.labels, OWN_SOURCE_ID);   // ✓ on the box may have copied it already
   if (!picked.length) return;
-  if (!src.length) { labelStore.remove(want); syncToPlayer(); return; }
+  if (!src.length) { labelStore.remove(want); return; }
   feedSimilarDecisions(picked.map((l) => l.id), true);
   const undo = snapshotLabels();
   const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.replaceAll(state.labels.filter((l) => !want.has(l.id)).concat(copies));
   touchOwnSet(OWN_SOURCE_ID);
-  syncToPlayer();
-  saveCurrentAnnotationsIfNeeded();
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
@@ -3189,7 +3190,6 @@ function rejectSimilar(ids) {
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
   labelStore.remove(want);
-  syncToPlayer();
   similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
 }
 
@@ -3480,7 +3480,6 @@ if (isLite()) {
 sidebar.setActive('project');
 
 // ── Sync & export ─────────────────────────────────────────────────
-let _skipPropsRefresh = false;
 /**
  * Save current state.labels into the active RecordingEntry when appropriate.
  * Guards against overwriting stored annotations with an empty in-memory state
@@ -3552,18 +3551,16 @@ function _playerLabels() {
   return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
 }
 
-/** Labels changed: save them to the active recording now, redraw every view in the next microtask. */
+/** Something besides the labels changed (sets, visibility, locks): save, redraw every view. */
 function syncToPlayer() {
   saveCurrentAnnotationsIfNeeded();
-  labelViews.invalidate('player', 'list', 'badge', 'explore');
-  if (!_skipPropsRefresh) labelViews.invalidate('props');
+  labelViews.invalidate('player', 'list', 'badge', 'explore', 'props');
   scheduleProjectAutosave();
 }
 
 /** Like syncToPlayer, but leaves the label list alone (spectrogram, table, badge, properties). */
 function syncToPlayerSoft() {
-  labelViews.invalidate('player', 'table', 'badge');
-  if (!_skipPropsRefresh) labelViews.invalidate('props');
+  labelViews.invalidate('player', 'table', 'badge', 'props');
 }
 
 /** Push a multi-selection change to every view that can show it. */
@@ -4618,7 +4615,8 @@ async function importAnnotaSetFile(file) {
     promoteXcAnnotationSets(labels, nr);
     const ids = new Set(labels.map((l) => l.id));
     if (isActive) {
-      labelStore.load([...state.labels.filter((l) => !ids.has(l.id)), ...labels], entry.id);
+      labelStore.claim(entry.id);
+      labelStore.replaceAll([...state.labels.filter((l) => !ids.has(l.id)), ...labels]);
       activeTouched = true;
     } else {
       entriesBefore.push([entry.id, entry.annotations || []]);
@@ -4649,7 +4647,7 @@ async function importAnnotaSetFile(file) {
   sidebar.setActive('labels');
 }
 
-function upsertLabel(label) {
+function upsertLabel(label, views = EDIT_VIEWS) {
   if (!label?.id) return;
   const idx = state.labels.findIndex((l) => l.id === label.id);
   if (idx >= 0) {
@@ -4660,16 +4658,15 @@ function upsertLabel(label) {
     if (wasNonManual && label.origin === 'manual') {
       merged = asOwnLabel(merged, state.labelSets);
     }
-    labelStore.update(prev.id, () => merged);
+    labelStore.update(prev.id, () => merged, { views });
   } else {
     // Assign the active annotation set to newly created labels
     const setId = label.setId ?? (state.activeSetId || OWN_SOURCE_ID);
     const created = { ...label, origin: label.origin || 'manual', setId };
     if (setId === OWN_SOURCE_ID && !created.layer) created.layer = activeLayerId(state.labelSets);
-    labelStore.add(created);
+    labelStore.add(created, { views });
   }
   touchOwnSet(state.labels.find((l) => l.id === label.id)?.setId);
-  labelViews.invalidate('list', 'badge');
   // Refresh properties panel if this label is displayed (pinned or hovered)
   const displayed = propsPanel.displayedLabel;
   if (displayed?.id === label.id) {
@@ -4682,19 +4679,13 @@ propsPanel.onChange = (id, updates) => {
   const idx = state.labels.findIndex((l) => l.id === id);
   if (idx < 0) return;
   const prev = state.labels[idx];
-  labelStore.patch(id, { ...updates, updatedAt: new Date().toISOString() });
-  touchOwnSet(prev.setId);
   const nameChanged = updates.label !== undefined || updates.scientificName !== undefined;
-  _skipPropsRefresh = true;
-  if (nameChanged) {
-    // Re-group fully — name change affects which group this label belongs to
-    syncToPlayer();
-  } else {
-    syncToPlayerSoft();
-    labelList.updateBadges(id, state.labels[idx]);
-  }
-  _skipPropsRefresh = false;
-  saveCurrentAnnotationsIfNeeded();
+  // A name change regroups the list; otherwise only the row's badges change (updateBadges).
+  // The properties panel is refreshed below, not by the views.
+  labelStore.patch(id, { ...updates, updatedAt: new Date().toISOString() },
+    { views: nameChanged ? ['player', 'list', 'badge', 'explore'] : ['player', 'table', 'badge'] });
+  touchOwnSet(prev.setId);
+  if (!nameChanged) labelList.updateBadges(id, state.labels[idx]);
   // Ensure properties panel UI reflects the latest label object after inline edits.
   // We intentionally refresh here because we temporarily suppressed automatic
   // propsPanel sync while updating the player/list to avoid redundant reflows.
@@ -4710,9 +4701,9 @@ propsPanel.onChange = (id, updates) => {
   }
 };
 
-player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded(); requestMissingSnr(); });
+player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); requestMissingSnr(); });
 player.on('spectrogramlabelupdate', (e) => {
-  upsertLabel(e.detail?.label); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  upsertLabel(e.detail?.label);
   // Re-compute SNR when a label is resized/moved on the spectrogram
   const lbl = e.detail?.label;
   if (lbl) {
@@ -4730,7 +4721,7 @@ player.on('annotationupdate', (e) => {
   if (a.species && a.species !== prev.label) changes.label = a.species;   // the track calls the name "species"
   if (a.color && a.color !== prev.color) changes.color = a.color;
   if (a.scientificName && a.scientificName !== prev.scientificName) changes.scientificName = a.scientificName;
-  upsertLabel(changes); syncToPlayerSoft(); saveCurrentAnnotationsIfNeeded();
+  upsertLabel(changes);
   if (changes.start !== prev.start || changes.end !== prev.end) {
     const _ab = player._state?.audioBuffer;
     const fresh = state.labels.find((l) => l.id === a.id);
@@ -4742,10 +4733,7 @@ player.on('annotationremove', (e) => {
   if (!id || !state.labels.some((l) => l.id === id)) return;
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
-  labelStore.remove(id);
-  syncToPlayerSoft();   // the context-menu path removes it from the track only, not from the spectrogram
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
+  labelStore.remove(id, { views: EDIT_VIEWS });   // the context-menu path removes it from the track only, not from the spectrogram
 });
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {
@@ -4759,9 +4747,7 @@ player.on('spectrogramlabelremove', (e) => {
   if (e.detail?.label?.origin === SIMILAR_ORIGIN) { rejectSimilar([id]); return; }
   snrComputer.invalidate(id);
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
-  labelStore.remove(id);
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
+  labelStore.remove(id, { views: ['list', 'badge'] });   // the player removed it already
 });
 
 // Undo/redo inside the player: mirror the restored state into state.labels
@@ -4772,13 +4758,13 @@ player.on('labelrestore', (e) => {
   const afterIds = new Set(after.map((l) => l.id));
   const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
   for (const id of removed) snrComputer.invalidate(id);
-  labelStore.remove(removed);
+  // The player shows the restored state already
+  const views = ['list', 'badge'];
+  labelStore.remove(removed, { views });
   for (const lbl of after) {
-    if (labelStore.has(lbl.id)) labelStore.patch(lbl.id, lbl);
-    else labelStore.add({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
+    if (labelStore.has(lbl.id)) labelStore.patch(lbl.id, lbl, { views });
+    else labelStore.add({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) }, { views });
   }
-  labelViews.invalidate('list', 'badge');
-  saveCurrentAnnotationsIfNeeded();
 });
 
 player.on('spectrogramlabelrefcalls', (e) => {

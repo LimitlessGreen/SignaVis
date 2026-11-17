@@ -26,7 +26,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 |---|---|---|
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
-| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b offen (Speichern/Ansichten per `subscribe`), 2 offen (Befehle) |
+| 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 offen (Befehle) |
 | 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | offen |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
@@ -185,9 +185,17 @@ Kein Redux/Reducer, keine Command-Klassen (erst bei Bedarf für Undo/Redo), kein
   Smoke (zwei Aufnahmen, Wechsel, Reload, Handy-Breite) wie `main`, keine Seitenfehler. Benchmark 1500 Labels unverändert
   (170–270 ms). Lite-Build braucht lokal `npm run taxonomy:build` (auch auf `main`).
 
-### Teil 1b – als Nächstes
+### Teil 1b – Speichern und Ansichten per `subscribe`
 
-Speichern (`saveCurrentAnnotationsIfNeeded`) und Ansichten (`labelViews.invalidate`) per `labelStore.subscribe`;
-die ~50 `syncToPlayer()`/`syncToPlayerSoft()`/`saveCurrentAnnotationsIfNeeded()`-Aufrufe nach Änderungen fallen weg.
-Offene Frage dabei: Stellen, die bewusst nur einen Teil neu zeichnen (z. B. Spektrogramm-Ereignisse ohne `player`,
-weil der Player das Label schon zeigt) – Hinweis an der Änderung (`{ views }`) oder Ansicht prüft selbst per Keyed-Render.
+- Ein Abonnent direkt nach `labelStore`: jede Änderung speichert sofort in die Aufnahme (`saveCurrentAnnotationsIfNeeded`,
+  außer `load`/`clear` – die zeigen ja den gespeicherten Stand), invalidiert die Ansichten, plant den Projekt-Autosave.
+- Entscheidung: Teil-Neuzeichnen per Hinweis an der Änderung, `{ views }` (Standard: alle). Genutzt bei Ereignissen,
+  die der Player selbst ausgelöst hat (`spectrogramlabelremove`, `labelrestore`: nur Liste+Badge), Bearbeitungen im
+  Spektrogramm/Wellenform (`EDIT_VIEWS`), Properties-Edit (ohne `props`; ohne Liste, wenn der Name gleich bleibt) und
+  laufender BirdBox-Erkennung (Liste erst am Ende). `_skipPropsRefresh` entfällt.
+- Weggefallen: die `syncToPlayer()`/`syncToPlayerSoft()`/`saveCurrentAnnotationsIfNeeded()`-Aufrufe direkt nach
+  Label-Änderungen. `syncToPlayer()` bleibt für Änderungen **neben** den Labels (Sets, Sichtbarkeit, Sperren) und
+  für Stellen, die Label-Objekte direkt ändern (`l.layer = …`) – Kandidat für `labelStore.changed()`.
+- `add` nimmt ein Label oder ein Array (`add(labels, meta?)`), nicht mehr `add(...labels)`.
+- Prüfung: wie 1a – alle E2E gegen `main` identisch (Reihenfolge der Artzählung in `similar-groups` schwankt auch auf `main`),
+  Render-Gleichwertigkeit ok, Benchmark unverändert (Ziehen 250–285 ms auf beiden).
