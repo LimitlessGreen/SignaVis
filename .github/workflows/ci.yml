@@ -195,8 +195,8 @@ jobs:
 
   lite-data:
     # Taxonomy for Lite (generated, not in git). Same steps and cache key as
-    # pages.yml, built once and handed to the Lite builds. Species images are
-    # not shipped with Lite (loaded on demand, see data_cache.rs).
+    # pages.yml, built once and handed to the Lite builds. Species images come
+    # from the BirdNET taxonomy API (Lite caches them, see data_cache.rs).
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -219,29 +219,28 @@ jobs:
         id: labels-hash
         run: |
           echo "hash=$(find _birdnet_upstream/birdnet_analyzer/labels/V2.4 -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          # Rebuild when the BirdNET taxonomy (names, IDs, image credits) has a new release.
+          echo "cornell=$(curl -fsS --retry 3 https://birdnet.cornell.edu/taxonomy/api/stats | jq -r .taxonomy_version || echo unknown)" >> $GITHUB_OUTPUT
 
 
-      # Lite only needs the taxonomy JSON (a few MB). Cache it on its own so a
-      # missing or evicted image cache (80 MB) does not cost a 16-min rebuild.
+      # Lite only needs the taxonomy JSON (species images come from the
+      # BirdNET taxonomy API at runtime).
       - name: Cache Lite taxonomy
         id: cache-lite-taxonomy
         uses: actions/cache@v6
         with:
           path: demo/data/birdnet-taxonomy.json
-          key: lite-taxonomy-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
+          key: lite-taxonomy-${{ steps.labels-hash.outputs.hash }}-${{ steps.labels-hash.outputs.cornell }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
-      - name: Restore species assets (same key as pages.yml)
+      - name: Restore taxonomy (same key as pages.yml)
         if: steps.cache-lite-taxonomy.outputs.cache-hit != 'true'
         id: cache-species
         uses: actions/cache/restore@v6
         with:
-          path: |
-            demo/data/species_images
-            demo/data/birdnet-taxonomy.json
-          key: species-assets-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
+          path: demo/data/birdnet-taxonomy.json
+          key: species-taxonomy-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ steps.labels-hash.outputs.cornell }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
-      # Full build (with images) so image credits in the taxonomy match Pages.
-      - name: Build taxonomy and download images
+      - name: Build taxonomy
         if: steps.cache-lite-taxonomy.outputs.cache-hit != 'true' && steps.cache-species.outputs.cache-hit != 'true'
         run: npm run taxonomy:build
 

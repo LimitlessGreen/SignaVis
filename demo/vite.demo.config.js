@@ -95,10 +95,6 @@ export default defineConfig({
         src:  resolve(__dirname, '..', 'models'),
         dest: resolve(__dirname, '..', '_site', 'models'),
       },
-      {
-        src:  resolve(__dirname, 'data', 'species_images'),
-        dest: resolve(__dirname, '..', '_site', 'demo', 'data', 'species_images'),
-      },
     ]),
   ],
   // Copy sample audio files into the output

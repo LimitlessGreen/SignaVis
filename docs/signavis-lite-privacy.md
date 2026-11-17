@@ -28,7 +28,8 @@ The app connects to these services, and only when you use the related feature:
 | Service | When | What is sent |
 |---|---|---|
 | **xeno-canto** (Xeno-canto Foundation, Netherlands) | searching, opening, downloading or uploading xeno-canto recordings | search terms, recording IDs; your xeno-canto API key and uploads only when you upload |
-| **GitHub Pages / GitHub** (GitHub Inc., USA) | first use of BirdNET or species images (model and data files, then kept offline), *Help* links | file requests |
+| **GitHub Pages / GitHub** (GitHub Inc., USA) | first use of BirdNET (model files, then kept offline), *Help* links | file requests |
+| **BirdNET taxonomy** (Cornell Lab of Ornithology, USA) | first display of a species image (then kept offline) | species names |
 | **GitHub Releases** (GitHub Inc., USA) | update check once a day and *Check for Updates…* — **not** in the Microsoft Store version, which is updated by the Store | current version and platform |
 | **GBIF** (Global Biodiversity Information Facility, Denmark) | the reference-call view | species names |
 | **OpenStreetMap** (OpenStreetMap Foundation, UK) | showing a recording location on the map | map tile requests |

@@ -6,9 +6,9 @@
  * Builds only the labeling app (plus the Phase-0 webview probe) into
  * _site-lite/, with the taxonomy and the libraries
  * the web app takes from CDNs (vendor/, see runtime.ts vendorUrl) bundled,
- * so the app works offline and under a strict CSP. Species images and the
- * BirdNET model are not shipped: Lite loads them on demand and caches them
- * (svdata protocol, src-tauri-lite/src/data_cache.rs).
+ * so the app works offline and under a strict CSP. Species images
+ * (BirdNET taxonomy API) and the BirdNET model are not shipped: Lite loads
+ * them on demand and caches them (svdata protocol, src-tauri-lite/src/data_cache.rs).
  */
 import { defineConfig } from 'vite';
 import { versionDefines, getBuildVersion } from '../scripts/build-version.mjs';

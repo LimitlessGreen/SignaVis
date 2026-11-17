@@ -9,15 +9,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 const TAXONOMY_FILE = path.join(ROOT, 'demo', 'data', 'birdnet-taxonomy.json');
-const IMAGE_DIR = path.join(ROOT, 'demo', 'data', 'species_images');
 const UPSTREAM_LABELS = path.join(ROOT, '_birdnet_upstream', 'birdnet_analyzer', 'labels', 'V2.4');
 
 function main() {
-    // Ensure directory exists even if empty to avoid build errors
-    if (!fs.existsSync(IMAGE_DIR)) {
-        fs.mkdirSync(IMAGE_DIR, { recursive: true });
-    }
-
     if (fs.existsSync(TAXONOMY_FILE)) {
         console.log('[ensure-assets] Taxonomy file found.');
         return;
@@ -39,7 +33,7 @@ function main() {
         }
     } else {
         console.warn('\n[ensure-assets] ⚠️  REQUIRED ASSETS MISSING');
-        console.warn('The species database and images are missing and required for the labeling app.');
+        console.warn('The species database is missing and required for the labeling app.');
         console.warn('To build them locally, run:');
         console.warn('\n  git clone --depth 1 --branch v2.4.0 https://github.com/birdnet-team/BirdNET-Analyzer.git _birdnet_upstream');
         console.warn('  npm run taxonomy:build\n');
