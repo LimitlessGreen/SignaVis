@@ -234,7 +234,7 @@ jobs:
         id: cache-lite-taxonomy
         uses: actions/cache@v6
         with:
-          path: demo/data/birdnet-taxonomy.v2.4.json
+          path: demo/data/birdnet-taxonomy.json
           key: lite-taxonomy-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
       - name: Restore species assets (same key as pages.yml)
@@ -244,7 +244,7 @@ jobs:
         with:
           path: |
             demo/data/species_images
-            demo/data/birdnet-taxonomy.v2.4.json
+            demo/data/birdnet-taxonomy.json
           key: species-assets-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
       # Full build (with images) so image credits in the taxonomy match Pages.
@@ -257,7 +257,7 @@ jobs:
         with:
           name: lite-data-${{ github.run_id }}
           if-no-files-found: error
-          path: demo/data/birdnet-taxonomy.v2.4.json
+          path: demo/data/birdnet-taxonomy.json
 
   lite-build:
     # SignaVis Lite: the labeling app as a slim desktop app (src-tauri-lite).

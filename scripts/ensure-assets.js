@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const TAXONOMY_FILE = path.join(ROOT, 'demo', 'data', 'birdnet-taxonomy.v2.4.json');
+const TAXONOMY_FILE = path.join(ROOT, 'demo', 'data', 'birdnet-taxonomy.json');
 const IMAGE_DIR = path.join(ROOT, 'demo', 'data', 'species_images');
 const UPSTREAM_LABELS = path.join(ROOT, '_birdnet_upstream', 'birdnet_analyzer', 'labels', 'V2.4');
 
@@ -29,9 +29,8 @@ function main() {
         console.log('[ensure-assets] Found local labels upstream. Building taxonomy...');
         const res = spawnSync('node', [
             './scripts/build-birdnet-taxonomy.js',
-            '--source', './_birdnet_upstream/birdnet_analyzer/labels/V2.4',
-            '--output', './demo/data/birdnet-taxonomy.v2.4.json',
-            '--model', 'V2.4'
+            '--output', './demo/data/birdnet-taxonomy.json',
+            '--v24-labels', './_birdnet_upstream/birdnet_analyzer/labels/V2.4'
         ], { stdio: 'inherit', cwd: ROOT });
 
         if (res.status !== 0) {

@@ -3765,15 +3765,23 @@ function relocalizeAllLabels() {
   }
 }
 
+/** Footer text: which species list is loaded (not which model runs). */
+function formatTaxonomyMeta(tax, lang) {
+  const v = tax.modelVersion || '';
+  const name = /BirdNET/i.test(v) ? v : `BirdNET ${v}`;
+  const extra = tax.data?.extraCount ? ` + ${tax.data.extraCount} more` : '';
+  return `Species list: ${name} · ${tax.speciesCount} classes${extra} · ${lang}`;
+}
+
 async function loadBirdnetTaxonomy() {
   try {
     taxonomyMeta.textContent = 'Taxonomy loading…';
-    const res = await fetch('./data/birdnet-taxonomy.v2.4.json');
+    const res = await fetch('./data/birdnet-taxonomy.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     taxonomy.load(data);
     state.taxonomyLang = populateLanguageSelect(taxonomyLangSelect, taxonomy, getLangParam());
-    taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp${taxonomy.data?.extraCount ? ` + ${taxonomy.data.extraCount} birds` : ""} · ${state.taxonomyLang}`;
+    taxonomyMeta.textContent = formatTaxonomyMeta(taxonomy, state.taxonomyLang);
     // Re-resolve any labels that were loaded before taxonomy was ready,
     // then push updated names to the player (overview + spectrogram).
     if (state.labels.length) {
@@ -4415,7 +4423,7 @@ taxonomyLangSelect.addEventListener('change', () => {
   state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
   try { localStorage.setItem(LANG_STORAGE_KEY, state.taxonomyLang); } catch {}
   if (taxonomy.data) {
-    taxonomyMeta.textContent = `BirdNET ${taxonomy.modelVersion} · ${taxonomy.speciesCount} sp${taxonomy.data?.extraCount ? ` + ${taxonomy.data.extraCount} birds` : ""} · ${state.taxonomyLang}`;
+    taxonomyMeta.textContent = formatTaxonomyMeta(taxonomy, state.taxonomyLang);
   }
   relocalizeAllLabels();
   // Re-localize the species bar if it has a selection with a known sci name

@@ -36,7 +36,7 @@ function copyStaticPlugin(pairs) {
  * - In build: rewrites fetch URLs in HTML, copies hashed file to output.
  * - In dev: no-op (original filename works via dev server).
  */
-export function taxonomyHashPlugin(taxonomySrc = resolve(__dirname, 'data', 'birdnet-taxonomy.v2.4.json')) {
+export function taxonomyHashPlugin(taxonomySrc = resolve(__dirname, 'data', 'birdnet-taxonomy.json')) {
   const ORIGINAL = basename(taxonomySrc);
   let isBuild = false;
   let hashedName = '';

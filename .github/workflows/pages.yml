@@ -55,7 +55,7 @@ jobs:
         with:
           path: |
             demo/data/species_images
-            demo/data/birdnet-taxonomy.v2.4.json
+            demo/data/birdnet-taxonomy.json
           key: species-assets-${{ runner.os }}-${{ steps.labels-hash.outputs.hash }}-${{ hashFiles('scripts/build-birdnet-taxonomy.js') }}
 
       - name: Build taxonomy and download images
