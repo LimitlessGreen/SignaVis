@@ -27,6 +27,11 @@ export function nearWindows(time: number): { from: number; to: number } {
     };
 }
 
+/** Whether a run's rows hold the seconds around `time`: a stopped run's only up to analyzedTo. */
+export function runCovers(raw: { analyzedTo: number }, stopped: boolean, time: number): boolean {
+    return !stopped || time + NEAR_SECONDS <= raw.analyzedTo;
+}
+
 export class NearbyRows<B> {
     private readonly stretches = new Map<string, Stretch[]>();
     private pending: Promise<boolean> | null = null;

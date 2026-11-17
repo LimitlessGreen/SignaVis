@@ -15,7 +15,7 @@ import { fuseBoxes, type FusedBox, type FusionCache } from '../../domain/detecto
 import { boxUnder, type BoxUnderCache } from '../../domain/detector/boxUnder.ts';
 import { Pacer } from '../../domain/detector/pacer.ts';
 import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
-import { NearbyRows } from '../../domain/detector/nearby.ts';
+import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
 
@@ -41,7 +41,8 @@ export interface BirdBoxPanelOptions {
     detector?: BirdBoxDetector;
 }
 
-interface Result { raw: RawRows; cache: FusionCache }
+/** `stopped`: Stop ended the run, its rows reach only raw.analyzedTo. */
+interface Result { raw: RawRows; cache: FusionCache; stopped?: boolean }
 
 export class BirdBoxPanel {
     private readonly o: BirdBoxPanelOptions;
@@ -80,7 +81,7 @@ export class BirdBoxPanel {
      * Null without rows for the recording at that point (neither a run nor detectNear).
      */
     boxAt(recordingId: string | null, time: number, freq: number, conf: number): { box: { start: number; end: number; freqMin: number; freqMax: number } | null; weaker: boolean } | null {
-        const res = this.results.get(key(recordingId));
+        const res = this.covering(recordingId, time);
         const near = res ? null : this.nearby.at(key(recordingId), time);
         const raw = res?.raw ?? near?.raw;
         if (!raw) return null;
@@ -96,8 +97,14 @@ export class BirdBoxPanel {
      */
     detectNear(recordingId: string | null, time: number): Promise<boolean> {
         const buf = this.o.getAudioBuffer();
-        if (!buf || this.results.has(key(recordingId))) return Promise.resolve(false);
+        if (!buf || this.covering(recordingId, time)) return Promise.resolve(false);
         return this.nearby.detect(key(recordingId), buf, time);
+    }
+
+    /** The run's result if its rows reach the seconds around `time` (a stopped run may not). */
+    private covering(recordingId: string | null, time: number): Result | null {
+        const res = this.results.get(key(recordingId));
+        return res && runCovers(res.raw, !!res.stopped, time) ? res : null;
     }
 
     /** Fuse the active recording's rows again with the slider settings. */
@@ -132,6 +139,7 @@ export class BirdBoxPanel {
             stoppedRun = () => {
                 if (!current()) return;
                 res.raw = { ...latest, done: true };
+                res.stopped = true;
                 this.emit(id, res, false);
             };
             const pacer = this.pacer = new Pacer<RawRows>(raw => {

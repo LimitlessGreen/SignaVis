@@ -86,3 +86,11 @@ test('NearbyRows: rows of a recording forgotten meanwhile are dropped', async ()
     assert.equal(await pending, false);
     assert.equal(near.at('rec', 30), null);
 });
+
+test('runCovers: a finished run holds every click, a stopped one only up to its analysed end', async () => {
+    const { runCovers } = await import('../src/domain/detector/nearby.ts');
+    assert.equal(runCovers({ analyzedTo: 20 }, false, 100), true);
+    assert.equal(runCovers({ analyzedTo: 20 }, true, 10), true);
+    assert.equal(runCovers({ analyzedTo: 20 }, true, 18), false);
+    assert.equal(runCovers({ analyzedTo: 20 }, true, 100), false);
+});
