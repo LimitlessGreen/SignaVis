@@ -46,3 +46,16 @@ test('templateTagsSummary: preset order first, then custom tags, empty values dr
     assert.equal(templateTagsSummary({ soundType: 'song', note: 'faint', sex: 'male', lifeStage: '' }, presets), 'male · song · faint');
     assert.equal(templateTagsSummary({}, presets), '');
 });
+
+test('reference for the dialog defaults: own labels only, not the detection boxes (BirdBox "Bird")', () => {
+    const layer = createLayer(null);
+    layer.add({ start: 0, end: 1, freqMin: 1000, freqMax: 4000, label: 'Chaffinch', scientificName: 'Fringilla coelebs' });
+    layer.add({ id: 'bb_1', start: 2, end: 3, freqMin: 1000, freqMax: 4000, label: 'Bird', origin: 'BirdBox' });
+    layer._lockedIds = new Set(['bb_1']);
+    assert.equal(layer._getReferenceLabelForDefaults().label, 'Chaffinch');
+    // Snap clicks right on a BirdBox box, which focuses it
+    layer._focusedLabelId = 'bb_1';
+    assert.equal(layer._getReferenceLabelForDefaults().label, 'Chaffinch');
+    layer._lockedIds = new Set(['bb_1', layer._items[0].id]);
+    assert.equal(layer._getReferenceLabelForDefaults(), null);
+});

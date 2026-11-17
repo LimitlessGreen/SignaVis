@@ -1173,11 +1173,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const ref = this._items.find((l: any) => l.id === this._stampRefLabelId);
             if (ref) return ref as any;
         }
+        // Detections shown on the spectrogram (locked BirdBox / BirdNET boxes) are no reference:
+        // a snap clicks right on them, and their "Bird" would replace the species
+        const own = (l: any) => !this._lockedIds.has(l.id);
         if (this._focusedLabelId) {
             const focused = this._items.find((l: any) => l.id === this._focusedLabelId);
-            if (focused) return focused as any;
+            if (focused && own(focused)) return focused as any;
         }
-        return this._items.length ? (this._items[this._items.length - 1] as any) : null;
+        for (let i = this._items.length - 1; i >= 0; i--) if (own(this._items[i])) return this._items[i] as any;
+        return null;
     }
 
     highlightActiveLabel(currentTime: number) {
@@ -1749,6 +1753,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         // A detector box exists below the current confidence: the wheel lowers that first
         this._snap = result ? { time, freq, result, source: 'signal', tune: det?.weaker ? 'conf' : 'sensitivity', detector: !!det } : null;
         this._renderSnapPreview();
+    }
+
+    /** Snap again at the last point (e.g. once the detector's rows for it arrived). */
+    refreshSnap() {
+        if (!this.snapMode || !this._snap) return;
+        this._runSnap(this._snap.time, this._snap.freq);
     }
 
     _renderSnapPreview() {
