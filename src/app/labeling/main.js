@@ -1564,6 +1564,7 @@ async function runBirdnetOnFolder({ entries, paths }) {
     todo.push(existing || recordingManager.add(folderFileEntry(path)));
   }
   let done = 0;
+  let failed = false;
   // Another BirdNET run (key b, phone UI) may be going: wait for it, analyze() would skip
   const birdnetIdle = async () => {
     while (!stopped && !birdnetPanel.canAnalyze) await new Promise((r) => setTimeout(r, 150));
@@ -1593,18 +1594,22 @@ async function runBirdnetOnFolder({ entries, paths }) {
         await birdnetIdle();
         if (stopped) break;
         if (recordingManager.activeId !== entry.id || player._state?.audioBuffer !== buf) continue;
-        await birdnetPanel.analyze();
-        recordingManager.update(entry.id, { pinned: true });
-        done++;
+        // Only an analyzed recording counts; a failed run (no model, error) stops the folder run
+        if (await birdnetPanel.analyze()) {
+          recordingManager.update(entry.id, { pinned: true });
+          done++;
+        } else failed = true;
         break;
       }
-      if (stopped) break;
+      if (stopped || failed) break;
     }
   } finally {
     _folderBirdnetStop = null;
-    selectionMeta.textContent = stopped
-      ? `BirdNET stopped after ${done} of ${todo.length} recordings`
-      : `BirdNET done for ${done} of ${todo.length} recordings`;
+    selectionMeta.textContent = failed
+      ? `BirdNET failed after ${done} of ${todo.length} recordings: ${birdnetPanel.statusEl?.textContent || ''}`
+      : stopped
+        ? `BirdNET stopped after ${done} of ${todo.length} recordings`
+        : `BirdNET done for ${done} of ${todo.length} recordings`;
     renderProjectLocation();
   }
 }

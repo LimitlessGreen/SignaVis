@@ -9,8 +9,8 @@ import sys
 from playwright.sync_api import sync_playwright
 
 url = sys.argv[1]
-xc = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].endswith('.wav') else None
 CLIP = next((a for a in sys.argv[2:] if a.endswith('.wav')), None)
+xc = next((a for a in sys.argv[2:] if not a.endswith('.wav')), None)
 fails = []
 
 
@@ -105,7 +105,7 @@ with sync_playwright() as p:
     page.evaluate("""() => { const p = window.__signavis.birdnetPanel; window.__bnRuns = [];
         p._analyze = async function () {          // stub: 1 s run, button disabled meanwhile
             this.analyzeBtn.disabled = true; const id = window.__signavis.activeRecordingId(); window.__bnRuns.push(id);
-            await new Promise((r) => setTimeout(r, 1000)); this.analyzeBtn.disabled = false; }; }""")
+            await new Promise((r) => setTimeout(r, 1000)); this.analyzeBtn.disabled = false; return true; }; }""")
     page.evaluate("() => { window.__signavis.birdnetPanel.analyze(); }")   # foreign run
     page.evaluate("() => { const sv = window.__signavis; window.__folder = sv.runBirdnetOnFolder({ entries: sv.recordings(), paths: [] }); }")
     page.wait_for_timeout(500)
@@ -126,24 +126,41 @@ with sync_playwright() as p:
             if page.evaluate("window.__signavis.recordingCount()") >= 2: break
         page.wait_for_timeout(2500)
         page.evaluate("""() => { const sv = window.__signavis; const p = sv.birdnetPanel; window.__bnRuns = [];
-            const [a, b] = sv.recordings(); window.__ab = [a.id, b.id];
+            const all = sv.recordings(); const [a, b] = all; window.__ab = all.map((e) => e.id);
             let fired = false, busyUntil = 0;
             Object.defineProperty(p, 'canAnalyze', { configurable: true, get() {
                 // first check after the runner opened A: a foreign run starts and the user opens B
                 if (!fired && window.__folderOn && sv.activeRecordingId() === a.id && sv.player._state?.audioBuffer) {
                     fired = true; busyUntil = Date.now() + 1500; sv.mobileApp.h.openRecording(b.id); }
                 return Date.now() > busyUntil && !this.analyzeBtn.disabled; } });
+            p._analyze = async function () { window.__bnRuns.push(sv.activeRecordingId()); await new Promise((r) => setTimeout(r, 300)); return true; };
             // the runner should analyze A first: make sure it is not active now
             sv.mobileApp.h.openRecording(b.id); }""")
         page.wait_for_timeout(2500)
         page.evaluate("() => { const sv = window.__signavis; window.__folderOn = true; window.__folder = sv.runBirdnetOnFolder({ entries: sv.recordings(), paths: [] }); }")
         page.wait_for_timeout(500)
         page.locator('button:has-text("Run")').last.click()
-        page.wait_for_function("window.__bnRuns.length >= 2", timeout=60000)
+        page.wait_for_function("window.__bnRuns.length >= window.__ab.length", timeout=60000)
         page.evaluate("() => window.__folder"); page.wait_for_timeout(500)
         runs = page.evaluate("window.__bnRuns"); ab = page.evaluate("window.__ab")
         pinned = page.evaluate("window.__signavis.recordings().map((e) => !!e.pinned)")
-        check('folder BirdNET re-opens a recording switched away from', runs == ab and pinned == [True, True], f'runs {runs} expected {ab}, pinned {pinned}')
+        check('folder BirdNET re-opens a recording switched away from', runs == ab and all(pinned), f'runs {runs} expected {ab}, pinned {pinned}')
+
+        # A failing analysis (e.g. no model URL) is not counted: nothing pinned, the run stops with the message
+        page.wait_for_timeout(800)
+        page.evaluate("""() => { const sv = window.__signavis; const p = sv.birdnetPanel;
+            delete p.canAnalyze;
+            for (const e of sv.recordings()) sv.recordings().find((x) => x.id === e.id).pinned = false;
+            p._analyze = async function () { this.statusEl.textContent = 'Please enter a model URL.'; return false; };
+            window.__metas = []; const m = document.getElementById('selectionMeta');
+            new MutationObserver(() => window.__metas.push(m.textContent)).observe(m, { childList: true, characterData: true, subtree: true });
+            window.__folder = sv.runBirdnetOnFolder({ entries: sv.recordings(), paths: [] }); }""")
+        page.wait_for_timeout(500)
+        page.locator('button:has-text("Run")').last.click()
+        page.wait_for_function("window.__metas.some((t) => /BirdNET (failed|done|stopped)/.test(t))", timeout=30000)
+        meta = page.evaluate("window.__metas.find((t) => /BirdNET (failed|done|stopped)/.test(t))")
+        pinned = page.evaluate("window.__signavis.recordings().map((e) => !!e.pinned)")
+        check('failed folder BirdNET counts nothing', meta.startswith('BirdNET failed after 0') and not any(pinned), f'{meta!r} pinned {pinned}')
 
     check('page errors', not errs, str(errs))
     b.close()
