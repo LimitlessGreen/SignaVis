@@ -2679,6 +2679,7 @@ const mobileApp = new MobileApp({
   },
   getLabels: () => state.labels,
   resolveName,
+  altNames: (sci) => Object.values(taxonomy.resolve(sci)?.n || {}),
   isOwn: (l) => l.setId === OWN_SOURCE_ID,
   addFile: () => document.getElementById('fileInput')?.click(),
   addXenoCanto: (raw) => {

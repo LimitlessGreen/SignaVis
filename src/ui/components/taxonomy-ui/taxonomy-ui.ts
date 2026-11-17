@@ -246,6 +246,50 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
   };
 }
 
+
+// ── Shared rendering for grouped species rows (search widget + label editor) ──
+
+const GROUP_TITLES: Record<string, string> = {
+  recent: 'Recent',
+  project: 'In this project',
+  taxonomy: 'Taxonomy',
+  extra: 'More species <span class="search-group-sub">· not detected by BirdNET</span>',
+};
+export const EXTRA_TITLE = 'Can be labelled, but BirdNET cannot detect this species';
+
+function esc(s: unknown) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function hl(text: string, q: string) {
+  const [pre, hit, post] = splitHighlight(text, q);
+  return hit ? `${esc(pre)}<mark>${esc(hit)}</mark>${esc(post)}` : esc(text);
+}
+
+/** Inner HTML of a group header; `n` shown, `total` before truncation. */
+export function speciesGroupHeaderHtml(group: string, n: number, total = n) {
+  const title = GROUP_TITLES[group] || esc(group);
+  return `<span>${title}</span><span>${total > n ? `${n} of ${total}` : n}</span>`;
+}
+
+export function speciesRowClass(s: SpeciesSuggestion) {
+  return 'species-search-item species-search-item--rich' + (s.group === 'extra' ? ' is-extra' : '');
+}
+
+/** Inner HTML of a two-line species row; `q` is the normalized query to highlight. */
+export function speciesRowHtml(s: SpeciesSuggestion, q: string) {
+  const dot = s.color && s.group !== 'taxonomy' && s.group !== 'extra'
+    ? `<span class="search-dot" style="background:${esc(s.color)}"></span>`
+    : '<span class="search-dot search-dot--hollow"></span>';
+  const sub = s.scientificName ? `<i>${hl(s.scientificName, q)}</i>` : '';
+  const alt = s.matchedAlt ? `${sub ? ' · ' : ''}<span class="search-alt">${hl(s.matchedAlt, q)}</span>` : '';
+  const code = s.code ? `<span class="search-code">${esc(s.code)}</span>` : '';
+  const meta = (s.local ? '<span class="search-local" title="Occurs at the recording location (BirdNET geo model)"></span>' : '')
+    + (s.count ? `<span class="search-count">${s.count}×</span>` : '');
+  return `${dot}<span class="search-name">${hl(s.name, q)}</span>`
+    + `<span class="search-meta">${meta}</span>`
+    + (sub || alt || code ? `<span class="search-sub">${sub}${alt}${code}</span>` : '');
+}
+
 /**
  * Create a reusable species autocomplete widget (input + floating dropdown).
  *
@@ -344,18 +388,6 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
     if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
   }
 
-  const GROUP_TITLES: Record<string, string> = {
-    recent: 'Recent',
-    project: 'In this project',
-    taxonomy: 'Taxonomy',
-    extra: 'More species <span class="search-group-sub">· not detected by BirdNET</span>',
-  };
-
-  function hl(text: string, q: string) {
-    const [pre, hit, post] = splitHighlight(text, q);
-    return hit ? `${escHtml(pre)}<mark>${escHtml(hit)}</mark>${escHtml(post)}` : escHtml(text);
-  }
-
   function addRow(row: HTMLElement, entry: any) {
     row.setAttribute('role', 'option');
     row.id = `${dropdown.id}-opt-${items.length}`;
@@ -369,19 +401,9 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
   function groupedRow(s: any, q: string) {
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'species-search-item species-search-item--rich' + (s.group === 'extra' ? ' is-extra' : '');
-    const dot = s.color && s.group !== 'taxonomy' && s.group !== 'extra'
-      ? `<span class="search-dot" style="background:${escHtml(s.color)}"></span>`
-      : '<span class="search-dot search-dot--hollow"></span>';
-    const sub = s.scientificName ? `<i>${hl(s.scientificName, q)}</i>` : '';
-    const alt = s.matchedAlt ? `${sub ? ' · ' : ''}<span class="search-alt">${hl(s.matchedAlt, q)}</span>` : '';
-    const code = s.code ? `<span class="search-code">${escHtml(s.code)}</span>` : '';
-    const meta = (s.local ? '<span class="search-local" title="Occurs at the recording location (BirdNET geo model)"></span>' : '')
-      + (s.count ? `<span class="search-count">${s.count}×</span>` : '');
-    row.innerHTML = `${dot}<span class="search-name">${hl(s.name, q)}</span>`
-      + `<span class="search-meta">${meta}</span>`
-      + (sub || alt || code ? `<span class="search-sub">${sub}${alt}${code}</span>` : '');
-    if (s.group === 'extra') row.title = 'Can be labelled, but BirdNET cannot detect this species';
+    row.className = speciesRowClass(s);
+    row.innerHTML = speciesRowHtml(s, q);
+    if (s.group === 'extra') row.title = EXTRA_TITLE;
     return row;
   }
 
@@ -398,7 +420,7 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
         const head = document.createElement('div');
         head.className = 'search-group' + (group === 'extra' ? ' is-extra' : '');
         head.setAttribute('role', 'presentation');
-        head.innerHTML = `<span>${GROUP_TITLES[group] || escHtml(group)}</span><span>${total > n ? `${n} of ${total}` : n}</span>`;
+        head.innerHTML = speciesGroupHeaderHtml(group, n, total);
         dropdown.appendChild(head);
       }
       addRow(groupedRow(s, q), s);

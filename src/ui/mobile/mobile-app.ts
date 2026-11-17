@@ -12,6 +12,7 @@
  * New files and Live recordings are analysed right away with the current analysis settings.
  */
 import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
+import { normalizeSearch, matchTier, MATCH } from '../components/taxonomy-ui/species-ranking.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
 import { t, getLang } from './i18n.ts';
@@ -51,6 +52,8 @@ export interface MobileAppHost {
   /** Labels of the active recording. */
   getLabels(): any[];
   resolveName(lbl: any): { display: string; scientific?: string };
+  /** Common names in all languages, so the species filter also finds other-language names. */
+  altNames?(scientificName: string): string[];
   /** True for labels in "My labels" (confirmed by the user). */
   isOwn?(lbl: any): boolean;
   /** Open the file picker to add audio. */
@@ -1076,12 +1079,19 @@ export class MobileApp {
     this.spSortBtn.innerHTML = `${t('sp.sortBy')} <b>${t(`sp.sort.${this.spSort}` as const)} ▾</b>`;
     this.spMeta.textContent = t('sp.recs', { n: recCount });
 
-    const q = this.spSearch.value.trim().toLowerCase();
+    // Same matching as the desktop species search: diacritics, word starts, 4/6-letter codes, other languages.
+    const q = normalizeSearch(this.spSearch.value).trim();
+    const tier = new Map<string, number>();
     let items = list.filter((sp) => this.spFilter === 'all' || (this.spFilter === 'confirmed' ? sp.confirmed > 0 : sp.confirmed === 0));
-    if (q) items = items.filter((sp) => name(sp).toLowerCase().includes(q) || sp.sci.toLowerCase().includes(q));
-    items.sort((a, b) => this.spSort === 'name' ? name(a).localeCompare(name(b))
+    if (q) {
+      for (const sp of items) tier.set(sp.key, matchTier(q, name(sp), sp.sci, this.h.altNames?.(sp.sci) || []));
+      items = items.filter((sp) => tier.get(sp.key)! !== MATCH.NONE);
+    }
+    // While searching, better matches first; the chosen sort order breaks ties.
+    const byTier = (a: any, b: any) => (q ? (tier.get(a.key)! <= MATCH.CODE ? 0 : 1) - (tier.get(b.key)! <= MATCH.CODE ? 0 : 1) : 0);
+    items.sort((a, b) => byTier(a, b) || (this.spSort === 'name' ? name(a).localeCompare(name(b))
       : this.spSort === 'conf' ? b.best - a.best
-      : (b.confirmed + b.detected) - (a.confirmed + a.detected) || name(a).localeCompare(name(b)));
+      : (b.confirmed + b.detected) - (a.confirmed + a.detected) || name(a).localeCompare(name(b))));
 
     this.spList.replaceChildren();
     if (!items.length) {

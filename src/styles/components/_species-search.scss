@@ -255,6 +255,7 @@
 .search-empty { padding: 12px; text-align: center; color: var(--color-text-secondary); }
 
 .species-search-item--rich {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   column-gap: 8px;
@@ -302,6 +303,7 @@
 .search-local { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; opacity: 0.8; }
 
 .species-search-item--create {
+  box-sizing: border-box;
   margin: 0 4px;
   width: calc(100% - 8px);
   border-radius: 4px;

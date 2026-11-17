@@ -346,3 +346,15 @@ html[data-theme="light"] .xc-export-dialog .json-null { color: #6b7280; }
 
 
 /* .daily-tip-* → co-located in src/ui/components/daily-tips/daily-tips.scss */
+
+/* Grouped species rows from the species search provider (see _species-search.scss) */
+.label-search-item.species-search-item--rich {
+  box-sizing: border-box;
+  width: calc(100% - 8px);
+  margin: 0 4px;
+  display: grid;
+  border-bottom: none;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.label-search-results .search-group { padding-left: 12px; padding-right: 12px; }
