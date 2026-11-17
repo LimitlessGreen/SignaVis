@@ -19,8 +19,9 @@ import { initDailyTips, showTip } from '../../ui/components/daily-tips/daily-tip
 import { Sidebar } from '../../ui/panels/sidebar.ts';
 import { MobileApp } from '../../ui/mobile/mobile-app.ts';
 import { t as mt } from '../../ui/mobile/i18n.ts';
-import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget, normalizeSearch } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
+import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget, normalizeSearch, altNameMatch } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
 import { matchTier, MATCH, LOCAL_THRESHOLD } from '../../ui/components/taxonomy-ui/species-ranking.ts';
+import { createSpeciesGeoCache } from '../../ui/components/taxonomy-ui/species-geo-cache.ts';
 import { LabelList } from '../../ui/panels/label-list.ts';
 import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
@@ -3070,33 +3071,23 @@ explorePanel.el.classList.add('analyse-explore');
 // ── Geo occurrence for species search ranking ─────────────────────
 // Species search ranks locally occurring species first, using the same BirdNET
 // area model, coordinates and recording date as the geo filter / Explore list.
-const speciesGeo = { key: '', scores: new Map(), pending: null };
-function speciesGeoScore(sci) { return speciesGeo.scores.get(sci) ?? null; }
-function refreshSpeciesGeoScores() {
-  const coords = birdnetPanel.getCoords?.();
-  if (!coords) { speciesGeo.key = ''; speciesGeo.scores = new Map(); return Promise.resolve(); }
-  const date = birdnetPanel.getRecordingDate?.() || null;
-  const key = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)},${date ? new Date(date).toISOString().slice(0, 10) : ''}`;
-  if (key === speciesGeo.key) return Promise.resolve();
-  if (speciesGeo.pending) return speciesGeo.pending;
-  speciesGeo.pending = (async () => {
-    try {
-      if (!birdnet.loaded) await birdnetPanel.loadModel();
-      if (!birdnet.hasAreaModel) return;
-      await birdnet.setLocation(coords.lat, coords.lon, { date: date || undefined });
-      const all = await birdnet.getAllSpecies();
-      speciesGeo.scores = new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
-      speciesGeo.key = key;
-      speciesSearchWidgets.forEach((w) => w.refresh?.());
-    } catch (err) {
-      console.warn('[species search] geo ranking unavailable:', err?.message || err);
-      speciesGeo.key = key;           // don't retry on every keystroke
-    } finally {
-      speciesGeo.pending = null;
-    }
-  })();
-  return speciesGeo.pending;
-}
+const speciesGeo = createSpeciesGeoCache({
+  getContext: () => {
+    const c = birdnetPanel.getCoords?.();
+    return c ? { lat: c.lat, lon: c.lon, date: birdnetPanel.getRecordingDate?.() || null } : null;
+  },
+  fetchScores: async (ctx) => {
+    if (!birdnet.loaded) await birdnetPanel.loadModel();
+    if (!birdnet.hasAreaModel) return null;
+    await birdnet.setLocation(ctx.lat, ctx.lon, { date: ctx.date || undefined });
+    const all = await birdnet.getAllSpecies();
+    return new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
+  },
+  onUpdate: () => speciesSearchWidgets.forEach((w) => w.refresh?.()),
+  onError: (err) => console.warn('[species search] geo ranking unavailable:', err?.message || err),
+});
+const speciesGeoScore = (sci) => speciesGeo.score(sci);
+const refreshSpeciesGeoScores = () => speciesGeo.refresh();
 /** Widgets that should re-render once geo scores arrive. */
 const speciesSearchWidgets = new Set();
 /** createSpeciesSearchWidget + geo refresh on focus. */
@@ -4679,7 +4670,12 @@ let topbarWidget = null;
         const rec = l.scientificName ? taxonomy.resolve(l.scientificName) : null;
         const tier = matchTier(q, l.name, l.scientificName, rec?.n ? Object.values(rec.n) : []);
         const geo = l.scientificName ? speciesGeoScore(l.scientificName) : null;
-        return { ...l, tier, local: geo != null && geo >= LOCAL_THRESHOLD };
+        return {
+          ...l, tier,
+          local: geo != null && geo >= LOCAL_THRESHOLD,
+          matchedAlt: tier === MATCH.ALT ? altNameMatch(rec, q, lang) : '',
+          code: tier === MATCH.CODE ? q.toUpperCase() : '',
+        };
       })
       .filter((l) => l.tier !== MATCH.NONE)
       .sort((a, b) => (q ? a.tier - b.tier : 0) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name))

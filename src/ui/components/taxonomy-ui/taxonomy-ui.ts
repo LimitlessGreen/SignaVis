@@ -120,7 +120,7 @@ function searchIndex(records: any[]) {
 }
 
 /** First other-language name containing `q`, prefixed with its flag. */
-function altNameMatch(record: any, q: string, displayLang: string) {
+export function altNameMatch(record: any, q: string, displayLang: string) {
   if (!q || !record?.n) return '';
   for (const [lang, name] of Object.entries(record.n)) {
     if (lang === displayLang) continue;
@@ -174,8 +174,10 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
 
     // User-drawn labels — count per species; show origin for non-manual labels (BirdNET, xeno-canto).
     for (const lbl of getLabels()) {
-      const sci = String(lbl?.scientificName || '').trim();
-      const record = recordFor(sci);
+      const rawSci = String(lbl?.scientificName || '').trim();
+      const record = recordFor(rawSci);
+      // Canonical name, so labels using an older alias count towards the same species.
+      const sci = record?.s || rawSci;
       const localized = record ? taxonomy.resolveCommonName(record, lang) : '';
       const name = String(localized || lbl?.commonName || lbl?.label || sci).trim();
       if (!name) continue;

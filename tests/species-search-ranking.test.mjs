@@ -111,3 +111,12 @@ test('label list filter: diacritics, codes, other languages and tags', async () 
   for (const f of ['kohl', 'pama', 'parmaj', 'great tit', 'mesange', 'gesang', 'major']) assert.ok(matches(f), f);
   for (const f of ['amsel', 'tumu']) assert.ok(!matches(f), f);
 });
+
+test('labels with a variant scientific name count towards the canonical species', () => {
+  const t = new TaxonomyResolver();
+  t.load({ languages: ['de'], records: [{ s: 'Parus major', n: { de: 'Kohlmeise' } }] });
+  assert.equal(t.resolve('Parus majr')?.s, 'Parus major');   // resolver maps the variant
+  const out = createSuggestionProvider({ taxonomy: t, getLang: () => 'de', getPool: () => [],
+    getLabels: () => [{ label: 'a', scientificName: 'Parus major' }, { label: 'b', scientificName: 'Parus majr' }] })('kohl');
+  assert.deepEqual(out.map((r) => [r.scientificName, r.count]), [['Parus major', 2]]);
+});
