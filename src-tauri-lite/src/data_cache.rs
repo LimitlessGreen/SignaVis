@@ -78,7 +78,10 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
         let code = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
         return Err((code, format!("{url}: HTTP {}", res.status())));
     }
-    let keep = worth_caching(res.headers().get(header::CACHE_CONTROL).and_then(|v| v.to_str().ok()));
+    // Only the image API marks temporary placeholders with a short max-age;
+    // GitHub Pages sends max-age=600 for everything, model files must stay cached.
+    let keep = !path.starts_with(SPECIES_IMAGES)
+        || worth_caching(res.headers().get(header::CACHE_CONTROL).and_then(|v| v.to_str().ok()));
     let bytes = res.bytes().await.map_err(|e| (StatusCode::BAD_GATEWAY, format!("{url}: {e}")))?.to_vec();
     if !keep {
         return Ok(bytes);
@@ -94,7 +97,7 @@ async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, 
 }
 
 /// The image API answers a failed download with a placeholder and a short
-/// max-age (5 min); such responses are served but not kept on disk.
+/// max-age (5 min); such species images are served but not kept on disk.
 const MIN_CACHE_SECONDS: u64 = 3600;
 
 fn worth_caching(cache_control: Option<&str>) -> bool {
