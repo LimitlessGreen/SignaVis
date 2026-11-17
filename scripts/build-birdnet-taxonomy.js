@@ -122,7 +122,8 @@ export function parseV3Labels(text) {
         const names = {};
         for (const [h, i] of nameCols) if (r[i]) names[h.slice('common_name_'.length)] = r[i];
         if (!names.en && r[iCom]) names.en = r[iCom];
-        return { s: r[iSci], birdnet_id: r[iId], taxon_group: r[iGrp], names };
+        const opt = (n) => { const i = header.indexOf(n); return i >= 0 ? r[i] || '' : ''; };
+        return { s: r[iSci], birdnet_id: r[iId], taxon_group: r[iGrp], names, inat_id: opt('inat_id'), ebird_code: opt('ebird_code') };
     });
 }
 
@@ -233,6 +234,15 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         v24ByKey.set(normalizeSci(c?.scientific_name || CURATED_LABEL_ALIASES[sci] || sci), { sci, names });
     }
 
+    // External IDs: eBird code, iNaturalist taxon id, Xeno-canto name (only if it differs).
+    const addIds = (rec, row, c) => {
+        const ebird = row?.ebird_code || c?.ebird_code;
+        const inat = Number(row?.inat_id || c?.inat_id) || 0;
+        if (ebird) rec.ebird = ebird;
+        if (inat) rec.inat = inat;
+        if (c?.xc_name && c.xc_name !== rec.s) rec.xc = c.xc_name;
+    };
+
     const records = [];
     const used = new Set();
     const usedCornell = new Set();
@@ -252,6 +262,7 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         rec.birdnet_id = row.birdnet_id || c?.birdnet_id;
         rec.taxon_group = row.taxon_group || c?.taxon_group;
         addAliases(rec, c, legacy?.sci);
+        addIds(rec, row, c);
         if (legacy) legacy.taken = true;
         if (c) usedCornell.add(c);
         used.add(normalizeSci(row.s));
@@ -269,6 +280,7 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         if (c?.birdnet_id) rec.birdnet_id = c.birdnet_id;
         if (c?.taxon_group) rec.taxon_group = c.taxon_group;
         addAliases(rec, c, legacy.sci);
+        addIds(rec, null, c);
         if (c) usedCornell.add(c);
         used.add(normalizeSci(sci));
         records.push(rec);
@@ -281,6 +293,7 @@ export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
         if (c.birdnet_id) rec.birdnet_id = c.birdnet_id;
         if (c.taxon_group) rec.taxon_group = c.taxon_group;
         addAliases(rec, c);
+        addIds(rec, null, c);
         used.add(normalizeSci(c.scientific_name));
         records.push(rec);
     }

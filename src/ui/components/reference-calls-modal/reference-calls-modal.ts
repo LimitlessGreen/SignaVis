@@ -36,6 +36,7 @@
  */
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
+import { speciesLinks, xcSearchName } from '../../../domain/speciesLinks.ts';
 import ModalManager from '../modal/modal-manager.ts';
 import { speciesImageBase } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
@@ -846,6 +847,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       if (info.total != null) parts.push(`<span><b>${fmt(info.total)}</b> GBIF records</span>`);
       if (info.near != null) parts.push(`<span><b>${fmt(info.near)}</b> within ~300 km</span>`);
       parts.push(`<a href="https://www.gbif.org/species/${encodeURIComponent(info.key)}" target="_blank" rel="noopener noreferrer">GBIF ↗</a>`);
+      for (const l of speciesLinks(taxonomy?.resolve(sciName))) {
+        parts.push(`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗</a>`);
+      }
       gbifEl.innerHTML = parts.join('');
     } catch {
       if (token === _gbifToken) gbifEl.textContent = 'GBIF not reachable';
@@ -1131,7 +1135,8 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   }
 
   async function fetchXcRecordings(sciName: string, page = 1) {
-    const [genus = '', epithet = ''] = sciName.trim().split(/\s+/);
+    const xcName = xcSearchName(sciName ? taxonomy?.resolve(sciName) : null, sciName);
+    const [genus = '', epithet = ''] = xcName.trim().split(/\s+/);
     if (!genus) throw new Error('Invalid scientific name');
     const apiKey = xcPanel.apiKey;
     if (!apiKey) throw new Error('XC API key required to browse reference calls. Add your key in the XC API panel.');
