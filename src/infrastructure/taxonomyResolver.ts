@@ -80,6 +80,12 @@ export class TaxonomyResolver {
             if (norm && !this._byScientificNorm.has(norm)) {
                 this._byScientificNorm.set(norm, rec);
             }
+            // Synonyms / older spellings (`a`), so labels made with an older
+            // taxonomy (e.g. BirdNET V2.4 names) still resolve.
+            for (const alt of rec?.a || []) {
+                const altNorm = normalizeScientificName(alt);
+                if (altNorm && !this._byScientificNorm.has(altNorm)) this._byScientificNorm.set(altNorm, rec);
+            }
             const { genus } = getGenusAndEpithet(rec?.s || '');
             if (!genus) continue;
             if (!this._byGenus.has(genus)) this._byGenus.set(genus, []);

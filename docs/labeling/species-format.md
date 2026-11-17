@@ -2,60 +2,59 @@
 
 This page documents the BirdNET species label source files and the JSON formats used by the Labeling App (taxonomy JSON and exported label objects).
 
-## 1) Source: BirdNET-Analyzer label files
+## 1) Sources
 
-- Location used by the build script: [BirdNET-Analyzer labels (V2.4)](https://github.com/birdnet-team/BirdNET-Analyzer/tree/main/birdnet_analyzer/labels/V2.4)
-- File name pattern: `BirdNET_GLOBAL_6K_<MODEL>_Labels_<lang>.txt` (e.g. `BirdNET_GLOBAL_6K_V2.4_Labels_en_uk.txt`).
-- Line format: each non-empty line is a single mapping using the first underscore (`_`) as separator: `<scientific name>_<common name>`.
+The taxonomy is built from three sources (later ones win for names):
 
-Example line:
-
-```
-Abroscopus albogularis_Rufous-faced Warbler
-```
-
-Notes:
-- The scientific name may contain spaces (genus + epithet). The build script splits at the first underscore so the left side is the scientific name and the right side is the localized common name.
-- The project contains a helper script that parses these files and writes a machine-friendly taxonomy JSON (see next section).
+1. **BirdNET V2.4 label files** (optional, `--v24-labels`): `BirdNET_GLOBAL_6K_V2.4_Labels_<lang>.txt`,
+   one `<scientific name>_<common name>` per line. Kept for languages V3 lacks (af, el, ro, th, …)
+   and for species only V2.4 knows, so older labels still resolve.
+2. **BirdNET taxonomy** (`https://birdnet.cornell.edu/taxonomy/api/download/json`, cached as
+   `demo/data/cornell-taxonomy.json`): ~16 000 species with names, scientific synonyms, images and
+   IDs for eBird, iNaturalist, GBIF, Xeno-canto and others.
+3. **BirdNET+ V3.0 Global 12K labels** (Zenodo record 24162518, downloaded to
+   `demo/data/BirdNET+_V3.0_Global_12K_Labels.csv`): the model's 11 725 classes with names in ~35 languages.
 
 ## 2) Generated taxonomy JSON (input for the Labeling App)
 
-The script `scripts/build-birdnet-taxonomy.js` converts the per-language text files into a single JSON payload. Example invocation (also available as an npm script):
-
 ```
-npm run taxonomy:build:local
+npm run taxonomy:build
 # or
-node ./scripts/build-birdnet-taxonomy.js --source ../BirdNET-Analyzer/birdnet_analyzer/labels/V2.4 --output ./demo/data/birdnet-taxonomy.v2.4.json --model V2.4 --source-url <url>
+node ./scripts/build-birdnet-taxonomy.js --output ./demo/data/birdnet-taxonomy.json \
+  [--v24-labels <BirdNET-Analyzer>/birdnet_analyzer/labels/V2.4] [--v3-labels <csv>] [--skip-images]
 ```
 
 Top-level JSON structure produced:
 
 ```json
 {
-  "modelVersion": "V2.4",
-  "sourceUrl": "https://github.com/..",
-  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "modelVersion": "BirdNET+ V3.0",
+  "sourceUrl": "https://zenodo.org/records/24162518",
+  "sources": ["BirdNET+ V3.0 Global 12K labels", "BirdNET taxonomy (birdnet.cornell.edu)", "BirdNET V2.4 labels"],
+  "updatedAt": "2026-11-17T00:00:00.000Z",
   "languages": ["en_uk", "de", "fr"],
-  "speciesCount": 6123,
+  "speciesCount": 11725,
+  "extraCount": 4980,
   "records": [
-    { "s": "Abroscopus albogularis", "n": { "en_uk": "Rufous-faced Warbler", "de": "..." } },
-    { "s": "Abroscopus schisticeps", "n": { "en_uk": "Black-faced Warbler" } }
+    { "s": "Pseudacris regilla", "a": ["Hyliola regilla"], "n": { "en_uk": "Pacific Chorus Frog", "de": "Pazifischer Laubfrosch" },
+      "birdnet_id": "BN25450", "taxon_group": "Amphibia" },
+    { "s": "Zosterops borbonicus", "x": 1, "n": { "en_uk": "Reunion Grey White-eye" } }
   ]
 }
 ```
 
 Field mapping:
-- `modelVersion` (string) — BirdNET model version.
-- `sourceUrl` (string) — origin of the source label files.
-- `updatedAt` (ISO string) — build timestamp.
-- `languages` (array) — language codes available in `records[].n`.
-- `speciesCount` (number) — number of species records.
-- `records` (array) — each record has:
-  - `s` (string): scientific name (used as the key)
-  - `n` (object): keyed by language code → localized common name
+- `modelVersion` — the species list's BirdNET version (shown in the app footer).
+- `speciesCount` — classes of the BirdNET+ V3.0 12K model; `extraCount` — further species (`x: 1`).
+- `records[]`:
+  - `s`: scientific name (key)
+  - `a`: alternative scientific names (synonyms, V2.4 spelling); the resolver matches them too
+  - `n`: language code → common name; names equal to `en_uk` are omitted (resolver falls back to `en_uk`)
+  - `x: 1`: not a V3 class (V2.4-only or other BirdNET-taxonomy species), still available for manual labels
+  - `birdnet_id`, `taxon_group`, `img*`: from the BirdNET taxonomy
 
 Who consumes this JSON:
-- The demo and Labeling App load `demo/data/birdnet-taxonomy.v2.4.json` (see `demo/labeling-app.html`).
+- The demo and Labeling App load `demo/data/birdnet-taxonomy.json` (see `demo/labeling-app.html`).
 - `src/taxonomyResolver.js` expects the format shown above and provides lookup + fuzzy resolution by scientific name.
 
 ## 3) Label object format used by the Labeling App (export & runtime)
@@ -117,13 +116,13 @@ The player will normalize this list (keeps up to 9 items) and `applyTaxonomyToLa
 
 ## 5) How to regenerate / update the taxonomy JSON
 
-- Locally (requires a checkout of BirdNET-Analyzer at `../BirdNET-Analyzer`):
+- Locally (V2.4 labels from a BirdNET-Analyzer checkout in `_birdnet_upstream`; V3 labels and the BirdNET taxonomy are downloaded):
 
 ```
-npm run taxonomy:build:local
+npm run taxonomy:build
 ```
 
-This runs `scripts/build-birdnet-taxonomy.js` and writes `demo/data/birdnet-taxonomy.v2.4.json`.
+This runs `scripts/build-birdnet-taxonomy.js` and writes `demo/data/birdnet-taxonomy.json`.
 - There is also a CI workflow `.github/workflows/update-birdnet-taxonomy.yml` that can update the file automatically in the repository.
 
 ## 6) Migration / differences summary

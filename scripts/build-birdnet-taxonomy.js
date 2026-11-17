@@ -4,9 +4,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 const CORNELL_TAXONOMY_URL = 'https://birdnet.cornell.edu/taxonomy/api/download/json';
+// BirdNET+ V3.0 Global 12K labels (Zenodo record, Apache-2.0): the model's full
+// class list with birdnet_id, taxon group and common names in ~35 languages.
+const V3_RECORD = '24162518';
+const V3_LABELS_FILE = 'BirdNET+_V3.0_Global_12K_Labels.csv';
+const V3_LABELS_URL = `https://zenodo.org/records/${V3_RECORD}/files/${V3_LABELS_FILE}?download=1`;
+const V3_MODEL_VERSION = 'BirdNET+ V3.0';
+
+// V3 / Cornell language codes -> the codes the app has used since V2.4.
+const LANG_ALIASES = { en: 'en_uk', pt: 'pt_BR', 'zh-CN': 'zh' };
+// Regional variants we do not offer as separate UI languages.
+const SKIP_LANGS = new Set(['es_EC', 'es_ES', 'es_MX', 'zh-CN']);
+
 const IMAGE_WIDTH = 480;
 const IMAGE_HEIGHT = 320;
 const WEBP_QUALITY = 70;
@@ -82,10 +95,60 @@ function parseLabelLine(line) {
     return { scientificName, commonName };
 }
 
+/** Minimal RFC 4180 CSV parser (quoted fields may contain commas, quotes, newlines). */
+export function parseCsv(text) {
+    const rows = []; let row = []; let f = ''; let q = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) {
+            if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c;
+        } else if (c === '"') q = true;
+        else if (c === ',') { row.push(f); f = ''; }
+        else if (c === '\n' || c === '\r') {
+            if (c === '\r' && text[i + 1] === '\n') i++;
+            row.push(f); f = ''; if (row.length > 1 || row[0]) rows.push(row); row = [];
+        } else f += c;
+    }
+    if (f || row.length) { row.push(f); rows.push(row); }
+    return rows;
+}
+
+/** V3 labels CSV -> [{ s, birdnet_id, taxon_group, names: { lang: name } }]. */
+export function parseV3Labels(text) {
+    const [header, ...rows] = parseCsv(text);
+    const col = (n) => { const i = header.indexOf(n); if (i < 0) throw new Error(`V3 labels: no column ${n}`); return i; };
+    const iSci = col('scientific_name'), iId = col('birdnet_id'), iGrp = col('taxon_group'), iCom = col('common_name');
+    const nameCols = header.map((h, i) => [h, i]).filter(([h]) => h.startsWith('common_name_'));
+    return rows.map((r) => {
+        const names = {};
+        for (const [h, i] of nameCols) if (r[i]) names[h.slice('common_name_'.length)] = r[i];
+        if (!names.en && r[iCom]) names.en = r[iCom];
+        const opt = (n) => { const i = header.indexOf(n); return i >= 0 ? r[i] || '' : ''; };
+        return { s: r[iSci], birdnet_id: r[iId], taxon_group: r[iGrp], names, inat_id: opt('inat_id'), ebird_code: opt('ebird_code') };
+    });
+}
+
+/**
+ * Merge name maps into the app's language codes. Later sources win, so pass
+ * them from least to most authoritative. Empty values never overwrite.
+ */
+export function mergeNames(...sources) {
+    const out = {};
+    for (const src of sources) {
+        for (const [lang, v] of Object.entries(src || {})) {
+            if (!v || SKIP_LANGS.has(lang)) continue;
+            out[LANG_ALIASES[lang] || lang] = v;
+        }
+    }
+    // zh-CN only fills zh when no plain zh name exists.
+    for (const src of sources) if (src?.['zh-CN'] && !out.zh) out.zh = src['zh-CN'];
+    return out;
+}
+
 async function downloadFile(url, dest) {
     if (fs.existsSync(dest)) return;
     console.log(`Downloading ${url} to ${dest} ...`);
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: { 'User-Agent': 'signavis-taxonomy-build/1.0' } });
     if (!res.ok) throw new Error(`Failed to download ${url}: ${res.statusText}`);
     const fileStream = fs.createWriteStream(dest);
     await finished(Readable.fromWeb(res.body).pipe(fileStream));
@@ -141,116 +204,238 @@ function buildTaxonomyFromDir(labelsDir) {
     };
 }
 
+const genusOf = (name) => String(name || '').trim().split(/\s+/)[0];
+const epithetStem = (name) => (String(name || '').trim().split(/\s+/)[1] || '').slice(0, 4).toLowerCase();
+
+/** Genus -> taxon groups, from the valid (not alias) Cornell names. */
+export function buildGenusGroups(cornell) {
+    const m = new Map();
+    for (const e of cornell) {
+        if (!e.taxon_group) continue;
+        const g = genusOf(e.scientific_name);
+        if (!m.has(g)) m.set(g, new Set());
+        m.get(g).add(e.taxon_group);
+    }
+    return m;
+}
+
+/**
+ * The BirdNET taxonomy's xc_name / scientific_name_aliases were partly matched
+ * by epithet alone (Crotalus ruber -> Scinax ruber, Tarentola mauritanica ->
+ * Strix mauritanica). A name whose genus belongs to another taxon group is not
+ * a synonym.
+ */
+function isSameGroup(groupOfRecord, name, genusGroups) {
+    const groups = genusGroups.get(genusOf(name));
+    return !groupOfRecord || !groups || groups.has(groupOfRecord);
+}
+
+export function plausibleAliases(entry, genusGroups) {
+    return (entry.scientific_name_aliases || []).filter((n) => isSameGroup(entry.taxon_group, n, genusGroups));
+}
+
+/**
+ * Stricter for Xeno-canto names (they drive the reference search): outside
+ * birds the epithet must match, and for reptiles the genus too — every reptile
+ * genus change in the data was a mismatch (checked against the XC API).
+ */
+export function isPlausibleXcName(rec, name, genusGroups) {
+    if (!isSameGroup(rec.taxon_group, name, genusGroups)) return false;
+    if (rec.taxon_group === 'Aves') return true;
+    if (epithetStem(name) !== epithetStem(rec.s)) return false;
+    return rec.taxon_group !== 'Reptilia' || genusOf(name) === genusOf(rec.s);
+}
+
+/**
+ * The BirdNET taxonomy renumbered birdnet_id between releases (an older
+ * download used other IDs than the V3 model). Refuse to mix the two schemes.
+ */
+export function assertSameIdScheme(v3, cornell, minShare = 0.9) {
+    const bySci = new Map(cornell.map((e) => [e.scientific_name, e.birdnet_id]));
+    const shared = v3.filter((r) => bySci.has(r.s));
+    if (!shared.length) return;
+    const same = shared.filter((r) => bySci.get(r.s) === r.birdnet_id).length;
+    if (same / shared.length < minShare) {
+        throw new Error(`BirdNET taxonomy IDs do not match the V3 labels (${same}/${shared.length}). `
+            + 'The cached cornell-taxonomy.json is probably outdated: delete it and rebuild.');
+    }
+}
+
+/**
+ * Build the taxonomy records. Pure (no I/O) so it can be tested.
+ *  - V3 12K classes are the base (x unset).
+ *  - V2.4-only species stay labelable (legacy model, older label files), x: 1.
+ *  - Every other Cornell species is available for manual labeling, x: 1.
+ * Names: V2.4 label files < Cornell taxonomy < V3 labels CSV.
+ * `a`: alternative scientific names (synonyms, V2.4 spelling) for lookup.
+ */
+export function buildRecords({ v3, v24 = new Map(), cornell = [] }) {
+    const genusGroups = buildGenusGroups(cornell);
+    const cornellBySci = new Map();
+    const cornellByNorm = new Map();
+    for (const e of cornell) {
+        cornellBySci.set(e.scientific_name, e);
+        for (const n of [e.scientific_name, ...plausibleAliases(e, genusGroups)]) {
+            const k = normalizeSci(n);
+            if (k && !cornellByNorm.has(k)) cornellByNorm.set(k, e);
+        }
+    }
+    const findCornell = (sci) => cornellBySci.get(sci)
+        || cornellBySci.get(CURATED_LABEL_ALIASES[sci])
+        || cornellByNorm.get(normalizeSci(sci))
+        || cornellByNorm.get(normalizeSci(CURATED_LABEL_ALIASES[sci]))
+        || null;
+
+    // V2.4 names keyed by the Cornell/V3 name they map to.
+    const v24ByKey = new Map();
+    for (const [sci, names] of v24) {
+        const c = findCornell(sci);
+        v24ByKey.set(normalizeSci(c?.scientific_name || CURATED_LABEL_ALIASES[sci] || sci), { sci, names });
+    }
+
+    // External IDs: eBird code, iNaturalist taxon id, Xeno-canto name (only if it differs).
+    const addIds = (rec, row, c) => {
+        const ebird = row?.ebird_code || c?.ebird_code;
+        const inat = Number(row?.inat_id || c?.inat_id) || 0;
+        if (ebird) rec.ebird = ebird;
+        if (inat) rec.inat = inat;
+        if (c?.xc_name && c.xc_name !== rec.s && isPlausibleXcName(rec, c.xc_name, genusGroups)) rec.xc = c.xc_name;
+    };
+
+    const records = [];
+    const used = new Set();
+    const usedCornell = new Set();
+    const addAliases = (rec, c, legacySci) => {
+        const a = new Set(c ? plausibleAliases(c, genusGroups) : []);
+        if (c && c.scientific_name !== rec.s) a.add(c.scientific_name);
+        if (legacySci && legacySci !== rec.s) a.add(legacySci);
+        a.delete(rec.s);
+        if (a.size) rec.a = [...a].sort();
+    };
+
+    for (const row of v3) {
+        if (!row.s || used.has(normalizeSci(row.s))) continue;
+        const c = findCornell(row.s);
+        const legacy = v24ByKey.get(normalizeSci(row.s)) || (c && v24ByKey.get(normalizeSci(c.scientific_name)));
+        const rec = { s: row.s, n: mergeNames(legacy?.names, c?.common_names, row.names) };
+        rec.birdnet_id = row.birdnet_id || c?.birdnet_id;
+        rec.taxon_group = row.taxon_group || c?.taxon_group;
+        addAliases(rec, c, legacy?.sci);
+        addIds(rec, row, c);
+        if (legacy) legacy.taken = true;
+        if (c) usedCornell.add(c);
+        used.add(normalizeSci(row.s));
+        records.push(rec);
+    }
+    const modelCount = records.length;
+
+    for (const legacy of v24ByKey.values()) {
+        if (legacy.taken) continue;
+        const c = findCornell(legacy.sci);
+        if (c && usedCornell.has(c)) continue;
+        const sci = c?.scientific_name || legacy.sci;
+        if (used.has(normalizeSci(sci))) continue;
+        const rec = { s: sci, n: mergeNames(legacy.names, c?.common_names), x: 1 };
+        if (c?.birdnet_id) rec.birdnet_id = c.birdnet_id;
+        if (c?.taxon_group) rec.taxon_group = c.taxon_group;
+        addAliases(rec, c, legacy.sci);
+        addIds(rec, null, c);
+        if (c) usedCornell.add(c);
+        used.add(normalizeSci(sci));
+        records.push(rec);
+    }
+
+    for (const c of cornell) {
+        if (c.record_type !== 'species' || usedCornell.has(c) || used.has(normalizeSci(c.scientific_name))) continue;
+        const rec = { s: c.scientific_name, n: mergeNames(c.common_names), x: 1 };
+        if (!rec.n.en_uk) rec.n.en_uk = c.common_name || c.scientific_name;
+        if (c.birdnet_id) rec.birdnet_id = c.birdnet_id;
+        if (c.taxon_group) rec.taxon_group = c.taxon_group;
+        addAliases(rec, c);
+        addIds(rec, null, c);
+        used.add(normalizeSci(c.scientific_name));
+        records.push(rec);
+    }
+
+    records.sort((a, b) => a.s.localeCompare(b.s));
+    return { records, modelCount, extraCount: records.length - modelCount, findCornell };
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    const sourceDir = args.source;
     const outputFile = args.output;
-    const modelVersion = args.model || 'V2.4';
-    const sourceUrl = args['source-url'] || 'https://github.com/birdnet-team/BirdNET-Analyzer';
+    const v24Dir = args['v24-labels'];
     const skipImages = args['skip-images'] === 'true';
-
-    if (!sourceDir || !outputFile) {
-        console.error('Usage: node scripts/build-birdnet-taxonomy.js --source <labels-dir> --output <json-file> [--model V2.4] [--source-url <url>]');
+    if (!outputFile) {
+        console.error('Usage: node scripts/build-birdnet-taxonomy.js --output <json-file> [--v3-labels <csv>] [--v24-labels <labels-dir>] [--skip-images]');
         process.exit(1);
     }
 
-    const dataDir = path.join(path.dirname(outputFile), '..', 'data');
+    const dataDir = path.dirname(outputFile);
     const cornellCache = path.join(dataDir, 'cornell-taxonomy.json');
-    const imageDir = path.join(path.dirname(outputFile), 'species_images');
-
-    fs.mkdirSync(dataDir, { recursive: true });
+    const imageDir = path.join(dataDir, 'species_images');
+    const v3Labels = args['v3-labels'] || path.join(dataDir, V3_LABELS_FILE);
     fs.mkdirSync(imageDir, { recursive: true });
 
     await downloadFile(CORNELL_TAXONOMY_URL, cornellCache);
+    await downloadFile(V3_LABELS_URL, v3Labels);
 
-    console.log(`Loading Cornell taxonomy from ${cornellCache} ...`);
-    const cornellRaw = JSON.parse(fs.readFileSync(cornellCache, 'utf8'));
-    const cornellBySci = new Map(cornellRaw.map(e => [e.scientific_name, e]));
-    const cornellByNorm = new Map();
-    for (const e of cornellRaw) {
-        const norm = normalizeSci(e.scientific_name);
-        if (norm && !cornellByNorm.has(norm)) cornellByNorm.set(norm, e);
-    }
+    const cornell = JSON.parse(fs.readFileSync(cornellCache, 'utf8'));
+    const v3 = parseV3Labels(fs.readFileSync(v3Labels, 'utf8'));
+    const v24 = v24Dir && fs.existsSync(v24Dir) ? buildTaxonomyFromDir(v24Dir).byScientific : new Map();
+    if (!v24.size) console.warn('No V2.4 label files: building without V2.4-only species and names.');
 
-    const built = buildTaxonomyFromDir(sourceDir);
-    const records = [];
+    assertSameIdScheme(v3, cornell);
+    const { records, modelCount, extraCount, findCornell } = buildRecords({ v3, v24, cornell });
+
+    // Images for the model's classes (as before: not for x: 1 extras).
     let imageCount = 0;
-
-    console.log(`Processing ${built.byScientific.size} species ...`);
-
-    for (const [sciName, names] of [...built.byScientific.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-        let entry = cornellBySci.get(sciName);
-        if (!entry) {
-            const alias = CURATED_LABEL_ALIASES[sciName];
-            if (alias) entry = cornellBySci.get(alias);
+    if (!skipImages) {
+        for (const rec of records) {
+            if (rec.x) continue;
+            const c = findCornell(rec.s);
+            const imageUrl = c?.image?.medium || c?.image?.thumb;
+            if (!imageUrl) continue;
+            const ok = await downloadAndResizeImage(imageUrl, path.join(imageDir, `${rec.s}.webp`));
+            if (!ok) continue;
+            rec.img = true;
+            rec.img_author = c.image_author;
+            rec.img_license = c.image_license;
+            imageCount++;
         }
-        if (!entry) {
-            entry = cornellByNorm.get(normalizeSci(sciName));
-        }
-
-        const record = { s: sciName, n: names };
-
-        if (entry) {
-            record.birdnet_id = entry.birdnet_id;
-            record.taxon_group = entry.taxon_group;
-
-            const imageUrl = entry.image?.medium || entry.image?.thumb;
-            if (imageUrl && !skipImages) {
-                const imgDest = path.join(imageDir, `${sciName}.webp`);
-                const ok = await downloadAndResizeImage(imageUrl, imgDest);
-                if (ok) {
-                    record.img = true;
-                    record.img_author = entry.image_author;
-                    record.img_license = entry.image_license;
-                    imageCount++;
-                }
-            }
-        }
-
-        records.push(record);
     }
 
-    // Bird species the BirdNET model does not know (e.g. Zosterops borbonicus):
-    // available for manual labeling, flagged with x: 1, no images.
-    const modelCount = records.length;
-    const known = new Set(records.map((r) => normalizeSci(r.s)));
-    for (const r of records) {
-        const e = cornellBySci.get(r.s) || cornellBySci.get(CURATED_LABEL_ALIASES[r.s]);
-        if (e) known.add(normalizeSci(e.scientific_name));
+    // Offer the languages of the BirdNET label sets; Cornell knows many more
+    // (often only a handful of names each), which would bloat the file.
+    const languages = [...new Set([
+        ...Object.keys(mergeNames(Object.fromEntries(v3.flatMap((r) => Object.keys(r.names)).map((l) => [l, 'x'])))),
+        ...(v24.size ? [...v24.values()].flatMap((n) => Object.keys(n)) : []),
+    ])].sort((a, b) => a.localeCompare(b));
+    const keep = new Set(languages);
+    for (const rec of records) {
+        for (const l of Object.keys(rec.n)) if (!keep.has(l)) delete rec.n[l];
+        // Store only names that differ from English; the resolver falls back to en_uk.
+        for (const l of Object.keys(rec.n)) if (l !== 'en_uk' && rec.n[l] === rec.n.en_uk) delete rec.n[l];
     }
-    let extraCount = 0;
-    for (const e of cornellRaw) {
-        if (e.taxon_group !== 'Aves' || e.record_type !== 'species') continue;
-        if (known.has(normalizeSci(e.scientific_name))) continue;
-        const cn = e.common_names || {};
-        const en = cn.en || e.common_name || e.scientific_name;
-        const n = { en_uk: en };
-        for (const lang of built.languages) {
-            if (lang === 'en_uk') continue;
-            const v = cn[lang] || cn[lang.replace('_', '-')] || cn[lang.split('_')[0]];
-            if (v && v !== en) n[lang] = v; // resolver falls back to en_uk
-        }
-        records.push({ s: e.scientific_name, n, x: 1, birdnet_id: e.birdnet_id, taxon_group: 'Aves' });
-        extraCount++;
-    }
-    records.sort((a, b) => a.s.localeCompare(b.s));
 
     const payload = {
-        modelVersion,
-        sourceUrl,
+        modelVersion: V3_MODEL_VERSION,
+        sourceUrl: `https://zenodo.org/records/${V3_RECORD}`,
+        sources: ['BirdNET+ V3.0 Global 12K labels', 'BirdNET taxonomy (birdnet.cornell.edu)', ...(v24.size ? ['BirdNET V2.4 labels'] : [])],
         updatedAt: new Date().toISOString(),
-        languages: built.languages,
+        languages,
         speciesCount: modelCount,
         extraCount,
         records,
     };
-
     fs.writeFileSync(outputFile, JSON.stringify(payload), 'utf8');
-    console.log(`Wrote ${payload.speciesCount} model species + ${extraCount} extra birds to ${outputFile}`);
+    console.log(`Wrote ${modelCount} model classes + ${extraCount} extra species (${languages.length} languages) to ${outputFile}`);
     console.log(`Processed ${imageCount} images into ${imageDir}`);
 }
 
-main().catch(err => {
-    console.error(err);
-    process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    main().catch((err) => {
+        console.error(err);
+        process.exit(1);
+    });
+}

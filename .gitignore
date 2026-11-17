@@ -65,7 +65,8 @@ platform/.local-testenv/
 # Generated Taxonomy & Species Images
 demo/data/cornell-taxonomy.json
 demo/data/species_images/
-demo/data/birdnet-taxonomy.v2.4.json
+demo/data/birdnet-taxonomy.json
+demo/data/BirdNET+_V3.0_Global_12K_Labels.csv
 
 schema_cornel.json
 

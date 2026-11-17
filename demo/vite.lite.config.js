@@ -138,7 +138,7 @@ export default defineConfig({
     copyStatic([
       ...vendorCopies,
       [resolve(root, 'src-tauri-lite', 'icons', 'icon.ico'), resolve(out, 'favicon.ico')],
-      [resolve(root, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), resolve(out, 'demo', 'data', 'birdnet-taxonomy.v2.4.json'), true],
+      [resolve(root, 'demo', 'data', 'birdnet-taxonomy.json'), resolve(out, 'demo', 'data', 'birdnet-taxonomy.json'), true],
     ]),
   ],
   // Dev: same watch exclusions as vite.config.js (cargo target dirs lock files on Windows).

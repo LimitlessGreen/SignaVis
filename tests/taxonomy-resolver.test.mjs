@@ -126,3 +126,14 @@ test('languages returns empty before load', () => {
     const t = new TaxonomyResolver();
     assert.deepEqual(t.languages, []);
 });
+
+// ─── synonyms (`a`) ─────────────────────────────────────────────────
+
+test('resolve finds a record by a synonym / older name', () => {
+    const t = new TaxonomyResolver();
+    t.load({ ...MOCK_TAXONOMY, records: [
+        { s: 'Leuconotopicus villosus', a: ['Dryobates villosus', 'Picoides villosus'], n: { en_uk: 'Hairy Woodpecker' } },
+    ] });
+    assert.equal(t.resolve('Dryobates villosus')?.s, 'Leuconotopicus villosus');
+    assert.equal(t.resolve('Picoides villosus')?.s, 'Leuconotopicus villosus');
+});

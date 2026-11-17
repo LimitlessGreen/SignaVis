@@ -36,6 +36,7 @@
  */
 
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
+import { speciesLinks, xcSearchNames } from '../../../domain/speciesLinks.ts';
 import ModalManager from '../modal/modal-manager.ts';
 import { speciesImageBase } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
@@ -834,11 +835,15 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     const token = ++_gbifToken;
     gbifEl.replaceChildren();
     if (!sciName) return;
-    gbifEl.textContent = 'GBIF …';
+    // eBird / iNaturalist come from the local taxonomy: show them whatever GBIF answers.
+    const links = speciesLinks(taxonomy?.resolve(sciName))
+      .map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗</a>`);
+    const show = (parts: string[]) => { gbifEl.innerHTML = [...parts, ...links].join(''); };
+    show(['<span>GBIF …</span>']);
     try {
       const info = await fetchGbifInfo(sciName, coords());
       if (token !== _gbifToken) return;
-      if (!info) { gbifEl.textContent = 'Not found on GBIF'; return; }
+      if (!info) { show(['<span>Not found on GBIF</span>']); return; }
       const fmt = (n: number) => n.toLocaleString(getLang?.() || undefined);
       const parts: string[] = [];
       if (info.order || info.family) parts.push(`<span>${esc([info.order, info.family].filter(Boolean).join(' › '))}</span>`);
@@ -846,9 +851,9 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
       if (info.total != null) parts.push(`<span><b>${fmt(info.total)}</b> GBIF records</span>`);
       if (info.near != null) parts.push(`<span><b>${fmt(info.near)}</b> within ~300 km</span>`);
       parts.push(`<a href="https://www.gbif.org/species/${encodeURIComponent(info.key)}" target="_blank" rel="noopener noreferrer">GBIF ↗</a>`);
-      gbifEl.innerHTML = parts.join('');
+      show(parts);
     } catch {
-      if (token === _gbifToken) gbifEl.textContent = 'GBIF not reachable';
+      if (token === _gbifToken) show(['<span>GBIF not reachable</span>']);
     }
   }
 
@@ -1130,8 +1135,30 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     };
   }
 
-  async function fetchXcRecordings(sciName: string, page = 1) {
-    const [genus = '', epithet = ''] = sciName.trim().split(/\s+/);
+  // Name that found recordings per species (later pages reuse it).
+  const _xcQueryName = new Map<string, string>();
+
+  /**
+   * XC recordings for a species: taxonomy name first, Xeno-canto's spelling if
+   * that finds nothing. `isCurrent` guards the remembered name against stale
+   * requests (an older search finishing after a newer one).
+   */
+  async function fetchXcRecordings(sciName: string, page = 1, isCurrent: () => boolean = () => true) {
+    const known = _xcQueryName.get(sciName);
+    if (page > 1 && known) return fetchXcRecordingsFor(known, page);
+    const names = xcSearchNames(sciName ? taxonomy?.resolve(sciName) : null, sciName);
+    let result: Awaited<ReturnType<typeof fetchXcRecordingsFor>> | null = null;
+    let chosen = names[0];
+    for (const name of names) {
+      result = await fetchXcRecordingsFor(name, page);
+      if (result.recordings.length > 0) { chosen = name; break; }
+    }
+    if (isCurrent()) _xcQueryName.set(sciName, chosen);
+    return result!;
+  }
+
+  async function fetchXcRecordingsFor(xcName: string, page = 1) {
+    const [genus = '', epithet = ''] = xcName.trim().split(/\s+/);
     if (!genus) throw new Error('Invalid scientific name');
     const apiKey = xcPanel.apiKey;
     if (!apiKey) throw new Error('XC API key required to browse reference calls. Add your key in the XC API panel.');
@@ -1301,7 +1328,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     pageInfo.textContent = '';
 
     try {
-      const { recordings, numPages, numRecordings, qualityLabel, fallback } = await fetchXcRecordings(_sciName, page);
+      const { recordings, numPages, numRecordings, qualityLabel, fallback } = await fetchXcRecordings(_sciName, page, () => token === _loadToken);
       if (token !== _loadToken) return;
       _totalPages = numPages;
       listBody.innerHTML = '';
