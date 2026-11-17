@@ -75,12 +75,14 @@ export function installAnnotaImport(ctx: AppContext, deps: AnnotaImportDeps) {
         selectionMeta.textContent = parts.join(' · ');
         if (!imported) return;
         showUndoToast(parts[0] + (missing.length ? ` (${missing.length} recording${missing.length === 1 ? '' : 's'} missing)` : ''), () => {
-            if (activeEntryId) {
-                // Another recording may be open by now: restore the imported one's stored labels instead
-                if (recordingManager.activeId === activeEntryId && labelStore.entryId === activeEntryId) labelStore.replaceAll(labelsBefore);
-                else recordingManager.update(activeEntryId, { annotations: [...labelsBefore] });
-            }
-            for (const [id, anns] of entriesBefore) recordingManager.update(id, { annotations: anns });
+            // Each recording as it was: through the store if it is open now, else its stored labels
+            // (the user may have switched recordings since the import)
+            const restore = (id: string, anns: readonly AppLabel[]) => {
+                if (recordingManager.activeId === id && labelStore.entryId === id) labelStore.replaceAll(anns);
+                else recordingManager.update(id, { annotations: [...anns] });
+            };
+            if (activeEntryId) restore(activeEntryId, labelsBefore);
+            for (const [id, anns] of entriesBefore) restore(id, anns);
             for (const id of setsCreated) state.labelSets.delete(id);
             refresh();
             selectionMeta.textContent = `Import of ${file.name} undone`;

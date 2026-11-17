@@ -102,6 +102,18 @@ with sync_playwright() as p:
             return [ids(a), ids(b)]; }""", [a_id, b_id])
         check('Annota undo after a recording switch', stored == [['r0', 'r1', 'r2'], ['b0']], str(stored))
 
+        # Import while A is open (B gets its labels in storage), switch to B, undo: B's live labels go back too
+        page.evaluate("(id) => window.__signavis.mobileApp.h.setRecordingInfo(id, { xcId: '999' })", b_id)
+        page.set_input_files('#importSetInput', set_file); page.wait_for_timeout(800)
+        page.evaluate("(id) => window.__signavis.mobileApp.h.openRecording(id)", b_id); page.wait_for_timeout(2500)
+        mid = page.evaluate("window.__signavis.state.labels.map((l) => l.id).sort()")
+        page.click('.undo-toast__btn'); page.wait_for_timeout(500)
+        page.evaluate("(id) => window.__signavis.mobileApp.h.openRecording(id)", a_id); page.wait_for_timeout(2500)
+        stored = page.evaluate("""([a, b]) => { const rs = window.__signavis.recordings();
+            const ids = (id) => (id === window.__signavis.activeRecordingId() ? window.__signavis.state.labels : rs.find((e) => e.id === id).annotations).map((l) => l.id).sort();
+            return [ids(a), ids(b)]; }""", [a_id, b_id])
+        check('Annota undo resets the live labels of a recording opened since', len(mid) == 2 and stored == [['r0', 'r1', 'r2'], ['b0']], f'B before undo {mid}, after {stored}')
+
     check('page errors', not errs, str(errs))
     b.close()
 
