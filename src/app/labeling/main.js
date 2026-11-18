@@ -3542,12 +3542,20 @@ sidebar.setActive('project');
  * but state._labelsEntryId wasn't set (race/edge cases) by saving them
  * into the currently active entry and marking ownership.
  */
+/**
+ * Labels as saved with the recording: suggestions of a similar-calls review are left out
+ * (they live only while the review is open; copies are own labels). Group previews stay.
+ */
+function labelsToSave() {
+  return state.labels.filter((l) => !(l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview));
+}
+
 function saveCurrentAnnotationsIfNeeded() {
   if (!recordingManager?.activeId) return;
   // If the in-memory labels are already marked as belonging to the active
   // entry, persist them (including the empty-array case when user cleared).
   if (labelStore.entryId === recordingManager.activeId) {
-    recordingManager.saveAnnotations(state.labels);
+    recordingManager.saveAnnotations(labelsToSave());
     scheduleProjectAutosave();   // saveAnnotations only updates the entry, not the project store
     return;
   }
@@ -3555,7 +3563,7 @@ function saveCurrentAnnotationsIfNeeded() {
   // active entry, assume they should be saved to the active entry and mark
   // ownership to avoid future ambiguity.
   if (Array.isArray(state.labels) && state.labels.length > 0) {
-    recordingManager.saveAnnotations(state.labels);
+    recordingManager.saveAnnotations(labelsToSave());
     labelStore.claim(recordingManager.activeId);
     scheduleProjectAutosave();
   }

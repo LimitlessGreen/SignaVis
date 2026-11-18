@@ -144,6 +144,8 @@ with sync_playwright() as p:
     # Opening another file (Keep both) with the review open: the leaving recording is saved without suggestions
     search()
     check(len(page.evaluate(SUGG)) > 0, 'search again before switching')
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)   # copy one, then leave with Esc
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
     first = page.evaluate(f"{SV}.activeRecordingId()")
     import shutil; other = clip[:-4] + '-copy.wav'; shutil.copy(clip, other)
     page.set_input_files('#fileInput', other)
@@ -151,9 +153,11 @@ with sync_playwright() as p:
     if page.locator('.app-modal [data-v="keep"]').count(): page.locator('.app-modal [data-v="keep"]').click()
     page.wait_for_function(f"{SV}.activeRecordingId() !== null && {SV}.activeRecordingId() !== {first!r}", timeout=30000)
     page.wait_for_timeout(500)
+    # Undo of a copy made in the first recording, pressed in the second: the first gets no suggestions back
+    page.locator('.undo-toast__btn', has_text='Undo').last.click(); page.wait_for_timeout(500)
     saved = page.evaluate(f"id => ({SV}.recordings().find(e => e.id === id)?.annotations || []).filter(l => l.origin === 'Similar').length", first)
     check(saved == 0, f'switching file: no suggestions saved with the leaving recording ({saved})')
-    check(page.locator('.similar-review').count() == 0, 'switching file closes the review')
+    check(page.locator('.similar-review').count() == 0, 'no review open after switching and Undo')
     check(not errs, f'page errors: {errs}')
     b.close()
 sys.exit(1 if fails else 0)
