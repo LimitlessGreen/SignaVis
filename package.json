@@ -80,6 +80,7 @@
     "pack:check": "npm pack",
     "test": "node ./scripts/run-tests.mjs",
     "models:birdbox": "node scripts/birdbox/fetch-model.mjs",
+    "models:anurapam": "bash scripts/fetch-anurapam.sh",
     "test:birdbox-stream": "node --import tsx scripts/birdbox/stream-parity.mjs",
     "test:analysis-smoke": "node --experimental-loader ./scripts/ignore-styles-loader.mjs --experimental-strip-types --test tests/analysis-backend-e2e-smoke.test.ts",
     "prepare": "npm run build:css && node ./scripts/install-githooks.js",

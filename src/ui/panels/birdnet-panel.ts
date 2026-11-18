@@ -34,6 +34,9 @@ export const BIRDNET_MODEL_PRESETS = {
   // Full model, not committed: fetch with `node scripts/fetch-birdnet-12k.mjs` (needs a served models/ folder).
   'v3.0-12k': { label: 'BirdNET+ V3.0 Global 12K (full, local download)', url: onDemandUrl('models/birdnet-v3.0-12k/', '../models/birdnet-v3.0-12k/') },
   'v2.4': { label: 'BirdNET v2.4 (legacy, TF.js)',      url: onDemandUrl('models/birdnet-v2.4/', '../models/birdnet-v2.4/') },
+  // BirdNET v2.4 + 14 Central European frogs and toads (HTW Dresden, CC BY 4.0). Not committed:
+  // fetch with `npm run models:anurapam` (needs a served models/ folder).
+  'anurapam': { label: 'AnuraPAM (BirdNET v2.4 + 14 European anurans, local download)', url: onDemandUrl('models/anurapam/', '../models/anurapam/') },
 } as const;
 const DEFAULT_MODEL_URL = BIRDNET_MODEL_PRESETS['v3.0'].url;
 // v3: V3.0 became the default; URLs stored by older versions (v2.4) are not carried over.

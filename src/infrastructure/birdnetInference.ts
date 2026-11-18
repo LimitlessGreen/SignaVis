@@ -6,6 +6,7 @@
  *   (BirdNET Live layout). Runs on onnxruntime-web (WASM), 32 kHz, 3 s windows,
  *   optional geo-model (lat, lon, week 1–48).
  * - BirdNET v2.4 (TF.js Layers): the folder contains `model.json` + `labels.json`
+ *   (a TF.js graph model with the same input and output works too, e.g. AnuraPAM)
  *   and optionally the area model in `mdata/`. 48 kHz, 3 s windows.
  *
  * Runtimes (TF.js / onnxruntime-web) are loaded from CDN at runtime (vendored in Lite).
@@ -110,7 +111,13 @@ self.onmessage = async (e) => {
       var base = e.data.modelUrl;
       if (!base.endsWith('/')) base += '/';
 
-      model = await tf.loadLayersModel(base + 'model.json');
+      // Layers model (BirdNET v2.4) or graph model (e.g. AnuraPAM, a BirdNET-Analyzer
+      // custom classifier converted from its SavedModel). Both take 3 s of 48 kHz audio
+      // and return sigmoid scores, so prediction is the same.
+      var manifest = await fetch(base + 'model.json').then(function (r) { return r.json(); });
+      model = manifest && manifest.format === 'graph-model'
+        ? await tf.loadGraphModel(base + 'model.json')
+        : await tf.loadLayersModel(base + 'model.json');
 
       self.postMessage({ id: id, type: 'progress', message: 'Warming up\\u2026', percent: 50 });
       model.predict(tf.zeros([1, ${TFJS_CHUNK_SAMPLES}])).dispose();

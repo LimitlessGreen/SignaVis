@@ -1,0 +1,29 @@
+"""AnuraPAM preset: pick it in the model picker, analyse a frog recording, the anuran shows up as labels.
+Dev server + `npm run models:anurapam` needed:
+  uv run --with playwright python -I tools/e2e/anurapam.py http://localhost:5191/demo/labeling-app.html <frog.wav> [screenshot-dir]
+"""
+import sys
+from playwright.sync_api import sync_playwright
+url, wav = sys.argv[1], sys.argv[2]; shots = sys.argv[3] if len(sys.argv) > 3 else None
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
+    page = b.new_page(viewport={'width': 1400, 'height': 900})
+    errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
+    page.goto(url, wait_until='networkidle'); page.wait_for_function('window.__signavis')
+    page.set_input_files('#fileInput', wav); page.wait_for_timeout(4000); page.keyboard.press('Escape')
+    page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll([]); sv.syncToPlayer(); }")
+    page.evaluate("document.querySelector('#birdnetModelSeg [data-value=anurapam]').click()")
+    print('preset:', page.evaluate("document.getElementById('birdnetModelPreset').value"),
+          '| url:', page.evaluate("document.getElementById('birdnetModelUrl').value"),
+          '| note:', page.inner_text('#birdnetModelNote'))
+    page.evaluate("() => { const c = document.getElementById('birdnetConfidence'); c.value = '0.3'; c.dispatchEvent(new Event('input')); }")
+    page.evaluate("() => window.__signavis.birdnetPanel.analyze()")
+    page.wait_for_function("() => /done|error|found|no /i.test(document.getElementById('birdnetStatus').textContent) && !document.getElementById('birdnetAnalyzeBtn').disabled", timeout=600000)
+    print('status:', page.inner_text('#birdnetStatus'))
+    labels = page.evaluate("() => window.__signavis.state.labels.map(l => [l.scientificName || l.label, +l.confidence.toFixed(2)])")
+    from collections import Counter
+    print('labels:', Counter(n for n, _ in labels).most_common(5))
+    if shots: page.screenshot(path=f'{shots}/anurapam.png')
+    print('page errors:', errs)
+    b.close()
+    sys.exit(0 if labels else 1)
