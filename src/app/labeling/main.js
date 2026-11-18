@@ -705,7 +705,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     sidebar.setActive('upload');
   } else if (k === 'f') {
-    let lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
+    const shown = propsPanel.displayedLabel;
+    // A suggestion removed meanwhile (review closed) still leads to the label it was found from
+    let lbl = state.labels.find((l) => l.id === shown?.id) || (shown?.origin === SIMILAR_ORIGIN ? shown : null);
     if (!lbl) return;
     // On a suggestion: search again from the label it was found from
     if (lbl.origin === SIMILAR_ORIGIN) lbl = state.labels.find((l) => l.id === lbl.similar?.sourceLabelId) || lbl;
@@ -3076,9 +3078,7 @@ const similarReview = new SimilarReview({
   onClose: () => {
     _similarCorrections.length = 0;
     endSimilarSession();
-    // Leaving the review drops the suggestions not copied (copies are own labels by now)
-    const left = new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview).map((l) => l.id));
-    if (left.size) { labelStore.remove(left); syncToPlayer(); }
+    dropUncopiedSimilar();
     groupReview.resume(_groupNamed); _groupNamed = false;
   },
   // Escape while resizing the box under review cancels the resize, not the review
@@ -3086,6 +3086,12 @@ const similarReview = new SimilarReview({
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
+
+/** Leaving the review drops the suggestions not copied (copies are own labels by now; group previews stay). */
+function dropUncopiedSimilar() {
+  const left = new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview).map((l) => l.id));
+  if (left.size) { labelStore.remove(left); syncToPlayer(); }
+}
 
 function closeSimilarReview() {
   // A session restore can switch recordings before the similar-calls code below has run (its lets are not set yet)
@@ -3227,8 +3233,8 @@ function acceptSimilar(ids) {
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
-    similarReview.close();
-    setActiveSimilar(null);   // the snapshot may hold the one then under review: lock it again
+    // The snapshot holds the suggestions of then; the review is closed now (or closes here): drop them
+    if (similarReview.isOpen) similarReview.close(); else dropUncopiedSimilar();
   });
 }
 

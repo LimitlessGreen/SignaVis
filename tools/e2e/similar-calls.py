@@ -107,6 +107,13 @@ with sync_playwright() as p:
         page.wait_for_timeout(300)
     search()
     check(len(page.evaluate(SUGG)) == n0 - 1, 'new search: the copied one stays out')
+    # Copy, close with Esc, then Undo: the copy goes, the restored suggestions do not come back without a review
+    search()
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.locator('.undo-toast__btn', has_text='Undo').last.click(); page.wait_for_timeout(300)
+    check(len(page.evaluate(OWN)) == 2 and len(page.evaluate(SUGG)) == 0, 'Undo after Esc: copy undone, no suggestions left without a review')
+    search()
     page.keyboard.press('x'); page.wait_for_timeout(300)
     check(len(page.evaluate(SUGG)) == n0 - 2, f'X rejects one suggestion ({n0} → {len(page.evaluate(SUGG))})')
     check(page.evaluate(f"() => {SV}.state.labels.some(l => l.id === 'ex')"), 'X did not delete the exemplar')
