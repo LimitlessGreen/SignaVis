@@ -705,7 +705,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     sidebar.setActive('upload');
   } else if (k === 'f') {
-    let lbl = state.labels.find((l) => l.id === propsPanel.displayedLabel?.id);
+    const shown = propsPanel.displayedLabel;
+    // A suggestion removed meanwhile (review closed) still leads to the label it was found from
+    let lbl = state.labels.find((l) => l.id === shown?.id) || (shown?.origin === SIMILAR_ORIGIN ? shown : null);
     if (!lbl) return;
     // On a suggestion: search again from the label it was found from
     if (lbl.origin === SIMILAR_ORIGIN) lbl = state.labels.find((l) => l.id === lbl.similar?.sourceLabelId) || lbl;
@@ -1208,7 +1210,7 @@ function buildProjectSnapshot() {
     updatedAt: Date.now(),
     audioSource: serializeAudioSource(),
     annotations: serializeOverlayAnnotations(),
-    labels: state.labels.map((l) => ({ ...l })),
+    labels: labelsToSave().map((l) => ({ ...l })),   // without suggestions of an open review
     settings: {
       taxonomyLang: state.taxonomyLang,
       activeSetId: state.activeSetId,
@@ -3073,12 +3075,23 @@ const similarReview = new SimilarReview({
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
-  onClose: () => { setActiveSimilar(null); _similarCorrections.length = 0; endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  onClose: () => {
+    _similarCorrections.length = 0;
+    endSimilarSession();
+    dropUncopiedSimilar();
+    groupReview.resume(_groupNamed); _groupNamed = false;
+  },
   // Escape while resizing the box under review cancels the resize, not the review
   busy: () => !!player.spectrogramLabels?._editing,
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
+
+/** Leaving the review drops the suggestions not copied (copies are own labels by now; group previews stay). */
+function dropUncopiedSimilar() {
+  const left = new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview).map((l) => l.id));
+  if (left.size) { labelStore.remove(left); syncToPlayer(); }
+}
 
 function closeSimilarReview() {
   // A session restore can switch recordings before the similar-calls code below has run (its lets are not set yet)
@@ -3086,6 +3099,7 @@ function closeSimilarReview() {
     similarReview.close();
     endSimilarSession();
     _similarRun++;
+    selectionMeta.classList.remove('is-busy');
   } catch { /* before the review exists */ }
 }
 
@@ -3125,16 +3139,15 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
   // A recording that gets its id only now (just loaded) is no switch
   const stale = () => run !== _similarRun || (!!recordingId && (recordingManager?.activeId || null) !== recordingId);
   selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
+  selectionMeta.classList.add('is-busy');
   try {
-    const spec = await bandSpectrogram(audio, ...searchBand(exemplar, audio.sampleRate), {
-      yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: stale,
-    });
-    if (!spec || stale()) return;
+    // Spectrogram and correlation both run in the session's worker: the page stays usable
     endSimilarSession();
     const session = _similarSession = new SimilarSession();
-    const hits = await session.find(spec, template ? { template }
+    const hits = await session.findInAudio(audio, ...searchBand(exemplar, audio.sampleRate), template ? { template }
       : { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
     if (stale()) { if (session === _similarSession) endSimilarSession(); return; }
+    if (!hits) { endSimilarSession(); selectionMeta.textContent = 'Find similar: spectrogram not ready yet, try again in a moment'; return; }
     const setId = similarSetId();
     if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
     let n = 0;
@@ -3157,6 +3170,8 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
   } catch (err) {
     console.error('Find similar failed', err);
     if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
+  } finally {
+    if (run === _similarRun) selectionMeta.classList.remove('is-busy');
   }
 }
 
@@ -3218,8 +3233,8 @@ function acceptSimilar(ids) {
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
-    similarReview.close();
-    setActiveSimilar(null);   // the snapshot may hold the one then under review: lock it again
+    // The snapshot holds the suggestions of then; the review is closed now (or closes here): drop them
+    if (similarReview.isOpen) similarReview.close(); else dropUncopiedSimilar();
   });
 }
 
@@ -3527,12 +3542,20 @@ sidebar.setActive('project');
  * but state._labelsEntryId wasn't set (race/edge cases) by saving them
  * into the currently active entry and marking ownership.
  */
+/**
+ * Labels as saved with the recording: suggestions of a similar-calls review are left out
+ * (they live only while the review is open; copies are own labels). Group previews stay.
+ */
+function labelsToSave() {
+  return state.labels.filter((l) => !(l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview));
+}
+
 function saveCurrentAnnotationsIfNeeded() {
   if (!recordingManager?.activeId) return;
   // If the in-memory labels are already marked as belonging to the active
   // entry, persist them (including the empty-array case when user cleared).
   if (labelStore.entryId === recordingManager.activeId) {
-    recordingManager.saveAnnotations(state.labels);
+    recordingManager.saveAnnotations(labelsToSave());
     scheduleProjectAutosave();   // saveAnnotations only updates the entry, not the project store
     return;
   }
@@ -3540,7 +3563,7 @@ function saveCurrentAnnotationsIfNeeded() {
   // active entry, assume they should be saved to the active entry and mark
   // ownership to avoid future ambiguity.
   if (Array.isArray(state.labels) && state.labels.length > 0) {
-    recordingManager.saveAnnotations(state.labels);
+    recordingManager.saveAnnotations(labelsToSave());
     labelStore.claim(recordingManager.activeId);
     scheduleProjectAutosave();
   }
@@ -4212,7 +4235,9 @@ async function loadLocalAudioFile(file, extra = {}) {
   }
   const _prep = await prepareRecordingLoad();
   if (_prep.cancel) { fileInput.value = ''; return; }
-  // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
+  // Drop uncopied suggestions, save the leaving entry, then detach so syncToPlayer doesn't clobber it
+  closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
@@ -4264,7 +4289,9 @@ async function loadDemoRecording() {
   if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
   const _prep = await prepareRecordingLoad();
   if (_prep.cancel) return;
-  // Save then detach so syncToPlayer doesn't clobber the leaving entry
+  // Drop uncopied suggestions, save, then detach so syncToPlayer doesn't clobber the leaving entry
+  closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];

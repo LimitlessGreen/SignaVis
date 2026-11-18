@@ -4,7 +4,7 @@
 //   Enter        copy into my labels       X / Delete   reject (not proposed again)
 //   Shift+Enter  copy all at or above the threshold
 //   ↓ / ↑        next / previous           Space        play again
-//   Esc          close (suggestions stay visible; ✓ on a box still copies it)
+//   Esc          close (suggestions not copied are removed)
 // The suggestion on screen is highlighted and resizable by the host (fine corrections before copying);
 // clicking another suggestion's box makes it the one under review (focusId).
 // Keys are taken in the capture phase on window while the bar is open, ahead of the player's
