@@ -6,7 +6,9 @@ description = "Perch-2-Embeddings (ONNX) fuer SignaVis: Fensterung, Resampling, 
 
 [dependencies]
 hound = "3.5.1"
-ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
+# No copy-dylibs: its Windows copy fallback panics in CI (ort-sys rc.10, build.rs:126).
+# The Lite bundle ships the DLLs it needs itself.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries"] }
 
 [features]
 directml = ["ort/directml"]

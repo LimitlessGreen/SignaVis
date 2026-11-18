@@ -317,13 +317,6 @@ jobs:
         shell: bash
         run: cargo test
 
-      - name: Prepare target dirs for ort (Windows)
-        # ort-sys 2.0.0-rc.10 copies its DLLs into target/release/{examples,deps}
-        # and panics ("path not found") when those folders do not exist yet.
-        if: runner.os == 'Windows'
-        shell: bash
-        run: mkdir -p src-tauri-lite/target/release/examples src-tauri-lite/target/release/deps
-
       - name: Build SignaVis Lite bundles
         working-directory: src-tauri-lite
         shell: bash   # PowerShell would turn "nsis,msi" into one argument "nsis msi"
@@ -342,7 +335,10 @@ jobs:
       - name: List native libraries next to the Lite binary (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: ls -la src-tauri-lite/target/release/*.dll || echo "no DLLs next to the binary"
+        run: |
+          ls -la src-tauri-lite/target/release/*.dll || echo "no DLLs next to the binary"
+          find "$LOCALAPPDATA/ort.pyke.io" -iname "*.dll" -exec ls -la {} \; 2>/dev/null || echo "no ort cache"
+          ls src-tauri-lite/target/release/bundle/nsis src-tauri-lite/target/release/bundle/msi
 
       - name: Upload Lite bundles
         uses: actions/upload-artifact@v7
