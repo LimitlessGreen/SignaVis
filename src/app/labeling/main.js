@@ -93,6 +93,7 @@ import { installMicRecording } from './features/mic-recording.ts';
 import { createXcUpload } from './features/xc-upload.ts';
 import { dedupeLabels } from './dedupe-labels.ts';
 import { initSponsorCard } from './sponsor-card.ts';
+import { initHelpMenu, HELP_ICONS } from './help-menu.ts';
 
 // Xeno-canto export/upload (features/xc-upload.ts), installed further down. Declared here, before
 // anything that may call the forwarders during startup (e.g. the sidebar restoring the Upload tab);
@@ -608,21 +609,23 @@ function openInfoDialog(el, title) {
 }
 initSponsorCard();
 
-document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
-  const r = e.currentTarget.getBoundingClientRect();
-  showContextMenu({
-    x: r.right - 200, y: r.bottom + 4,
-    items: [
-      { label: 'Shortcuts & help', action: () => openInfoDialog(helpPanelEl, 'Help') },
-      { label: 'Show daily tips', action: showDailyTips },
-      { label: 'Load demo recording', action: () => loadDemoRecording() },
-      { label: 'Run setup again…', action: () => runOnboarding() },
-      { separator: true },
-      { label: 'About SignaVis', action: () => openInfoDialog(aboutPanelEl, 'About') },
-      { label: 'Privacy policy', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
-      { label: '♥ Sponsor SignaVis', action: () => window.open('https://github.com/sponsors/LimitlessGreen', '_blank', 'noopener') },
-    ],
-  });
+const SPONSOR_URL = 'https://github.com/sponsors/LimitlessGreen';
+const ISSUES_URL = 'https://github.com/LimitlessGreen/SignaVis/issues/new/choose';
+const showShortcuts = () => openInfoDialog(helpPanelEl, 'Help');
+initHelpMenu({
+  button: document.getElementById('helpMenuBtn'),
+  shortcutsRoot: helpPanelEl,
+  onShowShortcuts: showShortcuts,
+  items: [
+    { group: 'Learn', icon: HELP_ICONS.Keyboard, label: 'Shortcuts & help', hint: 'Every key and mouse gesture', kbd: '?', keywords: 'keyboard keys mouse', action: showShortcuts },
+    { group: 'Learn', icon: HELP_ICONS.Lightbulb, label: 'Daily tips', hint: 'Small things worth knowing', keywords: 'tip hint', action: () => showDailyTips() },
+    { group: 'Learn', icon: HELP_ICONS.PlayCircle, label: 'Load demo recording', hint: 'Try SignaVis on a sample', keywords: 'example sample try', action: () => loadDemoRecording() },
+    { group: 'Learn', icon: HELP_ICONS.RotateCcw, label: 'Run setup again', hint: 'Language, region and model', keywords: 'onboarding wizard start', action: () => runOnboarding() },
+    { group: 'SignaVis', icon: HELP_ICONS.Info, label: 'About SignaVis', keywords: 'version license credits', action: () => openInfoDialog(aboutPanelEl, 'About') },
+    { group: 'SignaVis', icon: HELP_ICONS.Bug, label: 'Report a problem', hint: 'Opens GitHub issues', keywords: 'bug issue feedback idea', action: () => window.open(ISSUES_URL, '_blank', 'noopener') },
+    { group: 'SignaVis', icon: HELP_ICONS.Shield, label: 'Privacy policy', keywords: 'gdpr data datenschutz', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
+    { group: 'SignaVis', icon: HELP_ICONS.Heart, label: 'Sponsor SignaVis', keywords: 'donate support', action: () => window.open(SPONSOR_URL, '_blank', 'noopener') },
+  ],
 });
 
 // About panel simplified to a GitHub link (no extra runtime handlers)
