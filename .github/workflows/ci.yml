@@ -317,6 +317,20 @@ jobs:
         shell: bash
         run: cargo test
 
+      - name: Fetch DirectML.dll for the Lite bundle (Windows)
+        # ort links ONNX Runtime statically but DirectML dynamically. Without
+        # copy-dylibs (its copy fallback panics in CI) we ship the DLL next to
+        # the exe ourselves: build aw-embed once so ort-sys downloads it.
+        if: runner.os == 'Windows'
+        working-directory: src-tauri-lite
+        shell: bash
+        run: |
+          cargo build --release -p aw-embed
+          dll="$(find "$LOCALAPPDATA/ort.pyke.io" -iname DirectML.dll | head -1)"
+          [ -n "$dll" ] || { echo "::error::DirectML.dll not found in the ort cache"; exit 1; }
+          cp "$dll" DirectML.dll
+          ls -la DirectML.dll
+
       - name: Build SignaVis Lite bundles
         working-directory: src-tauri-lite
         shell: bash   # PowerShell would turn "nsis,msi" into one argument "nsis msi"
@@ -325,20 +339,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          extra=()
+          # Windows: DirectML.dll (step above) next to the exe in the installers
+          if [ "${RUNNER_OS}" = Windows ]; then
+            extra=(--config '{"bundle":{"resources":{"DirectML.dll":"DirectML.dll"}}}')
+          fi
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
-            npx tauri build --bundles ${{ matrix.bundles }}
+            npx tauri build --bundles ${{ matrix.bundles }} "${extra[@]}"
           else
             echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set — building without updater artifacts"
-            npx tauri build --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+            npx tauri build --bundles ${{ matrix.bundles }} "${extra[@]}" --config '{"bundle":{"createUpdaterArtifacts":false}}'
           fi
-
-      - name: List native libraries next to the Lite binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          ls -la src-tauri-lite/target/release/*.dll || echo "no DLLs next to the binary"
-          find "$LOCALAPPDATA/ort.pyke.io" -iname "*.dll" -exec ls -la {} \; 2>/dev/null || echo "no ort cache"
-          ls src-tauri-lite/target/release/bundle/nsis src-tauri-lite/target/release/bundle/msi
+          if [ "${RUNNER_OS}" = Windows ]; then
+            ls -la target/release/DirectML.dll   # resources are staged next to the exe
+          fi
 
       - name: Upload Lite bundles
         uses: actions/upload-artifact@v7

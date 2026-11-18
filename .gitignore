@@ -98,3 +98,4 @@ models/birdbox-just-bird/
 
 # merge leftovers
 *.orig
+src-tauri-lite/DirectML.dll
