@@ -95,28 +95,56 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         return entries().flatMap((e: any) => e.annotations || []);
     }
 
-    /** Remember what went out (labels + content hash) to show "changed since upload" later. */
-    function onSetUploaded() {
-        const own = ownSet();
-        if (own) {
+    // One upload at a time, from the panel button or the export modal.
+    let uploading = false;
+
+    interface UploadRun { result: UploadResult; sent: AppLabel[]; localError: string }
+
+    /**
+     * Send the current set. The "uploaded" snapshot is taken from what is sent (the selection
+     * can change while the request runs) and is only kept when Xeno-canto accepts the set.
+     * Errors while saving that locally do not turn an accepted upload into a failure: they come
+     * back as `localError`. Returns null while another upload is running.
+     */
+    async function runUpload(): Promise<UploadRun | null> {
+        if (uploading) return null;
+        uploading = true;
+        refresh();   // keeps the button disabled while the request runs
+        try {
+            const sent = collectSetLabels();
+            const own = ownSet();
             const { items } = selectUploadLabels(entries(), getSelection(), sets());
-            const snap = makeUploadSnapshot(items.map((x) => x.label), items.map((x) => x.entry),
-                { name: own.name, license: own.license, env: xcUploadTarget().env });
-            own.uploads = [...(own.uploads || []), snap];
+            const snap = own ? makeUploadSnapshot(items.map((x) => x.label), items.map((x) => x.entry),
+                { name: own.name, license: own.license, env: xcUploadTarget().env }) : null;
+            const result = await xcPanel.uploadToXenoCanto(sent, sets());
+            let localError = '';
+            if (result?.ok) {
+                try {
+                    const set = ownSet();
+                    if (set && snap) set.uploads = [...(set.uploads || []), snap];
+                    deps.saveSets();
+                    deps.refreshRecordings();
+                    deps.refreshLabelList();
+                } catch (e: any) {
+                    localError = `Uploaded, but saving that locally failed: ${e?.message || e}`;
+                    console.warn('[xc-upload]', e);
+                }
+            }
+            return { result, sent, localError };
+        } finally {
+            uploading = false;
+            refresh();
         }
-        deps.saveSets();
-        refresh();
-        deps.refreshRecordings();
-        deps.refreshLabelList();
     }
 
     // ── Export modal, upload and download buttons ──
     const exportModal = createXcExportModal({
         buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), sets()),
         upload: async () => {
-            const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), sets());
-            if (result?.ok) onSetUploaded();
-            return result;
+            const run = await runUpload();
+            if (!run) return { ok: false, message: 'An upload is already running' };
+            if (run.localError) return { ...run.result, message: `${run.result.message || 'Upload successful'} (${run.localError})` };
+            return run.result;
         },
         getApiKey: () => xcPanel.apiKey,
         getFilename: () => (toXcId(xcPanel.xcId) ? `${toXcId(xcPanel.xcId)}_annotation_set.json` : 'annotation_set.json'),
@@ -135,31 +163,31 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
     }
 
     uploadBtn.addEventListener('click', async () => {
-        uploadBtn.disabled = true;
+        if (uploading) return;
         xcPanel._setStatus('Uploading…', 'info');
+        let run: UploadRun | null = null;
         try {
-            const sent = collectSetLabels();
-            const result = await xcPanel.uploadToXenoCanto(sent, sets());
-            if (result.ok) {
-                onSetUploaded();
-                xcPanel._setStatus(result.message || '', 'success');
-                const t = xcUploadTarget();
-                showUploadSuccess({
-                    labelCount: sent.length,
-                    recordingCount: new Set(sent.map((l: any) => l.xc_nr || l.sound_file || '')).size,
-                    setName: ownSet()?.name || '',
-                    message: result.message || '',
-                    endpoint: t.endpoint,
-                    testServer: t.env !== 'live' ? `${t.env.toUpperCase()} test server` : '',
-                });
-            } else {
-                xcPanel._setStatus([result.message, ...(result.errors || [])].filter(Boolean).join('; '), 'error');
-            }
+            run = await runUpload();
         } catch (err: any) {
             xcPanel._setStatus(err?.message || 'Upload failed', 'error');
-        } finally {
-            refresh();
+            return;
         }
+        if (!run) return;
+        const { result, sent, localError } = run;
+        if (!result.ok) {
+            xcPanel._setStatus([result.message, ...(result.errors || [])].filter(Boolean).join('; '), 'error');
+            return;
+        }
+        xcPanel._setStatus([result.message, localError].filter(Boolean).join(' — '), localError ? 'error' : 'success');
+        const t = xcUploadTarget();
+        void showUploadSuccess({
+            labelCount: sent.length,
+            recordingCount: new Set(sent.map((l: any) => l.xc_nr || l.sound_file || '')).size,
+            setName: ownSet()?.name || '',
+            message: result.message || '',
+            endpoint: t.endpoint,
+            testServer: t.env !== 'live' ? `${t.env.toUpperCase()} test server` : '',
+        });
     });
 
     el('xcDownloadSetBtn').addEventListener('click', () => {
@@ -242,6 +270,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             ].filter(Boolean).join(' · ');
         } catch { /* app still initializing */ }
         xcPanel._updateUploadState();
+        if (uploading) uploadBtn.disabled = true;   // no second POST while one is running
     }
 
     async function jumpTo(t: CheckTarget): Promise<void> {
