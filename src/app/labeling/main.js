@@ -11,8 +11,6 @@ import { TaxonomyResolver } from '../../infrastructure/taxonomyResolver.ts';
 import { AnalysisBackendProxy, resolveAnalysisBackend } from '../../infrastructure/analysis/index.ts';
 import ModalManager from '../../ui/components/modal/modal-manager.ts';
 import { appAlert, appConfirm, appPrompt } from '../../ui/components/modal/dialogs.ts';
-import { showUploadSuccess } from '../../ui/components/upload-success/upload-success.ts';
-import { createXcExportModal } from '../../ui/components/xc-export-modal/xc-export-modal.js';
 import { createReferenceCallsModal } from '../../ui/components/reference-calls-modal/reference-calls-modal.ts';
 import { initDailyTips, showTip } from '../../ui/components/daily-tips/daily-tips.ts';
 
@@ -48,10 +46,8 @@ import { GroupReview } from '../../ui/components/similar-review/group-review.ts'
 import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
-import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator, layerAnnotatorFields } from '../../app/label-sources.ts';
-import { normalizeUploadSelection, uploadCandidates, selectUploadLabels, makeUploadSnapshot, snapshotState } from '../../app/upload-selection.ts';
-import { UploadSelectionPanel } from '../../ui/panels/upload-selection-panel.ts';
-import { XenoCantoPanel, defaultSetInfo, xcUploadTarget, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
+import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
+import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
 import { openOnboardingWizard } from '../../ui/components/onboarding/onboarding-wizard.ts';
 import { RecordingManager, defaultRecordingEntry } from '../../app/recording-manager.ts';
@@ -70,8 +66,6 @@ import { createAboutPanel } from '../../ui/panels/about-panel.ts';
 import { ExplorePanel } from '../../ui/panels/explore-panel.ts';
 import { showContextMenu } from '../../ui/components/context-menu/context-menu.ts';
 import { showUndoToast } from '../../ui/components/toast/undo-toast.ts';
-import { buildUploadChecklist } from '../../app/upload-checklist.ts';
-import { UploadAssistant } from '../../ui/panels/upload-assistant.ts';
 import { resolveRecordingContext, formatCoords, CONTEXT_SOURCE_TEXT } from '../../app/recording-context.ts';
 import { RecordingContextBlock } from '../../ui/panels/recording-context-block.ts';
 import {
@@ -96,6 +90,8 @@ import { createRavenExport } from './features/raven-export.ts';
 import { installAnnotaImport } from './features/annota-import.ts';
 import { installFileDrop } from './features/file-drop.ts';
 import { installMicRecording } from './features/mic-recording.ts';
+import { createXcUpload } from './features/xc-upload.ts';
+import { dedupeLabels } from './dedupe-labels.ts';
 
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -1117,6 +1113,12 @@ const appCtx = {
   showSidebarTab: (id) => sidebar.setActive(id),
 };
 
+/** Xeno-canto export/upload (features/xc-upload.ts); null until installed further down. */
+let xcUpload = null;
+function collectSetLabels() { return xcUpload ? xcUpload.collectSetLabels() : []; }
+function refreshUploadChecklist() { if (xcUpload) xcUpload.refresh(); else xcPanel._updateUploadState(); }
+function uploadBlockReason() { return xcUpload ? xcUpload.blockReason() : ''; }
+
 let getSuggestions = (q, n) => [];  // populated after taxonomy loads
 let _lastAudioUrl = null;           // track current audio URL for reference player
 
@@ -1988,7 +1990,7 @@ xcPanel.onKeyChange = () => {
   updateXcKeyIndicator();
   refreshUploadChecklist();
   applyTagVocabulary();
-  try { if (window.xcExportModalApi) window.xcExportModalApi.setUploadEnabled(!!xcPanel.apiKey); } catch (e) {}
+  xcUpload?.setUploadEnabled(!!xcPanel.apiKey);
 };
 
 // ── Recording Manager + Session Set ─────────────────────────────
@@ -3476,20 +3478,6 @@ function saveCurrentAnnotationsIfNeeded() {
     scheduleProjectAutosave();
   }
 }
-// Remove duplicate labels while preserving order. Keys by `id` when present,
-// otherwise falls back to a composite key of setId/start/end/scientificName.
-function dedupeLabels(labels) {
-  if (!Array.isArray(labels)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const l of labels) {
-    const key = l && (l.id || `${l.setId || ''}:${l.start || ''}:${l.end || ''}:${l.scientificName || ''}`);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(l);
-  }
-  return out;
-}
 function _computeLockedIds() {
   return state.labels
     .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
@@ -3941,224 +3929,17 @@ async function _loadXenoCanto(raw) {
   }
 }
 
-// ── Xeno-canto export & upload ────────────────────────────────────
-const xcExportSetBtn = document.getElementById('xcExportSetBtn');
-const xcUploadBtn = document.getElementById('xcUploadBtn');
-
-/**
- * Labels of one annotation set across all recordings of the session, each tagged with
- * the recording's xc_nr / sound_file. Without a set (or without recording entries)
- * the labels of the current recording are used. Shared by export, upload and the upload button.
- */
-/**
- * Labels of the next XC set: the upload selection (recordings with XC ID, species, layers,
- * sources) over all recordings, tagged with their recording's xc_nr / sound_file.
- */
-function collectSetLabels() {
-  // Persist in-memory labels first so per-entry `annotations` include the active recording.
-  saveCurrentAnnotationsIfNeeded();
-  const { items } = selectUploadLabels(recordingManager.getAll(), getUploadSelection(), state.labelSets);
-  return dedupeLabels(items.map(({ label, entry }) => {
-    // Labels on a layer with its own annotator are uploaded under that name (else: profile)
-    const copy = { ...label, ...(layerAnnotatorFields(state.labelSets, label) || {}) };
-    if (!copy.xc_nr) copy.xc_nr = xcNumber(entry.xcId);
-    if (entry.filename && !copy.sound_file) copy.sound_file = entry.filename;
-    return copy;
-  }));
-}
-
-function getUploadSelection() {
-  return normalizeUploadSelection(state.labelSets.get(OWN_SOURCE_ID)?.uploadSelection);
-}
-
-function setUploadSelection(sel) {
-  const own = state.labelSets.get(OWN_SOURCE_ID);
-  if (!own) return;
-  own.uploadSelection = normalizeUploadSelection(sel);
-  saveSessionSets(state);
-  refreshUploadChecklist();
-}
-
-function allRecordingLabels() {
-  saveCurrentAnnotationsIfNeeded();
-  return recordingManager.getAll().flatMap((e) => e.annotations || []);
-}
-
-/** Remember what went out (labels + content hash) to show "changed since upload" later. */
-function onSetUploaded() {
-  const own = state.labelSets.get(OWN_SOURCE_ID);
-  if (own) {
-    const { items } = selectUploadLabels(recordingManager.getAll(), getUploadSelection(), state.labelSets);
-    const snap = makeUploadSnapshot(items.map((x) => x.label), items.map((x) => x.entry),
-      { name: own.name, license: own.license, env: xcUploadTarget().env });
-    own.uploads = [...(own.uploads || []), snap];
-  }
-  saveSessionSets(state);
-  refreshUploadChecklist();
-  recordingExplorer.render();
-  labelViews.invalidate('list');
-}
-
-// Initialize extracted export modal and wire it to xcPanel
-window.xcExportModalApi = createXcExportModal({
-  buildPayload: () => xcPanel.buildAnnotationSetPayload(collectSetLabels(), state.labelSets),
-  upload: async () => {
-    const result = await xcPanel.uploadToXenoCanto(collectSetLabels(), state.labelSets);
-    if (result?.ok) onSetUploaded();
-    return result;
-  },
-  getApiKey: () => xcPanel.apiKey,
-  getFilename: () => (toXcId(xcPanel.xcId) ? `${toXcId(xcPanel.xcId)}_annotation_set.json` : 'annotation_set.json'),
-  defaultCollapseDepth: 1,
+// ── Xeno-canto export & upload, set contents, upload assistant (features/xc-upload.ts) ──
+xcUpload = createXcUpload(appCtx, {
+  xcPanel,
+  annotatorProfile,
+  saveSets: () => saveSessionSets(state),
+  refreshRecordings: () => recordingExplorer.render(),
+  refreshLabelList: () => labelViews.invalidate('list'),
+  activateRecording: (entry) => activateRecordingEntry(entry),
+  selectLabel: (id, opts) => selectLabel(id, opts),
+  projectName: () => projectMeta?.name || 'Project folder',
 });
-
-function openXcExportModal() { try { window.xcExportModalApi.open(); } catch (e) {} }
-
-xcExportSetBtn.addEventListener('click', () => openXcExportModal());
-
-// Test server (?xcenv=acc): say so on the button so nobody mistakes it for a real upload
-{
-  const target = xcUploadTarget();
-  const hint = document.getElementById('xcUploadTargetHint');
-  if (target.env !== 'live') {
-    xcUploadBtn.textContent = `Send to ${target.env.toUpperCase()} test server`;
-    hint.textContent = `Uploads go to ${target.label}. Open the app with ?xcenv=live to switch back.`;
-    hint.hidden = false;
-  }
-}
-
-xcUploadBtn.addEventListener('click', async () => {
-  xcUploadBtn.disabled = true;
-  xcPanel._setStatus('Uploading…', 'info');
-  try {
-    const sent = collectSetLabels();
-    const result = await xcPanel.uploadToXenoCanto(sent, state.labelSets);
-    if (result.ok) {
-      onSetUploaded();
-      xcPanel._setStatus(result.message, 'success');
-      const target = xcUploadTarget();
-      showUploadSuccess({
-        labelCount: sent.length,
-        recordingCount: new Set(sent.map((l) => l.xc_nr || l.sound_file || '')).size,
-        setName: state.labelSets.get(OWN_SOURCE_ID)?.name || '',
-        message: result.message,
-        endpoint: target.endpoint,
-        testServer: target.env !== 'live' ? `${target.env.toUpperCase()} test server` : '',
-      });
-    } else {
-      const msgs = [result.message, ...(result.errors || [])].filter(Boolean).join('; ');
-      xcPanel._setStatus(msgs, 'error');
-    }
-  } catch (err) {
-    xcPanel._setStatus(err?.message || 'Upload failed', 'error');
-  } finally {
-    refreshUploadChecklist();
-  }
-});
-
-document.getElementById('xcDownloadSetBtn').addEventListener('click', () => {
-  xcPanel.exportAnnotationSetJSON(collectSetLabels(), state.labelSets);
-});
-
-// ── Set contents (selection) + uploaded sets ──
-const uploadSelectionPanel = new UploadSelectionPanel({
-  el: document.getElementById('xcSelection'),
-  uploadsEl: document.getElementById('xcUploads'),
-  onChange: (sel) => setUploadSelection(sel),
-  onForgetSnapshot: (id) => {
-    const own = state.labelSets.get(OWN_SOURCE_ID);
-    if (!own) return;
-    own.uploads = (own.uploads || []).filter((u) => u.id !== id);
-    saveSessionSets(state);
-    refreshUploadChecklist();
-  },
-  onAssignXc: async (id) => {
-    const entry = recordingManager.getById(id);
-    if (!entry) return;
-    const val = await appPrompt(`XC number for ${entry.filename} (your own upload):`, entry.xcId || '', { title: 'Assign XC number', placeholder: 'XC123456' });
-    if (val == null) return;
-    if (!recordingManager.assignXcId(id, val)) await appAlert('Not a valid XC number.', { title: 'Assign XC number' });
-    refreshUploadChecklist();
-  },
-  layerName: (id) => ownLayers(state.labelSets).find((l) => l.id === id)?.name || id,
-  localName: () => projectMeta?.name || 'Project folder',
-});
-
-// ── Upload assistant (live checklist, XC "Verify" done locally) ──
-const uploadAssistant = new UploadAssistant({
-  el: document.getElementById('xcChecklist'),
-  keyEl: document.getElementById('xcKeySection'),
-  profileEl: document.getElementById('xcAuthorContainer'),
-  onJump: (target) => jumpToChecklistTarget(target),
-});
-let _lastChecklist = null;
-
-function uploadBlockReason() {
-  if (!_lastChecklist || _lastChecklist.ready) return '';
-  const first = _lastChecklist.steps.flatMap((st) => st.issues).find((i) => i.level === 'error');
-  return first ? `Fix first: ${first.message}` : '';
-}
-
-/** Re-run the local "Verify" for the own set and redraw checklist, summary and buttons. */
-function refreshUploadChecklist() {
-  if (!OWN_SOURCE_ID) return;
-  try {
-    const set = state.labelSets.get(OWN_SOURCE_ID);
-    const sel = getUploadSelection();
-    const labels = collectSetLabels();
-    const payload = xcPanel.buildAnnotationSetPayload(labels, state.labelSets);
-    const picked = selectUploadLabels(recordingManager.getAll(), sel, state.labelSets).items;
-    const recordings = recordingManager.getAll()
-      .map((entry) => ({
-        id: entry.id,
-        name: entry.filename,
-        xcNr: entry.xcId || '',
-        recordist: entry.xcRecordingMeta?.rec || '',
-        labelCount: picked.filter((x) => x.entry === entry).length,
-      }))
-      .filter((r) => r.labelCount > 0);
-    const all = allRecordingLabels();
-    uploadSelectionPanel.render(
-      uploadCandidates(recordingManager.getAll(), sel, state.labelSets),
-      sel,
-      (set?.uploads || []).map((snap) => ({ snap, ...snapshotState(snap, all) })),
-    );
-    _lastChecklist = buildUploadChecklist({
-      apiKey: xcPanel.apiKey,
-      profile: { name: annotatorProfile.name, xcUsername: annotatorProfile.xcUsername },
-      set, recordings, payload, validation: validateAnnotaPayload(payload),
-    });
-    uploadAssistant.render(_lastChecklist);
-    const c = _lastChecklist;
-    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-    document.getElementById('xcUploadSummary').textContent = [
-      `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
-      c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
-    ].filter(Boolean).join(' · ');
-  } catch (e) { /* app still initializing */ }
-  xcPanel._updateUploadState();
-}
-
-async function jumpToChecklistTarget(target) {
-  if (target.kind === 'set') {
-    sidebar.setActive('upload');
-    document.getElementById('xcSetContainer')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    return;
-  }
-  if (target.kind === 'recording') {
-    const entry = recordingManager.getById(target.id);
-    if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
-    sidebar.setActive('project');
-    return;
-  }
-  if (target.kind === 'label') {
-    saveCurrentAnnotationsIfNeeded();
-    const entry = recordingManager.getAll().find((e) => (e.annotations || []).some((a) => a.id === target.id));
-    if (entry && recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
-    selectLabel(target.id, { seekMode: 'start' });
-  }
-}
-
 
 // ── Taxonomy ──────────────────────────────────────────────────────
 const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
@@ -5202,7 +4983,7 @@ if (isLite()) {
 }
 // Dev server only (stripped from builds): handles for scripts in tools/perf/.
 if (import.meta.env.DEV) {
-  window.__signavis = { state, labelStore, ravenExport, mobileApp, birdboxPanel, birdnetPanel, xcPanel, loadXenoCanto, runBirdnetOnFolder,
+  window.__signavis = { state, labelStore, ravenExport, xcUpload, mobileApp, birdboxPanel, birdnetPanel, xcPanel, loadXenoCanto, runBirdnetOnFolder,
     recordings: () => recordingManager?.getAll() || [], player, labelList, labelTable, propsPanel, syncToPlayer: () => syncToPlayer(), findSimilarCalls, canFindSimilar, carrySimilarExemplar,
     activeRecordingId: () => recordingManager?.activeId || null,
     recordingCount: () => recordingManager?.getAll().length ?? 0,

@@ -1,6 +1,6 @@
 # Labeling-App – Architektur-Umbau: Plan und Stand
 
-Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 gemergt (PR #131, #132) · Schritt 4 Teil 1 gemergt (PR #133), Teil 2 auf Branch `refactor/split-main-2`
+Stand: 2026-11-17 · Schritte 1–2 und Schritt 5 Teile 1–3 gemergt (PR #117, #118) · Schritt 3 gemergt (PR #131, #132) · Schritt 4 Teile 1–2 gemergt (PR #133, #134), Teil 3 auf Branch `refactor/split-main-3`
 
 Ziel: Wiederverwendbarkeit und Performance. Schrittweise umbauen, jeder Schritt einzeln mergebar,
 die App läuft dazwischen. **Kein** Framework-Wechsel (React/Svelte) und kein Big-Bang-Rewrite: Die
@@ -27,7 +27,7 @@ Bausteine in `src/` (Panels, Domain, `MobileApp`, 78 Tests) sind solide, das Pro
 | 1 | Inline-Skript mechanisch nach `src/app/labeling/main.js`, HTML nur Markup; `demo/lib`-Stubs weg | ✅ `130e6f8` |
 | 2 | Render-Scheduler: Ansichten werden gebündelt neu gezeichnet (`RenderScheduler`), dazu zwei Hotspots in `annotations.ts` | ✅ (siehe unten) |
 | 3 | Befehle statt Button-Klicks: `loadXenoCanto(id)`, `activateRecording(id)`, `adoptLabel(id)`, `exportSet()` … – Desktop und `MobileApp` rufen dieselben Funktionen. Dabei Label-Änderungen in einen `LabelStore` (Mutationen nur über Methoden, Benachrichtigung per `subscribe`) | 🔧 Teil 1a ✅ (`LabelStore`), 1b ✅ (Speichern/Ansichten per `subscribe`), 2 ✅ (Befehle) |
-| 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | 🔧 Teil 1 ✅ (#133): Muster + Design, Raven-Export, Annota-Import; Teil 2: Drag & Drop, Mikrofon |
+| 4 | `main.js` nach Features aufteilen (Grenzen = vorhandene `// ──`-Abschnitte): Projektspeicher, Xeno-canto (Laden/Export/Upload), Aufnahmen (Datei/Drag&Drop/Mikro), Lite-Integration, Kontextmenüs, Startup. Je Modul `install(ctx)` mit typisiertem `AppContext`, als `.ts` **ohne** `@ts-nocheck` | 🔧 Teil 1 ✅ (#133): Muster + Design, Raven-Export, Annota-Import; Teil 2 ✅ (#134): Drag & Drop, Mikrofon; Teil 3: XC-Export/-Upload + Upload-Assistent |
 | 5 | Keyed-Render der Label-Ebenen, schnellere Labelliste | ✅ Teil 1 `SpectrogramLabelLayer`, ✅ Teil 2 `AnnotationLayer`, ✅ Teil 3 `LabelList`; offen: nur sichtbaren Zeitbereich rendern, Zeitansicht der Liste |
 
 ## Schritt 1 – Details
@@ -237,13 +237,24 @@ Module liegen in `src/app/labeling/features/`, typisiert, ohne `@ts-nocheck`.
 - Test: `uv run --with playwright python -I tools/e2e/feature-modules.py http://localhost:5191/demo/labeling-app.html <set.json> <kein-set.json>` – Design umschalten + nach Reload, Raven-Download,
   Annota-Import (Ablehnung, Import in die offene Aufnahme, Meldung fehlende/ohne XC-Nummer, gesperrtes Set, Undo).
   Raven in den Projektordner nicht getestet (braucht Ordner-Projekt). Übrige E2E wie `main`.
-### Teil 2 (Branch `refactor/split-main-2`)
+### Teil 2 (PR #134)
 
 - `features/file-drop.ts` (`installFileDrop`, `isAudioFile`), `features/mic-recording.ts` (`installMicRecording`).
   Beide öffnen über `loadLocalAudioFile` aus `main.js` (kommt als `deps.openFile`).
 - Test: `uv run --with playwright python -I tools/e2e/drop-and-record.py http://localhost:5191/demo/labeling-app.html demo/samples/sweep-200-8000.wav`
   – Drop einer Nicht-Audio-Datei (Fehler), Drop einer WAV (Overlay, öffnet), Mikrofon (Fake-Gerät, ~2 s, „Keep both“).
   Läuft auf `main` genauso; Gegenprobe ohne `install…`-Aufrufe scheitert.
-- Weitere Kandidaten (abgeschlossen, wenig geteilter Zustand): XC-Export/-Upload,
+### Teil 3 (Branch `refactor/split-main-3`)
+
+- `features/xc-upload.ts` (`createXcUpload`): Auswahl fürs Set, Export-Modal, Upload/Download, „Hochgeladene Sets“,
+  Upload-Assistent (Checkliste, Sprungziele). Gibt `collectSetLabels`, `refresh`, `blockReason`, `setUploadEnabled` zurück.
+  `main.js` behält gehobene Weiterleitungen (`collectSetLabels`, `refreshUploadChecklist`, `uploadBlockReason`),
+  die vor der Installation sicher sind; `window.xcExportModalApi` entfällt.
+- `dedupe-labels.ts` (aus `main.js`, mit Unit-Test).
+- Test: `uv run --with playwright python -I tools/e2e/xc-upload.py http://localhost:5191/demo/labeling-app.html` –
+  Zusammenfassung, Checkliste, Sperrgrund, Export-Modal, Download, Upload (Attrappe, nichts geht raus) mit
+  Erfolgsdialog und Eintrag unter „Hochgeladene Sets“. Gegenprobe ohne `onSetUploaded` scheitert.
+  label-list-behaviour, escape-cancels-drag, waveform-track-edits, label-template: Ausgabe gleich wie `main`.
+- Weitere Kandidaten (abgeschlossen, wenig geteilter Zustand):
   Upload-Assistent, Kontextmenüs, Species-Suche, Lite-Integration. Projektspeicher zuletzt (viele `let`-Variablen,
   die andere Teile lesen → erst Zustand in ein Objekt bündeln).
