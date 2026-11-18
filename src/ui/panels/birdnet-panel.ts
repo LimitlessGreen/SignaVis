@@ -27,6 +27,7 @@
 import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
+import { filterBySpeciesList } from '../../domain/species-lists.ts';
 
 // Bundled models (Lite does not ship them: fetched on first use and cached, see onDemandUrl).
 export const BIRDNET_MODEL_PRESETS = {
@@ -103,6 +104,8 @@ export class BirdNETPanel {
     modelUrlInput: any;
     modelPresetSelect: any;
     onResults: any;
+    /** Active species list: only these scientific names are kept (null = all). */
+    getSpeciesFilter?: () => { name: string; set: Set<string> | null } | null;
     /** Id of the open recording; results are handed back with the id the run started for. */
     getRecordingId?: () => string | null;
     openBtn: any;
@@ -435,11 +438,12 @@ export class BirdNETPanel {
     if (geoEnabled) await this.birdnet.setLocation(coords!.lat, coords!.lon, { date: new Date() });
     const minConfidence = parseFloat(this.confidenceInput.value) || 0.25;
     const geoThreshold = geoEnabled ? (parseFloat(this.geoThresholdInput?.value) || 0.01) : 0;
+    const listSet = this.getSpeciesFilter?.()?.set ?? null;
     return {
       minConfidence,
-      analyze: (pcm: Float32Array, sampleRate: number) =>
-        this.birdnet.analyze(pcm, { sampleRate, overlap: 0, minConfidence, geoThreshold }) as Promise<
-          { start: number; end: number; scientific: string; common: string; confidence: number }[]>,
+      analyze: async (pcm: Float32Array, sampleRate: number) =>
+        filterBySpeciesList(await (this.birdnet.analyze(pcm, { sampleRate, overlap: 0, minConfidence, geoThreshold }) as Promise<
+          { start: number; end: number; scientific: string; common: string; confidence: number }[]>), listSet),
     };
   }
 
@@ -513,7 +517,8 @@ export class BirdNETPanel {
       this.progressBar.style.width = '0%';
 
       const channelData = audioBuffer.getChannelData(0);
-      const detections = await this.birdnet.analyze(channelData, {
+      const speciesList = this.getSpeciesFilter?.() ?? null;
+      const allDetections = await this.birdnet.analyze(channelData, {
         sampleRate: audioBuffer.sampleRate,
         overlap,
         minConfidence: confidence,
@@ -521,6 +526,8 @@ export class BirdNETPanel {
         onProgress: (pct: any) => { this.progressBar.style.width = pct + '%'; },
       });
 
+      const detections = filterBySpeciesList(allDetections as any[], speciesList?.set ?? null);
+      const dropped = allDetections.length - detections.length;
       const author = String(this.getAuthor?.() ?? this.authorInput?.value ?? '').trim();
       const mergeOverlapping = this.mergeCheckbox.checked;
       const modelVersion = this._getModelVersion();
@@ -541,7 +548,8 @@ export class BirdNETPanel {
 
       const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
       this.onResults(labelsToAdd, recordingId);
-      this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added.`;
+      this.statusEl.textContent = `Done — ${labelsToAdd.length} detection${labelsToAdd.length === 1 ? '' : 's'} added`
+        + (speciesList && dropped ? ` · ${dropped} outside “${speciesList.name}” skipped.` : '.');
       return true;
     } catch (err) {
       this.statusEl.textContent = `Error: ${(err as any)?.message || String(err)}`;

@@ -320,6 +320,11 @@
         <input id="birdnetModelUrl" class="input" placeholder="../models/birdnet-v3.0/" aria-label="Model folder URL" hidden
           title="BirdNET+ V3.0 folder with model_config.json (ONNX), or a TF.js folder with model.json and labels.json" />
       </div>
+      <button type="button" class="species-list-chip" id="birdnetSpeciesListChip" title="Which species BirdNET may report — opens the Species tab">
+        <span class="species-list-chip-label">Species list</span>
+        <span class="species-list-chip-value"><strong>All species</strong><small>no list</small></span>
+        <span aria-hidden="true">›</span>
+      </button>
       <div class="panel-actions">
         <button class="sidebar-action-btn" id="birdnetAnalyzeBtn" type="button">▶ Analyze</button>
       </div>

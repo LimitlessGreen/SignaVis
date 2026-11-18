@@ -76,7 +76,9 @@ import {
 } from '../../app/analysis-backend-config.ts';
 import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
 import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
-import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines } from 'lucide-static';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines, ListChecks } from 'lucide-static';
+import { SpeciesListStore, speciesFilterSet } from '../../domain/species-lists.ts';
+import { SpeciesListsPanel } from '../../ui/panels/species-lists-panel.ts';
 import { SimilarPanel } from '../../ui/panels/similar-panel.ts';
 import {
   buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
@@ -579,6 +581,53 @@ sidebar.addPanel('analyse', {
   // Explore ("expected species here") lives below the BirdNET run; created further down.
   onActivate: () => { try { explorePanel.activate(); } catch (e) { /* not created yet */ } },
 });
+// ── Species lists: the user's own BirdNET species list (--slist), the active one limits Analyse ──
+const speciesLists = new SpeciesListStore();
+let speciesListSearchFactory = null;   // set once the taxonomy is loaded
+const taxonomyLangSafe = () => { try { return state.taxonomyLang; } catch { return 'en'; } };
+const speciesListsPanel = new SpeciesListsPanel({
+  store: speciesLists,
+  commonName: (sci) => {
+    const rec = taxonomy.data ? taxonomy.resolve(sci) : null;
+    return rec ? (taxonomy.resolveCommonName(rec, taxonomyLangSafe()) || '') : '';
+  },
+  canonical: (name) => (taxonomy.data ? taxonomy.resolve(name)?.s || '' : name),
+  speciesSearchFactory: () => speciesListSearchFactory,
+  getExpectedSpecies: async (minScore) => {
+    const c = birdnetPanel.getCoords?.();
+    if (!c) return null;
+    if (!birdnet.loaded) await birdnetPanel.loadModel();
+    if (!birdnet.hasAreaModel) return null;
+    const res = await birdnet.setLocation(c.lat, c.lon, { date: birdnetPanel.getRecordingDate?.() || undefined });
+    if (!res?.ok) throw new Error('location not accepted');
+    const all = await birdnet.getAllSpecies();
+    const species = all.filter((sp) => (sp.geoscore ?? 0) >= minScore)
+      .sort((a, b) => b.geoscore - a.geoscore).map((sp) => sp.scientific);
+    const week = res.week ? `week ${res.week}` : 'all year';
+    return { species, place: `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)} · ${week}` };
+  },
+  getLabelledSpecies: () => {
+    const all = [...(state.labels || [])];
+    for (const e of recordingManager?.getAll?.() || []) all.push(...(e.annotations || []));
+    return [...new Set(all.map((l) => String(l?.scientificName || '').trim()).filter(Boolean))];
+  },
+});
+function renderAnalyseListChip() {
+  const chip = document.getElementById('birdnetSpeciesListChip');
+  if (!chip) return;
+  const l = speciesLists.active;
+  chip.querySelector('strong').textContent = l ? l.name : 'All species';
+  chip.querySelector('small').textContent = l ? `${l.species.length} species` : 'no list';
+  chip.classList.toggle('is-filtered', !!l);
+  sidebar.setBadge('species', l ? String(l.species.length) : '');
+}
+speciesLists.onChange(renderAnalyseListChip);
+sidebar.addPanel('species', {
+  icon: ListChecks, label: 'Species', hint: 'Your species lists — limit what BirdNET reports',
+  element: speciesListsPanel.el, onActivate: () => speciesListsPanel.refresh(),
+});
+document.getElementById('birdnetSpeciesListChip')?.addEventListener('click', () => sidebar.setActive('species'));
+renderAnalyseListChip();
 sidebar.addPanel('upload',  { icon: ICONS.xc,      label: 'Upload',  hint: 'Send your labels to Xeno-canto', element: document.getElementById('panelXc'),
   // May fire during startup (restored last tab) before `state` exists; refreshed later anyway.
   onActivate: () => { try { refreshUploadChecklist(); } catch (e) { /* not initialised yet */ } } });
@@ -2907,6 +2956,7 @@ const birdnetPanel = new BirdNETPanel({
   geoThresholdVal:     document.getElementById('birdnetGeoThresholdVal'),
   geoFilterCheckbox:   document.getElementById('birdnetGeoFilterEnabled'),
   geoFilterSliderWrap: document.getElementById('birdnetGeoFilterSliderWrap'),
+  getSpeciesFilter:    () => { const l = speciesLists.active; return l ? { name: l.name, set: speciesFilterSet(l) } : null; },
   birdnet,
   getAudioBuffer: () => player._state?.audioBuffer,
   resolveLabel: (det, audioBuffer) => {
@@ -4106,6 +4156,9 @@ async function loadBirdnetTaxonomy() {
     labelList.setSpeciesSearchFactory(speciesSearchFactory);
     propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
     labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
+    speciesListSearchFactory = (anchor, onSelect) =>
+      createGeoAwareSpeciesSearch({ getSuggestions, onSelect, placeholder: 'Add a species…' });
+    speciesListsPanel.refresh();
     labelViews.invalidate('list');
   } catch (err) {
     taxonomy.clear();
