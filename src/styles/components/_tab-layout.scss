@@ -335,13 +335,15 @@ $pad: 12px;
 
 /* ── Segmented control (model, later others) ───────────────────────── */
 .seg {
-  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  // Flex + wrap instead of equal grid columns: long names (AnuraPAM) ran into
+  // their neighbour when the font is wider (WebKitGTK); now they move to a 2nd row
+  display: flex; flex-wrap: wrap;
   gap: 2px; padding: 2px;
   border-radius: 6px;
   background: var(--input-bg-weak);
 }
 .seg-btn {
-  min-width: 0; height: 22px; padding: 0 4px;
+  flex: 1 0 auto; height: 22px; padding: 0 6px;
   border: 0; border-radius: 4px;
   background: none;
   color: var(--color-text-secondary);
