@@ -19,7 +19,7 @@ import { toXcId, xcNumber } from '../../../domain/xc/xcId.ts';
 import { dedupeBy } from '../dedupe-labels.ts';
 import type { AppContext, AppLabel } from '../app-context.ts';
 
-interface UploadResult { ok: boolean; message?: string; errors?: string[] }
+interface UploadResult { ok: boolean; message?: string; errors?: string[]; /** set_name as sent */ setName?: string }
 
 /** The parts of XenoCantoPanel this module uses. */
 export interface XcPanelLike {
@@ -109,9 +109,11 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
 
     interface UploadRun { result: UploadResult; sent: AppLabel[]; recordingCount: number; setName: string; localError: string }
 
-    /** Redraw that never throws; returns the error message ('' when fine), also from the drawing part. */
+    /** Redraw for the upload path: never throws, returns the error ('' when fine). */
     function safeRefresh(): string {
-        try { return redraw(); } catch (e: any) { console.warn('[xc-upload]', e); return String(e?.message || e); }
+        const error = redraw();
+        if (error) console.warn('[xc-upload] redraw:', error);
+        return error;
     }
 
     /**
@@ -137,7 +139,8 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             const result = await xcPanel.uploadToXenoCanto(sent, sets());
             run = {
                 result, sent: going.map((x) => x.label), localError: '',
-                setName,   // the set that was sent, even if renamed or replaced meanwhile
+                // The name that was sent (dated default when empty), even if renamed or replaced meanwhile
+                setName: result?.setName || setName,
                 recordingCount: new Set(going.map((x) => x.label.xc_nr || x.label.sound_file || '')).size,
             };
             if (result?.ok) {
@@ -249,9 +252,11 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         onJump: (t) => { void jumpTo(t); },
     });
     let lastChecklist: ChecklistResult | null = null;
+    let checkError = '';   // the last check failed: no upload until one succeeds
 
     function blockReason(): string {
         if (uploading) return 'An upload is running.';
+        if (checkError) return `Fix first: the set could not be checked (${checkError})`;
         if (!lastChecklist || lastChecklist.ready) return '';
         const first = lastChecklist.steps.flatMap((st) => st.issues).find((i) => i.level === 'error');
         return first ? `Fix first: ${first.message}` : '';
@@ -259,15 +264,20 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
 
     function refresh(): void { redraw(); }
 
-    /** Redraw everything; returns the error of the drawing part ('' when fine). */
+    /**
+     * Check the set, then draw selection, uploaded sets, checklist and summary, then update the
+     * button. Never throws; returns the first error ('' when fine). A failed check drops the
+     * previous result, so the button stays blocked until a check succeeds again.
+     */
     function redraw(): string {
         if (!OWN_SOURCE_ID) return '';
         let error = '';
+        const note = (e: any) => { error ||= String(e?.message || e); };
+        // 1. Check (what blockReason() relies on)
         try {
             const set = ownSet();
             const sel = getSelection();
-            const labels = collectSetLabels();
-            const payload = xcPanel.buildAnnotationSetPayload(labels, sets());
+            const payload = xcPanel.buildAnnotationSetPayload(collectSetLabels(), sets());
             const all = entries();
             const picked = selectUploadLabels(all, sel, sets()).items;
             const recordings = all
@@ -279,25 +289,45 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
                     labelCount: picked.filter((x) => x.entry === entry).length,
                 }))
                 .filter((r) => r.labelCount > 0);
+            lastChecklist = buildUploadChecklist({
+                apiKey: xcPanel.apiKey,
+                profile: { name: deps.annotatorProfile.name, xcUsername: deps.annotatorProfile.xcUsername },
+                set, recordings, payload, validation: validateAnnotaPayload(payload as any),
+            });
+            checkError = '';
+        } catch (e: any) {   // also while the app is still starting
+            lastChecklist = null;
+            checkError = String(e?.message || e);
+            note(e);
+        }
+        // 2. Draw
+        try {
+            const set = ownSet();
+            const sel = getSelection();
+            const all = entries();
             const allLabels = allRecordingLabels();
             selectionPanel.render(
                 uploadCandidates(all, sel, sets()),
                 sel,
                 (set?.uploads || []).map((snap: any) => ({ snap, ...snapshotState(snap, allLabels) })),
             );
-            lastChecklist = buildUploadChecklist({
-                apiKey: xcPanel.apiKey,
-                profile: { name: deps.annotatorProfile.name, xcUsername: deps.annotatorProfile.xcUsername },
-                set, recordings, payload, validation: validateAnnotaPayload(payload as any),
-            });
-            assistant.render(lastChecklist);
             const c = lastChecklist;
-            el('xcUploadSummary').textContent = [
-                `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
-                c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
-            ].filter(Boolean).join(' · ');
-        } catch (e: any) { error = String(e?.message || e); /* also: app still initializing */ }
-        xcPanel._updateUploadState();   // asks blockReason(): disabled while an upload runs
+            if (c) {
+                assistant.render(c);
+                el('xcUploadSummary').textContent = [
+                    `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
+                    c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+                ].filter(Boolean).join(' · ');
+            }
+        } catch (e) { note(e); }
+        // 3. Button: the panel asks blockReason() (disabled while an upload runs). If that update
+        // fails, set the button here so it does not stay stuck from the last upload.
+        try {
+            xcPanel._updateUploadState();
+        } catch (e) {
+            note(e);
+            uploadBtn.disabled = !xcPanel.apiKey || !!blockReason();
+        }
         return error;
     }
 

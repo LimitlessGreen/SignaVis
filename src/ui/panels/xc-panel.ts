@@ -840,7 +840,8 @@ export class XenoCantoPanel {
       };
     }
     invalidateXenoCantoRecordingCache(this.xcId);
-    return { ok: true, message: body?.message || 'Upload successful', warnings: body?.warnings || [], errors: body?.errors || [] };
+    // setName: the name that was sent (the payload fills in a dated one when the set has none)
+    return { ok: true, message: body?.message || 'Upload successful', warnings: body?.warnings || [], errors: body?.errors || [], setName: String(payload?.set_name || '') };
   }
 
   exportAnnotationSetJSON(labels: any, labelSets: any) {
