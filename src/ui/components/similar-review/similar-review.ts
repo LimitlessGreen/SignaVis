@@ -178,15 +178,15 @@ export class SimilarReview {
         el.setAttribute('aria-label', 'Review similar calls');
         el.innerHTML = `
             <span class="similar-review__title"></span>
-            <span class="similar-review__pos"></span>
-            <span class="similar-review__score"></span>
-            <span class="similar-review__nav">
-                <button type="button" class="similar-review__btn similar-review__btn--icon" data-act="prev" title="Previous (↑)" aria-label="Previous">↑</button>
-                <button type="button" class="similar-review__btn similar-review__btn--icon" data-act="next" title="Next (↓)" aria-label="Next">↓</button>
-                <button type="button" class="similar-review__btn similar-review__btn--icon" data-act="play" title="Play (Space)" aria-label="Play">▶</button>
+            <span class="similar-review__pager" role="group" aria-label="Suggestions">
+                <button type="button" class="similar-review__step" data-act="prev" title="Previous (↑)" aria-label="Previous"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button>
+                <span class="similar-review__pos"></span>
+                <button type="button" class="similar-review__step" data-act="next" title="Next (↓)" aria-label="Next"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             </span>
-            <button type="button" class="similar-review__btn similar-review__btn--no" data-act="reject" title="Reject: not proposed again (X)">✗ <kbd>X</kbd></button>
-            <button type="button" class="similar-review__btn similar-review__btn--ok" data-act="accept" title="Copy into my labels (Enter)">✓ <kbd>↵</kbd></button>
+            <span class="similar-review__score"></span>
+            <button type="button" class="similar-review__play" data-act="play" title="Play (Space)" aria-label="Play"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg></button>
+            <button type="button" class="similar-review__btn similar-review__btn--no" data-act="reject" title="Reject: not proposed again (X)">✗ Reject <kbd>X</kbd></button>
+            <button type="button" class="similar-review__btn similar-review__btn--ok" data-act="accept" title="Copy into my labels (Enter)">✓ Copy <kbd>Enter</kbd></button>
             <label class="similar-review__thr" title="Copy all suggestions with at least this score (Shift+Enter)">
                 ≥ <input type="range" min="0.2" max="1" step="0.01"> <output></output>
             </label>
