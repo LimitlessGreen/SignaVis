@@ -1096,7 +1096,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); this._bindLoupeWindow(root); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
-    _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
+    _emitUpdate(item: any) {
+        // A time-only resize reports the band as stored, not as clamped to the display maximum
+        const band = (this._editing as any)?.keepBand;
+        this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any), ...(band || {}) } });
+    }
+    /** Bands as given to set(), before _normalize clamps them to the display maximum. */
+    _storedBands = new Map<string, { freqMin: number; freqMax: number }>();
     _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('spectrogramlabelpreview', { detail: { label: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
@@ -1107,6 +1113,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             return;
         }
         // Ensure incoming items are normalized (IDs, defaults)
+        this._storedBands = new Map(v.filter((i: any) => i?.id && Number.isFinite(i.freqMin) && Number.isFinite(i.freqMax))
+            .map((i: any) => [i.id, { freqMin: Number(i.freqMin), freqMax: Number(i.freqMax) }]));
         this._items = v.map((i) => this._normalize(i));
     }
 
@@ -2389,7 +2397,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
         next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
         // A time-only resize keeps the band as stored: _normalize clamps it to the display maximum
-        if (editing.mode === 'resize-l' || editing.mode === 'resize-r') { next.freqMin = src.freqMin; next.freqMax = src.freqMax; }
+        if (editing.mode === 'resize-l' || editing.mode === 'resize-r') {
+            next.freqMin = src.freqMin; next.freqMax = src.freqMax;
+            editing.keepBand = this._storedBands.get(src.id) || { freqMin: src.freqMin, freqMax: src.freqMax };
+        } else editing.keepBand = null;
 
         // Preserve band thickness on pure move (in pixel space, not Hz)
         if (editing.mode === 'move') {

@@ -79,8 +79,9 @@ export class SimilarReview {
      * `decided`: they went by a decision on the box (✓ / ✗): a re-rank may move on to the new best.
      */
     retain(ids: Set<string>, { decided = false } = {}) {
-        if (decided) this.fresh = true;
         const cur = this.items[this.pos]?.id;
+        // Only a decision on the one under review moves on; a clicked (pinned) one stays otherwise
+        if (decided && !(cur && ids.has(cur))) this.fresh = true;
         this.items = this.items.filter((i) => ids.has(i.id));
         const at = cur ? this.items.findIndex((i) => i.id === cur) : -1;
         this.pos = at >= 0 ? at : Math.min(this.pos, Math.max(0, this.items.length - 1));

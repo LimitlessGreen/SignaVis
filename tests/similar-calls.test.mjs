@@ -199,7 +199,7 @@ test('applyCorrection keeps the box inside the recording with a minimum size', (
     assert.ok(late.start < late.end && late.end <= 60, JSON.stringify(late));
     // A recording shorter than the minimum box: the box is the whole recording, not longer
     const tiny = applyCorrection({ start: 0, end: 0.005, freqMin: 1000, freqMax: 2000 }, { start: 0, end: 0.01, freqMin: 0, freqMax: 0 }, 8000, 0.008);
-    assert.ok(tiny.end <= 0.008 && tiny.start === 0, JSON.stringify(tiny));
+    assert.ok(tiny.start === 0 && Math.abs(tiny.end - 0.008) < 1e-12, JSON.stringify(tiny));
     // A box that fits stays as moved
     assert.deepEqual(applyCorrection({ start: 1, end: 2, freqMin: 1000, freqMax: 2000 }, { start: 0.1, end: 0.2, freqMin: -100, freqMax: 100 }, 8000, 60),
         { start: 1.1, end: 2.2, freqMin: 900, freqMax: 2100 });

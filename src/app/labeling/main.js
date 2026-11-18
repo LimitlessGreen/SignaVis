@@ -1877,7 +1877,8 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
     feedSimilarDecisions([lbl.id], true);
-    const d = correctionOf(lbl);
+    // Its correction counts only within its own review (an earlier group's box may still be on screen)
+    const d = similarReview.has(lbl.id) ? correctionOf(lbl) : null;
     if (d) _similarCorrections.push(d);
     labelStore.remove(lbl.id);
     if (d) spreadSimilarCorrections();
@@ -3022,7 +3023,11 @@ function canFindSimilar(lbl) {
 /** After labels were loaded or restored: only the item of an open review stays unlocked. */
 function syncActiveSimilar() {
   let id = null;
-  try { id = similarReview.currentId; } catch { /* before the review exists (early session restore) */ }
+  try {
+    // Labels restored (e.g. undo): the review keeps only suggestions that still exist, closes without any
+    if (similarReview.isOpen) similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+    id = similarReview.currentId;
+  } catch { /* before the review exists (early session restore) */ }
   setActiveSimilar(id && state.labels.some((l) => l.id === id) ? id : null);
 }
 
