@@ -148,8 +148,12 @@ export function initHelpMenu(opts: {
   button.addEventListener('click', () => (isOpen ? close() : open()));
   input.addEventListener('input', render);
   pop.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(active + 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive(active + (e.key === 'ArrowDown' ? 1 : -1));
+      // From a focused row, focus follows the highlight so Enter runs what is shown
+      if (e.target !== input) rows()[active]?.focus();
+    }
     // Enter in the search runs the highlighted row; on a focused row the button handles it natively
     else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); rows()[active]?.click(); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); button.focus(); }
