@@ -26,5 +26,9 @@
     color: var(--color-text-secondary);
     &:hover { color: var(--color-accent); text-decoration: underline; }
   }
-  .onb-next { color: var(--color-success); border-color: var(--color-success-soft); }
+  .onb-next {
+    min-height: 32px; padding: 0 16px; border-radius: 8px; font-weight: 650;
+    background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent);
+    &:hover:not(:disabled) { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+  }
 }

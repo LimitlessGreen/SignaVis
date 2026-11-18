@@ -257,3 +257,58 @@ html[data-theme="light"] { @include light-tokens; }
   border-style: dotted;
   opacity: 0.75;
 }
+
+/* ── Selects: own look instead of the native one ───────────────────
+   WebKitGTK (SignaVis Lite on Linux) draws native selects with the GTK
+   theme and ignores our background — with a dark GTK theme they turned
+   black with dark text. appearance:none + a chevron in currentColor
+   keeps every select on our tokens. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 20px !important;
+}
+select option { background-color: var(--color-bg-surface); color: var(--color-text-primary); }
+
+/* ── App modals: clearer hierarchy and contrast ────────────────────── */
+.app-modal-backdrop, .xc-nokey-backdrop {
+  backdrop-filter: blur(2px);
+}
+.app-modal, .xc-nokey-dialog {
+  border-radius: 14px;
+  border-color: var(--color-border-strong);
+  padding: 22px 24px 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  box-shadow: 0 24px 64px var(--shadow-strong), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.app-modal h3, .xc-nokey-dialog h3 { font-size: 16px; font-weight: 650; margin-bottom: 10px; }
+.app-modal p, .xc-nokey-dialog p { color: var(--color-text-primary); opacity: 0.9; overflow-wrap: anywhere; }
+.app-modal .app-modal-hint, .xc-nokey-dialog .xc-nokey-hint { color: var(--color-text-secondary); opacity: 1; }
+// Primary action on the right (first in the markup), the rest to its left
+.app-modal-actions, .xc-nokey-actions {
+  flex-direction: row-reverse; justify-content: flex-start; flex-wrap: wrap;
+  gap: 8px; margin-top: 18px;
+}
+.app-modal-actions .tb-btn, .xc-nokey-actions .tb-btn {
+  min-height: 32px; padding: 0 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+.app-modal-actions .tb-btn:first-child, .xc-nokey-actions .tb-btn:first-child {
+  background: var(--color-accent); border-color: var(--color-accent);
+  color: var(--color-on-accent); font-weight: 650;
+  &:hover:not(:disabled) { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+  &:disabled { background: var(--input-bg-weak); border-color: var(--color-border); color: var(--color-text-secondary); }
+}
+.app-modal-actions .tb-btn:first-child.app-dialog-ok--danger {
+  background: var(--color-danger); border-color: var(--color-danger); color: #fff;
+  &:hover:not(:disabled) { filter: brightness(1.08); background: var(--color-danger); }
+}
