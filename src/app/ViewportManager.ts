@@ -106,6 +106,8 @@ export class ViewportManager extends EventTarget {
     lensActive = false;
     lensStartNorm = 0;
     lensEndNorm = 1;
+    /** Duration the range badge was last written for (a new file keeps the normalized range). */
+    _lensRangeDuration = NaN;
     _onLensChange: (range: { startNorm: number; endNorm: number } | null) => void;
     _lastViewRangeTextEnd: any;
     /**
@@ -668,7 +670,9 @@ export class ViewportManager extends EventTarget {
             const detailDrag = this._interaction.isOverviewDrag && (this._interaction.ctx.overviewScale ?? 1) < 1;
             const refit = !this.lensActive || (!detailDrag && (cur / target > 1.5 || cur / target < 0.67));
             const outside = s < this.lensStartNorm - 1e-9 || e > this.lensEndNorm + 1e-9;
-            if (refit || outside) {
+            // During a detail-strip drag the lens holds still even when the
+            // window crosses its edge; the final update after release refits it.
+            if (refit || (outside && !detailDrag)) {
                 const L = refit ? target : cur;
                 const ls = clamp((s + e) / 2 - L / 2, 0, 1 - L);
                 if (Math.abs(ls - this.lensStartNorm) > 1e-9 || Math.abs(ls + L - this.lensEndNorm) > 1e-9) changed = true;
@@ -686,7 +690,8 @@ export class ViewportManager extends EventTarget {
             const dw = d.overviewDetail.clientWidth || cw;
             placeOverviewWindow(d.overviewDetailWindow, s, e, ls, le, dw);
             const buf = this._getAudioBuffer();
-            if (d.overviewDetailRange && buf && changed) {
+            if (d.overviewDetailRange && buf && (changed || buf.duration !== this._lensRangeDuration)) {
+                this._lensRangeDuration = buf.duration;
                 d.overviewDetailRange.textContent =
                     `${formatTime(ls * buf.duration)} – ${formatTime(le * buf.duration)}`;
             }

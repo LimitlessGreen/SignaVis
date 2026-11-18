@@ -275,3 +275,27 @@ test('ViewportManager: overview resize limit does not depend on recording length
     // 800 px viewport at max zoom 450 px/s ≈ 1.8 s — not 2 % of the file (72 s)
     assert.ok(minSpanNorm * 3600 < 2, `min span ${minSpanNorm * 3600}s`);
 });
+
+test('ViewportManager lens: holds still while a detail drag crosses its edge', () => {
+    const { vm } = makeLensViewport();
+    vm.windowStartNorm = 0.5; vm.windowEndNorm = 0.5 + 10 / 3600;
+    vm._updateOverviewWindowElement();
+    const [ls, le] = [vm.lensStartNorm, vm.lensEndNorm];
+    vm._interaction.isOverviewDrag = true;
+    vm._interaction.ctx.overviewScale = le - ls;
+    vm.windowEndNorm = le + 5 / 3600;
+    vm._updateOverviewWindowElement();
+    assert.deepEqual([vm.lensStartNorm, vm.lensEndNorm], [ls, le]);
+});
+
+test('ViewportManager lens: range badge follows a new file with the same normalized range', () => {
+    const { vm } = makeLensViewport();
+    let duration = 3600;
+    vm._getAudioBuffer = () => ({ duration });
+    vm.windowStartNorm = 0; vm.windowEndNorm = 8 / 3600;
+    vm._updateOverviewWindowElement();
+    const first = vm._d.overviewDetailRange.textContent;
+    duration = 4000;
+    vm._updateOverviewWindowElement();
+    assert.notEqual(vm._d.overviewDetailRange.textContent, first);
+});

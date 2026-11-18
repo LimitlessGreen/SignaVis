@@ -88,6 +88,7 @@
    Overrides prefers-color-scheme: light when user toggles.
    ═══════════════════════════════════════════════════════ */
 html[data-theme="dark"] {
+    --overview-dim:           rgba(5, 10, 25, 0.55);
     --color-bg-primary:       #1a1a2e;
     --color-bg-secondary:     #16213e;
     --color-bg-tertiary:      #0f3460;
