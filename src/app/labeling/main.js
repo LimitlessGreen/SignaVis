@@ -1303,7 +1303,9 @@ let projectAutosaver = null;
 let projectStore = null;
 let projectKind = 'none';            // 'browser' | 'folder' | 'none'
 let projectStatus = '';
-let projectMeta = { id: 'browser-default', name: 'Browser project', createdAt: '' };
+// Lite keeps its default project in the app data folder — "browser" would be wrong there
+const DEFAULT_PROJECT_NAME = isLite() ? 'Default project' : 'Browser project';
+let projectMeta = { id: 'browser-default', name: DEFAULT_PROJECT_NAME, createdAt: '' };
 let projectFolderFiles = [];         // audio files found in the folder
 let projectScanning = false;
 let recentFolderHandle = null;       // remembered folder that still needs a click
@@ -1455,7 +1457,7 @@ async function openProject() {
   catch (e) {
     console.warn('[project] cannot read project', e);
     if (projectKind === 'folder') {
-      await appAlert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\n\nSwitching back to the browser project.`, { title: 'Project could not be read' });
+      await appAlert(`Could not read project.signavis.json in “${projectStore.label}”: ${e?.message || e}\n\nSwitching back to the ${isLite() ? 'default project' : 'browser project'}.`, { title: 'Project could not be read' });
       lsSet(PROJECT_LOCATION_KEY, 'browser');
       window.location.reload();
       return false;
@@ -4241,7 +4243,7 @@ document.getElementById('newSessionBtn')?.addEventListener('click', async () => 
   saveCurrentAnnotationsIfNeeded();
   const nLabels = recordingManager.getAll().reduce((n, e) => n + (e.annotations?.length || 0), 0) || state.labels.length;
   if ((nRec || nLabels) && !await appConfirm(
-    `This removes ${nRec} recording${nRec === 1 ? '' : 's'} and ${nLabels} label${nLabels === 1 ? '' : 's'} from this browser. ` +
+    `This removes ${nRec} recording${nRec === 1 ? '' : 's'} and ${nLabels} label${nLabels === 1 ? '' : 's'} from ${isLite() || projectKind === 'folder' ? 'this project' : 'this browser'}. ` +
     'Export first if you want to keep them.',
     { title: 'Start a new session?', okLabel: 'Remove and start new', danger: true })) return;
   recordingManager.setActive(null);
