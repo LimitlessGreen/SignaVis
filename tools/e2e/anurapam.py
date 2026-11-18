@@ -15,11 +15,14 @@ with sync_playwright() as p:
     page.wait_for_function("() => window.__signavis.player._state?.audioBuffer", timeout=60000); page.keyboard.press('Escape')
     page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll([]); sv.syncToPlayer(); }")
     page.evaluate("document.querySelector('#birdnetModelSeg [data-value=anurapam]').click()")
-    print('preset:', page.evaluate("document.getElementById('birdnetModelPreset').value"),
-          '| url:', page.evaluate("document.getElementById('birdnetModelUrl').value"),
-          '| note:', page.inner_text('#birdnetModelNote'))
+    preset = page.evaluate("document.getElementById('birdnetModelPreset').value")
+    model_url = page.evaluate("document.getElementById('birdnetModelUrl').value")
+    print('preset:', preset, '| url:', model_url, '| note:', page.inner_text('#birdnetModelNote'))
+    if preset != 'anurapam' or 'anurapam' not in model_url:
+        sys.exit(f'AnuraPAM preset not selected (preset={preset!r}, url={model_url!r})')
     page.evaluate("() => { const c = document.getElementById('birdnetConfidence'); c.value = '0.3'; c.dispatchEvent(new Event('input')); }")
-    page.evaluate("() => window.__signavis.birdnetPanel.analyze()")
+    if not page.evaluate("() => window.__signavis.birdnetPanel.analyze()"):
+        sys.exit('analysis did not start (analyze() returned false)')
     page.wait_for_function("() => /done|error|found|no /i.test(document.getElementById('birdnetStatus').textContent) && !document.getElementById('birdnetAnalyzeBtn').disabled", timeout=600000)
     print('status:', page.inner_text('#birdnetStatus'))
     labels = page.evaluate("() => window.__signavis.state.labels.map(l => [l.scientificName || l.label, +l.confidence.toFixed(2)])")

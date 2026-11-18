@@ -50,10 +50,18 @@ cat > "$stage/README.md" <<'README'
 - Outputs: 6,522 BirdNET v2.4 classes (unchanged) + 14 anurans, sigmoid scores for 3 s of 48 kHz audio.
 README
 
-# Swap in the new model; the old one stays until the new one is in place.
-if [ -e "$out" ]; then mv "$out" "$work/previous"; fi
-if ! mv "$stage" "$out"; then
-  [ -e "$work/previous" ] && mv "$work/previous" "$out"
-  echo "could not install models/anurapam" >&2; exit 1
+# Publish under a lock so concurrent runs cannot interleave. The previous model is kept
+# next to models/anurapam (outside the auto-cleaned work dir) until the swap has succeeded,
+# so an interruption never leaves the preset without a model.
+mkdir -p "$root/models"
+exec 9>"$root/models/.anurapam.lock"
+flock 9
+backup="$out.previous"
+rm -rf "$backup"
+if [ -e "$out" ]; then mv "$out" "$backup"; fi
+if ! mv -T "$stage" "$out"; then
+  if [ -e "$backup" ] && [ ! -e "$out" ]; then mv -T "$backup" "$out"; fi
+  echo "could not install models/anurapam (previous model kept at $backup if restore failed)" >&2; exit 1
 fi
+rm -rf "$backup"
 echo "models/anurapam ready"
