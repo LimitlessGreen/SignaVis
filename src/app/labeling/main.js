@@ -38,7 +38,7 @@ import { serializeProject, deserializeProject, filesNotInProject, folderFileEntr
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
-import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, centreMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
 import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
@@ -1876,7 +1876,10 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
     feedSimilarDecisions([lbl.id], true);
+    const d = correctionOf(lbl);
+    if (d) _similarCorrections.push(d);
     labelStore.remove(lbl.id);
+    if (d) spreadSimilarCorrections();
     similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
   }
   touchOwnSet(OWN_SOURCE_ID);
@@ -3008,17 +3011,41 @@ function canFindSimilar(lbl) {
     && lbl.end > lbl.start && !lbl.fullBand && lbl.freqMax > lbl.freqMin;
 }
 
+/**
+ * The suggestion under review stands out and can be resized (fine corrections before copying);
+ * the others stay locked. `id` null: none (review closed).
+ */
+function setActiveSimilar(id) {
+  const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar
+    && (!!l.similar.active !== (l.id === id) || l.readonly === (l.id === id))).map((l) => l.id);
+  if (ids.length) labelStore.update(ids, (l) => ({ ...l, readonly: l.id !== id, similar: { ...l.similar, active: l.id === id } }));
+}
+
+const _similarCorrections = [];   // corrections of copied suggestions in this review (suggest-similar.ts)
+
+/** Copied corrected suggestions: move the ones not looked at yet by the mean correction. */
+function spreadSimilarCorrections() {
+  const d = meanCorrection(_similarCorrections);
+  if (!d) return;
+  const nyquist = (player._state?.audioBuffer?.sampleRate || Infinity) / 2;
+  const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar?.found && !l.similar.active
+    && !correctionOf(l)).map((l) => l.id);
+  if (!ids.length) return;
+  labelStore.update(ids, (l) => ({ ...l, ...applyCorrection(l.similar.found, d, nyquist) }));
+}
+
 const similarReview = new SimilarReview({
   onFocus: (id) => {
     const lbl = state.labels.find((l) => l.id === id);
     if (!lbl) return;
+    setActiveSimilar(id);
     player.selectLabel(id);
     player.playLabelSegment(lbl);
   },
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
-  onClose: () => { endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  onClose: () => { setActiveSimilar(null); _similarCorrections.length = 0; endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
@@ -3042,11 +3069,15 @@ function endSimilarSession() {
 let _similarFeed = Promise.resolve();
 function feedSimilarDecisions(ids, accepted) {
   const session = _similarSession;
-  const idx = ids.map((id) => _similarHitOf.get(id)).filter((i) => i !== undefined);
+  // A corrected box (resized under review) tells where the call really sits
+  const idx = ids.map((id) => {
+    const d = correctionOf(state.labels.find((l) => l.id === id));
+    return { i: _similarHitOf.get(id), moved: d ? centreMove(d) : undefined };
+  }).filter((x) => x.i !== undefined);
   if (!session || !idx.length) return;
   _similarFeed = _similarFeed.then(async () => {
     let ranks = null;
-    for (const i of idx) ranks = await session.decide(i, accepted);
+    for (const { i, moved } of idx) ranks = await session.decide(i, accepted, moved);
     if (session !== _similarSession || !ranks) return;
     const scores = new Map();
     for (const [id, i] of _similarHitOf) scores.set(id, ranks[i]);
@@ -3150,8 +3181,10 @@ function acceptSimilar(ids) {
   if (!src.length) { labelStore.remove(want); return; }
   feedSimilarDecisions(picked.map((l) => l.id), true);
   const undo = snapshotLabels();
+  for (const l of picked) { const d = correctionOf(l); if (d) _similarCorrections.push(d); }
   const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.replaceAll(state.labels.filter((l) => !want.has(l.id)).concat(copies));
+  if (picked.some((l) => correctionOf(l))) spreadSimilarCorrections();
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
@@ -3483,7 +3516,8 @@ function saveCurrentAnnotationsIfNeeded() {
 }
 function _computeLockedIds() {
   return state.labels
-    .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
+    // The similar-call suggestion under review is resizable (fine corrections before copying)
+    .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked && !(l.origin === SIMILAR_ORIGIN && l.similar?.active)))
     .map(l => l.id);
 }
 
@@ -4309,6 +4343,8 @@ installAnnotaImport(appCtx, {
 
 function upsertLabel(label, views = EDIT_VIEWS) {
   if (!label?.id) return;
+  // The player's view flag; the app keeps it in similar.active
+  if ('reviewing' in label) { const { reviewing, ...rest } = label; label = rest; }
   const idx = state.labels.findIndex((l) => l.id === label.id);
   if (idx >= 0) {
     const prev = state.labels[idx];

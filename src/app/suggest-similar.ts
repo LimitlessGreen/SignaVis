@@ -18,6 +18,39 @@ export interface SimilarRecord {
     sourceLabelId: string; score: number; sources: string[];
     /** suggestionKey() of the correlation hit: recorded on reject, checked on the next search. */
     key?: string;
+    /** Box as suggested; the user may correct the suggestion under review before copying it. */
+    found?: Box;
+    /** The suggestion under review: highlighted and resizable. */
+    active?: boolean;
+}
+
+/** Edge moves of a corrected suggestion against its box as suggested (null: unchanged). */
+export interface BoxCorrection { start: number; end: number; freqMin: number; freqMax: number }
+export function correctionOf(l: any): BoxCorrection | null {
+    const f = l?.similar?.found;
+    if (!f) return null;
+    const d = { start: l.start - f.start, end: l.end - f.end, freqMin: l.freqMin - f.freqMin, freqMax: l.freqMax - f.freqMax };
+    return Object.values(d).some((v) => Math.abs(v) > 1e-6) ? d : null;
+}
+
+/** Centre move of a correction (for re-ranking: where the corrected call really sits). */
+export function centreMove(d: BoxCorrection): { dt: number; df: number } {
+    return { dt: (d.start + d.end) / 2, df: (d.freqMin + d.freqMax) / 2 };
+}
+
+/** Mean of corrections; applied to suggestions not looked at yet (the same systematic offset). */
+export function meanCorrection(list: BoxCorrection[]): BoxCorrection | null {
+    if (!list.length) return null;
+    const m = { start: 0, end: 0, freqMin: 0, freqMax: 0 };
+    for (const d of list) for (const k of Object.keys(m) as (keyof BoxCorrection)[]) m[k] += d[k] / list.length;
+    return m;
+}
+
+/** `box` moved by `d`, kept valid (start < end, 0 ≤ freqMin < freqMax ≤ nyquist). */
+export function applyCorrection(box: Box, d: BoxCorrection, nyquist = Infinity): Box {
+    const start = Math.max(0, box.start + d.start), end = Math.max(start + 0.01, box.end + d.end);
+    const freqMin = Math.max(0, box.freqMin + d.freqMin), freqMax = Math.min(nyquist, Math.max(freqMin + 10, box.freqMax + d.freqMax));
+    return { start, end, freqMin, freqMax };
 }
 
 const name = (l: any) => String(l?.scientificName || l?.label || '').trim().toLowerCase();
@@ -70,7 +103,8 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
             ...(exemplar.color ? { color: exemplar.color } : {}),
             origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(h.score * 1000) / 1000,
             setId: opts.setId, ...(opts.recordingId ? { recordingId: opts.recordingId } : {}),
-            similar: { sourceLabelId: exemplar.id, score: h.score, sources, key } satisfies SimilarRecord,
+            similar: { sourceLabelId: exemplar.id, score: h.score, sources, key,
+                found: { start: box.start, end: box.end, freqMin: box.freqMin, freqMax: box.freqMax } } satisfies SimilarRecord,
         };
         out.push(sug);
         opts.onPick?.(sug, hi);

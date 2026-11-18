@@ -1392,6 +1392,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (isSuggestion) el.classList.add('suggestion');
         // Found as a repeat of an own label (app/suggest-similar.ts): dotted until copied or rejected
         if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
+        // The one under review (similar-review.ts): stands out, and resizable for fine corrections
+        if (label.origin === 'Similar' && (label as any).reviewing) el.classList.add('spectrogram-label-region--reviewing');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -1526,7 +1528,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this._suppressClickUntil = performance.now() + 250;
                 // Detections in a locked set (BirdNET / BirdBox) are copied into "My labels"
                 // by the app; an unlocked suggestion simply becomes a manual label.
-                if (this._lockedIds.has(label.id)) {
+                // A similar-call suggestion under review is unlocked (resizable) but still copied.
+                if (this._lockedIds.has(label.id) || label.origin === 'Similar') {
                     this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail: { label: { ...label } } }));
                 } else {
                     this._acceptSuggestion(label.id);
@@ -3128,6 +3131,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             author: meta.author,
             tags: meta.tags,
             readonly: label?.readonly === true,
+            // A similar-call suggestion under review (similar-review.ts): highlighted
+            ...(label?.similar?.active === true || label?.reviewing === true ? { reviewing: true } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
             createdAt: label?.createdAt || new Date().toISOString(),

@@ -850,17 +850,41 @@ html[data-theme="light"] { @include sponsor-light; }
 .similar-review__pos,
 .similar-review__score { color: var(--color-text-secondary, #9ca3af); font-variant-numeric: tabular-nums; }
 
+.similar-review__nav { display: inline-flex; gap: 4px; }
+
 .similar-review__btn {
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: 5px;
   background: none;
   color: var(--color-text-primary);
-  padding: 2px 8px;
+  padding: 4px 10px;
+  font-size: 13px;
   cursor: pointer;
 
+  &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
   &:disabled { opacity: 0.4; cursor: default; }
-  &--ok { color: var(--color-success, #22c55e); font-weight: 700; }
-  &--no { color: var(--color-danger, #ef4444); font-weight: 700; }
+  &--icon { min-width: 30px; font-size: 14px; padding: 4px 6px; }
+
+  // The two decisions: large, filled, unmistakable
+  &--ok,
+  &--no {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 6px 14px;
+    color: #fff;
+    border-width: 0;
+
+    kbd {
+      margin-left: 6px;
+      padding: 0 4px;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.25);
+      font: 600 10px/16px var(--font-mono, monospace);
+      vertical-align: 1px;
+    }
+  }
+  &--ok { background: #15803d; &:hover:not(:disabled) { background: #166534; } }
+  &--no { background: #b91c1c; &:hover:not(:disabled) { background: #991b1b; } }
 }
 
 .similar-review__thr {

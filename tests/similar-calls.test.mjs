@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import { fft, nccCurve, pickPeaks, findSimilar, timeIoU, Reranker, createSearch, templateFrom, fitTemplate, findWithTemplate } from '../src/domain/similar/ncc.ts';
 import { SimilarSession } from '../src/app/similarSpectrogram.ts';
 import { bandSpectrogram } from '../src/app/similarSpectrogram.ts';
-import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../src/app/suggest-similar.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, centreMove, meanCorrection, applyCorrection } from '../src/app/suggest-similar.ts';
 import { adoptLabels } from '../src/app/annotation-sets.ts';
 import { initWasmMain } from '../src/infrastructure/wasm-dsp/wasmMain.ts';
 
@@ -116,7 +116,8 @@ test('suggestions: skip labelled places and rejections, take BirdBox bounds, kee
     assert.deepEqual(out.map((s) => s.start), [5, 15.02]);
     assert.equal(out[0].origin, SIMILAR_ORIGIN);
     assert.equal(out[0].label, 'Blackbird');
-    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'], key: suggestionKey('Turdus merula', 5) });
+    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'], key: suggestionKey('Turdus merula', 5),
+        found: { start: 5, end: 5.4, freqMin: 2000, freqMax: 3000 } });
     assert.deepEqual(out[1].similar.sources, ['correlation', 'BirdBox']);
     assert.equal(out[1].freqMin, 2300);
 
@@ -150,6 +151,38 @@ test('Reranker: a rejected call type drops, an accepted one rises', () => {
     for (const b of [1, 2]) for (const a of [3, 4, 5]) assert.ok(ranks[a] > ranks[b], `A ${a} above B ${b}`);
     const after = rr.decide(3, true);                        // accept one A
     for (const a of [4, 5]) assert.ok(after[a] > 0.8, 'accepted A lifts the other A calls');
+});
+
+test('Reranker: an accepted hit whose box was corrected compares from the corrected place', () => {
+    const A = [500, 1500, 2500];
+    const spec = twoTypes(3600, 60, [100, ...A], []);
+    const win = { r0: 17, r1: 34, c0: 100, c1: 140 };
+    // Hit 0 sits 30 frames early (the user drags it onto the call); hits 1, 2 are on the calls
+    const hits = [470, 1500, 2500].map((f) => ({ frame: f, shift: 0, score: 0.4, start: f * 0.01, end: f * 0.01 + 0.4, freqMin: 1700, freqMax: 3300 }));
+    const plain = new Reranker(spec, win, hits, 1).decide(0, true);
+    const fixed = new Reranker(spec, win, hits, 1).decide(0, true, { dt: 0.3, df: 0 });
+    for (const j of [1, 2]) assert.ok(fixed[j] > 0.8 && fixed[j] > plain[j] + 0.2, `corrected exemplar lifts call ${j}`);
+    assert.equal(hits[0].frame, 470, 'the caller\'s hits stay as found');
+});
+
+test('corrections: edge moves against the box as found, mean, applied within bounds', () => {
+    const found = { start: 1, end: 1.4, freqMin: 2000, freqMax: 4000 };
+    assert.equal(correctionOf({ ...found, similar: { found } }), null, 'unchanged');
+    const d = correctionOf({ start: 0.9, end: 1.5, freqMin: 2000, freqMax: 4500, similar: { found } });
+    assert.deepEqual(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Math.round(v * 1000) / 1000])), { start: -0.1, end: 0.1, freqMin: 0, freqMax: 500 });
+    const c = centreMove(d);
+    assert.ok(Math.abs(c.dt) < 1e-9 && c.df === 250);
+    const m = meanCorrection([d, { start: -0.3, end: 0.1, freqMin: 0, freqMax: 0 }]);
+    assert.ok(Math.abs(m.start + 0.2) < 1e-9 && Math.abs(m.freqMax - 250) < 1e-9);
+    assert.equal(meanCorrection([]), null);
+    const b = applyCorrection({ start: 0.05, end: 0.2, freqMin: 100, freqMax: 7900 }, { start: -0.1, end: -0.5, freqMin: -200, freqMax: 500 }, 8000);
+    assert.deepEqual(b, { start: 0, end: 0.01, freqMin: 0, freqMax: 8000 });
+});
+
+test('suggestions remember the box as found', () => {
+    const sug = buildSuggestions({ id: 'ex', label: 'X', start: 0, end: 0.4, freqMin: 1000, freqMax: 2000 },
+        [{ start: 5, end: 5.4, freqMin: 1000, freqMax: 2000, score: 0.7 }], { labels: [], setId: 's', newId: () => 'n1' });
+    assert.deepEqual(sug[0].similar.found, { start: 5, end: 5.4, freqMin: 1000, freqMax: 2000 });
 });
 
 test('SimilarSession runs find + decide in place without workers', async () => {

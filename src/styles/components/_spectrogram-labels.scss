@@ -142,6 +142,39 @@
     opacity: 0.75;
 }
 
+/* The suggestion under review (similar-review.ts): bright solid frame, glow and a pulse, so it
+   stands out from the dotted rest; its handles are live for fine corrections. Doubled class
+   wins over .suggestion / .selected. */
+.spectrogram-label-region.spectrogram-label-region--reviewing.spectrogram-label-region--reviewing {
+    z-index: 12;
+    opacity: 1;
+    border: 3px solid #facc15;
+    outline: 1px solid rgba(0, 0, 0, 0.85);
+    outline-offset: 0;
+    background: rgba(250, 204, 21, 0.10);
+    box-shadow:
+        0 0 0 4px rgba(250, 204, 21, 0.35),
+        0 0 18px 4px rgba(250, 204, 21, 0.45);
+    animation: similarReviewPulse 1.4s ease-in-out infinite;
+
+    .label-handle { opacity: 1; }
+
+    .spectrogram-label-text {
+        background: #facc15;
+        color: #111827;
+        font-weight: 700;
+    }
+}
+@keyframes similarReviewPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35), 0 0 18px 4px rgba(250, 204, 21, 0.45); }
+    50%      { box-shadow: 0 0 0 7px rgba(250, 204, 21, 0.18), 0 0 26px 8px rgba(250, 204, 21, 0.30); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .spectrogram-label-region--reviewing { animation: none !important; }
+}
+/* The others recede while one is under review */
+.spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing) { opacity: 0.55; }
+
 /* ── Accept / Discard buttons (suggestion labels) ── */
 .label-accept-btn,
 .label-discard-btn {

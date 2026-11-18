@@ -256,6 +256,7 @@ export class Reranker {
     constructor(private readonly spec: BandSpectrogram, private readonly win: { r0: number; r1: number; c0: number; c1: number },
         private readonly hits: SimilarHit[], private readonly lambda = 1) {
         this.R = win.r1 - win.r0; this.T = win.c1 - win.c0;
+        this.hits = hits.slice();   // move() replaces entries; the caller's list stays as found
         this.pos = Float64Array.from(hits, (h) => h.score);
         this.neg = new Float64Array(hits.length).fill(-Infinity);
         this.open = new Set(hits.map((_, i) => i));
@@ -294,12 +295,30 @@ export class Reranker {
         return k;
     }
 
+    private move(i: number, { dt, df }: { dt: number; df: number }) {
+        const h = this.hits[i], spec = this.spec;
+        const frames = Number.isFinite(dt) ? Math.round(dt / spec.dt) : 0, rows = Number.isFinite(df) ? Math.round(df / spec.df) : 0;
+        if (!frames && !rows) return;
+        this.hits[i] = {
+            ...h,
+            frame: Math.max(0, Math.min(spec.frames - this.T, (h.frame ?? 0) + frames)),
+            shift: Math.max(-this.win.r0, Math.min(spec.rows - this.win.r1, (h.shift ?? 0) + rows)),
+        };
+        this.areas.delete(i);
+        this.cores.delete(i);
+    }
+
     similarity(i: number, j: number): number {
         return bestPearson(this.area(j), this.R + 2 * PAD_ROWS, this.T + 2 * PAD_FRAMES, this.core(i), this.R, this.T);
     }
 
-    /** Record a decision on hit i; returns the rank of every hit (decided ones: −Infinity). */
-    decide(i: number, accepted: boolean): Float64Array {
+    /**
+     * Record a decision on hit i; returns the rank of every hit (decided ones: −Infinity).
+     * `moved`: the user corrected the box before deciding; its centre moved by `dt` seconds and
+     * `df` Hz, so hit i's patch is taken from there (the patch keeps the exemplar's size).
+     */
+    decide(i: number, accepted: boolean, moved?: { dt: number; df: number }): Float64Array {
+        if (moved && this.open.has(i)) this.move(i, moved);
         if (this.open.delete(i)) {
             for (const j of this.open) {
                 const v = this.similarity(i, j);

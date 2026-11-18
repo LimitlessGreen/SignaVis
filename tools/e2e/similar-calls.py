@@ -38,18 +38,41 @@ with sync_playwright() as p:
     check(good >= 6, f'{good}/8 best suggestions are Wood Thrush songs')
     check(page.locator('.similar-review__title').inner_text() == 'Similar to Wood Thrush', 'review bar title')
     if shots: page.screenshot(path=f'{shots}/similar-review.png')
-    styles = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar, .annotation-region--similar')].map(e => getComputedStyle(e).borderTopStyle)")
+    # The suggestion under review stands out (solid, highlighted) and has live resize handles
+    rev = page.locator('.spectrogram-label-region--reviewing')
+    check(rev.count() == 1, f'exactly one suggestion is highlighted ({rev.count()})')
+    cur = page.evaluate(f"() => {SV}.state.labels.find(l => l.similar?.active)")
+    check(cur and rev.get_attribute('data-id') == cur['id'] and not cur['readonly'], 'the highlighted one is the one under review, editable')
+    check(rev.locator('.label-handle').count() > 0 and float(rev.locator('.handle-r').evaluate("e => getComputedStyle(e).opacity")) == 1,
+          'its resize handles are shown')
+    styles = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing), .annotation-region--similar')].map(e => getComputedStyle(e).borderTopStyle)")
     check(styles and all(x == 'dotted' for x in styles), f'suggestions are dotted {styles}')
     bar, spec = page.locator('.similar-review').bounding_box(), page.evaluate(f"() => {{ const r = {SV}.player._state.d.canvasWrapper.getBoundingClientRect(); return [r.top, r.bottom]; }}")
     check(spec[0] < bar['y'] and bar['y'] + bar['height'] <= spec[1], f'review bar sits inside the spectrogram (bar {bar}, spectrogram {spec})')
 
     n0 = len(s)
     before = page.locator('.similar-review__score').inner_text()
+    # Fine correction: drag the right edge of the one under review, then copy it
+    hb = rev.locator('.handle-r').bounding_box()
+    page.mouse.move(hb['x'] + hb['width'] / 2, hb['y'] + hb['height'] / 2); page.mouse.down()
+    page.mouse.move(hb['x'] + hb['width'] / 2 + 40, hb['y'] + hb['height'] / 2, steps=6); page.mouse.up()
+    page.wait_for_timeout(300)
+    resized = page.evaluate(f"id => {SV}.state.labels.find(l => l.id === id)", cur['id'])
+    check(resized['end'] > cur['end'] + 0.05 and abs(resized['start'] - cur['start']) < 1e-6, f"right edge dragged ({cur['end']:.2f} → {resized['end']:.2f} s)")
+    if shots: page.screenshot(path=f'{shots}/similar-review-resized.png')
+    others = page.evaluate(f"() => {SV}.state.labels.filter(l => l.origin === 'Similar' && !l.similar.active).map(l => [l.id, l.end - l.similar.found.end])")
+    page.evaluate("document.activeElement?.blur()")
     page.keyboard.press('Enter'); page.wait_for_timeout(600)
     print('score shown before / after the first decision (re-ranked):', before, '/', page.locator('.similar-review__score').inner_text())
     own = page.evaluate(OWN)
     copied = [l for l in own if l['id'] != 'ex']
     check(len(copied) == 1 and copied[0]['adoptedFrom']['similar']['sourceLabelId'] == 'ex', 'Enter copies with adoptedFrom.similar')
+    check(len(copied) == 1 and abs(copied[0]['end'] - resized['end']) < 1e-6 and 'active' not in copied[0]['adoptedFrom']['similar'],
+          'the copy has the corrected box')
+    dend = resized['end'] - cur['end']
+    spread = page.evaluate(f"() => {SV}.state.labels.filter(l => l.origin === 'Similar').map(l => l.end - l.similar.found.end)")
+    check(spread and all(abs(x - dend) < 1e-3 for x in spread) and all(abs(x) < 1e-6 for _, x in others),
+          f'the correction carries over to the suggestions not looked at yet (+{dend:.2f} s)')
     check(len(page.evaluate(SUGG)) == n0 - 1, 'copied suggestion leaves the suggestions')
     # Threshold to 0.25, Shift+Enter copies everything ranked at or above it (ranks after re-ranking)
     page.evaluate("() => { const r = document.querySelector('.similar-review input'); r.value = '0.25'; r.dispatchEvent(new Event('input')); }")
@@ -68,7 +91,7 @@ with sync_playwright() as p:
     search()
     check(len(page.evaluate(SUGG)) == n0 - 1, 'new search: the copied one stays out')
     page.keyboard.press('x'); page.wait_for_timeout(300)
-    check(len(page.evaluate(SUGG)) == n0 - 2, 'X rejects one suggestion')
+    check(len(page.evaluate(SUGG)) == n0 - 2, f'X rejects one suggestion ({n0} → {len(page.evaluate(SUGG))})')
     check(page.evaluate(f"() => {SV}.state.labels.some(l => l.id === 'ex')"), 'X did not delete the exemplar')
     # ✗ on a suggestion box rejects it too, and the review drops it
     sid = page.evaluate(f"() => {SV}.state.labels.filter(l => l.origin === 'Similar').at(-1).id")
