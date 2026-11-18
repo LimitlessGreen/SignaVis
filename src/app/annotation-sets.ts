@@ -41,7 +41,7 @@ function newLabelId() {
  */
 export function adoptLabels(labels: any[], targetSetId: string, now = new Date(), layer?: string) {
     return (labels || []).map((l) => {
-        const { readonly, annotationSet, adoptBox, similar, ...rest } = l || {};
+        const { readonly, annotationSet, adoptBox, similar, reviewing, ...rest } = l || {};
         return {
             ...rest,
             id: newLabelId(),
@@ -53,7 +53,7 @@ export function adoptLabels(labels: any[], targetSetId: string, now = new Date()
                 id: l?.id ?? null, setId: l?.setId ?? null, origin: l?.origin ?? null,
                 ...(adoptBox ? { box: { ...adoptBox } } : {}),
                 // Found as a repeat of an own label (suggest-similar.ts): exemplar, score, sources
-                ...(similar ? { similar: { ...similar, sources: [...(similar.sources || [])] } } : {}),
+                ...(similar ? { similar: (({ active, ...rec }) => ({ ...rec, sources: [...(similar.sources || [])] }))(similar) } : {}),
             },
             ...(layer ? { layer } : {}),
         };

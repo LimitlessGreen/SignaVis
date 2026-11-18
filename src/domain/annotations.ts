@@ -1096,7 +1096,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _bindInteractions(root: HTMLElement) { this._bindDrawingInteractions(root); this._loupeOption('loupeDetailCheck', 'aw-loupe-detail'); this._bindLoupeWindow(root); }
 
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
-    _emitUpdate(item: any) { this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any) } }); }
+    _emitUpdate(item: any) {
+        // A time-only resize reports the band as stored, not as clamped to the display maximum
+        const ed = this._editing as any;
+        // A time handle pressed without moving never set keepBand: still a time-only edit
+        const band = ed?.keepBand ?? ((ed?.mode === 'resize-l' || ed?.mode === 'resize-r') && item?.id ? this._storedBands.get(item.id) : null);
+        // Any other committed edit: its band is now the stored one (also without a new set())
+        if (!band && this._editing && item?.id) this._storedBands.set(item.id, { freqMin: Number(item.freqMin), freqMax: Number(item.freqMax) });
+        this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any), ...(band || {}) } });
+    }
+    /** Bands as given to set(), before _normalize clamps them to the display maximum. */
+    _storedBands = new Map<string, { freqMin: number; freqMax: number }>();
     _emitPreview(item: any) { this.dispatchEvent(new CustomEvent('spectrogramlabelpreview', { detail: { label: { ...item } } })); }
 
     /** Public alias for the internal items array (backward compat). */
@@ -1107,6 +1117,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             return;
         }
         // Ensure incoming items are normalized (IDs, defaults)
+        // Same defaults as _normalize (freqMax falls back to freqMin), then numbers (strings allowed)
+        this._storedBands = new Map(v.map((i: any) => [i?.id, { freqMin: Number(i?.freqMin ?? 0), freqMax: Number(i?.freqMax ?? i?.freqMin ?? 0) }] as const)
+            .filter(([id, b]) => id && Number.isFinite(b.freqMin) && Number.isFinite(b.freqMax)));
         this._items = v.map((i) => this._normalize(i));
     }
 
@@ -1392,6 +1405,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (isSuggestion) el.classList.add('suggestion');
         // Found as a repeat of an own label (app/suggest-similar.ts): dotted until copied or rejected
         if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
+        // The one under review (similar-review.ts): stands out, and resizable for fine corrections
+        if (label.origin === 'Similar' && (label as any).reviewing) el.classList.add('spectrogram-label-region--reviewing');
         if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -1526,8 +1541,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this._suppressClickUntil = performance.now() + 250;
                 // Detections in a locked set (BirdNET / BirdBox) are copied into "My labels"
                 // by the app; an unlocked suggestion simply becomes a manual label.
+                // A similar-call suggestion under review is unlocked (resizable) but still copied.
                 if (this._lockedIds.has(label.id)) {
                     this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail: { label: { ...label } } }));
+                } else if (label.origin === 'Similar') {
+                    const detail: any = { label: { ...label } };
+                    this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail }));
+                    if (!detail.handled) this._acceptSuggestion(label.id);   // standalone player: no host copies it
                 } else {
                     this._acceptSuggestion(label.id);
                 }
@@ -2381,6 +2401,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
 
         next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
+        // A time-only resize keeps the band as stored: _normalize clamps it to the display maximum
+        if (editing.mode === 'resize-l' || editing.mode === 'resize-r') {
+            next.freqMin = src.freqMin; next.freqMax = src.freqMax;
+            editing.keepBand = this._storedBands.get(src.id) || { freqMin: src.freqMin, freqMax: src.freqMax };
+        } else editing.keepBand = null;
 
         // Preserve band thickness on pure move (in pixel space, not Hz)
         if (editing.mode === 'move') {
@@ -3128,6 +3153,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             author: meta.author,
             tags: meta.tags,
             readonly: label?.readonly === true,
+            // A similar-call suggestion under review (similar-review.ts): highlighted
+            ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
             createdAt: label?.createdAt || new Date().toISOString(),

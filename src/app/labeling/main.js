@@ -38,7 +38,7 @@ import { serializeProject, deserializeProject, filesNotInProject, folderFileEntr
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
-import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../../app/suggest-similar.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, hitMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
 import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
@@ -1742,6 +1742,7 @@ async function restoreProjectSnapshotIfPossible() {
 
     if (Array.isArray(project.labels) && project.labels.length) {
       labelStore.load(dedupeLabels(project.labels.map((l) => ({ ...l }))), recordingManager?.activeId || null);
+      syncActiveSimilar();   // a suggestion stays unlocked only while its review is open
       ensureOwnSource();
       selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
     }
@@ -1876,8 +1877,12 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
   if (lbl.origin === SIMILAR_ORIGIN) {
     feedSimilarDecisions([lbl.id], true);
+    // Its correction counts only within its own review (an earlier group's box may still be on screen)
+    const d = similarReview.has(lbl.id) ? correctionOf(lbl) : null;
+    if (d) _similarCorrections.push(d);
     labelStore.remove(lbl.id);
-    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+    if (d) spreadSimilarCorrections();
+    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)), { decided: true });
   }
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
@@ -2104,6 +2109,7 @@ async function activateRecordingEntry(entry) {
 
   // 5. Restore annotations — mark state.labels as belonging to this entry
   labelStore.load((entry.annotations || []).map(a => ({ ...a })), entry.id);
+  syncActiveSimilar();
   relocalizeAllLabels();
 
   // 6. Update all per-recording displays
@@ -2188,12 +2194,14 @@ function snapshotLabels() {
     const active = recordingManager.activeId || null;
     if (active === activeAt) {
       labelStore.load(labels, labelsEntryId);
+      syncActiveSimilar();   // the one under review stays editable
     } else {
       // Another recording is on screen by now: `labels` belong to the one active at snapshot
       // time and would be saved into this one. Show this recording's own restored labels.
       const own = perEntry.find(([id]) => id === active);
       if (own) {
         labelStore.load(own[1].map((a) => ({ ...a })), active);
+        syncActiveSimilar();
       }
     }
     saveSessionSets(state);
@@ -3008,17 +3016,66 @@ function canFindSimilar(lbl) {
     && lbl.end > lbl.start && !lbl.fullBand && lbl.freqMax > lbl.freqMin;
 }
 
+/**
+ * The suggestion under review stands out and can be resized (fine corrections before copying);
+ * the others stay locked. `id` null: none (review closed).
+ */
+/** After labels were loaded or restored: only the item of an open review stays unlocked. */
+function syncActiveSimilar() {
+  let id = null;
+  try {
+    // Labels restored (e.g. undo): the review keeps only suggestions that still exist, closes without any
+    if (similarReview.isOpen) {
+      similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+      // The restore may have undone copies whose corrections were counted: start the mean afresh
+      _similarCorrections.length = 0;
+    }
+    id = similarReview.currentId;
+  } catch { /* before the review exists (early session restore) */ }
+  setActiveSimilar(id && state.labels.some((l) => l.id === id) ? id : null);
+}
+
+function setActiveSimilar(id) {
+  const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar
+    && (!!l.similar.active !== (l.id === id) || l.readonly === (l.id === id))).map((l) => l.id);
+  if (ids.length) labelStore.update(ids, (l) => ({ ...l, readonly: l.id !== id, similar: { ...l.similar, active: l.id === id } }));
+}
+
+const _similarCorrections = [];   // corrections of copied suggestions in this review (suggest-similar.ts)
+
+/**
+ * Copied user-corrected suggestions: the ones the user has not edited move to their box as
+ * found plus the mean correction (recomputed from `found` each time, so a new mean replaces the old).
+ */
+function spreadSimilarCorrections() {
+  const d = meanCorrection(_similarCorrections);
+  if (!d) return;
+  const audio = player._state?.audioBuffer;
+  const nyquist = (audio?.sampleRate || Infinity) / 2, duration = audio?.duration || Infinity;
+  // Only this review's suggestions (an earlier group's may still be on screen)
+  const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar?.found && !l.similar.active
+    && similarReview.has(l.id) && !correctionOf(l)).map((l) => l.id);
+  if (!ids.length) return;
+  labelStore.update(ids, (l) => {
+    const box = applyCorrection(l.similar.found, d, nyquist, duration);
+    return { ...l, ...box, similar: { ...l.similar, shown: box } };
+  });
+}
+
 const similarReview = new SimilarReview({
   onFocus: (id) => {
     const lbl = state.labels.find((l) => l.id === id);
     if (!lbl) return;
+    setActiveSimilar(id);
     player.selectLabel(id);
     player.playLabelSegment(lbl);
   },
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
-  onClose: () => { endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  onClose: () => { setActiveSimilar(null); _similarCorrections.length = 0; endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  // Escape while resizing the box under review cancels the resize, not the review
+  busy: () => !!player.spectrogramLabels?._editing,
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
@@ -3042,11 +3099,13 @@ function endSimilarSession() {
 let _similarFeed = Promise.resolve();
 function feedSimilarDecisions(ids, accepted) {
   const session = _similarSession;
-  const idx = ids.map((id) => _similarHitOf.get(id)).filter((i) => i !== undefined);
+  // A corrected box (resized under review) tells where the call really sits
+  const idx = ids.map((id) => ({ i: _similarHitOf.get(id), moved: hitMove(state.labels.find((l) => l.id === id)) }))
+    .filter((x) => x.i !== undefined);
   if (!session || !idx.length) return;
   _similarFeed = _similarFeed.then(async () => {
     let ranks = null;
-    for (const i of idx) ranks = await session.decide(i, accepted);
+    for (const { i, moved } of idx) ranks = await session.decide(i, accepted, moved);
     if (session !== _similarSession || !ranks) return;
     const scores = new Map();
     for (const [id, i] of _similarHitOf) scores.set(id, ranks[i]);
@@ -3087,8 +3146,9 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
       setId, recordingId, newId: () => `similar_${searchToken}_${++n}`,
       onPick: (sug, i) => _similarHitOf.set(sug.id, i),
     });
-    // One exemplar at a time: its suggestions replace earlier ones
+    // One exemplar at a time: its suggestions replace earlier ones (and their corrections)
     labelStore.replaceAll(state.labels.filter((l) => l.setId !== setId).concat(suggestions));
+    _similarCorrections.length = 0;
     state.hiddenSetIds?.delete(setId);
     syncToPlayer();
     if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
@@ -3150,13 +3210,16 @@ function acceptSimilar(ids) {
   if (!src.length) { labelStore.remove(want); return; }
   feedSimilarDecisions(picked.map((l) => l.id), true);
   const undo = snapshotLabels();
+  for (const l of picked) { const d = correctionOf(l); if (d) _similarCorrections.push(d); }
   const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.replaceAll(state.labels.filter((l) => !want.has(l.id)).concat(copies));
+  if (picked.some((l) => correctionOf(l))) spreadSimilarCorrections();
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
     similarReview.close();
+    setActiveSimilar(null);   // the snapshot may hold the one then under review: lock it again
   });
 }
 
@@ -3166,7 +3229,7 @@ function rejectSimilar(ids) {
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
   labelStore.remove(want);
-  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)), { decided: true });
 }
 
 // ── Overview: groups of similar calls (domain/similar/cluster.ts) ──
@@ -3261,7 +3324,8 @@ function showGroup(gi) {
       id: groupLabelId(gi, k), start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax, fullBand: false,
       label: `Group ${gi + 1}`, origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(g.scores[k] * 1000) / 1000,
       setId, ...(_groups.recordingId ? { recordingId: _groups.recordingId } : {}),
-      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true },
+      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true,
+        found: { start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax } },
     };
   });
   labelStore.replaceAll(state.labels.filter((l) => !l.similar?.preview).concat(preview));
@@ -3483,7 +3547,8 @@ function saveCurrentAnnotationsIfNeeded() {
 }
 function _computeLockedIds() {
   return state.labels
-    .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked))
+    // The similar-call suggestion under review is resizable (fine corrections before copying)
+    .filter(l => l.readonly || (l.setId && state.labelSets.get(l.setId)?.locked && !(l.origin === SIMILAR_ORIGIN && l.similar?.active)))
     .map(l => l.id);
 }
 
@@ -4309,6 +4374,8 @@ installAnnotaImport(appCtx, {
 
 function upsertLabel(label, views = EDIT_VIEWS) {
   if (!label?.id) return;
+  // The player's view flag; the app keeps it in similar.active
+  if ('reviewing' in label) { const { reviewing, ...rest } = label; label = rest; }
   const idx = state.labels.findIndex((l) => l.id === label.id);
   if (idx >= 0) {
     const prev = state.labels[idx];
@@ -4395,8 +4462,15 @@ player.on('annotationremove', (e) => {
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
   labelStore.remove(id, { views: EDIT_VIEWS });   // the context-menu path removes it from the track only, not from the spectrogram
 });
+// A click on another similar-call suggestion while reviewing: review that one now
+player.on('labelfocus', (e) => {
+  const d = e.detail || {};
+  if (d.interaction !== 'click' || !d.id || !similarReview.isOpen) return;
+  if (state.labels.find((l) => l.id === d.id)?.origin === SIMILAR_ORIGIN) similarReview.focusId(d.id);
+});
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {
+  if (e.detail) e.detail.handled = true;   // the layer falls back to a plain accept without a host
   const id = e.detail?.label?.id;
   if (id) adoptOneLabel(id);
 });

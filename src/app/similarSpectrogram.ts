@@ -113,11 +113,11 @@ export class SimilarSession {
         return (await this.call({ type: 'find', spec, exemplar, opts }, [spec.values.buffer])).hits;
     }
 
-    /** Record a decision on hit i; ranks of all hits (decided ones −Infinity). */
-    async decide(i: number, accepted: boolean): Promise<Float64Array> {
-        if (this.local) return this.local.reranker.decide(i, accepted);
+    /** Record a decision on hit i (`moved`: box centre corrected by dt s / df Hz); ranks of all hits (decided ones −Infinity). */
+    async decide(i: number, accepted: boolean, moved?: { dt: number; df: number }): Promise<Float64Array> {
+        if (this.local) return this.local.reranker.decide(i, accepted, moved);
         if (!this.worker) throw new Error('no search');
-        return (await this.call({ type: 'decide', i, accepted })).ranks;
+        return (await this.call({ type: 'decide', i, accepted, moved })).ranks;
     }
 
     dispose() {

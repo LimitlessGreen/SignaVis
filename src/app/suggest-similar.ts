@@ -18,6 +18,62 @@ export interface SimilarRecord {
     sourceLabelId: string; score: number; sources: string[];
     /** suggestionKey() of the correlation hit: recorded on reject, checked on the next search. */
     key?: string;
+    /** Box as suggested (BirdBox may have refined the hit); base for carrying corrections over. */
+    found?: Box;
+    /** Box as last shown (found, or moved by carried-over corrections); differs once the user edits it. */
+    shown?: Box;
+    /** The correlation hit itself: re-ranking measures where a corrected call sits from here. */
+    hit?: Box;
+    /** The suggestion under review: highlighted and resizable. */
+    active?: boolean;
+}
+
+/** Edge moves of one box against another. */
+export interface BoxCorrection { start: number; end: number; freqMin: number; freqMax: number }
+const diff = (l: Box, f: Box): BoxCorrection => ({ start: l.start - f.start, end: l.end - f.end, freqMin: l.freqMin - f.freqMin, freqMax: l.freqMax - f.freqMax });
+const moved = (d: BoxCorrection) => Object.values(d).some((v) => Math.abs(v) > 1e-6);
+
+/** The user edited this suggestion: its box differs from the one shown (carried-over moves are not edits). */
+export function userEdited(l: any): boolean {
+    const shown = l?.similar?.shown || l?.similar?.found;
+    return !!shown && moved(diff(l, shown));
+}
+
+/** The user's correction against the box as found (null: not edited by the user). */
+export function correctionOf(l: any): BoxCorrection | null {
+    const f = l?.similar?.found;
+    return f && userEdited(l) ? diff(l, f) : null;
+}
+
+/** For re-ranking: how far the centre of a user-corrected box is from its correlation hit (undefined: not edited). */
+export function hitMove(l: any): { dt: number; df: number } | undefined {
+    const h = l?.similar?.hit || l?.similar?.found;
+    if (!h || !userEdited(l)) return undefined;
+    return { dt: (l.start + l.end - h.start - h.end) / 2, df: (l.freqMin + l.freqMax - h.freqMin - h.freqMax) / 2 };
+}
+
+/** Mean of corrections; applied to suggestions not looked at yet (the same systematic offset). */
+export function meanCorrection(list: BoxCorrection[]): BoxCorrection | null {
+    if (!list.length) return null;
+    const m = { start: 0, end: 0, freqMin: 0, freqMax: 0 };
+    for (const d of list) for (const k of Object.keys(m) as (keyof BoxCorrection)[]) m[k] += d[k] / list.length;
+    return m;
+}
+
+const MIN_DUR = 0.01, MIN_BAND = 10;
+
+/** `box` moved by `d`, kept inside the recording (0..duration, 0..nyquist) with a minimum size. */
+export function applyCorrection(box: Box, d: BoxCorrection, nyquist = Infinity, duration = Infinity): Box {
+    const fit = (lo: number, hi: number, max: number, min: number) => {
+        const top = max;
+        min = Math.min(min, top);   // a span shorter than the minimum: the whole span
+        lo = Math.min(Math.max(0, lo), top - min);
+        hi = Math.min(top, Math.max(lo + min, hi));
+        return [lo, hi];
+    };
+    const [start, end] = fit(box.start + d.start, box.end + d.end, duration, MIN_DUR);
+    const [freqMin, freqMax] = fit(box.freqMin + d.freqMin, box.freqMax + d.freqMax, nyquist, MIN_BAND);
+    return { start, end, freqMin, freqMax };
 }
 
 const name = (l: any) => String(l?.scientificName || l?.label || '').trim().toLowerCase();
@@ -70,7 +126,9 @@ export function buildSuggestions(exemplar: any, hits: SimilarHit[], opts: BuildO
             ...(exemplar.color ? { color: exemplar.color } : {}),
             origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(h.score * 1000) / 1000,
             setId: opts.setId, ...(opts.recordingId ? { recordingId: opts.recordingId } : {}),
-            similar: { sourceLabelId: exemplar.id, score: h.score, sources, key } satisfies SimilarRecord,
+            similar: { sourceLabelId: exemplar.id, score: h.score, sources, key,
+                found: { start: box.start, end: box.end, freqMin: box.freqMin, freqMax: box.freqMax },
+                hit: { start: h.start, end: h.end, freqMin: h.freqMin, freqMax: h.freqMax } } satisfies SimilarRecord,
         };
         out.push(sug);
         opts.onPick?.(sug, hi);

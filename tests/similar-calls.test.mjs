@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import { fft, nccCurve, pickPeaks, findSimilar, timeIoU, Reranker, createSearch, templateFrom, fitTemplate, findWithTemplate } from '../src/domain/similar/ncc.ts';
 import { SimilarSession } from '../src/app/similarSpectrogram.ts';
 import { bandSpectrogram } from '../src/app/similarSpectrogram.ts';
-import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN } from '../src/app/suggest-similar.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, userEdited, hitMove, meanCorrection, applyCorrection } from '../src/app/suggest-similar.ts';
 import { adoptLabels } from '../src/app/annotation-sets.ts';
 import { initWasmMain } from '../src/infrastructure/wasm-dsp/wasmMain.ts';
 
@@ -116,7 +116,8 @@ test('suggestions: skip labelled places and rejections, take BirdBox bounds, kee
     assert.deepEqual(out.map((s) => s.start), [5, 15.02]);
     assert.equal(out[0].origin, SIMILAR_ORIGIN);
     assert.equal(out[0].label, 'Blackbird');
-    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'], key: suggestionKey('Turdus merula', 5) });
+    assert.deepEqual(out[0].similar, { sourceLabelId: 'ex', score: 0.9, sources: ['correlation'], key: suggestionKey('Turdus merula', 5),
+        found: { start: 5, end: 5.4, freqMin: 2000, freqMax: 3000 }, hit: out[0].similar.hit });
     assert.deepEqual(out[1].similar.sources, ['correlation', 'BirdBox']);
     assert.equal(out[1].freqMin, 2300);
 
@@ -150,6 +151,65 @@ test('Reranker: a rejected call type drops, an accepted one rises', () => {
     for (const b of [1, 2]) for (const a of [3, 4, 5]) assert.ok(ranks[a] > ranks[b], `A ${a} above B ${b}`);
     const after = rr.decide(3, true);                        // accept one A
     for (const a of [4, 5]) assert.ok(after[a] > 0.8, 'accepted A lifts the other A calls');
+});
+
+test('Reranker: an accepted hit whose box was corrected compares from the corrected place', () => {
+    const A = [500, 1500, 2500];
+    const spec = twoTypes(3600, 60, [100, ...A], []);
+    const win = { r0: 17, r1: 34, c0: 100, c1: 140 };
+    // Hit 0 sits 30 frames early (the user drags it onto the call); hits 1, 2 are on the calls
+    const hits = [470, 1500, 2500].map((f) => ({ frame: f, shift: 0, score: 0.4, start: f * 0.01, end: f * 0.01 + 0.4, freqMin: 1700, freqMax: 3300 }));
+    const plain = new Reranker(spec, win, hits, 1).decide(0, true);
+    const fixed = new Reranker(spec, win, hits, 1).decide(0, true, { dt: 0.3, df: 0 });
+    for (const j of [1, 2]) assert.ok(fixed[j] > 0.8 && fixed[j] > plain[j] + 0.2, `corrected exemplar lifts call ${j}`);
+    assert.equal(hits[0].frame, 470, 'the caller\'s hits stay as found');
+});
+
+test('corrections: only user edits count, measured from the box as found; re-rank move from the hit', () => {
+    const found = { start: 1, end: 1.4, freqMin: 2000, freqMax: 4000 };
+    assert.equal(correctionOf({ ...found, similar: { found } }), null, 'unchanged');
+    const d = correctionOf({ start: 0.9, end: 1.5, freqMin: 2000, freqMax: 4500, similar: { found } });
+    assert.deepEqual(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Math.round(v * 1000) / 1000])), { start: -0.1, end: 0.1, freqMin: 0, freqMax: 500 });
+    // Moved by a carried-over correction, then copied untouched: no user edit, no re-rank move
+    const shown = { start: 1.1, end: 1.5, freqMin: 2000, freqMax: 4000 };
+    const carried = { ...shown, similar: { found, shown } };
+    assert.equal(userEdited(carried), false);
+    assert.equal(correctionOf(carried), null);
+    assert.equal(hitMove(carried), undefined);
+    // Edited after the carry-over: full offset from found
+    const edited = { ...shown, end: 1.7, similar: { found, shown } };
+    assert.ok(Math.abs(correctionOf(edited).end - 0.3) < 1e-9 && Math.abs(correctionOf(edited).start - 0.1) < 1e-9);
+    // BirdBox refined the hit 15.00–15.40 to 15.10–15.50; the user moves it to 15.15–15.55: 0.15 s from the hit
+    const hit = { start: 15, end: 15.4, freqMin: 2000, freqMax: 4000 }, bb = { start: 15.1, end: 15.5, freqMin: 2000, freqMax: 4000 };
+    const m = hitMove({ start: 15.15, end: 15.55, freqMin: 2000, freqMax: 4000, similar: { found: bb, hit } });
+    assert.ok(Math.abs(m.dt - 0.15) < 1e-9 && Math.abs(m.df) < 1e-9);
+    const mean = meanCorrection([d, { start: -0.3, end: 0.1, freqMin: 0, freqMax: 0 }]);
+    assert.ok(Math.abs(mean.start + 0.2) < 1e-9 && Math.abs(mean.freqMax - 250) < 1e-9);
+    assert.equal(meanCorrection([]), null);
+});
+
+test('applyCorrection keeps the box inside the recording with a minimum size', () => {
+    const b = applyCorrection({ start: 0.05, end: 0.2, freqMin: 100, freqMax: 7900 }, { start: -0.1, end: -0.5, freqMin: -200, freqMax: 500 }, 8000);
+    assert.deepEqual(b, { start: 0, end: 0.01, freqMin: 0, freqMax: 8000 });
+    // Both edges up past Nyquist: not inverted
+    const up = applyCorrection({ start: 1, end: 2, freqMin: 7800, freqMax: 7900 }, { start: 0, end: 0, freqMin: 400, freqMax: 400 }, 8000);
+    assert.ok(up.freqMin < up.freqMax && up.freqMax <= 8000 && up.freqMax - up.freqMin >= 10, JSON.stringify(up));
+    // Past the end of the recording
+    const late = applyCorrection({ start: 59.8, end: 59.95, freqMin: 1000, freqMax: 2000 }, { start: 0.3, end: 0.3, freqMin: 0, freqMax: 0 }, 8000, 60);
+    assert.ok(late.start < late.end && late.end <= 60, JSON.stringify(late));
+    // A recording shorter than the minimum box: the box is the whole recording, not longer
+    const tiny = applyCorrection({ start: 0, end: 0.005, freqMin: 1000, freqMax: 2000 }, { start: 0, end: 0.01, freqMin: 0, freqMax: 0 }, 8000, 0.008);
+    assert.ok(tiny.start === 0 && Math.abs(tiny.end - 0.008) < 1e-12, JSON.stringify(tiny));
+    // A box that fits stays as moved
+    assert.deepEqual(applyCorrection({ start: 1, end: 2, freqMin: 1000, freqMax: 2000 }, { start: 0.1, end: 0.2, freqMin: -100, freqMax: 100 }, 8000, 60),
+        { start: 1.1, end: 2.2, freqMin: 900, freqMax: 2100 });
+});
+
+test('suggestions remember the box as found', () => {
+    const sug = buildSuggestions({ id: 'ex', label: 'X', start: 0, end: 0.4, freqMin: 1000, freqMax: 2000 },
+        [{ start: 5, end: 5.4, freqMin: 1000, freqMax: 2000, score: 0.7 }], { labels: [], setId: 's', newId: () => 'n1' });
+    assert.deepEqual(sug[0].similar.found, { start: 5, end: 5.4, freqMin: 1000, freqMax: 2000 });
+    assert.deepEqual(sug[0].similar.hit, { start: 5, end: 5.4, freqMin: 1000, freqMax: 2000 });
 });
 
 test('SimilarSession runs find + decide in place without workers', async () => {

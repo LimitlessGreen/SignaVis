@@ -1,6 +1,6 @@
 // similar.worker.ts — one search session off the main thread (app/similarSpectrogram.ts SimilarSession).
 //   { type: 'find', spec, exemplar, opts } → { id, hits }      spec.values transferred, kept for re-ranking
-//   { type: 'decide', i, accepted }        → { id, ranks }     Reranker (domain/similar/ncc.ts)
+//   { type: 'decide', i, accepted, moved? } → { id, ranks }     Reranker (domain/similar/ncc.ts)
 // Errors come back as { id, error }.
 import { createSearch, type SearchState } from '../domain/similar/ncc.ts';
 
@@ -14,7 +14,7 @@ self.onmessage = (e: MessageEvent) => {
             (self as any).postMessage({ id, hits: search.hits });
         } else if (type === 'decide') {
             if (!search) throw new Error('no search');
-            const ranks = search.reranker.decide(e.data.i, e.data.accepted);
+            const ranks = search.reranker.decide(e.data.i, e.data.accepted, e.data.moved);
             (self as any).postMessage({ id, ranks }, [ranks.buffer]);
         }
     } catch (err: any) {

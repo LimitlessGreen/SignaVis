@@ -832,8 +832,8 @@ html[data-theme="light"] { @include sponsor-light; }
   z-index: 2990;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px 6px 14px;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
   border: 1px solid var(--color-accent);
   border-radius: 6px;
   background: var(--color-bg-secondary, #1f2937);
@@ -850,6 +850,39 @@ html[data-theme="light"] { @include sponsor-light; }
 .similar-review__pos,
 .similar-review__score { color: var(--color-text-secondary, #9ca3af); font-variant-numeric: tabular-nums; }
 
+// Pager: ⌃ 3 / 8 ⌄ in one pill; play as a round icon button
+.similar-review__pager {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+
+  .similar-review__pos { padding: 0 4px; min-width: 4.5ch; text-align: center; }
+}
+.similar-review__step,
+.similar-review__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+
+  &:hover { background: rgba(255, 255, 255, 0.1); color: var(--color-accent); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+}
+.similar-review__step { width: 24px; height: 22px; }
+.similar-review__play {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  padding-left: 2px;   // optical centre of the triangle
+}
+
 .similar-review__btn {
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -858,10 +891,42 @@ html[data-theme="light"] { @include sponsor-light; }
   padding: 2px 8px;
   cursor: pointer;
 
+  &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
   &:disabled { opacity: 0.4; cursor: default; }
-  &--ok { color: var(--color-success, #22c55e); font-weight: 700; }
-  &--no { color: var(--color-danger, #ef4444); font-weight: 700; }
+
+  // The two decisions: compact but filled, unmistakable
+  &--ok,
+  &--no {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 18px;
+    padding: 2px 10px;
+    color: #fff;
+    border-color: transparent;
+
+    kbd {
+      margin-left: 4px;
+      padding: 0 3px;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.25);
+      font: 600 10px/14px var(--font-mono, monospace);
+      vertical-align: 1px;
+    }
+  }
+  &--ok { background: #15803d; &:hover:not(:disabled) { background: #166534; } }
+  &--no { background: #b91c1c; &:hover:not(:disabled) { background: #991b1b; } }
 }
+
+.similar-review__bulk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 1px 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-text-secondary, #9ca3af);
+}
+.similar-review__btn--bulk { border: 0; background: rgba(255, 255, 255, 0.08); font-weight: 600; }
 
 .similar-review__thr {
   display: flex;
