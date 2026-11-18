@@ -1,6 +1,6 @@
 """Drag & drop and microphone recording (features/file-drop.ts, features/mic-recording.ts).
 
-Dev server needed:  uv run --with playwright python -I tools/e2e/drop-and-record.py http://localhost:5191/demo/labeling-app.html <clip.wav>
+Dev server needed:  uv run --with playwright python -I tools/e2e/drop-and-record.py http://localhost:5191/demo/labeling-app.html demo/samples/sweep-200-8000.wav
 Chromium runs with a fake microphone; the second load answers the replace-or-keep question with "Keep both". Exits non-zero on failure.
 """
 import base64
@@ -53,14 +53,15 @@ with sync_playwright() as p:
     page.wait_for_function(f'window.__signavis.recordingCount() > {n0}', timeout=15000)
     check('overlay while dragging', shown)
     check('overlay hidden after drop', not page.evaluate("document.querySelector('.file-drop-overlay').matches(':popover-open')"))
-    check('dropped file opened', file_label() == 'dropped.wav', file_label())
+    page.wait_for_timeout(500)   # a second (duplicate) add would land here
+    check('dropped file opened once', file_label() == 'dropped.wav' and n_rec() == n0 + 1, f'{file_label()}, {n_rec() - n0} added')
 
     # Microphone: button visible, record ~2 s, stop → new recording opened
     btn = page.locator('#recordBtn')
     check('record button visible', btn.is_visible())
     n1 = n_rec()
     btn.click()
-    page.wait_for_timeout(500)
+    page.wait_for_selector('#recordBtn.is-recording', timeout=10000)
     check('recording state', 'is-recording' in (btn.get_attribute('class') or '') and btn.inner_text().strip() == 'Stop', btn.inner_text())
     page.wait_for_timeout(1500)
     btn.click()
@@ -71,7 +72,10 @@ with sync_playwright() as p:
         added = True
     except Exception:
         added = False
-    check('recording opened as new entry', added and file_label().startswith('Recording_'), file_label())
+    page.wait_for_timeout(500)
+    # Exactly one more, and "Keep both" left the dropped recording in the list
+    check('recording opened as one new entry', added and file_label().startswith('Recording_') and n_rec() == n1 + 1,
+          f'{file_label()}, {n_rec() - n1} added')
     check('button back to Record', 'is-recording' not in (btn.get_attribute('class') or '') and btn.inner_text().strip() == 'Record')
     check('no page errors', not errs, '; '.join(errs))
     b.close()
