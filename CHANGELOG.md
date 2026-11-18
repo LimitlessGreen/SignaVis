@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - Unreleased
+
+### Added
+- Labeling app: **BirdBox call boxes** (Analyse → Call boxes) draw a
+  time/frequency box around every bird call; detection streams while it runs.
+- **Similar calls**: after one label, SignaVis suggests the repeats of that
+  call (also in other recordings) for a quick accept/reject review; the search
+  runs off the main thread. In SignaVis Lite, Perch 2 embeddings pick them.
+- **Label template**: species + tags for new labels; accepting a detection
+  takes over its BirdBox box; Snap uses BirdBox only around the click.
+- **Species lists** (new Species tab): own lists that limit BirdNET analysis,
+  like BirdNET-Analyzer's `--slist`.
+- **AnuraPAM** model preset (BirdNET V2.4 + 14 European anurans).
+- Phone UI (≤ 600 px or touch landscape) with Recordings · Review · Live ·
+  Species, review queue and live detection.
+- Onboarding wizard on first run; help popover with search; rewarding sponsor
+  card.
+
+### Changed
+- Species taxonomy follows **BirdNET+ V3.0** (about 1,900 more classes: frogs,
+  insects, mammals …), is built from the BirdNET species API, and species
+  images come from that API.
+- Species search shows grouped results (recent, this project, taxonomy) with
+  ranking by location and short codes.
+- Overview strip: clearer visible-range window and a detail strip for long
+  recordings.
+- Redesigned Analyse, Upload, Project and Audio tabs; modern app dialogs with
+  a filled primary button; selects drawn by the app (readable with any GTK
+  theme in SignaVis Lite on Linux).
+- SignaVis Lite: no browser wording for the default project.
+- Faster label rendering (keyed updates) and a restructured labeling app
+  (label store, commands, feature modules).
+- `onnxruntime-web` 1.31.1.
+
+### Fixed
+- Taxonomy 404 on GitHub Pages; two wrong Xeno-canto names in the taxonomy.
+- Full-band labels are no longer band-filtered on playback.
+- Waveform-track edits and Escape in the label editor.
+- The BirdNET model picker no longer overlaps long model names.
+
 ## [1.2.0] - 2026-11-16
 
 ### Added
