@@ -1098,7 +1098,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _emitCreate(region: any) { this.player?._emit?.('spectrogramlabelcreate', { label: { ...(region as any) } }); }
     _emitUpdate(item: any) {
         // A time-only resize reports the band as stored, not as clamped to the display maximum
-        const band = (this._editing as any)?.keepBand;
+        const ed = this._editing as any;
+        // A time handle pressed without moving never set keepBand: still a time-only edit
+        const band = ed?.keepBand ?? ((ed?.mode === 'resize-l' || ed?.mode === 'resize-r') && item?.id ? this._storedBands.get(item.id) : null);
         // Any other committed edit: its band is now the stored one (also without a new set())
         if (!band && this._editing && item?.id) this._storedBands.set(item.id, { freqMin: Number(item.freqMin), freqMax: Number(item.freqMax) });
         this.player?._emit?.('spectrogramlabelupdate', { label: { ...(item as any), ...(band || {}) } });
@@ -1115,7 +1117,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             return;
         }
         // Ensure incoming items are normalized (IDs, defaults)
-        this._storedBands = new Map(v.map((i: any) => [i?.id, { freqMin: Number(i?.freqMin), freqMax: Number(i?.freqMax) }] as const)
+        // Same defaults as _normalize (freqMax falls back to freqMin), then numbers (strings allowed)
+        this._storedBands = new Map(v.map((i: any) => [i?.id, { freqMin: Number(i?.freqMin ?? 0), freqMax: Number(i?.freqMax ?? i?.freqMin ?? 0) }] as const)
             .filter(([id, b]) => id && Number.isFinite(b.freqMin) && Number.isFinite(b.freqMax)));
         this._items = v.map((i) => this._normalize(i));
     }

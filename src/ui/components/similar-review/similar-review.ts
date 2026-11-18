@@ -136,10 +136,15 @@ export class SimilarReview {
         const ids = this.aboveThreshold().map((i) => i.id);
         if (!ids.length) return;
         const set = new Set(ids);
+        const cur = this.current?.id;
         this.items = this.items.filter((i) => !set.has(i.id));
-        this.pos = 0;
+        // A pinned (clicked / stepped to) suggestion below the threshold stays on screen
+        const keep = !this.fresh && cur && !set.has(cur) ? this.items.findIndex((i) => i.id === cur) : -1;
+        this.pos = Math.max(0, keep);
         this.h.onAccept(ids);
-        this.afterChange();
+        if (keep < 0) { this.afterChange(); return; }
+        if (!this.items.length) { this.close(); return; }
+        this.render();
     }
 
     private afterChange() {
