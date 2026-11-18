@@ -23,7 +23,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp, formatSecondsShort, formatTime } from '../shared/utils.ts';
-import { DEFAULT_ZOOM_PPS, MIN_WINDOW_NORM } from '../shared/constants.ts';
+import { DEFAULT_ZOOM_PPS, MIN_WINDOW_SECONDS } from '../shared/constants.ts';
 
 /** Main-strip window narrower than this (px) gets the detail strip. */
 const OVERVIEW_COMPACT_PX = 36;
@@ -701,7 +701,9 @@ export class ViewportManager extends EventTarget {
         const d        = this._d;
         const minPps   = this._getMinPps();
         const maxPps   = Math.max(minPps, Number(d.zoomSlider?.max || 2000));
-        const minSpanNorm = Math.max(MIN_WINDOW_NORM, (vw / maxPps) / duration);
+        // The narrowest window is set by the zoom limit, not by a share of the file:
+        // a fixed share made a 1 h recording jump to 72 s at the first resize.
+        const minSpanNorm = Math.max(MIN_WINDOW_SECONDS, vw / maxPps) / duration;
         const maxSpanNorm = Math.min(1, (vw / minPps) / duration);
         return {
             minSpanNorm: Math.min(minSpanNorm, 1),
@@ -768,6 +770,8 @@ export class ViewportManager extends EventTarget {
             const final = this._overviewNeedsFinalRedraw;
             this._overviewNeedsFinalRedraw = false;
             this._applyOverviewWindowToViewport();
+            // Drag finished: refit the detail strip to the new window size.
+            if (final && !this._interaction.isOverviewDrag) this._updateOverviewWindowElement();
             // Same-frame draw, so the view keeps up with the overview window;
             // the scroll event that follows finds this position already drawn.
             this._redrawNow(final);

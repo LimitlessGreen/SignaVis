@@ -268,3 +268,10 @@ test('ViewportManager lens: detail drag scales pointer movement by the lens span
     vm._updateOverviewDrag(180); // 80 px of 800 = 10 % of the lens
     assert.ok(Math.abs(vm.windowStartNorm - 0.51) < 1e-9);
 });
+
+test('ViewportManager: overview resize limit does not depend on recording length', () => {
+    const vm = makeViewport({ getAudioBuffer: () => ({ duration: 3600 }) });
+    const { minSpanNorm } = vm._getOverviewSpanConstraints();
+    // 800 px viewport at max zoom 450 px/s ≈ 1.8 s — not 2 % of the file (72 s)
+    assert.ok(minSpanNorm * 3600 < 2, `min span ${minSpanNorm * 3600}s`);
+});
