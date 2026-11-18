@@ -300,6 +300,10 @@
   color: var(--color-accent);
   font: 600 9.5px ui-monospace, monospace;
 }
+.search-listed {
+  padding: 0 5px; border-radius: 999px; font-size: 10px; line-height: 15px;
+  background: var(--color-accent-faint); color: var(--color-accent); font-weight: 600;
+}
 .search-local { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; opacity: 0.8; }
 
 .species-search-item--create {

@@ -120,3 +120,37 @@ test('labels with a variant scientific name count towards the canonical species'
     getLabels: () => [{ label: 'a', scientificName: 'Parus major' }, { label: 'b', scientificName: 'Parus majr' }] })('kohl');
   assert.deepEqual(out.map((r) => [r.scientificName, r.count]), [['Parus major', 2]]);
 });
+
+test('species on the active list rank first, before local ones, and are marked', () => {
+  const p = createSuggestionProvider({
+    taxonomy: tax, getLang: () => 'de', getLabels: () => [], getPool: () => [],
+    getGeoScore: (sci) => ({ 'Poecile palustris': 0.5 })[sci] ?? null,
+    isListed: (sci) => sci === 'Carpodacus sibiricus',
+  });
+  const out = p('meise').filter((r) => r.group === 'taxonomy');
+  assert.deepEqual(out.map((r) => r.name).slice(0, 2), ['Meisengimpel', 'Sumpfmeise']);
+  assert.equal(out[0].listed, true);
+  assert.equal(out[1].listed, false);
+});
+
+test('compareRanked: listed beats local within the same match bucket only', () => {
+  const rows = [
+    { name: 'local', tier: MATCH.PREFIX, geo: 0.5 },
+    { name: 'listed', tier: MATCH.PREFIX, listed: true },
+    { name: 'exact', tier: MATCH.EXACT },
+  ];
+  assert.deepEqual(rows.sort(compareRanked).map((r) => r.name), ['exact', 'listed', 'local']);
+});
+
+test('project labels: a listed species beats an unlisted one of the same match bucket', () => {
+  const p = createSuggestionProvider({
+    taxonomy: tax, getLang: () => 'de', getPool: () => [], getGeoScore: () => null,
+    getLabels: () => [
+      { label: 'Meisengimpel', scientificName: 'Carpodacus sibiricus' },
+      { label: 'Sumpfmeise', scientificName: 'Poecile palustris' },
+    ],
+    isListed: (sci) => sci === 'Poecile palustris',
+  });
+  const project = p('meise').filter((r) => r.group === 'project').map((r) => r.name);
+  assert.deepEqual(project, ['Sumpfmeise', 'Meisengimpel']);
+});
