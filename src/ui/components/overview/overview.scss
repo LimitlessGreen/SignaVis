@@ -1,81 +1,145 @@
 /* Overview strip — minimap + label tracks */
 
-.overview-container {
+.overview-container,
+.overview-detail {
     position: relative;
     height: 48px;
     min-height: 48px;
     background: var(--color-bg-secondary);
     border-top: 1px solid var(--color-border);
     overflow: hidden;
+    user-select: none;
 }
 
-[data-aw="overviewCanvas"] {
+.overview-detail {
+    height: 34px;
+    min-height: 34px;
+}
+
+.overview-detail[hidden] { display: none; }
+
+[data-aw="overviewCanvas"],
+[data-aw="overviewDetailCanvas"] {
     display: block;
     width: 100%;
     height: 100%;
     cursor: pointer;
 }
 
+/* Visible range: everything outside it is dimmed, so the window reads at a
+   glance on any waveform or spectrogram. The huge spread shadow is clipped
+   by the strip. */
 .overview-window {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    border-left: 2px solid var(--color-accent);
-    border-right: 2px solid var(--color-accent);
-    background: rgba(56, 189, 248, 0.08);
+    top: 1px;
+    bottom: 1px;
+    border: 1.5px solid var(--color-accent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    box-shadow:
+        0 0 0 100vmax var(--overview-dim, rgba(5, 10, 25, 0.55)),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.12);
     pointer-events: auto;
     cursor: grab;
     box-sizing: border-box;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.overview-window:hover {
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 
 .overview-window:active {
     cursor: grabbing;
 }
 
+/* Edge handles: a wide invisible hit area with a pill grip on the border. */
 .overview-window .handle {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 8px;
-    background: rgba(56, 189, 248, 0.6);
+    width: 14px;
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
+    z-index: 1;
 }
 
-.overview-window .handle.left { left: -4px; }
-.overview-window .handle.right { right: -4px; }
+.overview-window .handle.left  { left: -8px; }
+.overview-window .handle.right { right: -8px; }
 
-/* Grip for a window too narrow to grab (long recordings, deep zoom) */
-.overview-window .overview-grip { display: none; }
-
-.overview-window.compact {
-    border-left-width: 1px;
-    border-right-width: 1px;
+.overview-window .handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: min(22px, 60%);
+    transform: translate(-50%, -50%);
+    border-radius: 3px;
     background: var(--color-accent);
+    box-shadow:
+        0 0 0 1.5px var(--color-bg-secondary),
+        0 1px 4px rgba(0, 0, 0, 0.45);
+    transition: height 0.12s, background 0.12s;
+}
+
+/* Keep the grips inside the strip at the file start/end. */
+.overview-window .handle.left::after  { left: calc(50% + 2px); }
+.overview-window .handle.right::after { left: calc(50% - 2px); }
+
+.overview-window .handle:hover::after,
+.overview-window .handle:active::after {
+    height: min(30px, 80%);
+    background: var(--color-accent-hover, var(--color-accent));
+}
+
+/* Main-strip window too narrow to use (long recordings, deep zoom): a solid
+   marker for the true range; the lens bracket and the detail strip take over. */
+.overview-window.compact {
+    border-width: 0;
+    border-radius: 1px;
+    background: var(--color-accent);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 80%, transparent);
+    pointer-events: none;
 }
 
 .overview-window.compact .handle { display: none; }
 
-.overview-window.compact .overview-grip {
-    display: block;
+/* Range magnified in the detail strip, marked on the main strip. */
+.overview-lens {
     position: absolute;
-    left: 50%;
-    bottom: 2px;
-    width: 24px;
-    height: 14px;
-    transform: translateX(-50%);
-    border-radius: 4px;
-    background: var(--color-accent);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-    /* three grip lines */
-    background-image: repeating-linear-gradient(90deg,
-        transparent 0 7px, rgba(0, 0, 0, 0.35) 7px 8px, transparent 8px 10px);
-    background-size: 14px 8px;
-    background-position: center;
-    background-repeat: no-repeat;
+    top: 1px;
+    bottom: 1px;
+    box-sizing: border-box;
+    border: 1px dashed color-mix(in srgb, var(--color-accent) 75%, transparent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    box-shadow: 0 0 0 100vmax var(--overview-dim, rgba(5, 10, 25, 0.55));
     cursor: grab;
     touch-action: none;
+}
+
+.overview-lens[hidden] { display: none; }
+.overview-lens:active { cursor: grabbing; }
+
+/* With a lens, the lens does the dimming and the marker sits on top of it. */
+.overview-container:has(.overview-lens:not([hidden])) .overview-window {
+    z-index: 1;
+}
+
+.overview-detail-range {
+    position: absolute;
+    right: 6px;
+    top: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-bg-primary) 75%, transparent);
+    pointer-events: none;
 }
 
 /* ═══ Overview Label Section (collapsible) ═══ */

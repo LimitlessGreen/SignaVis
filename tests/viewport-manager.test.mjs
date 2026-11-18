@@ -206,3 +206,65 @@ test('ViewportManager: updateCoords swaps the internal coords reference', () => 
     vm.updateCoords(newCoords);
     assert.strictEqual(vm._coords, newCoords);
 });
+
+// ─── Detail strip (lens) for long recordings ──────────────────────────
+
+function makeLensViewport() {
+    const el = () => ({ style: {}, hidden: true, clientWidth: 800, textContent: '', classList: { toggle() {} } });
+    const lensEvents = [];
+    const vm = makeViewport({ onLensChange: (r) => lensEvents.push(r), getAudioBuffer: () => ({ duration: 3600 }) });
+    Object.assign(vm._d, {
+        overviewContainer: el(), overviewWindow: el(), overviewLens: el(),
+        overviewDetail: el(), overviewDetailWindow: el(), overviewDetailRange: el(),
+    });
+    return { vm, lensEvents };
+}
+
+test('ViewportManager lens: wide window shows no detail strip', () => {
+    const { vm, lensEvents } = makeLensViewport();
+    vm.windowStartNorm = 0.2; vm.windowEndNorm = 0.5;
+    vm._updateOverviewWindowElement();
+    assert.equal(vm.lensActive, false);
+    assert.equal(vm._d.overviewDetail.hidden, true);
+    assert.equal(lensEvents.length, 0);
+});
+
+test('ViewportManager lens: narrow window opens a magnified range around it', () => {
+    const { vm, lensEvents } = makeLensViewport();
+    vm.windowStartNorm = 0.5; vm.windowEndNorm = 0.5 + 10 / 3600;
+    vm._updateOverviewWindowElement();
+    assert.equal(vm.lensActive, true);
+    assert.equal(vm._d.overviewDetail.hidden, false);
+    const span = vm.lensEndNorm - vm.lensStartNorm;
+    assert.ok(Math.abs(span - 8 * 10 / 3600) < 1e-9);
+    assert.ok(vm.lensStartNorm <= vm.windowStartNorm && vm.lensEndNorm >= vm.windowEndNorm);
+    assert.equal(lensEvents.length, 1);
+    // Window shown at 1/8 of the detail width
+    assert.ok(Math.abs(parseFloat(vm._d.overviewDetailWindow.style.width) - 100) < 1e-6);
+    assert.match(vm._d.overviewDetailRange.textContent, /^29:/);
+});
+
+test('ViewportManager lens: stays put while the window moves inside, follows when it leaves', () => {
+    const { vm, lensEvents } = makeLensViewport();
+    vm.windowStartNorm = 0.5; vm.windowEndNorm = 0.5 + 10 / 3600;
+    vm._updateOverviewWindowElement();
+    const ls = vm.lensStartNorm;
+    vm.windowStartNorm += 5 / 3600; vm.windowEndNorm += 5 / 3600;
+    vm._updateOverviewWindowElement();
+    assert.equal(vm.lensStartNorm, ls);
+    assert.equal(lensEvents.length, 1);
+    vm.windowStartNorm = 0.9; vm.windowEndNorm = 0.9 + 10 / 3600;
+    vm._updateOverviewWindowElement();
+    assert.ok(vm.lensStartNorm <= 0.9 && vm.lensEndNorm >= vm.windowEndNorm);
+    assert.equal(lensEvents.length, 2);
+});
+
+test('ViewportManager lens: detail drag scales pointer movement by the lens span', () => {
+    const { vm } = makeLensViewport();
+    vm._interaction.overviewSubMode = 'move';
+    vm._queueOverviewViewportApply = () => {};
+    vm.windowStartNorm = 0.5; vm.windowEndNorm = 0.5 + 10 / 3600;
+    vm._startOverviewDrag('move', 100, 0.1);
+    vm._updateOverviewDrag(180); // 80 px of 800 = 10 % of the lens
+    assert.ok(Math.abs(vm.windowStartNorm - 0.51) < 1e-9);
+});

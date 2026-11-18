@@ -22,8 +22,24 @@
 //   'selection'      — { start: number, end: number }  (viewport visible range)
 // ═══════════════════════════════════════════════════════════════════════
 
-import { clamp, formatSecondsShort } from '../shared/utils.ts';
+import { clamp, formatSecondsShort, formatTime } from '../shared/utils.ts';
 import { DEFAULT_ZOOM_PPS, MIN_WINDOW_NORM } from '../shared/constants.ts';
+
+/** Main-strip window narrower than this (px) gets the detail strip. */
+const OVERVIEW_COMPACT_PX = 36;
+/** Detail strip shows this many viewport widths around the view. */
+const OVERVIEW_LENS_FACTOR = 8;
+
+/** Position a window element for range [s,e] inside a strip showing [from,to]. */
+function placeOverviewWindow(el: HTMLElement | null, s: number, e: number, from: number, to: number, w: number) {
+    if (!el) return;
+    const k = w / Math.max(1e-12, to - from);
+    let left  = (s - from) * k;
+    const width = Math.max(2, (e - s) * k);
+    if (left + width > w) left = Math.max(0, w - width);
+    el.style.left  = `${left}px`;
+    el.style.width = `${width}px`;
+}
 
 import type { CoordinateSystem } from '../domain/coordinateSystem.ts';
 import type { InteractionState } from './interactionState.ts';
@@ -43,6 +59,8 @@ export interface ViewportManagerOptions {
     /** Cheap, synchronous: refresh coords and the scroll extent after a pps change. */
     onZoomApplied?: () => void;
     getSpectroHasData: () => boolean;
+    /** The detail (lens) strip shows a new range, or was switched off (null). */
+    onLensChange?: (range: { startNorm: number; endNorm: number } | null) => void;
     emit: (name: string, detail?: unknown) => void;
 }
 
@@ -84,6 +102,11 @@ export class ViewportManager extends EventTarget {
     _lastViewRangeTextStart: any;
     /** Overview container width the window element was last laid out for. */
     _overviewLayoutWidth = 0;
+    /** Detail strip range (normalized). Active when the main window is too narrow to use. */
+    lensActive = false;
+    lensStartNorm = 0;
+    lensEndNorm = 1;
+    _onLensChange: (range: { startNorm: number; endNorm: number } | null) => void;
     _lastViewRangeTextEnd: any;
     /**
      * @param {object} opts
@@ -103,7 +126,7 @@ export class ViewportManager extends EventTarget {
      */
     constructor({ d, coords, interaction, layout, playbackViewportConfig,
                   getAudioBuffer, getWavesurfer, scheduleUiUpdate,
-                  onRedrawNeeded, onZoomApplied, getSpectroHasData, emit }: ViewportManagerOptions) {
+                  onRedrawNeeded, onZoomApplied, getSpectroHasData, onLensChange, emit }: ViewportManagerOptions) {
         super();
 
         this._d           = d;
@@ -119,6 +142,7 @@ export class ViewportManager extends EventTarget {
         this._onRedrawNeeded   = onRedrawNeeded;
         this._onZoomApplied    = onZoomApplied ?? (() => {});
         this._getSpectroHasData = getSpectroHasData;
+        this._onLensChange      = onLensChange ?? (() => {});
         this._emitHost         = emit;
 
         // ── State ────────────────────────────────────────────────────
@@ -387,8 +411,8 @@ export class ViewportManager extends EventTarget {
      * @param {'move'|'left'|'right'} mode
      * @param {number} clientX
      */
-    startOverviewDrag(mode: 'move'|'left'|'right', clientX: number) {
-        this._startOverviewDrag(mode, clientX);
+    startOverviewDrag(mode: 'move'|'left'|'right', clientX: number, scale = 1) {
+        this._startOverviewDrag(mode, clientX, scale);
     }
 
     /**
@@ -612,18 +636,62 @@ export class ViewportManager extends EventTarget {
 
     _updateOverviewWindowElement() {
         if (!this._layout.showOverview) return;
-        const cw = this._d.overviewContainer?.clientWidth || 0;
+        const d  = this._d;
+        const cw = d.overviewContainer?.clientWidth || 0;
         if (cw <= 0) return;
         this._overviewLayoutWidth = cw;
-        // Always draw the true range (a thin line when tiny). Below a
-        // grabbable width a separate grip takes over dragging, so the box
-        // never claims a wider range than is actually shown.
-        let left  = this.windowStartNorm * cw;
-        let width = Math.max(2, this.windowEndNorm * cw - left);
-        if (left + width > cw) left = Math.max(0, cw - width);
-        this._d.overviewWindow.style.left  = `${left}px`;
-        this._d.overviewWindow.style.width = `${width}px`;
-        this._d.overviewWindow.classList.toggle('compact', width < 24);
+        const s = this.windowStartNorm;
+        const e = this.windowEndNorm;
+        // Always draw the true range (a thin line when tiny). Below a usable
+        // width the detail strip takes over: it magnifies the surroundings so
+        // the window there has real handles again.
+        const compact = (e - s) * cw < OVERVIEW_COMPACT_PX;
+        placeOverviewWindow(d.overviewWindow, s, e, 0, 1, cw);
+        d.overviewWindow?.classList.toggle('compact', compact);
+        this._updateLens(compact, cw);
+    }
+
+    /** Pick, keep or drop the detail strip range for the current window. */
+    _updateLens(compact: boolean, cw: number) {
+        const d = this._d;
+        if (!d.overviewDetail || !d.overviewLens) return;
+        const s = this.windowStartNorm;
+        const e = this.windowEndNorm;
+        const span = e - s;
+        const want = compact && span < 1;
+        let changed = want !== this.lensActive;
+        if (want) {
+            const target = Math.min(1, span * OVERVIEW_LENS_FACTOR);
+            const cur = this.lensEndNorm - this.lensStartNorm;
+            // Resizing in the detail strip keeps its range: the window must not
+            // slide away under the pointer. Otherwise refit after a zoom.
+            const detailDrag = this._interaction.isOverviewDrag && (this._interaction.ctx.overviewScale ?? 1) < 1;
+            const refit = !this.lensActive || (!detailDrag && (cur / target > 1.5 || cur / target < 0.67));
+            const outside = s < this.lensStartNorm - 1e-9 || e > this.lensEndNorm + 1e-9;
+            if (refit || outside) {
+                const L = refit ? target : cur;
+                const ls = clamp((s + e) / 2 - L / 2, 0, 1 - L);
+                if (Math.abs(ls - this.lensStartNorm) > 1e-9 || Math.abs(ls + L - this.lensEndNorm) > 1e-9) changed = true;
+                this.lensStartNorm = ls;
+                this.lensEndNorm   = ls + L;
+            }
+        }
+        this.lensActive = want;
+        d.overviewLens.hidden   = !want;
+        d.overviewDetail.hidden = !want;
+        if (want) {
+            const ls = this.lensStartNorm, le = this.lensEndNorm;
+            d.overviewLens.style.left  = `${ls * cw}px`;
+            d.overviewLens.style.width = `${Math.max(6, (le - ls) * cw)}px`;
+            const dw = d.overviewDetail.clientWidth || cw;
+            placeOverviewWindow(d.overviewDetailWindow, s, e, ls, le, dw);
+            const buf = this._getAudioBuffer();
+            if (d.overviewDetailRange && buf && changed) {
+                d.overviewDetailRange.textContent =
+                    `${formatTime(ls * buf.duration)} – ${formatTime(le * buf.duration)}`;
+            }
+        }
+        if (changed) this._onLensChange(want ? { startNorm: this.lensStartNorm, endNorm: this.lensEndNorm } : null);
     }
 
     _getOverviewSpanConstraints() {
@@ -641,13 +709,14 @@ export class ViewportManager extends EventTarget {
         };
     }
 
-    _startOverviewDrag(mode: 'move'|'left'|'right', clientX: number) {
+    _startOverviewDrag(mode: 'move'|'left'|'right', clientX: number, scale = 1) {
         /** @type {Record<string, import('./interactionState.ts').InteractionMode>} */
         const modeMap = { move: 'overview-move', left: 'overview-resize-left', right: 'overview-resize-right' };
         if (!this._interaction.enter(modeMap[mode])) return;
         this._interaction.ctx.overviewStartX    = clientX;
         this._interaction.ctx.overviewStartNorm = this.windowStartNorm;
         this._interaction.ctx.overviewEndNorm   = this.windowEndNorm;
+        this._interaction.ctx.overviewScale     = scale;
     }
 
     _updateOverviewDrag(clientX: number) {
@@ -658,7 +727,7 @@ export class ViewportManager extends EventTarget {
         if (Math.abs(clientX - ctx.overviewStartX) > 2) ctx.overviewMoved = true;
 
         const cw        = this._d.overviewContainer?.clientWidth || 1;
-        const deltaNorm = (clientX - ctx.overviewStartX) / cw;
+        const deltaNorm = (clientX - ctx.overviewStartX) / cw * (ctx.overviewScale ?? 1);
         const { minSpanNorm, maxSpanNorm } = this._getOverviewSpanConstraints();
         const fixedStart = ctx.overviewStartNorm;
         const fixedEnd   = ctx.overviewEndNorm;

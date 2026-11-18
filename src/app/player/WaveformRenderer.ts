@@ -28,6 +28,8 @@ export interface WaveformRendererDeps {
         waveformContent:        HTMLElement | null;
         overviewCanvas:         HTMLCanvasElement | null;
         overviewContainer:      HTMLElement | null;
+        overviewDetailCanvas?:  HTMLCanvasElement | null;
+        overviewDetail?:        HTMLElement | null;
         freqLabels:             HTMLElement | null;
         amplitudeLabels:        HTMLElement | null;
     };
@@ -115,8 +117,31 @@ export class WaveformRenderer {
         this.#scheduleUiUpdate();
     }
 
+    #detailRange: { startNorm: number; endNorm: number } | null = null;
+
+    /**
+     * Detail strip below the overview (long recordings): always a waveform,
+     * since the overview spectrogram is a whole-file image. null = hidden.
+     */
+    drawOverviewDetail(range?: { startNorm: number; endNorm: number } | null): void {
+        if (range !== undefined) this.#detailRange = range;
+        const r = this.#detailRange;
+        const { overviewDetailCanvas, overviewDetail } = this.#d;
+        const audioBuffer = this.#getAudioBuffer();
+        if (!r || !overviewDetailCanvas || !overviewDetail || !audioBuffer || overviewDetail.hidden) return;
+        renderOverviewWaveform({
+            audioBuffer,
+            overviewCanvas: overviewDetailCanvas,
+            overviewContainer: overviewDetail,
+            amplitudePeakAbs: this.#getAmplitudePeakAbs(),
+            startNorm: r.startNorm,
+            endNorm: r.endNorm,
+        });
+    }
+
     drawOverviewWaveform(): void {
         if (!this.#getShowOverview()) return;
+        this.drawOverviewDetail();
         const { overviewCanvas, overviewContainer } = this.#d;
         if (!overviewCanvas || !overviewContainer) return;
         const audioBuffer = this.#getAudioBuffer();

@@ -258,11 +258,16 @@ export function renderOverviewWaveform({
     overviewCanvas,
     overviewContainer,
     amplitudePeakAbs,
+    startNorm = 0,
+    endNorm = 1,
 }: {
     audioBuffer: AudioBuffer;
     overviewCanvas: HTMLCanvasElement;
     overviewContainer: HTMLElement;
     amplitudePeakAbs: number;
+    /** Part of the file to show (normalized); the detail strip shows a slice. */
+    startNorm?: number;
+    endNorm?: number;
 }) {
     if (!audioBuffer) return;
 
@@ -270,28 +275,35 @@ export function renderOverviewWaveform({
     if (!ctx) return;
 
     try {
-        (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs };
+        (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs, startNorm, endNorm };
     } catch (e) {}
 
+    // Device pixels, so the strip stays crisp on HiDPI screens.
+    const dpr = Math.max(1, Math.min(3, (globalThis as any).devicePixelRatio || 1));
     const rect = overviewContainer.getBoundingClientRect();
-    overviewCanvas.width = Math.max(1, Math.floor(rect.width));
-    overviewCanvas.height = Math.max(1, Math.floor(rect.height));
+    const W = Math.max(1, Math.floor(rect.width * dpr));
+    const H = Math.max(1, Math.floor(rect.height * dpr));
+    overviewCanvas.width = W;
+    overviewCanvas.height = H;
 
-    ctx.clearRect(0, 0, overviewCanvas.width, overviewCanvas.height);
+    ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
-    ctx.fillRect(0, 0, overviewCanvas.width, overviewCanvas.height);
+    ctx.fillRect(0, 0, W, H);
 
     const channelData = cachedChannelData(audioBuffer);
     const totalSamples = channelData.length;
-    const amp = overviewCanvas.height / 2;
+    const s0 = Math.floor(clamp(startNorm, 0, 1) * totalSamples);
+    const s1 = Math.max(s0 + 1, Math.ceil(clamp(endNorm, 0, 1) * totalSamples));
+    const span = s1 - s0;
+    const mid = H / 2;
     const ampScale = 1 / Math.max(1e-6, amplitudePeakAbs);
+    // Keep a little headroom so peaks do not touch the strip edges.
+    const amp = mid * 0.9;
 
-    ctx.strokeStyle = getCssVar('--color-accent', '#60a5fa');
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < overviewCanvas.width; x++) {
-        const start = Math.floor(x * totalSamples / overviewCanvas.width);
-        const end = Math.min(totalSamples, Math.floor((x + 1) * totalSamples / overviewCanvas.width));
+    ctx.fillStyle = getCssVar('--color-accent', '#60a5fa');
+    for (let x = 0; x < W; x++) {
+        const start = s0 + Math.floor(x * span / W);
+        const end = Math.min(s1, Math.max(start + 1, s0 + Math.floor((x + 1) * span / W)));
         let min = 1;
         let max = -1;
         for (let i = start; i < end; i++) {
@@ -299,10 +311,10 @@ export function renderOverviewWaveform({
             if (v < min) min = v;
             if (v > max) max = v;
         }
-        ctx.beginPath();
-        ctx.moveTo(x, (1 + min) * amp);
-        ctx.lineTo(x, (1 + max) * amp);
-        ctx.stroke();
+        if (min > max) continue;
+        const y0 = mid - max * amp;
+        const y1 = mid - min * amp;
+        ctx.fillRect(x, y0, 1, Math.max(dpr, y1 - y0));
     }
 
     installThemeObserver(overviewCanvas, () => {
