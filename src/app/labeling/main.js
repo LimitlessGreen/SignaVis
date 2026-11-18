@@ -1210,7 +1210,7 @@ function buildProjectSnapshot() {
     updatedAt: Date.now(),
     audioSource: serializeAudioSource(),
     annotations: serializeOverlayAnnotations(),
-    labels: state.labels.map((l) => ({ ...l })),
+    labels: labelsToSave().map((l) => ({ ...l })),   // without suggestions of an open review
     settings: {
       taxonomyLang: state.taxonomyLang,
       activeSetId: state.activeSetId,

@@ -158,6 +158,21 @@ with sync_playwright() as p:
     saved = page.evaluate(f"id => ({SV}.recordings().find(e => e.id === id)?.annotations || []).filter(l => l.origin === 'Similar').length", first)
     check(saved == 0, f'switching file: no suggestions saved with the leaving recording ({saved})')
     check(page.locator('.similar-review').count() == 0, 'no review open after switching and Undo')
+    # Switching file while the review is open (no Esc): it closes, nothing saved with the leaving recording
+    page.evaluate(f"""() => {{ const sv = {SV}; const own = [...sv.state.labelSets.values()].find(s => s.origin !== 'BirdBox' && !s.locked)?.id;
+        sv.labelStore.add({{ id: 'ex', setId: own, origin: 'manual', label: 'Wood Thrush', scientificName: 'Hylocichla mustelina',
+          start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); }}""")
+    search()
+    check(page.locator('.similar-review').count() == 1 and len(page.evaluate(SUGG)) > 0, 'review open in the second recording')
+    second = page.evaluate(f"{SV}.activeRecordingId()")
+    third = clip[:-4] + '-copy2.wav'; shutil.copy(clip, third)
+    page.set_input_files('#fileInput', third); page.wait_for_timeout(500)
+    if page.locator('.app-modal [data-v="keep"]').count(): page.locator('.app-modal [data-v="keep"]').click()
+    page.wait_for_function(f"{SV}.activeRecordingId() !== null && {SV}.activeRecordingId() !== {second!r}", timeout=30000)
+    page.wait_for_timeout(500)
+    check(page.locator('.similar-review').count() == 0, 'switching file closes the open review')
+    saved = page.evaluate(f"id => ({SV}.recordings().find(e => e.id === id)?.annotations || []).filter(l => l.origin === 'Similar').length", second)
+    check(saved == 0, f'switching with the review open: no suggestions saved with the leaving recording ({saved})')
     check(not errs, f'page errors: {errs}')
     b.close()
 sys.exit(1 if fails else 0)
