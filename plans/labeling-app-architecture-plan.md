@@ -256,5 +256,5 @@ Module liegen in `src/app/labeling/features/`, typisiert, ohne `@ts-nocheck`.
   Erfolgsdialog und Eintrag unter „Hochgeladene Sets“. Gegenprobe ohne `onSetUploaded` scheitert.
   label-list-behaviour, escape-cancels-drag, waveform-track-edits, label-template: Ausgabe gleich wie `main`.
 - Weitere Kandidaten (abgeschlossen, wenig geteilter Zustand):
-  Upload-Assistent, Kontextmenüs, Species-Suche, Lite-Integration. Projektspeicher zuletzt (viele `let`-Variablen,
+  Kontextmenüs, Species-Suche, Lite-Integration. Projektspeicher zuletzt (viele `let`-Variablen,
   die andere Teile lesen → erst Zustand in ein Objekt bündeln).
