@@ -3025,7 +3025,11 @@ function syncActiveSimilar() {
   let id = null;
   try {
     // Labels restored (e.g. undo): the review keeps only suggestions that still exist, closes without any
-    if (similarReview.isOpen) similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+    if (similarReview.isOpen) {
+      similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+      // The restore may have undone copies whose corrections were counted: start the mean afresh
+      _similarCorrections.length = 0;
+    }
     id = similarReview.currentId;
   } catch { /* before the review exists (early session restore) */ }
   setActiveSimilar(id && state.labels.some((l) => l.id === id) ? id : null);

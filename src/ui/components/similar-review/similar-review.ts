@@ -46,6 +46,7 @@ export class SimilarReview {
         this.title = title;
         this.items = [...items].sort((a, b) => b.score - a.score);
         this.pos = 0;
+        this.fresh = true;   // a new review starts unpinned
         if (!this.el) {
             this.el = this.build();
             document.body.appendChild(this.el);
