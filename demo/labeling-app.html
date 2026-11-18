@@ -67,18 +67,38 @@
       <!-- Left: brand + file controls -->
       <div class="topbar-left">
         <div class="brand">
-          <span class="heart-wrap">
-            <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="heart-link">
-              <span class="heart">♥</span>
-            </a>
-          </span>
+          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="heart-link" aria-label="Sponsor SignaVis" aria-describedby="sponsorCard">
+            <svg class="heart" viewBox="0 0 24 24" aria-hidden="true">
+              <defs><clipPath id="heartClip"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.1 1.8-1.9 3.3-3.1 5.4-3.1 3.6 0 5.7 3.8 4.2 7.2C19.5 16.4 12 21 12 21z"/></clipPath></defs>
+              <g clip-path="url(#heartClip)"><rect class="heart__fill" x="0" y="0" width="24" height="24"/></g>
+              <path class="heart__outline" d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.1 1.8-1.9 3.3-3.1 5.4-3.1 3.6 0 5.7 3.8 4.2 7.2C19.5 16.4 12 21 12 21z"/>
+            </svg>
+          </a>
           <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="brand-title">SignaVis</a>
         </div>
-        <div class="sponsor-card" role="tooltip">
-          <div class="sponsor-card__glow"></div>
-          <p class="sponsor-card__title">♥ Support this project</p>
-          <p class="sponsor-card__body">SignaVis is free &amp; open-source. If it saves you time, consider sponsoring to keep development alive.</p>
-          <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta">Become a Sponsor →</a>
+        <div class="sponsor-card" id="sponsorCard" role="tooltip">
+          <div class="sponsor-card__spot" aria-hidden="true"></div>
+          <div class="sponsor-card__view sponsor-card__view--ask">
+            <p class="sponsor-card__eyebrow">Free &amp; open source</p>
+            <p class="sponsor-card__title">Made with ♥ for bioacoustics</p>
+            <p class="sponsor-card__body">SignaVis is built in spare time. If it saves you hours of labeling, a sponsorship keeps new features coming.</p>
+            <div class="sponsor-card__actions">
+              <a href="https://github.com/sponsors/LimitlessGreen" target="_blank" rel="noopener" class="sponsor-card__cta" data-sponsor-cta>♥ Sponsor</a>
+              <a href="https://github.com/LimitlessGreen/SignaVis" target="_blank" rel="noopener" class="sponsor-card__ghost">★ Star on GitHub</a>
+            </div>
+          </div>
+          <div class="sponsor-card__view sponsor-card__view--confirm">
+            <p class="sponsor-card__title">Did you become a sponsor?</p>
+            <div class="sponsor-card__actions">
+              <button type="button" class="sponsor-card__cta" data-sponsor-yes>Yes ♥</button>
+              <button type="button" class="sponsor-card__ghost" data-sponsor-no>Not yet</button>
+            </div>
+          </div>
+          <div class="sponsor-card__view sponsor-card__view--thanks">
+            <p class="sponsor-card__eyebrow">Sponsor</p>
+            <p class="sponsor-card__title">Thank you! ♥</p>
+            <p class="sponsor-card__body">You help keep SignaVis free for everyone who listens to birds, frogs and bats.</p>
+          </div>
         </div>
         <span class="tb-sep"></span>
         <span class="file-label" id="fileLabel">No file loaded</span>
@@ -561,6 +581,7 @@
           <kbd>J / L</kbd> <span class="sc-desc">Seek backward / forward (coarse)</span>
           <kbd>Home</kbd> <span class="sc-desc">Seek to start</span>
           <kbd>End</kbd> <span class="sc-desc">Seek to end</span>
+          <kbd>?</kbd> <span class="sc-desc">Show this shortcut overview</span>
         </div>
       </div>
       <div class="help-section">
@@ -620,7 +641,7 @@
     </div>
     <div class="statusbar-spacer"></div>
     <div class="statusbar-section statusbar-notice">
-      <a href="https://github.com/LimitlessGreen/Audio-Workbench/issues" target="_blank" rel="noopener noreferrer">Report issues</a>
+      <a href="https://github.com/LimitlessGreen/SignaVis/issues" target="_blank" rel="noopener noreferrer">Report issues</a>
     </div>
     <div class="statusbar-spacer"></div>
     <div class="statusbar-section statusbar-updated" style="white-space:nowrap">
@@ -686,7 +707,7 @@
                 if (fullSha) {
                   // Link to GitHub commit
                   try {
-                    commitEl.href = `https://github.com/LimitlessGreen/Audio-Workbench/commit/${fullSha}`;
+                    commitEl.href = `https://github.com/LimitlessGreen/SignaVis/commit/${fullSha}`;
                     commitEl.target = '_blank';
                     commitEl.rel = 'noopener noreferrer';
                     commitEl.title = json.commitFull || '';
@@ -735,37 +756,5 @@
   </script>
 
   <script type="module" src="../src/app/labeling/main.js"></script>
-  <script>
-    (() => {
-      const brand = document.querySelector('.brand');
-      const card  = document.querySelector('.sponsor-card');
-      if (!brand || !card) return;
-      let showTimer = null;
-      let hideTimer = null;
-
-      function scheduleShow() {
-        clearTimeout(hideTimer);
-        showTimer = setTimeout(() => {
-          brand.classList.add('is-active');
-          card.classList.add('is-open');
-        }, 180);
-      }
-      function cancelShow() {
-        clearTimeout(showTimer);
-      }
-      function scheduleHide() {
-        clearTimeout(showTimer);
-        hideTimer = setTimeout(() => {
-          brand.classList.remove('is-active');
-          card.classList.remove('is-open');
-        }, 200);
-      }
-
-      brand.addEventListener('mouseenter', scheduleShow);
-      brand.addEventListener('mouseleave', scheduleHide);
-      card.addEventListener('mouseenter', () => { clearTimeout(hideTimer); });
-      card.addEventListener('mouseleave', scheduleHide);
-    })();
-  </script>
 </body>
 </html>
