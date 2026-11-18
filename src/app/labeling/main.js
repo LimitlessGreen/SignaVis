@@ -92,6 +92,7 @@ import { installFileDrop } from './features/file-drop.ts';
 import { installMicRecording } from './features/mic-recording.ts';
 import { createXcUpload } from './features/xc-upload.ts';
 import { dedupeLabels } from './dedupe-labels.ts';
+import { initSponsorCard } from './sponsor-card.ts';
 
 // Xeno-canto export/upload (features/xc-upload.ts), installed further down. Declared here, before
 // anything that may call the forwarders during startup (e.g. the sidebar restoring the Upload tab);
@@ -605,6 +606,8 @@ function openInfoDialog(el, title) {
   } });
   mm.open();
 }
+initSponsorCard();
+
 document.getElementById('helpMenuBtn')?.addEventListener('click', (e) => {
   const r = e.currentTarget.getBoundingClientRect();
   showContextMenu({
