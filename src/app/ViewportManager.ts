@@ -36,7 +36,10 @@ function placeOverviewWindow(el: HTMLElement | null, s: number, e: number, from:
     const k = w / Math.max(1e-12, to - from);
     let left  = (s - from) * k;
     const width = Math.max(2, (e - s) * k);
-    if (left + width > w) left = Math.max(0, w - width);
+    // Main strip: keep the window inside. Detail strip: keep the true
+    // position and let the strip clip the overflow (the lens may hold still
+    // while a drag crosses its edge).
+    if (from === 0 && to === 1 && left + width > w) left = Math.max(0, w - width);
     el.style.left  = `${left}px`;
     el.style.width = `${width}px`;
 }
