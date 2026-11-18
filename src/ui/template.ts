@@ -499,8 +499,16 @@ export function createPlayerHTML(opts = {}) {
             <div class="overview-window" data-aw="overviewWindow">
                 <div class="handle left" data-aw="overviewHandleLeft"></div>
                 <div class="handle right" data-aw="overviewHandleRight"></div>
-                <div class="overview-grip" aria-hidden="true"></div>
             </div>
+            <div class="overview-lens" data-aw="overviewLens" hidden title="Drag to move the view"></div>
+        </div>
+        <div class="overview-detail" data-aw="overviewDetail"${hide(o.showOverview)} hidden>
+            <canvas data-aw="overviewDetailCanvas"></canvas>
+            <div class="overview-window" data-aw="overviewDetailWindow">
+                <div class="handle left" data-aw="overviewDetailHandleLeft"></div>
+                <div class="handle right" data-aw="overviewDetailHandleRight"></div>
+            </div>
+            <span class="overview-detail-range" data-aw="overviewDetailRange"></span>
         </div>
         <div class="overview-label-section" data-aw="overviewLabelSection"${hide(o.showOverview)}>
             <div class="overview-label-bar">

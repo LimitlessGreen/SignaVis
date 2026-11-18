@@ -350,6 +350,7 @@ export class PlayerState {
             onRedrawNeeded: () => this._drawViewport(false),
             onZoomApplied:  () => { this._updateCoords(); this._syncTrackWidth(); },
             getSpectroHasData: () => this._spectro.hasData,
+            onLensChange: (range) => this._waveformRenderer?.drawOverviewDetail(range),
             emit: (event: string, detail?: any) => this._emit(event, detail),
         });
 
@@ -408,6 +409,8 @@ export class PlayerState {
                 waveformContent:        this.d.waveformContent,
                 overviewCanvas:         this.d.overviewCanvas,
                 overviewContainer:      this.d.overviewContainer,
+                overviewDetailCanvas:   this.d.overviewDetailCanvas,
+                overviewDetail:         this.d.overviewDetail,
                 freqLabels:             this.d.freqLabels,
                 amplitudeLabels:        this.d.amplitudeLabels,
             },
@@ -668,6 +671,13 @@ export class PlayerState {
             overviewWindow:         q('overviewWindow'),
             overviewHandleLeft:     q('overviewHandleLeft'),
             overviewHandleRight:    q('overviewHandleRight'),
+            overviewLens:           q('overviewLens'),
+            overviewDetail:         q('overviewDetail'),
+            overviewDetailCanvas:   q('overviewDetailCanvas'),
+            overviewDetailWindow:   q('overviewDetailWindow'),
+            overviewDetailHandleLeft:  q('overviewDetailHandleLeft'),
+            overviewDetailHandleRight: q('overviewDetailHandleRight'),
+            overviewDetailRange:    q('overviewDetailRange'),
             overviewLabelTracks:    q('overviewLabelTracks'),
             overviewLabelSection:   q('overviewLabelSection'),
             overviewLabelToggle:    q('overviewLabelToggle'),
@@ -1337,7 +1347,7 @@ export class PlayerState {
     _syncOverviewWindowToViewport() { this._viewport.syncOverviewWindowToViewport(); }
     _updateOverviewWindowElement() { this._viewport.updateOverviewWindowElement(); }
     _getOverviewSpanConstraints() { return this._viewport.getOverviewSpanConstraints(); }
-    _startOverviewDrag(mode: unknown, clientX: unknown) { this._viewport.startOverviewDrag(mode, clientX); }
+    _startOverviewDrag(mode: unknown, clientX: unknown, scale = 1) { this._viewport.startOverviewDrag(mode, clientX, scale); }
     _updateOverviewDrag(clientX: unknown) { this._viewport.updateOverviewDrag(clientX); }
     _queueOverviewViewportApply(redrawFinal = false) { this._viewport.queueOverviewViewportApply(redrawFinal); }
 

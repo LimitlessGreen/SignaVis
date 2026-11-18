@@ -13,7 +13,8 @@ export const SEEK_FINE_SEC = 0.5;
 export const SEEK_COARSE_SEC = 5;
 export const SPECTROGRAM_HEIGHT = 160;
 export const MAX_BASE_SPECTROGRAM_WIDTH = 24000;
-export const MIN_WINDOW_NORM = 0.02;
+/** Shortest overview window (seconds), whatever the recording length. */
+export const MIN_WINDOW_SECONDS = 0.05;
 
 // ─── Tile-based lazy rendering (for long audio files) ──────────────
 export const WASM_TILE_MIN_DURATION_SEC = 10 * 60; // long files use the spectrogram pyramid

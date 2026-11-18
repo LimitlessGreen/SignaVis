@@ -101,6 +101,7 @@ function defaultContext() {
         overviewStartNorm: 0,
         overviewEndNorm: 1,
         overviewMoved: false,
+        overviewScale: 1,
         resizeStartY: 0,
         resizeStartWaveformH: 0,
         resizeStartSpectrogramH: 0,
@@ -126,6 +127,8 @@ export interface InteractionContext {
     overviewStartNorm?: number;
     overviewEndNorm?: number;
     overviewMoved?: boolean;
+    /** Normalized file span per container width (1 = main strip, <1 = detail strip). */
+    overviewScale?: number;
     resizeStartY?: number;
     resizeStartWaveformH?: number;
     resizeStartSpectrogramH?: number;

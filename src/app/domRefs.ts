@@ -59,6 +59,13 @@ export interface DomRefs {
     overviewWindow:          HTMLElement       | null;
     overviewHandleLeft:      HTMLElement       | null;
     overviewHandleRight:     HTMLElement       | null;
+    overviewLens:            HTMLElement       | null;
+    overviewDetail:          HTMLElement       | null;
+    overviewDetailCanvas:    HTMLCanvasElement | null;
+    overviewDetailWindow:    HTMLElement       | null;
+    overviewDetailHandleLeft:  HTMLElement     | null;
+    overviewDetailHandleRight: HTMLElement     | null;
+    overviewDetailRange:     HTMLElement       | null;
     overviewLabelTracks:     HTMLElement       | null;
     overviewLabelSection:    HTMLElement       | null;
     overviewLabelToggle:     HTMLButtonElement | null;
