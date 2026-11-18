@@ -93,6 +93,15 @@ import { installMicRecording } from './features/mic-recording.ts';
 import { createXcUpload } from './features/xc-upload.ts';
 import { dedupeLabels } from './dedupe-labels.ts';
 
+// Xeno-canto export/upload (features/xc-upload.ts), installed further down. Declared here, before
+// anything that may call the forwarders during startup (e.g. the sidebar restoring the Upload tab);
+// until then they do nothing — the module refreshes on install.
+let xcUpload = null;
+function collectSetLabels() { return xcUpload ? xcUpload.collectSetLabels() : []; }
+function refreshUploadChecklist() { xcUpload?.refresh(); }
+function uploadBlockReason() { return xcUpload ? xcUpload.blockReason() : ''; }
+
+
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
 // hands its link (?xc=, ?lang=) to Lite and stops here, so nothing is downloaded twice.
@@ -1112,12 +1121,6 @@ const appCtx = {
   syncToPlayer: () => syncToPlayer(),
   showSidebarTab: (id) => sidebar.setActive(id),
 };
-
-/** Xeno-canto export/upload (features/xc-upload.ts); null until installed further down. */
-let xcUpload = null;
-function collectSetLabels() { return xcUpload ? xcUpload.collectSetLabels() : []; }
-function refreshUploadChecklist() { if (xcUpload) xcUpload.refresh(); else xcPanel._updateUploadState(); }
-function uploadBlockReason() { return xcUpload ? xcUpload.blockReason() : ''; }
 
 let getSuggestions = (q, n) => [];  // populated after taxonomy loads
 let _lastAudioUrl = null;           // track current audio URL for reference player
@@ -3940,6 +3943,7 @@ xcUpload = createXcUpload(appCtx, {
   selectLabel: (id, opts) => selectLabel(id, opts),
   projectName: () => projectMeta?.name || 'Project folder',
 });
+xcUpload.refresh();
 
 // ── Taxonomy ──────────────────────────────────────────────────────
 const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
