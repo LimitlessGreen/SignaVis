@@ -143,7 +143,8 @@ with sync_playwright() as p:
     status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
     check('accepted upload still a success when the panel update throws', dialog and 'updating the panel failed' in status, status)
     # The panel update still throws: the button must not stay stuck from the finished upload
-    check('button usable again although the panel update fails', not page.is_disabled('#xcUploadBtn'))
+    check('button usable again although the panel update fails', not page.is_disabled('#xcUploadBtn')
+          and 'running' not in (page.get_attribute('#xcUploadBtn', 'title') or ''), page.get_attribute('#xcUploadBtn', 'title'))
     page.evaluate('window.__restoreUpd()')
     close_success(page)
     page.evaluate('window.__signavis.xcUpload.refresh()')
@@ -165,6 +166,23 @@ with sync_playwright() as p:
     close_success(page)
     page.evaluate('window.__signavis.xcUpload.refresh()')
 
+    # Accepted upload, then only drawing fails (the selection list cannot be written): reported, the
+    # check itself still passes, so the button is usable
+    page.evaluate("""() => { const x = window.__signavis.xcPanel; const list = document.getElementById('xcSelection');
+      window.__restoreDraw = () => { delete list.innerHTML; };
+      x.uploadToXenoCanto = async () => { Object.defineProperty(list, 'innerHTML', { configurable: true,
+        set: () => { throw new Error('draw broke'); } }); return { ok: true, message: 'Set created' }; }; }""")
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
+    page.click('#xcUploadBtn')
+    page.wait_for_selector('.upl-backdrop', timeout=5000)
+    status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
+    check('drawing error after an accepted upload is reported', 'draw broke' in status, status)
+    check('drawing error does not block the next upload', page.evaluate('window.__signavis.xcUpload.blockReason()') == ''
+          and not page.is_disabled('#xcUploadBtn'))
+    page.evaluate('window.__restoreDraw()')
+    close_success(page)
+    page.evaluate('window.__signavis.xcUpload.refresh()')
+
     # Only recording unticked during the upload, and the check after it fails: the old "ready"
     # result must not enable the button
     page.evaluate("""() => { const x = window.__signavis.xcPanel; const build = x.buildAnnotationSetPayload;
@@ -182,11 +200,24 @@ with sync_playwright() as p:
     check('failed check keeps the button blocked', page.is_disabled('#xcUploadBtn')
           and 'could not be checked' in page.evaluate('window.__signavis.xcUpload.blockReason()'),
           page.evaluate('window.__signavis.xcUpload.blockReason()'))
-    page.evaluate('window.__restoreBuild()')
+    check('summary says the check could not run, checklist marked outdated',
+          'could not be checked' in page.inner_text('#xcUploadSummary')
+          and page.evaluate("document.getElementById('xcChecklist').classList.contains('ua-checklist--stale')"),
+          page.inner_text('#xcUploadSummary'))
+    # The export modal's own upload button only looks at the key: the upload must still send nothing
+    page.evaluate("() => { window.__calls = []; window.__signavis.xcPanel.uploadToXenoCanto = async (l) => { window.__calls.push(l.length); return { ok: true }; }; }")
     close_success(page)
+    page.click('#xcExportSetBtn')
+    page.click('#xcExportUploadBtn')
+    page.wait_for_timeout(300)
+    check('no request while the set cannot be checked', page.evaluate('window.__calls.length') == 0
+          and 'could not be checked' in page.inner_text('#xcExportModalStatus'), page.inner_text('#xcExportModalStatus'))
+    page.evaluate("document.querySelector('.xc-nokey-backdrop').hidden = true")
+    page.evaluate('window.__restoreBuild()')
     page.click('#xcSelection .us-row input[type=checkbox]')   # tick the recording again
     page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
-    check('a successful check unblocks it again', page.evaluate('window.__signavis.xcUpload.blockReason()') == '')
+    check('a successful check unblocks it again', page.evaluate('window.__signavis.xcUpload.blockReason()') == ''
+          and not page.evaluate("document.getElementById('xcChecklist').classList.contains('ua-checklist--stale')"))
 
     # Set name left empty: the real upload code (only fetch stubbed) sends a dated name, the dialog shows it
     page.evaluate("""() => { const sv = window.__signavis; const x = sv.xcPanel;
@@ -205,6 +236,8 @@ with sync_playwright() as p:
     check('empty set name: dialog shows the dated name that was sent',
           len(sent_names) == 1 and sent_names[0].startswith('SignaVis annotations') and sent_names[0] in dlg,
           f'{sent_names} | {dlg[:100]!r}')
+    snap_name = page.evaluate("window.__signavis.state.labelSets.get('own').uploads.at(-1).name")
+    check('upload record keeps the name that was sent', bool(sent_names) and snap_name == sent_names[0], snap_name)
     page.evaluate("() => { window.fetch = window.__realFetch; window.__signavis.state.labelSets.get('own').name = \"E2E Tester's Annotations\"; }")
     close_success(page)
 

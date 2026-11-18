@@ -59,6 +59,8 @@ export interface XcUpload {
 }
 
 const el = (id: string) => document.getElementById(id) as HTMLElement;
+/** Upload button tooltip when nothing blocks it (as in XenoCantoPanel._updateUploadState). */
+const UPLOAD_TITLE = 'Upload the annotation set to your Xeno-canto account for verification';
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
@@ -128,7 +130,12 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         uploading = true;
         let run: UploadRun | null = null;
         try {
-            safeRefresh();   // disables the button while the request runs
+            safeRefresh();   // disables the button while the request runs; re-checks the set
+            if (checkError) {   // the set could not be checked: send nothing
+                run = { result: { ok: false, message: `The set could not be checked: ${checkError}` },
+                    sent: [], recordingCount: 0, setName: '', localError: '' };
+                return run;
+            }
             const own = ownSet();
             const setName: string = own?.name || '';
             const prepared = prepareSet();
@@ -146,7 +153,10 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             if (result?.ok) {
                 try {
                     // A new session may have replaced the own set meanwhile: the snapshot is not its upload.
-                    if (own && snap && ownSet() === own) own.uploads = [...(own.uploads || []), snap];
+                    if (own && snap && ownSet() === own) {
+                        if (result.setName) snap.name = result.setName;   // as sent (dated default when empty)
+                        own.uploads = [...(own.uploads || []), snap];
+                    }
                     deps.saveSets();
                     deps.refreshRecordings();
                     deps.refreshLabelList();
@@ -312,12 +322,17 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
                 (set?.uploads || []).map((snap: any) => ({ snap, ...snapshotState(snap, allLabels) })),
             );
             const c = lastChecklist;
+            // A failed check leaves the last checklist in place (its key/profile controls stay
+            // mounted) but marks it outdated; the summary says the check could not run.
+            el('xcChecklist').classList.toggle('ua-checklist--stale', !c);
             if (c) {
                 assistant.render(c);
                 el('xcUploadSummary').textContent = [
                     `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
                     c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
                 ].filter(Boolean).join(' · ');
+            } else {
+                el('xcUploadSummary').textContent = `The set could not be checked: ${checkError}`;
             }
         } catch (e) { note(e); }
         // 3. Button: the panel asks blockReason() (disabled while an upload runs). If that update
@@ -326,7 +341,9 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             xcPanel._updateUploadState();
         } catch (e) {
             note(e);
-            uploadBtn.disabled = !xcPanel.apiKey || !!blockReason();
+            const reason = !xcPanel.apiKey ? 'Add your Xeno-canto API key first.' : blockReason();
+            uploadBtn.disabled = !!reason;
+            uploadBtn.title = reason || UPLOAD_TITLE;
         }
         return error;
     }
