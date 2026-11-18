@@ -132,7 +132,7 @@ self.onmessage = async (e) => {
                 return r.arrayBuffer();
               });
             }));
-            return [specs, tf.io.concatenateArrayBuffers(bufs)];
+            return [specs, bufs]; // TF.js 4 takes the shards as a list
           });
         },
       };
