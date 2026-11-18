@@ -38,7 +38,7 @@ import { serializeProject, deserializeProject, filesNotInProject, folderFileEntr
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
-import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, centreMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
+import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, hitMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
 import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
@@ -1742,6 +1742,7 @@ async function restoreProjectSnapshotIfPossible() {
 
     if (Array.isArray(project.labels) && project.labels.length) {
       labelStore.load(dedupeLabels(project.labels.map((l) => ({ ...l }))), recordingManager?.activeId || null);
+      setActiveSimilar(null);   // a suggestion stays unlocked only while its review is open
       ensureOwnSource();
       selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
     }
@@ -2107,6 +2108,7 @@ async function activateRecordingEntry(entry) {
 
   // 5. Restore annotations — mark state.labels as belonging to this entry
   labelStore.load((entry.annotations || []).map(a => ({ ...a })), entry.id);
+  setActiveSimilar(null);
   relocalizeAllLabels();
 
   // 6. Update all per-recording displays
@@ -2191,12 +2193,14 @@ function snapshotLabels() {
     const active = recordingManager.activeId || null;
     if (active === activeAt) {
       labelStore.load(labels, labelsEntryId);
+      setActiveSimilar(null);
     } else {
       // Another recording is on screen by now: `labels` belong to the one active at snapshot
       // time and would be saved into this one. Show this recording's own restored labels.
       const own = perEntry.find(([id]) => id === active);
       if (own) {
         labelStore.load(own[1].map((a) => ({ ...a })), active);
+        setActiveSimilar(null);
       }
     }
     saveSessionSets(state);
@@ -3023,15 +3027,22 @@ function setActiveSimilar(id) {
 
 const _similarCorrections = [];   // corrections of copied suggestions in this review (suggest-similar.ts)
 
-/** Copied corrected suggestions: move the ones not looked at yet by the mean correction. */
+/**
+ * Copied user-corrected suggestions: the ones the user has not edited move to their box as
+ * found plus the mean correction (recomputed from `found` each time, so a new mean replaces the old).
+ */
 function spreadSimilarCorrections() {
   const d = meanCorrection(_similarCorrections);
   if (!d) return;
-  const nyquist = (player._state?.audioBuffer?.sampleRate || Infinity) / 2;
+  const audio = player._state?.audioBuffer;
+  const nyquist = (audio?.sampleRate || Infinity) / 2, duration = audio?.duration || Infinity;
   const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar?.found && !l.similar.active
     && !correctionOf(l)).map((l) => l.id);
   if (!ids.length) return;
-  labelStore.update(ids, (l) => ({ ...l, ...applyCorrection(l.similar.found, d, nyquist) }));
+  labelStore.update(ids, (l) => {
+    const box = applyCorrection(l.similar.found, d, nyquist, duration);
+    return { ...l, ...box, similar: { ...l.similar, shown: box } };
+  });
 }
 
 const similarReview = new SimilarReview({
@@ -3046,6 +3057,8 @@ const similarReview = new SimilarReview({
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
   onClose: () => { setActiveSimilar(null); _similarCorrections.length = 0; endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  // Escape while resizing the box under review cancels the resize, not the review
+  busy: () => !!player.spectrogramLabels?._editing,
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
   anchor: () => player._state?.d?.canvasWrapper?.getBoundingClientRect() || null,
 });
@@ -3070,10 +3083,8 @@ let _similarFeed = Promise.resolve();
 function feedSimilarDecisions(ids, accepted) {
   const session = _similarSession;
   // A corrected box (resized under review) tells where the call really sits
-  const idx = ids.map((id) => {
-    const d = correctionOf(state.labels.find((l) => l.id === id));
-    return { i: _similarHitOf.get(id), moved: d ? centreMove(d) : undefined };
-  }).filter((x) => x.i !== undefined);
+  const idx = ids.map((id) => ({ i: _similarHitOf.get(id), moved: hitMove(state.labels.find((l) => l.id === id)) }))
+    .filter((x) => x.i !== undefined);
   if (!session || !idx.length) return;
   _similarFeed = _similarFeed.then(async () => {
     let ranks = null;
@@ -3118,8 +3129,9 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
       setId, recordingId, newId: () => `similar_${searchToken}_${++n}`,
       onPick: (sug, i) => _similarHitOf.set(sug.id, i),
     });
-    // One exemplar at a time: its suggestions replace earlier ones
+    // One exemplar at a time: its suggestions replace earlier ones (and their corrections)
     labelStore.replaceAll(state.labels.filter((l) => l.setId !== setId).concat(suggestions));
+    _similarCorrections.length = 0;
     state.hiddenSetIds?.delete(setId);
     syncToPlayer();
     if (!suggestions.length) { selectionMeta.textContent = `No further calls like ${exemplar.label} found`; similarReview.close(); return; }
@@ -3190,6 +3202,7 @@ function acceptSimilar(ids) {
   showUndoToast(`Copied ${n} similar call${n === 1 ? '' : 's'} as ${src[0].label}`, () => {
     undo();
     similarReview.close();
+    setActiveSimilar(null);   // the snapshot may hold the one then under review: lock it again
   });
 }
 
@@ -3294,7 +3307,8 @@ function showGroup(gi) {
       id: groupLabelId(gi, k), start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax, fullBand: false,
       label: `Group ${gi + 1}`, origin: SIMILAR_ORIGIN, readonly: true, confidence: Math.round(g.scores[k] * 1000) / 1000,
       setId, ...(_groups.recordingId ? { recordingId: _groups.recordingId } : {}),
-      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true },
+      similar: { sourceLabelId: null, score: g.scores[k], sources: ['group', 'BirdBox'], group: gi, preview: true,
+        found: { start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax } },
     };
   });
   labelStore.replaceAll(state.labels.filter((l) => !l.similar?.preview).concat(preview));
@@ -4439,6 +4453,7 @@ player.on('labelfocus', (e) => {
 });
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {
+  if (e.detail) e.detail.handled = true;   // the layer falls back to a plain accept without a host
   const id = e.detail?.label?.id;
   if (id) adoptOneLabel(id);
 });

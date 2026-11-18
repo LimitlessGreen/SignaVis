@@ -43,7 +43,7 @@ with sync_playwright() as p:
     check(rev.count() == 1, f'exactly one suggestion is highlighted ({rev.count()})')
     cur = page.evaluate(f"() => {SV}.state.labels.find(l => l.similar?.active)")
     check(cur and rev.get_attribute('data-id') == cur['id'] and not cur['readonly'], 'the highlighted one is the one under review, editable')
-    check(rev.locator('.label-handle').count() > 0 and float(rev.locator('.handle-r').evaluate("e => getComputedStyle(e).opacity")) == 1,
+    check(rev.locator('.handle-r').is_visible() and float(rev.locator('.handle-r').evaluate("e => getComputedStyle(e).opacity")) == 1,
           'its resize handles are shown')
     styles = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing), .annotation-region--similar')].map(e => getComputedStyle(e).borderTopStyle)")
     check(styles and all(x == 'dotted' for x in styles), f'suggestions are dotted {styles}')
@@ -124,6 +124,9 @@ with sync_playwright() as p:
     page.evaluate("document.activeElement?.blur()")
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
     check(page.locator('.similar-review').count() == 0, 'Esc closes the bar')
+    ops = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar')].map(e => getComputedStyle(e).opacity)")
+    check(ops and all(o != '0.55' for o in ops) and page.locator('.spectrogram-label-region--reviewing').count() == 0,
+          f'closed: suggestions no longer dimmed or highlighted {set(ops)}')
     check(not errs, f'page errors: {errs}')
     b.close()
 sys.exit(1 if fails else 0)

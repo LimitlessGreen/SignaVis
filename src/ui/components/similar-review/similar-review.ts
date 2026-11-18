@@ -17,6 +17,8 @@ export interface SimilarReviewHandlers {
     onAccept: (ids: string[]) => void;
     onReject: (ids: string[]) => void;
     onClose?: () => void;
+    /** True while the host is in the middle of something that owns Escape (e.g. resizing a box). */
+    busy?: () => boolean;
     /** Area to sit at the bottom of (e.g. the spectrogram); fixed near the window bottom without. */
     anchor?: () => DOMRect | null;
 }
@@ -47,6 +49,7 @@ export class SimilarReview {
         if (!this.el) {
             this.el = this.build();
             document.body.appendChild(this.el);
+            document.body.classList.add('similar-reviewing');
             window.addEventListener('keydown', this.onKey, true);
             window.addEventListener('resize', this.onResize);
         }
@@ -62,6 +65,7 @@ export class SimilarReview {
         window.removeEventListener('resize', this.onResize);
         this.el.remove();
         this.el = null;
+        document.body.classList.remove('similar-reviewing');
         this.h.onClose?.();
     }
 
@@ -97,8 +101,8 @@ export class SimilarReview {
         if (!this.el) return false;
         const at = this.items.findIndex((i) => i.id === id);
         if (at < 0) return false;
+        this.fresh = false;   // like ↑/↓: a re-rank keeps it on screen (also when it is already the current one)
         if (at === this.pos) return true;
-        this.fresh = false;   // like ↑/↓: a re-rank keeps it on screen
         this.pos = at;
         this.render();
         this.focusCurrent();
@@ -149,6 +153,11 @@ export class SimilarReview {
 
     private handleKey(e: KeyboardEvent) {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
+        // A modal dialog (e.g. Replace / Keep) or the host's own interaction (resizing) keeps its keys
+        if (this.h.busy?.()) return;
+        // (closed app modals stay in the DOM, hidden: only a visible one counts)
+        const shown = (m: Element) => !this.el?.contains(m) && ((m as any).checkVisibility ? (m as any).checkVisibility() : (m as HTMLElement).offsetParent !== null);
+        if ([...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(shown)) return;
         const t = e.target;
         if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
             && !this.el?.contains(t)) return;

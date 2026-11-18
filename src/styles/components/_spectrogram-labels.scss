@@ -172,8 +172,8 @@
 @media (prefers-reduced-motion: reduce) {
     .spectrogram-label-region--reviewing { animation: none !important; }
 }
-/* The others recede while one is under review */
-.spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing) { opacity: 0.55; }
+/* The others recede while one is under review (the review bar is open) */
+.similar-reviewing .spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing) { opacity: 0.55; }
 
 /* ── Accept / Discard buttons (suggestion labels) ── */
 .label-accept-btn,

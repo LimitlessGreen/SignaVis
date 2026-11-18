@@ -1529,8 +1529,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 // Detections in a locked set (BirdNET / BirdBox) are copied into "My labels"
                 // by the app; an unlocked suggestion simply becomes a manual label.
                 // A similar-call suggestion under review is unlocked (resizable) but still copied.
-                if (this._lockedIds.has(label.id) || label.origin === 'Similar') {
+                if (this._lockedIds.has(label.id)) {
                     this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail: { label: { ...label } } }));
+                } else if (label.origin === 'Similar') {
+                    const detail: any = { label: { ...label } };
+                    this.dispatchEvent(new CustomEvent('spectrogramlabeladopt', { detail }));
+                    if (!detail.handled) this._acceptSuggestion(label.id);   // standalone player: no host copies it
                 } else {
                     this._acceptSuggestion(label.id);
                 }
