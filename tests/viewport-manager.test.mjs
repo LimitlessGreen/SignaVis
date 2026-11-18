@@ -299,3 +299,15 @@ test('ViewportManager lens: range badge follows a new file with the same normali
     vm._updateOverviewWindowElement();
     assert.notEqual(vm._d.overviewDetailRange.textContent, first);
 });
+
+test('ViewportManager lens: window beyond the held lens keeps its left edge', () => {
+    const { vm } = makeLensViewport();
+    vm.windowStartNorm = 0.5; vm.windowEndNorm = 0.5 + 10 / 3600;
+    vm._updateOverviewWindowElement();
+    const left = parseFloat(vm._d.overviewDetailWindow.style.left);
+    vm._interaction.isOverviewDrag = true;
+    vm._interaction.ctx.overviewScale = vm.lensEndNorm - vm.lensStartNorm;
+    vm.windowEndNorm = vm.lensEndNorm + 5 / 3600;
+    vm._updateOverviewWindowElement();
+    assert.ok(Math.abs(parseFloat(vm._d.overviewDetailWindow.style.left) - left) < 1e-6);
+});
