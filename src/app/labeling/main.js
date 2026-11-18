@@ -591,14 +591,21 @@ const speciesListsPanel = new SpeciesListsPanel({
     const rec = taxonomy.data ? taxonomy.resolve(sci) : null;
     return rec ? (taxonomy.resolveCommonName(rec, taxonomyLangSafe()) || '') : '';
   },
+  // BirdNET-Analyzer matches whole label lines, so export the model's English names.
+  modelLabelName: (sci) => {
+    const rec = taxonomy.data ? taxonomy.resolve(sci) : null;
+    return rec?.n?.en_uk || '';
+  },
   canonical: (name) => (taxonomy.data ? taxonomy.resolve(name)?.s || '' : name),
   speciesSearchFactory: () => speciesListSearchFactory,
   getExpectedSpecies: async (minScore) => {
+    // Place and date of the same recording, read before any await.
     const c = birdnetPanel.getCoords?.();
+    const date = birdnetPanel.getRecordingDate?.() || undefined;
     if (!c) return null;
     if (!birdnet.loaded) await birdnetPanel.loadModel();
     if (!birdnet.hasAreaModel) return null;
-    const res = await birdnet.setLocation(c.lat, c.lon, { date: birdnetPanel.getRecordingDate?.() || undefined });
+    const res = await birdnet.setLocation(c.lat, c.lon, { date });
     if (!res?.ok) throw new Error('location not accepted');
     const all = await birdnet.getAllSpecies();
     const species = all.filter((sp) => (sp.geoscore ?? 0) >= minScore)
@@ -4761,6 +4768,7 @@ player.setLabelSuggestionProvider(
     // shows all contextually relevant species as suggestions.
     getPool:   () => [...state.xcLabelPool, ...player.getBackgroundSpecies()],
     getGeoScore: speciesGeoScore,
+    isListed: (sci) => !!activeListSet?.has(String(sci).toLowerCase()),
   }),
 );
 

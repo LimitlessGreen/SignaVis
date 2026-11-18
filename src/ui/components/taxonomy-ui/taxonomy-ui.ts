@@ -6,8 +6,7 @@
  */
 
 import {
-  normalizeSearch, matchTier, compareRanked, speciesCodes, splitHighlight, MATCH, LOCAL_THRESHOLD,
-} from './species-ranking.ts';
+  normalizeSearch, matchTier, compareRanked, speciesCodes, splitHighlight, MATCH, LOCAL_THRESHOLD, matchBucket } from './species-ranking.ts';
 
 export { normalizeSearch };
 
@@ -207,7 +206,8 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       });
     }
     projectRows.sort((a, b) =>
-      (q ? a.tier - b.tier : 0) || Number(!!b.listed) - Number(!!a.listed) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
+      (q ? matchBucket(a.tier) - matchBucket(b.tier) : 0) || Number(!!b.listed) - Number(!!a.listed)
+      || (q ? a.tier - b.tier : 0) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
 
     // Taxonomy: full scan over the cached index (≈11k records), then rank.
     const taxRows: any[] = [];

@@ -16,6 +16,8 @@ export interface SpeciesListsPanelOpts {
   store: SpeciesListStore;
   /** Localised common name ('' when unknown). */
   commonName: (sci: string) => string;
+  /** English model label name for the --slist export ('' when unknown). */
+  modelLabelName?: (sci: string) => string;
   /** Canonical scientific name from the taxonomy, or '' when unknown. */
   canonical: (nameOrSci: string) => string;
   /** Species search widget factory (same as the label editor). */
@@ -120,7 +122,7 @@ export class SpeciesListsPanel {
       if (!card) return;
       const id = card.dataset.list || null;
       this.o.store.setActive(id);
-      if (id) this.editingId = id;
+      if (id && id !== this.editingId) { this.editingId = id; this.filter = ''; }
       this.render();
     });
     this.els.cards.addEventListener('keydown', (e) => {
@@ -254,7 +256,7 @@ export class SpeciesListsPanel {
           : '<button type="button" class="sl-use">Use for analysis</button>'}
       </div>
       <div class="sl-add"></div>
-      ${list.species.length > 8 ? `<input class="lt-filter sl-filter" type="search" placeholder="Filter this list…" aria-label="Filter species in list" value="${esc(this.filter)}" />` : ''}
+      ${list.species.length > 8 || this.filter ? `<input class="lt-filter sl-filter" type="search" placeholder="Filter this list…" aria-label="Filter species in list" value="${esc(this.filter)}" />` : ''}
       <ul class="sl-rows"></ul>`;
 
     const name = ed.querySelector<HTMLInputElement>('.sl-name')!;
@@ -345,8 +347,8 @@ export class SpeciesListsPanel {
   private display(sci: string) { return this.o.commonName(sci) || sci; }
 
   private exportList(list: SpeciesList) {
-    // BirdNET's own label files use English names after the underscore; keep whatever language is shown.
-    const text = serializeSpeciesList(list.species, (s) => this.o.commonName(s));
+    // BirdNET-Analyzer compares whole label lines: use the model's English names, not the shown language.
+    const text = serializeSpeciesList(list.species, (s) => this.o.modelLabelName?.(s) || '');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = `${list.name.replace(/[^\w\- ]+/g, '').trim() || 'species_list'}.txt`;

@@ -45,3 +45,15 @@ test('corrupt storage starts empty, unknown active id falls back to all species'
   const st = { getItem: () => JSON.stringify({ activeId: 'gone', lists: [] }), setItem() {} };
   assert.equal(new SpeciesListStore(st).state.activeId, null);
 });
+
+test('blocked localStorage (throwing getter) falls back to memory instead of breaking startup', () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('SecurityError'); } });
+  try {
+    const s = new SpeciesListStore();
+    s.setActive(s.create('x', ['Parus major']).id);
+    assert.equal(s.active?.name, 'x');
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'localStorage', desc); else delete globalThis.localStorage;
+  }
+});

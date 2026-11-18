@@ -66,8 +66,8 @@ export class SpeciesListStore {
   state: SpeciesListState;
   private listeners = new Set<() => void>();
   private storage: Pick<Storage, 'getItem' | 'setItem'> | null;
-  constructor(storage: Pick<Storage, 'getItem' | 'setItem'> | null = globalThis.localStorage ?? null) {
-    this.storage = storage;
+  constructor(storage?: Pick<Storage, 'getItem' | 'setItem'> | null) {
+    this.storage = storage === undefined ? defaultStorage() : storage;
     this.state = this.load();
   }
 
@@ -148,4 +148,9 @@ function dedupe(species: string[]): string[] {
     out.push(v);
   }
   return out;
+}
+
+/** localStorage, or null when the browser blocks it (the getter itself can throw). */
+function defaultStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
 }

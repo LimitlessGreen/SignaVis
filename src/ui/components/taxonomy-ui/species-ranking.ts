@@ -72,14 +72,14 @@ export interface RankInput {
 }
 
 /** Sort key bucket: 0 exact/code, 1 direct match, 2 other-language match. */
-function bucket(tier: number) {
+export function matchBucket(tier: number) {
   if (tier <= MATCH.CODE) return 0;
   return tier === MATCH.ALT ? 2 : 1;
 }
 
 /** Comparator for taxonomy results (see module doc for the order). */
 export function compareRanked(a: RankInput, b: RankInput) {
-  const ba = bucket(a.tier), bb = bucket(b.tier);
+  const ba = matchBucket(a.tier), bb = matchBucket(b.tier);
   if (ba !== bb) return ba - bb;
   if (!!a.listed !== !!b.listed) return a.listed ? -1 : 1;
   const la = (a.geo ?? 0) >= LOCAL_THRESHOLD ? 0 : 1;

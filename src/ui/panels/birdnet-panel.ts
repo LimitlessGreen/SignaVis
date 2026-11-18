@@ -459,6 +459,7 @@ export class BirdNETPanel {
   async _analyze(): Promise<boolean> {
     const audioBuffer = this.getAudioBuffer();
     const recordingId = this.getRecordingId?.() ?? null;
+    const speciesList = this.getSpeciesFilter?.() ?? null;   // the list active when the run starts
     if (!audioBuffer) {
       this.statusEl.textContent = 'No audio loaded.';
       return false;
@@ -517,7 +518,6 @@ export class BirdNETPanel {
       this.progressBar.style.width = '0%';
 
       const channelData = audioBuffer.getChannelData(0);
-      const speciesList = this.getSpeciesFilter?.() ?? null;
       const allDetections = await this.birdnet.analyze(channelData, {
         sampleRate: audioBuffer.sampleRate,
         overlap,

@@ -141,3 +141,16 @@ test('compareRanked: listed beats local within the same match bucket only', () =
   ];
   assert.deepEqual(rows.sort(compareRanked).map((r) => r.name), ['exact', 'listed', 'local']);
 });
+
+test('project labels: a listed species beats an unlisted one of the same match bucket', () => {
+  const p = createSuggestionProvider({
+    taxonomy: tax, getLang: () => 'de', getPool: () => [], getGeoScore: () => null,
+    getLabels: () => [
+      { label: 'Meisengimpel', scientificName: 'Carpodacus sibiricus' },
+      { label: 'Sumpfmeise', scientificName: 'Poecile palustris' },
+    ],
+    isListed: (sci) => sci === 'Poecile palustris',
+  });
+  const project = p('meise').filter((r) => r.group === 'project').map((r) => r.name);
+  assert.deepEqual(project, ['Sumpfmeise', 'Meisengimpel']);
+});
