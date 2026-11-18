@@ -107,11 +107,11 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
     // blockReason() says so, which keeps the panel button disabled on every state update.
     let uploading = false;
 
-    interface UploadRun { result: UploadResult; sent: AppLabel[]; recordingCount: number; localError: string }
+    interface UploadRun { result: UploadResult; sent: AppLabel[]; recordingCount: number; setName: string; localError: string }
 
-    /** refresh() that never throws; returns the error message ('' when fine). */
+    /** Redraw that never throws; returns the error message ('' when fine), also from the drawing part. */
     function safeRefresh(): string {
-        try { refresh(); return ''; } catch (e: any) { console.warn('[xc-upload]', e); return String(e?.message || e); }
+        try { return redraw(); } catch (e: any) { console.warn('[xc-upload]', e); return String(e?.message || e); }
     }
 
     /**
@@ -128,6 +128,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         try {
             safeRefresh();   // disables the button while the request runs
             const own = ownSet();
+            const setName: string = own?.name || '';
             const prepared = prepareSet();
             const sent = prepared.map((x) => x.label);
             const going = prepared.filter((x) => isAnnotaLabel(x.label));   // what the payload carries
@@ -136,6 +137,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             const result = await xcPanel.uploadToXenoCanto(sent, sets());
             run = {
                 result, sent: going.map((x) => x.label), localError: '',
+                setName,   // the set that was sent, even if renamed or replaced meanwhile
                 recordingCount: new Set(going.map((x) => x.label.xc_nr || x.label.sound_file || '')).size,
             };
             if (result?.ok) {
@@ -194,7 +196,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             return;
         }
         if (!run) return;
-        const { result, sent, recordingCount, localError } = run;
+        const { result, sent, recordingCount, setName, localError } = run;
         if (!result.ok) {
             xcPanel._setStatus([result.message, ...(result.errors || [])].filter(Boolean).join('; '), 'error');
             return;
@@ -204,7 +206,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         void showUploadSuccess({
             labelCount: sent.length,
             recordingCount,
-            setName: ownSet()?.name || '',
+            setName,
             message: result.message || '',
             endpoint: t.endpoint,
             testServer: t.env !== 'live' ? `${t.env.toUpperCase()} test server` : '',
@@ -255,8 +257,12 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         return first ? `Fix first: ${first.message}` : '';
     }
 
-    function refresh(): void {
-        if (!OWN_SOURCE_ID) return;
+    function refresh(): void { redraw(); }
+
+    /** Redraw everything; returns the error of the drawing part ('' when fine). */
+    function redraw(): string {
+        if (!OWN_SOURCE_ID) return '';
+        let error = '';
         try {
             const set = ownSet();
             const sel = getSelection();
@@ -290,8 +296,9 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
                 `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
                 c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
             ].filter(Boolean).join(' · ');
-        } catch { /* app still initializing */ }
+        } catch (e: any) { error = String(e?.message || e); /* also: app still initializing */ }
         xcPanel._updateUploadState();   // asks blockReason(): disabled while an upload runs
+        return error;
     }
 
     async function jumpTo(t: CheckTarget): Promise<void> {

@@ -115,9 +115,11 @@ with sync_playwright() as p:
     page.click('#xcUploadBtn')
     page.wait_for_function('typeof window.__answer === "function"')
     page.evaluate("""() => { const sets = window.__signavis.state.labelSets;
-      sets.set('own', { ...window.__oldOwn, uploads: [] }); window.__answer(); }""")
+      sets.set('own', { ...window.__oldOwn, name: 'Other set', uploads: [] }); window.__answer(); }""")
     page.wait_for_selector('.upl-backdrop', timeout=5000)
     check('replaced own set gets no upload record', page.evaluate("window.__signavis.state.labelSets.get('own').uploads.length") == 0)
+    dlg = page.inner_text('.upl-backdrop')
+    check('dialog names the set that was sent', "E2E Tester's Annotations" in dlg and 'Other set' not in dlg, dlg[:90].replace('\n', ' '))
     page.evaluate("() => { window.__signavis.state.labelSets.set('own', window.__oldOwn); document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove()); }")
 
     # Accepted upload, then the final panel update throws: still a success with the error shown
@@ -134,6 +136,22 @@ with sync_playwright() as p:
     page.evaluate('window.__restoreUpd()')
     status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
     check('accepted upload still a success when the panel update throws', dialog and 'updating the panel failed' in status, status)
+    page.evaluate("() => { document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove()); window.__signavis.xcUpload.refresh(); }")
+
+    # Accepted upload, then redrawing the panel throws (caught inside refresh): reported, still a success
+    page.evaluate("""() => { const x = window.__signavis.xcPanel; const build = x.buildAnnotationSetPayload;
+      window.__restoreBuild = () => { x.buildAnnotationSetPayload = build; };
+      x.uploadToXenoCanto = async () => { x.buildAnnotationSetPayload = () => { throw new Error('render broke'); }; return { ok: true, message: 'Set created' }; }; }""")
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
+    page.click('#xcUploadBtn')
+    try:
+        page.wait_for_selector('.upl-backdrop', timeout=5000)
+        dialog = True
+    except Exception:
+        dialog = False
+    page.evaluate('window.__restoreBuild()')
+    status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
+    check('accepted upload reports a failed redraw', dialog and 'render broke' in status, status)
     page.evaluate("() => { document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove()); window.__signavis.xcUpload.refresh(); }")
 
     # Accepted upload while saving locally fails: still a success (dialog), the local error is shown
