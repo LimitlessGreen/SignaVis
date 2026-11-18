@@ -1827,7 +1827,7 @@ export class BirdNETPlayer {
             author: meta.author,
             tags: meta.tags,
             // A similar-call suggestion under review (similar-review.ts): highlighted on the spectrogram
-            ...((label as any)?.similar?.active === true || (label as any)?.reviewing === true ? { reviewing: true } : {}),
+            ...(((label as any)?.similar ? (label as any).similar.active === true : (label as any)?.reviewing === true) ? { reviewing: true } : {}),
             createdAt: (label as any)?.createdAt || new Date().toISOString(),
             ...((label as any)?.updatedAt ? { updatedAt: (label as any).updatedAt } : {}),
         };

@@ -3132,7 +3132,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             tags: meta.tags,
             readonly: label?.readonly === true,
             // A similar-call suggestion under review (similar-review.ts): highlighted
-            ...(label?.similar?.active === true || label?.reviewing === true ? { reviewing: true } : {}),
+            ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
             createdAt: label?.createdAt || new Date().toISOString(),

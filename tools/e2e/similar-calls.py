@@ -61,6 +61,16 @@ with sync_playwright() as p:
     check(resized['end'] > cur['end'] + 0.05 and abs(resized['start'] - cur['start']) < 1e-6, f"right edge dragged ({cur['end']:.2f} → {resized['end']:.2f} s)")
     if shots: page.screenshot(path=f'{shots}/similar-review-resized.png')
     others = page.evaluate(f"() => {SV}.state.labels.filter(l => l.origin === 'Similar' && !l.similar.active).map(l => [l.id, l.end - l.similar.found.end])")
+    # A click on another suggestion's box reviews that one; back to the corrected one by clicking it
+    other = page.locator('.spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing)').first
+    other.scroll_into_view_if_needed(); oid = other.get_attribute('data-id'); other.click(); page.wait_for_timeout(300)
+    check(page.evaluate(f"() => {SV}.state.labels.find(l => l.similar?.active)?.id") == oid
+          and page.locator('.spectrogram-label-region--reviewing').get_attribute('data-id') == oid, 'clicking another suggestion reviews it')
+    page.evaluate(f"id => {SV}.player.spectrogramLabels.dispatchEvent(new CustomEvent('labelfocus', {{ detail: {{ id, source: 'spectrogram', interaction: 'click' }} }}))", cur['id'])
+    page.wait_for_timeout(300)
+    check(page.evaluate(f"() => {SV}.state.labels.find(l => l.similar?.active)?.id") == cur['id'], 'and back to the corrected one')
+    bar_h = page.locator('.similar-review').bounding_box()['height']
+    check(bar_h <= 36, f'review bar stays compact ({bar_h:.0f} px)')
     page.evaluate("document.activeElement?.blur()")
     page.keyboard.press('Enter'); page.wait_for_timeout(600)
     print('score shown before / after the first decision (re-ranked):', before, '/', page.locator('.similar-review__score').inner_text())

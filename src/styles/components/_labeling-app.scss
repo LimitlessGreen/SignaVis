@@ -832,8 +832,8 @@ html[data-theme="light"] { @include sponsor-light; }
   z-index: 2990;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px 6px 14px;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
   border: 1px solid var(--color-accent);
   border-radius: 6px;
   background: var(--color-bg-secondary, #1f2937);
@@ -854,32 +854,32 @@ html[data-theme="light"] { @include sponsor-light; }
 
 .similar-review__btn {
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: 4px;
   background: none;
   color: var(--color-text-primary);
-  padding: 4px 10px;
-  font-size: 13px;
+  padding: 2px 8px;
   cursor: pointer;
 
   &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
   &:disabled { opacity: 0.4; cursor: default; }
-  &--icon { min-width: 30px; font-size: 14px; padding: 4px 6px; }
+  &--icon { min-width: 26px; padding: 2px 6px; }
 
-  // The two decisions: large, filled, unmistakable
+  // The two decisions: compact but filled, unmistakable
   &--ok,
   &--no {
     font-size: 14px;
     font-weight: 700;
-    padding: 6px 14px;
+    line-height: 18px;
+    padding: 2px 10px;
     color: #fff;
-    border-width: 0;
+    border-color: transparent;
 
     kbd {
-      margin-left: 6px;
-      padding: 0 4px;
+      margin-left: 4px;
+      padding: 0 3px;
       border-radius: 3px;
       background: rgba(0, 0, 0, 0.25);
-      font: 600 10px/16px var(--font-mono, monospace);
+      font: 600 10px/14px var(--font-mono, monospace);
       vertical-align: 1px;
     }
   }

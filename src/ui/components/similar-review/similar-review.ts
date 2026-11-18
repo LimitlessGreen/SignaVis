@@ -5,7 +5,8 @@
 //   Shift+Enter  copy all at or above the threshold
 //   ↓ / ↑        next / previous           Space        play again
 //   Esc          close (suggestions stay visible; ✓ on a box still copies it)
-// The suggestion on screen is highlighted and resizable by the host (fine corrections before copying).
+// The suggestion on screen is highlighted and resizable by the host (fine corrections before copying);
+// clicking another suggestion's box makes it the one under review (focusId).
 // Keys are taken in the capture phase on window while the bar is open, ahead of the player's
 // own shortcuts on document (X would delete the selected label: the one under review is unlocked).
 
@@ -91,6 +92,19 @@ export class SimilarReview {
         this.render();
     }
 
+    /** The user picked a suggestion elsewhere (click on its box): review it now. */
+    focusId(id: string): boolean {
+        if (!this.el) return false;
+        const at = this.items.findIndex((i) => i.id === id);
+        if (at < 0) return false;
+        if (at === this.pos) return true;
+        this.fresh = false;   // like ↑/↓: a re-rank keeps it on screen
+        this.pos = at;
+        this.render();
+        this.focusCurrent();
+        return true;
+    }
+
     private get current(): ReviewItem | undefined { return this.items[this.pos]; }
     private aboveThreshold(): ReviewItem[] { return this.items.filter((i) => i.score >= this.threshold); }
 
@@ -171,8 +185,8 @@ export class SimilarReview {
                 <button type="button" class="similar-review__btn similar-review__btn--icon" data-act="next" title="Next (↓)" aria-label="Next">↓</button>
                 <button type="button" class="similar-review__btn similar-review__btn--icon" data-act="play" title="Play (Space)" aria-label="Play">▶</button>
             </span>
-            <button type="button" class="similar-review__btn similar-review__btn--no" data-act="reject" title="Reject: not proposed again (X)">✗ Reject <kbd>X</kbd></button>
-            <button type="button" class="similar-review__btn similar-review__btn--ok" data-act="accept" title="Copy into my labels (Enter)">✓ Copy <kbd>Enter</kbd></button>
+            <button type="button" class="similar-review__btn similar-review__btn--no" data-act="reject" title="Reject: not proposed again (X)">✗ <kbd>X</kbd></button>
+            <button type="button" class="similar-review__btn similar-review__btn--ok" data-act="accept" title="Copy into my labels (Enter)">✓ <kbd>↵</kbd></button>
             <label class="similar-review__thr" title="Copy all suggestions with at least this score (Shift+Enter)">
                 ≥ <input type="range" min="0.2" max="1" step="0.01"> <output></output>
             </label>

@@ -4431,6 +4431,12 @@ player.on('annotationremove', (e) => {
   touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
   labelStore.remove(id, { views: EDIT_VIEWS });   // the context-menu path removes it from the track only, not from the spectrogram
 });
+// A click on another similar-call suggestion while reviewing: review that one now
+player.on('labelfocus', (e) => {
+  const d = e.detail || {};
+  if (d.interaction !== 'click' || !d.id || !similarReview.isOpen) return;
+  if (state.labels.find((l) => l.id === d.id)?.origin === SIMILAR_ORIGIN) similarReview.focusId(d.id);
+});
 // ✓ on a detection (BirdNET / BirdBox, locked set): copy it into "My labels".
 player.on('spectrogramlabeladopt', (e) => {
   const id = e.detail?.label?.id;
