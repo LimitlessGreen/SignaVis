@@ -8,7 +8,7 @@ import {
     type UploadSelection,
 } from '../../upload-selection.ts';
 import { buildUploadChecklist, type ChecklistResult, type CheckTarget } from '../../upload-checklist.ts';
-import { validateAnnotaPayload } from '../../../infrastructure/xeno-canto/annotaPayload.ts';
+import { validateAnnotaPayload, isAnnotaLabel } from '../../../infrastructure/xeno-canto/annotaPayload.ts';
 import { xcUploadTarget } from '../../../ui/panels/xc-panel.ts';
 import { UploadSelectionPanel } from '../../../ui/panels/upload-selection-panel.ts';
 import { UploadAssistant } from '../../../ui/panels/upload-assistant.ts';
@@ -16,7 +16,7 @@ import { createXcExportModal } from '../../../ui/components/xc-export-modal/xc-e
 import { showUploadSuccess } from '../../../ui/components/upload-success/upload-success.ts';
 import { appAlert, appPrompt } from '../../../ui/components/modal/dialogs.ts';
 import { toXcId, xcNumber } from '../../../domain/xc/xcId.ts';
-import { dedupeLabels } from '../dedupe-labels.ts';
+import { dedupeBy } from '../dedupe-labels.ts';
 import type { AppContext, AppLabel } from '../app-context.ts';
 
 interface UploadResult { ok: boolean; message?: string; errors?: string[] }
@@ -77,17 +77,25 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         refresh();
     }
 
-    function collectSetLabels(): AppLabel[] {
+    /**
+     * The set as it goes out: one label per id over the upload selection, each tagged with its
+     * recording's xc_nr / sound_file, and the recording it came from (for the upload snapshot).
+     */
+    function prepareSet(): { label: AppLabel; entry: any }[] {
         // Persist in-memory labels first so per-entry `annotations` include the active recording.
         ctx.saveCurrentAnnotations();
         const { items } = selectUploadLabels(entries(), getSelection(), sets());
-        return dedupeLabels(items.map(({ label, entry }) => {
+        return dedupeBy(items, (x) => x.label).map(({ label, entry }) => {
             // Labels on a layer with its own annotator are uploaded under that name (else: profile)
             const copy = { ...label, ...(layerAnnotatorFields(sets(), label) || {}) };
             if (!copy.xc_nr) copy.xc_nr = xcNumber(entry.xcId);
             if (entry.filename && !copy.sound_file) copy.sound_file = entry.filename;
-            return copy;
-        }));
+            return { label: copy, entry };
+        });
+    }
+
+    function collectSetLabels(): AppLabel[] {
+        return prepareSet().map((x) => x.label);
     }
 
     function allRecordingLabels() {
@@ -95,46 +103,59 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         return entries().flatMap((e: any) => e.annotations || []);
     }
 
-    // One upload at a time, from the panel button or the export modal.
+    // One upload at a time, from the panel button or the export modal. While it runs,
+    // blockReason() says so, which keeps the panel button disabled on every state update.
     let uploading = false;
 
-    interface UploadRun { result: UploadResult; sent: AppLabel[]; localError: string }
+    interface UploadRun { result: UploadResult; sent: AppLabel[]; recordingCount: number; localError: string }
+
+    /** refresh() that never throws; returns the error message ('' when fine). */
+    function safeRefresh(): string {
+        try { refresh(); return ''; } catch (e: any) { console.warn('[xc-upload]', e); return String(e?.message || e); }
+    }
 
     /**
-     * Send the current set. The "uploaded" snapshot is taken from what is sent (the selection
-     * can change while the request runs) and is only kept when Xeno-canto accepts the set.
-     * Errors while saving that locally do not turn an accepted upload into a failure: they come
-     * back as `localError`. Returns null while another upload is running.
+     * Send the current set. The "uploaded" snapshot holds exactly what goes out (the selection
+     * can change while the request runs) and is kept only when Xeno-canto accepts the set and
+     * the own set is still the one that sent it. Once accepted, errors while saving or
+     * redrawing locally do not turn the upload into a failure: they come back as `localError`.
+     * Returns null while another upload is running.
      */
     async function runUpload(): Promise<UploadRun | null> {
         if (uploading) return null;
         uploading = true;
-        refresh();   // keeps the button disabled while the request runs
+        let run: UploadRun | null = null;
         try {
-            const sent = collectSetLabels();
+            safeRefresh();   // disables the button while the request runs
             const own = ownSet();
-            const { items } = selectUploadLabels(entries(), getSelection(), sets());
-            const snap = own ? makeUploadSnapshot(items.map((x) => x.label), items.map((x) => x.entry),
+            const prepared = prepareSet();
+            const sent = prepared.map((x) => x.label);
+            const going = prepared.filter((x) => isAnnotaLabel(x.label));   // what the payload carries
+            const snap = own ? makeUploadSnapshot(going.map((x) => x.label), going.map((x) => x.entry),
                 { name: own.name, license: own.license, env: xcUploadTarget().env }) : null;
             const result = await xcPanel.uploadToXenoCanto(sent, sets());
-            let localError = '';
+            run = {
+                result, sent: going.map((x) => x.label), localError: '',
+                recordingCount: new Set(going.map((x) => x.label.xc_nr || x.label.sound_file || '')).size,
+            };
             if (result?.ok) {
                 try {
-                    const set = ownSet();
-                    if (set && snap) set.uploads = [...(set.uploads || []), snap];
+                    // A new session may have replaced the own set meanwhile: the snapshot is not its upload.
+                    if (own && snap && ownSet() === own) own.uploads = [...(own.uploads || []), snap];
                     deps.saveSets();
                     deps.refreshRecordings();
                     deps.refreshLabelList();
                 } catch (e: any) {
-                    localError = `Uploaded, but saving that locally failed: ${e?.message || e}`;
+                    run.localError = `Uploaded, but saving that locally failed: ${e?.message || e}`;
                     console.warn('[xc-upload]', e);
                 }
             }
-            return { result, sent, localError };
         } finally {
             uploading = false;
-            refresh();
+            const refreshError = safeRefresh();
+            if (refreshError && run?.result?.ok && !run.localError) run.localError = `Uploaded, but updating the panel failed: ${refreshError}`;
         }
+        return run;
     }
 
     // ── Export modal, upload and download buttons ──
@@ -173,7 +194,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             return;
         }
         if (!run) return;
-        const { result, sent, localError } = run;
+        const { result, sent, recordingCount, localError } = run;
         if (!result.ok) {
             xcPanel._setStatus([result.message, ...(result.errors || [])].filter(Boolean).join('; '), 'error');
             return;
@@ -182,7 +203,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         const t = xcUploadTarget();
         void showUploadSuccess({
             labelCount: sent.length,
-            recordingCount: new Set(sent.map((l: any) => l.xc_nr || l.sound_file || '')).size,
+            recordingCount,
             setName: ownSet()?.name || '',
             message: result.message || '',
             endpoint: t.endpoint,
@@ -228,6 +249,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
     let lastChecklist: ChecklistResult | null = null;
 
     function blockReason(): string {
+        if (uploading) return 'An upload is running.';
         if (!lastChecklist || lastChecklist.ready) return '';
         const first = lastChecklist.steps.flatMap((st) => st.issues).find((i) => i.level === 'error');
         return first ? `Fix first: ${first.message}` : '';
@@ -269,8 +291,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
                 c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
             ].filter(Boolean).join(' · ');
         } catch { /* app still initializing */ }
-        xcPanel._updateUploadState();
-        if (uploading) uploadBtn.disabled = true;   // no second POST while one is running
+        xcPanel._updateUploadState();   // asks blockReason(): disabled while an upload runs
     }
 
     async function jumpTo(t: CheckTarget): Promise<void> {

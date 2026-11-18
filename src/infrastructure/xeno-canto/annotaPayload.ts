@@ -145,12 +145,17 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
 }
 
 /** Build an Annota-JSON Fv0 set payload. Labels without start/end are skipped. */
+/** Labels the payload carries: those with a start and an end (others are left out). */
+export function isAnnotaLabel(l: any): boolean {
+    return !!l && l.start != null && l.end != null;
+}
+
 export function buildAnnotaPayload(opts: AnnotaBuildOptions) {
     const s = opts.set || {};
     const now = opts.now || new Date();
     const annotator = str(s.creator);
     const annotations = (opts.labels || [])
-        .filter((l: any) => l && l.start != null && l.end != null)
+        .filter(isAnnotaLabel)
         .map((l: any, i: number) => buildAnnotaAnnotation(l, {
             defaultXcNr: opts.defaultXcNr, annotator, annotatorXcId: s.creatorId, index: i,
         }));

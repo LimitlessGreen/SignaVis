@@ -1,7 +1,7 @@
 """Xeno-canto export & upload (features/xc-upload.ts): summary + checklist, selection, export modal,
 download, upload (stubbed, nothing leaves the machine) through the real button with success dialog and
-"uploaded sets" entry; one upload at a time, snapshot = what was sent, accepted upload stays a success
-when saving it locally fails. The profile is set before loading, so neither onboarding nor the project-folder hint opens.
+"uploaded sets" entry; one upload at a time, snapshot = what went out (deduped, timed labels), none for a replaced own set,
+accepted upload stays a success when saving it locally or the final panel update fails. The profile is set before loading, so neither onboarding nor the project-folder hint opens.
 
 Dev server needed:  uv run --with playwright python -I tools/e2e/xc-upload.py http://localhost:5191/demo/labeling-app.html
 Exits non-zero on failure.
@@ -75,14 +75,20 @@ with sync_playwright() as p:
       x.setApiKey('e2e-dummy-key'); }""")
     page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
     check('block reason gone with key', page.evaluate("window.__signavis.xcUpload.blockReason()") == '')
+    # A label without an end: the payload leaves it out, so must the upload record
+    page.evaluate("""() => { const sv = window.__signavis;
+      sv.labelStore.add({ id: 'u3', start: 5, end: null, label: 'Wood Thrush', scientificName: 'Hylocichla mustelina', origin: 'manual', setId: 'own', tags: {} }); }""")
     page.click('#xcUploadBtn')
     page.wait_for_function('window.__calls.length === 1')
-    # While it runs, a refresh (set still valid) must not enable the button again
+    # While it runs, a refresh or a direct panel update (e.g. an XC import finishing) must not
+    # enable the button again while the set is still valid
     page.evaluate('window.__signavis.xcUpload.refresh()')
-    check('button stays disabled while uploading', page.is_disabled('#xcUploadBtn'))
+    check('button stays disabled while uploading (refresh)', page.is_disabled('#xcUploadBtn'))
+    page.evaluate('window.__signavis.xcPanel._updateUploadState()')
+    check('button stays disabled while uploading (panel update)', page.is_disabled('#xcUploadBtn'))
     # The selection changes (recording unticked) and both entry points are tried again
     page.click('#xcSelection .us-row input[type=checkbox]')
-    page.wait_for_timeout(300)
+    page.wait_for_function('window.__signavis.xcUpload.collectSetLabels().length === 0', timeout=5000)
     page.evaluate("document.getElementById('xcUploadBtn').click()")
     page.click('#xcExportSetBtn'); page.click('#xcExportUploadBtn')
     page.wait_for_timeout(300)
@@ -91,14 +97,46 @@ with sync_playwright() as p:
     page.evaluate("document.querySelector('.xc-nokey-backdrop').hidden = true")
     page.evaluate('window.__answer()')
     page.wait_for_selector('.upl-backdrop', timeout=5000)
-    check('upload sent both labels', page.evaluate('window.__calls[0]') == ['u1', 'u2'], str(page.evaluate('window.__calls')))
+    check('upload got all three labels', page.evaluate('window.__calls[0]') == ['u1', 'u2', 'u3'], str(page.evaluate('window.__calls')))
     snap = page.evaluate("window.__signavis.state.labelSets.get('own')?.uploads?.map((u) => u.labelIds)")
-    check('snapshot = what was sent, not the later selection', snap == [['u1', 'u2']], str(snap))
+    check('snapshot = what went out (no u3), not the later selection', snap == [['u1', 'u2']], str(snap))
+    check('success dialog counts what went out', '2 labels' in page.inner_text('.upl-backdrop'), page.inner_text('.upl-backdrop')[:80].replace('\n', ' '))
     check('uploaded set listed', page.evaluate("document.querySelectorAll('#xcUploads .us-snap-title').length") == 1)
     page.evaluate("document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove())")
+    page.evaluate("window.__signavis.labelStore.remove('u3')")
+    page.click('#xcSelection .us-row input[type=checkbox]')   # tick the recording again
+    page.wait_for_function('window.__signavis.xcUpload.collectSetLabels().length === 2', timeout=5000)
+
+    # The own set is replaced (new session) while the request runs: the old upload is not recorded there
+    page.evaluate("""() => { const sv = window.__signavis; const x = sv.xcPanel;
+      x.uploadToXenoCanto = () => new Promise((resolve) => { window.__answer = () => resolve({ ok: true, message: 'Set created' }); });
+      window.__oldOwn = sv.state.labelSets.get('own'); }""")
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
+    page.click('#xcUploadBtn')
+    page.wait_for_function('typeof window.__answer === "function"')
+    page.evaluate("""() => { const sets = window.__signavis.state.labelSets;
+      sets.set('own', { ...window.__oldOwn, uploads: [] }); window.__answer(); }""")
+    page.wait_for_selector('.upl-backdrop', timeout=5000)
+    check('replaced own set gets no upload record', page.evaluate("window.__signavis.state.labelSets.get('own').uploads.length") == 0)
+    page.evaluate("() => { window.__signavis.state.labelSets.set('own', window.__oldOwn); document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove()); }")
+
+    # Accepted upload, then the final panel update throws: still a success with the error shown
+    page.evaluate("""() => { const x = window.__signavis.xcPanel; const upd = x._updateUploadState;
+      window.__restoreUpd = () => { x._updateUploadState = upd; };
+      x.uploadToXenoCanto = async () => { x._updateUploadState = () => { throw new Error('panel broke'); }; return { ok: true, message: 'Set created' }; }; }""")
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
+    page.click('#xcUploadBtn')
+    try:
+        page.wait_for_selector('.upl-backdrop', timeout=5000)
+        dialog = True
+    except Exception:
+        dialog = False
+    page.evaluate('window.__restoreUpd()')
+    status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
+    check('accepted upload still a success when the panel update throws', dialog and 'updating the panel failed' in status, status)
+    page.evaluate("() => { document.querySelectorAll('.upl-backdrop').forEach((b) => b.remove()); window.__signavis.xcUpload.refresh(); }")
 
     # Accepted upload while saving locally fails: still a success (dialog), the local error is shown
-    page.click('#xcSelection .us-row input[type=checkbox]')   # tick the recording again
     page.evaluate("""() => { const x = window.__signavis.xcPanel;
       x.uploadToXenoCanto = async () => ({ ok: true, message: 'Set created' });
       const own = window.__signavis.state.labelSets.get('own'); const keep = own.uploads;
