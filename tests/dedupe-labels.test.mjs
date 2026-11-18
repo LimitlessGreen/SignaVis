@@ -18,3 +18,13 @@ test('dedupeLabels on no array returns []', () => {
     assert.deepEqual(dedupeLabels(null), []);
     assert.deepEqual(dedupeLabels(undefined), []);
 });
+
+test('dedupeLabels treats id 0 as an id', () => {
+    const a = { id: 0, start: 1 }, b = { id: 0, start: 5 };
+    assert.deepEqual(dedupeLabels([a, b]), [a]);
+});
+
+test('dedupeLabels without id tells start 0 from a missing start', () => {
+    const a = { setId: 's', start: 0, end: 1 }, b = { setId: 's', end: 1 };
+    assert.deepEqual(dedupeLabels([a, b]), [a, b]);
+});
