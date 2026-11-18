@@ -187,10 +187,12 @@ export class SimilarReview {
             <button type="button" class="similar-review__play" data-act="play" title="Play (Space)" aria-label="Play"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg></button>
             <button type="button" class="similar-review__btn similar-review__btn--no" data-act="reject" title="Reject: not proposed again (X)">✗ Reject <kbd>X</kbd></button>
             <button type="button" class="similar-review__btn similar-review__btn--ok" data-act="accept" title="Copy into my labels (Enter)">✓ Copy <kbd>Enter</kbd></button>
-            <label class="similar-review__thr" title="Copy all suggestions with at least this score (Shift+Enter)">
-                ≥ <input type="range" min="0.2" max="1" step="0.01"> <output></output>
-            </label>
-            <button type="button" class="similar-review__btn" data-act="all"></button>
+            <span class="similar-review__bulk" role="group" aria-label="Copy all from a score">
+                <label class="similar-review__thr" title="Lowest score for “Copy all”">
+                    Score ≥ <input type="range" min="0.2" max="1" step="0.01"> <output></output>
+                </label>
+                <button type="button" class="similar-review__btn similar-review__btn--bulk" data-act="all"></button>
+            </span>
             <button type="button" class="similar-review__btn" data-act="close" title="Close (Esc)">Done</button>`;
         el.addEventListener('click', (e) => {
             const act = (e.target as HTMLElement).closest('button')?.dataset.act;
@@ -231,7 +233,7 @@ export class SimilarReview {
         (el.querySelector('.similar-review__score') as HTMLElement).textContent = it ? `score ${it.score.toFixed(2)}` : '';
         (el.querySelector('output') as HTMLOutputElement).textContent = this.threshold.toFixed(2);
         const n = this.aboveThreshold().length, all = el.querySelector('[data-act="all"]') as HTMLButtonElement;
-        all.textContent = `Copy ${n}`;
+        all.textContent = `Copy all ${n}`;
         all.title = `Copy the ${n} suggestion${n === 1 ? '' : 's'} with score ≥ ${this.threshold.toFixed(2)} (Shift+Enter)`;
         all.disabled = !n;
         this.place();   // after the text: its height decides the top
