@@ -288,7 +288,7 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
     function redraw(): string {
         if (!OWN_SOURCE_ID) return '';
         let error = '';
-        const note = (e: any) => { error ||= String(e?.message || e); };
+        const note = (e: any) => { error ||= String(e?.message || e || '') || 'unknown error'; };
         // 1. Check (what blockReason() relies on)
         try {
             const set = ownSet();

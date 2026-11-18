@@ -229,13 +229,28 @@ with sync_playwright() as p:
     page.evaluate("""() => { const x = window.__signavis.xcPanel; const build = x.buildAnnotationSetPayload;
       const list = document.getElementById('xcSelection');
       x.buildAnnotationSetPayload = () => { throw ''; };
-      Object.defineProperty(list, 'innerHTML', { configurable: true, set: () => { throw new Error('draw broke'); } });
+      window.__drawTries = 0;
+      Object.defineProperty(list, 'innerHTML', { configurable: true, set: () => { window.__drawTries++; throw new Error('draw broke'); } });
       window.__restoreBoth = () => { x.buildAnnotationSetPayload = build; delete list.innerHTML; };
       window.__signavis.xcUpload.refresh(); }""")
     reason = page.evaluate('window.__signavis.xcUpload.blockReason()')
     check('empty thrown value still blocks', page.is_disabled('#xcUploadBtn') and 'could not be checked' in reason, reason)
+    check('drawing was attempted (and failed) in that refresh', page.evaluate('window.__drawTries') > 0, str(page.evaluate('window.__drawTries')))
     check('outdated note shown although drawing failed', page.is_visible('.ua-stale-note'), page.inner_text('#xcUploadSummary'))
     page.evaluate('() => { window.__restoreBoth(); window.__signavis.xcUpload.refresh(); }')
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
+
+    # Accepted upload, then the final check throws an empty value: reported as a local warning
+    page.evaluate("""() => { const x = window.__signavis.xcPanel; const build = x.buildAnnotationSetPayload;
+      window.__restoreBuild = () => { x.buildAnnotationSetPayload = build; };
+      x.uploadToXenoCanto = async () => { x.buildAnnotationSetPayload = () => { throw ''; }; return { ok: true, message: 'Set created' }; }; }""")
+    page.click('#xcUploadBtn')
+    page.wait_for_selector('.upl-backdrop', timeout=5000)
+    status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
+    check('empty check failure after an accepted upload is reported', 'unknown error' in status, status)
+    page.evaluate('window.__restoreBuild()')
+    close_success(page)
+    page.evaluate('window.__signavis.xcUpload.refresh()')
     page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
 
     # Set name left empty: the real upload code (only fetch stubbed) sends a dated name, the dialog shows it
