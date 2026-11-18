@@ -42,6 +42,9 @@
     pointer-events: auto;
     cursor: grab;
     box-sizing: border-box;
+    /* Otherwise a touch drag turns into a page pan after a few pixels and
+       the browser cancels the pointer (window only moved a little). */
+    touch-action: none;
     transition: background 0.12s, border-color 0.12s;
 }
 
