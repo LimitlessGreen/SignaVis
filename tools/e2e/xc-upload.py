@@ -247,7 +247,8 @@ with sync_playwright() as p:
     page.click('#xcUploadBtn')
     page.wait_for_selector('.upl-backdrop', timeout=5000)
     status = page.evaluate("document.querySelector('.xc-status')?.textContent || ''")
-    check('empty check failure after an accepted upload is reported', 'unknown error' in status, status)
+    check('empty check failure after an accepted upload is reported',
+          status == 'Set created — Uploaded, but updating the panel failed: unknown error', status)
     page.evaluate('window.__restoreBuild()')
     close_success(page)
     page.evaluate('window.__signavis.xcUpload.refresh()')
