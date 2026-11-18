@@ -6,7 +6,8 @@
  *   (BirdNET Live layout). Runs on onnxruntime-web (WASM), 32 kHz, 3 s windows,
  *   optional geo-model (lat, lon, week 1–48).
  * - BirdNET v2.4 (TF.js Layers): the folder contains `model.json` + `labels.json`
- *   (a TF.js graph model with the same input and output works too, e.g. AnuraPAM)
+ *   (a TF.js graph model with the same input and output works too, e.g. AnuraPAM;
+ *   it must run with synchronous predict(), i.e. contain no control-flow ops)
  *   and optionally the area model in `mdata/`. 48 kHz, 3 s windows.
  *
  * Runtimes (TF.js / onnxruntime-web) are loaded from CDN at runtime (vendored in Lite).
@@ -114,10 +115,30 @@ self.onmessage = async (e) => {
       // Layers model (BirdNET v2.4) or graph model (e.g. AnuraPAM, a BirdNET-Analyzer
       // custom classifier converted from its SavedModel). Both take 3 s of 48 kHz audio
       // and return sigmoid scores, so prediction is the same.
-      var manifest = await fetch(base + 'model.json').then(function (r) { return r.json(); });
-      model = manifest && manifest.format === 'graph-model'
-        ? await tf.loadGraphModel(base + 'model.json')
-        : await tf.loadLayersModel(base + 'model.json');
+      // model.json is fetched once: it decides the loader and is handed to it, the
+      // weight shards are resolved against the model folder.
+      var manifest = await fetch(base + 'model.json').then(function (r) {
+        if (!r.ok) throw new Error('model.json: HTTP ' + r.status);
+        return r.json();
+      });
+      var handler = {
+        load: function () {
+          return tf.io.getModelArtifactsForJSON(manifest, async function (groups) {
+            var specs = [], paths = [];
+            groups.forEach(function (g) { specs.push.apply(specs, g.weights); paths.push.apply(paths, g.paths); });
+            var bufs = await Promise.all(paths.map(function (p) {
+              return fetch(base + p).then(function (r) {
+                if (!r.ok) throw new Error(p + ': HTTP ' + r.status);
+                return r.arrayBuffer();
+              });
+            }));
+            return [specs, tf.io.concatenateArrayBuffers(bufs)];
+          });
+        },
+      };
+      model = manifest.format === 'graph-model'
+        ? await tf.loadGraphModel(handler)
+        : await tf.loadLayersModel(handler);
 
       self.postMessage({ id: id, type: 'progress', message: 'Warming up\\u2026', percent: 50 });
       model.predict(tf.zeros([1, ${TFJS_CHUNK_SAMPLES}])).dispose();

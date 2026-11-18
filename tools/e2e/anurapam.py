@@ -1,16 +1,18 @@
 """AnuraPAM preset: pick it in the model picker, analyse a frog recording, the anuran shows up as labels.
 Dev server + `npm run models:anurapam` needed:
-  uv run --with playwright python -I tools/e2e/anurapam.py http://localhost:5191/demo/labeling-app.html <frog.wav> [screenshot-dir]
+  uv run --with playwright python -I tools/e2e/anurapam.py http://localhost:5191/demo/labeling-app.html <frog.wav> <species> [screenshot-dir]
+  e.g. Bombina_bombina.wav "Bombina bombina" — passes only when that anuran is detected.
 """
 import sys
 from playwright.sync_api import sync_playwright
-url, wav = sys.argv[1], sys.argv[2]; shots = sys.argv[3] if len(sys.argv) > 3 else None
+url, wav, expected = sys.argv[1], sys.argv[2], sys.argv[3]; shots = sys.argv[4] if len(sys.argv) > 4 else None
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
     page = b.new_page(viewport={'width': 1400, 'height': 900})
     errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
     page.goto(url, wait_until='networkidle'); page.wait_for_function('window.__signavis')
-    page.set_input_files('#fileInput', wav); page.wait_for_timeout(4000); page.keyboard.press('Escape')
+    page.set_input_files('#fileInput', wav)
+    page.wait_for_function("() => window.__signavis.player._state?.audioBuffer", timeout=60000); page.keyboard.press('Escape')
     page.evaluate("() => { const sv = window.__signavis; sv.labelStore.replaceAll([]); sv.syncToPlayer(); }")
     page.evaluate("document.querySelector('#birdnetModelSeg [data-value=anurapam]').click()")
     print('preset:', page.evaluate("document.getElementById('birdnetModelPreset').value"),
@@ -26,4 +28,6 @@ with sync_playwright() as p:
     if shots: page.screenshot(path=f'{shots}/anurapam.png')
     print('page errors:', errs)
     b.close()
-    sys.exit(0 if labels else 1)
+    found = any(n == expected for n, _ in labels)
+    print(f'{expected} detected:', found)
+    sys.exit(0 if found and not errs else 1)

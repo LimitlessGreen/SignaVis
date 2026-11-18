@@ -8,6 +8,12 @@ const dir = new URL('../models/anurapam/', import.meta.url);
 const skip = !existsSync(new URL('model.json', dir)) && 'models/anurapam not fetched';
 const read = (f) => JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
 
+const ANURANS = [
+    'Alytes obstetricans', 'Bombina bombina', 'Bombina variegata', 'Bufo bufo', 'Bufotes viridis',
+    'Epidalea calamita', 'Hyla arborea', 'Pelobates fuscus', 'Pelophylax esculentus', 'Pelophylax lessonae',
+    'Pelophylax ridibundus', 'Rana arvalis', 'Rana dalmatina', 'Rana temporaria',
+];
+
 test('model.json is a graph model with 3 s of 48 kHz in and one score per label out', { skip }, () => {
     const m = read('model.json');
     assert.equal(m.format, 'graph-model');
@@ -17,11 +23,9 @@ test('model.json is a graph model with 3 s of 48 kHz in and one score per label 
     for (const p of m.weightsManifest.flatMap((g) => g.paths)) assert.ok(existsSync(new URL(p, dir)), p);
 });
 
-test('labels.json keeps the BirdNET v2.4 birds and ends with the 14 anurans', { skip }, () => {
+test('labels.json is the BirdNET v2.4 labels in order, then the 14 anurans in order', { skip }, () => {
     const labels = read('labels.json');
-    assert.equal(labels.length, 6522 + 14);
-    const frogs = labels.slice(-14).map((l) => l.split('_')[0]);
-    assert.ok(frogs.includes('Rana temporaria'));
-    assert.ok(frogs.includes('Pelophylax esculentus'), 'taxonomy spelling without "kl."');
-    assert.equal(labels[0], read('../birdnet-v2.4/labels.json')[0]);
+    assert.deepEqual(labels.slice(0, 6522), read('../birdnet-v2.4/labels.json'));
+    // "kl." dropped to match the taxonomy
+    assert.deepEqual(labels.slice(6522).map((l) => l.split('_')[0]), ANURANS);
 });
