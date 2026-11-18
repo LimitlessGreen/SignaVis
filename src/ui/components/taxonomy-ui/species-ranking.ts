@@ -67,6 +67,8 @@ export interface RankInput {
   tier: number;
   /** Geo occurrence probability, or null/undefined when unknown. */
   geo?: number | null;
+  /** On the user's active species list. */
+  listed?: boolean;
 }
 
 /** Sort key bucket: 0 exact/code, 1 direct match, 2 other-language match. */
@@ -79,6 +81,7 @@ function bucket(tier: number) {
 export function compareRanked(a: RankInput, b: RankInput) {
   const ba = bucket(a.tier), bb = bucket(b.tier);
   if (ba !== bb) return ba - bb;
+  if (!!a.listed !== !!b.listed) return a.listed ? -1 : 1;
   const la = (a.geo ?? 0) >= LOCAL_THRESHOLD ? 0 : 1;
   const lb = (b.geo ?? 0) >= LOCAL_THRESHOLD ? 0 : 1;
   if (la !== lb) return la - lb;

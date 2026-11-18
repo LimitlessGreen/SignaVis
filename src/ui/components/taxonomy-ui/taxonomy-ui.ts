@@ -99,6 +99,8 @@ export interface SpeciesSuggestion {
   code?: string;
   /** Species occurs at the recording location according to the geo model. */
   local?: boolean;
+  /** On the user's active species list. */
+  listed?: boolean;
   [k: string]: any;
 }
 
@@ -145,7 +147,7 @@ export function altNameMatch(record: any, q: string, displayLang: string) {
  * @param {(sci: string) => number|null} [opts.getGeoScore]  Occurrence probability at the recording location
  * @returns {(query: string, limit?: number) => SpeciesSuggestion[]}
  */
-export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool, getGeoScore }: any) {
+export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool, getGeoScore, isListed }: any) {
   return (query: any, limit = 14): SpeciesSuggestion[] => {
     const q = normalizeSearch(query).trim();
     const lang = getLang();
@@ -197,6 +199,7 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       projectRows.push({
         ...item,
         tier,
+        listed: !!(item.scientificName && isListed?.(item.scientificName)),
         group: 'project',
         local: geo != null && geo >= LOCAL_THRESHOLD,
         matchedAlt: tier === MATCH.ALT ? altNameMatch(rec, q, lang) : '',
@@ -204,7 +207,7 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
       });
     }
     projectRows.sort((a, b) =>
-      (q ? a.tier - b.tier : 0) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
+      (q ? a.tier - b.tier : 0) || Number(!!b.listed) - Number(!!a.listed) || (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
 
     // Taxonomy: full scan over the cached index (≈11k records), then rank.
     const taxRows: any[] = [];
@@ -223,6 +226,7 @@ export function createSuggestionProvider({ taxonomy, getLang, getLabels, getPool
         const geo = getGeoScore?.(rec.s) ?? null;
         const row = {
           name, scientificName: rec.s, tier, geo,
+          listed: !!isListed?.(rec.s),
           local: geo != null && geo >= LOCAL_THRESHOLD,
           matchedAlt: tier === MATCH.ALT ? altNameMatch(rec, q, lang) : '',
           code: tier === MATCH.CODE ? q.toUpperCase() : '',
@@ -285,7 +289,8 @@ export function speciesRowHtml(s: SpeciesSuggestion, q: string) {
   const sub = s.scientificName ? `<i>${hl(s.scientificName, q)}</i>` : '';
   const alt = s.matchedAlt ? `${sub ? ' · ' : ''}<span class="search-alt">${hl(s.matchedAlt, q)}</span>` : '';
   const code = s.code ? `<span class="search-code">${esc(s.code)}</span>` : '';
-  const meta = (s.local ? '<span class="search-local" title="Occurs at the recording location (BirdNET geo model)"></span>' : '')
+  const meta = (s.listed ? '<span class="search-listed" title="On your active species list">list</span>' : '')
+    + (s.local ? '<span class="search-local" title="Occurs at the recording location (BirdNET geo model)"></span>' : '')
     + (s.count ? `<span class="search-count">${s.count}×</span>` : '');
   return `${dot}<span class="search-name">${hl(s.name, q)}</span>`
     + `<span class="search-meta">${meta}</span>`

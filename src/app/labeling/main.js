@@ -621,6 +621,8 @@ function renderAnalyseListChip() {
   chip.classList.toggle('is-filtered', !!l);
   sidebar.setBadge('species', l ? String(l.species.length) : '');
 }
+let activeListSet = speciesFilterSet(speciesLists.active);
+speciesLists.onChange(() => { activeListSet = speciesFilterSet(speciesLists.active); });
 speciesLists.onChange(renderAnalyseListChip);
 sidebar.addPanel('species', {
   icon: ListChecks, label: 'Species', hint: 'Your species lists — limit what BirdNET reports',
@@ -4150,6 +4152,7 @@ async function loadBirdnetTaxonomy() {
       getLabels: () => state.labels,
       getPool: () => state.xcLabelPool,
       getGeoScore: speciesGeoScore,
+      isListed: (sci) => !!activeListSet?.has(String(sci).toLowerCase()),
     });
     const speciesSearchFactory = (anchor, onSelect) =>
       createGeoAwareSpeciesSearch({ getSuggestions, onSelect });
