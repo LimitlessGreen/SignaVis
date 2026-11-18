@@ -94,6 +94,8 @@ import { LabelStore } from './label-store.ts';
 import { installThemeToggle } from './features/theme.ts';
 import { createRavenExport } from './features/raven-export.ts';
 import { installAnnotaImport } from './features/annota-import.ts';
+import { installFileDrop } from './features/file-drop.ts';
+import { installMicRecording } from './features/mic-recording.ts';
 
 // ── Hand-over to the SignaVis Lite desktop app (web only) ─────────
 // Runs before anything is loaded: with "always open in the app" switched on, the page
@@ -4329,30 +4331,12 @@ async function openFile() {
   if (picked) await loadLocalAudioFile(picked.file, { filePath: picked.path });
 }
 // ── Microphone recording: live spectrogram, then added like a local file ──
-const recordBtn = document.getElementById('recordBtn');
-if (recordBtn && BirdNETPlayer.recordingSupported) {
-  recordBtn.hidden = false;
-  const recordText = recordBtn.querySelector('.record-btn-text');
-  const setRecording = (on) => {
-    recordBtn.classList.toggle('is-recording', on);
-    recordText.textContent = on ? 'Stop' : 'Record';
-  };
-  recordBtn.addEventListener('click', async () => {
-    if (player.isRecording) { await player.stopRecording(); return; }
-    try {
-      await player.startRecording({ maxSeconds: 300, loadWhenDone: false });
-      setRecording(true);
-    } catch (e) {
-      showLoadError(e?.name === 'NotAllowedError' ? 'Microphone access was denied.' : (e?.message || e), 'Cannot record');
-    }
-  });
-  player.on('recordingstop', () => setRecording(false));
-  player.on('recordingcomplete', async (e) => {
-    setRecording(false);
-    const file = e.detail?.file;
-    if (file) await loadLocalAudioFile(file);
-  });
-}
+installMicRecording(appCtx, {
+  button: document.getElementById('recordBtn'),
+  supported: !!BirdNETPlayer.recordingSupported,
+  openFile: (file) => loadLocalAudioFile(file),
+  showError: (msg, title) => showLoadError(msg, title),
+});
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
@@ -4417,43 +4401,9 @@ async function loadLocalAudioFile(file, extra = {}) {
 }
 
 // ── Drag & drop of audio files anywhere on the page ──────────────
-const AUDIO_EXT = /\.(wav|mp3|flac|ogg|oga|opus|m4a|aac|webm|aif|aiff)$/i;
-const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
-const dropOverlay = document.createElement('div');
-dropOverlay.className = 'file-drop-overlay';
-dropOverlay.innerHTML = '<div class="file-drop-card"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><div class="file-drop-title">Drop audio file to open</div><div class="file-drop-hint">WAV, MP3, FLAC, OGG, M4A …</div></div>';
-// Popover = browser top layer, so it also covers open <dialog> modals.
-dropOverlay.popover = 'manual';
-document.body.appendChild(dropOverlay);
-const showDropOverlay = () => { try { if (!dropOverlay.matches(':popover-open')) dropOverlay.showPopover(); } catch (e) {} };
-let _dragDepth = 0;
-const hideDropOverlay = () => { _dragDepth = 0; try { dropOverlay.hidePopover(); } catch (e) {} };
-window.addEventListener('dragenter', (e) => {
-  if (!isFileDrag(e)) return;
-  e.preventDefault();
-  _dragDepth++;
-  showDropOverlay();
-});
-window.addEventListener('dragover', (e) => {
-  if (!isFileDrag(e)) return;
-  e.preventDefault(); // otherwise the browser opens the file itself
-  e.dataTransfer.dropEffect = 'copy';
-});
-window.addEventListener('dragleave', (e) => {
-  if (!isFileDrag(e)) return;
-  if (--_dragDepth <= 0) hideDropOverlay();
-});
-window.addEventListener('drop', async (e) => {
-  if (!isFileDrag(e)) return;
-  e.preventDefault();
-  hideDropOverlay();
-  const files = Array.from(e.dataTransfer.files || []);
-  const file = files.find((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name));
-  if (!file) {
-    showLoadError(files.length ? `"${files[0].name}" is not an audio file` : 'no file', 'Cannot open');
-    return;
-  }
-  await loadLocalAudioFile(file);
+installFileDrop({
+  openFile: (file) => loadLocalAudioFile(file),
+  showError: (msg, title) => showLoadError(msg, title),
 });
 
 loadSampleBtn.addEventListener('click', () => loadDemoRecording());
