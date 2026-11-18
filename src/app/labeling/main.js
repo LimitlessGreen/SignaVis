@@ -3073,7 +3073,14 @@ const similarReview = new SimilarReview({
   onPlay: (id) => { const lbl = state.labels.find((l) => l.id === id); if (lbl) player.playLabelSegment(lbl); },
   onAccept: (ids) => acceptSimilar(ids),
   onReject: (ids) => rejectSimilar(ids),
-  onClose: () => { setActiveSimilar(null); _similarCorrections.length = 0; endSimilarSession(); groupReview.resume(_groupNamed); _groupNamed = false; },
+  onClose: () => {
+    _similarCorrections.length = 0;
+    endSimilarSession();
+    // Leaving the review drops the suggestions not copied (copies are own labels by now)
+    const left = new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar && !l.similar.preview).map((l) => l.id));
+    if (left.size) { labelStore.remove(left); syncToPlayer(); }
+    groupReview.resume(_groupNamed); _groupNamed = false;
+  },
   // Escape while resizing the box under review cancels the resize, not the review
   busy: () => !!player.spectrogramLabels?._editing,
   // Sits at the bottom of the spectrogram (low band, mostly noise) instead of over the label tracks
@@ -3086,6 +3093,7 @@ function closeSimilarReview() {
     similarReview.close();
     endSimilarSession();
     _similarRun++;
+    selectionMeta.classList.remove('is-busy');
   } catch { /* before the review exists */ }
 }
 
@@ -3125,16 +3133,15 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
   // A recording that gets its id only now (just loaded) is no switch
   const stale = () => run !== _similarRun || (!!recordingId && (recordingManager?.activeId || null) !== recordingId);
   selectionMeta.textContent = `Looking for calls like ${exemplar.label}…`;
+  selectionMeta.classList.add('is-busy');
   try {
-    const spec = await bandSpectrogram(audio, ...searchBand(exemplar, audio.sampleRate), {
-      yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: stale,
-    });
-    if (!spec || stale()) return;
+    // Spectrogram and correlation both run in the session's worker: the page stays usable
     endSimilarSession();
     const session = _similarSession = new SimilarSession();
-    const hits = await session.find(spec, template ? { template }
+    const hits = await session.findInAudio(audio, ...searchBand(exemplar, audio.sampleRate), template ? { template }
       : { start: exemplar.start, end: exemplar.end, freqMin: exemplar.freqMin, freqMax: exemplar.freqMax });
     if (stale()) { if (session === _similarSession) endSimilarSession(); return; }
+    if (!hits) { endSimilarSession(); selectionMeta.textContent = 'Find similar: spectrogram not ready yet, try again in a moment'; return; }
     const setId = similarSetId();
     if (!_similarRejected.has(recordingId)) _similarRejected.set(recordingId, new Set());
     let n = 0;
@@ -3157,6 +3164,8 @@ async function findSimilarCalls(exemplar, { template = null } = {}) {
   } catch (err) {
     console.error('Find similar failed', err);
     if (!stale()) selectionMeta.textContent = `Find similar failed (${err?.message || err})`;
+  } finally {
+    if (run === _similarRun) selectionMeta.classList.remove('is-busy');
   }
 }
 

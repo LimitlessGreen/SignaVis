@@ -7,65 +7,19 @@
 
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
 import { channelData } from '../shared/utils.ts';
+import { bandSpectrogramOf, type BandOptions } from './similarBand.ts';
 import type { CallPatch } from '../domain/similar/cluster.ts';
 import { createSearch, type CallTemplate, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
 
 const WINDOW_SECONDS = 0.016;
-const BLOCK_FRAMES = 4096;
-
-export interface BandOptions {
-    /** Called between blocks; return a promise to yield to the UI. */
-    yieldEvery?: () => Promise<void> | void;
-    /** Stops early when it returns true. */
-    cancelled?: () => boolean;
-}
+export type { BandOptions } from './similarBand.ts';
 
 /** Spectrogram rows covering loHz..hiHz of the whole recording, or null before aw-dsp is ready / when cancelled. */
 export async function bandSpectrogram(audio: AudioBuffer, loHz: number, hiHz: number, opts: BandOptions = {}): Promise<BandSpectrogram | null> {
     const wasm = wasmMain();
     if (!wasm) return null;
-    const sr = audio.sampleRate;
-    const winLen = 2 ** Math.round(Math.log2(sr * WINDOW_SECONDS));
-    const hop = winLen / 4;
-    const params = { winLen, hop, nFft: winLen, window: { kind: 'hann' }, scale: { kind: 'linear' },
-        pcen: null, reassign: false, output: 'db', sampleRate: sr };
-    const stft = new wasm.WasmStft(JSON.stringify(params));
-    try {
-        const total = stft.nFrames(audio.length);
-        const bins = stft.outBins();
-        const freqs = stft.binFrequencies();
-        const df = freqs.length > 1 ? freqs[1] - freqs[0] : sr / winLen;
-        const b0 = Math.max(0, Math.floor((loHz - freqs[0]) / df));
-        const b1 = Math.min(bins, Math.ceil((hiHz - freqs[0]) / df) + 1);
-        const rows = Math.max(0, b1 - b0);
-        if (!rows || total < 3) return null;
-        const values = new Float32Array(rows * total);
-        const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
-        for (let f0 = 0; f0 < total; f0 += BLOCK_FRAMES) {
-            if (opts.cancelled?.()) return null;
-            const n = Math.min(BLOCK_FRAMES, total - f0);
-            const [lo, hi] = stft.blockFrameRange(f0, n, total);
-            const [start, len] = stft.sampleRange(lo, hi - lo);
-            const first = Math.max(0, start), last = Math.min(audio.length, start + len);
-            const mono = new Float32Array(Math.max(0, last - first));
-            for (const ch of channels) for (let i = 0; i < mono.length; i++) mono[i] += ch[first + i] / channels.length;
-            const block = stft.blockValues(mono, first, f0, n, total);   // n × bins, frame-major
-            for (let f = 0; f < n; f++) {
-                const src = f * bins;
-                for (let r = 0; r < rows; r++) values[r * total + f0 + f] = block[src + b0 + r];
-            }
-            await opts.yieldEvery?.();
-        }
-        // Band floor: subtract each row's median
-        const tmp = new Float32Array(total);
-        for (let r = 0; r < rows; r++) {
-            const row = values.subarray(r * total, (r + 1) * total);
-            tmp.set(row); tmp.sort();
-            const med = tmp[total >> 1];
-            for (let j = 0; j < total; j++) row[j] -= med;
-        }
-        return { values, rows, frames: total, f0: freqs[0] + b0 * df, df, t0: 0, dt: hop / sr };
-    } finally { stft.free(); }
+    const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+    return bandSpectrogramOf(wasm, channels, audio.length, audio.sampleRate, loHz, hiHz, opts);
 }
 
 // ── Search session off the main thread ────────────────────────────
@@ -99,6 +53,36 @@ export class SimilarSession {
         const Ctor = await workerCtor();
         if (this.disposed) throw new Error('search closed');   // closed while the worker module loaded
         if (!Ctor) { this.local = createSearch(spec, exemplar, opts); return this.local.hits; }
+        this.start(Ctor);
+        return (await this.call({ type: 'find', spec, exemplar, opts }, [spec.values.buffer])).hits;
+    }
+
+    /**
+     * Hits for `exemplar` in loHz..hiHz of `audio`; the spectrogram is computed in the worker too,
+     * so a long recording does not stall the page. null: aw-dsp not ready or recording too short.
+     */
+    async findInAudio(audio: AudioBuffer, loHz: number, hiHz: number, exemplar: Box | { template: CallTemplate },
+        opts: FindOptions = {}): Promise<SimilarHit[] | null> {
+        const Ctor = await workerCtor();
+        let module: WebAssembly.Module | null = null;
+        if (Ctor) {
+            try { module = await (await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts')).compileWasmModule(); } catch { module = null; }
+        }
+        if (this.disposed) throw new Error('search closed');
+        if (!Ctor || !module) {
+            const spec = await bandSpectrogram(audio, loHz, hiHz, { yieldEvery: () => new Promise((r) => setTimeout(r, 0)), cancelled: () => this.disposed });
+            if (!spec || this.disposed) return null;
+            this.local = createSearch(spec, exemplar, opts);
+            return this.local.hits;
+        }
+        this.start(Ctor);
+        // Channels are copied (structured clone): the AudioBuffer keeps its own
+        const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+        const r = await this.call({ type: 'findAudio', module, channels, length: audio.length, sampleRate: audio.sampleRate, loHz, hiHz, exemplar, opts });
+        return r.hits ?? null;
+    }
+
+    private start(Ctor: any) {
         this.worker = new Ctor();
         this.worker!.onmessage = (e: MessageEvent) => {
             const p = this.pending.get(e.data.id);
@@ -110,7 +94,6 @@ export class SimilarSession {
             for (const p of this.pending.values()) p.reject(new Error(e.message || 'similar worker failed'));
             this.pending.clear();
         };
-        return (await this.call({ type: 'find', spec, exemplar, opts }, [spec.values.buffer])).hits;
     }
 
     /** Record a decision on hit i (`moved`: box centre corrected by dt s / df Hz); ranks of all hits (decided ones −Infinity). */

@@ -33,3 +33,25 @@
 .statusbar-label {
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
 }
+
+// Long-running work (e.g. "find similar calls"): spinner in front of the message
+.statusbar-label.is-busy::before {
+    content: '';
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-right: 0.5em;
+    vertical-align: -0.1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: statusbar-spin 0.8s linear infinite;
+}
+
+@keyframes statusbar-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .statusbar-label.is-busy::before { animation-duration: 2.4s; }
+}

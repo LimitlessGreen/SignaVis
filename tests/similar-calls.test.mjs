@@ -296,3 +296,28 @@ test('a template starting one row below the band is still searched when an upwar
     // Nothing fits at all: no hits, no error
     assert.deepEqual(findWithTemplate(spec, { ...t, f0: -1000 }).hits, []);
 });
+
+test('SimilarSession.findInAudio computes the band spectrogram and finds the repeats (in place without workers)', async () => {
+    const sr = 32000, n = sr * 10, x = new Float32Array(n), r = rng(5);
+    for (let i = 0; i < n; i++) x[i] = 0.01 * r();
+    for (const at of [1, 4.5, 8]) {
+        let ph = 0;
+        for (let i = 0; i < 0.25 * sr; i++) {
+            const t = i / sr;
+            ph += 2 * Math.PI * (3000 + 4000 * t) / sr;
+            x[Math.round(at * sr) + i] += 0.3 * Math.sin(ph) * Math.sin(Math.PI * t / 0.25);
+        }
+    }
+    const audio = { sampleRate: sr, length: n, numberOfChannels: 1, getChannelData: () => x };
+    const exemplar = { start: 1, end: 1.25, freqMin: 2900, freqMax: 4100 };
+    const session = new SimilarSession();
+    const hits = await session.findInAudio(audio, ...searchBand(exemplar, sr), exemplar, { minScore: 0.3 });
+    for (const t of [4.5, 8]) assert.ok(hits.some((h) => Math.abs(h.start - t) < 0.03), `chirp at ${t} s`);
+    assert.equal((await session.decide(0, true))[0], -Infinity);
+    session.dispose();
+    // Closed while computing: no result
+    const closed = new SimilarSession();
+    const p = closed.findInAudio(audio, ...searchBand(exemplar, sr), exemplar);
+    closed.dispose();
+    await assert.rejects(p);
+});

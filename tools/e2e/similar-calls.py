@@ -28,8 +28,15 @@ with sync_playwright() as p:
           start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); sv.player.selectLabel('ex'); }}""")
     page.wait_for_timeout(500)
     page.evaluate("document.activeElement?.blur()")
+    # Watch the main thread while searching: the longest gap between frames
+    page.evaluate("() => { window.__gap = 0; let t = performance.now(); const tick = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - t); t = n; if (!window.__stopGap) requestAnimationFrame(tick); }; requestAnimationFrame(tick); }")
     page.keyboard.press('f')
+    busy = page.evaluate("document.getElementById('selectionMeta').classList.contains('is-busy')")
     page.wait_for_selector('.similar-review', state='attached', timeout=30000)
+    gap = page.evaluate("() => { window.__stopGap = true; return window.__gap; }")
+    check(busy, 'status bar shows the spinner while searching')
+    check(not page.evaluate("document.getElementById('selectionMeta').classList.contains('is-busy')"), 'spinner gone once the review opens')
+    check(gap < 250, f'page stays responsive while searching (longest frame gap {gap:.0f} ms)')
     s = page.evaluate(SUGG)
     print('suggestions (start, score, sources):', [(round(a, 2), round(c, 2), d) for a, c, d in sorted(s, key=lambda x: -x[1])][:10])
     truth = [11.03, 14.53, 19.14, 23.41, 26.80, 30.97, 35.43, 39.16, 44.40, 47.99, 51.55, 55.40, 58.88]
@@ -124,9 +131,9 @@ with sync_playwright() as p:
     page.evaluate("document.activeElement?.blur()")
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
     check(page.locator('.similar-review').count() == 0, 'Esc closes the bar')
-    ops = page.evaluate("[...document.querySelectorAll('.spectrogram-label-region--similar')].map(e => getComputedStyle(e).opacity)")
-    check(ops and all(o != '0.55' for o in ops) and page.locator('.spectrogram-label-region--reviewing').count() == 0,
-          f'closed: suggestions no longer dimmed or highlighted {set(ops)}')
+    check(len(page.evaluate(SUGG)) == 0 and page.locator('.spectrogram-label-region--similar').count() == 0,
+          'closed: suggestions not copied are gone')
+    check(any(l.get('adoptedFrom') for l in page.evaluate(OWN)), 'closed: the copies stay')
     check(not errs, f'page errors: {errs}')
     b.close()
 sys.exit(1 if fails else 0)
