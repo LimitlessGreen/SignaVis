@@ -34,11 +34,16 @@ const SHOW_DELAY = 180;
 const HIDE_DELAY = 220;
 const BURST_COOLDOWN = 1200;
 
-export function initSponsorCard(doc: Document = document): void {
+export interface SponsorCardHandle {
+  /** Call when the user heads to the sponsor page from elsewhere (e.g. the help menu). */
+  startSponsor(): void;
+}
+
+export function initSponsorCard(doc: Document = document): SponsorCardHandle | null {
   const brand = doc.querySelector<HTMLElement>('.brand');
   const card = doc.querySelector<HTMLElement>('.sponsor-card');
   const heart = doc.querySelector<HTMLElement>('.heart-link');
-  if (!brand || !card || !heart) return;
+  if (!brand || !card || !heart) return null;
   const win = doc.defaultView ?? window;
   const storage = (() => { try { return win.localStorage; } catch { return null; } })();
   const reducedMotion = () => win.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -48,6 +53,7 @@ export function initSponsorCard(doc: Document = document): void {
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let lastBurst = 0;
   let open = false;
+  let openAtPointerDown = false; // touch: decide the tap with the state from before focus moved
   let holdUntil = 0; // keep the card up briefly after the thank-you
 
   const applyState = () => {
@@ -55,12 +61,23 @@ export function initSponsorCard(doc: Document = document): void {
     brand.classList.toggle('is-sponsor', state === 'sponsor');
   };
   applyState();
+  card.inert = true;
+
+  const startSponsor = () => {
+    if (state === 'sponsor') return;
+    state = 'pending';
+    writeSponsorState(storage, state);
+    applyState();
+  };
 
   const setOpen = (next: boolean) => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
     if (open === next) return;
     open = next;
     brand.classList.toggle('is-active', next);
     card.classList.toggle('is-open', next);
+    card.inert = !next;
     if (next) burst(state === 'sponsor' ? 10 : 7);
   };
   const scheduleShow = () => {
@@ -107,13 +124,14 @@ export function initSponsorCard(doc: Document = document): void {
     el.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') scheduleHide(); });
   }
   // Touch: first tap on the heart opens the card instead of navigating
+  heart.addEventListener('pointerdown', () => { openAtPointerDown = open; });
   heart.addEventListener('click', (e) => {
-    if ((e as PointerEvent).pointerType === 'touch' && !open) {
+    if ((e as PointerEvent).pointerType === 'touch' && !openAtPointerDown) {
       e.preventDefault();
       setOpen(true);
       return;
     }
-    if (state === 'none') { state = 'pending'; writeSponsorState(storage, state); applyState(); }
+    startSponsor();
   });
   doc.addEventListener('pointerdown', (e) => {
     if (open && !brand.contains(e.target as Node) && !card.contains(e.target as Node)) setOpen(false);
@@ -138,12 +156,7 @@ export function initSponsorCard(doc: Document = document): void {
   });
 
   // Sponsor click → ask once the user returns
-  card.querySelector('[data-sponsor-cta]')?.addEventListener('click', () => {
-    if (state === 'sponsor') return;
-    state = 'pending';
-    writeSponsorState(storage, state);
-    applyState();
-  });
+  card.querySelector('[data-sponsor-cta]')?.addEventListener('click', startSponsor);
   card.querySelector('[data-sponsor-yes]')?.addEventListener('click', () => {
     state = 'sponsor';
     writeSponsorState(storage, state);
@@ -163,4 +176,6 @@ export function initSponsorCard(doc: Document = document): void {
       setOpen(true);
     }
   });
+
+  return { startSponsor };
 }

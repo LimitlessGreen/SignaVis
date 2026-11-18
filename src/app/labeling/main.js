@@ -607,7 +607,7 @@ function openInfoDialog(el, title) {
   } });
   mm.open();
 }
-initSponsorCard();
+const sponsorCard = initSponsorCard();
 
 const SPONSOR_URL = 'https://github.com/sponsors/LimitlessGreen';
 const ISSUES_URL = 'https://github.com/LimitlessGreen/SignaVis/issues/new/choose';
@@ -624,7 +624,7 @@ initHelpMenu({
     { group: 'SignaVis', icon: HELP_ICONS.Info, label: 'About SignaVis', keywords: 'version license credits', action: () => openInfoDialog(aboutPanelEl, 'About') },
     { group: 'SignaVis', icon: HELP_ICONS.Bug, label: 'Report a problem', hint: 'Opens GitHub issues', keywords: 'bug issue feedback idea', action: () => window.open(ISSUES_URL, '_blank', 'noopener') },
     { group: 'SignaVis', icon: HELP_ICONS.Shield, label: 'Privacy policy', keywords: 'gdpr data datenschutz', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
-    { group: 'SignaVis', icon: HELP_ICONS.Heart, label: 'Sponsor SignaVis', keywords: 'donate support', action: () => window.open(SPONSOR_URL, '_blank', 'noopener') },
+    { group: 'SignaVis', icon: HELP_ICONS.Heart, label: 'Sponsor SignaVis', keywords: 'donate support', action: () => { sponsorCard?.startSponsor(); window.open(SPONSOR_URL, '_blank', 'noopener'); } },
   ],
 });
 

@@ -60,10 +60,10 @@ export function initHelpMenu(opts: {
 
   const pop = document.createElement('div');
   pop.className = 'help-pop';
-  pop.setAttribute('role', 'menu');
+  pop.inert = true;
   pop.innerHTML = `
-    <label class="help-pop__search">${Search}<input type="search" placeholder="Search help &amp; shortcuts…" aria-label="Search help and shortcuts"></label>
-    <div class="help-pop__list"></div>
+    <label class="help-pop__search">${Search}<input type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="helpPopList" placeholder="Search help &amp; shortcuts…" aria-label="Search help and shortcuts"></label>
+    <div class="help-pop__list" id="helpPopList" role="listbox" aria-label="Help"></div>
     <div class="help-pop__foot"><span>Press <kbd>?</kbd> for all shortcuts</span></div>`;
   document.body.appendChild(pop);
   const input = pop.querySelector('input')!;
@@ -77,7 +77,11 @@ export function initHelpMenu(opts: {
     const r = rows();
     if (!r.length) return;
     active = (i + r.length) % r.length;
-    r.forEach((el, j) => el.classList.toggle('is-active', j === active));
+    r.forEach((el, j) => {
+      el.classList.toggle('is-active', j === active);
+      el.setAttribute('aria-selected', String(j === active));
+    });
+    input.setAttribute('aria-activedescendant', r[active].id);
     r[active].scrollIntoView({ block: 'nearest' });
   };
 
@@ -88,18 +92,19 @@ export function initHelpMenu(opts: {
     let group = '';
     res.items.forEach((it, i) => {
       if (it.group !== group) { group = it.group; html += `<div class="help-pop__group">${esc(group)}</div>`; }
-      html += `<button type="button" class="help-pop__item" role="menuitem" data-i="${i}">
+      html += `<button type="button" class="help-pop__item" role="option" id="helpPopItem${i}" data-i="${i}">
         <span class="help-pop__icon">${it.icon}</span>
         <span class="help-pop__text"><span class="help-pop__label">${esc(it.label)}</span>${it.hint ? `<span class="help-pop__hint">${esc(it.hint)}</span>` : ''}</span>
         ${it.kbd ? `<kbd>${esc(it.kbd)}</kbd>` : ''}</button>`;
     });
     if (res.shortcuts.length) {
       html += `<div class="help-pop__group">Shortcuts</div>`;
-      res.shortcuts.forEach((s) => {
-        html += `<button type="button" class="help-pop__item help-pop__item--sc" role="menuitem" data-sc="1">
+      res.shortcuts.forEach((s, j) => {
+        html += `<button type="button" class="help-pop__item help-pop__item--sc" role="option" id="helpPopSc${j}" data-sc="1">
           <span class="help-pop__text"><span class="help-pop__label">${esc(s.desc)}</span></span><kbd>${esc(s.keys)}</kbd></button>`;
       });
     }
+    if (!html) { input.removeAttribute('aria-activedescendant'); }
     if (!html) html = `<div class="help-pop__empty">Nothing found — try “zoom” or “label”.</div>`;
     list.innerHTML = html;
     list.querySelectorAll<HTMLElement>('.help-pop__item').forEach((el) => {
@@ -109,6 +114,7 @@ export function initHelpMenu(opts: {
         else res.items[Number(el.dataset.i)]?.action();
       });
       el.addEventListener('pointermove', () => setActive(rows().indexOf(el)));
+      el.addEventListener('focus', () => setActive(rows().indexOf(el)));
     });
     setActive(0);
   };
@@ -124,6 +130,7 @@ export function initHelpMenu(opts: {
     input.value = '';
     render();
     place();
+    pop.inert = false;
     pop.classList.add('is-open');
     button.setAttribute('aria-expanded', 'true');
     button.classList.add('is-active');
@@ -133,6 +140,7 @@ export function initHelpMenu(opts: {
     if (!isOpen) return;
     isOpen = false;
     pop.classList.remove('is-open');
+    pop.inert = true;
     btn.setAttribute('aria-expanded', 'false');
     btn.classList.remove('is-active');
   }
@@ -142,7 +150,8 @@ export function initHelpMenu(opts: {
   pop.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(active + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
-    else if (e.key === 'Enter') { e.preventDefault(); rows()[active]?.click(); }
+    // Enter in the search runs the highlighted row; on a focused row the button handles it natively
+    else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); rows()[active]?.click(); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); button.focus(); }
   });
   document.addEventListener('pointerdown', (e) => {
