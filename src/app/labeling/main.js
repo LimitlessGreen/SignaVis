@@ -4221,7 +4221,8 @@ async function loadLocalAudioFile(file, extra = {}) {
   }
   const _prep = await prepareRecordingLoad();
   if (_prep.cancel) { fileInput.value = ''; return; }
-  // Save current annotations to the leaving entry, then detach so syncToPlayer doesn't clobber it
+  // Drop uncopied suggestions, save the leaving entry, then detach so syncToPlayer doesn't clobber it
+  closeSimilarReview();
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
@@ -4273,7 +4274,8 @@ async function loadDemoRecording() {
   if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
   const _prep = await prepareRecordingLoad();
   if (_prep.cancel) return;
-  // Save then detach so syncToPlayer doesn't clobber the leaving entry
+  // Drop uncopied suggestions, save, then detach so syncToPlayer doesn't clobber the leaving entry
+  closeSimilarReview();
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
