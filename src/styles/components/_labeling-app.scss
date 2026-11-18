@@ -914,6 +914,9 @@ html[data-theme="light"] { @include sponsor-light; }
 
 /* ── Upload assistant: live checklist ── */
 .ua-checklist { display: flex; flex-direction: column; padding: 4px 8px; gap: 2px; }
+/* Last check failed: the checklist below is outdated (readable note, controls stay as they are) */
+.ua-stale-note { margin: 4px 8px; padding: 6px 8px; font-size: 12px; color: var(--color-text-primary);
+  border-left: 3px solid var(--color-warning, #f59e0b); background: var(--color-bg-secondary, transparent); }
 
 .ua-step {
   border-radius: 4px;
