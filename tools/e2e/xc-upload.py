@@ -20,6 +20,12 @@ def check(name, ok, info=''):
         fails.append(name)
 
 
+def close_export(page):
+    """Close the export modal through its close button (removes its key handler)."""
+    page.click('#xcExportModal .modal-close')
+    page.wait_for_selector('#xcExportModal', state='hidden', timeout=5000)
+
+
 def close_success(page):
     """Close the success dialog through its own button (runs its close callback)."""
     page.click('.upl-backdrop .upl-close')
@@ -62,8 +68,7 @@ with sync_playwright() as p:
     page.click('#xcExportSetBtn')
     pre = page.inner_text('#xcExportJsonPre')
     check('export modal shows payload', '1159843' in pre and 'u1' in pre and 'u2' in pre, pre[:120].replace('\n', ' '))
-    page.keyboard.press('Escape')
-    page.evaluate("document.querySelector('.xc-nokey-backdrop').hidden = true")
+    close_export(page)
 
     # Download file
     with page.expect_download() as dl:
@@ -100,7 +105,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     check('only one request at a time', page.evaluate('window.__calls.length') == 1, str(page.evaluate('window.__calls')))
     check('modal says an upload is running', 'already running' in page.inner_text('#xcExportModalStatus'), page.inner_text('#xcExportModalStatus'))
-    page.evaluate("document.querySelector('.xc-nokey-backdrop').hidden = true")
+    close_export(page)
     page.evaluate('window.__answer()')
     page.wait_for_selector('.upl-backdrop', timeout=5000)
     check('upload got all three labels', page.evaluate('window.__calls[0]') == ['u1', 'u2', 'u3'], str(page.evaluate('window.__calls')))
@@ -202,7 +207,7 @@ with sync_playwright() as p:
           page.evaluate('window.__signavis.xcUpload.blockReason()'))
     check('summary says the check could not run, checklist marked outdated',
           'could not be checked' in page.inner_text('#xcUploadSummary')
-          and page.evaluate("document.getElementById('xcChecklist').classList.contains('ua-checklist--stale')"),
+          and page.is_visible('.ua-stale-note') and 'outdated' in page.inner_text('.ua-stale-note'),
           page.inner_text('#xcUploadSummary'))
     # The export modal's own upload button only looks at the key: the upload must still send nothing
     page.evaluate("() => { window.__calls = []; window.__signavis.xcPanel.uploadToXenoCanto = async (l) => { window.__calls.push(l.length); return { ok: true }; }; }")
@@ -212,12 +217,26 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     check('no request while the set cannot be checked', page.evaluate('window.__calls.length') == 0
           and 'could not be checked' in page.inner_text('#xcExportModalStatus'), page.inner_text('#xcExportModalStatus'))
-    page.evaluate("document.querySelector('.xc-nokey-backdrop').hidden = true")
+    close_export(page)
     page.evaluate('window.__restoreBuild()')
     page.click('#xcSelection .us-row input[type=checkbox]')   # tick the recording again
     page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
     check('a successful check unblocks it again', page.evaluate('window.__signavis.xcUpload.blockReason()') == ''
-          and not page.evaluate("document.getElementById('xcChecklist').classList.contains('ua-checklist--stale')"))
+          and not page.is_visible('.ua-stale-note'))
+
+    # The check throws an empty value and drawing fails in the same refresh: still blocked, and the
+    # outdated note is shown although the selection list could not be drawn
+    page.evaluate("""() => { const x = window.__signavis.xcPanel; const build = x.buildAnnotationSetPayload;
+      const list = document.getElementById('xcSelection');
+      x.buildAnnotationSetPayload = () => { throw ''; };
+      Object.defineProperty(list, 'innerHTML', { configurable: true, set: () => { throw new Error('draw broke'); } });
+      window.__restoreBoth = () => { x.buildAnnotationSetPayload = build; delete list.innerHTML; };
+      window.__signavis.xcUpload.refresh(); }""")
+    reason = page.evaluate('window.__signavis.xcUpload.blockReason()')
+    check('empty thrown value still blocks', page.is_disabled('#xcUploadBtn') and 'could not be checked' in reason, reason)
+    check('outdated note shown although drawing failed', page.is_visible('.ua-stale-note'), page.inner_text('#xcUploadSummary'))
+    page.evaluate('() => { window.__restoreBoth(); window.__signavis.xcUpload.refresh(); }')
+    page.wait_for_selector('#xcUploadBtn:not([disabled])', timeout=5000)
 
     # Set name left empty: the real upload code (only fetch stubbed) sends a dated name, the dialog shows it
     page.evaluate("""() => { const sv = window.__signavis; const x = sv.xcPanel;

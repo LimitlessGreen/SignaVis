@@ -261,6 +261,12 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
         profileEl: document.getElementById('xcAuthorContainer'),
         onJump: (t) => { void jumpTo(t); },
     });
+    // Shown above the checklist while the last check failed (a sibling: render() replaces the list)
+    const staleNote = document.createElement('p');
+    staleNote.className = 'ua-stale-note';
+    staleNote.setAttribute('role', 'status');
+    staleNote.hidden = true;
+    el('xcChecklist').before(staleNote);
     let lastChecklist: ChecklistResult | null = null;
     let checkError = '';   // the last check failed: no upload until one succeeds
 
@@ -307,10 +313,27 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
             checkError = '';
         } catch (e: any) {   // also while the app is still starting
             lastChecklist = null;
-            checkError = String(e?.message || e);
+            checkError = String(e?.message || e || '') || 'unknown error';   // never empty: it is the block flag
             note(e);
         }
-        // 2. Draw
+        // 2. Check result: summary, or a readable "outdated" note when the check failed. Kept apart
+        // from drawing the selection, so a drawing error cannot hide a failed check. The last
+        // checklist stays mounted (its key/profile controls must stay usable).
+        try {
+            const c = lastChecklist;
+            staleNote.hidden = !!c;
+            if (c) {
+                assistant.render(c);
+                el('xcUploadSummary').textContent = [
+                    `Set "${ownSet()?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
+                    c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
+                ].filter(Boolean).join(' · ');
+            } else {
+                staleNote.textContent = `Checklist outdated: the set could not be checked (${checkError}).`;
+                el('xcUploadSummary').textContent = `The set could not be checked: ${checkError}`;
+            }
+        } catch (e) { note(e); }
+        // 3. Draw selection and uploaded sets
         try {
             const set = ownSet();
             const sel = getSelection();
@@ -321,21 +344,8 @@ export function createXcUpload(ctx: AppContext, deps: XcUploadDeps): XcUpload {
                 sel,
                 (set?.uploads || []).map((snap: any) => ({ snap, ...snapshotState(snap, allLabels) })),
             );
-            const c = lastChecklist;
-            // A failed check leaves the last checklist in place (its key/profile controls stay
-            // mounted) but marks it outdated; the summary says the check could not run.
-            el('xcChecklist').classList.toggle('ua-checklist--stale', !c);
-            if (c) {
-                assistant.render(c);
-                el('xcUploadSummary').textContent = [
-                    `Set "${set?.name || 'Unnamed'}"`, plural(c.recordingCount, 'recording'), plural(c.labelCount, 'label'),
-                    c.errorCount ? `${c.errorCount} to do` : '', c.warningCount ? plural(c.warningCount, 'warning') : '',
-                ].filter(Boolean).join(' · ');
-            } else {
-                el('xcUploadSummary').textContent = `The set could not be checked: ${checkError}`;
-            }
         } catch (e) { note(e); }
-        // 3. Button: the panel asks blockReason() (disabled while an upload runs). If that update
+        // 4. Button: the panel asks blockReason() (disabled while an upload runs). If that update
         // fails, set the button here so it does not stay stuck from the last upload.
         try {
             xcPanel._updateUploadState();
