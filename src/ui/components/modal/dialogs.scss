@@ -7,8 +7,4 @@
   margin: 6px 0 14px;
   font-size: 12px; padding: 6px 8px;
 }
-.app-dialog .app-modal-actions { margin-top: 14px; }
-.app-dialog .app-modal-actions .tb-btn.app-dialog-ok--danger {
-  color: var(--color-danger, #e5484d);
-  border-color: currentColor;
-}
+/* Buttons (primary / danger) come from the shared .app-modal rules in _ui-clarity.scss */
