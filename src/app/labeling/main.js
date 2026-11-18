@@ -4223,6 +4223,7 @@ async function loadLocalAudioFile(file, extra = {}) {
   if (_prep.cancel) { fileInput.value = ''; return; }
   // Drop uncopied suggestions, save the leaving entry, then detach so syncToPlayer doesn't clobber it
   closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
@@ -4276,6 +4277,7 @@ async function loadDemoRecording() {
   if (_prep.cancel) return;
   // Drop uncopied suggestions, save, then detach so syncToPlayer doesn't clobber the leaving entry
   closeSimilarReview();
+  try { groupReview.close(); } catch { /* before the overview exists */ }
   saveCurrentAnnotationsIfNeeded();
   recordingManager.setActive(null);
   state.xcLabelPool = [];
