@@ -65,7 +65,8 @@ const MIN_DUR = 0.01, MIN_BAND = 10;
 /** `box` moved by `d`, kept inside the recording (0..duration, 0..nyquist) with a minimum size. */
 export function applyCorrection(box: Box, d: BoxCorrection, nyquist = Infinity, duration = Infinity): Box {
     const fit = (lo: number, hi: number, max: number, min: number) => {
-        const top = Math.max(min, max);
+        const top = max;
+        min = Math.min(min, top);   // a span shorter than the minimum: the whole span
         lo = Math.min(Math.max(0, lo), top - min);
         hi = Math.min(top, Math.max(lo + min, hi));
         return [lo, hi];

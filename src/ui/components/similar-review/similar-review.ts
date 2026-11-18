@@ -69,8 +69,17 @@ export class SimilarReview {
         this.h.onClose?.();
     }
 
-    /** Drop items that no longer exist (removed elsewhere), keeping the position. */
-    retain(ids: Set<string>) {
+    /** The item under review (null when closed or empty). */
+    get currentId(): string | null { return this.el ? this.current?.id ?? null : null; }
+    /** `id` is one of the suggestions of this review. */
+    has(id: string): boolean { return !!this.el && this.items.some((i) => i.id === id); }
+
+    /**
+     * Drop items that no longer exist (removed elsewhere), keeping the position.
+     * `decided`: they went by a decision on the box (✓ / ✗): a re-rank may move on to the new best.
+     */
+    retain(ids: Set<string>, { decided = false } = {}) {
+        if (decided) this.fresh = true;
         const cur = this.items[this.pos]?.id;
         this.items = this.items.filter((i) => ids.has(i.id));
         const at = cur ? this.items.findIndex((i) => i.id === cur) : -1;

@@ -1742,7 +1742,7 @@ async function restoreProjectSnapshotIfPossible() {
 
     if (Array.isArray(project.labels) && project.labels.length) {
       labelStore.load(dedupeLabels(project.labels.map((l) => ({ ...l }))), recordingManager?.activeId || null);
-      setActiveSimilar(null);   // a suggestion stays unlocked only while its review is open
+      syncActiveSimilar();   // a suggestion stays unlocked only while its review is open
       ensureOwnSource();
       selectionMeta.textContent = `Restored autosave (${projectRuntime.backend})`;
     }
@@ -1881,7 +1881,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
     if (d) _similarCorrections.push(d);
     labelStore.remove(lbl.id);
     if (d) spreadSimilarCorrections();
-    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+    similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)), { decided: true });
   }
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
@@ -2108,7 +2108,7 @@ async function activateRecordingEntry(entry) {
 
   // 5. Restore annotations — mark state.labels as belonging to this entry
   labelStore.load((entry.annotations || []).map(a => ({ ...a })), entry.id);
-  setActiveSimilar(null);
+  syncActiveSimilar();
   relocalizeAllLabels();
 
   // 6. Update all per-recording displays
@@ -2193,14 +2193,14 @@ function snapshotLabels() {
     const active = recordingManager.activeId || null;
     if (active === activeAt) {
       labelStore.load(labels, labelsEntryId);
-      setActiveSimilar(null);
+      syncActiveSimilar();   // the one under review stays editable
     } else {
       // Another recording is on screen by now: `labels` belong to the one active at snapshot
       // time and would be saved into this one. Show this recording's own restored labels.
       const own = perEntry.find(([id]) => id === active);
       if (own) {
         labelStore.load(own[1].map((a) => ({ ...a })), active);
-        setActiveSimilar(null);
+        syncActiveSimilar();
       }
     }
     saveSessionSets(state);
@@ -3019,6 +3019,13 @@ function canFindSimilar(lbl) {
  * The suggestion under review stands out and can be resized (fine corrections before copying);
  * the others stay locked. `id` null: none (review closed).
  */
+/** After labels were loaded or restored: only the item of an open review stays unlocked. */
+function syncActiveSimilar() {
+  let id = null;
+  try { id = similarReview.currentId; } catch { /* before the review exists (early session restore) */ }
+  setActiveSimilar(id && state.labels.some((l) => l.id === id) ? id : null);
+}
+
 function setActiveSimilar(id) {
   const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar
     && (!!l.similar.active !== (l.id === id) || l.readonly === (l.id === id))).map((l) => l.id);
@@ -3036,8 +3043,9 @@ function spreadSimilarCorrections() {
   if (!d) return;
   const audio = player._state?.audioBuffer;
   const nyquist = (audio?.sampleRate || Infinity) / 2, duration = audio?.duration || Infinity;
+  // Only this review's suggestions (an earlier group's may still be on screen)
   const ids = state.labels.filter((l) => l.origin === SIMILAR_ORIGIN && l.similar?.found && !l.similar.active
-    && !correctionOf(l)).map((l) => l.id);
+    && similarReview.has(l.id) && !correctionOf(l)).map((l) => l.id);
   if (!ids.length) return;
   labelStore.update(ids, (l) => {
     const box = applyCorrection(l.similar.found, d, nyquist, duration);
@@ -3212,7 +3220,7 @@ function rejectSimilar(ids) {
   const rejected = _similarRejected.get(recordingManager?.activeId || null);
   for (const l of state.labels) if (want.has(l.id)) rejected?.add(l.similar?.key || suggestionKey(l.scientificName || l.label, l.start));
   labelStore.remove(want);
-  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)));
+  similarReview.retain(new Set(state.labels.filter((l) => l.origin === SIMILAR_ORIGIN).map((l) => l.id)), { decided: true });
 }
 
 // ── Overview: groups of similar calls (domain/similar/cluster.ts) ──

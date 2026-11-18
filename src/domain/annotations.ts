@@ -2388,6 +2388,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         }
 
         next = this._normalize({ ...src, ...next, id: src.id, label: src.label, color: src.color });
+        // A time-only resize keeps the band as stored: _normalize clamps it to the display maximum
+        if (editing.mode === 'resize-l' || editing.mode === 'resize-r') { next.freqMin = src.freqMin; next.freqMax = src.freqMax; }
 
         // Preserve band thickness on pure move (in pixel space, not Hz)
         if (editing.mode === 'move') {
