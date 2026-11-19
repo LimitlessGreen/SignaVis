@@ -501,12 +501,14 @@ html.is-mobile {
   .m-live-marks { position: absolute; inset: 0; z-index: 31; pointer-events: none; overflow: hidden; }
   .m-live-mark {
     position: absolute; left: 0; height: 19px;
-    display: flex; align-items: center; gap: 5px; padding: 0 6px; overflow: hidden; white-space: nowrap;
+    display: flex; align-items: center; padding: 0 6px; white-space: nowrap;
     border-radius: 3px; background: color-mix(in srgb, var(--m-c) 32%, rgba(0, 0, 0, 0.6));
     box-shadow: inset 2px 0 0 var(--m-c), inset 0 -2px 0 var(--m-c);
     color: #fff; font-size: 10.5px; text-shadow: 0 1px 2px #000;
     animation: m-live-in 0.35s ease-out;
   }
+  // Text is clipped in the tag; the shading below (::after) is clipped by .m-live-marks.
+  .m-live-tag { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
   .m-live-mark b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
   .m-live-mark span { font-family: var(--m-mono); opacity: 0.85; }
   .m-live-mark::after {   // the window itself, faint, down the full height
@@ -674,4 +676,24 @@ html.is-mobile .m-review--viewer {
   // The deck overlaps the stage by its corner radius: keep the picture above it.
   .m-stage { background: #000; padding-bottom: 14px; }
   .m-zoom:not(.m-zoom--top) { bottom: 24px; }
+}
+html.is-mobile {
+  .m-spc-item { display: flex; flex: 0 0 auto; scroll-snap-align: start; }
+  .m-ov:focus-visible, .m-spc:focus-visible, .m-seg-btn:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+}
+/* Short screens (landscape phones): the picture shrinks, transport and species stay reachable. */
+@media (max-height: 520px) {
+  html.is-mobile {
+    .m-stage { min-height: 90px; }
+    .m-review--viewer .m-zoom:not(.m-zoom--top) { flex-direction: row; bottom: 20px; }
+    .m-zoom-btn { height: 38px; }
+    .m-review--viewer .m-appbar { min-height: 44px; }
+    .m-deck { margin-top: -10px; padding-top: 8px; }
+    .m-deck .m-ov { height: 28px; }
+    .m-tbar .m-play { width: 48px; height: 48px; }
+    .m-tbar .m-tbtn { width: 40px; height: 40px; }
+    .m-deck .m-strip { padding-bottom: 6px; }
+    .m-spc { height: 40px; }
+    .m-spc img { width: 30px; height: 30px; }
+  }
 }

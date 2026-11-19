@@ -63,7 +63,7 @@ export interface MobileAppHost {
   /** Open the file picker to add audio. */
   addFile(): void;
   /** Load a Xeno-canto recording (number or URL) into the project and open it. */
-  addXenoCanto?(raw: string): Promise<void> | void;
+  addXenoCanto?(raw: string): Promise<boolean | void> | boolean | void;
   /** Remember thumbnail / duration on the recording (so they survive a reload). */
   setRecordingInfo?(id: string, info: { thumb?: string | null; duration?: number }): void;
   /** ✓: copy a detection of the active recording into "My labels" (desktop: spectrogramlabeladopt). */
@@ -276,6 +276,9 @@ export class MobileApp {
   private focusKey: string | null = null;
   private stripCur = '';
   private paintRaf = 0;
+  private gestures: SpectrogramGestures | null = null;
+  /** Changes whenever the shown detections change (overview marks are rebuilt then). */
+  private labelRev = 0;
   private cfg: PhoneSettings = loadSettings();
   private setBackTo: Screen = 'recordings';
   private setBody!: HTMLElement;
@@ -370,11 +373,11 @@ export class MobileApp {
     // Touch gestures on the spectrogram, and species colours on its labels.
     const spec = host.playerRoot.querySelector<HTMLElement>('[data-aw="spectrogramContainer"]');
     if (spec) {
-      new SpectrogramGestures(spec, {
+      this.gestures = new SpectrogramGestures(spec, {
         player: () => this.h.player,
-        onLabelTap: (id) => { const l = this.labelById(id); if (l) this.playLabel(l); },
-        onLabelHold: (id) => { const l = this.labelById(id); if (l) this.loopLabel(l); },
-        onEmptyTap: (x) => { this.stopLoop(); this.h.player?._state?._seekFromClientX?.(x, 'spectrogram'); },
+        onLabelTap: (id) => { const l = this.screen === 'review' && this.labelById(id); if (l) this.playLabel(l); },
+        onLabelHold: (id) => { const l = this.screen === 'review' && this.labelById(id); if (l) this.loopLabel(l); },
+        onEmptyTap: (time) => { if (this.screen !== 'review') return; this.stopLoop(); this.h.player?._state?._seekToTime?.(time, false); },
         onDoubleTap: () => this.togglePlay(),
       });
     }
@@ -388,7 +391,14 @@ export class MobileApp {
       if (!this.active) return;
       setTimeout(() => this.fitTime(), 250);
       // Only when asked for (Settings): the phone is a viewer, analysing is a button in the player.
-      if (this.autoAnalyse && this.cfg.autoAnalyse) setTimeout(() => this.analyseNow(), 300);
+      this.gestures?.cancel();
+      if (this.autoAnalyse && this.cfg.autoAnalyse) {
+        const recId = this.activeRecId();
+        setTimeout(() => {
+          // Only the recording that became ready, still open, still in phone mode and still wanted.
+          if (this.active && this.cfg.autoAnalyse && recId != null && this.activeRecId() === recId) this.analyseNow();
+        }, 300);
+      }
       this.autoAnalyse = false;
     });
 
@@ -462,6 +472,7 @@ export class MobileApp {
   }
 
   show(screen: Screen) {
+    if (screen !== this.screen) this.gestures?.cancel();
     this.screen = screen;
     for (const [id, s] of this.screens) s.hidden = id !== screen;
     const navOn = screen === 'analyse' ? (this.anBackTo === 'review' ? this.rvFrom : this.anBackTo)
@@ -508,14 +519,19 @@ export class MobileApp {
         e.preventDefault();
         const raw = input.value.trim();
         if (!raw) return;
-        input.value = '';
         input.blur();
         this.autoAnalyse = !!this.h.analysis;
         this.toast(t('new.xcLoading'), null);
-        try {
-          await this.h.addXenoCanto!(raw);
-          if (!REVIEW_WORKFLOW) this.show('review');
-        } catch { this.autoAnalyse = false; }
+        let ok = false;
+        try { ok = (await this.h.addXenoCanto!(raw)) !== false; } catch { ok = false; }
+        if (!ok) {
+          // Keep what was typed, say so, and stay here to try again.
+          this.autoAnalyse = false;
+          input.value = raw;
+          this.toast(t('new.xcFailed'), null, { label: t('new.retry'), run: () => form.requestSubmit() });
+          return;
+        }
+        if (!REVIEW_WORKFLOW) this.show('review');
       });
       s.append(form);
     }
@@ -783,6 +799,7 @@ export class MobileApp {
     if (!REVIEW_WORKFLOW) bar.appendChild(button('m-icon-btn', I.gear, t('set.title'), () => this.openSettings('review')));
 
     this.playerSlot = el('div', 'm-player');
+    this.playerSlot.id = 'm-player-slot';
     this.rvProgress = el('div', 'm-rv-progress');
     this.rvProgress.hidden = true;
 
@@ -818,7 +835,7 @@ export class MobileApp {
       zoom.append(
         button('m-zoom-btn', I.zoomOut, t('rv.zoomOut'), () => this.zoomBy(1 / 1.8)),
         button('m-zoom-btn', I.zoomIn, t('rv.zoomIn'), () => this.zoomBy(1.8)),
-        button('m-zoom-btn', I.fit, t('rv.zoomFit'), () => { try { this.h.player?._state?._fitEntireTrackInView?.(); this.h.player?._state?._freqZoom?.reset(); } catch { /* ignore */ } }),
+        button('m-zoom-btn', I.fit, t('rv.zoomFit'), () => { try { this.h.player?._state?._fitEntireTrackInView?.(); this.applyFreq(); } catch { /* ignore */ } }),
       );
       this.tuneBtn = button('m-zoom-btn m-tune-btn', I.tune, t('set.view'), () => this.toggleTune());
       const tuneBox = el('div', 'm-zoom m-zoom--top');
@@ -975,6 +992,7 @@ export class MobileApp {
     this.colorOf.clear();
     this.keyOfId.clear();
     this.belowMin.clear();
+    this.labelRev++;
     for (const l of labels) {
       if (!this.shown(l)) { this.belowMin.add(String(l.id)); continue; }
       const k = speciesKey(l);
@@ -1030,7 +1048,7 @@ export class MobileApp {
       if (hasRec && !busy && this.h.analysis) {
         const row = el('div', 'm-strip-empty m-strip-cta');
         row.append(el('span', '', t('rv.noSpecies')),
-          button('m-cta m-cta--sm', `${I.analyse}<span>${t('rv.analyseNow')}</span>`, t('rv.analyseNow'), () => this.analyseNow()));
+          button('m-cta m-cta--sm', `${I.analyse}<span>${t('rv.analyseNow')}</span>`, t('rv.analyseNow'), () => this.analyseBirdNET()));
         this.strip.appendChild(row);
         return;
       }
@@ -1042,7 +1060,6 @@ export class MobileApp {
       const name = this.h.resolveName(g.best)?.display || g.best.label || t('common.unknown');
       const chip = el('button', `m-spc${this.focusKey === g.key ? ' on' : ''}${this.focusKey && this.focusKey !== g.key ? ' off' : ''}`);
       chip.type = 'button';
-      chip.setAttribute('role', 'listitem');
       chip.dataset.key = g.key;
       chip.style.setProperty('--m-c', this.colorOf.get(g.key) || PALETTE[0]);
       const tx = el('span', 'm-spc-tx');
@@ -1059,8 +1076,14 @@ export class MobileApp {
           this.playLabel(g.best);
         }
         this.renderReview();
+        // The strip was rebuilt: keep focus on this species, so it can be pressed again to clear.
+        this.strip.querySelector<HTMLElement>(`.m-spc[data-key="${CSS.escape(g.key)}"]`)?.focus();
       });
-      this.strip.appendChild(chip);
+      // The list item is a wrapper, so the chip keeps its button role.
+      const item = el('div', 'm-spc-item');
+      item.setAttribute('role', 'listitem');
+      item.appendChild(chip);
+      this.strip.appendChild(item);
     }
   }
 
@@ -1134,6 +1157,26 @@ export class MobileApp {
     const ov = el('div', 'm-ov');
     ov.setAttribute('role', 'scrollbar');
     ov.setAttribute('aria-label', t('rv.overview'));
+    ov.setAttribute('aria-orientation', 'horizontal');
+    ov.setAttribute('aria-controls', 'm-player-slot');
+    ov.setAttribute('aria-valuemin', '0');
+    ov.setAttribute('aria-valuemax', '100');
+    ov.setAttribute('aria-valuenow', '0');
+    ov.tabIndex = 0;
+    // Keyboard: arrows move by half a view, Page keys by a whole one, Home / End to the ends.
+    ov.addEventListener('keydown', (e) => {
+      const v = this.visibleRange();
+      const dur = Number(this.h.player?.duration) || 0;
+      if (!v || !dur) return;
+      const span = v.end - v.start;
+      const centre = (v.start + v.end) / 2;
+      const to = e.key === 'ArrowLeft' ? centre - span / 2 : e.key === 'ArrowRight' ? centre + span / 2
+        : e.key === 'PageUp' ? centre - span : e.key === 'PageDown' ? centre + span
+        : e.key === 'Home' ? 0 : e.key === 'End' ? dur : null;
+      if (to == null) return;
+      e.preventDefault();
+      try { this.h.player?._state?._centerViewportAtTime?.(to); } catch { /* ignore */ }
+    });
     this.ovMarks = el('div', 'm-ov-marks');
     this.ovWin = el('div', 'm-ov-win');
     this.ovHead = el('div', 'm-ov-head');
@@ -1182,8 +1225,10 @@ export class MobileApp {
     this.ovWin.style.left = pct(v.start);
     this.ovWin.style.width = `calc(${pct(Math.min(dur, v.end) - v.start)} - 0px)`;
     this.ovHead.style.left = pct(Number(this.h.player.currentTime) || 0);
+    const now = String(Math.round((v.start / Math.max(1e-6, dur - (v.end - v.start))) * 100) || 0);
+    if (this.ov.getAttribute('aria-valuenow') !== now) this.ov.setAttribute('aria-valuenow', now);
     // Thumbnail + marks only when the recording or its labels changed.
-    const sig = `${rec?.id}|${rec?.thumb ? 1 : 0}|${this.keyOfId.size}|${this.cfg.minConf}`;
+    const sig = `${rec?.id}|${rec?.thumb ? 1 : 0}|${this.labelRev}`;
     if (sig === this.ovSig) return;
     this.ovSig = sig;
     this.ov.style.backgroundImage = rec?.thumb ? `url("${rec.thumb}")` : '';
@@ -1236,35 +1281,8 @@ export class MobileApp {
       b.appendChild(g);
       return g;
     };
-    const seg = <V extends string | number>(g: HTMLElement, label: string, opts: [V, string][], cur: V, pick: (v: V) => void) => {
-      const row = el('div', 'm-set-row');
-      row.appendChild(el('span', 'm-set-label', label));
-      const box = el('div', 'm-seg');
-      box.setAttribute('role', 'radiogroup');
-      box.setAttribute('aria-label', label);
-      for (const [v, text] of opts) {
-        const o = button(`m-seg-btn${v === cur ? ' on' : ''}`, '', text, () => { pick(v); this.renderSettings(); });
-        o.textContent = text;
-        o.setAttribute('role', 'radio');
-        o.setAttribute('aria-checked', String(v === cur));
-        box.appendChild(o);
-      }
-      row.appendChild(box);
-      g.appendChild(row);
-    };
-    const toggle = (g: HTMLElement, label: string, hint: string, on: boolean, set: (v: boolean) => void) => {
-      const row = el('label', 'm-set-row m-set-toggle');
-      const tx = el('span', 'm-set-tx');
-      tx.append(el('span', 'm-set-label', label), el('small', '', hint));
-      const sw = el('span', 'm-switch');
-      const input = el('input');
-      input.type = 'checkbox';
-      input.checked = on;
-      input.addEventListener('change', () => set(input.checked));
-      sw.append(input, el('i'));
-      row.append(tx, sw);
-      g.appendChild(row);
-    };
+    const seg = <V extends string | number>(g: HTMLElement, label: string, opts: [V, string][], cur: V, pick: (v: V) => void) =>
+      this.segRow(g, label, opts, cur, (v) => { pick(v); this.renderSettings(); });
 
     const view = group(t('set.view'));
     this.specControls(view, () => this.renderSettings());
@@ -1280,10 +1298,13 @@ export class MobileApp {
     seg(gen, t('set.lang'), [['en', 'English'], ['de', 'Deutsch']], getLang(), (v) => {
       if (v === getLang()) return;
       setLang(v);
-      // Strings are built once; a reload shows the new language everywhere.
-      const u = new URL(location.href);
-      u.searchParams.delete('lang');
-      location.replace(u.toString());
+      // Strings are built once, so the new language needs a reload. Not automatic: a local file
+      // only lives as a blob URL of this page and would have to be picked again.
+      this.toast(t('set.langReload'), null, { label: t('set.reload'), run: () => {
+        const u = new URL(location.href);
+        u.searchParams.delete('lang');
+        location.replace(u.toString());
+      } });
     });
 
     const help = group(t('set.gestures'));
@@ -1305,13 +1326,28 @@ export class MobileApp {
     const box = el('div', 'm-seg');
     box.setAttribute('role', 'radiogroup');
     box.setAttribute('aria-label', label);
+    // Picking re-renders the panel: put focus back on the chosen option afterwards.
+    const choose = (v: V) => {
+      pick(v);
+      document.querySelector<HTMLElement>(`[data-fkey="${CSS.escape(`${label}:${v}`)}"]`)?.focus();
+    };
     for (const [v, text] of opts) {
-      const o = button(`m-seg-btn${v === cur ? ' on' : ''}`, '', text, () => pick(v));
+      const o = button(`m-seg-btn${v === cur ? ' on' : ''}`, '', text, () => choose(v));
       o.textContent = text;
       o.setAttribute('role', 'radio');
       o.setAttribute('aria-checked', String(v === cur));
+      o.tabIndex = v === cur ? 0 : -1;   // one tab stop per group, arrows move within it
+      o.dataset.fkey = `${label}:${v}`;
       box.appendChild(o);
     }
+    if (!opts.some(([v]) => v === cur) && box.firstElementChild) (box.firstElementChild as HTMLElement).tabIndex = 0;
+    box.addEventListener('keydown', (e) => {
+      const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const i = Math.max(0, opts.findIndex(([v]) => v === cur));
+      choose(opts[(i + step + opts.length) % opts.length][0]);
+    });
     row.appendChild(box);
     g.appendChild(row);
   }
@@ -1522,7 +1558,7 @@ export class MobileApp {
   private activeRecId() { return this.h.getRecordings().find((r) => r.active)?.id ?? null; }
 
   /** Short message above the nav, with an optional undo; the undo only applies to the recording it was made in. */
-  private toast(msg: string, undo: (() => void) | null) {
+  private toast(msg: string, undo: (() => void) | null, action?: { label: string; run: () => void }) {
     if (undo) {
       const recId = this.activeRecId();
       const inner = undo;
@@ -1536,8 +1572,11 @@ export class MobileApp {
         undo();
       }));
     }
+    if (action) {
+      this.snack.appendChild(button('m-snack-btn', action.label, action.label, () => { this.snack.hidden = true; action.run(); }));
+    }
     this.snack.hidden = false;
-    this.snackTimer = window.setTimeout(() => { this.snack.hidden = true; }, 4000);
+    this.snackTimer = window.setTimeout(() => { this.snack.hidden = true; }, action ? 8000 : 4000);
   }
 
   private playLabel(lbl: any) {
@@ -1946,10 +1985,18 @@ export class MobileApp {
   }
 
   /** Analyse the active recording with the current settings and show it in the review screen. */
+  /** „Analyse with BirdNET“: BirdNET, whatever is ticked on the Analyse screen. */
+  private analyseBirdNET() {
+    if (!this.h.analysis || this.anJob !== 'idle') return;
+    this.renderAnalyse();
+    this.startJob('birdnet');
+    if (this.anJob === 'idle') this.renderReview();   // could not start: keep the button
+  }
+
   private analyseNow() {
     if (!this.h.analysis || this.anJob !== 'idle') return;
     this.renderAnalyse();
-    this.rvFrom = 'queue';
+    if (REVIEW_WORKFLOW) this.rvFrom = 'queue';
     this.show('review');
     this.runAnalysis();
   }
@@ -2006,6 +2053,7 @@ export class MobileApp {
       this.anProgressText.textContent = status || t('an.failed');
       this.anRun.disabled = false;
       this.rvProgress.hidden = true;
+      this.renderReview();   // the strip shows the analyse button again
       return;
     }
 
@@ -2015,7 +2063,7 @@ export class MobileApp {
     this.anProgressText.textContent = status || t('an.done');
     this.anProgressBar.style.width = '100%';
     this.anRun.disabled = false;
-    setTimeout(() => { this.anProgress.hidden = true; this.rvProgress.hidden = true; }, 1500);
+    setTimeout(() => { this.anProgress.hidden = true; this.rvProgress.hidden = true; this.renderReview(); }, 1500);
     this.rvFilter = 'open';
     if (this.screen === 'analyse') this.show('review');
     else if (this.screen === 'review') this.renderReview();
@@ -2097,7 +2145,9 @@ export class MobileApp {
     const m = el('div', 'm-live-mark');
     m.style.setProperty('--m-c', this.lvColor(p.scientific));
     m.style.top = `${4 + lane * 22}px`;
-    m.append(el('b', '', p.common || p.scientific), el('span', '', `${Math.round(p.confidence * 100)}%`));
+    const tag = el('span', 'm-live-tag');
+    tag.append(el('b', '', p.common || p.scientific), el('span', '', `${Math.round(p.confidence * 100)}%`));
+    m.appendChild(tag);
     this.lvMarksEl.appendChild(m);
     this.lvMarks.push({ el: m, at });
   }
@@ -2151,6 +2201,7 @@ export class MobileApp {
         const { pcm, at } = queue.shift()!;
         try {
           const preds = await classify.analyze(pcm, rec.sampleRate);
+          if (this.lvRec !== rec) break;   // stopped or discarded meanwhile: drop late results
           preds.slice(0, 3).forEach((p, lane) => this.addLiveMark(p, at, lane));
           for (const p of preds) {
             const e = this.lvSpecies.get(p.scientific);

@@ -4025,27 +4025,29 @@ xcIdInput.addEventListener('keydown', (e) => {
 // One load at a time: a second one could finish first and the first one's label import
 // would then write into the second recording.
 let _xcLoading = false;
+/** Load a Xeno-canto recording (number or link). Resolves true once it is the open recording. */
 async function loadXenoCanto(input) {
   const raw = String(input || '').trim();
-  if (!raw || _xcLoading) return;
+  if (!raw || _xcLoading) return false;
   _xcLoading = true;
-  try { await _loadXenoCanto(raw); } finally { _xcLoading = false; }
+  try { return await _loadXenoCanto(raw); } finally { _xcLoading = false; }
 }
 async function _loadXenoCanto(raw) {
-  // Deduplicate: if this XC ID is already in the session, just switch to it
-  const _preCheckId = raw.replace(/^xc/i, '').replace(/\D/g, '').replace(/^0+/, '') || '0';
-  const _preExisting = recordingManager.findByXcId(_preCheckId);
+  // Deduplicate: if this XC ID is already in the session, just switch to it.
+  // The canonical parser, so a link with a query string (…/1089065?ref=2) finds it too.
+  const _preCheckId = xcNumber(raw);
+  const _preExisting = _preCheckId ? recordingManager.findByXcId(_preCheckId) : null;
   if (_preExisting) {
     if (_preExisting.id !== recordingManager.activeId) await activateRecordingEntry(_preExisting);
     sidebar.setActive('labels');
-    return;
+    return true;
   }
   const _prep = await prepareRecordingLoad();
-  if (_prep.cancel) return;
+  if (_prep.cancel) return false;
   xcLoadBtn.disabled = true;
   xcLoadBtn.textContent = '…';
   try {
-    if (!await checkXcDuration(raw)) { xcLoadBtn.disabled = false; xcLoadBtn.textContent = 'Load'; return; }
+    if (!await checkXcDuration(raw)) { xcLoadBtn.disabled = false; xcLoadBtn.textContent = 'Load'; return false; }
     const _xcp2 = makeXcProgress(raw);
     xcPanel.prefetchRecording(raw); // labels/metadata load in parallel with the audio
     const audio = await xcPanel.fetchAudio(raw, _xcp2.onStatus, _xcp2.onProgress);
@@ -4077,10 +4079,12 @@ async function _loadXenoCanto(raw) {
     }
     // Stay in the Project tab: the explorer now shows the XC set (read-only) under the recording.
     recordingExplorer.render();
+    return true;
   } catch (err) {
     xcProgressDone();
     player.hideLoadingOverlay();
     showXcError(err);
+    return false;
   } finally {
     xcLoadBtn.disabled = false;
     xcLoadBtn.textContent = 'Load';
