@@ -6,7 +6,9 @@
  * into the review screen while the phone UI is active and moved back afterwards; CSS
  * (`html.is-mobile`) hides the player's desktop chrome (toolbar, waveform, zoom strip).
  *
- * Screens (bottom nav): Aufnahmen · Prüfen · Live · Arten.
+ * The phone is a viewer (Xeno-canto recordings first): Aufnahmen · Player · Live · Arten.
+ * The review workflow below (queue, ✓/✕, swipe) is kept but switched off (REVIEW_WORKFLOW).
+ * Screens with the review workflow: Aufnahmen · Prüfen · Live · Arten.
  * „Prüfen“ is a queue of open detections over all recordings; a tap opens the recording (review screen)
  * where ✓ copies a detection into „Meine Labels“ and ✕ removes it (both with undo).
  * New files and Live recordings are analysed right away with the current analysis settings.
@@ -17,6 +19,7 @@ import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
 import { t, getLang } from './i18n.ts';
 import { renderThumb, thumbFromUrl } from './thumb.ts';
+import { SpectrogramGestures } from './gestures.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -126,6 +129,7 @@ const I = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.2"/><circle cx="13" cy="16" r="1.2"/></svg>',
   globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  wave: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
   rw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
@@ -133,6 +137,13 @@ const I = {
 };
 
 const SKIP_SEC = 5;
+/** Upper frequency on the phone when the recording has no clear top. */
+const PHONE_MAX_HZ = 12000;
+/** Queue, ✓/✕ and swiping on the phone. Off: the phone is a viewer; labeling stays on the desktop. */
+const REVIEW_WORKFLOW = false;
+/** Species colours on the spectrogram and in the species strip; picked to stand out on the inferno palette. */
+const PALETTE = ['#22d3ee', '#a3e635', '#f472b6', '#a78bfa', '#60a5fa', '#facc15', '#2dd4bf', '#fb923c', '#e879f9', '#f87171'];
+const speciesKey = (l: any) => String(l.scientificName || l.label || '?');
 /** Live recordings are held in memory until Stop: keep them short enough for a phone tab. */
 const LIVE_MAX_SEC = 15 * 60;
 /** Seconds visible in the spectrogram on phones (the desktop default is far too zoomed in there). */
@@ -225,7 +236,7 @@ export class MobileApp {
   private rvFilter: 'open' | 'all' = 'open';
   private rvChips = new Map<'open' | 'all', HTMLButtonElement>();
   /** Where the review screen was opened from (back button + highlighted nav tab). */
-  private rvFrom: Screen = 'queue';
+  private rvFrom: Screen = REVIEW_WORKFLOW ? 'queue' : 'recordings';
   private qList!: HTMLElement;
   private qHead!: HTMLElement;
   private snack!: HTMLElement;
@@ -240,6 +251,13 @@ export class MobileApp {
   /** Analyse the next recording that gets loaded (after „Neu“ or Live). */
   private autoAnalyse = false;
   private loopSeg: { start: number; end: number } | null = null;
+  // Viewer: species strip and colours
+  private strip!: HTMLElement;
+  private colorOf = new Map<string, string>();
+  private keyOfId = new Map<string, string>();
+  private focusKey: string | null = null;
+  private stripCur = '';
+  private paintRaf = 0;
 
   // Species
   private spList!: HTMLElement;
@@ -299,7 +317,8 @@ export class MobileApp {
     body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies());
     const nav = el('nav', 'm-nav');
     nav.setAttribute('aria-label', t('nav.label'));
-    for (const [id, icon, label] of [['recordings', I.lib, t('nav.recordings')], ['queue', I.check, t('nav.review')],
+    const second: [Screen, string, string] = REVIEW_WORKFLOW ? ['queue', I.check, t('nav.review')] : ['review', I.wave, t('nav.player')];
+    for (const [id, icon, label] of [['recordings', I.lib, t('nav.recordings')], second,
       ['live', I.mic, t('nav.live')], ['species', I.bird, t('nav.species')]] as [Screen, string, string][]) {
       const b = el('button', 'm-nav-btn');
       b.type = 'button';
@@ -309,11 +328,26 @@ export class MobileApp {
       nav.appendChild(b);
     }
     this.navBadge = el('span', 'm-nav-badge');
-    this.navBtns.get('queue')!.appendChild(this.navBadge);
+    this.navBadge.hidden = true;
+    this.navBtns.get('queue')?.appendChild(this.navBadge);
     this.snack = el('div', 'm-snack');
     this.snack.hidden = true;
     this.root.append(body, this.snack, nav);
     document.body.appendChild(this.root);
+
+    // Touch gestures on the spectrogram, and species colours on its labels.
+    const spec = host.playerRoot.querySelector<HTMLElement>('[data-aw="spectrogramContainer"]');
+    if (spec) {
+      new SpectrogramGestures(spec, {
+        player: () => this.h.player,
+        onLabelTap: (id) => { const l = this.labelById(id); if (l) this.playLabel(l); },
+        onLabelHold: (id) => { const l = this.labelById(id); if (l) this.loopLabel(l); },
+        onEmptyTap: (x) => { this.stopLoop(); this.h.player?._state?._seekFromClientX?.(x, 'spectrogram'); },
+        onDoubleTap: () => this.togglePlay(),
+      });
+    }
+    new MutationObserver(() => this.schedulePaint())
+      .observe(host.playerRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-id'] });
 
     // A newly loaded recording starts with the phone time span.
     host.player?.on?.('ready', () => {
@@ -350,7 +384,8 @@ export class MobileApp {
     if (phone) {
       this.mountPlayer();
       this.startTicker();
-      this.show(this.openTotal() ? 'queue' : 'recordings');
+      if (REVIEW_WORKFLOW) this.show(this.openTotal() ? 'queue' : 'recordings');
+      else this.show(this.h.getRecordings().some((r) => r.active) ? 'review' : 'recordings');
     } else {
       this.stopTicker();
       this.unmountPlayer();
@@ -372,6 +407,16 @@ export class MobileApp {
     if (w < 50) return;                       // player not visible yet — retried when Prüfen opens
     this.needsFit = false;
     st._setPixelsPerSecond(w / span, true, start, 0);
+    // Frequency range fitted to where the calls are (most birds stay far below Nyquist).
+    // Fit to the activity; if that still reaches far up (noise, high sample rates), show 0–12 kHz:
+    // where most bird song is, and the phone screen is small.
+    setTimeout(() => {
+      try {
+        st.applyAutoFreqView?.();
+        const top = Number(st._freqZoom?.max) || Number(st.coords?.boundedMaxFreq) || 0;
+        if (top > PHONE_MAX_HZ * 1.4) st._freqZoom?.set(0, PHONE_MAX_HZ);
+      } catch { /* ignore */ }
+    }, 150);
   }
 
   private mountPlayer() {
@@ -394,7 +439,7 @@ export class MobileApp {
     this.screen = screen;
     for (const [id, s] of this.screens) s.hidden = id !== screen;
     const navOn = screen === 'analyse' ? (this.anBackTo === 'review' ? this.rvFrom : this.anBackTo)
-      : screen === 'review' ? this.rvFrom : screen;
+      : screen === 'review' && REVIEW_WORKFLOW ? this.rvFrom : screen;
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
     if (screen === 'analyse') this.renderAnalyse();
     if (screen === 'species') this.renderSpecies();
@@ -517,7 +562,10 @@ export class MobileApp {
       // Source (Xeno-canto) and place on a second line when there is something to say.
       const where = [when && r.meta === 'Xeno-canto' ? r.meta : '', r.place || ''].filter(Boolean).join(' · ');
       if (where) main.appendChild(el('div', 'm-rec-meta m-rec-place', where));
-      const st = open.length
+      const st = !REVIEW_WORKFLOW
+        ? (species ? el('span', 'm-status done', t('rv.species', { n: species }))
+          : r.labels.length ? el('span', 'm-status done', t('common.labels', { n: r.labels.length })) : el('span', 'm-status new', t('rec.notAnalysed')))
+        : open.length
         ? el('span', 'm-status todo', t('rec.open', { n: open.length }))
         : detections.length ? el('span', 'm-status done', t('rec.reviewed'))
         : r.labels.length ? el('span', 'm-status done', t('common.labels', { n: r.labels.length })) : el('span', 'm-status new', t('rec.notAnalysed'));
@@ -695,6 +743,19 @@ export class MobileApp {
       this.loopBtn,
     );
 
+    if (!REVIEW_WORKFLOW) {
+      // Viewer: spectrogram as large as possible, one slim transport bar, species strip at the bottom.
+      const tbar = el('div', 'm-tbar');
+      const tm = el('div', 'm-tbar-time');
+      tm.append(this.timeCur, el('span', 'm-tbar-sep', '/'), this.timeDur);
+      tbar.append(tm, tr);
+      this.strip = el('div', 'm-strip');
+      this.strip.setAttribute('role', 'list');
+      s.append(bar, this.rvProgress, this.playerSlot, tbar, this.strip);
+      this.screens.set('review', s);
+      return s;
+    }
+
     const sheet = el('div', 'm-sheet');
     sheet.appendChild(el('div', 'm-grip'));
     this.detHead = el('div', 'm-sheet-h', '');
@@ -717,6 +778,13 @@ export class MobileApp {
     this.rvTitle.textContent = rec?.title || t('common.noRecording');
     const labels = [...this.h.getLabels()].sort((a, b) => (a.start - b.start) || (a.end - b.end));
     const { adopted, detections, open } = reviewState(labels, this.isOwn);
+    this.assignColors(labels);
+    if (!REVIEW_WORKFLOW) {
+      this.rvSub.textContent = rec ? [rec.meta, rec.place].filter(Boolean).join(' · ') : '';
+      this.renderStrip(labels, !!rec);
+      this.schedulePaint();
+      return;
+    }
     this.rvSub.textContent = rec
       ? (detections.length ? t('rv.sub', { det: detections.length, open: open.length }) : t('common.labels', { n: labels.length }))
       : '';
@@ -809,6 +877,126 @@ export class MobileApp {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.playLabel(lbl); }
     });
     return card;
+  }
+
+  // ── Viewer: species colours and strip ──────────────────────────────
+
+  /** One colour per species, in order of first appearance in the recording. */
+  private assignColors(labels: any[]) {
+    this.colorOf.clear();
+    this.keyOfId.clear();
+    for (const l of labels) {
+      const k = speciesKey(l);
+      if (!this.colorOf.has(k)) this.colorOf.set(k, PALETTE[this.colorOf.size % PALETTE.length]);
+      this.keyOfId.set(String(l.id), k);
+    }
+    if (this.focusKey && !this.colorOf.has(this.focusKey)) this.focusKey = null;
+  }
+
+  private labelById(id: string) { return this.h.getLabels().find((l) => String(l.id) === id) || null; }
+
+  /** Labels under time `t`, best first. */
+  private labelsAt(time: number) {
+    return this.h.getLabels()
+      .filter((l) => time >= l.start && time <= l.end && !(this.isOwn(l) && l.adoptedFrom?.id != null))
+      .sort((a, b) => (Number(b.confidence) || 0) - (Number(a.confidence) || 0));
+  }
+
+  private schedulePaint() {
+    if (this.paintRaf || !this.active) return;
+    this.paintRaf = requestAnimationFrame(() => { this.paintRaf = 0; this.paint(); });
+  }
+
+  /** Species colour on every label region; with a species picked, the others fade. */
+  private paint() {
+    const root = this.h.playerRoot;
+    root.classList.toggle('m-has-focus', !!this.focusKey);
+    for (const r of root.querySelectorAll<HTMLElement>('.spectrogram-label-region')) {
+      const k = this.keyOfId.get(r.dataset.id || '');
+      const c = k ? this.colorOf.get(k) : undefined;
+      if (c) { if (r.style.getPropertyValue('--m-c') !== c) r.style.setProperty('--m-c', c); }
+      else r.style.removeProperty('--m-c');
+      r.classList.toggle('m-dim', !!this.focusKey && k !== this.focusKey);
+    }
+  }
+
+  private renderStrip(labels: any[], hasRec: boolean) {
+    const groups = new Map<string, { key: string; list: any[]; best: any }>();
+    for (const l of labels) {
+      if (this.isOwn(l) && l.adoptedFrom?.id != null) continue;
+      const k = speciesKey(l);
+      const g = groups.get(k) || { key: k, list: [], best: l };
+      g.list.push(l);
+      if ((Number(l.confidence) || 0) > (Number(g.best.confidence) || 0)) g.best = l;
+      groups.set(k, g);
+    }
+    this.strip.replaceChildren();
+    this.stripCur = '';
+    if (!groups.size) {
+      const busy = !this.rvProgress.hidden;
+      this.strip.appendChild(el('p', 'm-strip-empty', !hasRec ? t('rv.pickRecording')
+        : busy ? t('rv.analysing') : this.h.analysis ? t('rv.noDetectionsAnalyse') : t('rv.noSpecies')));
+      return;
+    }
+    for (const g of groups.values()) {
+      const name = this.h.resolveName(g.best)?.display || g.best.label || t('common.unknown');
+      const chip = el('button', `m-spc${this.focusKey === g.key ? ' on' : ''}${this.focusKey && this.focusKey !== g.key ? ' off' : ''}`);
+      chip.type = 'button';
+      chip.setAttribute('role', 'listitem');
+      chip.dataset.key = g.key;
+      chip.style.setProperty('--m-c', this.colorOf.get(g.key) || PALETTE[0]);
+      const tx = el('span', 'm-spc-tx');
+      tx.append(el('b', '', name));
+      const pct = g.best.confidence != null ? `${Math.round(Number(g.best.confidence) * 100)}%` : '';
+      tx.append(el('small', '', [`${g.list.length}×`, pct].filter(Boolean).join(' · ')));
+      chip.append(this.speciesImg(g.best), tx);
+      chip.setAttribute('aria-pressed', String(this.focusKey === g.key));
+      chip.addEventListener('click', () => {
+        if (this.focusKey === g.key) {
+          this.focusKey = null;
+        } else {
+          this.focusKey = g.key;
+          this.playLabel(g.best);
+        }
+        this.renderReview();
+      });
+      this.strip.appendChild(chip);
+    }
+    const hint = el('p', 'm-strip-hint', t('rv.gestures'));
+    this.strip.appendChild(hint);
+  }
+
+  /** Highlight the chips of the species under the playhead. */
+  private markStrip() {
+    if (!this.strip) return;
+    const keys = [...new Set(this.labelsAt(Number(this.h.player?.currentTime) || 0).map(speciesKey))];
+    const sig = keys.join('|');
+    if (sig === this.stripCur) return;
+    this.stripCur = sig;
+    let first: HTMLElement | null = null;
+    for (const c of this.strip.querySelectorAll<HTMLElement>('.m-spc')) {
+      const on = keys.includes(c.dataset.key || '');
+      c.classList.toggle('cur', on);
+      if (on && !first) first = c;
+    }
+    first?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }
+
+  private loopLabel(lbl: any) {
+    this.loopSeg = { start: lbl.start, end: lbl.end };
+    this.loopBtn.classList.add('on');
+    this.playLabel(lbl);
+  }
+
+  private stopLoop() {
+    if (!this.loopSeg) return;
+    this.loopSeg = null;
+    this.loopBtn.classList.remove('on');
+    // Keep playing, just without the loop.
+    const p = this.h.player;
+    const was = !!p?.isPlaying;
+    p?._state?._stopCustomSegmentPlayback?.('stopped', Number(p.currentTime) || 0);
+    if (was) p.play?.();
   }
 
   // ── Accept / discard ────────────────────────────────────────────────
@@ -927,6 +1115,7 @@ export class MobileApp {
 
   /** Highlight the card under the playhead (or the last tapped one). */
   private markCurrent(scroll: boolean) {
+    if (!REVIEW_WORKFLOW) return;
     const t = Number(this.h.player?.currentTime) || 0;
     let cur: HTMLElement | null = null;
     for (const c of this.detList.querySelectorAll<HTMLElement>('.m-det')) {
@@ -961,8 +1150,13 @@ export class MobileApp {
   private toggleLoop() {
     // Loop the detection that is current; without one, loop is just a visual toggle for the next tap.
     if (this.loopSeg) {
-      this.loopSeg = null;
-      this.loopBtn.classList.remove('on');
+      this.stopLoop();
+      return;
+    }
+    if (!REVIEW_WORKFLOW) {
+      const cur = this.labelsAt(Number(this.h.player?.currentTime) || 0)[0];
+      if (cur) this.loopLabel(cur);
+      else { this.loopSeg = { start: 0, end: 0 }; this.loopBtn.classList.add('on'); }
       return;
     }
     const card = this.detList.querySelector<HTMLElement>('.m-det.cur');
@@ -985,7 +1179,8 @@ export class MobileApp {
       }
       this.timeCur.textContent = fmtClock(p?.currentTime);
       this.timeDur.textContent = fmtClock(p?.duration);
-      if (playing) this.markCurrent(true);
+      if (REVIEW_WORKFLOW) { if (playing) this.markCurrent(true); }
+      else this.markStrip();
     };
     this.raf = requestAnimationFrame(tick);
   }

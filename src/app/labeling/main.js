@@ -3944,7 +3944,7 @@ const xcNokeyModalManager = new ModalManager({ backdrop: xcNokeyModal, dialog: x
 
 let _xcNokeyShownThisSession = false;
 function showXcNokeyModal() {
-  if (xcPanel.apiKey) return false;
+  if (xcPanel.apiKey || mobileApp.isActive) return false;
   if (_onboardingOpen || (_onboardingAtStart && !annotatorProfile.onboardingDone)) {   // the wizard asks for the key itself
     selectionMeta.textContent = 'No XC API key — add one in the setup or the Upload tab to load annotations.';
     return false;
@@ -5148,7 +5148,8 @@ if (_restoredFromProject && !_hasXcParam && !_liteInitialLaunch.length) {
   if (_last && (_last.xcId || _last.audioUrl || _last.path || _last.filePath)) activateRecordingEntry(_last);
   else recordingManager.setActive(null);
 }
-setTimeout(() => { if (_onboardingAtStart) runOnboarding(); else maybeShowProjectFolderModal(); }, 400);
+// The phone UI is a viewer: no labeling setup wizard or project-folder prompt there.
+setTimeout(() => { if (mobileApp.isActive) return; if (_onboardingAtStart) runOnboarding(); else maybeShowProjectFolderModal(); }, 400);
 // Start the XC download right away — the 7 MB taxonomy loads in parallel and
 // re-localizes any labels imported before it finished.
 autoLoadFromParams();

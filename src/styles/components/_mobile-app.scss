@@ -122,7 +122,7 @@ html.is-mobile {
   .m-cta.m-cta--sm { width: auto; flex-shrink: 0; height: 40px; padding: 0 14px; font-size: 13.5px; }
 
   /* ── Review: player ── */
-  .m-player { flex: 0 0 auto; height: min(46dvh, 380px); min-height: 220px; position: relative; }
+  .m-player { flex: 1 1 auto; min-height: 220px; position: relative; }
   .m-player #playerRoot { width: 100%; height: 100%; border: none; border-radius: 0; }
   /* Desktop chrome inside the player is not used on phones. */
   .m-player {
@@ -134,9 +134,67 @@ html.is-mobile {
   .m-player .waveform-container { flex: 0 0 0 !important; height: 0 !important; min-height: 0 !important; border: none !important; }
   .m-player .spectrogram-container { flex: 1 1 auto !important; height: auto !important; }
 
-  // Species tracks under the overview: a few rows, the rest scrolls.
-  .m-player .overview-label-tracks { max-height: 76px; overflow-y: auto; flex: 0 0 auto !important; }
-  .m-player .overview-label-row, .m-player .overview-label-group-header { flex-shrink: 0 !important; min-height: 16px; }
+  // Viewer: no label tracks (the species strip and the colours do that job), slim overview.
+  .m-player .overview-label-section { display: none !important; }
+  .m-player .overview-container { height: 30px !important; min-height: 30px !important; }
+  .m-player .overview-container .handle { width: 14px; }
+
+  // Frequency scale as an overlay on the spectrogram instead of its own column.
+  --axis-width: 0px;
+  .m-player .freq-axis-spacer {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 6;
+    width: 46px; flex: none !important; border: none;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0));
+    pointer-events: none;
+  }
+  .m-player .spectrogram-container .time-aligned-row { position: relative; }
+  .m-player .frequency-labels span {
+    left: 5px; right: auto; text-align: left;
+    color: rgba(255, 255, 255, 0.78); font-size: 9.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  .m-player .frequency-labels span::after { display: none; }
+  // The detection bars sit at the top: no scale numbers under them.
+  .m-player .frequency-labels { mask-image: linear-gradient(transparent 34px, #000 46px); }
+  .m-player .freq-scrollbar { width: 3px; opacity: 0.5; }
+  .m-player .freq-zoom-reset-btn { display: none !important; }
+  .m-player .waveform-container .axis-spacer, .m-player .overview-container .axis-spacer { display: none; }
+
+  /* ── Player: transport bar and species strip ── */
+  .m-tbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 2px 14px; flex-shrink: 0; }
+  .m-tbar-time { font-family: var(--m-mono); font-size: 11.5px; color: var(--m-muted); white-space: nowrap; min-width: 0; }
+  .m-tbar-time span:first-child { color: var(--m-text); font-weight: 600; }
+  .m-tbar-sep { margin: 0 3px; opacity: 0.5; }
+  .m-tbar .m-transport { flex: 1; justify-content: flex-end; gap: 2px; padding: 0; }
+  .m-tbar .m-play { width: 46px; height: 46px; border-radius: 50%; }
+  .m-tbar .m-tbtn { width: 40px; height: 40px; }
+
+  .m-strip {
+    display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 6px 12px 10px; flex-shrink: 0; scroll-snap-type: x proximity; scrollbar-width: none;
+    align-items: stretch;
+  }
+  .m-strip::-webkit-scrollbar { display: none; }
+  .m-spc {
+    flex: 0 0 auto; scroll-snap-align: start;
+    display: flex; align-items: center; gap: 8px; max-width: 220px;
+    height: 52px; padding: 5px 12px 5px 5px; text-align: left;
+    border: 1px solid var(--m-line); border-radius: 8px;
+    background: var(--m-surface); color: var(--m-text);
+    box-shadow: inset 0 -3px 0 var(--m-c);
+    transition: opacity 0.15s, background-color 0.15s, transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-spc img { width: 40px; height: 40px; border-radius: 5px; object-fit: cover; flex-shrink: 0; background: #252525; box-shadow: 0 0 0 2px var(--m-c); }
+  .m-spc-tx { display: flex; flex-direction: column; min-width: 0; }
+  .m-spc-tx b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-spc-tx small { font-family: var(--m-mono); font-size: 10.5px; color: var(--m-muted); margin-top: 2px; }
+  .m-spc.cur { background: color-mix(in srgb, var(--m-c) 22%, var(--m-surface)); border-color: var(--m-c); }
+  .m-spc.on { background: color-mix(in srgb, var(--m-c) 34%, var(--m-surface)); border-color: var(--m-c); }
+  .m-spc.off { opacity: 0.5; }
+  .m-spc:active { transform: scale(0.97); }
+  .m-strip-empty { margin: 8px 4px 6px; color: var(--m-muted); font-size: 13px; line-height: 1.4; }
+  .m-strip-hint { flex: 0 0 180px; margin: 0; align-self: center; font-size: 10.5px; line-height: 1.35; color: var(--m-muted); }
 
   .m-time { display: flex; justify-content: space-between; padding: 4px 16px 0; font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); flex-shrink: 0; }
   .m-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 0 8px; flex-shrink: 0; }
@@ -224,99 +282,59 @@ html.is-mobile {
   .m-q-go svg { width: 18px; height: 18px; }
 }
 
-/* BirdNET detections (time only, "lanes") — same strategy as the desktop (_assignLanes):
-   overlapping windows go to the next lane down, so their name tags stack; only the
-   current one (under the playhead / selected / focused) shades its column as a band
-   over the full height (mockup screen 6). Tripled class to win over the desktop lane rules. */
+/* BirdNET detections (time only, "lanes"; desktop _assignLanes stacks overlapping windows).
+   Phone viewer: each window is a thin bar in its species colour (--m-c, set by mobile-app.ts),
+   the name sits on the bar; the current window (under the playhead / tapped) shades its column.
+   Tripled class to win over the desktop lane rules. */
 html.is-mobile .m-player .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
-  --m-band: var(--color-detection, #f59e0b);
+  --m-band: var(--m-c, var(--color-detection, #f59e0b));
   overflow: visible;
   border: none; border-image: none; outline: none;
   border-width: 0 !important;    // _ui-clarity forces a dashed frame on locked labels
   opacity: 1;
-  border-radius: 4px;
-  background: transparent;
-  box-shadow: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--m-band) 30%, rgba(0, 0, 0, 0.55));
+  box-shadow: inset 2px 0 0 var(--m-band), inset 0 -2px 0 var(--m-band);
+  transition: opacity 0.15s;
 
-  // Column below the tag: hidden unless current (desktop rule), drawn as a band then.
   &::after {
     left: 0; right: 0;
-    background: color-mix(in srgb, var(--m-band) 11%, transparent);
-    border-left: 2px solid var(--m-band);
-    border-right: 2px solid var(--m-band);
+    background: color-mix(in srgb, var(--m-band) 12%, transparent);
+    border-left: 1.5px solid var(--m-band);
+    border-right: 1.5px solid var(--m-band);
   }
   &::before { display: none; }   // confidence edge — the tag shows the number
 
   .spectrogram-label-text {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; gap: 4px;
     width: max-content; max-width: 100%;
     overflow: hidden; white-space: nowrap;
-    padding: 0 6px; height: 100%;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--m-band) 78%, #000);
-    color: #1a1205;
-    font-size: 11px; font-weight: 700; line-height: 1;
-    text-shadow: none;
+    padding: 0 5px 0 6px; height: 100%;
+    background: transparent;
+    color: #fff;
+    font-size: 10.5px; font-weight: 700; line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   }
   .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 0.85; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .spectrogram-label-conf-meter { display: none; }
 
-  // Under the playhead: edges only — several overlapping windows share one band
-  // instead of stacking their fills. Selected / focused: filled band.
   &.active, &.selected, &.focused {
     z-index: 12;
-    .spectrogram-label-text { background: var(--m-band); }
+    background: var(--m-band);
+    .spectrogram-label-text { color: #0b0b10; text-shadow: none; }
     &::after { opacity: 1; }
   }
   &.active:not(.selected):not(.focused)::after { background: transparent; }
-  &.selected, &.focused { --m-band: var(--color-accent); .spectrogram-label-text { color: #04111b; } }
 }
 
-/* ── Analyse screen ── */
-html.is-mobile {
-  .m-an-body { padding: 2px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .m-an-progress { padding: 10px 12px; border-radius: 8px; font-size: 12.5px; background: color-mix(in srgb, var(--m-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--m-accent) 30%, transparent); }
-  .m-an-progress[hidden] { display: none; }
-  .m-an-bar { height: 3px; margin-top: 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
-  .m-an-bar i { display: block; height: 100%; width: 0; background: var(--m-accent); transition: width 0.2s; }
-
-  .m-card { padding: 0 12px; border-radius: 8px; background: var(--m-surface); border: 1px solid var(--m-line); }
-  .m-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--m-line); font-size: 13.5px; color: var(--m-text); }
-  .m-row:first-child { border-top: none; }
-  .m-row[hidden] { display: none; }
-  .m-row--plain { border-top: none; min-height: 40px; }
-  .m-row--btn { width: 100%; border: none; background: transparent; text-align: left; padding: 6px 0; }
-  .m-row-text { display: flex; flex-direction: column; min-width: 0; }
-  .m-row-text small { font-size: 11.5px; color: var(--m-muted); margin-top: 1px; }
-  .m-row-val { font-family: var(--m-mono); font-size: 12px; color: var(--m-muted); }
-  .m-chev svg { width: 16px; height: 16px; color: var(--m-muted); transition: transform 0.15s; }
-  .m-row--btn.open .m-chev svg { transform: rotate(90deg); }
-  .m-expert { border-top: 1px solid var(--m-line); }
-  .m-expert[hidden] { display: none; }
-  .m-hint { margin: 8px 0 10px; font-size: 11.5px; color: var(--m-muted); }
-  .m-select { height: 34px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface-2); color: var(--m-text); font-size: 13px; }
-
-  .m-switch { position: relative; flex-shrink: 0; width: 40px; height: 24px; }
-  .m-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
-  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.15); transition: background 0.15s; }
-  .m-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
-  .m-switch input:checked + i { background: var(--m-accent); }
-  .m-switch input:checked + i::after { transform: translateX(16px); }
-  .m-switch input:disabled + i { opacity: 0.4; }
-  .m-switch input:focus-visible + i { outline: 2px solid var(--m-accent); outline-offset: 2px; }
-
-  .m-range { width: 100%; margin: 4px 0 14px; accent-color: var(--m-accent); height: 28px; }
-
-  .m-an-foot { padding: 10px 14px; border-top: 1px solid var(--m-line); flex-shrink: 0; }
-  .m-cta { width: 100%; height: 48px; border: none; border-radius: 8px; background: var(--m-accent); color: var(--m-accent-ink); font-weight: 700; font-size: 14.5px; }
-  .m-cta:disabled { opacity: 0.5; }
-}
+/* A species picked in the strip: the other species fade. */
+html.is-mobile .m-player .spectrogram-label-region.m-dim { opacity: 0.18 !important; }
 
 /* Boxes (BirdBox calls, own labels) as in the mockup: solid frame, light fill,
    name tag above the box. Detections amber, own labels in their colour, selected blue. */
 html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region--lane) {
-  --m-box: var(--spectrogram-label-edge, var(--color-detection, #f59e0b));
+  --m-box: var(--m-c, var(--spectrogram-label-edge, var(--color-detection, #f59e0b)));
   border: 2px solid var(--m-box) !important;
   border-image: none !important;
   border-radius: 4px;
@@ -326,7 +344,7 @@ html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region
   box-shadow: none;
   overflow: visible;
 
-  &.suggestion { --m-box: var(--color-detection, #f59e0b); }
+  &.suggestion { --m-box: var(--m-c, var(--color-detection, #f59e0b)); }
 
   .spectrogram-label-text {
     position: absolute; left: -2px; top: -20px; bottom: auto;
@@ -334,7 +352,7 @@ html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region
     height: 17px; padding: 0 6px;
     width: max-content; max-width: none;
     border-radius: 4px;
-    background: var(--m-box); color: #1a1205;
+    background: var(--m-box); color: #0b0b10;
     font-size: 11px; font-weight: 700; line-height: 1;
     text-shadow: none; border: 0;
   }
@@ -435,5 +453,5 @@ html.is-mobile {
     border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-muted);
     font-size: 12.5px; font-weight: 600;
   }
-  .m-live-discard[hidden] { display: none; }
+  .m-live-discard[hidden] { display: block; visibility: hidden; }
 }
