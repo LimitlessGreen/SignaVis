@@ -26,9 +26,9 @@ export const ui = {
     ],
     featuresTitle: 'Features', more: 'More',
     features: [
-      ['overview.mp4', 'Overview', 'Whole-recording overview', 'Activity across the entire recording, including multi-hour files.', ''],
+      ['overview.mp4', 'Overview', 'Whole-recording overview', 'Activity across the entire recording, including multi-hour files.', '/docs/features/overview/'],
       ['labeling.mp4', 'Labeling', 'Fast annotation', 'Time–frequency boxes with species, sound type and keyboard shortcuts.', '/docs/features/labels/'],
-      ['magnifier.mp4', 'Magnifier', 'Detail view', 'Inspect fine structure while keeping the context visible.', ''],
+      ['magnifier.mp4', 'Magnifier', 'Detail view', 'Inspect fine structure while keeping the context visible.', '/docs/features/magnifier/'],
     ],
     mobileKicker: 'Mobile', mobileTitle: 'Optimised for mobile devices',
     mobileText: 'Load Xeno-canto recordings, play them back and review the detected species.', mobileCta: 'Open mobile version',
@@ -58,9 +58,9 @@ export const ui = {
     ],
     featuresTitle: 'Funktionen', more: 'Mehr',
     features: [
-      ['overview.mp4', 'Überblick', 'Übersicht der gesamten Aufnahme', 'Aktivität über die volle Länge, auch bei mehrstündigen Dateien.', ''],
+      ['overview.mp4', 'Überblick', 'Übersicht der gesamten Aufnahme', 'Aktivität über die volle Länge, auch bei mehrstündigen Dateien.', '/docs/features/overview/'],
       ['labeling.mp4', 'Annotation', 'Schnelle Annotation', 'Zeit-Frequenz-Rahmen mit Art, Lautäußerung und Tastenkürzeln.', '/docs/features/labels/'],
-      ['magnifier.mp4', 'Lupe', 'Detailansicht', 'Feinstruktur prüfen, ohne den Kontext zu verlieren.', ''],
+      ['magnifier.mp4', 'Lupe', 'Detailansicht', 'Feinstruktur prüfen, ohne den Kontext zu verlieren.', '/docs/features/magnifier/'],
     ],
     mobileKicker: 'Mobil', mobileTitle: 'Für Mobilgeräte optimiert',
     mobileText: 'Xeno-canto-Aufnahmen laden, abspielen und erkannte Arten prüfen.', mobileCta: 'Mobile Version öffnen',
