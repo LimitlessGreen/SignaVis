@@ -3,6 +3,7 @@
 // HDBSCAN cluster, with batch-tagging and smart-sampling (Phase 4).
 // ═══════════════════════════════════════════════════════════════════════
 
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import type { Recording, Dataset } from '../../domain/corpus/types.ts';
 import {
     datasetRunClustering,
@@ -255,6 +256,16 @@ export class ClusterBrowserPanel {
         `;
 
         card.addEventListener('click', () => this.opts.onOpenRecording?.(rec));
+        card.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const copy = (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); };
+            showContextMenu({ x: e.clientX, y: e.clientY, items: [
+                { label: 'Open', action: () => this.opts.onOpenRecording?.(rec), disabled: !this.opts.onOpenRecording },
+                { separator: true },
+                { label: `Copy “${name}”`, action: () => copy(name) },
+                { label: 'Copy file path', action: () => copy(rec.filepath) },
+            ] });
+        });
 
         // Async waveform thumbnail
         getWaveformThumbnail(rec.filepath)

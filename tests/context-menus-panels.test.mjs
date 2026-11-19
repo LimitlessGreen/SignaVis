@@ -47,3 +47,13 @@ test('explore species card menu leaves out missing actions', async () => {
   assert.deepEqual(labels(bare), ['Copy “Parus major”']);
   assert.ok(!bare[0].separator);
 });
+
+test('recording card menu lists one remove entry per tag', async () => {
+  const { recordingCardMenuItems } = await import('../src/ui/panels/RecordingGalleryPanel.ts');
+  const removed = [];
+  const items = recordingCardMenuItems({ filepath: '/d/x.wav', tags: ['owl', 'night'] },
+    { open: noop, copy: noop, addTag: noop, removeTag: (t) => removed.push(t) });
+  assert.deepEqual(labels(items), ['Open', 'Add tag…', 'Remove tag “owl”', 'Remove tag “night”', 'Copy “x.wav”', 'Copy file path']);
+  items.filter((i) => i.label?.startsWith('Remove')).forEach((i) => i.action());
+  assert.deepEqual(removed, ['owl', 'night']);
+});

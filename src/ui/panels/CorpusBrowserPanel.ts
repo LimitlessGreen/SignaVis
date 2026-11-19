@@ -4,6 +4,7 @@
 // Shows all datasets, allows creating, deleting, and selecting them.
 // ═══════════════════════════════════════════════════════════════════════
 
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import type { Dataset } from '../../domain/corpus/types.ts';
 import {
     datasetCreate,
@@ -153,6 +154,21 @@ export class DatasetBrowserPanel {
                 const id = (btn as HTMLElement).dataset.openDataset!;
                 const dataset = this.datasets.find((c) => c.id === id);
                 if (dataset) this.onDatasetSelect(dataset);
+            });
+        });
+
+        listEl.querySelectorAll<HTMLElement>('[data-open-dataset]').forEach((card) => {
+            card.addEventListener('contextmenu', (e) => {
+                const dataset = this.datasets.find((c) => c.id === card.dataset.openDataset);
+                if (!dataset) return;
+                e.preventDefault();
+                const del = card.querySelector<HTMLElement>('[data-delete-dataset]') || listEl.querySelector<HTMLElement>(`[data-delete-dataset="${CSS.escape(dataset.id)}"]`);
+                showContextMenu({ x: e.clientX, y: e.clientY, items: [
+                    { label: 'Open', action: () => this.onDatasetSelect(dataset) },
+                    { label: `Copy “${dataset.name}”`, action: () => ((t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); })(dataset.name) },
+                    { separator: true },
+                    { label: 'Delete dataset…', danger: true, disabled: !del, action: () => del?.click() },
+                ] });
             });
         });
 
