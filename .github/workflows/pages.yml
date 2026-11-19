@@ -3,6 +3,8 @@ name: Deploy Demo to GitHub Pages
 on:
   push:
     branches: ["main"]
+  release:
+    types: [published]   # refresh download links on the website
   workflow_dispatch:
 
 permissions:
@@ -78,6 +80,9 @@ jobs:
         # Landing page at /, docs at /docs (English) and /de/docs (German).
         # Developer docs are imported from docs/ and keep their old URLs.
         # Also writes sitemap-index.xml, sitemap.xml and robots.txt.
+        # The token lets the download page read the latest release without rate limits.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm ci --prefix site
           npm run build --prefix site

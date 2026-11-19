@@ -57,7 +57,7 @@ p { margin: 0; }
 
 /* ── Bottom nav (mobile only, M3 navigation bar) ── */
 .bottom-nav {
-  position: fixed; inset: auto 0 0 0; z-index: 10; display: grid; grid-template-columns: repeat(3, 1fr);
+  position: fixed; inset: auto 0 0 0; z-index: 10; display: grid; grid-template-columns: repeat(4, 1fr);
   padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom));
   background: var(--md-surface-container); border-top: 1px solid var(--md-outline-variant);
 }
@@ -171,3 +171,24 @@ p { margin: 0; }
   border-radius: 999px; font-weight: 600; font-size: .85rem; color: var(--md-on-surface-variant);
 }
 .lang-btn:hover { background: var(--md-surface-container-high); color: var(--md-on-surface); }
+
+/* ── Download page ── */
+.dl-head { max-width: 44rem; }
+.dl-head h1 { font-size: clamp(2rem, 6vw, 3rem); font-weight: 700; margin-bottom: .75rem; }
+.dl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: 1rem; color: var(--md-on-surface-variant); }
+.dl-meta a { color: var(--md-primary); font-weight: 600; display: inline-flex; align-items: center; gap: .3rem; }
+.dl-grid { display: grid; gap: .9rem; margin-top: 2rem; }
+.dl-card { padding: 1.6rem; border-radius: 28px; border: 1px solid var(--md-outline-variant); display: grid; gap: .9rem; align-content: start; }
+.dl-card.detected { border-color: var(--md-primary); background: var(--md-surface-container-low); }
+.dl-card > .icon { color: var(--md-primary); }
+.dl-card h2 { font-size: 1.3rem; display: flex; align-items: center; gap: .6rem; }
+.dl-card .chip { font-size: .75rem; padding: .15rem .6rem; display: none; }
+.dl-card.detected .chip { display: inline-flex; }
+.dl-card .btn { justify-content: center; }
+.dl-alt { display: grid; gap: .25rem; }
+.dl-alt a { color: var(--md-primary); font-weight: 600; }
+.dl-size { color: var(--md-on-surface-variant); font-size: .85rem; font-weight: 400; }
+.dl-hint { font-size: .875rem; color: var(--md-on-surface-variant); }
+.dl-hint code { font-size: .8rem; }
+@media (min-width: 960px) { .dl-grid { grid-template-columns: repeat(3, 1fr); } }
+.btn-filled .dl-size { color: inherit; opacity: .75; }
