@@ -1,7 +1,8 @@
 // Touch gestures on the phone spectrogram (src/ui/mobile/mobile-app.ts).
 //
 //   one finger drag   → scroll in time (with a short fling)
-//   two fingers       → pinch = zoom in time around the fingers, move = scroll
+//   two fingers       → spread sideways = zoom in time, spread up/down = zoom in frequency, move = scroll
+//   (a drag also moves the frequency view up / down when it is zoomed)
 //   tap               → on a detection: play it; elsewhere: move the playhead there
 //   double tap        → play / pause
 //   long press        → on a detection: play it as a loop
@@ -32,7 +33,8 @@ export class SpectrogramGestures {
   private y0 = 0;
   private t0 = 0;
   private scroll0 = 0;
-  private pinch0 = { dist: 1, mid: 0, pps: 1, scroll: 0 };
+  private pinch0 = { dist: 1, mid: 0, pps: 1, scroll: 0, distY: 1, midY: 0, fMin: 0, fMax: 1, axis: '' as '' | 'x' | 'y' | 'xy' };
+  private f0 = { min: 0, max: 1, top: 0, zoomed: false };
   private holdTimer = 0;
   private held = false;
   private lastTap = 0;
@@ -57,6 +59,10 @@ export class SpectrogramGestures {
       if (performance.now() - this.lastTouch < 800) { e.stopPropagation(); e.preventDefault(); }
     };
     for (const type of ['mousedown', 'mouseup', 'click', 'dblclick']) target.addEventListener(type, swallow, { capture: true });
+    // The player's own touch recogniser (components/gestures) would zoom / scroll as well: on the phone
+    // this class handles touch alone (it works on pointer events, which these don't affect).
+    const block = (e: Event) => { if (document.documentElement.classList.contains('is-mobile')) e.stopPropagation(); };
+    for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) target.addEventListener(type, block, { capture: true });
     // Long press would open the browser's context menu / text selection otherwise.
     target.addEventListener('contextmenu', (e) => { if (this.pts.size || this.held) e.preventDefault(); });
   }
@@ -80,6 +86,7 @@ export class SpectrogramGestures {
       this.mode = 'tap';
       this.x0 = e.clientX; this.y0 = e.clientY; this.t0 = performance.now();
       this.scroll0 = st?._getPrimaryScrollLeft?.() ?? 0;
+      this.f0 = this.freqView();
       this.vel = 0;
       this.lastMove = { x: e.clientX, t: this.t0 };
       this.held = false;
@@ -97,11 +104,16 @@ export class SpectrogramGestures {
       clearTimeout(this.holdTimer);
       this.mode = 'pinch';
       const [a, b] = [...this.pts.values()];
+      const fv = this.freqView();
       this.pinch0 = {
         dist: Math.max(20, Math.abs(a.x - b.x)),
         mid: (a.x + b.x) / 2,
         pps: Number(st?.pixelsPerSecond) || 1,
         scroll: st?._getPrimaryScrollLeft?.() ?? 0,
+        distY: Math.max(20, Math.abs(a.y - b.y)),
+        midY: (a.y + b.y) / 2,
+        fMin: fv.min, fMax: fv.max,
+        axis: '',
       };
     }
   };
@@ -124,18 +136,42 @@ export class SpectrogramGestures {
       if (dt > 0) this.vel = 0.8 * ((e.clientX - this.lastMove.x) / dt) + 0.2 * this.vel;
       this.lastMove = { x: e.clientX, t: now };
       const left = this.scroll0 - (e.clientX - this.x0);
-      this.schedule(() => st._setLinkedScrollLeft(left));
+      const dy = e.clientY - this.y0;
+      this.schedule(() => {
+        st._setLinkedScrollLeft(left);
+        if (this.f0.zoomed) this.setFreq(this.f0.min, this.f0.max, dy);
+      });
     } else if (this.mode === 'pinch' && this.pts.size >= 2) {
       const [a, b] = [...this.pts.values()];
-      const dist = Math.max(20, Math.abs(a.x - b.x));
-      const mid = (a.x + b.x) / 2;
       const p0 = this.pinch0;
-      const pps = Math.max(MIN_PPS, Math.min(MAX_PPS, p0.pps * (dist / p0.dist)));
-      // The time that was under the fingers' midpoint at the start stays under the midpoint now.
+      const dist = Math.max(20, Math.abs(a.x - b.x));
+      const distY = Math.max(20, Math.abs(a.y - b.y));
+      const mid = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      // Which way do the fingers spread? Decided once per pinch: sideways = time, up/down = frequency,
+      // diagonal = both. Keeps an up/down pinch from also zooming time by a few per cent.
+      if (!p0.axis) {
+        const gx = Math.abs(Math.log(dist / p0.dist)), gy = Math.abs(Math.log(distY / p0.distY));
+        if (Math.max(gx, gy) > 0.06) p0.axis = gx > gy * 2 ? 'x' : gy > gx * 2 ? 'y' : 'xy';
+      }
       const rect = st.d?.canvasWrapper?.getBoundingClientRect?.() ?? this.target.getBoundingClientRect();
-      const anchorTime = (p0.scroll + (p0.mid - rect.left)) / p0.pps;
-      const local = Math.max(0, Math.min(rect.width, mid - rect.left));
-      this.schedule(() => st._setPixelsPerSecond(pps, true, anchorTime, local));
+      this.schedule(() => {
+        if (p0.axis === 'x' || p0.axis === 'xy') {
+          const pps = Math.max(MIN_PPS, Math.min(MAX_PPS, p0.pps * (dist / p0.dist)));
+          // The time that was under the fingers' midpoint at the start stays under the midpoint now.
+          const anchorTime = (p0.scroll + (p0.mid - rect.left)) / p0.pps;
+          const local = Math.max(0, Math.min(rect.width, mid - rect.left));
+          st._setPixelsPerSecond(pps, true, anchorTime, local);
+        }
+        if (p0.axis === 'y' || p0.axis === 'xy') {
+          // Frequency under the starting midpoint stays under the fingers.
+          const frac = 1 - Math.max(0, Math.min(1, (p0.midY - rect.top) / rect.height));
+          const anchor = p0.fMin + frac * (p0.fMax - p0.fMin);
+          const range = (p0.fMax - p0.fMin) * (p0.distY / distY);
+          const min = anchor - frac * range;
+          this.setFreq(min, min + range, midY - p0.midY);
+        }
+      });
     }
   };
 
@@ -194,6 +230,30 @@ export class SpectrogramGestures {
       if (node === this.target) break;
     }
     return null;
+  }
+
+  /** Visible frequency range (Hz) and the full one. */
+  private freqView() {
+    const st = this.st;
+    const top = Number(st?.coords?.boundedMaxFreq) || 0;
+    const z = st?._freqZoom;
+    const min = Number(z?.min ?? 0) || 0;
+    const max = Number(z?.max ?? top) || top;
+    return { min, max, top, zoomed: !!z?.isZoomed };
+  }
+
+  /** Show min…max Hz, moved by `dy` px (finger down = lower frequencies come into view = view moves up). */
+  private setFreq(min: number, max: number, dy: number) {
+    const st = this.st;
+    const z = st?._freqZoom;
+    const top = Number(st?.coords?.boundedMaxFreq) || 0;
+    const h = (st?.d?.canvasWrapper as HTMLElement | undefined)?.clientHeight || this.target.clientHeight || 1;
+    if (!z || !top) return;
+    const range = Math.max(500, Math.min(top, max - min));
+    let lo = min + (dy / h) * (max - min);
+    lo = Math.max(0, Math.min(top - range, lo));
+    if (range >= top * 0.995) { z.reset(); return; }
+    z.set(lo, lo + range);
   }
 
   private startFling() {

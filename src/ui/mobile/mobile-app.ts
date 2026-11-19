@@ -20,6 +20,7 @@ import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-vi
 import { t, getLang, setLang } from './i18n.ts';
 import { renderThumb, thumbFromUrl } from './thumb.ts';
 import { SpectrogramGestures } from './gestures.ts';
+import { getSpectrogramColor } from '../../domain/spectrogram.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -133,6 +134,7 @@ const I = {
   zoomIn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   zoomOut: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   fit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4"/></svg>',
+  tune: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
   wave: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -282,6 +284,8 @@ export class MobileApp {
   private ovHead!: HTMLElement;
   private ovMarks!: HTMLElement;
   private ovSig = '';
+  private tune!: HTMLElement;
+  private tuneBtn!: HTMLButtonElement;
 
   // Species
   private spList!: HTMLElement;
@@ -808,10 +812,18 @@ export class MobileApp {
       zoom.append(
         button('m-zoom-btn', I.zoomOut, t('rv.zoomOut'), () => this.zoomBy(1 / 1.8)),
         button('m-zoom-btn', I.zoomIn, t('rv.zoomIn'), () => this.zoomBy(1.8)),
-        button('m-zoom-btn', I.fit, t('rv.zoomFit'), () => { try { this.h.player?._state?._fitEntireTrackInView?.(); } catch { /* ignore */ } }),
+        button('m-zoom-btn', I.fit, t('rv.zoomFit'), () => { try { this.h.player?._state?._fitEntireTrackInView?.(); this.h.player?._state?._freqZoom?.reset(); } catch { /* ignore */ } }),
       );
+      this.tuneBtn = button('m-zoom-btn m-tune-btn', I.tune, t('set.view'), () => this.toggleTune());
+      const tuneBox = el('div', 'm-zoom m-zoom--top');
+      tuneBox.appendChild(this.tuneBtn);
+      this.tune = el('div', 'm-tune');
+      this.tune.hidden = true;
+      const th = el('div', 'm-tune-h');
+      th.append(el('b', '', t('set.view')), button('m-icon-btn', I.x, t('common.close'), () => this.toggleTune(false)));
+      this.tune.append(th, el('div', 'm-tune-body'));
       const stage = el('div', 'm-stage');
-      stage.append(this.playerSlot, zoom);
+      stage.append(this.playerSlot, zoom, tuneBox, this.tune);
       s.append(bar, this.rvProgress, stage, this.buildOverview(), tbar, this.strip);
       this.screens.set('review', s);
       return s;
@@ -1238,31 +1250,9 @@ export class MobileApp {
     };
 
     const view = group(t('set.view'));
-    const scheme = this.ctl<HTMLSelectElement>('colorSchemeSelect');
-    if (scheme) {
-      const names: [string, string][] = [['ember', 'Ember'], ['inferno', 'Inferno'], ['magma', 'Magma'], ['viridis', 'Viridis'], ['fire', 'Fire'], ['grayscale', t('set.bw')]];
-      const row = el('div', 'm-set-row m-set-col');
-      row.appendChild(el('span', 'm-set-label', t('set.colors')));
-      const box = el('div', 'm-swatches');
-      for (const [v, text] of names) {
-        if (![...scheme.options].some((o) => o.value === v)) continue;
-        const o = button(`m-swatch m-swatch--${v}${scheme.value === v ? ' on' : ''}`, '<i></i><span></span>', text, () => {
-          scheme.value = v;
-          scheme.dispatchEvent(new Event('change', { bubbles: true }));
-          this.renderSettings();
-        });
-        o.querySelector('span')!.textContent = text;
-        box.appendChild(o);
-      }
-      row.appendChild(box);
-      view.appendChild(row);
-    }
+    this.specControls(view, () => this.renderSettings());
     seg(view, t('set.freq'), [['auto', t('set.auto')], [8000, '8 kHz'], [12000, '12 kHz'], [16000, '16 kHz'], ['full', t('set.full')]],
       this.cfg.freq, (v) => { this.cfg.freq = v; this.saveCfg(); this.applyFreq(); });
-    const nr = this.ctl<HTMLInputElement>('noiseReductionCheck');
-    if (nr) toggle(view, t('set.noise'), t('set.noiseHint'), nr.checked, (v) => { nr.checked = v; nr.dispatchEvent(new Event('change', { bubbles: true })); });
-    const clahe = this.ctl<HTMLInputElement>('claheCheck');
-    if (clahe) toggle(view, t('set.contrast'), t('set.contrastHint'), clahe.checked, (v) => { clahe.checked = v; clahe.dispatchEvent(new Event('change', { bubbles: true })); });
 
     const det = group(t('set.detections'));
     seg(det, t('set.minConf'), [[0, t('common.all')], [0.25, '25%'], [0.5, '50%'], [0.75, '75%']],
@@ -1282,6 +1272,148 @@ export class MobileApp {
     const ul = el('ul', 'm-set-help');
     for (const k of ['set.g.pinch', 'set.g.drag', 'set.g.tap', 'set.g.double', 'set.g.hold', 'set.g.overview'] as const) ul.appendChild(el('li', '', t(k)));
     help.appendChild(ul);
+  }
+
+  // ── Spectrogram controls (settings screen + quick panel on the player) ──
+
+  private static poke(elm: HTMLElement, type: 'change' | 'input' | 'click') {
+    if (type === 'click') (elm as HTMLButtonElement).click();
+    else elm.dispatchEvent(new Event(type, { bubbles: true }));
+  }
+
+  private segRow<V extends string | number>(g: HTMLElement, label: string, opts: [V, string][], cur: V, pick: (v: V) => void) {
+    const row = el('div', 'm-set-row');
+    row.appendChild(el('span', 'm-set-label', label));
+    const box = el('div', 'm-seg');
+    box.setAttribute('role', 'radiogroup');
+    box.setAttribute('aria-label', label);
+    for (const [v, text] of opts) {
+      const o = button(`m-seg-btn${v === cur ? ' on' : ''}`, '', text, () => pick(v));
+      o.textContent = text;
+      o.setAttribute('role', 'radio');
+      o.setAttribute('aria-checked', String(v === cur));
+      box.appendChild(o);
+    }
+    row.appendChild(box);
+    g.appendChild(row);
+  }
+
+  private switchRow(g: HTMLElement, label: string, hint: string, on: boolean, set: (v: boolean) => void) {
+    const row = el('label', 'm-set-row m-set-toggle');
+    const tx = el('span', 'm-set-tx');
+    tx.append(el('span', 'm-set-label', label), el('small', '', hint));
+    const sw = el('span', 'm-switch');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = on;
+    input.addEventListener('change', () => set(input.checked));
+    sw.append(input, el('i'));
+    row.append(tx, sw);
+    g.appendChild(row);
+  }
+
+  /** A slider bound to one of the player's range inputs (live while dragging). */
+  private sliderRow(g: HTMLElement, label: string, src: HTMLInputElement, ends: [string, string] | null, readout: () => string, onMove?: () => void) {
+    const row = el('div', 'm-set-row m-set-col');
+    const head = el('div', 'm-set-head');
+    const val = el('span', 'm-set-val', readout());
+    head.append(el('span', 'm-set-label', label), val);
+    const r = el('input', 'm-slider');
+    r.type = 'range';
+    r.min = src.min; r.max = src.max; r.step = src.step || '1';
+    r.value = src.value;
+    r.setAttribute('aria-label', label);
+    r.addEventListener('input', () => {
+      onMove?.();
+      src.value = r.value;
+      MobileApp.poke(src, 'input');
+      val.textContent = readout();
+    });
+    row.append(head);
+    if (ends) {
+      const line = el('div', 'm-slider-line');
+      line.append(el('small', '', ends[0]), r, el('small', '', ends[1]));
+      row.append(line);
+    } else row.append(r);
+    g.appendChild(row);
+  }
+
+  /** Colours, contrast, frequency scale, resolution, noise — the player's own controls. */
+  private specControls(g: HTMLElement, rerender: () => void) {
+    const d = this.h.player?._state?.d || {};
+    const scheme = this.ctl<HTMLSelectElement>('colorSchemeSelect');
+    if (scheme) {
+      const nice: Record<string, string> = { grayscale: t('set.bw'), grayscaleInv: t('set.wb'), spectroflare: 'SpectroFlare' };
+      const row = el('div', 'm-set-row m-set-col');
+      row.appendChild(el('span', 'm-set-label', t('set.colors')));
+      const box = el('div', 'm-swatches');
+      for (const o of scheme.options) {
+        const v = o.value;
+        const text = nice[v] || o.textContent?.replace(/\s*\(.*\)\s*$/, '').trim() || v;
+        const b = button(`m-swatch m-swatch--${v}${scheme.value === v ? ' on' : ''}`, '<i></i><span></span>', text, () => {
+          scheme.value = v;
+          MobileApp.poke(scheme, 'change');
+          rerender();
+        });
+        b.querySelector('span')!.textContent = text;
+        b.querySelector('i')!.style.background = `linear-gradient(90deg, ${[0, 0.2, 0.4, 0.6, 0.8, 1]
+          .map((x) => { const c = getSpectrogramColor(x, v); return `rgb(${c.r},${c.g},${c.b})`; }).join(', ')})`;
+        b.setAttribute('aria-pressed', String(scheme.value === v));
+        box.appendChild(b);
+      }
+      row.appendChild(box);
+      g.appendChild(row);
+    }
+
+    const mode = d.gainModeSelect as HTMLSelectElement | undefined;
+    const floor = d.floorSlider as HTMLInputElement | undefined;
+    const ceil = d.ceilSlider as HTMLInputElement | undefined;
+    if (mode) {
+      this.segRow(g, t('set.contrastMode'), [['auto', t('set.auto')], ['fixed', t('set.manual')]], mode.value, (v) => {
+        mode.value = v;
+        MobileApp.poke(mode, 'change');
+        rerender();
+      });
+    }
+    // Moving a slider means „manual“: switch the mode so the values stick.
+    const manual = () => { if (mode && mode.value !== 'fixed') { mode.value = 'fixed'; MobileApp.poke(mode, 'change'); } };
+    const txt = (e: unknown) => ((e as HTMLElement | undefined)?.textContent || '').trim();
+    if (floor) this.sliderRow(g, t('set.floor'), floor, null, () => txt(d.floorValue) || `${floor.value}`, manual);
+    if (ceil) this.sliderRow(g, t('set.ceil'), ceil, null, () => txt(d.ceilValue) || `${ceil.value}`, manual);
+    if (d.autoContrastBtn) {
+      const row = el('div', 'm-set-row');
+      row.appendChild(button('m-set-btn', '', t('set.autoContrast'), () => { MobileApp.poke(d.autoContrastBtn, 'click'); rerender(); }));
+      (row.firstChild as HTMLElement).textContent = t('set.autoContrast');
+      g.appendChild(row);
+    }
+
+    const scale = d.scaleSelect as HTMLSelectElement | undefined;
+    if (scale) {
+      const opts = [...scale.options].map((o) => [o.value, o.value === 'mel' ? 'Mel' : o.value === 'linear' ? t('set.linear') : t('set.log')] as [string, string]);
+      this.segRow(g, t('set.scale'), opts, scale.value, (v) => { scale.value = v; MobileApp.poke(scale, 'change'); rerender(); });
+    }
+    const q = d.qualitySlider as HTMLInputElement | undefined;
+    if (q) this.sliderRow(g, t('set.resolution'), q, [t('set.resTime'), t('set.resFreq')], () => txt(d.qualityLevelDisplay));
+
+    const nr = d.noiseReductionCheck as HTMLInputElement | undefined;
+    if (nr) this.switchRow(g, t('set.noise'), t('set.noiseHint'), nr.checked, (v) => { nr.checked = v; MobileApp.poke(nr, 'change'); });
+    const clahe = d.claheCheck as HTMLInputElement | undefined;
+    if (clahe) this.switchRow(g, t('set.contrast'), t('set.contrastHint'), clahe.checked, (v) => { clahe.checked = v; MobileApp.poke(clahe, 'change'); });
+  }
+
+  /** Quick panel over the player: change the picture and see it right away. */
+  private toggleTune(open: boolean = this.tune.hidden === true) {
+    this.tune.hidden = !open;
+    this.tuneBtn.classList.toggle('on', open);
+    if (open) this.renderTune();
+  }
+
+  private renderTune() {
+    const body = this.tune.querySelector<HTMLElement>('.m-tune-body')!;
+    body.replaceChildren();
+    const g = el('div', 'm-set-group');
+    this.specControls(g, () => this.renderTune());
+    body.appendChild(g);
   }
 
   // ── Accept / discard ────────────────────────────────────────────────
