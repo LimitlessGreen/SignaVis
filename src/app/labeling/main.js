@@ -4371,7 +4371,7 @@ loadSampleBtn.addEventListener('click', () => loadDemoRecording());
 /** Load the bundled demo recording (or switch to it if it is in the session already). */
 async function loadDemoRecording() {
   // Sample already in the session — just switch to it
-  const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/birdsong.wav');
+  const _sampleExisting = recordingManager.getAll().find((e) => e.audioUrl === './samples/signavis-demo.wav');
   if (_sampleExisting) { await activateRecordingEntry(_sampleExisting); return; }
   const _prep = await prepareRecordingLoad();
   if (_prep.cancel) return;
@@ -4386,11 +4386,11 @@ async function loadDemoRecording() {
   currentXcId = null;
   updateUrlXcId(null);
   syncToPlayer();
-  fileLabel.textContent = 'birdsong.wav';
-  await player.loadUrl('./samples/birdsong.wav');
+  fileLabel.textContent = 'signavis-demo.wav';
+  await player.loadUrl('./samples/signavis-demo.wav');
   const _sampleEntry = recordingManager.add({
-    filename: 'birdsong.wav',
-    audioUrl: './samples/birdsong.wav',
+    filename: 'signavis-demo.wav',
+    audioUrl: './samples/signavis-demo.wav',
     isBlobUrl: false,
   });
   recordingManager.setActive(_sampleEntry.id);
