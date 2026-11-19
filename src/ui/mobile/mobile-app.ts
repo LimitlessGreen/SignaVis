@@ -148,6 +148,8 @@ const speciesKey = (l: any) => String(l.scientificName || l.label || '?');
 const LIVE_MAX_SEC = 15 * 60;
 /** Seconds visible in the spectrogram on phones (the desktop default is far too zoomed in there). */
 const VIEW_SEC = 10;
+/** Seconds shown in the live spectrogram. */
+const LIVE_SPAN_SEC = 15;
 const RATES = [1, 0.5, 0.25];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
@@ -302,6 +304,9 @@ export class MobileApp {
   private lvBusy = false;
   private lvRaf = 0;
   private lvTick = 0;
+  private lvMarksEl!: HTMLElement;
+  private lvMarks: { el: HTMLElement; at: number }[] = [];
+  private lvColors = new Map<string, string>();
 
   // Where the player root lives on the desktop
   private playerHome: { parent: Node; next: Node | null } | null = null;
@@ -460,8 +465,38 @@ export class MobileApp {
     const bar = el('header', 'm-appbar');
     bar.appendChild(el('h1', '', t('nav.recordings')));
     this.recList = el('div', 'm-scroll m-rec-list');
+    s.append(bar);
+    // Viewer first: open a Xeno-canto recording straight from here (number or link).
+    if (this.h.addXenoCanto) {
+      const form = el('form', 'm-xc');
+      const ic = el('span', 'm-xc-ic');
+      ic.innerHTML = I.globe;
+      const input = el('input', 'm-xc-input');
+      input.placeholder = t('new.xcPlaceholder');
+      input.setAttribute('aria-label', t('new.xc'));
+      input.inputMode = 'url';
+      input.autocapitalize = 'off';
+      input.enterKeyHint = 'go';
+      const go = el('button', 'm-xc-go', t('new.load'));
+      go.type = 'submit';
+      form.append(ic, input, go);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const raw = input.value.trim();
+        if (!raw) return;
+        input.value = '';
+        input.blur();
+        this.autoAnalyse = !!this.h.analysis;
+        this.toast(t('new.xcLoading'), null);
+        try {
+          await this.h.addXenoCanto!(raw);
+          if (!REVIEW_WORKFLOW) this.show('review');
+        } catch { this.autoAnalyse = false; }
+      });
+      s.append(form);
+    }
     const fab = button('m-fab', `${I.plus}<span>${t('rec.new')}</span>`, t('rec.add'), () => this.toggleNewMenu());
-    s.append(bar, this.recList, this.buildNewMenu(), fab);
+    s.append(this.recList, this.buildNewMenu(), fab);
     this.screens.set('recordings', s);
     return s;
   }
@@ -933,7 +968,7 @@ export class MobileApp {
     this.strip.replaceChildren();
     this.stripCur = '';
     if (!groups.size) {
-      const busy = !this.rvProgress.hidden;
+      const busy = !this.rvProgress.hidden || this.anJob !== 'idle';
       this.strip.appendChild(el('p', 'm-strip-empty', !hasRec ? t('rv.pickRecording')
         : busy ? t('rv.analysing') : this.h.analysis ? t('rv.noDetectionsAnalyse') : t('rv.noSpecies')));
       return;
@@ -1556,6 +1591,10 @@ export class MobileApp {
     const bar = job === 'birdnet' ? a.progressBar : a.birdboxProgressBar;
     this.anProgressText.textContent = `${t('an.running', { job: job === 'birdnet' ? 'BirdNET' : 'BirdBox' })}${status ? ` ${status}` : ''}`;
     this.anProgressBar.style.width = bar?.style.width || '0%';
+    if (this.rvProgress.hidden && !REVIEW_WORKFLOW) {
+      this.rvProgress.hidden = false;
+      this.renderReview();   // strip: „Analysing …“ instead of „no detections“
+    }
     this.rvProgress.hidden = false;
     this.rvProgress.textContent = this.anProgressText.textContent;
     this.rvProgress.style.setProperty('--p', bar?.style.width || '0%');
@@ -1588,14 +1627,18 @@ export class MobileApp {
     const s = el('section', 'm-screen m-live');
     const bar = el('header', 'm-appbar');
     bar.appendChild(el('h1', '', t('live.title')));
-    const top = el('div', 'm-live-top');
-    const meter = el('div', 'm-live-meter');
-    meter.innerHTML = `<span>${t('live.level')}</span><i><b></b></i>`;
-    this.lvMeter = meter.querySelector('b')!;
     this.lvInfo = el('span', 'm-live-info');
-    top.append(meter, this.lvInfo);
+    bar.appendChild(this.lvInfo);
+    // Spectrogram with the detected species as marks that scroll along, level along the bottom edge.
     this.lvSpec = el('div', 'm-live-spec');
     this.lvSpec.appendChild(el('span', 'm-live-hint', t('live.hint')));
+    this.lvMarksEl = el('div', 'm-live-marks');
+    const meter = el('div', 'm-live-level');
+    meter.setAttribute('aria-label', t('live.level'));
+    this.lvMeter = el('b');
+    meter.appendChild(this.lvMeter);
+    const specWrap = el('div', 'm-live-specwrap');
+    specWrap.append(this.lvSpec, this.lvMarksEl, meter);
     this.lvList = el('div', 'm-scroll m-live-list');
     const foot = el('div', 'm-live-foot');
     this.lvTime = el('div', 'm-live-time', '00:00');
@@ -1605,7 +1648,7 @@ export class MobileApp {
     });
     const spacer = el('span', 'm-live-discard-spacer');
     foot.append(this.lvDiscard, this.lvBtn, spacer);
-    s.append(bar, top, this.lvSpec, this.lvList, this.lvTime, foot);
+    s.append(bar, specWrap, this.lvList, this.lvTime, foot);
     this.screens.set('live', s);
     return s;
   }
@@ -1627,6 +1670,7 @@ export class MobileApp {
     const now = this.lvRec?.elapsed ?? Infinity;
     for (const r of rows) {
       const row = el('div', `m-live-row${on && now - r.last < 6 ? ' new' : ''}`);
+      row.style.setProperty('--m-c', this.lvColor(r.sci));
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
@@ -1640,6 +1684,36 @@ export class MobileApp {
       row.append(img, txt, c);
       this.lvList.appendChild(row);
     }
+  }
+
+  private lvColor(sci: string) {
+    let c = this.lvColors.get(sci);
+    if (!c) { c = PALETTE[this.lvColors.size % PALETTE.length]; this.lvColors.set(sci, c); }
+    return c;
+  }
+
+  /** A detection on the live spectrogram: a bar over its 3 s window with the name. */
+  private addLiveMark(p: LivePrediction, at: number, lane: number) {
+    const m = el('div', 'm-live-mark');
+    m.style.setProperty('--m-c', this.lvColor(p.scientific));
+    m.style.top = `${4 + lane * 22}px`;
+    m.append(el('b', '', p.common || p.scientific), el('span', '', `${Math.round(p.confidence * 100)}%`));
+    this.lvMarksEl.appendChild(m);
+    this.lvMarks.push({ el: m, at });
+  }
+
+  /** Marks follow the spectrogram (right edge = now); gone once they scrolled out. */
+  private placeLiveMarks(now: number) {
+    const w = this.lvMarksEl.clientWidth;
+    if (!w) return;
+    const pxs = w / LIVE_SPAN_SEC;
+    this.lvMarks = this.lvMarks.filter((m) => {
+      const x = w - (now - m.at) * pxs;
+      if (x + 3 * pxs < 0) { m.el.remove(); return false; }
+      m.el.style.width = `${3 * pxs}px`;
+      m.el.style.transform = `translateX(${x}px)`;
+      return true;
+    });
   }
 
   private ago(sec: number) {
@@ -1664,6 +1738,9 @@ export class MobileApp {
     }
     const rec = new LiveRecorder({ maxSeconds: LIVE_MAX_SEC });
     this.lvSpecies.clear();
+    this.lvColors.clear();
+    this.lvMarks = [];
+    this.lvMarksEl.replaceChildren();
     // 3 s chunks at the device rate; BirdNET resamples. A slow phone drops chunks instead of lagging.
     let buf: Float32Array | null = null, n = 0, chunkStart = 0;
     const queue: { pcm: Float32Array; at: number }[] = [];
@@ -1674,6 +1751,7 @@ export class MobileApp {
         const { pcm, at } = queue.shift()!;
         try {
           const preds = await classify.analyze(pcm, rec.sampleRate);
+          preds.slice(0, 3).forEach((p, lane) => this.addLiveMark(p, at, lane));
           for (const p of preds) {
             const e = this.lvSpecies.get(p.scientific);
             if (e) { e.count++; e.max = Math.max(e.max, p.confidence); e.last = at; }
@@ -1717,7 +1795,7 @@ export class MobileApp {
     this.lvBtn.disabled = false;
     this.lvInfo.textContent = live.describe?.() || t('live.every3s');
     this.lvSpec.querySelector('.m-live-hint')?.remove();
-    const view = new LiveSpectrogramView(this.lvSpec, { spanSeconds: 15, getMaxFreq: () => 12000 });
+    const view = new LiveSpectrogramView(this.lvSpec, { spanSeconds: LIVE_SPAN_SEC, getMaxFreq: () => PHONE_MAX_HZ });
     view.attach(rec);
     this.lvView = view;
     const level = new Float32Array(1024);
@@ -1732,6 +1810,7 @@ export class MobileApp {
         this.lvMeter.classList.toggle('clip', peak > 0.98);
       }
       this.lvTime.textContent = fmtClock(rec.elapsed, false);
+      this.placeLiveMarks(rec.elapsed);
       this.lvRaf = requestAnimationFrame(loop);
     };
     this.lvRaf = requestAnimationFrame(loop);
@@ -1753,6 +1832,8 @@ export class MobileApp {
     this.lvView?.detach();
     this.lvView = null;
     this.lvSpec.replaceChildren(el('span', 'm-live-hint', keep ? t('live.saved') : t('live.discarded')));
+    this.lvMarks = [];
+    this.lvMarksEl.replaceChildren();
     this.renderLive();
     if (recording && this.h.live) {
       this.lvInfo.textContent = t('live.saving');

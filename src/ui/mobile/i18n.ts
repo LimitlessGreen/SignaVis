@@ -30,7 +30,7 @@ const en = {
 
   'rec.new': 'New',
   'rec.add': 'Add recording',
-  'rec.empty': 'No recordings yet. Tap “New” to open an audio file.',
+  'rec.empty': 'No recordings yet. Enter a Xeno-canto number above, or tap “New” for an audio file or the microphone.',
   'rec.species': (v) => `${v.n} species`,
   'rec.open': (v) => `${v.n} open`,
   'rec.reviewed': '✓ reviewed',
@@ -162,7 +162,7 @@ const de: Partial<Record<MKey, Entry>> = {
 
   'rec.new': 'Neu',
   'rec.add': 'Aufnahme hinzufügen',
-  'rec.empty': 'Noch keine Aufnahmen. Mit „Neu“ eine Audiodatei öffnen.',
+  'rec.empty': 'Noch keine Aufnahmen. Oben eine Xeno-canto-Nummer eingeben oder mit „Neu“ eine Audiodatei oder das Mikrofon wählen.',
   'rec.species': (v) => `${v.n} ${plural(+v.n, 'Art', 'Arten')}`,
   'rec.open': (v) => `${v.n} offen`,
   'rec.reviewed': '✓ geprüft',
