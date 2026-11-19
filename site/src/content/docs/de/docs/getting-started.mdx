@@ -1,0 +1,80 @@
+---
+title: Erste Schritte
+description: "Die ersten zehn Minuten mit SignaVis: Aufnahme laden, Spektrogramm lesen, Arten von BirdNET vorschlagen lassen, Ergebnisse prüfen, einen Ruf markieren und Labels exportieren."
+sidebar: { order: 2 }
+---
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+<p class="lede">Dieser Rundgang dauert etwa zehn Minuten. Du brauchst eine Vogelaufnahme (WAV, MP3, FLAC oder OGG) und einen aktuellen Browser – installieren musst du nichts.</p>
+
+:::tip[Keine Aufnahme zur Hand?]
+Gib im Reiter **Project** eine beliebige [Xeno-canto](https://xeno-canto.org)-Nummer (zum Beispiel `XC1059662`) in das Feld **Xeno-canto number or URL** ein und drücke **Load**.
+:::
+
+## 1. SignaVis öffnen und Aufnahme laden
+
+Öffne die [Web-App](/SignaVis/demo/labeling-app.html). Beim ersten Start fragt eine kurze Einrichtung nach Name und Lizenz – beides wird in jedes exportierte Annotations-Set geschrieben. Mit **Skip setup** kannst du das überspringen und später im Reiter **Upload** nachholen.
+
+Ziehe die Audiodatei in das Fenster oder nutze **Audio file** im Reiter **Project**. Mit **Record** nimmst du stattdessen über das Mikrofon auf.
+
+<img class="shot" src="/SignaVis/media/getting-started-loaded.webp" alt="SignaVis mit geladener Aufnahme: oben Wellenform, in der Mitte Spektrogramm, darunter der Übersichtsbalken" />
+
+Das Fenster hat drei Bereiche:
+
+- **Linke Leiste** – die Arbeitsbereiche: *Project*, *Labels*, *Analyse*, *Species*, *Upload*.
+- **Mitte** – Wellenform, Spektrogramm und darunter der Übersichtsbalken der ganzen Aufnahme.
+- **Rechte Leiste** – *Display* (Farben, Kontrast, Frequenzbereich), *Properties* des gewählten Labels und *Audio*-Einstellungen.
+
+## 2. Das Spektrogramm lesen
+
+Die Zeit läuft von links nach rechts, die Tonhöhe von unten (tief) nach oben (hoch), die Helligkeit zeigt die Lautstärke. Ein gepfiffener Ton ist eine dünne Linie, ein rauer Ruf ein breiter Fleck, ein Triller eine Reihe kurzer, wiederholter Striche.
+
+- **Leertaste** spielt ab und pausiert; ein Klick ins Spektrogramm springt dorthin.
+- **Mausrad** scrollt in der Zeit, **Strg + Mausrad** zoomt in der Zeit, **⇧ + Mausrad** in der Frequenz.
+- **Fit** zeigt die ganze Aufnahme. Mehr unter [Navigation & Zoom](/SignaVis/de/docs/features/overview/).
+
+## 3. Arten von BirdNET vorschlagen lassen
+
+Öffne **Analyse**, lass **Species · BirdNET** und das Modell **V3.0** gewählt und drücke **▶ Analyze**. Das Modell läuft auf deinem Gerät; im Standardmodus *local* wird kein Audio hochgeladen.
+
+Nach der Analyse wechselt SignaVis zu **Labels**. Die Vorschläge stehen nach Arten gruppiert in der Quelle **BirdNET** und als farbige Spuren unter dem Spektrogramm.
+
+<img class="shot" src="/SignaVis/media/getting-started-analysed.webp" alt="Reiter Labels nach der Analyse: BirdNET fand 14 Treffer von 6 Arten, oben Blauhäher mit 8 Treffern" />
+
+## 4. Ergebnisse prüfen
+
+BirdNET macht Vorschläge, keine Bestimmungen. Bevor du einer Art traust:
+
+1. **Auf die Anzahl achten.** Im Beispiel wurde der Blauhäher 8-mal gefunden – plausibel. Fünf weitere Arten tauchen nur je einmal auf; die sind verdächtig.
+2. **Anhören.** Klappe eine Art auf und klicke einen Treffer an: Die Ansicht springt dorthin. Spiel ihn ab und vergleiche die Form im Spektrogramm mit einer Referenzaufnahme.
+3. **Schwelle anheben.** Unter **Analyse → Settings** entfernt eine höhere **Min. confidence** (Standard 0,25) schwache Vorschläge.
+4. **Nach Ort und Jahreszeit filtern.** Setze einen Ort und wähle eine [Artenliste](/SignaVis/de/docs/use-cases/species-lists/), damit nur dort erwartete Arten vorgeschlagen werden.
+
+Einen geprüften Treffer übernimmst du mit **✓** – er wird nach **My labels** kopiert. Den Rest blendest du mit dem Augen-Symbol aus.
+
+## 5. Selbst einen Ruf markieren
+
+Halte **⇧** gedrückt und ziehe im Spektrogramm einen Rahmen um einen Ruf. Tippe die Art ein (deutscher oder wissenschaftlicher Name oder Kürzel) und bestätige mit **Enter**. Ziehe an den Ecken, bis der Rahmen eng sitzt; die Tasten **1–7** setzen den Lauttyp (Gesang, Ruf, Warnruf …).
+
+Mehr unter [Rufe annotieren](/SignaVis/de/docs/use-cases/label-calls/) und [Label-Rahmen](/SignaVis/de/docs/features/labels/).
+
+## 6. Speichern und exportieren
+
+Deine Arbeit wird automatisch im Browser-Projekt gespeichert (*Saved* im Reiter **Project**). Für größere Projekte wähle **Use a project folder…**, dann liegen die Dateien auf deiner Festplatte.
+
+Zum Exportieren öffne **Labels → Export**:
+
+| Format | Wofür |
+|---|---|
+| Labels JSON | Archivieren, wieder in SignaVis laden, eigene Skripte |
+| Raven table | Raven Pro und die meisten Analyse-Werkzeuge |
+| Annota-JSON (XC) | Annotations-Sets zu Xeno-canto hochladen (Reiter **Upload**) |
+
+## Wie geht es weiter?
+
+<CardGrid>
+  <LinkCard title="Einen Ruf überall finden" description="Die Aufnahme nach Rufen durchsuchen, die einem markierten ähneln." href="/SignaVis/de/docs/use-cases/similar-calls/" />
+  <LinkCard title="Im Gelände arbeiten" description="SignaVis auf dem Smartphone nutzen." href="/SignaVis/de/docs/use-cases/mobile/" />
+  <LinkCard title="Tastenkürzel" description="Schneller arbeiten mit der Tastatur." href="/SignaVis/docs/labeling/shortcuts/" />
+  <LinkCard title="Aus Python nutzen" description="Den Player in Jupyter, Gradio oder Streamlit einbetten." href="/SignaVis/de/docs/python/jupyter/" />
+</CardGrid>
