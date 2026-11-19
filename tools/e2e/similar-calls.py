@@ -28,6 +28,10 @@ with sync_playwright() as p:
           start: 2.93, end: 5.15, freqMin: 1167, freqMax: 5496 }}); sv.syncToPlayer(); sv.player.selectLabel('ex'); }}""")
     page.wait_for_timeout(500)
     page.evaluate("document.activeElement?.blur()")
+    cap = page.locator('.spectrogram-label-text').first
+    page.keyboard.down('h'); page.wait_for_timeout(200)
+    check(cap.evaluate("e => getComputedStyle(e).opacity") == '0', 'holding H hides label captions (no review open)')
+    page.keyboard.up('h'); page.wait_for_timeout(200)
     # Watch the main thread while searching: the longest gap between frames
     page.evaluate("() => { window.__gap = 0; let t = performance.now(); const tick = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - t); t = n; if (!window.__stopGap) requestAnimationFrame(tick); }; requestAnimationFrame(tick); }")
     page.keyboard.press('f')

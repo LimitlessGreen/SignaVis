@@ -4,7 +4,7 @@
 //    to the spectrogram. The grip (⋮⋮) at its left edge stays visible: pointing at it brings the bar
 //    back until the pointer leaves the bar (plus margin). While a mouse button is held (drawing,
 //    moving a box) bars stay faded.
-// 2. Hold H: all bars and the label captions fade out; let go to bring them back.
+// 2. Hold H (installOverlayPeekKey, app-wide): all bars and the label captions fade out; let go to bring them back.
 
 export const NEAR_PX = 28;
 
@@ -66,9 +66,6 @@ export function attachPeek(el: HTMLElement): () => void {
         window.addEventListener('pointermove', onPointer, true);
         window.addEventListener('pointerdown', onPointer, true);
         window.addEventListener('pointerup', onPointer, true);
-        window.addEventListener('keydown', onKeyDown, true);
-        window.addEventListener('keyup', onKeyUp, true);
-        window.addEventListener('blur', onBlur);
     }
     bars.add(entry);
     return () => {
@@ -79,10 +76,16 @@ export function attachPeek(el: HTMLElement): () => void {
             window.removeEventListener('pointermove', onPointer, true);
             window.removeEventListener('pointerdown', onPointer, true);
             window.removeEventListener('pointerup', onPointer, true);
-            window.removeEventListener('keydown', onKeyDown, true);
-            window.removeEventListener('keyup', onKeyUp, true);
-            window.removeEventListener('blur', onBlur);
-            document.body.classList.remove(HIDE_CLASS);
         }
     };
+}
+
+let keyInstalled = false;
+/** Hold H anywhere in the app to hide the overlays (bars, label captions); once per page. */
+export function installOverlayPeekKey(): void {
+    if (keyInstalled) return;
+    keyInstalled = true;
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur);
 }

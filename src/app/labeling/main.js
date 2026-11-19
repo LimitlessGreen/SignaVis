@@ -45,6 +45,7 @@ import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
 import { GroupReview } from '../../ui/components/similar-review/group-review.ts';
 import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
+import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
@@ -3131,6 +3132,7 @@ function spreadSimilarCorrections() {
   });
 }
 
+installOverlayPeekKey();   // hold H: hide bars and label captions to see the spectrogram under them
 const similarReview = new SimilarReview({
   onFocus: (id) => {
     const lbl = state.labels.find((l) => l.id === id);
