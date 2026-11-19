@@ -62,6 +62,15 @@ html.is-mobile {
   .m-nav-badge[hidden] { display: none; }
 
   /* ── Recordings ── */
+  .m-xc {
+    display: flex; align-items: center; gap: 8px; margin: 0 14px 10px; height: 46px; padding: 0 5px 0 12px;
+    border-radius: 8px; border: 1px solid var(--m-line); background: var(--m-surface); flex-shrink: 0;
+  }
+  .m-xc:focus-within { border-color: var(--m-accent); }
+  .m-xc-ic { display: grid; color: var(--m-accent); }
+  .m-xc-ic svg { width: 19px; height: 19px; }
+  .m-xc-input { flex: 1; min-width: 0; border: none; background: transparent; color: var(--m-text); font-size: 15px; outline: none; }
+  .m-xc-go { height: 36px; padding: 0 14px; border: none; border-radius: 6px; background: var(--m-accent); color: var(--m-accent-ink); font-weight: 700; font-size: 13.5px; }
   .m-rec-list { padding: 4px 14px 80px; display: flex; flex-direction: column; gap: 8px; }
   .m-rec {
     display: flex; flex-direction: column; width: 100%; padding: 0; overflow: hidden; text-align: left;
@@ -122,7 +131,7 @@ html.is-mobile {
   .m-cta.m-cta--sm { width: auto; flex-shrink: 0; height: 40px; padding: 0 14px; font-size: 13.5px; }
 
   /* ── Review: player ── */
-  .m-player { flex: 0 0 auto; height: min(46dvh, 380px); min-height: 220px; position: relative; }
+  .m-player { flex: 1 1 auto; min-height: 0; position: relative; }
   .m-player #playerRoot { width: 100%; height: 100%; border: none; border-radius: 0; }
   /* Desktop chrome inside the player is not used on phones. */
   .m-player {
@@ -134,9 +143,103 @@ html.is-mobile {
   .m-player .waveform-container { flex: 0 0 0 !important; height: 0 !important; min-height: 0 !important; border: none !important; }
   .m-player .spectrogram-container { flex: 1 1 auto !important; height: auto !important; }
 
-  // Species tracks under the overview: a few rows, the rest scrolls.
-  .m-player .overview-label-tracks { max-height: 76px; overflow-y: auto; flex: 0 0 auto !important; }
-  .m-player .overview-label-row, .m-player .overview-label-group-header { flex-shrink: 0 !important; min-height: 16px; }
+  // Viewer: no label tracks (the species strip and the colours do that job), slim overview.
+  .m-player .overview-label-section, .m-player .overview-container, .m-player .overview-detail { display: none !important; }
+
+  // Spectrogram + floating zoom buttons
+  .m-stage { position: relative; flex: 1 1 auto; min-height: 220px; display: flex; flex-direction: column; }
+  .m-stage .m-player { flex: 1 1 auto; }
+  .m-zoom {
+    position: absolute; right: 10px; bottom: 10px; z-index: 20;
+    display: flex; flex-direction: column; gap: 1px; border-radius: 10px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  .m-zoom-btn {
+    width: 44px; height: 42px; display: grid; place-items: center; padding: 0;
+    border: none; background: rgba(12, 12, 20, 0.62); color: #fff;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-zoom-btn:active { background: rgba(60, 60, 80, 0.85); }
+  .m-zoom-btn svg { width: 19px; height: 19px; }
+
+  // Own overview: whole recording, detections in colour, visible part as a frame; tap/drag anywhere.
+  .m-ov {
+    position: relative; flex-shrink: 0; height: 46px; margin: 6px 10px 0;
+    border-radius: 6px; overflow: hidden; touch-action: none; cursor: pointer;
+    background: #0b0910 center / 100% 100% no-repeat;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-ov-marks { position: absolute; left: 0; right: 0; top: 0; height: 5px; pointer-events: none; }
+  .m-ov-marks i { position: absolute; top: 0; bottom: 0; border-radius: 1px; opacity: 0.95; }
+  .m-ov-win {
+    position: absolute; top: 0; bottom: 0; min-width: 6px; pointer-events: none;
+    border: 2px solid #fff; border-radius: 5px;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.42);
+    transition: border-color 0.12s;
+  }
+  .m-ov.drag .m-ov-win { border-color: var(--m-accent); background: color-mix(in srgb, var(--m-accent) 20%, transparent); }
+  .m-ov-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ef4444; pointer-events: none; }
+
+  .m-player .spectrogram-label-region.m-hide { display: none !important; }
+
+  // Frequency scale as an overlay on the spectrogram instead of its own column.
+  --axis-width: 0px;
+  .m-player .freq-axis-spacer {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 6;
+    width: 46px; flex: none !important; border: none;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0));
+    pointer-events: none;
+  }
+  .m-player .spectrogram-container .time-aligned-row { position: relative; }
+  .m-player .frequency-labels span {
+    left: 5px; right: auto; text-align: left;
+    color: rgba(255, 255, 255, 0.78); font-size: 9.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  .m-player .frequency-labels span::after { display: none; }
+  // The detection bars sit at the top: no scale numbers under them.
+  .m-player .frequency-labels { mask-image: linear-gradient(transparent 34px, #000 46px); }
+  .m-player .freq-scrollbar { width: 3px; opacity: 0.5; }
+  .m-player .freq-zoom-reset-btn { display: none !important; }
+  .m-player .waveform-container .axis-spacer, .m-player .overview-container .axis-spacer { display: none; }
+
+  /* ── Player: transport bar and species strip ── */
+  .m-tbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 2px 14px; flex-shrink: 0; }
+  .m-tbar-time { font-family: var(--m-mono); font-size: 11.5px; color: var(--m-muted); white-space: nowrap; min-width: 0; }
+  .m-tbar-time span:first-child { color: var(--m-text); font-weight: 600; }
+  .m-tbar-sep { margin: 0 3px; opacity: 0.5; }
+  .m-tbar .m-transport { flex: 1; justify-content: flex-end; gap: 2px; padding: 0; }
+  .m-tbar .m-play { width: 46px; height: 46px; border-radius: 50%; }
+  .m-tbar .m-tbtn { width: 40px; height: 40px; }
+
+  .m-strip {
+    display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 6px 12px 10px; flex-shrink: 0; scroll-snap-type: x proximity; scrollbar-width: none;
+    align-items: stretch;
+  }
+  .m-strip::-webkit-scrollbar { display: none; }
+  .m-spc {
+    flex: 0 0 auto; scroll-snap-align: start;
+    display: flex; align-items: center; gap: 8px; max-width: 220px;
+    height: 52px; padding: 5px 12px 5px 5px; text-align: left;
+    border: 1px solid var(--m-line); border-radius: 8px;
+    background: var(--m-surface); color: var(--m-text);
+    box-shadow: inset 0 -3px 0 var(--m-c);
+    transition: opacity 0.15s, background-color 0.15s, transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-spc img { width: 40px; height: 40px; border-radius: 5px; object-fit: cover; flex-shrink: 0; background: #252525; box-shadow: 0 0 0 2px var(--m-c); }
+  .m-spc-tx { display: flex; flex-direction: column; min-width: 0; }
+  .m-spc-tx b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-spc-tx small { font-family: var(--m-mono); font-size: 10.5px; color: var(--m-muted); margin-top: 2px; }
+  .m-spc.cur { background: color-mix(in srgb, var(--m-c) 22%, var(--m-surface)); border-color: var(--m-c); }
+  .m-spc.on { background: color-mix(in srgb, var(--m-c) 34%, var(--m-surface)); border-color: var(--m-c); }
+  .m-spc.off { opacity: 0.5; }
+  .m-spc:active { transform: scale(0.97); }
+  .m-strip-empty { margin: 8px 4px 6px; color: var(--m-muted); font-size: 13px; line-height: 1.4; }
+  .m-strip-hint { flex: 0 0 180px; margin: 0; align-self: center; font-size: 10.5px; line-height: 1.35; color: var(--m-muted); }
 
   .m-time { display: flex; justify-content: space-between; padding: 4px 16px 0; font-family: var(--m-mono); font-size: 11px; color: var(--m-muted); flex-shrink: 0; }
   .m-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 0 8px; flex-shrink: 0; }
@@ -224,54 +327,55 @@ html.is-mobile {
   .m-q-go svg { width: 18px; height: 18px; }
 }
 
-/* BirdNET detections (time only, "lanes") — same strategy as the desktop (_assignLanes):
-   overlapping windows go to the next lane down, so their name tags stack; only the
-   current one (under the playhead / selected / focused) shades its column as a band
-   over the full height (mockup screen 6). Tripled class to win over the desktop lane rules. */
+/* BirdNET detections (time only, "lanes"; desktop _assignLanes stacks overlapping windows).
+   Phone viewer: each window is a thin bar in its species colour (--m-c, set by mobile-app.ts),
+   the name sits on the bar; the current window (under the playhead / tapped) shades its column.
+   Tripled class to win over the desktop lane rules. */
 html.is-mobile .m-player .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
-  --m-band: var(--color-detection, #f59e0b);
+  --m-band: var(--m-c, var(--color-detection, #f59e0b));
   overflow: visible;
   border: none; border-image: none; outline: none;
   border-width: 0 !important;    // _ui-clarity forces a dashed frame on locked labels
   opacity: 1;
-  border-radius: 4px;
-  background: transparent;
-  box-shadow: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--m-band) 30%, rgba(0, 0, 0, 0.55));
+  box-shadow: inset 2px 0 0 var(--m-band), inset 0 -2px 0 var(--m-band);
+  transition: opacity 0.15s;
 
-  // Column below the tag: hidden unless current (desktop rule), drawn as a band then.
   &::after {
     left: 0; right: 0;
-    background: color-mix(in srgb, var(--m-band) 11%, transparent);
-    border-left: 2px solid var(--m-band);
-    border-right: 2px solid var(--m-band);
+    background: color-mix(in srgb, var(--m-band) 12%, transparent);
+    border-left: 1.5px solid var(--m-band);
+    border-right: 1.5px solid var(--m-band);
   }
   &::before { display: none; }   // confidence edge — the tag shows the number
 
   .spectrogram-label-text {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; gap: 4px;
     width: max-content; max-width: 100%;
     overflow: hidden; white-space: nowrap;
-    padding: 0 6px; height: 100%;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--m-band) 78%, #000);
-    color: #1a1205;
-    font-size: 11px; font-weight: 700; line-height: 1;
-    text-shadow: none;
+    padding: 0 5px 0 6px; height: 100%;
+    background: transparent;
+    color: #fff;
+    font-size: 10.5px; font-weight: 700; line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   }
   .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 0.85; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .spectrogram-label-conf-meter { display: none; }
 
-  // Under the playhead: edges only — several overlapping windows share one band
-  // instead of stacking their fills. Selected / focused: filled band.
   &.active, &.selected, &.focused {
     z-index: 12;
-    .spectrogram-label-text { background: var(--m-band); }
+    background: var(--m-band);
+    .spectrogram-label-text { color: #0b0b10; text-shadow: none; }
     &::after { opacity: 1; }
   }
   &.active:not(.selected):not(.focused)::after { background: transparent; }
-  &.selected, &.focused { --m-band: var(--color-accent); .spectrogram-label-text { color: #04111b; } }
 }
+
+/* A species picked in the strip: the other species fade. */
+html.is-mobile .m-player .spectrogram-label-region.m-dim { opacity: 0.18 !important; }
+
 
 /* ── Analyse screen ── */
 html.is-mobile {
@@ -299,7 +403,7 @@ html.is-mobile {
 
   .m-switch { position: relative; flex-shrink: 0; width: 40px; height: 24px; }
   .m-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
-  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.15); transition: background 0.15s; }
+  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: color-mix(in srgb, var(--m-muted) 35%, transparent); transition: background 0.15s; }
   .m-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
   .m-switch input:checked + i { background: var(--m-accent); }
   .m-switch input:checked + i::after { transform: translateX(16px); }
@@ -316,7 +420,7 @@ html.is-mobile {
 /* Boxes (BirdBox calls, own labels) as in the mockup: solid frame, light fill,
    name tag above the box. Detections amber, own labels in their colour, selected blue. */
 html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region--lane) {
-  --m-box: var(--spectrogram-label-edge, var(--color-detection, #f59e0b));
+  --m-box: var(--m-c, var(--spectrogram-label-edge, var(--color-detection, #f59e0b)));
   border: 2px solid var(--m-box) !important;
   border-image: none !important;
   border-radius: 4px;
@@ -326,7 +430,7 @@ html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region
   box-shadow: none;
   overflow: visible;
 
-  &.suggestion { --m-box: var(--color-detection, #f59e0b); }
+  &.suggestion { --m-box: var(--m-c, var(--color-detection, #f59e0b)); }
 
   .spectrogram-label-text {
     position: absolute; left: -2px; top: -20px; bottom: auto;
@@ -334,7 +438,7 @@ html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region
     height: 17px; padding: 0 6px;
     width: max-content; max-width: none;
     border-radius: 4px;
-    background: var(--m-box); color: #1a1205;
+    background: var(--m-box); color: #0b0b10;
     font-size: 11px; font-weight: 700; line-height: 1;
     text-shadow: none; border: 0;
   }
@@ -382,33 +486,48 @@ html.is-mobile {
   .m-ex-info b { color: var(--m-text); }
   .m-ex-more { font-size: 11.5px; color: var(--m-muted); padding-left: 2px; }
   /* ── Live ── */
-  .m-live-top { display: flex; gap: 6px; padding: 0 14px 10px; flex-shrink: 0; }
-  .m-live-meter {
-    flex: 1; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
-    border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface);
-    font-size: 11.5px; color: var(--m-muted);
-  }
-  .m-live-meter i { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
-  .m-live-meter b { display: block; height: 100%; width: 0; background: var(--m-ok); transition: width 60ms linear; }
-  .m-live-meter b.clip { background: var(--color-error, #f87171); }
+  .m-live .m-appbar { gap: 10px; }
   .m-live-info {
-    max-width: 55%; height: 28px; line-height: 26px; padding: 0 9px;
-    border-radius: 6px; border: 1px solid var(--m-line); color: var(--m-muted);
-    font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 62%; height: 26px; line-height: 24px; padding: 0 9px;
+    border-radius: 13px; border: 1px solid var(--m-line); color: var(--m-muted);
+    font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .m-live-info:empty { display: none; }
-  .m-live-spec { position: relative; height: 210px; flex-shrink: 0; background: #000; display: grid; place-items: center; }
+  .m-live-specwrap { position: relative; flex: 1 1 55%; min-height: 200px; background: #000; overflow: hidden; }
+  .m-live-spec { position: absolute; inset: 0; display: grid; place-items: center; }
+  .m-live-spec .live-view { position: absolute; inset: 0; }
   .m-live-spec .live-view-chip { display: none; }
-  .m-live-hint { padding: 0 24px; color: var(--m-muted); font-size: 12.5px; text-align: center; }
-  .m-live-list { padding: 8px 0 150px; }
-  .m-live-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; }
-  .m-live-row img { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .m-live-hint { padding: 0 24px; color: rgba(255, 255, 255, 0.6); font-size: 12.5px; text-align: center; }
+  .m-live-marks { position: absolute; inset: 0; z-index: 31; pointer-events: none; overflow: hidden; }
+  .m-live-mark {
+    position: absolute; left: 0; height: 19px;
+    display: flex; align-items: center; padding: 0 6px; white-space: nowrap;
+    border-radius: 3px; background: color-mix(in srgb, var(--m-c) 32%, rgba(0, 0, 0, 0.6));
+    box-shadow: inset 2px 0 0 var(--m-c), inset 0 -2px 0 var(--m-c);
+    color: #fff; font-size: 10.5px; text-shadow: 0 1px 2px #000;
+    animation: m-live-in 0.35s ease-out;
+  }
+  // Text is clipped in the tag; the shading below (::after) is clipped by .m-live-marks.
+  .m-live-tag { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+  .m-live-mark b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+  .m-live-mark span { font-family: var(--m-mono); opacity: 0.85; }
+  .m-live-mark::after {   // the window itself, faint, down the full height
+    content: ''; position: absolute; left: 0; right: 0; top: 19px; height: 100vh;
+    background: color-mix(in srgb, var(--m-c) 7%, transparent);
+  }
+  @keyframes m-live-in { from { opacity: 0; } to { opacity: 1; } }
+  .m-live-level { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.08); }
+  .m-live-level b { display: block; height: 100%; width: 0; background: var(--m-ok); transition: width 60ms linear; }
+  .m-live-level b.clip { background: var(--color-error, #f87171); }
+  .m-live-list { flex: 1 1 45%; padding: 6px 0 130px; }
+  .m-live-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px; box-shadow: inset 3px 0 0 var(--m-c, transparent); }
+  .m-live-row img { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; flex-shrink: 0; box-shadow: 0 0 0 2px var(--m-c, transparent); }
   .m-live-row-txt { min-width: 0; }
   .m-live-row-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .m-live-row-sub { font-size: 11px; color: var(--m-muted); font-family: var(--m-mono); }
   .m-live-row-conf { margin-left: auto; text-align: right; font-weight: 700; font-family: var(--m-mono); font-size: 12.5px; }
   .m-live-row-conf small { display: block; font-weight: 400; font-size: 10px; color: var(--m-muted); }
-  .m-live-row.new { background: color-mix(in srgb, var(--m-accent) 7%, transparent); box-shadow: inset 3px 0 0 var(--m-accent); }
+  .m-live-row.new { background: color-mix(in srgb, var(--m-c, var(--m-accent)) 14%, transparent); }
   .m-live-time {
     position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
     display: flex; align-items: center; gap: 6px;
@@ -435,5 +554,146 @@ html.is-mobile {
     border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-muted);
     font-size: 12.5px; font-weight: 600;
   }
-  .m-live-discard[hidden] { display: none; }
+  .m-live-discard[hidden] { display: block; visibility: hidden; }
+}
+
+/* ── Settings ── */
+html.is-mobile {
+  .m-set-body { padding: 0 14px 24px; }
+  .m-set-group { margin: 6px 0 18px; }
+  .m-set-group h3 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--m-muted); }
+  .m-set-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 52px; padding: 8px 12px; background: var(--m-surface); border: 1px solid var(--m-line);
+    border-bottom-width: 0;
+  }
+  .m-set-group > .m-set-row:first-of-type { border-radius: 8px 8px 0 0; }
+  .m-set-group > .m-set-row:last-child { border-radius: 0 0 8px 8px; border-bottom-width: 1px; }
+  .m-set-group > h3 + .m-set-row:last-child { border-radius: 8px; }
+  .m-set-col { flex-direction: column; align-items: stretch; }
+  .m-set-label { font-size: 14px; font-weight: 600; }
+  .m-set-tx { display: flex; flex-direction: column; min-width: 0; }
+  .m-set-tx small { font-size: 11.5px; color: var(--m-muted); margin-top: 2px; }
+  .m-set-row:has(.m-seg) { flex-direction: column; align-items: stretch; gap: 8px; }
+  .m-seg { display: flex; border: 1px solid var(--m-line); border-radius: 7px; overflow: hidden; }
+  .m-seg-btn {
+    flex: 1; min-width: 0; height: 36px; padding: 0 4px; border: none; border-left: 1px solid var(--m-line);
+    background: transparent; color: var(--m-text); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  }
+  .m-seg-btn:first-child { border-left: none; }
+  .m-seg-btn.on { background: var(--m-accent); color: var(--m-accent-ink); }
+  .m-swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .m-swatch {
+    display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 7px;
+    border: 1px solid var(--m-line); background: transparent; color: var(--m-text); font-size: 11.5px; font-weight: 600;
+  }
+  .m-swatch i { display: block; height: 22px; border-radius: 4px; }
+  .m-swatch.on { border-color: var(--m-accent); box-shadow: inset 0 0 0 1.5px var(--m-accent); }
+  .m-set-help { margin: 0; padding: 10px 12px 10px 28px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; font-size: 13px; line-height: 1.6; }
+}
+
+/* Quick spectrogram panel on the player + shared slider rows */
+html.is-mobile {
+  .m-zoom--top { top: 10px; bottom: auto; }
+  .m-zoom-btn.on { background: var(--m-accent); color: var(--m-accent-ink); }
+  .m-tune {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 25; max-height: 72%;
+    display: flex; flex-direction: column;
+    background: color-mix(in srgb, var(--m-bg) 94%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px 12px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .m-tune[hidden] { display: none; }
+  .m-tune-h { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 6px 16px; font-size: 15px; flex-shrink: 0; }
+  .m-tune-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
+  .m-tune-body .m-set-group { margin: 0; }
+  .m-set-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .m-set-val { font-family: var(--m-mono); font-size: 12px; color: var(--m-muted); white-space: nowrap; }
+  .m-slider { width: 100%; height: 32px; margin: 2px 0 0; accent-color: var(--m-accent); }
+  .m-slider-line { display: flex; align-items: center; gap: 8px; }
+  .m-slider-line small { font-size: 11px; color: var(--m-muted); }
+  .m-set-btn {
+    width: 100%; height: 40px; border-radius: 7px; border: 1px solid var(--m-line);
+    background: var(--m-surface-2); color: var(--m-text); font-weight: 600; font-size: 13.5px;
+  }
+  .m-swatches { grid-template-columns: repeat(3, 1fr); }
+}
+html.is-mobile {
+  .m-tune { max-height: 58%; }
+  .m-tune .m-swatches { display: flex; overflow-x: auto; gap: 6px; scrollbar-width: none; margin-top: 6px; }
+  .m-tune .m-swatches::-webkit-scrollbar { display: none; }
+  .m-tune .m-swatch { flex: 0 0 76px; padding: 4px; font-size: 10.5px; }
+  .m-tune .m-swatch i { height: 16px; }
+  .m-tune .m-set-row { min-height: 0; padding: 7px 10px; }
+}
+html.is-mobile {
+  .m-strip-cta { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+  .m-strip-cta .m-cta { display: inline-flex; align-items: center; gap: 6px; }
+  .m-strip-cta .m-cta svg { width: 16px; height: 16px; }
+}
+html.is-mobile {
+  /* Transport: time line above, centred controls with a large play button */
+  .m-tbar { flex-direction: column; align-items: stretch; gap: 0; padding: 4px 14px 4px; }
+  .m-tbar-time { display: flex; justify-content: space-between; font-size: 11.5px; }
+  .m-tbar .m-transport { flex: none; display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; justify-items: center; align-items: center; gap: 0; padding: 0 4px; margin-top: -4px; }
+  .m-tbar .m-tbtn { width: 48px; height: 48px; border-radius: 50%; }
+  .m-tbar .m-tbtn svg { width: 24px; height: 24px; }
+  .m-tbar .m-tbtn--txt { font-size: 13px; }
+  .m-tbar .m-play {
+    width: 68px; height: 68px; border-radius: 50%;
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--m-accent) 45%, transparent);
+    transition: transform 0.12s;
+  }
+  .m-tbar .m-play:active { transform: scale(0.94); }
+  .m-tbar .m-play svg { width: 30px; height: 30px; }
+  .m-tbar .m-play[data-state="false"] svg, .m-tbar .m-play:not([data-state]) svg { margin-left: 3px; }
+}
+html.is-mobile {
+  /* Player as a modern player app: full-bleed picture, floating deck below */
+  .m-review--viewer {
+    .m-appbar { min-height: 56px; }
+    .m-appbar .m-icon-btn { border: none; border-radius: 50%; background: transparent; width: 42px; height: 42px; }
+    .m-appbar .m-icon-btn:active { background: var(--m-surface-2); }
+    .m-appbar-title h2 { font-size: 17px; font-weight: 700; }
+    .m-appbar-title small { font-family: inherit; font-size: 12px; }
+  }
+  .m-deck {
+    position: relative; z-index: 2; flex-shrink: 0; margin-top: -14px;
+    padding: 12px 0 2px; border-radius: 20px 20px 0 0;
+    background: var(--m-surface);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.28);
+  }
+  .m-deck .m-ov { margin: 0 16px; height: 42px; border-radius: 8px; }
+  .m-deck .m-tbar { padding: 4px 16px 2px; }
+  .m-deck .m-tbar-time { padding: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .m-deck .m-strip { padding: 4px 14px 10px; }
+  .m-skip { position: relative; }
+  .m-skip b { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 2px; font-size: 9px; font-weight: 800; pointer-events: none; }
+  .m-rate { width: auto !important; min-width: 44px; height: 30px !important; padding: 0 10px; border-radius: 15px !important; background: var(--m-surface-2) !important; font-family: var(--m-mono); }
+  .m-rate.on { background: color-mix(in srgb, var(--m-accent) 18%, transparent) !important; }
+}
+html.is-mobile .m-review--viewer {
+  // The deck overlaps the stage by its corner radius: keep the picture above it.
+  .m-stage { background: #000; padding-bottom: 14px; }
+  .m-zoom:not(.m-zoom--top) { bottom: 24px; }
+}
+html.is-mobile {
+  .m-spc-item { display: flex; flex: 0 0 auto; scroll-snap-align: start; }
+  .m-ov:focus-visible, .m-spc:focus-visible, .m-seg-btn:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+}
+/* Short screens (landscape phones): the picture shrinks, transport and species stay reachable. */
+@media (max-height: 520px) {
+  html.is-mobile {
+    .m-stage { min-height: 90px; }
+    .m-review--viewer .m-zoom:not(.m-zoom--top) { flex-direction: row; bottom: 20px; }
+    .m-zoom-btn { height: 38px; }
+    .m-review--viewer .m-appbar { min-height: 44px; }
+    .m-deck { margin-top: -10px; padding-top: 8px; }
+    .m-deck .m-ov { height: 28px; }
+    .m-tbar .m-play { width: 48px; height: 48px; }
+    .m-tbar .m-tbtn { width: 40px; height: 40px; }
+    .m-deck .m-strip { padding-bottom: 6px; }
+    .m-spc { height: 40px; }
+    .m-spc img { width: 30px; height: 30px; }
+  }
 }
