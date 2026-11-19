@@ -32,5 +32,5 @@ def run(d):
     d.click('button[title="Fit the frequency range to where the calls are"]', ms=1600)
 
     d.caption("<b>Fit</b> shows the whole recording again")
-    d.click('button[title="Fit to view"]', ms=1500)
+    d.click('button[title^="Fit: show the whole recording"]', ms=1500)
     d.no_caption()
