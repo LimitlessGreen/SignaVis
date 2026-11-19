@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2026-11-19
+
+### Fixed
+- SignaVis Lite AppImage: Xeno-canto recordings (and other compressed audio)
+  no longer hang at "Decoding". The AppImage now ships its own GStreamer
+  plugins instead of relying on the host's, which may not match.
+
 ## [1.3.1] - 2026-11-19
 
 Same features as 1.3.0, which was tagged but not published on GitHub because
