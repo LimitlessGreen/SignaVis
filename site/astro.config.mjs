@@ -55,6 +55,7 @@ export default defineConfig({
         { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Welcome', translations: { de: 'Willkommen' }, link: '/docs/' }] },
         { label: 'What do you want to do?', translations: { de: 'Was willst du tun?' }, items: [{ autogenerate: { directory: 'docs/use-cases' } }] },
         { label: 'Features', translations: { de: 'Funktionen' }, items: [{ autogenerate: { directory: 'docs/features' } }] },
+        { label: 'Python', items: [{ autogenerate: { directory: 'docs/python' } }] },
         {
           label: 'Developers', translations: { de: 'Für Entwickler' }, collapsed: true,
           // Imported from ../docs by scripts/import-dev-docs.mjs; URLs match the old MkDocs site.

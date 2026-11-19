@@ -1,0 +1,40 @@
+---
+title: Jupyter & Colab
+description: "Spektrogramm-Player für jede Aufnahme in Jupyter oder Google Colab mit dem Python-Paket signavis. Im Player gezeichnete Labels zurück nach Python holen."
+sidebar: { order: 1 }
+---
+```bash
+pip install "signavis[widget]"
+```
+
+## Aufnahme zeigen
+
+```python
+from signavis import Player
+
+Player("vogel.wav", viewMode="spectrogram")
+```
+
+Als letzte Zeile einer Zelle zurückgeben, wie eine matplotlib-Grafik.
+
+## Labels in beide Richtungen
+
+```python
+from signavis import AudioWorkbenchWidget
+
+w = AudioWorkbenchWidget("vogel.wav")
+w.set_annotations([{"start": 1.0, "end": 2.0, "species": "Turdus merula"}])
+w
+```
+
+Im Player gezeichnete Labels landen in `w.annotations`.
+
+## Eigenes Spektrogramm
+
+```python
+Player("vogel.wav", spectrogram_data=spec)   # 2D float32, Frames × Mels
+```
+
+Oder ein fertiges Bild als `spectrogram_image` (PNG-Bytes, matplotlib-Figur, PIL-Bild).
+
+[In Colab ausprobieren](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb) · [Alle Optionen](/SignaVis/docs/usage/player-options/)

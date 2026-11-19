@@ -1,0 +1,32 @@
+---
+title: Gradio
+description: "SignaVisPlayer ist eine echte Gradio-Komponente: Erkennungen deines Modells im Spektrogramm zeigen, hinspringen, abspielen. Läuft offline, streamt lange Aufnahmen."
+sidebar: { order: 3 }
+---
+```bash
+pip install "signavis[gradio]"
+```
+
+```python
+import gradio as gr
+from signavis.gradio import SignaVisPlayer, player_value
+
+with gr.Blocks() as demo:
+    player = SignaVisPlayer()
+    gr.Button("Zeigen").click(
+        lambda: player_value(
+            "vogel.wav",
+            detections=[{"start": 3, "end": 6, "label": "Turdus merula", "confidence": 0.91}],
+            select=(3, 6),  # hinspringen und abspielen
+        ),
+        outputs=player,
+    )
+
+demo.launch()
+```
+
+<img class="shot" src="/SignaVis/media/python-gradio.png" alt="Gradio-App mit SignaVis-Player und einer Erkennung" />
+
+- Erkennungen erscheinen in der Tabelle und im Spektrogramm.
+- Die Audiodatei wird von der Platte gestreamt, auch stundenlange Dateien gehen.
+- Kein Internet nötig, alles steckt im Paket.
