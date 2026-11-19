@@ -4677,8 +4677,10 @@ function showLabelContextMenu(e, id) {
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
+          // Dispatch on the layer (as the X key does) so the player drops it from its
+          // linked-label state too; a bare player._emit left it there and the next sync revived it.
           player.spectrogramLabels?.remove(id);
-          player._emit?.('spectrogramlabelremove', { label: { ...lbl } });
+          player.spectrogramLabels?.dispatchEvent(new CustomEvent('spectrogramlabelremove', { detail: { label: { ...lbl } } }));
         } },
     ],
   });
@@ -4710,7 +4712,7 @@ player.annotations?.overlay?.addEventListener('contextmenu', (e) => {
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {
           player.annotations?.remove(id);
-          player._emit?.('annotationremove', { annotation: { ...ann } });
+          player.annotations?.dispatchEvent(new CustomEvent('annotationremove', { detail: { annotation: { ...ann } } }));
         } },
     ],
   });
