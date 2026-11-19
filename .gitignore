@@ -100,7 +100,7 @@ models/birdbox-just-bird/
 *.orig
 src-tauri-lite/DirectML.dll
 
-# Plans, experiments and reports live in a separate private repository
+# Local notes
 /plans/
 /scripts/similar/
 /scripts/search/

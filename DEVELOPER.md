@@ -97,7 +97,6 @@ Desktop app (Tauri)
 SignaVis Lite (Tauri, `src-tauri-lite/`)
 - The labeling app as a slim desktop app: no SurrealDB / gRPC / platform, only
   `demo/labeling-app.html` built by `demo/vite.lite.config.js` into `_site-lite/`.
-  Plan: kept in the maintainers' notes.
 - The frontend tells the shells apart with `src/infrastructure/tauri/runtime.ts`
   (`isLite()`, `isFullDesktop()`); Lite sets `window.__SIGNAVIS_LITE__` before any page script.
   Code that calls full-desktop Rust commands must check `isFullDesktop()`.
