@@ -10,6 +10,8 @@
 // Keys are taken in the capture phase on window while the bar is open, ahead of the player's
 // own shortcuts on document (X would delete the selected label: the one under review is unlocked).
 
+import { attachPeek } from './overlay-peek';
+
 export interface ReviewItem { id: string; score: number }
 export interface SimilarReviewHandlers {
     onFocus: (id: string) => void;
@@ -28,6 +30,7 @@ const DEFAULT_THRESHOLD = 0.35;
 
 export class SimilarReview {
     private el: HTMLElement | null = null;
+    private detachPeek: (() => void) | null = null;
     private items: ReviewItem[] = [];
     private pos = 0;
     /** No ↑/↓ since the last decision: a re-rank may move on to the new best. */
@@ -50,6 +53,7 @@ export class SimilarReview {
         if (!this.el) {
             this.el = this.build();
             document.body.appendChild(this.el);
+            this.detachPeek = attachPeek(this.el);
             document.body.classList.add('similar-reviewing');
             window.addEventListener('keydown', this.onKey, true);
             window.addEventListener('resize', this.onResize);
@@ -64,6 +68,8 @@ export class SimilarReview {
         if (!this.el) return;
         window.removeEventListener('keydown', this.onKey, true);
         window.removeEventListener('resize', this.onResize);
+        this.detachPeek?.();
+        this.detachPeek = null;
         this.el.remove();
         this.el = null;
         document.body.classList.remove('similar-reviewing');

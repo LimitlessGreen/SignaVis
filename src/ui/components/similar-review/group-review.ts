@@ -6,6 +6,8 @@
 //   slider     coarser ↔ finer grouping (re-groups)
 // While the member review (similar-review.ts) is open this bar is suspended (hidden, no keys).
 
+import { attachPeek } from './overlay-peek';
+
 export interface GroupItem { size: number }
 export interface GroupReviewHandlers {
     onShow: (index: number) => void;
@@ -18,6 +20,7 @@ export interface GroupReviewHandlers {
 
 export class GroupReview {
     private el: HTMLElement | null = null;
+    private detachPeek: (() => void) | null = null;
     private groups: GroupItem[] = [];
     private done = new Set<number>();
     private pos = 0;
@@ -40,6 +43,7 @@ export class GroupReview {
         if (!this.el) {
             this.el = this.build();
             document.body.appendChild(this.el);
+            this.detachPeek = attachPeek(this.el);
             window.addEventListener('resize', this.onResize);
         }
         this.suspended = false;
@@ -54,6 +58,8 @@ export class GroupReview {
         if (!this.el) return;
         document.removeEventListener('keydown', this.onKey, true);
         window.removeEventListener('resize', this.onResize);
+        this.detachPeek?.();
+        this.detachPeek = null;
         this.el.remove();
         this.el = null;
         this.h.onClose?.();
