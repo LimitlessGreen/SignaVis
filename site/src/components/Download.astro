@@ -1,0 +1,92 @@
+---
+import Site from '../layouts/Site.astro';
+import Icon from './Icon.astro';
+import { ui, langPrefix, type Lang } from '../i18n/ui';
+import { latestRelease, findAsset, mb, SLOTS, RELEASES_URL } from '../lib/release';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = ui[lang];
+const d = t.dl;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = `${base}${langPrefix(lang)}`;
+const app = `${base}/demo/labeling-app.html`;
+const release = await latestRelease();
+const date = (iso: string) => (iso ? new Date(iso).toLocaleDateString(lang, { dateStyle: 'medium' }) : '');
+const oses = [
+  { os: 'windows', icon: 'monitor' },
+  { os: 'macos', icon: 'laptop' },
+  { os: 'linux', icon: 'terminal' },
+] as const;
+// Without a release list (API down at build time) every link points to the GitHub release page.
+const slots = SLOTS.map((s) => {
+  const a = findAsset(release, s.pattern);
+  return { ...s, href: a?.url ?? release.url, size: a ? mb(a.size) : '' };
+});
+const clientSlots = SLOTS.map((s) => ({ id: s.id, pattern: s.pattern.source }));
+---
+<Site lang={lang} path="/download/" title={d.metaTitle} description={d.metaDesc}>
+  <section class="section">
+    <header class="dl-head">
+      <h1>{d.title}</h1>
+      <p class="lede">{d.lede}</p>
+      <p class="dl-meta">
+        <span id="dl-version" hidden={!release.tag}>{d.version} <strong data-field="tag">{release.tag.replace(/^v/, '')}</strong> · <span data-field="date">{date(release.date)}</span></span>
+        <a id="dl-notes" href={release.url}><Icon name="file-text" size={18} /> {d.notes}</a>
+        <a href={RELEASES_URL}><Icon name="history" size={18} /> {d.allFiles}</a>
+      </p>
+    </header>
+
+    <div class="dl-grid">
+      {oses.map(({ os, icon }) => (
+        <article class="dl-card" data-os={os}>
+          <Icon name={icon} size={30} />
+          <h2>{d[os]} <span class="chip">{d.detected}</span></h2>
+          <p class="dl-hint">{d.req[os]}</p>
+          {slots.filter((s) => s.os === os).map((s) =>
+            'primary' in s
+              ? <a class="btn btn-filled" data-slot={s.id} href={s.href} download><Icon name="download" size={20} /> {d[s.id]} <span class="dl-size" data-size>{s.size}</span></a>
+              : <div class="dl-alt"><a data-slot={s.id} href={s.href} download>{d[s.id]} <span class="dl-size" data-size>{s.size}</span></a></div>
+          )}
+          <p class="dl-hint" set:html={d.hint[os]} />
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="section">
+    <header class="section-head"><h2>{d.otherTitle}</h2></header>
+    <div class="get-grid">
+      <a class="get-card" href={app}><Icon name="globe" size={28} /><h3>{d.web[0]}</h3><p>{d.web[1]}</p></a>
+      <a class="get-card" href={`${home}/docs/python/jupyter/`}><Icon name="code" size={28} /><h3>{d.python[0]}</h3><p set:html={d.python[1]} /></a>
+      <a class="get-card" href="https://github.com/sponsors/LimitlessGreen"><Icon name="heart" size={28} /><h3>{t.getSponsor[0]}</h3><p>{t.getSponsor[1]}</p></a>
+    </div>
+  </section>
+
+  <script is:inline define:vars={{ slots: clientSlots, lang }}>
+    // Highlight the visitor's platform and move it first.
+    const ua = navigator.userAgentData?.platform || navigator.userAgent;
+    const os = /win/i.test(ua) ? 'windows' : /mac/i.test(ua) && !/iphone|ipad/i.test(ua) ? 'macos'
+      : /linux|x11/i.test(ua) && !/android/i.test(ua) ? 'linux' : '';
+    const card = os && document.querySelector(`.dl-card[data-os="${os}"]`);
+    if (card) { card.classList.add('detected'); card.parentElement.prepend(card); }
+
+    // Refresh links from the live release, so a new version appears before the next site deploy.
+    fetch('https://api.github.com/repos/LimitlessGreen/SignaVis/releases/latest')
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((rel) => {
+        for (const s of slots) {
+          const a = rel.assets.find((x) => new RegExp(s.pattern).test(x.name));
+          const el = document.querySelector(`[data-slot="${s.id}"]`);
+          if (!a || !el) continue;
+          el.href = a.browser_download_url;
+          el.querySelector('[data-size]').textContent = `${Math.round(a.size / 1e6)} MB`;
+        }
+        const v = document.getElementById('dl-version');
+        v.querySelector('[data-field="tag"]').textContent = rel.tag_name.replace(/^v/, '');
+        v.querySelector('[data-field="date"]').textContent = new Date(rel.published_at).toLocaleDateString(lang, { dateStyle: 'medium' });
+        v.hidden = false;
+        document.getElementById('dl-notes').href = rel.html_url;
+      })
+      .catch(() => {});
+  </script>
+</Site>
