@@ -1,16 +1,64 @@
 ---
 title: Analyse a recording
-description: "Identify the bird species on a recording: load audio into SignaVis, inspect the spectrogram and run BirdNET. In the default local mode, no audio is uploaded."
+description: "Identify the bird species on a recording with BirdNET in SignaVis: choose a model, set confidence and location filters, judge the results and turn verified detections into labels. In the default local mode, no audio is uploaded."
 sidebar: { order: 1 }
 ---
 <img class="shot" src="/SignaVis/media/app-desktop.png" alt="Spectrogram of a Tree Pipit song in SignaVis" />
 
+**What for:** get a list of the species on a recording – as a starting point for checking it by ear, not as a final answer.
+
+## Steps
+
 <ol class="steps-m3">
-  <li>Drag the audio file into the window.</li>
-  <li>Open **Analyse** and start the analysis.</li>
-  <li>Review the suggested species.</li>
+  <li>Load the recording: drag it into the window, or use **Audio file** or a Xeno-canto number on the **Project** tab.</li>
+  <li>Open **Analyse** and keep **Species · BirdNET** selected.</li>
+  <li>Choose a model (see below) and, if you know where the recording was made, a [species list](/SignaVis/docs/use-cases/species-lists/).</li>
+  <li>Press **▶ Analyze**. SignaVis then switches to **Labels** and lists the detections under the **BirdNET** source, grouped by species.</li>
 </ol>
 
-:::note
+## Which model?
+
+| Model | When to use it |
+|---|---|
+| **V3.0** (default) | Newest BirdNET, about 10,000 species. Start here. |
+| **V3.0 12K** | Full global model with more species; downloaded once to your device. |
+| **V2.4** | Previous generation. For comparing with older BirdNET results. |
+| **AnuraPAM** | V2.4 plus 14 European frogs and toads – for ponds and wetlands. |
+| **Custom** | Your own model folder (BirdNET+ ONNX or TF.js). |
+
+## Settings
+
+<img class="shot" src="/SignaVis/media/analyse-settings.webp" alt="Analyse panel with the settings opened: minimum confidence, overlap, merge overlapping labels, location filter and backend" style="max-width: 300px; margin-inline: auto;" />
+
+- **Min. confidence** (default 0.25) – detections below this score are dropped. Raise it to 0.5 or more for a short, reliable list; lower it when looking for faint or rare calls, and expect more false positives.
+- **Overlap** – BirdNET looks at 3-second windows. With an overlap of 1–2 s, calls that fall on a window border are found more reliably; the analysis takes correspondingly longer.
+- **Merge overlapping labels** – joins consecutive detections of the same species into one label.
+- **Location filter** – with a location set for the recording (**Edit** → *Properties*), **Only species expected here** keeps species that BirdNET's area model expects there at that time of year. **Min. occurrence** sets how strict this is.
+- **Backend** – where the analysis runs. **Local (Browser)** keeps the audio on your device. **Server**, **Cloud** and **Hybrid** send it to the endpoint you enter.
+
+## Reading the results
+
+BirdNET's score is not a probability that the species is present. Use these checks:
+
+- **Repetition** – a species detected many times across the recording is far more likely than one with a single hit.
+- **Plausibility** – is the species expected at this place and season? A species list or the location filter does this for you.
+- **Listen and look** – click a detection to jump there, play it and compare the shape in the spectrogram with a reference recording.
+- **Similar species** – BirdNET often confuses mimics (jays, starlings, marsh warblers) and species with similar calls. Check those with extra care.
+
+Verified detections become your labels with **✓**. This copies them into **My labels**; if BirdBox found a call box at that time, the copy gets the box instead of the whole 3-second window. Hide the rest with the eye icon or delete them.
+
+:::note[Privacy]
 In the default **local** mode, audio is processed on the device and not uploaded. If a **server**, **cloud** or **hybrid** analysis endpoint is configured, the samples are sent to that endpoint.
 :::
+
+## Problems?
+
+- **No detections** – lower **Min. confidence**, set the species list to *All species*, and check that the sound is a bird (or frog, with AnuraPAM). Very high-pitched or exotic species may be missing from the model.
+- **Many unlikely species** – raise the confidence, use a species list or turn on the location filter.
+- **Slow analysis** – long recordings take time on weak devices. Reduce the overlap, or use the [desktop app](/SignaVis/download/).
+- **Model fails to load** – the first run downloads the model; check the network connection and try again.
+
+## Next
+
+- [Annotate calls](/SignaVis/docs/use-cases/label-calls/) – draw exact boxes around calls.
+- [Similar-call search](/SignaVis/docs/use-cases/similar-calls/) – find all occurrences of a call you verified.
