@@ -325,6 +325,9 @@ jobs:
         working-directory: src-tauri-lite
         shell: bash
         run: |
+          # A restored Rust cache skips ort-sys' build script, which is what
+          # downloads the DLL into the ort cache. Force it to run again.
+          cargo clean --release -p ort-sys
           cargo build --release -p aw-embed
           dll="$(find "$LOCALAPPDATA/ort.pyke.io" -iname DirectML.dll | head -1)"
           [ -n "$dll" ] || { echo "::error::DirectML.dll not found in the ort cache"; exit 1; }
