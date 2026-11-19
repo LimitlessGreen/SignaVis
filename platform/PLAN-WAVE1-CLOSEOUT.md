@@ -35,6 +35,6 @@ Diese Punkte bleiben explizit fuer die naechste Welle:
 
 ## Referenzen
 
-- Externer Arbeitsplan: `../plans/platform-implementation-backlog.md` (workspace-weit, ausserhalb dieses Git-Repos)
+- Externer Arbeitsplan: `platform implementation backlog plan` (workspace-weit, ausserhalb dieses Git-Repos)
 - Vertrag: `platform/contracts/openapi.yaml`
 - Governance: `platform/contracts/CONTRACT-GOVERNANCE.md`

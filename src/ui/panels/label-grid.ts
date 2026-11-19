@@ -13,7 +13,7 @@
  *
  * The grid never owns label data: it renders what `render(labels)` passes and reports edits
  * through `onChange(id, updates)` (same path as the properties panel).
- * plans/label-table-view-plan.md
+ * (label table view plan)
  */
 
 import { TAG_PRESETS } from './label-table.ts';

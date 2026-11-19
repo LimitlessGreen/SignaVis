@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // domain/project/IProjectStore.ts — port for a labeling project location
 //
-// Implementations (see plans/project-folder-plan.md):
+// Implementations (see project folder plan):
 //   • OpfsProjectStore      — browser-private project (all browsers), phase 3
 //   • FsAccessProjectStore  — user-picked folder (Chromium), phase 4
 //   • MemoryProjectStore    — tests

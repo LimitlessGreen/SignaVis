@@ -4,7 +4,7 @@
 // zero mean, unit norm). Distance between two calls:
 //   1 − Pearson r of the patches + W_DUR · |Δ log duration| + W_FREQ · |Δ log centre frequency|
 // Average-linkage clustering (nearest-neighbour chain, O(n²)), cut at `cut`.
-// Measured on Powdermill (scripts/similar/cluster-sim.py CLIP=0, plans/similar-calls-plan.md): at cut 1.0,
+// Measured on Powdermill (similar-calls cluster simulation): at cut 1.0,
 // labelling whole groups and fixing strays costs 0.43 of labelling each BirdBox box (0.27 with
 // perfect boxes), groups 84 % pure; at cut 0.8: 0.58, 95 % pure.
 

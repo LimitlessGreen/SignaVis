@@ -1,6 +1,6 @@
 # ADR 001 – Grundlagen der SignaVis-Plattform
 
-Stand: 2026-11-06 · Plan: `plans/signavis-platform-plan.md` (Phase 0)
+Stand: 2026-11-06 · Phase 0 of the platform plan
 
 ## Entscheidungen
 

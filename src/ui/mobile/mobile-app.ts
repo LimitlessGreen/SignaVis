@@ -1,5 +1,5 @@
 /**
- * SignaVis mobile — its own UI for phones (plans/mobile-ui-plan.md, design: plans/mobile-design/mockup.html).
+ * SignaVis mobile — its own UI for phones (mobile ui plan).
  *
  * On phones (PHONE_QUERY) the desktop shell is hidden and this app is shown instead.
  * It reuses the app's data and the one BirdNETPlayer instance: the player root is moved

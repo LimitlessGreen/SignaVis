@@ -1295,7 +1295,7 @@ async function saveProjectSnapshotNow() {
 // ── Project storage: browser project (OPFS) or a project folder (File System Access).
 // Recordings, sets and labels survive closing the tab. Replaces sessionStorage
 // (RecordingManager), localStorage sets and the autosave above; those only serve
-// as a one-time migration source (plans/project-folder-plan.md).
+// as a one-time migration source (project folder plan).
 // Switching the location reloads the page, like "New…" does.
 const PROJECT_LOCATION_KEY = 'signavis.project.location.v1';   // 'browser' | 'folder'
 const XC_TO_FOLDER_KEY = 'signavis.project.xc-to-folder.v1';
@@ -2825,7 +2825,7 @@ const mobileApp = new MobileApp({
   recordingManager.addEventListener('activechange', () => mobileApp.refresh());
 }
 
-// ── Label table ("Table" tab below the overview) — plans/label-table-view-plan.md ──
+// ── Label table ("Table" tab below the overview) — label table view plan ──
 const labelTableHost = player.enableLabelTable?.();
 const labelTable = labelTableHost ? new LabelGrid({
   host: labelTableHost,
@@ -3063,7 +3063,7 @@ if (player.spectrogramLabels) {
   };
 }
 
-// ── Similar calls: suggestions from one own label (plans/similar-calls-plan.md) ──
+// ── Similar calls: suggestions from one own label (similar calls plan) ──
 // Correlation over the whole recording (app/similarSpectrogram.ts), BirdBox only refines
 // bounds (app/suggest-similar.ts). Suggestions sit in a locked 'Similar' set, so they show and
 // copy (✓) like detections; the review bar walks through them best first.
