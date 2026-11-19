@@ -17,7 +17,7 @@ import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
 import { normalizeSearch, matchTier, MATCH } from '../components/taxonomy-ui/species-ranking.ts';
 import { LiveRecorder } from '../../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../components/live-view/live-spectrogram-view.ts';
-import { t, getLang } from './i18n.ts';
+import { t, getLang, setLang } from './i18n.ts';
 import { renderThumb, thumbFromUrl } from './thumb.ts';
 import { SpectrogramGestures } from './gestures.ts';
 
@@ -112,7 +112,7 @@ export interface AnalysisControls {
   run(job: 'birdnet' | 'birdbox'): void;
 }
 
-type Screen = 'recordings' | 'queue' | 'review' | 'analyse' | 'live' | 'species';
+type Screen = 'recordings' | 'queue' | 'review' | 'analyse' | 'live' | 'species' | 'settings';
 
 const FALLBACK_IMG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
@@ -129,6 +129,10 @@ const I = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.2"/><circle cx="13" cy="16" r="1.2"/></svg>',
   globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  zoomIn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  zoomOut: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
+  fit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4"/></svg>',
   wave: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -143,6 +147,15 @@ const PHONE_MAX_HZ = 12000;
 const REVIEW_WORKFLOW = false;
 /** Species colours on the spectrogram and in the species strip; picked to stand out on the inferno palette. */
 const PALETTE = ['#22d3ee', '#a3e635', '#f472b6', '#a78bfa', '#60a5fa', '#facc15', '#2dd4bf', '#fb923c', '#e879f9', '#f87171'];
+/** Phone-only viewer settings (the spectrogram settings live in the player and are stored there). */
+interface PhoneSettings { freq: 'auto' | 'full' | number; minConf: number }
+const SETTINGS_KEY = 'signavis.mobile.settings.v1';
+function loadSettings(): PhoneSettings {
+  try {
+    const v = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    return { freq: v.freq ?? 'auto', minConf: Number(v.minConf) || 0 };
+  } catch { return { freq: 'auto', minConf: 0 }; }
+}
 const speciesKey = (l: any) => String(l.scientificName || l.label || '?');
 /** Live recordings are held in memory until Stop: keep them short enough for a phone tab. */
 const LIVE_MAX_SEC = 15 * 60;
@@ -260,6 +273,15 @@ export class MobileApp {
   private focusKey: string | null = null;
   private stripCur = '';
   private paintRaf = 0;
+  private cfg: PhoneSettings = loadSettings();
+  private setBackTo: Screen = 'recordings';
+  private setBody!: HTMLElement;
+  // Own overview strip under the spectrogram
+  private ov!: HTMLElement;
+  private ovWin!: HTMLElement;
+  private ovHead!: HTMLElement;
+  private ovMarks!: HTMLElement;
+  private ovSig = '';
 
   // Species
   private spList!: HTMLElement;
@@ -319,7 +341,7 @@ export class MobileApp {
     this.root = el('div', 'm-app');
     this.root.setAttribute('aria-label', 'SignaVis');
     const body = el('div', 'm-screens');
-    body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies());
+    body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies(), this.buildSettings());
     const nav = el('nav', 'm-nav');
     nav.setAttribute('aria-label', t('nav.label'));
     const second: [Screen, string, string] = REVIEW_WORKFLOW ? ['queue', I.check, t('nav.review')] : ['review', I.wave, t('nav.player')];
@@ -413,15 +435,7 @@ export class MobileApp {
     this.needsFit = false;
     st._setPixelsPerSecond(w / span, true, start, 0);
     // Frequency range fitted to where the calls are (most birds stay far below Nyquist).
-    // Fit to the activity; if that still reaches far up (noise, high sample rates), show 0–12 kHz:
-    // where most bird song is, and the phone screen is small.
-    setTimeout(() => {
-      try {
-        st.applyAutoFreqView?.();
-        const top = Number(st._freqZoom?.max) || Number(st.coords?.boundedMaxFreq) || 0;
-        if (top > PHONE_MAX_HZ * 1.4) st._freqZoom?.set(0, PHONE_MAX_HZ);
-      } catch { /* ignore */ }
-    }, 150);
+    setTimeout(() => this.applyFreq(), 150);
   }
 
   private mountPlayer() {
@@ -444,10 +458,12 @@ export class MobileApp {
     this.screen = screen;
     for (const [id, s] of this.screens) s.hidden = id !== screen;
     const navOn = screen === 'analyse' ? (this.anBackTo === 'review' ? this.rvFrom : this.anBackTo)
-      : screen === 'review' && REVIEW_WORKFLOW ? this.rvFrom : screen;
+      : screen === 'review' && REVIEW_WORKFLOW ? this.rvFrom
+      : screen === 'settings' ? this.setBackTo : screen;
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
     if (screen === 'analyse') this.renderAnalyse();
     if (screen === 'species') this.renderSpecies();
+    if (screen === 'settings') this.renderSettings();
     if (screen === 'live') this.renderLive();
     if (screen === 'recordings') this.renderRecordings();
     if (screen === 'queue') this.renderQueue();
@@ -464,6 +480,7 @@ export class MobileApp {
     const s = el('section', 'm-screen m-recordings');
     const bar = el('header', 'm-appbar');
     bar.appendChild(el('h1', '', t('nav.recordings')));
+    bar.appendChild(button('m-icon-btn', I.gear, t('set.title'), () => this.openSettings('recordings')));
     this.recList = el('div', 'm-scroll m-rec-list');
     s.append(bar);
     // Viewer first: open a Xeno-canto recording straight from here (number or link).
@@ -756,6 +773,7 @@ export class MobileApp {
     titleBox.append(this.rvTitle, this.rvSub);
     bar.appendChild(titleBox);
     if (this.h.analysis) bar.appendChild(button('m-icon-btn', I.analyse, t('rv.analyse'), () => this.openAnalyse('review')));
+    if (!REVIEW_WORKFLOW) bar.appendChild(button('m-icon-btn', I.gear, t('set.title'), () => this.openSettings('review')));
 
     this.playerSlot = el('div', 'm-player');
     this.rvProgress = el('div', 'm-rv-progress');
@@ -786,7 +804,15 @@ export class MobileApp {
       tbar.append(tm, tr);
       this.strip = el('div', 'm-strip');
       this.strip.setAttribute('role', 'list');
-      s.append(bar, this.rvProgress, this.playerSlot, tbar, this.strip);
+      const zoom = el('div', 'm-zoom');
+      zoom.append(
+        button('m-zoom-btn', I.zoomOut, t('rv.zoomOut'), () => this.zoomBy(1 / 1.8)),
+        button('m-zoom-btn', I.zoomIn, t('rv.zoomIn'), () => this.zoomBy(1.8)),
+        button('m-zoom-btn', I.fit, t('rv.zoomFit'), () => { try { this.h.player?._state?._fitEntireTrackInView?.(); } catch { /* ignore */ } }),
+      );
+      const stage = el('div', 'm-stage');
+      stage.append(this.playerSlot, zoom);
+      s.append(bar, this.rvProgress, stage, this.buildOverview(), tbar, this.strip);
       this.screens.set('review', s);
       return s;
     }
@@ -917,10 +943,18 @@ export class MobileApp {
   // ── Viewer: species colours and strip ──────────────────────────────
 
   /** One colour per species, in order of first appearance in the recording. */
+  private belowMin = new Set<string>();
+
+  private shown(l: any) {
+    return l.confidence == null || Number(l.confidence) >= this.cfg.minConf;
+  }
+
   private assignColors(labels: any[]) {
     this.colorOf.clear();
     this.keyOfId.clear();
+    this.belowMin.clear();
     for (const l of labels) {
+      if (!this.shown(l)) { this.belowMin.add(String(l.id)); continue; }
       const k = speciesKey(l);
       if (!this.colorOf.has(k)) this.colorOf.set(k, PALETTE[this.colorOf.size % PALETTE.length]);
       this.keyOfId.set(String(l.id), k);
@@ -933,7 +967,7 @@ export class MobileApp {
   /** Labels under time `t`, best first. */
   private labelsAt(time: number) {
     return this.h.getLabels()
-      .filter((l) => time >= l.start && time <= l.end && !(this.isOwn(l) && l.adoptedFrom?.id != null))
+      .filter((l) => time >= l.start && time <= l.end && this.shown(l) && !(this.isOwn(l) && l.adoptedFrom?.id != null))
       .sort((a, b) => (Number(b.confidence) || 0) - (Number(a.confidence) || 0));
   }
 
@@ -947,6 +981,7 @@ export class MobileApp {
     const root = this.h.playerRoot;
     root.classList.toggle('m-has-focus', !!this.focusKey);
     for (const r of root.querySelectorAll<HTMLElement>('.spectrogram-label-region')) {
+      r.classList.toggle('m-hide', this.belowMin.has(r.dataset.id || ''));
       const k = this.keyOfId.get(r.dataset.id || '');
       const c = k ? this.colorOf.get(k) : undefined;
       if (c) { if (r.style.getPropertyValue('--m-c') !== c) r.style.setProperty('--m-c', c); }
@@ -959,6 +994,7 @@ export class MobileApp {
     const groups = new Map<string, { key: string; list: any[]; best: any }>();
     for (const l of labels) {
       if (this.isOwn(l) && l.adoptedFrom?.id != null) continue;
+      if (!this.shown(l)) continue;
       const k = speciesKey(l);
       const g = groups.get(k) || { key: k, list: [], best: l };
       g.list.push(l);
@@ -997,8 +1033,6 @@ export class MobileApp {
       });
       this.strip.appendChild(chip);
     }
-    const hint = el('p', 'm-strip-hint', t('rv.gestures'));
-    this.strip.appendChild(hint);
   }
 
   /** Highlight the chips of the species under the playhead. */
@@ -1032,6 +1066,222 @@ export class MobileApp {
     const was = !!p?.isPlaying;
     p?._state?._stopCustomSegmentPlayback?.('stopped', Number(p.currentTime) || 0);
     if (was) p.play?.();
+  }
+
+  // ── Viewer: zoom and overview ───────────────────────────────────────
+
+  private zoomBy(scale: number) {
+    const st = this.h.player?._state;
+    const w = st?.d?.canvasWrapper as HTMLElement | undefined;
+    if (!st || !w) return;
+    const r = w.getBoundingClientRect();
+    // Zoom around the playhead when it is in view, else around the middle.
+    const pps = Number(st.pixelsPerSecond) || 1;
+    const px = (Number(this.h.player.currentTime) || 0) * pps - w.scrollLeft;
+    const x = px >= 0 && px <= r.width ? r.left + px : r.left + r.width / 2;
+    st._zoomByScale(scale, x);
+  }
+
+  /** Frequency range from the settings: fitted to the calls, a fixed top, or everything. */
+  private applyFreq() {
+    const st = this.h.player?._state;
+    if (!st) return;
+    try {
+      const f = this.cfg.freq;
+      if (f === 'full') { st._freqZoom?.reset(); return; }
+      if (typeof f === 'number') { st._freqZoom?.set(0, f); return; }
+      // Auto: fit to the activity; if that still reaches far up (noise, high sample rates), 0–12 kHz.
+      st.applyAutoFreqView?.();
+      const top = Number(st._freqZoom?.max) || Number(st.coords?.boundedMaxFreq) || 0;
+      if (top > PHONE_MAX_HZ * 1.4) st._freqZoom?.set(0, PHONE_MAX_HZ);
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * Overview of the whole recording: mini spectrogram, detections in their colours, the visible
+   * part as a frame. Tap or drag anywhere moves the view there (no small handles to hit).
+   */
+  private buildOverview(): HTMLElement {
+    const ov = el('div', 'm-ov');
+    ov.setAttribute('role', 'scrollbar');
+    ov.setAttribute('aria-label', t('rv.overview'));
+    this.ovMarks = el('div', 'm-ov-marks');
+    this.ovWin = el('div', 'm-ov-win');
+    this.ovHead = el('div', 'm-ov-head');
+    ov.append(this.ovMarks, this.ovWin, this.ovHead);
+    let grab = 0;   // where in the frame the finger holds it (seconds from its centre)
+    const timeAt = (x: number) => {
+      const r = ov.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (x - r.left) / r.width)) * (Number(this.h.player?.duration) || 0);
+    };
+    const move = (x: number) => {
+      try { this.h.player?._state?._centerViewportAtTime?.(timeAt(x) - grab); } catch { /* ignore */ }
+    };
+    ov.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      ov.setPointerCapture(e.pointerId);
+      const v = this.visibleRange();
+      const t0 = timeAt(e.clientX);
+      // Inside the frame: drag it from where it was grabbed; outside: jump there.
+      grab = v && t0 >= v.start && t0 <= v.end ? t0 - (v.start + v.end) / 2 : 0;
+      ov.classList.add('drag');
+      move(e.clientX);
+    });
+    ov.addEventListener('pointermove', (e) => { if (ov.hasPointerCapture(e.pointerId)) move(e.clientX); });
+    const end = () => ov.classList.remove('drag');
+    ov.addEventListener('pointerup', end);
+    ov.addEventListener('pointercancel', end);
+    this.ov = ov;
+    return ov;
+  }
+
+  private visibleRange() {
+    const st = this.h.player?._state;
+    const pps = Number(st?.pixelsPerSecond) || 0;
+    if (!pps) return null;
+    const start = (Number(st._getPrimaryScrollLeft?.()) || 0) / pps;
+    return { start, end: start + (Number(st._getViewportWidth?.()) || 0) / pps };
+  }
+
+  private updateOverview() {
+    if (!this.ov || this.screen !== 'review') return;
+    const dur = Number(this.h.player?.duration) || 0;
+    const rec = this.h.getRecordings().find((r) => r.active);
+    const v = this.visibleRange();
+    if (!dur || !v) return;
+    const pct = (x: number) => `${Math.max(0, Math.min(100, (x / dur) * 100))}%`;
+    this.ovWin.style.left = pct(v.start);
+    this.ovWin.style.width = `calc(${pct(Math.min(dur, v.end) - v.start)} - 0px)`;
+    this.ovHead.style.left = pct(Number(this.h.player.currentTime) || 0);
+    // Thumbnail + marks only when the recording or its labels changed.
+    const sig = `${rec?.id}|${rec?.thumb ? 1 : 0}|${this.keyOfId.size}|${this.cfg.minConf}`;
+    if (sig === this.ovSig) return;
+    this.ovSig = sig;
+    this.ov.style.backgroundImage = rec?.thumb ? `url("${rec.thumb}")` : '';
+    this.ovMarks.replaceChildren();
+    for (const l of this.h.getLabels()) {
+      const k = this.keyOfId.get(String(l.id));
+      if (!k) continue;
+      const i = el('i');
+      i.style.left = pct(l.start);
+      i.style.width = `max(2px, ${pct(l.end - l.start)})`;
+      i.style.background = this.colorOf.get(k) || '';
+      this.ovMarks.appendChild(i);
+    }
+  }
+
+  // ── Settings ───────────────────────────────────────────────────────
+
+  openSettings(from: Screen) {
+    this.setBackTo = from;
+    this.show('settings');
+  }
+
+  private buildSettings(): HTMLElement {
+    const s = el('section', 'm-screen m-settings');
+    const bar = el('header', 'm-appbar');
+    bar.appendChild(button('m-icon-btn', I.back, t('common.back'), () => this.show(this.setBackTo)));
+    bar.appendChild(el('h1', '', t('set.title')));
+    this.setBody = el('div', 'm-scroll m-set-body');
+    s.append(bar, this.setBody);
+    this.screens.set('settings', s);
+    return s;
+  }
+
+  private saveCfg() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.cfg)); } catch { /* ignore */ }
+  }
+
+  /** The player's own control (settings panel); changing it there keeps one implementation + storage. */
+  private ctl<T extends HTMLElement>(aw: string) {
+    // The settings panel may have been moved out of the player root (desktop drawer): use the player's refs.
+    return (this.h.player?._state?.d?.[aw] as T | null) ?? document.querySelector<T>(`[data-aw="${aw}"]`);
+  }
+
+  private renderSettings() {
+    const b = this.setBody;
+    b.replaceChildren();
+    const group = (title: string) => {
+      const g = el('div', 'm-set-group');
+      g.appendChild(el('h3', '', title));
+      b.appendChild(g);
+      return g;
+    };
+    const seg = <V extends string | number>(g: HTMLElement, label: string, opts: [V, string][], cur: V, pick: (v: V) => void) => {
+      const row = el('div', 'm-set-row');
+      row.appendChild(el('span', 'm-set-label', label));
+      const box = el('div', 'm-seg');
+      box.setAttribute('role', 'radiogroup');
+      box.setAttribute('aria-label', label);
+      for (const [v, text] of opts) {
+        const o = button(`m-seg-btn${v === cur ? ' on' : ''}`, '', text, () => { pick(v); this.renderSettings(); });
+        o.textContent = text;
+        o.setAttribute('role', 'radio');
+        o.setAttribute('aria-checked', String(v === cur));
+        box.appendChild(o);
+      }
+      row.appendChild(box);
+      g.appendChild(row);
+    };
+    const toggle = (g: HTMLElement, label: string, hint: string, on: boolean, set: (v: boolean) => void) => {
+      const row = el('label', 'm-set-row m-set-toggle');
+      const tx = el('span', 'm-set-tx');
+      tx.append(el('span', 'm-set-label', label), el('small', '', hint));
+      const sw = el('span', 'm-switch');
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = on;
+      input.addEventListener('change', () => set(input.checked));
+      sw.append(input, el('i'));
+      row.append(tx, sw);
+      g.appendChild(row);
+    };
+
+    const view = group(t('set.view'));
+    const scheme = this.ctl<HTMLSelectElement>('colorSchemeSelect');
+    if (scheme) {
+      const names: [string, string][] = [['ember', 'Ember'], ['inferno', 'Inferno'], ['magma', 'Magma'], ['viridis', 'Viridis'], ['fire', 'Fire'], ['grayscale', t('set.bw')]];
+      const row = el('div', 'm-set-row m-set-col');
+      row.appendChild(el('span', 'm-set-label', t('set.colors')));
+      const box = el('div', 'm-swatches');
+      for (const [v, text] of names) {
+        if (![...scheme.options].some((o) => o.value === v)) continue;
+        const o = button(`m-swatch m-swatch--${v}${scheme.value === v ? ' on' : ''}`, '<i></i><span></span>', text, () => {
+          scheme.value = v;
+          scheme.dispatchEvent(new Event('change', { bubbles: true }));
+          this.renderSettings();
+        });
+        o.querySelector('span')!.textContent = text;
+        box.appendChild(o);
+      }
+      row.appendChild(box);
+      view.appendChild(row);
+    }
+    seg(view, t('set.freq'), [['auto', t('set.auto')], [8000, '8 kHz'], [12000, '12 kHz'], [16000, '16 kHz'], ['full', t('set.full')]],
+      this.cfg.freq, (v) => { this.cfg.freq = v; this.saveCfg(); this.applyFreq(); });
+    const nr = this.ctl<HTMLInputElement>('noiseReductionCheck');
+    if (nr) toggle(view, t('set.noise'), t('set.noiseHint'), nr.checked, (v) => { nr.checked = v; nr.dispatchEvent(new Event('change', { bubbles: true })); });
+    const clahe = this.ctl<HTMLInputElement>('claheCheck');
+    if (clahe) toggle(view, t('set.contrast'), t('set.contrastHint'), clahe.checked, (v) => { clahe.checked = v; clahe.dispatchEvent(new Event('change', { bubbles: true })); });
+
+    const det = group(t('set.detections'));
+    seg(det, t('set.minConf'), [[0, t('common.all')], [0.25, '25%'], [0.5, '50%'], [0.75, '75%']],
+      this.cfg.minConf, (v) => { this.cfg.minConf = v; this.saveCfg(); this.renderReview(); });
+
+    const gen = group(t('set.general'));
+    seg(gen, t('set.lang'), [['en', 'English'], ['de', 'Deutsch']], getLang(), (v) => {
+      if (v === getLang()) return;
+      setLang(v);
+      // Strings are built once; a reload shows the new language everywhere.
+      const u = new URL(location.href);
+      u.searchParams.delete('lang');
+      location.replace(u.toString());
+    });
+
+    const help = group(t('set.gestures'));
+    const ul = el('ul', 'm-set-help');
+    for (const k of ['set.g.pinch', 'set.g.drag', 'set.g.tap', 'set.g.double', 'set.g.hold', 'set.g.overview'] as const) ul.appendChild(el('li', '', t(k)));
+    help.appendChild(ul);
   }
 
   // ── Accept / discard ────────────────────────────────────────────────
@@ -1215,7 +1465,7 @@ export class MobileApp {
       this.timeCur.textContent = fmtClock(p?.currentTime);
       this.timeDur.textContent = fmtClock(p?.duration);
       if (REVIEW_WORKFLOW) { if (playing) this.markCurrent(true); }
-      else this.markStrip();
+      else { this.markStrip(); this.updateOverview(); }
     };
     this.raf = requestAnimationFrame(tick);
   }

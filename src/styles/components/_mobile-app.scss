@@ -131,7 +131,7 @@ html.is-mobile {
   .m-cta.m-cta--sm { width: auto; flex-shrink: 0; height: 40px; padding: 0 14px; font-size: 13.5px; }
 
   /* ── Review: player ── */
-  .m-player { flex: 1 1 auto; min-height: 220px; position: relative; }
+  .m-player { flex: 1 1 auto; min-height: 0; position: relative; }
   .m-player #playerRoot { width: 100%; height: 100%; border: none; border-radius: 0; }
   /* Desktop chrome inside the player is not used on phones. */
   .m-player {
@@ -144,9 +144,45 @@ html.is-mobile {
   .m-player .spectrogram-container { flex: 1 1 auto !important; height: auto !important; }
 
   // Viewer: no label tracks (the species strip and the colours do that job), slim overview.
-  .m-player .overview-label-section { display: none !important; }
-  .m-player .overview-container { height: 30px !important; min-height: 30px !important; }
-  .m-player .overview-container .handle { width: 14px; }
+  .m-player .overview-label-section, .m-player .overview-container, .m-player .overview-detail { display: none !important; }
+
+  // Spectrogram + floating zoom buttons
+  .m-stage { position: relative; flex: 1 1 auto; min-height: 220px; display: flex; flex-direction: column; }
+  .m-stage .m-player { flex: 1 1 auto; }
+  .m-zoom {
+    position: absolute; right: 10px; bottom: 10px; z-index: 20;
+    display: flex; flex-direction: column; gap: 1px; border-radius: 10px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  .m-zoom-btn {
+    width: 44px; height: 42px; display: grid; place-items: center; padding: 0;
+    border: none; background: rgba(12, 12, 20, 0.62); color: #fff;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-zoom-btn:active { background: rgba(60, 60, 80, 0.85); }
+  .m-zoom-btn svg { width: 19px; height: 19px; }
+
+  // Own overview: whole recording, detections in colour, visible part as a frame; tap/drag anywhere.
+  .m-ov {
+    position: relative; flex-shrink: 0; height: 46px; margin: 6px 10px 0;
+    border-radius: 6px; overflow: hidden; touch-action: none; cursor: pointer;
+    background: #0b0910 center / 100% 100% no-repeat;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-ov-marks { position: absolute; left: 0; right: 0; top: 0; height: 5px; pointer-events: none; }
+  .m-ov-marks i { position: absolute; top: 0; bottom: 0; border-radius: 1px; opacity: 0.95; }
+  .m-ov-win {
+    position: absolute; top: 0; bottom: 0; min-width: 6px; pointer-events: none;
+    border: 2px solid #fff; border-radius: 5px;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.42);
+    transition: border-color 0.12s;
+  }
+  .m-ov.drag .m-ov-win { border-color: var(--m-accent); background: color-mix(in srgb, var(--m-accent) 20%, transparent); }
+  .m-ov-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ef4444; pointer-events: none; }
+
+  .m-player .spectrogram-label-region.m-hide { display: none !important; }
 
   // Frequency scale as an overlay on the spectrogram instead of its own column.
   --axis-width: 0px;
@@ -367,7 +403,7 @@ html.is-mobile {
 
   .m-switch { position: relative; flex-shrink: 0; width: 40px; height: 24px; }
   .m-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
-  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.15); transition: background 0.15s; }
+  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: color-mix(in srgb, var(--m-muted) 35%, transparent); transition: background 0.15s; }
   .m-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
   .m-switch input:checked + i { background: var(--m-accent); }
   .m-switch input:checked + i::after { transform: translateX(16px); }
@@ -517,4 +553,46 @@ html.is-mobile {
     font-size: 12.5px; font-weight: 600;
   }
   .m-live-discard[hidden] { display: block; visibility: hidden; }
+}
+
+/* ── Settings ── */
+html.is-mobile {
+  .m-set-body { padding: 0 14px 24px; }
+  .m-set-group { margin: 6px 0 18px; }
+  .m-set-group h3 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--m-muted); }
+  .m-set-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 52px; padding: 8px 12px; background: var(--m-surface); border: 1px solid var(--m-line);
+    border-bottom-width: 0;
+  }
+  .m-set-group > .m-set-row:first-of-type { border-radius: 8px 8px 0 0; }
+  .m-set-group > .m-set-row:last-child { border-radius: 0 0 8px 8px; border-bottom-width: 1px; }
+  .m-set-group > h3 + .m-set-row:last-child { border-radius: 8px; }
+  .m-set-col { flex-direction: column; align-items: stretch; }
+  .m-set-label { font-size: 14px; font-weight: 600; }
+  .m-set-tx { display: flex; flex-direction: column; min-width: 0; }
+  .m-set-tx small { font-size: 11.5px; color: var(--m-muted); margin-top: 2px; }
+  .m-set-row:has(.m-seg) { flex-direction: column; align-items: stretch; gap: 8px; }
+  .m-seg { display: flex; border: 1px solid var(--m-line); border-radius: 7px; overflow: hidden; }
+  .m-seg-btn {
+    flex: 1; min-width: 0; height: 36px; padding: 0 4px; border: none; border-left: 1px solid var(--m-line);
+    background: transparent; color: var(--m-text); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  }
+  .m-seg-btn:first-child { border-left: none; }
+  .m-seg-btn.on { background: var(--m-accent); color: var(--m-accent-ink); }
+  .m-swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .m-swatch {
+    display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 7px;
+    border: 1px solid var(--m-line); background: transparent; color: var(--m-text); font-size: 11.5px; font-weight: 600;
+  }
+  .m-swatch i { display: block; height: 22px; border-radius: 4px; }
+  .m-swatch.on { border-color: var(--m-accent); box-shadow: inset 0 0 0 1.5px var(--m-accent); }
+  .m-swatch--inferno i { background: linear-gradient(90deg, #000004, #420a68, #932667, #dd513a, #fca50a, #fcffa4); }
+  .m-swatch--ember i { background: linear-gradient(90deg, #000, #3a0a05, #8a1f04, #d9520b, #f9a23b, #fff1c4); }
+  .m-swatch--magma i { background: linear-gradient(90deg, #000004, #3b0f70, #8c2981, #de4968, #fe9f6d, #fcfdbf); }
+  .m-swatch--viridis i { background: linear-gradient(90deg, #440154, #3b528b, #21918c, #5ec962, #fde725); }
+  .m-swatch--fire i { background: linear-gradient(90deg, #000, #600, #c30, #f90, #ff6, #fff); }
+  .m-swatch--grayscale i { background: linear-gradient(90deg, #000, #fff); }
+  .m-swatch--grayscaleInv i { background: linear-gradient(90deg, #fff, #000); border: 1px solid var(--m-line); }
+  .m-set-help { margin: 0; padding: 10px 12px 10px 28px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; font-size: 13px; line-height: 1.6; }
 }
