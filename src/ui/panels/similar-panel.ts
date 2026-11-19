@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -53,6 +54,28 @@ const fmtTime = (s: number) => {
     return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
 };
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+/** Right-click menu for a result row. `current` is the hit's label in the selected class (null: none / no class). */
+export function similarHitMenuItems(h: SimilarHit, current: Label | null | undefined, act: {
+    play: () => void; open: () => void; label: (l: Label) => void; copy: (text: string) => void; query: () => void;
+}, hasClass = current !== undefined) {
+    const file = h.path.split('/').pop() || h.path;
+    const items: { label?: string; action?: () => void; separator?: boolean }[] = [
+        { label: 'Play', action: act.play },
+        { label: 'Open in spectrogram', action: act.open },
+        { label: 'Find similar to this', action: act.query },
+    ];
+    if (hasClass) {
+        items.push({ separator: true });
+        for (const l of ['pos', 'neg', 'unsure'] as Label[]) {
+            items.push({ label: `${current === l ? 'Clear' : 'Mark'} ${LABEL_TITLE[l].split(' ')[0].toLowerCase()}`, action: () => act.label(l) });
+        }
+    }
+    items.push({ separator: true },
+        { label: `Copy “${file} @ ${fmtTime(h.start)}”`, action: () => act.copy(`${h.path}\t${h.start.toFixed(2)}\t${h.end.toFixed(2)}`) },
+        { label: 'Copy file path', action: () => act.copy(h.path) });
+    return items;
+}
 const errText = (e: unknown) => `${(e as Error)?.message || e}`;
 
 export class SimilarPanel {
@@ -85,6 +108,7 @@ export class SimilarPanel {
         this.el = document.createElement('div');
         this.el.className = 'scroll-panel similar-panel';
         this.el.addEventListener('click', (e) => this.#onClick(e));
+        this.el.addEventListener('contextmenu', (e) => this.#onContextMenu(e));
         this.el.addEventListener('change', (e) => this.#onChange(e));
         this.el.addEventListener('input', (e) => {
             if ((e.target as HTMLElement).id === 'simThr') this.#onChange(e);
@@ -342,6 +366,24 @@ export class SimilarPanel {
         }
     }
 
+    #onContextMenu(e: MouseEvent) {
+        const li = (e.target as Element).closest<HTMLElement>('.sim-hit');
+        const h = li ? this.#hits[Number(li.dataset.i)] : null;
+        if (!h) return;
+        e.preventDefault();
+        const fail = (err: unknown) => { this.#status = errText(err); this.#render(); };
+        showContextMenu({
+            x: e.clientX, y: e.clientY,
+            items: similarHitMenuItems(h, this.#cls ? this.#labelOf(h.path, h.start) : undefined, {
+                play: () => Promise.resolve(this.#opts.openHit(h, true)).catch(fail),
+                open: () => Promise.resolve(this.#opts.openHit(h, false)).catch(fail),
+                label: (l) => this.#setLabel(h.path, h.start, l).catch(fail),
+                copy: (t) => { navigator.clipboard?.writeText(t).catch(() => {}); },
+                query: () => this.#search({ path: h.path, start: h.start, end: h.end }).catch(fail),
+            }),
+        });
+    }
+
     #onChange(e: Event) {
         const t = e.target as HTMLInputElement | HTMLSelectElement;
         if (t.id === 'simClass') this.#selectClass(t.value);
@@ -509,7 +551,7 @@ export class SimilarPanel {
         return `<div class="panel-section sim-results">
             <p class="field-hint">${head}</p>
             <ol class="sim-list">${this.#hits.map((h, i) => `
-                <li class="sim-hit">
+                <li class="sim-hit" data-i="${i}">
                     <button class="sim-play" data-act="play" data-i="${i}" type="button" title="Play">▶</button>
                     <button class="sim-open" data-act="open" data-i="${i}" type="button" title="${esc(h.path)} — open in spectrogram">
                         <span class="sim-file">${esc(h.path.split('/').pop() || h.path)}</span>

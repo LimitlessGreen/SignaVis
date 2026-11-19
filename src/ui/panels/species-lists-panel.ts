@@ -11,6 +11,7 @@
 import {
   SpeciesListStore, parseSpeciesListText, serializeSpeciesList, type SpeciesList,
 } from '../../domain/species-lists.ts';
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
 export interface SpeciesListsPanelOpts {
   store: SpeciesListStore;
@@ -30,6 +31,44 @@ export interface SpeciesListsPanelOpts {
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]);
 const plural = (n: number) => `${n} species`;
+const copyText = (t: string) => navigator.clipboard?.writeText(t).catch(() => {});
+
+type MenuItem = { label?: string; action?: () => void; danger?: boolean; disabled?: boolean; separator?: boolean };
+
+/** Right-click menu for a list card ("All species" when list is null). */
+export function listCardMenuItems(list: SpeciesList | null, active: boolean, act: {
+  use: () => void; edit: () => void; duplicate: () => void; exportFile: () => void; remove: () => void;
+}): MenuItem[] {
+  const use = { label: active ? 'Used for analysis' : 'Use for analysis', action: act.use, disabled: active };
+  if (!list) return [use];
+  return [
+    use,
+    { label: 'Edit list', action: act.edit },
+    { separator: true },
+    { label: 'Duplicate', action: act.duplicate },
+    { label: 'Export for BirdNET (--slist)…', action: act.exportFile, disabled: !list.species.length },
+    { separator: true },
+    { label: 'Delete list', action: act.remove, danger: true },
+  ];
+}
+
+/** Right-click menu for a species row inside a list. */
+export function speciesRowMenuItems(sci: string, common: string, others: SpeciesList[], act: {
+  copy: (text: string) => void; addTo: (listId: string) => void; remove: () => void;
+}): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (common) items.push({ label: `Copy “${common}”`, action: () => act.copy(common) });
+  items.push({ label: `Copy “${sci}”`, action: () => act.copy(sci) });
+  const lc = sci.toLowerCase();
+  if (others.length) items.push({ separator: true });
+  for (const o of others.slice(0, 8)) {
+    const has = o.species.some((s) => s.toLowerCase() === lc);
+    items.push({ label: has ? `Already on “${o.name}”` : `Add to “${o.name}”`, action: () => act.addTo(o.id), disabled: has });
+  }
+  items.push({ separator: true }, { label: 'Remove from list', action: act.remove, danger: true });
+  return items;
+}
+
 const SOURCE_TEXT: Record<string, string> = {
   manual: 'Made by hand', location: 'Expected at a place', import: 'Imported', labels: 'From labels',
 };
@@ -124,6 +163,25 @@ export class SpeciesListsPanel {
       this.o.store.setActive(id);
       if (id && id !== this.editingId) { this.editingId = id; this.filter = ''; }
       this.render();
+    });
+    this.els.cards.addEventListener('contextmenu', (e) => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>('[data-list]');
+      if (!card) return;
+      e.preventDefault();
+      const { store } = this.o;
+      const id = card.dataset.list || null;
+      const list = store.get(id);
+      const r = !e.clientX && !e.clientY ? card.getBoundingClientRect() : null; // keyboard (Menu key)
+      showContextMenu({
+        x: r ? r.left : e.clientX, y: r ? r.bottom : e.clientY,
+        items: listCardMenuItems(list, (store.state.activeId ?? null) === id, {
+          use: () => store.setActive(id),
+          edit: () => { if (id) this.open(id); },
+          duplicate: () => { const c = id && store.duplicate(id); if (c) this.open(c.id, { focusName: true }); },
+          exportFile: () => { if (list) this.exportList(list); },
+          remove: () => { if (list) this.deleteList(list); },
+        }),
+      });
     });
     this.els.cards.addEventListener('keydown', (e) => {
       if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return;
@@ -307,9 +365,33 @@ export class SpeciesListsPanel {
 
     const filterInput = ed.querySelector<HTMLInputElement>('.sl-filter');
     filterInput?.addEventListener('input', () => { this.filter = filterInput.value; this.renderRows(list); });
-    ed.querySelector('.sl-rows')!.addEventListener('click', (e) => {
+    const rowsEl = ed.querySelector<HTMLElement>('.sl-rows')!;
+    rowsEl.addEventListener('click', (e) => {
       const sci = (e.target as HTMLElement).closest<HTMLElement>('.sl-remove')?.dataset.sci;
+      if (sci) this.removeSpecies(list, sci);
+    });
+    rowsEl.addEventListener('contextmenu', (e) => {
+      const sci = (e.target as HTMLElement).closest<HTMLElement>('.sl-row')?.dataset.sci;
       if (!sci) return;
+      e.preventDefault();
+      const others = this.o.store.lists.filter((l) => l.id !== list.id);
+      showContextMenu({
+        x: e.clientX, y: e.clientY,
+        items: speciesRowMenuItems(sci, this.o.commonName(sci), others, {
+          copy: (t) => { copyText(t); this.setStatus(`Copied “${t}”.`); },
+          addTo: (id) => {
+            this.o.store.add(id, [sci]);
+            this.setStatus(`Added ${this.display(sci)} to “${this.o.store.get(id)?.name}”.`);
+          },
+          remove: () => this.removeSpecies(list, sci),
+        }),
+      });
+    });
+    this.renderRows(list);
+  }
+
+  private removeSpecies(list: SpeciesList, sci: string) {
+    {
       const idx = list.species.indexOf(sci);
       this.o.store.remove(list.id, [sci]);
       this.setStatus(`Removed ${this.display(sci)}.`, {
@@ -321,8 +403,7 @@ export class SpeciesListsPanel {
           this.o.store.add(list.id, []); // persist + notify
         },
       });
-    });
-    this.renderRows(list);
+    }
   }
 
   private renderRows(list: SpeciesList) {
@@ -338,7 +419,7 @@ export class SpeciesListsPanel {
       .filter((r) => !q || r.sci.toLowerCase().includes(q) || r.common.toLowerCase().includes(q))
       .sort((a, b) => (a.common || a.sci).localeCompare(b.common || b.sci));
     ul.innerHTML = rows.map((r) => `
-      <li class="sl-row${r.known ? '' : ' is-unknown'}" title="${r.known ? '' : 'Not in the BirdNET taxonomy — BirdNET will never report this name'}">
+      <li class="sl-row${r.known ? '' : ' is-unknown'}" data-sci="${esc(r.sci)}" title="${r.known ? '' : 'Not in the BirdNET taxonomy — BirdNET will never report this name'}">
         <span class="sl-row-text"><span class="sl-common">${esc(r.common || r.sci)}</span>${r.common ? `<i class="sl-sci">${esc(r.sci)}</i>` : ''}</span>
         <button type="button" class="sl-remove" data-sci="${esc(r.sci)}" aria-label="Remove ${esc(r.common || r.sci)}" title="Remove">×</button>
       </li>`).join('') || '<li class="sl-empty">Nothing matches the filter.</li>';
