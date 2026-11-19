@@ -20,6 +20,7 @@ import { ExportPanel } from './ExportPanel.ts';
 import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
 import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 
 export interface RecordingGalleryOptions {
     container: HTMLElement;
@@ -409,6 +410,26 @@ export class RecordingGalleryPanel {
             });
         });
 
+        grid.querySelectorAll<HTMLElement>('[data-open-recording]').forEach((el) => {
+            el.addEventListener('contextmenu', (e) => {
+                const rec = this.recordings.find((r) => r.id === el.dataset.openRecording);
+                if (!rec) return;
+                e.preventDefault();
+                showContextMenu({
+                    x: e.clientX, y: e.clientY,
+                    items: recordingCardMenuItems(rec, {
+                        open: () => this.onOpenRecording?.(rec),
+                        copy: (t) => { navigator.clipboard?.writeText(t).catch(() => {}); },
+                        addTag: async () => {
+                            const tag = (await appPrompt('Add tag:', ''))?.trim();
+                            if (tag && !rec.tags.includes(tag)) await this.setTags(rec, [...rec.tags, tag]);
+                        },
+                        removeTag: (t) => this.setTags(rec, rec.tags.filter((x) => x !== t)),
+                    }),
+                });
+            });
+        });
+
         grid.querySelectorAll('[data-toggle-tag]').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -428,6 +449,16 @@ export class RecordingGalleryPanel {
                 }
             });
         });
+    }
+
+    private async setTags(rec: Recording, tags: string[]): Promise<void> {
+        try {
+            await recordingSetTags(rec.id, tags);
+            rec.tags = tags;
+            this.renderGrid();
+        } catch (e) {
+            this.onStatusMessage(`Tag error: ${e}`);
+        }
     }
 
     // ── Field schema ──────────────────────────────────────────────────
@@ -862,4 +893,21 @@ function shortLabel(label: string): string {
     const parts = label.split(' ');
     if (parts.length >= 2) return `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
     return label;
+}
+
+/** Right-click menu for a recording card. */
+export function recordingCardMenuItems(r: Pick<Recording, 'filepath' | 'tags'>, act: {
+    open: () => void; copy: (t: string) => void; addTag: () => void; removeTag: (t: string) => void;
+}) {
+    const name = r.filepath.split('/').pop() ?? r.filepath;
+    const items: { label?: string; action?: () => void; separator?: boolean; danger?: boolean }[] = [
+        { label: 'Open', action: act.open },
+        { separator: true },
+        { label: 'Add tag…', action: act.addTag },
+        ...r.tags.map((t) => ({ label: `Remove tag “${t}”`, action: () => act.removeTag(t) })),
+        { separator: true },
+        { label: `Copy “${name}”`, action: () => act.copy(name) },
+        { label: 'Copy file path', action: () => act.copy(r.filepath) },
+    ];
+    return items;
 }

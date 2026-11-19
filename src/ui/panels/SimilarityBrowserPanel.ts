@@ -3,6 +3,7 @@
 // reference recording, ranked by cosine similarity of BirdNET embeddings.
 // ═══════════════════════════════════════════════════════════════════════
 
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import type { Recording } from '../../domain/corpus/types.ts';
 import {
     recordingGetSimilar,
@@ -146,6 +147,19 @@ export class SimilarityBrowserPanel {
 
         // Bind click events
         grid.querySelectorAll<HTMLElement>('[data-result-idx]').forEach((card) => {
+            card.addEventListener('contextmenu', (e) => {
+                const result = this.results[parseInt(card.dataset.resultIdx!, 10)];
+                if (!result) return;
+                e.preventDefault();
+                const copy = (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); };
+                const name = result.filepath.split('/').pop() ?? result.filepath;
+                showContextMenu({ x: e.clientX, y: e.clientY, items: [
+                    { label: 'Open', action: () => card.click(), disabled: !this.onOpenRecording },
+                    { separator: true },
+                    { label: `Copy “${name}”`, action: () => copy(name) },
+                    { label: 'Copy file path', action: () => copy(result.filepath) },
+                ] });
+            });
             card.addEventListener('click', async () => {
                 const idx = parseInt(card.dataset.resultIdx!, 10);
                 const result = this.results[idx];

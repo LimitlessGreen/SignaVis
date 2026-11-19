@@ -35,6 +35,7 @@
  * Only one player ever plays at a time.
  */
 
+import { showContextMenu } from '../context-menu/context-menu.ts';
 import { createSpeciesSearchWidget } from '../taxonomy-ui/taxonomy-ui.ts';
 import { speciesLinks, xcSearchNames } from '../../../domain/speciesLinks.ts';
 import ModalManager from '../modal/modal-manager.ts';
@@ -1283,6 +1284,19 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
     });
     const idx = _items.push({ el: item, rec }) - 1;
     item.addEventListener('click', () => selectItem(idx));
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const url = `https://xeno-canto.org/${rec.id}`;
+      const copy = (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); };
+      showContextMenu({ x: e.clientX, y: e.clientY, items: [
+        { label: 'Show', action: () => selectItem(idx) },
+        { label: isPinned(rec.id) ? 'Unpin' : 'Pin as reference', action: () => pin.click() },
+        { label: 'Open on xeno-canto', action: () => window.open(url, '_blank', 'noopener') },
+        { separator: true },
+        { label: `Copy “XC${rec.id}”`, action: () => copy(`XC${rec.id}`) },
+        { label: 'Copy link', action: () => copy(url) },
+      ] });
+    });
     return item;
   }
 

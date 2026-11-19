@@ -3532,6 +3532,15 @@ const explorePanel = new ExplorePanel({
     });
   },
   onOpenRefCalls: (item) => openRefCalls({ scientificName: item.scientificName, label: item.name }),
+  getSpeciesLists: () => speciesLists.lists,
+  onAddToSpeciesList: (id, sci) => {
+    const before = [...(speciesLists.get(id)?.species || [])];
+    speciesLists.add(id, [sci]);
+    showUndoToast(`Added ${sci} to “${speciesLists.get(id)?.name}”`, () => {
+      const l = speciesLists.get(id);
+      if (l) { l.species.splice(0, l.species.length, ...before); speciesLists.add(id, []); }
+    });
+  },
 });
 explorePanel.el.classList.add('analyse-explore');
 

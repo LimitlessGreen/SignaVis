@@ -13,6 +13,7 @@
  * Clicking any card pre-fills the topbar species selector for drawing new labels.
  */
 
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
 
 // Species thumbnails: from the BirdNET taxonomy, cached for offline use in Lite (speciesImageUrl).
@@ -46,6 +47,8 @@ export class ExplorePanel {
     _loading: any;
     _onOpenRefCalls: any;
     _onSpeciesSelect: any;
+    _getSpeciesLists: any;
+    _onAddToSpeciesList: any;
     _taxonomy: any;
     dataset: any;
     el: any;
@@ -62,7 +65,9 @@ export class ExplorePanel {
    * @param {(item: {name:string, scientificName:string}) => void} [opts.onSpeciesSelect]
    *   Called when the user clicks a species card — use to pre-fill the label species bar.
    */
-  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect, onOpenRefCalls }: any) {
+  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect, onOpenRefCalls, getSpeciesLists, onAddToSpeciesList }: any) {
+    this._getSpeciesLists = getSpeciesLists ?? null;
+    this._onAddToSpeciesList = onAddToSpeciesList ?? null;
     this._birdnet          = birdnet;
     this._getLabels        = getLabels;
     this._getLang          = getLang;
@@ -438,6 +443,20 @@ export class ExplorePanel {
       });
     }
 
+    card.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu({ x: e.clientX, y: e.clientY, items: speciesCardMenuItems(
+        { name: commonName, scientificName: scientificName || '' },
+        this._getSpeciesLists?.() || [],
+        {
+          select: this._onSpeciesSelect ? () => card.click() : null,
+          refCalls: this._onOpenRefCalls && scientificName ? () => this._onOpenRefCalls({ scientificName, name: commonName }) : null,
+          addTo: this._onAddToSpeciesList ? (id: string) => this._onAddToSpeciesList(id, scientificName) : null,
+          copy: (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); },
+        },
+      ) });
+    });
+
     return card;
   }
 
@@ -451,6 +470,29 @@ export class ExplorePanel {
   }
 
   _q(sel: any) { return this.el.querySelector(sel); }
+}
+
+/** Right-click menu for a species card. Actions passed as null are left out. */
+export function speciesCardMenuItems(
+  sp: { name: string; scientificName: string },
+  lists: { id: string; name: string; species: string[] }[],
+  act: { select: (() => void) | null; refCalls: (() => void) | null; addTo: ((id: string) => void) | null; copy: (t: string) => void },
+) {
+  const items: any[] = [];
+  if (act.select) items.push({ label: 'Use as label species', action: act.select });
+  if (act.refCalls) items.push({ label: 'Reference calls…', action: act.refCalls });
+  if (act.addTo && sp.scientificName && lists.length) {
+    if (items.length) items.push({ separator: true });
+    const lc = sp.scientificName.toLowerCase();
+    for (const l of lists.slice(0, 8)) {
+      const has = l.species.some((s) => s.toLowerCase() === lc);
+      items.push({ label: has ? `Already on “${l.name}”` : `Add to “${l.name}”`, disabled: has, action: () => act.addTo!(l.id) });
+    }
+  }
+  if (items.length) items.push({ separator: true });
+  if (sp.name && sp.name !== sp.scientificName) items.push({ label: `Copy “${sp.name}”`, action: () => act.copy(sp.name) });
+  if (sp.scientificName) items.push({ label: `Copy “${sp.scientificName}”`, action: () => act.copy(sp.scientificName) });
+  return items;
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
