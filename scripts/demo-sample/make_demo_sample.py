@@ -57,15 +57,22 @@ def tt(dur):
     return np.arange(int(dur * SR)) / SR
 
 
-# --- "SignaVis" written into the sound ------------------------------------
-TEXT, TEXT_T, TEXT_F = "SignaVis", (3.2, 10.6), (9500, 17500)
+# --- "SignaVis by LimitlessGreen" written into the sound ------------------------------------
+TEXT, SUB = "SignaVis", "by LimitlessGreen"
+TEXT_T, TEXT_F = (3.2, 10.6), (9300, 20000)
 
 
 def write_text():
     font = ImageFont.truetype(FONT, 200) if Path(FONT).exists() else ImageFont.load_default(200)
+    small = ImageFont.truetype(FONT, 78) if Path(FONT).exists() else ImageFont.load_default(78)
     x0, y0, x1, y1 = font.getbbox(TEXT)
-    mask = Image.new("L", (x1 - x0 + 20, y1 - y0 + 20))
-    ImageDraw.Draw(mask).text((10 - x0, 10 - y0), TEXT, font=font, fill=255)
+    sx0, sy0, sx1, sy1 = small.getbbox(SUB)
+    w, gap = x1 - x0 + 20, 26
+    mask = Image.new("L", (w, y1 - y0 + gap + sy1 - sy0 + 20))
+    d = ImageDraw.Draw(mask)
+    d.text((10 - x0, 10 - y0), TEXT, font=font, fill=255)
+    # second line right-aligned under the title, like a signature
+    d.text((w - 10 - sx1, 10 + y1 - y0 + gap - sy0), SUB, font=small, fill=255)
     # tones on every 3rd bin centre of a 2048-pt FFT (23.4 Hz bins) -> each
     # bin is fed by one tone only, no beating, clean letters for nfft 1024-2048
     bin_hz = SR / 2048
@@ -131,10 +138,10 @@ t = tt(T)
 buzz = np.sin(2 * np.pi * 3800 * t) * (1 + 0.9 * np.sin(2 * np.pi * 90 * t))
 place(10.35, buzz, 0.5)
 
-# --- above the text: insect-like pulses at 19-21 kHz -----------------------
+# --- above the text: insect-like pulses at 21-22 kHz -----------------------
 for st in np.arange(0.3, 11.5, 0.5):
     for p in range(4):
-        add(st + p * 0.035, lambda u: 20000 - 600 * u, 0.02, 0.12, harmonics=(1.0,))
+        add(st + p * 0.035, lambda u: 22000 - 600 * u, 0.02, 0.12, harmonics=(1.0,))
 
 # faint background chorus everywhere
 for _ in range(90):
