@@ -24,6 +24,8 @@ p { margin: 0; }
 .btn-filled { background: var(--md-primary); color: var(--md-on-primary); }
 .btn-filled:hover { box-shadow: 0 2px 10px color-mix(in srgb, var(--md-primary) 35%, transparent); }
 .btn-tonal { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.btn-outlined { border: 1px solid var(--md-outline); color: var(--md-primary); }
+.btn-outlined:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
 .btn-text { color: var(--md-primary); padding: 0 .75rem; margin-left: -.75rem; }
 .btn-text:hover { background: color-mix(in srgb, var(--md-primary) 10%, transparent); }
 .btn-sm { min-height: 40px; padding: 0 1.1rem; font-size: .95rem; }

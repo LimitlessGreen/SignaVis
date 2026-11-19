@@ -14,7 +14,7 @@ export const ui = {
     navShortUse: 'Use', navShortApp: 'App', themeToggle: 'Toggle light/dark',
     heroA: 'See', heroB: 'bird sounds.', heroAccentFirst: true,
     heroLede: 'Spectrogram analysis, species identification and annotation for bioacoustic recordings. In the browser, on mobile and on the desktop.',
-    ctaStart: 'Start in browser', ctaGuide: 'Guide',
+    ctaStart: 'Start in browser', ctaGuide: 'Guide', ctaDownload: 'Download desktop app',
     trustLocal: 'Local processing by default', trustOss: 'Open source',
     useCasesTitle: 'Use cases',
     useCases: [
@@ -66,7 +66,7 @@ export const ui = {
     navShortUse: 'Anwendung', navShortApp: 'App', themeToggle: 'Hell/Dunkel umschalten',
     heroA: 'Vogelstimmen', heroB: 'sehen.', heroAccentFirst: false,
     heroLede: 'Spektrogramm-Analyse, Artbestimmung und Annotation bioakustischer Aufnahmen. Im Browser, mobil und als Desktop-App.',
-    ctaStart: 'Im Browser starten', ctaGuide: 'Dokumentation',
+    ctaStart: 'Im Browser starten', ctaGuide: 'Dokumentation', ctaDownload: 'Desktop-App herunterladen',
     trustLocal: 'Standardmäßig lokale Verarbeitung', trustOss: 'Open Source',
     useCasesTitle: 'Anwendungsfälle',
     useCases: [

@@ -22,6 +22,7 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
       <div class="cta-row">
         <a class="btn btn-filled" href={app}><Icon name="play" size={20} /> {t.ctaStart}</a>
         <a class="btn btn-tonal" href={docs}><Icon name="book-open" size={20} /> {t.ctaGuide}</a>
+        <a class="btn btn-outlined" href={`${home}/download/`}><Icon name="download" size={20} /> {t.ctaDownload}</a>
       </div>
       <ul class="trust">
         <li><Icon name="shield-check" size={18} /> {t.trustLocal}</li>
