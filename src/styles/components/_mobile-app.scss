@@ -629,3 +629,49 @@ html.is-mobile {
   .m-strip-cta .m-cta { display: inline-flex; align-items: center; gap: 6px; }
   .m-strip-cta .m-cta svg { width: 16px; height: 16px; }
 }
+html.is-mobile {
+  /* Transport: time line above, centred controls with a large play button */
+  .m-tbar { flex-direction: column; align-items: stretch; gap: 0; padding: 4px 14px 4px; }
+  .m-tbar-time { display: flex; justify-content: space-between; font-size: 11.5px; }
+  .m-tbar .m-transport { flex: none; display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; justify-items: center; align-items: center; gap: 0; padding: 0 4px; margin-top: -4px; }
+  .m-tbar .m-tbtn { width: 48px; height: 48px; border-radius: 50%; }
+  .m-tbar .m-tbtn svg { width: 24px; height: 24px; }
+  .m-tbar .m-tbtn--txt { font-size: 13px; }
+  .m-tbar .m-play {
+    width: 68px; height: 68px; border-radius: 50%;
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--m-accent) 45%, transparent);
+    transition: transform 0.12s;
+  }
+  .m-tbar .m-play:active { transform: scale(0.94); }
+  .m-tbar .m-play svg { width: 30px; height: 30px; }
+  .m-tbar .m-play[data-state="false"] svg, .m-tbar .m-play:not([data-state]) svg { margin-left: 3px; }
+}
+html.is-mobile {
+  /* Player as a modern player app: full-bleed picture, floating deck below */
+  .m-review--viewer {
+    .m-appbar { min-height: 56px; }
+    .m-appbar .m-icon-btn { border: none; border-radius: 50%; background: transparent; width: 42px; height: 42px; }
+    .m-appbar .m-icon-btn:active { background: var(--m-surface-2); }
+    .m-appbar-title h2 { font-size: 17px; font-weight: 700; }
+    .m-appbar-title small { font-family: inherit; font-size: 12px; }
+  }
+  .m-deck {
+    position: relative; z-index: 2; flex-shrink: 0; margin-top: -14px;
+    padding: 12px 0 2px; border-radius: 20px 20px 0 0;
+    background: var(--m-surface);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.28);
+  }
+  .m-deck .m-ov { margin: 0 16px; height: 42px; border-radius: 8px; }
+  .m-deck .m-tbar { padding: 4px 16px 2px; }
+  .m-deck .m-tbar-time { padding: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .m-deck .m-strip { padding: 4px 14px 10px; }
+  .m-skip { position: relative; }
+  .m-skip b { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 2px; font-size: 9px; font-weight: 800; pointer-events: none; }
+  .m-rate { width: auto !important; min-width: 44px; height: 30px !important; padding: 0 10px; border-radius: 15px !important; background: var(--m-surface-2) !important; font-family: var(--m-mono); }
+  .m-rate.on { background: color-mix(in srgb, var(--m-accent) 18%, transparent) !important; }
+}
+html.is-mobile .m-review--viewer {
+  // The deck overlaps the stage by its corner radius: keep the picture above it.
+  .m-stage { background: #000; padding-bottom: 14px; }
+  .m-zoom:not(.m-zoom--top) { bottom: 24px; }
+}

@@ -135,6 +135,7 @@ const I = {
   zoomOut: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   fit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4"/></svg>',
   tune: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+  loop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
   wave: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -791,22 +792,25 @@ export class MobileApp {
     time.append(this.timeCur, this.timeDur);
 
     const tr = el('div', 'm-transport');
-    this.rateBtn = button('m-tbtn m-tbtn--txt', '1×', t('rv.rate'), () => this.cycleRate());
+    this.rateBtn = button('m-tbtn m-tbtn--txt m-rate', '1×', t('rv.rate'), () => this.cycleRate());
     this.playBtn = button('m-play', I.play, t('rv.play'), () => this.togglePlay());
-    this.loopBtn = button('m-tbtn m-tbtn--txt', t('rv.loop'), t('rv.loopLabel'), () => this.toggleLoop());
+    this.loopBtn = REVIEW_WORKFLOW
+      ? button('m-tbtn m-tbtn--txt', t('rv.loop'), t('rv.loopLabel'), () => this.toggleLoop())
+      : button('m-tbtn', I.loop, t('rv.loopLabel'), () => this.toggleLoop());
     tr.append(
       this.rateBtn,
-      button('m-tbtn', I.rw, t('rv.skipBack', { s: SKIP_SEC }), () => this.skip(-SKIP_SEC)),
+      button('m-tbtn m-skip', `${I.rw}<b>${SKIP_SEC}</b>`, t('rv.skipBack', { s: SKIP_SEC }), () => this.skip(-SKIP_SEC)),
       this.playBtn,
-      button('m-tbtn', I.fw, t('rv.skipFwd', { s: SKIP_SEC }), () => this.skip(SKIP_SEC)),
+      button('m-tbtn m-skip', `${I.fw}<b>${SKIP_SEC}</b>`, t('rv.skipFwd', { s: SKIP_SEC }), () => this.skip(SKIP_SEC)),
       this.loopBtn,
     );
 
     if (!REVIEW_WORKFLOW) {
       // Viewer: spectrogram as large as possible, one slim transport bar, species strip at the bottom.
+      // Time on a slim line, then the transport with a large play button in the middle.
       const tbar = el('div', 'm-tbar');
       const tm = el('div', 'm-tbar-time');
-      tm.append(this.timeCur, el('span', 'm-tbar-sep', '/'), this.timeDur);
+      tm.append(this.timeCur, this.timeDur);
       tbar.append(tm, tr);
       this.strip = el('div', 'm-strip');
       this.strip.setAttribute('role', 'list');
@@ -826,7 +830,11 @@ export class MobileApp {
       this.tune.append(th, el('div', 'm-tune-body'));
       const stage = el('div', 'm-stage');
       stage.append(this.playerSlot, zoom, tuneBox, this.tune);
-      s.append(bar, this.rvProgress, stage, this.buildOverview(), tbar, this.strip);
+      // „Now playing“ deck: overview as the progress bar, times, transport, species.
+      const deck = el('div', 'm-deck');
+      deck.append(this.buildOverview(), tbar, this.strip);
+      s.classList.add('m-review--viewer');
+      s.append(bar, this.rvProgress, stage, deck);
       this.screens.set('review', s);
       return s;
     }
