@@ -37,7 +37,7 @@ export const ui = {
     getBrowser: ['Web app', 'No installation required.'],
     getLite: ['SignaVis Lite', 'Desktop app for Windows, macOS and Linux. Works offline.'],
     getSponsor: ['Support', 'Sponsorship keeps SignaVis free and open.'],
-    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support',
+    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support', footerCite: 'Cite',
   },
   de: {
     metaTitle: 'SignaVis – Kostenloser Spektrogramm-Viewer für Vogelstimmen',
@@ -69,6 +69,6 @@ export const ui = {
     getBrowser: ['Web-App', 'Keine Installation erforderlich.'],
     getLite: ['SignaVis Lite', 'Desktop-App für Windows, macOS und Linux. Offline nutzbar.'],
     getSponsor: ['Unterstützen', 'Sponsoring hält SignaVis frei und offen.'],
-    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen',
+    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen', footerCite: 'Zitieren',
   },
 } as const;
