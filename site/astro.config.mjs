@@ -52,10 +52,19 @@ export default defineConfig({
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' }],
       customCss: ['@fontsource-variable/inter', './src/styles/m3-tokens.css', './src/styles/starlight-m3.css'],
       sidebar: [
-        { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Overview', translations: { de: 'Übersicht' }, link: '/docs/' }, { label: 'Cite', translations: { de: 'Zitieren' }, link: '/docs/cite/' }] },
-        { label: 'Use cases', translations: { de: 'Anwendungsfälle' }, items: [{ autogenerate: { directory: 'docs/use-cases' } }] },
+        { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Overview', translations: { de: 'Übersicht' }, link: '/docs/' }, { label: 'Getting started', translations: { de: 'Erste Schritte' }, link: '/docs/getting-started/' }] },
+        { label: 'Guides', translations: { de: 'Anleitungen' }, items: [{ autogenerate: { directory: 'docs/use-cases' } }] },
         { label: 'Features', translations: { de: 'Funktionen' }, items: [{ autogenerate: { directory: 'docs/features' } }] },
         { label: 'Python', items: [{ autogenerate: { directory: 'docs/python' } }] },
+        {
+          label: 'Reference', translations: { de: 'Nachschlagen' },
+          items: [
+            { label: 'Keyboard shortcuts', translations: { de: 'Tastenkürzel' }, slug: 'docs/labeling/shortcuts' },
+            { label: 'Species format', translations: { de: 'Artenformat' }, slug: 'docs/labeling/species-format' },
+            { label: 'Xeno-canto format', translations: { de: 'Xeno-canto-Format' }, slug: 'docs/labeling/xeno-canto-format' },
+            { label: 'Cite SignaVis', translations: { de: 'SignaVis zitieren' }, link: '/docs/cite/' },
+          ],
+        },
         {
           label: 'Developers', translations: { de: 'Für Entwickler' }, collapsed: true,
           // Imported from ../docs by scripts/import-dev-docs.mjs; URLs match the old MkDocs site.
@@ -64,9 +73,6 @@ export default defineConfig({
             { label: 'Integration examples', slug: 'docs/usage/integration' },
             { label: 'Python integration', slug: 'docs/python-integration' },
             { label: 'Labeling app', slug: 'docs/labeling' },
-            { label: 'Shortcuts', slug: 'docs/labeling/shortcuts' },
-            { label: 'Species format', slug: 'docs/labeling/species-format' },
-            { label: 'Xeno-canto format', slug: 'docs/labeling/xeno-canto-format' },
             { label: 'Labeling: Python', slug: 'docs/labeling/python-integration' },
             { label: 'SignaVis Lite', slug: 'docs/signavis-lite' },
             { label: 'Lite privacy policy', slug: 'docs/signavis-lite-privacy' },

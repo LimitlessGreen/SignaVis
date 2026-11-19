@@ -1,0 +1,80 @@
+---
+title: Getting started
+description: "Your first ten minutes with SignaVis: load a recording, read the spectrogram, let BirdNET suggest species, check the results, annotate a call and export your labels."
+sidebar: { order: 2 }
+---
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+<p class="lede">This walkthrough takes about ten minutes. You need a bird recording (WAV, MP3, FLAC or OGG) and a current browser – nothing to install.</p>
+
+:::tip[No recording at hand?]
+Paste any [Xeno-canto](https://xeno-canto.org) number (for example `XC1059662`) into the **Xeno-canto number or URL** field on the **Project** tab and press **Load**.
+:::
+
+## 1. Open SignaVis and load a recording
+
+Open the [web app](/SignaVis/demo/labeling-app.html). On first start a short setup asks for your name and licence – they are written into every annotation set you export. You can **Skip setup** and fill it in later on the **Upload** tab.
+
+Drag the audio file into the window, or use **Audio file** on the **Project** tab. **Record** captures audio from the microphone instead.
+
+<img class="shot" src="/SignaVis/media/getting-started-loaded.webp" alt="SignaVis with a loaded recording: waveform on top, spectrogram in the middle, overview strip below" />
+
+The window has three parts:
+
+- **Left rail** – the work areas: *Project*, *Labels*, *Analyse*, *Species*, *Upload*.
+- **Centre** – waveform, spectrogram and, below it, the overview strip of the whole recording.
+- **Right rail** – *Display* (colours, contrast, frequency range), *Properties* of the selected label, and *Audio* settings.
+
+## 2. Read the spectrogram
+
+Time runs from left to right, pitch from bottom (low) to top (high), and brightness shows loudness. A whistled note is a thin line, a harsh call a broad smear, and a trill a row of repeated short marks.
+
+- **Space** plays and pauses; click the spectrogram to jump.
+- **Mouse wheel** scrolls in time, **Ctrl + wheel** zooms in time, **⇧ + wheel** zooms in frequency.
+- **Fit** shows the whole recording. Details: [Navigation & zoom](/SignaVis/docs/features/overview/).
+
+## 3. Let BirdNET suggest species
+
+Open **Analyse**, keep **Species · BirdNET** and the model **V3.0**, and press **▶ Analyze**. The model runs on your device; in the default *local* mode no audio is uploaded.
+
+When the analysis is done, SignaVis switches to **Labels**. The suggestions appear grouped by species in the **BirdNET** source, and as coloured tracks below the spectrogram.
+
+<img class="shot" src="/SignaVis/media/getting-started-analysed.webp" alt="Labels tab after the analysis: BirdNET found 14 detections of 6 species, Blue Jay with 8 detections at the top" />
+
+## 4. Check the results
+
+BirdNET makes suggestions, not decisions. Before you trust a species:
+
+1. **Look at the count.** In the example, Blue Jay was found 8 times – plausible. Five other species appear only once each; treat those with suspicion.
+2. **Listen to it.** Expand a species and click a detection: the view jumps there. Play it and compare the shape in the spectrogram with a reference recording.
+3. **Raise the bar.** Under **Analyse → Settings**, a higher **Min. confidence** (default 0.25) removes weak suggestions.
+4. **Filter by place and season.** Set a location and choose a [species list](/SignaVis/docs/use-cases/species-lists/) so that only species expected there are suggested.
+
+Accept a detection you have verified with **✓** – it is copied into **My labels**. Hide the rest with the eye icon.
+
+## 5. Annotate a call yourself
+
+Hold **⇧** and drag a box around a call on the spectrogram. Type the species (common or scientific name, or a short code) and confirm with **Enter**. Drag the corners to fit the box tightly; keys **1–7** set the sound type (song, call, alarm …).
+
+More in [Annotate calls](/SignaVis/docs/use-cases/label-calls/) and [Label boxes](/SignaVis/docs/features/labels/).
+
+## 6. Save and export
+
+Your work is kept automatically in the browser project (*Saved* on the **Project** tab). For longer projects choose **Use a project folder…** so the files live on your disk.
+
+To get the labels out, open **Labels → Export**:
+
+| Format | Use it for |
+|---|---|
+| Labels JSON | Archiving, reloading in SignaVis, own scripts |
+| Raven table | Raven Pro and most analysis tools |
+| Annota-JSON (XC) | Uploading annotation sets to Xeno-canto (**Upload** tab) |
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Find a call everywhere" description="Search the recording for calls similar to one you marked." href="/SignaVis/docs/use-cases/similar-calls/" />
+  <LinkCard title="Work in the field" description="Use SignaVis on a phone." href="/SignaVis/docs/use-cases/mobile/" />
+  <LinkCard title="Keyboard shortcuts" description="Work faster with the keyboard." href="/SignaVis/docs/labeling/shortcuts/" />
+  <LinkCard title="Use it from Python" description="Embed the player in Jupyter, Gradio or Streamlit." href="/SignaVis/docs/python/jupyter/" />
+</CardGrid>
