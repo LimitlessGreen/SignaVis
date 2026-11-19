@@ -12,6 +12,24 @@ const home = `${base}${langPrefix(lang)}`;
 const docs = `${home}/docs/`;
 const app = `${base}/demo/labeling-app.html`;
 const other = (Object.keys(languages) as Lang[]).filter((l) => l !== lang);
+const siteUrl = `${Astro.site}SignaVis`;
+const canonical = `${siteUrl}${langPrefix(lang)}/`;
+// Structured data so search engines show SignaVis as a free app.
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SignaVis',
+  url: `${siteUrl}/`,
+  description: t.metaDesc,
+  applicationCategory: 'ScienceApplication',
+  operatingSystem: 'Web, Windows, macOS, Linux, Android, iOS',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+  image: `${siteUrl}/media/og-image.png`,
+  screenshot: `${siteUrl}/media/app-desktop.png`,
+  inLanguage: lang,
+  license: 'https://github.com/LimitlessGreen/SignaVis/blob/main/LICENSE',
+  codeRepository: 'https://github.com/LimitlessGreen/SignaVis',
+};
 ---
 <!doctype html>
 <html lang={lang}>
@@ -21,13 +39,23 @@ const other = (Object.keys(languages) as Lang[]).filter((l) => l !== lang);
   <title>{t.metaTitle}</title>
   <meta name="description" content={t.metaDesc} />
   <meta name="theme-color" content="#0f1417" />
+  <meta name="google-site-verification" content="LQaceaYKsZF6elDYBWZfJyz8RE2UzSP5u9QXgMI9xNk" />
+  <link rel="canonical" href={canonical} />
   <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+  <link rel="sitemap" href={`${base}/sitemap-index.xml`} />
   {(Object.keys(languages) as Lang[]).map((l) => (
-    <link rel="alternate" hreflang={l} href={`${Astro.site}SignaVis${langPrefix(l)}/`} />
+    <link rel="alternate" hreflang={l} href={`${siteUrl}${langPrefix(l)}/`} />
   ))}
+  <link rel="alternate" hreflang="x-default" href={`${siteUrl}/`} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SignaVis" />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:locale" content={lang === 'de' ? 'de_DE' : 'en_US'} />
   <meta property="og:title" content={t.metaTitle} />
   <meta property="og:description" content={t.metaDesc} />
-  <meta property="og:image" content={`${Astro.site}SignaVis/media/og-image.png`} />
+  <meta property="og:image" content={`${siteUrl}/media/og-image.png`} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   <script is:inline>
     // Shares the theme choice with the docs (Starlight stores it under this key).
     const t = localStorage.getItem('starlight-theme');

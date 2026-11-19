@@ -8,8 +8,8 @@ export const langPrefix = (lang: Lang) => (lang === defaultLang ? '' : `/${lang}
 
 export const ui = {
   en: {
-    metaTitle: 'SignaVis – See bird sounds',
-    metaDesc: 'Free, open-source app for bioacoustics: spectrograms, species detection and call labeling – in the browser, on your phone or as a desktop app.',
+    metaTitle: 'SignaVis – Free spectrogram viewer & bird sound labeling',
+    metaDesc: 'Free, open-source app for bioacoustics: view spectrograms, identify bird species with BirdNET, label calls and use Xeno-canto – in the browser, on your phone or as a desktop app.',
     navUseCases: 'Use cases', navFeatures: 'Features', navDocs: 'Docs', openApp: 'Open app',
     navShortUse: 'Use', navShortApp: 'App', themeToggle: 'Toggle light/dark',
     heroA: 'See', heroB: 'bird sounds.', heroAccentFirst: true,
@@ -41,8 +41,8 @@ export const ui = {
     footerTag: 'Open source for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support',
   },
   de: {
-    metaTitle: 'SignaVis – Vogelstimmen sehen',
-    metaDesc: 'Kostenlose Open-Source-App für Bioakustik: Spektrogramme, Arterkennung und Rufe markieren – im Browser, am Handy oder als Desktop-App.',
+    metaTitle: 'SignaVis – Kostenloser Spektrogramm-Viewer für Vogelstimmen',
+    metaDesc: 'Kostenlose Open-Source-App für Bioakustik: Spektrogramme ansehen, Vogelarten mit BirdNET bestimmen, Rufe markieren, Xeno-canto nutzen – im Browser, am Handy oder als Desktop-App.',
     navUseCases: 'Anwendungen', navFeatures: 'Funktionen', navDocs: 'Doku', openApp: 'App öffnen',
     navShortUse: 'Anwenden', navShortApp: 'App', themeToggle: 'Hell/Dunkel umschalten',
     heroA: 'Vogelstimmen', heroB: 'sehen.', heroAccentFirst: false,

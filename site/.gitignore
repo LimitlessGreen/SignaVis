@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .astro/
+src/content/docs/docs/dev/
+src/content/docs/docs/dev-pages.json
+public/docs/img/
