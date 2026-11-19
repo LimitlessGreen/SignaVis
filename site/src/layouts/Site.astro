@@ -1,0 +1,72 @@
+---
+import '@fontsource-variable/inter';
+import '../styles/m3-tokens.css';
+import '../styles/site.css';
+import Icon from '../components/Icon.astro';
+interface Props { title: string; description: string }
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <meta name="theme-color" content="#0f1417" />
+  <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content={`${Astro.site}SignaVis/media/og-image.png`} />
+  <script is:inline>
+    // Shares the theme choice with the docs (Starlight stores it under this key).
+    const t = localStorage.getItem('starlight-theme');
+    const theme = t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = theme;
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href={`${base}/`}><img src={`${base}/favicon.svg`} alt="" width="32" height="32" />SignaVis</a>
+    <nav class="topnav" aria-label="Hauptnavigation">
+      <a href={`${base}/#anwendungen`}>Anwendungen</a>
+      <a href={`${base}/#funktionen`}>Funktionen</a>
+      <a href={`${base}/docs/`}>Doku</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="themeToggle" aria-label="Hell/Dunkel umschalten">
+        <span class="only-dark"><Icon name="sun" size={20} /></span>
+        <span class="only-light"><Icon name="moon" size={20} /></span>
+      </button>
+      <a class="btn btn-filled btn-sm hide-xs" href={`${base}/demo/labeling-app.html`}>App öffnen</a>
+    </div>
+  </header>
+  <main><slot /></main>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a class="brand" href={`${base}/`}><img src={`${base}/favicon.svg`} alt="" width="28" height="28" />SignaVis</a>
+        <p>Freie Open-Source-Software für Bioakustik.</p>
+      </div>
+      <nav aria-label="Fußzeile">
+        <a href={`${base}/docs/`}>Doku</a>
+        <a href="https://github.com/LimitlessGreen/SignaVis">GitHub</a>
+        <a href="https://github.com/sponsors/LimitlessGreen">Unterstützen</a>
+      </nav>
+    </div>
+  </footer>
+  <nav class="bottom-nav" aria-label="Schnellnavigation">
+    <a href={`${base}/#anwendungen`}><Icon name="compass" size={22} /><span>Anwenden</span></a>
+    <a href={`${base}/docs/`}><Icon name="book-open" size={22} /><span>Doku</span></a>
+    <a class="primary" href={`${base}/demo/labeling-app.html`}><Icon name="play" size={22} /><span>App</span></a>
+  </nav>
+  <script is:inline>
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('starlight-theme', next);
+    });
+  </script>
+</body>
+</html>

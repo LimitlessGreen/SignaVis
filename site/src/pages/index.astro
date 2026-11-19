@@ -1,0 +1,113 @@
+---
+import Site from '../layouts/Site.astro';
+import Icon from '../components/Icon.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const app = `${base}/demo/labeling-app.html`;
+const docs = `${base}/docs`;
+
+const useCases = [
+  { icon: 'audio-lines', title: 'Aufnahme durchhören', text: 'Spektrogramm ansehen, Rufe finden und Arten bestimmen lassen.', href: `${docs}/anwendungsfaelle/aufnahme-durchhoeren/` },
+  { icon: 'tag', title: 'Rufe markieren', text: 'Rufe einrahmen, Arten zuordnen und als Datensatz teilen.', href: `${docs}/anwendungsfaelle/rufe-markieren/` },
+  { icon: 'search', title: 'Seltene Art suchen', text: 'Viele Stunden Material gezielt nach einer Art durchsuchen.', href: '#' },
+  { icon: 'smartphone', title: 'Unterwegs sichten', text: 'Aufnehmen und prüfen direkt am Handy, auch live.', href: '#' },
+  { icon: 'list-checks', title: 'Artenliste für dein Gebiet', text: 'Nur die Arten vorschlagen lassen, die bei dir vorkommen.', href: '#' },
+  { icon: 'sparkles', title: 'Ähnliche Rufe finden', text: 'Einen Ruf auswählen und alle ähnlichen Stellen finden.', href: '#' },
+];
+
+const features = [
+  { video: 'overview.mp4', kicker: 'Überblick', title: 'Die ganze Aufnahme auf einen Blick', text: 'Der Übersichtsbalken zeigt dir sofort, wo etwas los ist – auch bei stundenlangen Aufnahmen. Ein Klick, und du bist da.', href: '#' },
+  { video: 'labeling.mp4', kicker: 'Markieren', title: 'Rufe markieren in Sekunden', text: 'Ruf einrahmen, Art tippen, fertig. Die Erkennung schlägt dir die passenden Grenzen und Arten gleich mit vor.', href: `${docs}/funktionen/labels/` },
+  { video: 'magnifier.mp4', kicker: 'Lupe', title: 'Ins Detail zoomen', text: 'Mit der Lupe siehst du feine Strukturen im Ruf, ohne den Überblick zu verlieren.', href: '#' },
+];
+---
+<Site title="SignaVis – Vogelstimmen sehen, finden und bestimmen" description="SignaVis ist eine kostenlose Open-Source-App für Bioakustik: Spektrogramme ansehen, Rufe markieren und Arten bestimmen – im Browser, am Handy oder als Desktop-App.">
+
+  <section class="hero">
+    <div class="hero-text">
+      <span class="chip"><Icon name="sparkles" size={16} /> Kostenlos &amp; Open Source</span>
+      <h1>Vogelstimmen <span class="accent">sehen</span>, finden und bestimmen.</h1>
+      <p class="lede">SignaVis macht aus deinen Aufnahmen klare Bilder. Rufe finden, Arten bestimmen und Daten teilen – im Browser, am Handy oder als App.</p>
+      <div class="cta-row">
+        <a class="btn btn-filled" href={app}><Icon name="play" size={20} /> Im Browser starten</a>
+        <a class="btn btn-tonal" href={`${docs}/`}><Icon name="book-open" size={20} /> So funktioniert’s</a>
+      </div>
+      <ul class="trust">
+        <li><Icon name="shield-check" size={18} /> Deine Aufnahmen bleiben auf deinem Gerät</li>
+        <li><Icon name="globe" size={18} /> Läuft ohne Installation</li>
+      </ul>
+    </div>
+    <div class="hero-visual">
+      <img class="shot-desktop" src={`${base}/media/app-desktop.png`} alt="SignaVis am Computer: Spektrogramm einer Vogelaufnahme" width="1440" height="860" />
+      <img class="shot-phone" src={`${base}/media/app-mobile.png`} alt="SignaVis am Handy: Liste der Aufnahmen" width="412" height="915" />
+    </div>
+  </section>
+
+  <section class="section" id="anwendungen">
+    <header class="section-head">
+      <h2>Was willst du tun?</h2>
+      <p>Such dir dein Ziel aus – wir führen dich Schritt für Schritt hin.</p>
+    </header>
+    <div class="card-grid">
+      {useCases.map((u) => (
+        <a class="card" href={u.href}>
+          <span class="card-icon"><Icon name={u.icon} size={26} /></span>
+          <h3>{u.title}</h3>
+          <p>{u.text}</p>
+          <span class="card-more">Los geht’s <Icon name="arrow-right" size={18} /></span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="section" id="funktionen">
+    <header class="section-head">
+      <h2>Gemacht fürs genaue Hinhören</h2>
+      <p>Werkzeuge, die dir Arbeit abnehmen – ohne dass du dich mit Technik beschäftigen musst.</p>
+    </header>
+    {features.map((f, i) => (
+      <article class:list={['feature', { flip: i % 2 === 1 }]}>
+        <div class="feature-media">
+          <video src={`${base}/media/${f.video}`} autoplay muted loop playsinline preload="auto"></video>
+        </div>
+        <div class="feature-text">
+          <span class="kicker">{f.kicker}</span>
+          <h3>{f.title}</h3>
+          <p>{f.text}</p>
+          <a class="btn btn-text" href={f.href}>Mehr erfahren <Icon name="arrow-right" size={18} /></a>
+        </div>
+      </article>
+    ))}
+  </section>
+
+  <section class="section mobile-band">
+    <div class="mobile-band-inner">
+      <div>
+        <span class="kicker">Am Handy</span>
+        <h2>Deine Aufnahmen in der Hosentasche</h2>
+        <p>Die Handy-Ansicht ist für den Daumen gemacht: aufnehmen, live mithören, Erkennungen prüfen. Einfach im Browser öffnen und zum Startbildschirm hinzufügen.</p>
+        <a class="btn btn-filled" href={app}><Icon name="smartphone" size={20} /> Am Handy öffnen</a>
+      </div>
+      <img src={`${base}/media/app-mobile.png`} alt="SignaVis Handy-Ansicht" width="412" height="915" loading="lazy" />
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="get-grid">
+      <a class="get-card" href={app}>
+        <Icon name="globe" size={28} />
+        <h3>Im Browser</h3>
+        <p>Sofort loslegen, nichts installieren. Funktioniert auch am Handy.</p>
+      </a>
+      <a class="get-card" href="https://github.com/LimitlessGreen/SignaVis/releases">
+        <Icon name="download" size={28} />
+        <h3>SignaVis Lite</h3>
+        <p>Die Desktop-App für Windows, macOS und Linux – auch offline.</p>
+      </a>
+      <a class="get-card" href="https://github.com/sponsors/LimitlessGreen">
+        <Icon name="heart" size={28} />
+        <h3>Unterstützen</h3>
+        <p>SignaVis ist frei. Hilf mit, dass es so bleibt.</p>
+      </a>
+    </div>
+  </section>
+</Site>

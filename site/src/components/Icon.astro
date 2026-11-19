@@ -1,0 +1,12 @@
+---
+// Inline Lucide icon (same icon set as the app).
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+interface Props { name: string; size?: number; class?: string }
+const { name, size = 24, class: cls = '' } = Astro.props;
+const require = createRequire(import.meta.url);
+const svg = readFileSync(require.resolve(`lucide-static/icons/${name}.svg`), 'utf8')
+  .replace(/width="\d+"/, `width="${size}"`).replace(/height="\d+"/, `height="${size}"`)
+  .replace('<svg', `<svg aria-hidden="true" class="icon ${cls}"`);
+---
+<Fragment set:html={svg} />

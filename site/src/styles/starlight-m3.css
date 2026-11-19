@@ -1,0 +1,67 @@
+/* Maps Material 3 tokens onto Starlight so docs and landing share one look. */
+:root {
+  --sl-font: 'Inter Variable', system-ui, sans-serif;
+  --sl-content-width: 46rem;
+  --radius-s: 12px;
+  --radius-m: 20px;
+  --radius-l: 28px;
+}
+:root, :root[data-theme='dark'], :root[data-theme='light'] {
+  --sl-color-accent-low: var(--md-primary-container);
+  --sl-color-accent: var(--md-primary);
+  --sl-color-accent-high: var(--md-on-primary-container);
+  --sl-color-white: var(--md-on-surface);
+  --sl-color-gray-1: var(--md-on-surface);
+  --sl-color-gray-2: var(--md-on-surface-variant);
+  --sl-color-gray-3: var(--md-on-surface-variant);
+  --sl-color-gray-4: var(--md-outline);
+  --sl-color-gray-5: var(--md-outline-variant);
+  --sl-color-gray-6: var(--md-surface-container-high);
+  --sl-color-black: var(--md-surface);
+  --sl-color-bg: var(--md-surface);
+  --sl-color-bg-nav: var(--md-surface-container-low);
+  --sl-color-bg-sidebar: var(--md-surface-container-low);
+  --sl-color-hairline: var(--md-outline-variant);
+  --sl-color-hairline-light: var(--md-outline-variant);
+  --sl-color-hairline-shade: var(--md-surface-container-lowest);
+  --sl-color-text-accent: var(--md-primary);
+}
+:root[data-theme='light'] .sl-markdown-content a { color: var(--md-primary); }
+
+/* M3 navigation-drawer style: rounded pill for the active item */
+.sidebar-content a[aria-current='page'] {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container) !important;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.sidebar-content a { border-radius: 999px; padding-inline: .8rem; }
+header.header { border-bottom: none; }
+.search-input, site-search button { border-radius: 999px !important; }
+
+/* Doc building blocks */
+.sl-markdown-content :is(.shot, video.shot) {
+  width: 100%; border-radius: var(--radius-m); display: block;
+  background: var(--md-surface-container-highest);
+}
+.lede { font-size: 1.15rem; color: var(--md-on-surface-variant); }
+.steps-m3 { counter-reset: s; list-style: none; padding: 0; display: grid; gap: .75rem; }
+.steps-m3 > li {
+  counter-increment: s; position: relative; margin: 0 !important;
+  background: var(--md-surface-container); border-radius: var(--radius-m);
+  padding: 1rem 1.2rem 1rem 3.6rem;
+}
+.steps-m3 > li::before {
+  content: counter(s); position: absolute; left: 1rem; top: 1rem;
+  width: 1.8rem; height: 1.8rem; border-radius: 50%; display: grid; place-items: center;
+  background: var(--md-primary); color: var(--md-on-primary); font-weight: 700; font-size: .9rem;
+}
+.starlight-aside { border-radius: var(--radius-m); border-inline-start: none; }
+.starlight-aside--tip { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+.starlight-aside--note { background: var(--md-surface-container-high); }
+details.pro {
+  background: var(--md-surface-container-low); border: 1px solid var(--md-outline-variant);
+  border-radius: var(--radius-m); padding: .8rem 1.2rem;
+}
+details.pro summary { cursor: pointer; font-weight: 600; color: var(--md-on-surface-variant); }
+.starlight-aside--tip .starlight-aside__title { color: inherit; }
