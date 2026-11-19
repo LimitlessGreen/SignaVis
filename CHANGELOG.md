@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.3.2] - Unreleased
+## [1.3.2] - 2026-11-19
 
 ### Fixed
 - SignaVis Lite AppImage: Xeno-canto recordings (and other compressed audio)
