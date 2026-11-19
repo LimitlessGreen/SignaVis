@@ -1,17 +1,17 @@
 ---
-title: Willkommen
-description: "SignaVis-Doku: Spektrogramme ansehen, Vogelarten mit BirdNET bestimmen und Rufe markieren – kostenlos, im Browser oder am Handy."
+title: Übersicht
+description: "SignaVis-Dokumentation: Spektrogramme ansehen, Vogelarten mit BirdNET bestimmen und Rufe annotieren – kostenlos, im Browser, mobil oder als Desktop-App."
 tableOfContents: false
 ---
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-<p class="lede">Lade eine Aufnahme. SignaVis zeigt sie als Bild und erkennt die Arten.</p>
+<p class="lede">SignaVis stellt Aufnahmen als Spektrogramm dar, bestimmt Arten mit BirdNET und unterstützt die manuelle Annotation.</p>
 
 <CardGrid>
-  <LinkCard title="Aufnahme durchhören" description="Wer singt da?" href="/SignaVis/de/docs/use-cases/listen/" />
-  <LinkCard title="Rufe markieren" description="Rufe einrahmen und benennen." href="/SignaVis/de/docs/use-cases/label-calls/" />
+  <LinkCard title="Aufnahme auswerten" description="Vorkommende Arten mit BirdNET bestimmen." href="/SignaVis/de/docs/use-cases/listen/" />
+  <LinkCard title="Rufe annotieren" description="Rufe in Zeit und Frequenz markieren." href="/SignaVis/de/docs/use-cases/label-calls/" />
 </CardGrid>
 
 :::tip[Spektrogramm lesen]
-Nach rechts: Zeit. Nach oben: Tonhöhe. Hell: laut.
+Waagerechte Achse: Zeit. Senkrechte Achse: Frequenz. Helligkeit: Pegel.
 :::

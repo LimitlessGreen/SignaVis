@@ -1,29 +1,16 @@
 ---
-title: Label calls
-description: "Label bird calls in SignaVis: draw a box around a call, pick the species and share annotations in Xeno-canto format – on a computer or a phone."
+title: Annotate calls
+description: "Annotate bird calls in SignaVis: draw a time–frequency box around a call, assign the species and export annotations in Xeno-canto format."
 sidebar: { order: 2 }
 ---
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
 <video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline></video>
 
-<Tabs syncKey="device">
-  <TabItem label="Computer">
-    <ol class="steps-m3">
-      <li>**⇧ + drag**: box around the call.</li>
-      <li>Type the species, **Enter**.</li>
-      <li>Drag the corners to adjust.</li>
-    </ol>
-  </TabItem>
-  <TabItem label="Phone">
-    <img class="shot" src="/SignaVis/media/app-mobile.png" alt="Reviewing detected species on a phone" style="max-width: 320px; margin-inline: auto;" />
-    <ol class="steps-m3">
-      <li>Tap the recording.</li>
-      <li>✓ confirm or ✕ reject.</li>
-    </ol>
-  </TabItem>
-</Tabs>
+<ol class="steps-m3">
+  <li>**⇧ + drag** to draw a box around the call.</li>
+  <li>Enter the species and confirm with **Enter**.</li>
+  <li>Drag the corners to refine the box.</li>
+</ol>
 
 :::tip
-**1–9** applies your most used species. **Ctrl + Z** undoes.
+Keys **1–9** assign the most frequently used species. **Ctrl + Z** undoes the last step.
 :::

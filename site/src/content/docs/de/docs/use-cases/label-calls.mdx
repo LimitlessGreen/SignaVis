@@ -1,29 +1,16 @@
 ---
-title: Rufe markieren
-description: "Vogelrufe markieren mit SignaVis: Rahmen um den Ruf ziehen, Art wählen und Markierungen im Xeno-canto-Format teilen – am Computer oder Handy."
+title: Rufe annotieren
+description: "Vogelrufe in SignaVis annotieren: Zeit-Frequenz-Rahmen um den Ruf ziehen, Art zuweisen und Annotationen im Xeno-canto-Format exportieren."
 sidebar: { order: 2 }
 ---
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
 <video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline></video>
 
-<Tabs syncKey="device">
-  <TabItem label="Computer">
-    <ol class="steps-m3">
-      <li>**⇧ + ziehen**: Rahmen um den Ruf.</li>
-      <li>Art tippen, **Enter**.</li>
-      <li>Ecken ziehen zum Anpassen.</li>
-    </ol>
-  </TabItem>
-  <TabItem label="Handy">
-    <img class="shot" src="/SignaVis/media/app-mobile.png" alt="Erkannte Arten am Handy prüfen" style="max-width: 320px; margin-inline: auto;" />
-    <ol class="steps-m3">
-      <li>Aufnahme antippen.</li>
-      <li>✓ bestätigen oder ✕ verwerfen.</li>
-    </ol>
-  </TabItem>
-</Tabs>
+<ol class="steps-m3">
+  <li>Mit **⇧ + Ziehen** einen Rahmen um den Ruf legen.</li>
+  <li>Art eingeben und mit **Enter** bestätigen.</li>
+  <li>Rahmen über die Ecken anpassen.</li>
+</ol>
 
 :::tip
-**1–9** vergibt deine häufigsten Arten. **Strg + Z** macht rückgängig.
+Die Tasten **1–9** vergeben die am häufigsten genutzten Arten. **Strg + Z** macht den letzten Schritt rückgängig.
 :::

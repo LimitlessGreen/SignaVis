@@ -7,7 +7,7 @@ sidebar: { order: 1 }
 pip install "signavis[widget]"
 ```
 
-## Aufnahme zeigen
+## Aufnahme anzeigen
 
 ```python
 from signavis import Player
@@ -15,9 +15,9 @@ from signavis import Player
 Player("vogel.wav", viewMode="spectrogram")
 ```
 
-Als letzte Zeile einer Zelle zurückgeben, wie eine matplotlib-Grafik.
+Die Anzeige erfolgt, wenn das Objekt als letzte Zeile einer Zelle steht – wie bei einer matplotlib-Grafik.
 
-## Labels in beide Richtungen
+## Annotationen in beide Richtungen
 
 ```python
 from signavis import AudioWorkbenchWidget
@@ -27,14 +27,14 @@ w.set_annotations([{"start": 1.0, "end": 2.0, "species": "Turdus merula"}])
 w
 ```
 
-Im Player gezeichnete Labels landen in `w.annotations`.
+Im Player gezeichnete Annotationen stehen in `w.annotations` zur Verfügung.
 
-## Eigenes Spektrogramm
+## Eigene Spektrogramme
 
 ```python
 Player("vogel.wav", spectrogram_data=spec)   # 2D float32, Frames × Mels
 ```
 
-Oder ein fertiges Bild als `spectrogram_image` (PNG-Bytes, matplotlib-Figur, PIL-Bild).
+Alternativ lässt sich ein fertiges Bild als `spectrogram_image` übergeben (PNG-Bytes, matplotlib-Figur, PIL-Bild).
 
 [In Colab ausprobieren](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb) · [Alle Optionen](/SignaVis/docs/usage/player-options/)

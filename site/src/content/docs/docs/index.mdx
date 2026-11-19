@@ -1,17 +1,17 @@
 ---
-title: Welcome
-description: "SignaVis documentation: learn how to view spectrograms, identify bird species with BirdNET and label calls – free, in the browser or on your phone."
+title: Overview
+description: "SignaVis documentation: view spectrograms, identify bird species with BirdNET and annotate calls – free, in the browser, on mobile devices or as a desktop app."
 tableOfContents: false
 ---
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-<p class="lede">Load a recording. SignaVis shows it as an image and identifies the species.</p>
+<p class="lede">SignaVis displays recordings as spectrograms, identifies species with BirdNET and supports manual annotation.</p>
 
 <CardGrid>
-  <LinkCard title="Listen through a recording" description="Who is singing?" href="/SignaVis/docs/use-cases/listen/" />
-  <LinkCard title="Label calls" description="Box calls and name them." href="/SignaVis/docs/use-cases/label-calls/" />
+  <LinkCard title="Analyse a recording" description="Identify the species present with BirdNET." href="/SignaVis/docs/use-cases/listen/" />
+  <LinkCard title="Annotate calls" description="Mark calls in time and frequency." href="/SignaVis/docs/use-cases/label-calls/" />
 </CardGrid>
 
 :::tip[Reading a spectrogram]
-Right: time. Up: pitch. Bright: loud.
+Horizontal axis: time. Vertical axis: frequency. Brightness: sound level.
 :::
