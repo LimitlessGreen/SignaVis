@@ -1,49 +1,29 @@
 ---
 title: Rufe markieren
-description: Rufe einrahmen, Arten zuordnen und als Datensatz teilen.
+description: Rufe einrahmen und benennen.
 sidebar: { order: 2 }
 ---
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-<p class="lede">Markierte Rufe sind Gold wert – für deine eigene Sammlung, für Xeno-canto oder um Erkennungsmodelle zu verbessern. So geht’s.</p>
-
 <video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline></video>
-
-## In vier Schritten
 
 <Tabs syncKey="device">
   <TabItem label="Computer">
     <ol class="steps-m3">
-      <li>**Halte Umschalt (⇧) gedrückt** und zieh mit der Maus einen Rahmen um den Ruf.</li>
-      <li>**Tipp den Namen der Art** – Deutsch, Englisch, wissenschaftlich oder als Kürzel. Mit Enter übernehmen.</li>
-      <li>**Rahmen anpassen:** an den Ecken ziehen, bis der Ruf genau drin ist.</li>
-      <li>**Speichern oder teilen** über den Tab **Upload**.</li>
+      <li>**⇧ + ziehen**: Rahmen um den Ruf.</li>
+      <li>Art tippen, **Enter**.</li>
+      <li>Ecken ziehen zum Anpassen.</li>
     </ol>
   </TabItem>
   <TabItem label="Handy">
+    <img class="shot" src="/SignaVis/media/app-mobile.png" alt="Erkannte Arten am Handy prüfen" style="max-width: 320px; margin-inline: auto;" />
     <ol class="steps-m3">
-      <li>**Öffne die Aufnahme** und tippe unten auf **Prüfen**.</li>
-      <li>**Geh die Vorschläge durch** und bestätige oder korrigiere sie.</li>
-      <li>**Fehlt eine Art?** Tippe auf das Feld und such sie aus der Liste.</li>
-      <li>Fertig – deine Markierungen bleiben in der Aufnahme gespeichert.</li>
+      <li>Aufnahme antippen.</li>
+      <li>✓ bestätigen oder ✕ verwerfen.</li>
     </ol>
   </TabItem>
 </Tabs>
 
-:::tip[Spart Zeit]
-Mit den Tasten **1–9** vergibst du deine häufigsten Arten mit einem Tastendruck. Leg sie dir als Vorlage an.
+:::tip
+**1–9** vergibt deine häufigsten Arten. **Strg + Z** macht rückgängig.
 :::
-
-## Häufige Fragen
-
-**Der Rahmen springt an eine andere Stelle?**
-Das ist Absicht: SignaVis legt den Rahmen automatisch eng um den Ruf, der direkt an deinem Klick liegt.
-
-**Ich habe mich vertan.**
-Mit **Strg + Z** machst du den letzten Schritt rückgängig.
-
-<details class="pro">
-<summary>Für Fortgeschrittene: Dateiformat</summary>
-
-Markierungen werden als Annotation-Set im Xeno-canto-Format gespeichert (Zeit, Frequenz, Art, Tags). Details findest du in der [Entwickler-Doku](https://github.com/LimitlessGreen/SignaVis/tree/main/docs/labeling).
-</details>

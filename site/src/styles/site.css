@@ -165,3 +165,4 @@ p { margin: 0; }
   .mobile-band-inner > div { padding-bottom: 3.5rem; align-self: center; }
   .footer-inner { grid-template-columns: 1fr auto; align-items: start; }
 }
+.footer .credit { font-size: .8rem; opacity: .75; } .footer .credit a { text-decoration: underline; }
