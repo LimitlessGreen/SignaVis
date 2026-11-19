@@ -150,13 +150,13 @@ const REVIEW_WORKFLOW = false;
 /** Species colours on the spectrogram and in the species strip; picked to stand out on the inferno palette. */
 const PALETTE = ['#22d3ee', '#a3e635', '#f472b6', '#a78bfa', '#60a5fa', '#facc15', '#2dd4bf', '#fb923c', '#e879f9', '#f87171'];
 /** Phone-only viewer settings (the spectrogram settings live in the player and are stored there). */
-interface PhoneSettings { freq: 'auto' | 'full' | number; minConf: number }
+interface PhoneSettings { freq: 'auto' | 'full' | number; minConf: number; autoAnalyse: boolean }
 const SETTINGS_KEY = 'signavis.mobile.settings.v1';
 function loadSettings(): PhoneSettings {
   try {
     const v = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-    return { freq: v.freq ?? 'auto', minConf: Number(v.minConf) || 0 };
-  } catch { return { freq: 'auto', minConf: 0 }; }
+    return { freq: v.freq ?? 'auto', minConf: Number(v.minConf) || 0, autoAnalyse: v.autoAnalyse === true };
+  } catch { return { freq: 'auto', minConf: 0, autoAnalyse: false }; }
 }
 const speciesKey = (l: any) => String(l.scientificName || l.label || '?');
 /** Live recordings are held in memory until Stop: keep them short enough for a phone tab. */
@@ -386,7 +386,9 @@ export class MobileApp {
       this.thumbActive();
       if (!this.active) return;
       setTimeout(() => this.fitTime(), 250);
-      if (this.autoAnalyse) { this.autoAnalyse = false; setTimeout(() => this.analyseNow(), 300); }
+      // Only when asked for (Settings): the phone is a viewer, analysing is a button in the player.
+      if (this.autoAnalyse && this.cfg.autoAnalyse) setTimeout(() => this.analyseNow(), 300);
+      this.autoAnalyse = false;
     });
 
     this.mql = window.matchMedia(PHONE_QUERY);
@@ -637,7 +639,7 @@ export class MobileApp {
         }
         this.rvFrom = 'recordings';
         this.show('review');
-        if (fresh && r.active) this.analyseNow();
+        if (fresh && r.active && this.cfg.autoAnalyse) this.analyseNow();
       });
       this.recList.appendChild(card);
     }
@@ -1017,8 +1019,15 @@ export class MobileApp {
     this.stripCur = '';
     if (!groups.size) {
       const busy = !this.rvProgress.hidden || this.anJob !== 'idle';
+      if (hasRec && !busy && this.h.analysis) {
+        const row = el('div', 'm-strip-empty m-strip-cta');
+        row.append(el('span', '', t('rv.noSpecies')),
+          button('m-cta m-cta--sm', `${I.analyse}<span>${t('rv.analyseNow')}</span>`, t('rv.analyseNow'), () => this.analyseNow()));
+        this.strip.appendChild(row);
+        return;
+      }
       this.strip.appendChild(el('p', 'm-strip-empty', !hasRec ? t('rv.pickRecording')
-        : busy ? t('rv.analysing') : this.h.analysis ? t('rv.noDetectionsAnalyse') : t('rv.noSpecies')));
+        : busy ? t('rv.analysing') : t('rv.noSpecies')));
       return;
     }
     for (const g of groups.values()) {
@@ -1255,6 +1264,7 @@ export class MobileApp {
       this.cfg.freq, (v) => { this.cfg.freq = v; this.saveCfg(); this.applyFreq(); });
 
     const det = group(t('set.detections'));
+    this.switchRow(det, t('set.autoAnalyse'), t('set.autoAnalyseHint'), this.cfg.autoAnalyse, (v) => { this.cfg.autoAnalyse = v; this.saveCfg(); });
     seg(det, t('set.minConf'), [[0, t('common.all')], [0.25, '25%'], [0.5, '50%'], [0.75, '75%']],
       this.cfg.minConf, (v) => { this.cfg.minConf = v; this.saveCfg(); this.renderReview(); });
 

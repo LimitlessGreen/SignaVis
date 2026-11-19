@@ -624,3 +624,8 @@ html.is-mobile {
   .m-tune .m-swatch i { height: 16px; }
   .m-tune .m-set-row { min-height: 0; padding: 7px 10px; }
 }
+html.is-mobile {
+  .m-strip-cta { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+  .m-strip-cta .m-cta { display: inline-flex; align-items: center; gap: 6px; }
+  .m-strip-cta .m-cta svg { width: 16px; height: 16px; }
+}
