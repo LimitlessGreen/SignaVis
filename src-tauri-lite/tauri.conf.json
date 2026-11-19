@@ -53,7 +53,12 @@
         "rank": "Alternate"
       }
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   },
   "plugins": {
     "deep-link": {
