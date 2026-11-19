@@ -52,7 +52,7 @@ export default defineConfig({
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' }],
       customCss: ['@fontsource-variable/inter', './src/styles/m3-tokens.css', './src/styles/starlight-m3.css'],
       sidebar: [
-        { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Overview', translations: { de: 'Übersicht' }, link: '/docs/' }, { label: 'Getting started', translations: { de: 'Erste Schritte' }, link: '/docs/getting-started/' }] },
+        { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Overview', translations: { de: 'Übersicht' }, link: '/docs/' }, { label: 'Getting started', translations: { de: 'Erste Schritte' }, link: '/docs/getting-started/' }, { label: 'The interface', translations: { de: 'Die Oberfläche' }, link: '/docs/interface/' }] },
         { label: 'Guides', translations: { de: 'Anleitungen' }, items: [{ autogenerate: { directory: 'docs/use-cases' } }] },
         { label: 'Features', translations: { de: 'Funktionen' }, items: [{ autogenerate: { directory: 'docs/features' } }] },
         { label: 'Python', items: [{ autogenerate: { directory: 'docs/python' } }] },

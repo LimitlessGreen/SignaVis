@@ -65,3 +65,11 @@ details.pro {
 }
 details.pro summary { cursor: pointer; font-weight: 600; color: var(--md-on-surface-variant); }
 .starlight-aside--tip .starlight-aside__title { color: inherit; }
+
+/* Numbered legend under an annotated screenshot (matches the orange badges) */
+.tour-legend { counter-reset: t; list-style: none; padding: 0; columns: 2 22rem; column-gap: 2rem; }
+.tour-legend > li { counter-increment: t; position: relative; padding-left: 2.2rem; margin: 0 0 .6rem !important; break-inside: avoid; }
+.tour-legend > li::before {
+  content: counter(t); position: absolute; left: 0; top: .1rem; width: 1.5rem; height: 1.5rem; border-radius: 50%;
+  background: #ff6d00; color: #fff; font: 700 .8rem/1.5rem system-ui, sans-serif; text-align: center;
+}
