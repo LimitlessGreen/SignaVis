@@ -10,7 +10,7 @@
  *   3. Label row (one line): ▶ · start · duration · tags or BirdNET confidence · actions on hover.
  *
  * Imported (non-own) sources are drawn dimmed. A second view ("time") lists all labels flat by start time.
- * plans/labels-tab-plan.md
+ * labels tab plan
  *
  * Usage:
  *   const list = new LabelList({ container, emptyEl, resolveName, onSync, ... });

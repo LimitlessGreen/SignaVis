@@ -1,6 +1,6 @@
 // app/similarSpectrogram.ts — band spectrogram of a whole recording for "find similar calls"
 //
-// Same STFT as the benchmark (scripts/similar/similar-benchmark.py): window ≈ 16 ms
+// Same STFT as the benchmark (similar-calls benchmark): window ≈ 16 ms
 // (512 at 32 kHz), no zero padding, hop = window / 4, dB; each row's median over the
 // recording is subtracted (the band floor), like snap. Only rows inside [loHz, hiHz]
 // are kept; frames are computed in blocks so a long recording never needs the full matrix.

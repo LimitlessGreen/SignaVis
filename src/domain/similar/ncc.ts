@@ -3,7 +3,7 @@
 // The exemplar's spectrogram patch (its band plus a small margin) slides over the whole
 // recording; the score at each offset is the normalised cross-correlation (Pearson r over
 // all cells), maximised over a small frequency shift because repeats wander a little.
-// Measured on Powdermill (plans/similar-calls-plan.md): better than gating by BirdBox
+// Measured on Powdermill (similar calls plan): better than gating by BirdBox
 // boxes, and as good on quiet calls as on loud ones.
 //
 // Correlation runs blockwise (overlap-save FFT), so memory stays small for long recordings.
@@ -222,7 +222,7 @@ export function findSimilar(spec: BandSpectrogram, exemplar: Box, opts: FindOpti
 // Each accepted suggestion becomes another exemplar, each rejected one a counter-example:
 //   rank = max(similarity to exemplar and accepted) − λ · max(0, similarity to rejected)
 // Similarity of two hits = Pearson r of their patches, best over ±1 row / ±2 frames.
-// Simulated review on Powdermill (scripts/similar/rerank-sim.py, 87 exemplars): calls found
+// Simulated review on Powdermill (similar-calls benchmark, 87 exemplars): calls found
 // in the first 20 reviewed 10.1 → 11.3 (λ = 1), first 10: 6.4 → 7.2.
 
 const PAD_ROWS = 1, PAD_FRAMES = 2;
