@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-11-19
+
+Same features as 1.3.0, which was tagged but not published on GitHub because
+the Windows SignaVis Lite build failed.
+
+### Fixed
+- Windows SignaVis Lite installers build again and ship `DirectML.dll`.
+
 ## [1.3.0] - 2026-11-18
 
 ### Added
