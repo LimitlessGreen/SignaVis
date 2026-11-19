@@ -15,7 +15,7 @@ export const ui = {
     heroA: 'See', heroB: 'bird sounds.', heroAccentFirst: true,
     heroLede: 'Spectrogram analysis, species identification and annotation for bioacoustic recordings. In the browser, on mobile and on the desktop.',
     ctaStart: 'Start in browser', ctaGuide: 'Guide',
-    trustLocal: 'Processed locally', trustOss: 'Open source',
+    trustLocal: 'Local processing by default', trustOss: 'Open source',
     useCasesTitle: 'Use cases',
     useCases: [
       ['audio-lines', 'Analyse a recording', 'Identify the species present with BirdNET.', '/docs/use-cases/listen/'],
@@ -47,7 +47,7 @@ export const ui = {
     heroA: 'Vogelstimmen', heroB: 'sehen.', heroAccentFirst: false,
     heroLede: 'Spektrogramm-Analyse, Artbestimmung und Annotation bioakustischer Aufnahmen. Im Browser, mobil und als Desktop-App.',
     ctaStart: 'Im Browser starten', ctaGuide: 'Dokumentation',
-    trustLocal: 'Lokale Verarbeitung', trustOss: 'Open Source',
+    trustLocal: 'Standardmäßig lokale Verarbeitung', trustOss: 'Open Source',
     useCasesTitle: 'Anwendungsfälle',
     useCases: [
       ['audio-lines', 'Aufnahme auswerten', 'Vorkommende Arten mit BirdNET bestimmen.', '/docs/use-cases/listen/'],

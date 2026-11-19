@@ -52,7 +52,7 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
     {t.features.map(([video, kicker, title, text, href], i) => (
       <article class:list={['feature', { flip: i % 2 === 1 }]}>
         <div class="feature-media">
-          <video src={`${base}/media/${video}`} autoplay muted loop playsinline preload="auto"></video>
+          <video src={`${base}/media/${video}`} autoplay muted loop playsinline controls preload="auto"></video>
         </div>
         <div class="feature-text">
           <span class="kicker">{kicker}</span>
