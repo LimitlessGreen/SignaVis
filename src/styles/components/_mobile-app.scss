@@ -340,6 +340,47 @@ html.is-mobile .m-player .spectrogram-label-region.spectrogram-label-region--lan
 /* A species picked in the strip: the other species fade. */
 html.is-mobile .m-player .spectrogram-label-region.m-dim { opacity: 0.18 !important; }
 
+
+/* ── Analyse screen ── */
+html.is-mobile {
+  .m-an-body { padding: 2px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .m-an-progress { padding: 10px 12px; border-radius: 8px; font-size: 12.5px; background: color-mix(in srgb, var(--m-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--m-accent) 30%, transparent); }
+  .m-an-progress[hidden] { display: none; }
+  .m-an-bar { height: 3px; margin-top: 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+  .m-an-bar i { display: block; height: 100%; width: 0; background: var(--m-accent); transition: width 0.2s; }
+
+  .m-card { padding: 0 12px; border-radius: 8px; background: var(--m-surface); border: 1px solid var(--m-line); }
+  .m-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--m-line); font-size: 13.5px; color: var(--m-text); }
+  .m-row:first-child { border-top: none; }
+  .m-row[hidden] { display: none; }
+  .m-row--plain { border-top: none; min-height: 40px; }
+  .m-row--btn { width: 100%; border: none; background: transparent; text-align: left; padding: 6px 0; }
+  .m-row-text { display: flex; flex-direction: column; min-width: 0; }
+  .m-row-text small { font-size: 11.5px; color: var(--m-muted); margin-top: 1px; }
+  .m-row-val { font-family: var(--m-mono); font-size: 12px; color: var(--m-muted); }
+  .m-chev svg { width: 16px; height: 16px; color: var(--m-muted); transition: transform 0.15s; }
+  .m-row--btn.open .m-chev svg { transform: rotate(90deg); }
+  .m-expert { border-top: 1px solid var(--m-line); }
+  .m-expert[hidden] { display: none; }
+  .m-hint { margin: 8px 0 10px; font-size: 11.5px; color: var(--m-muted); }
+  .m-select { height: 34px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--m-line); background: var(--m-surface-2); color: var(--m-text); font-size: 13px; }
+
+  .m-switch { position: relative; flex-shrink: 0; width: 40px; height: 24px; }
+  .m-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .m-switch i { position: absolute; inset: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.15); transition: background 0.15s; }
+  .m-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+  .m-switch input:checked + i { background: var(--m-accent); }
+  .m-switch input:checked + i::after { transform: translateX(16px); }
+  .m-switch input:disabled + i { opacity: 0.4; }
+  .m-switch input:focus-visible + i { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+
+  .m-range { width: 100%; margin: 4px 0 14px; accent-color: var(--m-accent); height: 28px; }
+
+  .m-an-foot { padding: 10px 14px; border-top: 1px solid var(--m-line); flex-shrink: 0; }
+  .m-cta { width: 100%; height: 48px; border: none; border-radius: 8px; background: var(--m-accent); color: var(--m-accent-ink); font-weight: 700; font-size: 14.5px; }
+  .m-cta:disabled { opacity: 0.5; }
+}
+
 /* Boxes (BirdBox calls, own labels) as in the mockup: solid frame, light fill,
    name tag above the box. Detections amber, own labels in their colour, selected blue. */
 html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region--lane) {
