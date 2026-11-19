@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://limitlessgreen.github.io/SignaVis/sitemap-index.xml

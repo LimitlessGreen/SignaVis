@@ -1,0 +1,26 @@
+---
+title: Streamlit
+description: "SignaVis-Spektrogramm-Player in eine Streamlit-App einbetten: Aufnahme hochladen, abspielen, zoomen, labeln."
+sidebar: { order: 2 }
+---
+```bash
+pip install "signavis[streamlit]"
+```
+
+```python
+import streamlit as st
+import streamlit.components.v1 as components
+from signavis import render_daw_player
+
+f = st.file_uploader("Aufnahme", type=["wav", "mp3", "ogg", "flac"])
+if f:
+    components.html(render_daw_player(f.read(), viewMode="spectrogram"), height=640)
+```
+
+<img class="shot" src="/SignaVis/media/python-embed.png" alt="SignaVis-Player aus Python eingebettet" />
+
+Kompakte Vorschau mit großer Wiedergabetaste:
+
+```python
+render_daw_player(audio, transportStyle="hero", showOverview=False, iframe_height=320)
+```

@@ -1,0 +1,32 @@
+---
+title: Gradio
+description: "SignaVisPlayer is a native Gradio component: display model detections on the spectrogram, navigate to them and play them back. Works offline, streams long recordings."
+sidebar: { order: 3 }
+---
+```bash
+pip install "signavis[gradio]"
+```
+
+```python
+import gradio as gr
+from signavis.gradio import SignaVisPlayer, player_value
+
+with gr.Blocks() as demo:
+    player = SignaVisPlayer()
+    gr.Button("Show").click(
+        lambda: player_value(
+            "bird.wav",
+            detections=[{"start": 3, "end": 6, "label": "Turdus merula", "confidence": 0.91}],
+            select=(3, 6),  # jump there and play
+        ),
+        outputs=player,
+    )
+
+demo.launch()
+```
+
+<img class="shot" src="/SignaVis/media/python-gradio.png" alt="Gradio app with a SignaVis player showing one detection" />
+
+- Detections are shown in the table and on the spectrogram.
+- Audio is streamed from disk, so multi-hour files are supported.
+- No internet connection required; all assets ship with the package.

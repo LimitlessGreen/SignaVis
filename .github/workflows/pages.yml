@@ -28,6 +28,9 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            site/package-lock.json
 
       - name: Install JS dependencies
         run: npm ci
@@ -55,15 +58,6 @@ jobs:
         if: steps.cache-species.outputs.cache-hit != 'true'
         run: npm run taxonomy:build
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.x"
-
-      - name: Install docs dependencies
-        run: |
-          pip install mkdocs-material
-
       - name: Cache BirdBox model
         uses: actions/cache@v6
         with:
@@ -80,50 +74,14 @@ jobs:
           cp demo/samples/*.wav _site/demo/samples/
           cp demo/samples/README.md _site/demo/samples/ 2>/dev/null || true
 
-      - name: Build docs into /docs
+      - name: Build website and docs (Astro + Starlight)
+        # Landing page at /, docs at /docs (English) and /de/docs (German).
+        # Developer docs are imported from docs/ and keep their old URLs.
+        # Also writes sitemap-index.xml, sitemap.xml and robots.txt.
         run: |
-          mkdocs build --config-file mkdocs.yml --site-dir _site/docs
-
-      - name: Root redirect
-        run: |
-          cat > _site/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>SignaVis – Open-source spectrogram viewer &amp; audio labeling</title>
-          <meta name="description" content="SignaVis is a free, open-source web app for bioacoustics: spectrograms, bird and bat call labeling, BirdNET detections and xeno-canto integration.">
-          <meta name="google-site-verification" content="LQaceaYKsZF6elDYBWZfJyz8RE2UzSP5u9QXgMI9xNk">
-          <link rel="canonical" href="https://limitlessgreen.github.io/SignaVis/">
-          <meta property="og:title" content="SignaVis – Open-source spectrogram viewer &amp; audio labeling">
-          <meta property="og:image" content="https://raw.githubusercontent.com/LimitlessGreen/SignaVis/main/docs/img/og-image.png">
-          <meta name="twitter:card" content="summary_large_image">
-          </head>
-          <body>
-          <h1>SignaVis</h1>
-          <p>Free, open-source spectrogram viewer and audio labeling tool for bioacoustics.</p>
-          <ul>
-            <li><a href="demo/labeling-app.html">Open the labeling app</a></li>
-            <li><a href="demo/storybook.html">Demo / Storybook</a></li>
-            <li><a href="docs/">Documentation</a></li>
-            <li><a href="https://github.com/LimitlessGreen/SignaVis">Source code on GitHub</a></li>
-          </ul>
-          </body>
-          </html>
-          EOF
-
-      - name: robots.txt and sitemap
-        run: |
-          printf 'User-agent: *\nAllow: /\nSitemap: https://limitlessgreen.github.io/SignaVis/sitemap.xml\n' > _site/robots.txt
-          cat > _site/sitemap.xml <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-            <url><loc>https://limitlessgreen.github.io/SignaVis/</loc></url>
-            <url><loc>https://limitlessgreen.github.io/SignaVis/demo/labeling-app.html</loc></url>
-            <url><loc>https://limitlessgreen.github.io/SignaVis/docs/</loc></url>
-          </urlset>
-          EOF
+          npm ci --prefix site
+          npm run build --prefix site
+          cp -r site/dist/. _site/
 
       - name: Write version.json for deployment
         run: |

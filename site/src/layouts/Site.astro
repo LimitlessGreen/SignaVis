@@ -1,0 +1,115 @@
+---
+import '@fontsource-variable/inter';
+import '../styles/m3-tokens.css';
+import '../styles/site.css';
+import Icon from '../components/Icon.astro';
+import { ui, languages, langPrefix, type Lang } from '../i18n/ui';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = ui[lang];
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = `${base}${langPrefix(lang)}`;
+const docs = `${home}/docs/`;
+const app = `${base}/demo/labeling-app.html`;
+const other = (Object.keys(languages) as Lang[]).filter((l) => l !== lang);
+const siteUrl = `${Astro.site}SignaVis`;
+const canonical = `${siteUrl}${langPrefix(lang)}/`;
+// Structured data so search engines show SignaVis as a free app.
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SignaVis',
+  url: `${siteUrl}/`,
+  description: t.metaDesc,
+  applicationCategory: 'ScienceApplication',
+  operatingSystem: 'Web, Windows, macOS, Linux, Android, iOS',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+  image: `${siteUrl}/media/og-image.png`,
+  screenshot: `${siteUrl}/media/app-desktop.png`,
+  inLanguage: lang,
+  license: 'https://github.com/LimitlessGreen/SignaVis/blob/main/LICENSE',
+  codeRepository: 'https://github.com/LimitlessGreen/SignaVis',
+};
+---
+<!doctype html>
+<html lang={lang}>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{t.metaTitle}</title>
+  <meta name="description" content={t.metaDesc} />
+  <meta name="theme-color" content="#0f1417" />
+  <meta name="google-site-verification" content="LQaceaYKsZF6elDYBWZfJyz8RE2UzSP5u9QXgMI9xNk" />
+  <link rel="canonical" href={canonical} />
+  <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+  <link rel="sitemap" href={`${base}/sitemap-index.xml`} />
+  {(Object.keys(languages) as Lang[]).map((l) => (
+    <link rel="alternate" hreflang={l} href={`${siteUrl}${langPrefix(l)}/`} />
+  ))}
+  <link rel="alternate" hreflang="x-default" href={`${siteUrl}/`} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SignaVis" />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:locale" content={lang === 'de' ? 'de_DE' : 'en_US'} />
+  <meta property="og:title" content={t.metaTitle} />
+  <meta property="og:description" content={t.metaDesc} />
+  <meta property="og:image" content={`${siteUrl}/media/og-image.png`} />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  <script is:inline>
+    // Shares the theme choice with the docs (Starlight stores it under this key).
+    const t = localStorage.getItem('starlight-theme');
+    const theme = t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = theme;
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href={`${home}/`}><img src={`${base}/favicon.svg`} alt="" width="32" height="32" />SignaVis</a>
+    <nav class="topnav" aria-label="Main">
+      <a href={`${home}/#use-cases`}>{t.navUseCases}</a>
+      <a href={`${home}/#features`}>{t.navFeatures}</a>
+      <a href={docs}>{t.navDocs}</a>
+    </nav>
+    <div class="topbar-actions">
+      {other.map((l) => (
+        <a class="lang-btn" href={`${base}${langPrefix(l)}/`} hreflang={l} lang={l} aria-label={languages[l]}>
+          <Icon name="languages" size={18} /><span>{l.toUpperCase()}</span>
+        </a>
+      ))}
+      <button class="icon-btn" id="themeToggle" aria-label={t.themeToggle}>
+        <span class="only-dark"><Icon name="sun" size={20} /></span>
+        <span class="only-light"><Icon name="moon" size={20} /></span>
+      </button>
+      <a class="btn btn-filled btn-sm hide-xs" href={app}>{t.openApp}</a>
+    </div>
+  </header>
+  <main><slot /></main>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a class="brand" href={`${home}/`}><img src={`${base}/favicon.svg`} alt="" width="28" height="28" />SignaVis</a>
+        <p>{t.footerTag}</p>
+        <p class="credit">{t.footerSample}: <a href="https://xeno-canto.org/1089065">XC1089065</a> · Petter Westberg · <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a></p>
+      </div>
+      <nav aria-label="Footer">
+        <a href={docs}>{t.navDocs}</a>
+        <a href="https://github.com/LimitlessGreen/SignaVis">GitHub</a>
+        <a href="https://github.com/sponsors/LimitlessGreen">{t.footerSupport}</a>
+      </nav>
+    </div>
+  </footer>
+  <nav class="bottom-nav" aria-label="Quick">
+    <a href={`${home}/#use-cases`}><Icon name="compass" size={22} /><span>{t.navShortUse}</span></a>
+    <a href={docs}><Icon name="book-open" size={22} /><span>{t.navDocs}</span></a>
+    <a class="primary" href={app}><Icon name="play" size={22} /><span>{t.navShortApp}</span></a>
+  </nav>
+  <script is:inline>
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('starlight-theme', next);
+    });
+  </script>
+</body>
+</html>

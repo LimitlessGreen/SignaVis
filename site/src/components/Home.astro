@@ -1,0 +1,86 @@
+---
+import Site from '../layouts/Site.astro';
+import Icon from './Icon.astro';
+import { ui, langPrefix, type Lang } from '../i18n/ui';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = ui[lang];
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = `${base}${langPrefix(lang)}`;
+const docs = `${home}/docs/`;
+const app = `${base}/demo/labeling-app.html`;
+// Empty doc paths fall back to the docs start page until those pages exist.
+const docHref = (p: string) => (p ? `${home}${p}` : docs);
+---
+<Site lang={lang}>
+  <section class="hero">
+    <div class="hero-text">
+      <h1>{t.heroAccentFirst
+        ? <><span class="accent">{t.heroA}</span> {t.heroB}</>
+        : <>{t.heroA} <span class="accent">{t.heroB}</span></>}</h1>
+      <p class="lede">{t.heroLede}</p>
+      <div class="cta-row">
+        <a class="btn btn-filled" href={app}><Icon name="play" size={20} /> {t.ctaStart}</a>
+        <a class="btn btn-tonal" href={docs}><Icon name="book-open" size={20} /> {t.ctaGuide}</a>
+      </div>
+      <ul class="trust">
+        <li><Icon name="shield-check" size={18} /> {t.trustLocal}</li>
+        <li><Icon name="code" size={18} /> {t.trustOss}</li>
+      </ul>
+    </div>
+    <div class="hero-visual">
+      <img class="shot-desktop" src={`${base}/media/app-desktop.png`} alt={t.desktopAlt} width="1440" height="860" />
+      <img class="shot-phone" src={`${base}/media/app-mobile.png`} alt={t.mobileAlt} width="412" height="839" />
+    </div>
+  </section>
+
+  <section class="section" id="use-cases">
+    <header class="section-head"><h2>{t.useCasesTitle}</h2></header>
+    <div class="card-grid">
+      {t.useCases.map(([icon, title, text, href]) => (
+        <a class="card" href={docHref(href)}>
+          <span class="card-icon"><Icon name={icon} size={26} /></span>
+          <h3>{title}</h3>
+          <p>{text}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <header class="section-head"><h2>{t.featuresTitle}</h2></header>
+    {t.features.map(([video, kicker, title, text, href], i) => (
+      <article class:list={['feature', { flip: i % 2 === 1 }]}>
+        <div class="feature-media">
+          <video src={`${base}/media/${video}`} autoplay muted loop playsinline controls preload="auto"></video>
+        </div>
+        <div class="feature-text">
+          <span class="kicker">{kicker}</span>
+          <h3>{title}</h3>
+          <p>{text}</p>
+          <a class="btn btn-text" href={docHref(href)}>{t.more} <Icon name="arrow-right" size={18} /></a>
+        </div>
+      </article>
+    ))}
+  </section>
+
+  <section class="section mobile-band">
+    <div class="mobile-band-inner">
+      <div>
+        <span class="kicker">{t.mobileKicker}</span>
+        <h2>{t.mobileTitle}</h2>
+        <p>{t.mobileText}</p>
+        <a class="btn btn-filled" href={app}><Icon name="smartphone" size={20} /> {t.mobileCta}</a>
+      </div>
+      <img src={`${base}/media/app-mobile.png`} alt={t.mobileAlt} width="412" height="839" loading="lazy" />
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="get-grid">
+      <a class="get-card" href={app}><Icon name="globe" size={28} /><h3>{t.getBrowser[0]}</h3><p>{t.getBrowser[1]}</p></a>
+      <a class="get-card" href="https://github.com/LimitlessGreen/SignaVis/releases"><Icon name="download" size={28} /><h3>{t.getLite[0]}</h3><p>{t.getLite[1]}</p></a>
+      <a class="get-card" href="https://github.com/sponsors/LimitlessGreen"><Icon name="heart" size={28} /><h3>{t.getSponsor[0]}</h3><p>{t.getSponsor[1]}</p></a>
+    </div>
+  </section>
+</Site>

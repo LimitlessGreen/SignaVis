@@ -1,0 +1,40 @@
+---
+title: Jupyter & Colab
+description: "Show a spectrogram player for any recording in Jupyter or Google Colab with the signavis Python package. Read labels drawn in the player back into Python."
+sidebar: { order: 1 }
+---
+```bash
+pip install "signavis[widget]"
+```
+
+## Display a recording
+
+```python
+from signavis import Player
+
+Player("bird.wav", viewMode="spectrogram")
+```
+
+The player is displayed when the object is the last expression in a cell, as with a matplotlib figure.
+
+## Two-way annotations
+
+```python
+from signavis import AudioWorkbenchWidget
+
+w = AudioWorkbenchWidget("bird.wav")
+w.set_annotations([{"start": 1.0, "end": 2.0, "species": "Turdus merula"}])
+w
+```
+
+Annotations drawn in the player are available in `w.annotations`.
+
+## Custom spectrograms
+
+```python
+Player("bird.wav", spectrogram_data=spec)   # 2D float32, frames × mels
+```
+
+Alternatively, pass a pre-rendered image as `spectrogram_image` (PNG bytes, matplotlib figure, PIL image).
+
+[Try it in Colab](https://colab.research.google.com/github/LimitlessGreen/SignaVis/blob/main/python-wrapper/demo_colab.ipynb) · [All options](/SignaVis/docs/usage/player-options/)
