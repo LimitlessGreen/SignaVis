@@ -156,13 +156,15 @@ metadata (also shown via the "Cite this repository" button on GitHub), or use:
 @software{signavis,
   author  = {Behrisch, Jairus},
   title   = {SignaVis: Interactive waveform + spectrogram audio player for bioacoustic analysis and annotation},
+  year    = {2026},
+  doi     = {10.5281/zenodo.23949899},
   url     = {https://github.com/LimitlessGreen/SignaVis},
   license = {AGPL-3.0-only}
 }
 ```
 
-A DOI via [Zenodo](https://zenodo.org/) is minted automatically for each GitHub release; see the DOI badge at
-the top of this README for the latest version.
+The concept DOI [10.5281/zenodo.23949899](https://doi.org/10.5281/zenodo.23949899) covers all versions; each GitHub
+release also gets its own version DOI on Zenodo. APA and more: <https://limitlessgreen.github.io/SignaVis/docs/cite/>.
 
 ## License
 
