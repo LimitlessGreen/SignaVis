@@ -6,7 +6,7 @@
 Options:
     --url URL         base URL of the dev server (default http://localhost:5173)
     --out DIR         output folder (default tools/demo-gifs/out); writes <scene>.gif and <scene>.mp4
-    --audio FILE      recording used by the scenes (default tests/fixtures/local/XC204513.wav,
+    --audio FILE      recording used by the scenes (default tests/fixtures/local/XC1089065.wav,
                       falls back to demo/samples/birdsong.wav)
     --keep-video      also keep the raw .webm recordings
     --list            list scenes and exit
@@ -123,6 +123,14 @@ class Director:
         self.pg.wait_for_selector("[data-aw=spectrogramCanvas]", timeout=60000)
         self.wait(6000)
         self.pg.keyboard.press("Escape")
+
+    def narrow_freq(self, times=2):
+        """Narrow the frequency range (no cursor animation; use before begin())."""
+        btn = self.pg.locator('button[title="Show a narrower frequency range (zoom in)"]:visible').first
+        for _ in range(times):
+            btn.click()
+            self.wait(400)
+        self.wait(800)
 
     def close_left_panel(self):
         """Collapse the left sidebar so the spectrogram gets the full width."""
@@ -262,7 +270,7 @@ def record(browser, mod, args):
 
 
 def main(argv):
-    fixture = REPO / "tests" / "fixtures" / "local" / "XC204513.wav"
+    fixture = REPO / "tests" / "fixtures" / "local" / "XC1089065.wav"
     args = {"url": "http://localhost:5173", "out": REPO / "tools" / "demo-gifs" / "out", "keep_video": False,
             "audio": fixture if fixture.exists() else REPO / "demo" / "samples" / "birdsong.wav"}
     names, it = [], iter(argv)

@@ -20,8 +20,8 @@ Output (default `tools/demo-gifs/out/`, gitignored — upload as GitHub release 
 
 Options: `--url`, `--out DIR`, `--audio FILE`, `--keep-video` (keep the raw `.webm`).
 
-The scenes use `tests/fixtures/local/XC204513.wav`
-([XC204513](https://xeno-canto.org/204513), *Zosterops borbonicus*) when present,
+The scenes use `tests/fixtures/local/XC1089065.wav`
+([XC1089065](https://xeno-canto.org/1089065), *Anthus trivialis*, Petter Westberg, CC BY-NC-SA 4.0) when present,
 otherwise `demo/samples/birdsong.wav`.
 
 ## Writing a scene
