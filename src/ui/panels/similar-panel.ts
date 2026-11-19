@@ -7,10 +7,11 @@
 //   embed_model_status / embed_model_download   (event lite-embed-model)
 //   embed_info / embed_start / embed_cancel     (event lite-embed-progress)
 //   embed_similar                               (top-k windows)
-//   embed_map                                   (2-D map, event lite-map-progress)
+//   embed_map / embed_clusters                  (2-D map + HDBSCAN, event lite-map-progress)
 // and src-tauri-lite/src/agile.rs:
 //   agile_labels / agile_class_add / agile_class_remove / agile_label_set(_many)
 //   agile_train / agile_classifier_info / agile_rank / agile_export
+//   agile_scores / agile_suspects               (map colouring, label check)
 // The host page supplies the project root, the query (selection/playhead)
 // and how to open + play a hit.
 // ═══════════════════════════════════════════════════════════════════════
@@ -18,7 +19,7 @@
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
-import { EmbeddingMap, type MapData } from './embedding-map.ts';
+import { EmbeddingMap, type Clusters, type MapData, type Suspect } from './embedding-map.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -255,6 +256,9 @@ export class SimilarPanel {
                 this.#render();
             },
             openHit: (hit, play) => this.#opts.openHit(hit, play),
+            loadClusters: (minSize) => this.#call<Clusters>('embed_clusters', { root: this.#opts.getRoot(), minClusterSize: minSize }),
+            loadScores: async () => (await this.#call<{ scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls })).scores,
+            loadSuspects: () => this.#call<Suspect[]>('agile_suspects', { root: this.#opts.getRoot(), class: this.#cls }),
         });
         this.#map.open();
     }

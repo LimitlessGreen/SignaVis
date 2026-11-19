@@ -12,11 +12,14 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 
+use crate::hdbscan;
 use crate::embeddings::{store_dir, store_stamp, with_loaded, EmbedState};
 use aw_embed::{DIM, SAMPLE_RATE, WINDOW};
 
 pub const MAP_EVENT: &str = "lite-map-progress";
-const MAP_VERSION: u32 = 1;
+const MAP_VERSION: u32 = 2;
+/// Kern-Abstand fuer HDBSCAN (Mutual Reachability): Abstand zum 5. Nachbarn.
+const MIN_SAMPLES: usize = 5;
 const PCA_DIM: usize = 50;
 const K: usize = 15;
 const K_PLACE: usize = 5;
@@ -40,6 +43,23 @@ pub struct MapData {
     start: Vec<f64>,
     x: Vec<f32>,
     y: Vec<f32>,
+    /// Pro Punkt: Layout-Punkt (Index im Layout), ueber den er platziert wurde.
+    anchor: Vec<u32>,
+    /// Minimalbaum der Layout-Punkte (Mutual Reachability), fuer HDBSCAN.
+    /// Nur im Cache, nicht an die Oberflaeche.
+    #[serde(default)]
+    mst_a: Vec<u32>,
+    #[serde(default)]
+    mst_b: Vec<u32>,
+    #[serde(default)]
+    mst_w: Vec<f32>,
+}
+
+pub(crate) struct Projection {
+    pub xy: Vec<f32>,
+    pub layout_points: usize,
+    pub anchor: Vec<u32>,
+    pub mst: Vec<(u32, u32, f32)>,
 }
 
 #[derive(Serialize, Clone)]
@@ -267,6 +287,41 @@ fn nearest(p: &[f32], d: usize, q: &[f32], cand: &[usize], k: usize, skip: Optio
     best.into_iter().map(|(i, dd)| (i, dd.sqrt())).collect()
 }
 
+/// Verbindet die Teile des kNN-Graphen mit ihrer echten kuerzesten Kante
+/// (Borůvka-Schritte), damit HDBSCAN keine kuenstlichen Spruenge sieht.
+fn connect_components(p: &[f32], d: usize, layout: &[usize], core: &[f32], mut edges: Vec<(u32, u32, f32)>) -> Vec<(u32, u32, f32)> {
+    let m = layout.len();
+    loop {
+        let mut uf = hdbscan::UnionFind::new(m);
+        edges.iter().for_each(|e| {
+            uf.union(e.0 as usize, e.1 as usize);
+        });
+        let comp: Vec<usize> = (0..m).map(|i| uf.find(i)).collect();
+        let mut roots: Vec<usize> = comp.clone();
+        roots.sort_unstable();
+        roots.dedup();
+        if roots.len() <= 1 {
+            return edges;
+        }
+        // je Teil die kuerzeste Kante nach aussen
+        let best = par_map(roots.len(), |ri| {
+            let r = roots[ri];
+            let mut best = (u32::MAX, u32::MAX, f32::MAX);
+            for i in (0..m).filter(|&i| comp[i] == r) {
+                let qi = &p[layout[i] * d..(layout[i] + 1) * d];
+                for j in (0..m).filter(|&j| comp[j] != r) {
+                    let dd = dist2(qi, &p[layout[j] * d..(layout[j] + 1) * d]).sqrt().max(core[i]).max(core[j]);
+                    if dd < best.2 {
+                        best = (i as u32, j as u32, dd);
+                    }
+                }
+            }
+            best
+        });
+        edges.extend(best.into_iter().filter(|e| e.0 != u32::MAX));
+    }
+}
+
 // ── UMAP ──────────────────────────────────────────────────────────────
 
 /// Fuzzy-Graph aus kNN (je Punkt k Paare (Nachbar, Abstand)), symmetrisiert.
@@ -385,11 +440,10 @@ fn optimize_layout(y: &mut [f32], n: usize, edges: &[(u32, u32, f32)], rng: &mut
 }
 
 /// Komplette Projektion: `x` (n × DIM, normiert) → 2-D-Koordinaten in [0, 1].
-/// Liefert (xy n × 2, Anzahl Layout-Punkte).
-pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'static str, f32)) -> (Vec<f32>, usize) {
+pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'static str, f32)) -> Projection {
     let mut rng = Rng(SEED);
     if n == 0 {
-        return (vec![], 0);
+        return Projection { xy: vec![], layout_points: 0, anchor: vec![], mst: vec![] };
     }
     progress("pca", 0.0);
     let d = PCA_DIM.min(dim).min(n);
@@ -427,6 +481,21 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
     let edges = fuzzy_graph(&knn);
     optimize_layout(&mut y, m, &edges, &mut rng, |f| progress("layout", f));
 
+    // Minimalbaum fuer HDBSCAN: kNN-Kanten mit Mutual-Reachability-Gewicht
+    let core: Vec<f32> = knn.iter().map(|nb| nb.get(MIN_SAMPLES.min(nb.len()).saturating_sub(1)).map_or(0.0, |x| x.1)).collect();
+    let mr_edges: Vec<(u32, u32, f32)> = knn
+        .iter()
+        .enumerate()
+        .flat_map(|(i, nb)| nb.iter().map(move |&(j, d)| (i, j, d)))
+        .map(|(i, j, d)| (i as u32, j as u32, d.max(core[i]).max(core[j])))
+        .collect();
+    let mr_edges = connect_components(&p, d, &layout, &core, mr_edges);
+    let mst = hdbscan::mst(m, mr_edges);
+    let mut anchor = vec![0u32; n];
+    for (ci, &i) in layout.iter().enumerate() {
+        anchor[i] = ci as u32;
+    }
+
     // Ganze Menge: Layout-Punkte direkt, Rest ueber Nachbarn
     let mut xy = vec![0.0f32; n * 2];
     for (ci, &i) in layout.iter().enumerate() {
@@ -444,11 +513,12 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
             let w = nb.len().max(1) as f32;
             let sx: f32 = nb.iter().map(|&(ci, _)| y[ci * 2]).sum();
             let sy: f32 = nb.iter().map(|&(ci, _)| y[ci * 2 + 1]).sum();
-            (sx / w, sy / w)
+            (sx / w, sy / w, nb.first().map_or(0, |x| x.0) as u32)
         });
-        for (r, (px, py)) in placed.into_iter().enumerate() {
+        for (r, (px, py, a)) in placed.into_iter().enumerate() {
             xy[rest[r] * 2] = px;
             xy[rest[r] * 2 + 1] = py;
+            anchor[rest[r]] = a;
         }
     }
 
@@ -466,7 +536,7 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
         c[0] = (c[0] - x0 + ox) / span;
         c[1] = (c[1] - y0 + oy) / span;
     }
-    (xy, m)
+    Projection { xy, layout_points: m, anchor, mst }
 }
 
 // ── Kommando ──────────────────────────────────────────────────────────
@@ -474,9 +544,13 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
 /// 2-D-Karte aller Fenster des Projekts (gecacht; `force` rechnet neu).
 #[tauri::command]
 pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>) -> Result<MapData, String> {
-    tauri::async_runtime::spawn_blocking(move || compute_map(&app, &root, force.unwrap_or(false)))
+    let mut data = tauri::async_runtime::spawn_blocking(move || compute_map(&app, &root, force.unwrap_or(false)))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())??;
+    data.mst_a = vec![];
+    data.mst_b = vec![];
+    data.mst_w = vec![];
+    Ok(data)
 }
 
 fn compute_map(app: &tauri::AppHandle, root: &str, force: bool) -> Result<MapData, String> {
@@ -500,7 +574,7 @@ pub(crate) fn build_map(state: &EmbedState, root: &str, force: bool, emit: &dyn 
     // Laeuft auf der gecachten Matrix (kein Kopieren); die Suche wartet solange.
     let data = with_loaded(state, root, |l| {
         let n = l.rows.len();
-        let (xy, layout_points) = project_2d(&l.vecs, n, DIM, emit);
+        let Projection { xy, layout_points, anchor, mst } = project_2d(&l.vecs, n, DIM, emit);
         let mut files: Vec<String> = Vec::new();
         let mut file = Vec::with_capacity(n);
         for r in &l.rows {
@@ -519,12 +593,98 @@ pub(crate) fn build_map(state: &EmbedState, root: &str, force: bool, emit: &dyn 
             start: l.rows.iter().map(|r| r.start).collect(),
             x: xy.iter().step_by(2).copied().collect(),
             y: xy.iter().skip(1).step_by(2).copied().collect(),
+            anchor,
+            mst_a: mst.iter().map(|e| e.0).collect(),
+            mst_b: mst.iter().map(|e| e.1).collect(),
+            mst_w: mst.iter().map(|e| e.2).collect(),
         }
     })?;
     if let Ok(json) = serde_json::to_vec(&data) {
         let _ = std::fs::write(map_path(root), json);
     }
     Ok(data)
+}
+
+// ── Cluster ───────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterInfo {
+    id: i32,
+    size: usize,
+    /// Typische Punkte (Index in der Karte): am festesten im Cluster.
+    exemplars: Vec<u32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Clusters {
+    stamp: u64,
+    min_cluster_size: usize,
+    /// Pro Kartenpunkt Cluster-Id (0 = groesster) oder −1 (Rauschen).
+    labels: Vec<i32>,
+    strength: Vec<f32>,
+    clusters: Vec<ClusterInfo>,
+    noise: usize,
+}
+
+/// Mindestgroesse ohne Vorgabe: ~2 % der Layout-Punkte, 5..100.
+fn auto_min_size(m: usize) -> usize {
+    (m / 50).clamp(5, 100)
+}
+
+pub(crate) fn clusters_from_map(map: &MapData, min_cluster_size: Option<usize>) -> Clusters {
+    let m = map.layout_points;
+    let mcs = min_cluster_size.unwrap_or_else(|| auto_min_size(m));
+    let mst: Vec<(u32, u32, f32)> = (0..map.mst_w.len()).map(|i| (map.mst_a[i], map.mst_b[i], map.mst_w[i])).collect();
+    let c = hdbscan::cluster(m, &mst, mcs);
+    let n = map.x.len();
+    let labels: Vec<i32> = (0..n).map(|i| c.labels.get(map.anchor[i] as usize).copied().unwrap_or(-1)).collect();
+    // Platzierte Punkte erben Cluster und Staerke ihres Ankers.
+    let strength: Vec<f32> = (0..n).map(|i| c.strength.get(map.anchor[i] as usize).copied().unwrap_or(0.0)).collect();
+    let k = labels.iter().copied().max().map_or(0, |v| (v + 1).max(0) as usize);
+    let mut members: Vec<Vec<u32>> = vec![vec![]; k];
+    for (i, &l) in labels.iter().enumerate() {
+        if l >= 0 {
+            members[l as usize].push(i as u32);
+        }
+    }
+    let clusters = members
+        .into_iter()
+        .enumerate()
+        .map(|(id, mut pts)| {
+            let size = pts.len();
+            // typisch = fest im Cluster und nahe am 2-D-Schwerpunkt
+            let (cx, cy) = pts.iter().fold((0.0, 0.0), |a, &i| (a.0 + map.x[i as usize], a.1 + map.y[i as usize]));
+            let (cx, cy) = (cx / size.max(1) as f32, cy / size.max(1) as f32);
+            let key = |i: u32| {
+                let i = i as usize;
+                let d = ((map.x[i] - cx).powi(2) + (map.y[i] - cy).powi(2)).sqrt();
+                strength[i] - d
+            };
+            pts.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
+            pts.truncate(6);
+            ClusterInfo { id: id as i32, size, exemplars: pts }
+        })
+        .collect();
+    let noise = labels.iter().filter(|&&l| l < 0).count();
+    Clusters { stamp: map.stamp, min_cluster_size: mcs, labels, strength, clusters, noise }
+}
+
+/// HDBSCAN-Cluster auf der aktuellen Karte (`min_cluster_size` leer = automatisch).
+#[tauri::command]
+pub async fn embed_clusters(root: String, min_cluster_size: Option<usize>) -> Result<Clusters, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let stamp = store_stamp(&root).ok_or("Noch keine Embeddings in diesem Projekt")?;
+        let map = std::fs::read(map_path(&root))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<MapData>(&b).ok())
+            .filter(|m| m.version == MAP_VERSION && m.stamp == stamp)
+            .ok_or("Karte ist veraltet – bitte neu berechnen")?;
+        Ok(clusters_from_map(&map, min_cluster_size))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -546,7 +706,7 @@ mod tests {
             }
         }
         let n = 3 * per;
-        let (xy, m) = project_2d(&x, n, dim, &|_, _| {});
+        let Projection { xy, layout_points: m, .. } = project_2d(&x, n, dim, &|_, _| {});
         assert_eq!(m, n);
         assert!(xy.iter().all(|v| (0.0..=1.0).contains(v)));
         let centroid = |c: usize| {
@@ -592,7 +752,7 @@ mod tests {
         let mut rng = Rng(3);
         let x: Vec<f32> = (0..n * dim).map(|i| rng.gauss() * 0.1 + if i % dim == (i / dim) % 40 { 2.0 } else { 0.0 }).collect();
         let t = std::time::Instant::now();
-        let (_, m) = project_2d(&x, n, dim, &|ph, f| if f == 0.0 { eprintln!("{:>6.1}s {ph}", t.elapsed().as_secs_f32()) });
+        let Projection { layout_points: m, .. } = project_2d(&x, n, dim, &|ph, f| if f == 0.0 { eprintln!("{:>6.1}s {ph}", t.elapsed().as_secs_f32()) });
         eprintln!("{n} Punkte ({m} Layout) in {:.1}s", t.elapsed().as_secs_f32());
     }
 
@@ -603,6 +763,25 @@ mod tests {
         let root = std::env::var("EMBED_MAP_DIR").unwrap();
         let m = build_map(&EmbedState::default(), &root, true, &|_, _| {}).unwrap();
         assert_eq!(m.x.len(), m.start.len());
+        for mcs in [3, 8, 12, 20] {
+            let c = clusters_from_map(&m, Some(mcs));
+            eprintln!("min {mcs}: {:?} Rauschen {}", c.clusters.iter().map(|x| x.size).collect::<Vec<_>>(), c.noise);
+        }
+        let c = clusters_from_map(&m, None);
+        if let Ok(dump) = std::env::var("EMBED_MAP_DUMP") {
+            std::fs::write(dump, serde_json::to_vec(&c).unwrap()).unwrap();
+        }
+        let sizes: Vec<usize> = c.clusters.iter().map(|x| x.size).collect();
+        eprintln!("Cluster (min {}): {sizes:?}, Rauschen {}", c.min_cluster_size, c.noise);
+        for cl in &c.clusters {
+            let mut by: std::collections::BTreeMap<&str, usize> = Default::default();
+            for (i, &l) in c.labels.iter().enumerate() {
+                if l == cl.id {
+                    *by.entry(m.files[m.file[i] as usize].split('/').next().unwrap()).or_default() += 1;
+                }
+            }
+            eprintln!("  #{}: {by:?}", cl.id);
+        }
         eprintln!("{} Punkte, {} Dateien -> {}", m.x.len(), m.files.len(), map_path(&root).display());
     }
 }
