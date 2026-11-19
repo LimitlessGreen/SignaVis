@@ -118,6 +118,11 @@ fn read_index(root: &str) -> Option<Index> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Aenderungszaehler des Stores (None: keine Embeddings).
+pub(crate) fn store_stamp(root: &str) -> Option<u64> {
+    read_index(root).map(|i| i.stamp)
+}
+
 fn write_index(root: &str, idx: &Index) -> Result<(), String> {
     let dir = store_dir(root);
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;

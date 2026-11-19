@@ -11,6 +11,7 @@
 
 mod agile;
 mod data_cache;
+mod embed_map;
 mod embeddings;
 mod launch;
 mod menu;
@@ -93,6 +94,8 @@ pub fn run() {
             embeddings::embed_start,
             embeddings::embed_cancel,
             embeddings::embed_similar,
+            embed_map::embed_map,
+            agile::agile_label_set_many,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,

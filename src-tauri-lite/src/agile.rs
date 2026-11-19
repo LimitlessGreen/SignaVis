@@ -145,6 +145,40 @@ pub fn agile_label_set(
     Ok(f)
 }
 
+#[derive(Deserialize)]
+pub struct WindowRef {
+    path: String,
+    start: f64,
+}
+
+/// Label fuer viele Fenster auf einmal setzen (Lasso auf der Karte); `None` entfernt.
+#[tauri::command]
+pub fn agile_label_set_many(
+    root: String,
+    class: String,
+    items: Vec<WindowRef>,
+    label: Option<String>,
+) -> Result<LabelsFile, String> {
+    if let Some(l) = &label {
+        if !matches!(l.as_str(), "pos" | "neg" | "unsure") {
+            return Err(format!("Unbekanntes Label: {l}"));
+        }
+    }
+    let class = valid_class_name(&class)?;
+    let mut f = read_labels(&root);
+    if !f.classes.iter().any(|c| c.name == class) {
+        f.classes.push(AgileClass { name: class.clone(), examples: vec![] });
+    }
+    let c = f.classes.iter_mut().find(|c| c.name == class).unwrap();
+    let same = |e: &Example, w: &WindowRef| e.path == w.path && (e.start - w.start).abs() < 1e-3;
+    c.examples.retain(|e| !items.iter().any(|w| same(e, w)));
+    if let Some(label) = label {
+        c.examples.extend(items.into_iter().map(|w| Example { path: w.path, start: w.start, label: label.clone() }));
+    }
+    write_labels(&root, &f)?;
+    Ok(f)
+}
+
 // ── Klassifikator ─────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone)]
