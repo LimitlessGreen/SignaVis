@@ -1,16 +1,64 @@
 ---
 title: Annotate calls
-description: "Annotate bird calls in SignaVis: draw a time–frequency box around a call, assign the species and export annotations in Xeno-canto format."
+description: "Annotate bird calls in SignaVis: draw time–frequency boxes, assign species and sound types, label series quickly with a template or Snap to call, adopt BirdNET and BirdBox detections, and export in Raven or Xeno-canto format."
 sidebar: { order: 2 }
 ---
 <video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline controls></video>
 
+**What for:** mark exactly when and at which pitch a species calls – for your own records, for training data, or to share annotation sets on Xeno-canto.
+
+## Draw a label
+
 <ol class="steps-m3">
-  <li>**⇧ + drag** to draw a box around the call.</li>
-  <li>Enter the species and confirm with **Enter**.</li>
-  <li>Drag the corners to refine the box.</li>
+  <li>Hold **⇧** and drag a box around the call on the spectrogram.</li>
+  <li>The **New label** dialog opens. Type the species – common name, scientific name or a short code – and pick it from the list.</li>
+  <li>Optionally set **sex**, **lifeStage** and **soundType**, or add your own tag with **+ Tag**.</li>
+  <li>Confirm with **Enter** or **Save**.</li>
 </ol>
 
-:::tip
-With an annotation selected, keys **1–7** set its sound type (song, call, alarm call …). **Ctrl + Z** undoes the last step.
-:::
+<img class="shot" src="/SignaVis/media/label-new-dialog.webp" alt="New label dialog with the species Blue Jay selected, tag fields for sex, life stage and sound type, and the option Keep for next labels" style="max-width: 520px; margin-inline: auto;" />
+
+**Tight boxes are better boxes.** Let the box start and end with the call and cover only its frequency range. Zoom in (Ctrl + wheel for time, ⇧ + wheel for frequency) for short calls.
+
+## Label many calls quickly
+
+- **Template** – tick **Keep for next labels** in the dialog, or right-click a label → **Use as template**. The species and tags then appear in the top bar, and every new box gets them without the dialog. Hold **Alt** while drawing to get the dialog once anyway.
+- **Snap to call** – switch on *Snap to call* in the toolbar and simply click a call: SignaVis draws the box for you, using a BirdBox call box if there is one, otherwise the signal itself. **⇧ + wheel** changes the sensitivity, **Esc** ends the mode.
+- **Sound type by key** – with a label selected, the number keys set the sound type: **1** song, **2** call, **3** alarm call, **4** flight call, **5** begging call, **6** drumming, **7** nocturnal flight call. This also works on several selected labels at once.
+- **Copy and paste** – **Ctrl + C** copies the selected label, **Ctrl + V** pastes it at the playhead.
+- **Find the rest** – select a finished label and press **F** to search the recording for [similar calls](/SignaVis/docs/use-cases/similar-calls/).
+
+## Adopt detections
+
+Labels from BirdNET (species, 3-second windows) and BirdBox (call boxes, no species) appear as separate sources in the **Labels** tab. Click **✓** on a detection to copy it into **My labels**:
+
+- ✓ on a **BirdNET** detection takes the species and, if BirdBox found a call there, its box.
+- ✓ on a **BirdBox** box takes the species from an overlapping BirdNET detection, otherwise from the template, otherwise it asks.
+
+A toast offers to adopt the remaining candidates and to undo.
+
+## Edit and correct
+
+| Action | Input |
+|---|---|
+| Move a label | Drag it, or **G** |
+| Resize | Drag an edge or corner |
+| Change species or tags | Double-click the label, or use **Properties** on the right |
+| Delete | **Delete** / **Backspace** |
+| Undo / redo | **Ctrl + Z** / **Ctrl + Y** |
+
+All shortcuts: [Keyboard shortcuts](/SignaVis/docs/labeling/shortcuts/).
+
+## Export
+
+Open **Labels → Export**:
+
+- **Labels JSON** – complete labels of this recording, for archiving and own scripts.
+- **Raven table** – a selection table for Raven Pro and most analysis tools. In a project folder, tables for all recordings can be written at once.
+- **Annota-JSON (XC)** – annotation set for Xeno-canto; prepare and upload it on the **Upload** tab.
+
+## Problems?
+
+- **The dialog doesn't open** – a template is active, so new boxes get its species directly. Empty the species field in the top bar or hold **Alt** while drawing.
+- **Number keys do nothing** – click the label first so it is selected; keys are ignored while a text field has focus.
+- **A label can't be changed** – labels of imported or locked sets are read-only. Adopt them with ✓ to get an editable copy.

@@ -1,16 +1,64 @@
 ---
 title: Aufnahme auswerten
-description: "Vogelarten einer Aufnahme bestimmen: Audio in SignaVis laden, Spektrogramm prüfen und BirdNET ausführen. Im lokalen Standardmodus ohne Upload."
+description: "Vogelarten einer Aufnahme mit BirdNET in SignaVis bestimmen: Modell wählen, Konfidenz- und Ortsfilter setzen, Ergebnisse beurteilen und geprüfte Treffer als Labels übernehmen. Im lokalen Standardmodus ohne Upload."
 sidebar: { order: 1 }
 ---
 <img class="shot" src="/SignaVis/media/app-desktop.png" alt="Spektrogramm eines Baumpieper-Gesangs in SignaVis" />
 
+**Wofür:** eine Liste der Arten auf einer Aufnahme – als Ausgangspunkt zum Nachhören, nicht als fertige Bestimmung.
+
+## Schritte
+
 <ol class="steps-m3">
-  <li>Audiodatei in das Fenster ziehen.</li>
-  <li>**Analyse** öffnen und die Auswertung starten.</li>
-  <li>Vorgeschlagene Arten prüfen.</li>
+  <li>Aufnahme laden: ins Fenster ziehen, oder im Reiter **Project** über **Audio file** bzw. eine Xeno-canto-Nummer.</li>
+  <li>**Analyse** öffnen und **Species · BirdNET** gewählt lassen.</li>
+  <li>Modell wählen (siehe unten) und, wenn du den Aufnahmeort kennst, eine [Artenliste](/SignaVis/de/docs/use-cases/species-lists/).</li>
+  <li>**▶ Analyze** drücken. SignaVis wechselt danach zu **Labels** und zeigt die Treffer in der Quelle **BirdNET**, nach Arten gruppiert.</li>
 </ol>
 
-:::note
+## Welches Modell?
+
+| Modell | Wann |
+|---|---|
+| **V3.0** (Standard) | Neuestes BirdNET, etwa 10.000 Arten. Hier anfangen. |
+| **V3.0 12K** | Vollständiges globales Modell mit mehr Arten; wird einmal aufs Gerät geladen. |
+| **V2.4** | Vorgängergeneration. Zum Vergleich mit älteren BirdNET-Ergebnissen. |
+| **AnuraPAM** | V2.4 plus 14 europäische Froschlurche – für Teiche und Feuchtgebiete. |
+| **Custom** | Eigener Modellordner (BirdNET+ ONNX oder TF.js). |
+
+## Einstellungen
+
+<img class="shot" src="/SignaVis/media/analyse-settings.webp" alt="Analyse-Bereich mit geöffneten Einstellungen: Mindest-Konfidenz, Überlappung, überlappende Labels zusammenfassen, Ortsfilter und Backend" style="max-width: 300px; margin-inline: auto;" />
+
+- **Min. confidence** (Standard 0,25) – Treffer unter diesem Wert fallen weg. Für eine kurze, verlässliche Liste auf 0,5 oder mehr anheben; für leise oder seltene Rufe senken – dann mit mehr Fehltreffern rechnen.
+- **Overlap** – BirdNET betrachtet 3-Sekunden-Fenster. Mit 1–2 s Überlappung werden Rufe an Fenstergrenzen sicherer erkannt; die Analyse dauert entsprechend länger.
+- **Merge overlapping labels** – fasst aufeinanderfolgende Treffer derselben Art zu einem Label zusammen.
+- **Location filter** – ist für die Aufnahme ein Ort gesetzt (**Edit** → *Properties*), behält **Only species expected here** nur Arten, die das Gebietsmodell von BirdNET dort zu dieser Jahreszeit erwartet. **Min. occurrence** regelt, wie streng das ist.
+- **Backend** – wo die Analyse läuft. **Local (Browser)** lässt das Audio auf deinem Gerät. **Server**, **Cloud** und **Hybrid** schicken es an den eingetragenen Endpunkt.
+
+## Ergebnisse richtig lesen
+
+Der BirdNET-Wert ist keine Wahrscheinlichkeit, dass die Art da ist. Besser prüfen:
+
+- **Wiederholung** – eine Art mit vielen Treffern über die Aufnahme ist viel wahrscheinlicher als eine mit einem einzigen.
+- **Plausibilität** – wird die Art an diesem Ort und zu dieser Jahreszeit erwartet? Artenliste oder Ortsfilter nehmen dir das ab.
+- **Hören und sehen** – Treffer anklicken, die Ansicht springt hin; abspielen und die Form im Spektrogramm mit einer Referenzaufnahme vergleichen.
+- **Ähnliche Arten** – Imitatoren (Eichelhäher, Star, Sumpfrohrsänger) und Arten mit ähnlichen Rufen verwechselt BirdNET häufig. Die besonders kritisch prüfen.
+
+Geprüfte Treffer übernimmst du mit **✓** in **My labels**. Hat BirdBox dort einen Rufrahmen gefunden, bekommt die Kopie diesen Rahmen statt des ganzen 3-Sekunden-Fensters. Den Rest blendest du mit dem Augen-Symbol aus oder löschst ihn.
+
+:::note[Datenschutz]
 Im Standardmodus **local** werden die Audiodaten auf dem Gerät verarbeitet und nicht hochgeladen. Ist ein Analyse-Endpunkt im Modus **server**, **cloud** oder **hybrid** eingerichtet, werden die Audiodaten an diesen Endpunkt gesendet.
 :::
+
+## Probleme?
+
+- **Keine Treffer** – **Min. confidence** senken, Artenliste auf *All species* stellen und prüfen, ob es wirklich ein Vogel ist (oder ein Frosch, mit AnuraPAM). Sehr hohe oder exotische Arten fehlen dem Modell eventuell.
+- **Viele unwahrscheinliche Arten** – Konfidenz anheben, Artenliste nutzen oder Ortsfilter einschalten.
+- **Analyse langsam** – lange Aufnahmen brauchen auf schwachen Geräten Zeit. Überlappung verringern oder die [Desktop-App](/SignaVis/de/download/) nutzen.
+- **Modell lädt nicht** – beim ersten Lauf wird das Modell heruntergeladen; Netzverbindung prüfen und erneut versuchen.
+
+## Weiter
+
+- [Rufe annotieren](/SignaVis/de/docs/use-cases/label-calls/) – genaue Rahmen um Rufe ziehen.
+- [Suche nach ähnlichen Rufen](/SignaVis/de/docs/use-cases/similar-calls/) – alle Vorkommen eines geprüften Rufs finden.

@@ -1,16 +1,64 @@
 ---
 title: Rufe annotieren
-description: "Vogelrufe in SignaVis annotieren: Zeit-Frequenz-Rahmen um den Ruf ziehen, Art zuweisen und Annotationen im Xeno-canto-Format exportieren."
+description: "Vogelrufe in SignaVis annotieren: Zeit-Frequenz-Rahmen ziehen, Art und Lauttyp vergeben, Serien mit Vorlage oder Snap schnell labeln, BirdNET- und BirdBox-Treffer übernehmen und im Raven- oder Xeno-canto-Format exportieren."
 sidebar: { order: 2 }
 ---
 <video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline controls></video>
 
+**Wofür:** genau festhalten, wann und in welcher Tonhöhe eine Art ruft – für eigene Aufzeichnungen, als Trainingsdaten oder um Annotations-Sets auf Xeno-canto zu teilen.
+
+## Ein Label zeichnen
+
 <ol class="steps-m3">
-  <li>Mit **⇧ + Ziehen** einen Rahmen um den Ruf legen.</li>
-  <li>Art eingeben und mit **Enter** bestätigen.</li>
-  <li>Rahmen über die Ecken anpassen.</li>
+  <li>**⇧** halten und im Spektrogramm einen Rahmen um den Ruf ziehen.</li>
+  <li>Der Dialog **New label** öffnet sich. Art eintippen – deutscher oder wissenschaftlicher Name oder Kürzel – und aus der Liste wählen.</li>
+  <li>Optional **sex**, **lifeStage** und **soundType** setzen oder mit **+ Tag** einen eigenen Tag anlegen.</li>
+  <li>Mit **Enter** oder **Save** bestätigen.</li>
 </ol>
 
-:::tip
-Bei ausgewählter Annotation setzen die Tasten **1–7** den Ruftyp (song, call, alarm call …). **Strg + Z** macht den letzten Schritt rückgängig.
-:::
+<img class="shot" src="/SignaVis/media/label-new-dialog.webp" alt="Dialog New label mit gewählter Art Blauhäher, Tag-Feldern für Geschlecht, Alter und Lauttyp und der Option Keep for next labels" style="max-width: 520px; margin-inline: auto;" />
+
+**Enge Rahmen sind bessere Rahmen.** Der Rahmen sollte mit dem Ruf beginnen und enden und nur seinen Frequenzbereich abdecken. Für kurze Rufe hineinzoomen (Strg + Mausrad für Zeit, ⇧ + Mausrad für Frequenz).
+
+## Viele Rufe schnell labeln
+
+- **Vorlage** – im Dialog **Keep for next labels** anhaken oder Rechtsklick auf ein Label → **Use as template**. Art und Tags stehen dann oben in der Leiste, und jeder neue Rahmen bekommt sie ohne Dialog. Mit **Alt** beim Ziehen kommt der Dialog trotzdem einmal.
+- **Snap to call** – *Snap to call* in der Werkzeugleiste einschalten und einfach auf einen Ruf klicken: SignaVis zieht den Rahmen selbst, mit einem BirdBox-Rufrahmen, falls vorhanden, sonst anhand des Signals. **⇧ + Mausrad** ändert die Empfindlichkeit, **Esc** beendet den Modus.
+- **Lauttyp per Taste** – bei gewähltem Label setzen die Zifferntasten den Lauttyp: **1** Gesang, **2** Ruf, **3** Warnruf, **4** Flugruf, **5** Bettelruf, **6** Trommeln, **7** nächtlicher Zugruf. Das klappt auch für mehrere ausgewählte Labels auf einmal.
+- **Kopieren und einfügen** – **Strg + C** kopiert das gewählte Label, **Strg + V** fügt es an der Abspielposition ein.
+- **Den Rest finden** – fertiges Label wählen und **F** drücken, um die Aufnahme nach [ähnlichen Rufen](/SignaVis/de/docs/use-cases/similar-calls/) zu durchsuchen.
+
+## Treffer übernehmen
+
+Labels von BirdNET (Art, 3-Sekunden-Fenster) und BirdBox (Rufrahmen, ohne Art) stehen als eigene Quellen im Reiter **Labels**. **✓** an einem Treffer kopiert ihn nach **My labels**:
+
+- ✓ an einem **BirdNET**-Treffer übernimmt die Art und, wenn BirdBox dort einen Ruf gefunden hat, dessen Rahmen.
+- ✓ an einem **BirdBox**-Rahmen holt die Art aus einem überlappenden BirdNET-Treffer, sonst aus der Vorlage, sonst wird nachgefragt.
+
+Eine Meldung bietet an, die übrigen Kandidaten zu übernehmen oder rückgängig zu machen.
+
+## Bearbeiten und korrigieren
+
+| Aktion | Eingabe |
+|---|---|
+| Label verschieben | Ziehen oder **G** |
+| Größe ändern | Kante oder Ecke ziehen |
+| Art oder Tags ändern | Doppelklick aufs Label oder rechts **Properties** |
+| Löschen | **Entf** / **Rücktaste** |
+| Rückgängig / wiederholen | **Strg + Z** / **Strg + Y** |
+
+Alle Kürzel: [Tastenkürzel](/SignaVis/docs/labeling/shortcuts/).
+
+## Export
+
+**Labels → Export** öffnen:
+
+- **Labels JSON** – alle Labels dieser Aufnahme, zum Archivieren und für eigene Skripte.
+- **Raven table** – Auswahltabelle für Raven Pro und die meisten Analyse-Werkzeuge. In einem Projektordner lassen sich Tabellen für alle Aufnahmen auf einmal schreiben.
+- **Annota-JSON (XC)** – Annotations-Set für Xeno-canto; im Reiter **Upload** vorbereiten und hochladen.
+
+## Probleme?
+
+- **Der Dialog öffnet sich nicht** – eine Vorlage ist aktiv, neue Rahmen bekommen ihre Art direkt. Das Artfeld oben leeren oder beim Ziehen **Alt** halten.
+- **Zifferntasten tun nichts** – erst das Label anklicken, damit es gewählt ist; solange ein Textfeld den Fokus hat, werden die Tasten ignoriert.
+- **Ein Label lässt sich nicht ändern** – Labels importierter oder gesperrter Sets sind schreibgeschützt. Mit ✓ übernehmen, dann hast du eine bearbeitbare Kopie.

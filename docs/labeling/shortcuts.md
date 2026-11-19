@@ -23,7 +23,11 @@ The table below lists keyboard and interaction shortcuts for the Labeling App.
 | Labels | ++ctrl+d++ | Toggle Stamp mode |
 | Labels | ++delete++ / ++backspace++ | Remove selected label |
 | Labels | ++g++ | Grab / move focused label |
-| Labels | ++1++–++9++ | Apply taxonomy preset to focused label |
+| Labels | ++1++–++9++ | Set the sound type of the selected label(s) to the n-th value of the list (1 song, 2 call, 3 alarm call …) |
+| Labels | ++f++ | Find calls similar to the selected label |
+| Recordings | ++n++ / ++p++ | Next / previous recording |
+| Recordings | ++b++ | Run BirdNET on the current recording |
+| Recordings | ++u++ | Open the upload assistant |
 | Label Editor | ++arrow-up++ / ++arrow-down++ | Navigate suggestions |
 | Label Editor | ++enter++ | Select suggestion / confirm |
 | Label Editor | Double-click | Select & immediately confirm |
