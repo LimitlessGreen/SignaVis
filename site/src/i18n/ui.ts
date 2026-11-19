@@ -20,10 +20,9 @@ export const ui = {
     useCases: [
       ['audio-lines', 'Analyse a recording', 'Identify the species present with BirdNET.', '/docs/use-cases/listen/'],
       ['tag', 'Annotate calls', 'Mark calls in time and frequency.', '/docs/use-cases/label-calls/'],
-      ['search', 'Search for a target species', 'Locate rare species in long recordings.', ''],
-      ['smartphone', 'Mobile review', 'Inspect recordings in the field.', ''],
-      ['list-checks', 'Regional species lists', 'Restrict results to species expected on site.', ''],
-      ['scan-search', 'Similar-call search', 'Find all occurrences of a reference call.', ''],
+      ['smartphone', 'Mobile review', 'Inspect recordings in the field.', '/docs/use-cases/mobile/'],
+      ['list-checks', 'Regional species lists', 'Restrict results to species expected on site.', '/docs/use-cases/species-lists/'],
+      ['scan-search', 'Similar-call search', 'Find all occurrences of a reference call.', '/docs/use-cases/similar-calls/'],
     ],
     featuresTitle: 'Features', more: 'More',
     features: [
@@ -53,10 +52,9 @@ export const ui = {
     useCases: [
       ['audio-lines', 'Aufnahme auswerten', 'Vorkommende Arten mit BirdNET bestimmen.', '/docs/use-cases/listen/'],
       ['tag', 'Rufe annotieren', 'Rufe in Zeit und Frequenz markieren.', '/docs/use-cases/label-calls/'],
-      ['search', 'Zielart suchen', 'Seltene Arten in langen Aufnahmen finden.', ''],
-      ['smartphone', 'Mobile Sichtung', 'Aufnahmen direkt im Feld prüfen.', ''],
-      ['list-checks', 'Regionale Artenlisten', 'Ergebnisse auf am Standort erwartete Arten begrenzen.', ''],
-      ['scan-search', 'Suche nach ähnlichen Rufen', 'Alle Vorkommen eines Referenzrufs finden.', ''],
+      ['smartphone', 'Mobile Sichtung', 'Aufnahmen direkt im Feld prüfen.', '/docs/use-cases/mobile/'],
+      ['list-checks', 'Regionale Artenlisten', 'Ergebnisse auf am Standort erwartete Arten begrenzen.', '/docs/use-cases/species-lists/'],
+      ['scan-search', 'Suche nach ähnlichen Rufen', 'Alle Vorkommen eines Referenzrufs finden.', '/docs/use-cases/similar-calls/'],
     ],
     featuresTitle: 'Funktionen', more: 'Mehr',
     features: [
