@@ -3,21 +3,30 @@ import '@fontsource-variable/inter';
 import '../styles/m3-tokens.css';
 import '../styles/site.css';
 import Icon from '../components/Icon.astro';
-interface Props { title: string; description: string }
-const { title, description } = Astro.props;
+import { ui, languages, langPrefix, type Lang } from '../i18n/ui';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = ui[lang];
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = `${base}${langPrefix(lang)}`;
+const docs = `${home}/docs/`;
+const app = `${base}/demo/labeling-app.html`;
+const other = (Object.keys(languages) as Lang[]).filter((l) => l !== lang);
 ---
 <!doctype html>
-<html lang="de">
+<html lang={lang}>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>{title}</title>
-  <meta name="description" content={description} />
+  <title>{t.metaTitle}</title>
+  <meta name="description" content={t.metaDesc} />
   <meta name="theme-color" content="#0f1417" />
   <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
-  <meta property="og:title" content={title} />
-  <meta property="og:description" content={description} />
+  {(Object.keys(languages) as Lang[]).map((l) => (
+    <link rel="alternate" hreflang={l} href={`${Astro.site}SignaVis${langPrefix(l)}/`} />
+  ))}
+  <meta property="og:title" content={t.metaTitle} />
+  <meta property="og:description" content={t.metaDesc} />
   <meta property="og:image" content={`${Astro.site}SignaVis/media/og-image.png`} />
   <script is:inline>
     // Shares the theme choice with the docs (Starlight stores it under this key).
@@ -28,39 +37,44 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href={`${base}/`}><img src={`${base}/favicon.svg`} alt="" width="32" height="32" />SignaVis</a>
-    <nav class="topnav" aria-label="Hauptnavigation">
-      <a href={`${base}/#anwendungen`}>Anwendungen</a>
-      <a href={`${base}/#funktionen`}>Funktionen</a>
-      <a href={`${base}/docs/`}>Doku</a>
+    <a class="brand" href={`${home}/`}><img src={`${base}/favicon.svg`} alt="" width="32" height="32" />SignaVis</a>
+    <nav class="topnav" aria-label="Main">
+      <a href={`${home}/#use-cases`}>{t.navUseCases}</a>
+      <a href={`${home}/#features`}>{t.navFeatures}</a>
+      <a href={docs}>{t.navDocs}</a>
     </nav>
     <div class="topbar-actions">
-      <button class="icon-btn" id="themeToggle" aria-label="Hell/Dunkel umschalten">
+      {other.map((l) => (
+        <a class="lang-btn" href={`${base}${langPrefix(l)}/`} hreflang={l} lang={l} aria-label={languages[l]}>
+          <Icon name="languages" size={18} /><span>{l.toUpperCase()}</span>
+        </a>
+      ))}
+      <button class="icon-btn" id="themeToggle" aria-label={t.themeToggle}>
         <span class="only-dark"><Icon name="sun" size={20} /></span>
         <span class="only-light"><Icon name="moon" size={20} /></span>
       </button>
-      <a class="btn btn-filled btn-sm hide-xs" href={`${base}/demo/labeling-app.html`}>App öffnen</a>
+      <a class="btn btn-filled btn-sm hide-xs" href={app}>{t.openApp}</a>
     </div>
   </header>
   <main><slot /></main>
   <footer class="footer">
     <div class="footer-inner">
       <div>
-        <a class="brand" href={`${base}/`}><img src={`${base}/favicon.svg`} alt="" width="28" height="28" />SignaVis</a>
-        <p>Open Source für Bioakustik.</p>
-        <p class="credit">Beispielaufnahme: <a href="https://xeno-canto.org/1089065">XC1089065</a> · Petter Westberg · <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a></p>
+        <a class="brand" href={`${home}/`}><img src={`${base}/favicon.svg`} alt="" width="28" height="28" />SignaVis</a>
+        <p>{t.footerTag}</p>
+        <p class="credit">{t.footerSample}: <a href="https://xeno-canto.org/1089065">XC1089065</a> · Petter Westberg · <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a></p>
       </div>
-      <nav aria-label="Fußzeile">
-        <a href={`${base}/docs/`}>Doku</a>
+      <nav aria-label="Footer">
+        <a href={docs}>{t.navDocs}</a>
         <a href="https://github.com/LimitlessGreen/SignaVis">GitHub</a>
-        <a href="https://github.com/sponsors/LimitlessGreen">Unterstützen</a>
+        <a href="https://github.com/sponsors/LimitlessGreen">{t.footerSupport}</a>
       </nav>
     </div>
   </footer>
-  <nav class="bottom-nav" aria-label="Schnellnavigation">
-    <a href={`${base}/#anwendungen`}><Icon name="compass" size={22} /><span>Anwenden</span></a>
-    <a href={`${base}/docs/`}><Icon name="book-open" size={22} /><span>Doku</span></a>
-    <a class="primary" href={`${base}/demo/labeling-app.html`}><Icon name="play" size={22} /><span>App</span></a>
+  <nav class="bottom-nav" aria-label="Quick">
+    <a href={`${home}/#use-cases`}><Icon name="compass" size={22} /><span>{t.navShortUse}</span></a>
+    <a href={docs}><Icon name="book-open" size={22} /><span>{t.navDocs}</span></a>
+    <a class="primary" href={app}><Icon name="play" size={22} /><span>{t.navShortApp}</span></a>
   </nav>
   <script is:inline>
     document.getElementById('themeToggle').addEventListener('click', () => {

@@ -13,13 +13,17 @@ export default defineConfig({
       logo: { src: './src/assets/logo.svg', replacesTitle: false },
       favicon: '/favicon.svg',
       defaultLocale: 'root',
-      locales: { root: { label: 'Deutsch', lang: 'de' } },
+      // English at the root, German under /de/. Same file paths in both locales.
+      locales: {
+        root: { label: 'English', lang: 'en' },
+        de: { label: 'Deutsch', lang: 'de' },
+      },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' }],
       customCss: ['@fontsource-variable/inter', './src/styles/m3-tokens.css', './src/styles/starlight-m3.css'],
       sidebar: [
-        { label: 'Los geht’s', items: [{ label: 'Willkommen', link: '/docs/' }] },
-        { label: 'Was willst du tun?', items: [{ autogenerate: { directory: 'docs/anwendungsfaelle' } }] },
-        { label: 'Funktionen', items: [{ autogenerate: { directory: 'docs/funktionen' } }] },
+        { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Welcome', translations: { de: 'Willkommen' }, link: '/docs/' }] },
+        { label: 'What do you want to do?', translations: { de: 'Was willst du tun?' }, items: [{ autogenerate: { directory: 'docs/use-cases' } }] },
+        { label: 'Features', translations: { de: 'Funktionen' }, items: [{ autogenerate: { directory: 'docs/features' } }] },
       ],
     }),
   ],

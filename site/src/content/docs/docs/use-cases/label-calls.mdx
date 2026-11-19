@@ -1,0 +1,29 @@
+---
+title: Label calls
+description: Box calls and name them.
+sidebar: { order: 2 }
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<video class="shot" src="/SignaVis/media/labeling.mp4" autoplay muted loop playsinline></video>
+
+<Tabs syncKey="device">
+  <TabItem label="Computer">
+    <ol class="steps-m3">
+      <li>**⇧ + drag**: box around the call.</li>
+      <li>Type the species, **Enter**.</li>
+      <li>Drag the corners to adjust.</li>
+    </ol>
+  </TabItem>
+  <TabItem label="Phone">
+    <img class="shot" src="/SignaVis/media/app-mobile.png" alt="Reviewing detected species on a phone" style="max-width: 320px; margin-inline: auto;" />
+    <ol class="steps-m3">
+      <li>Tap the recording.</li>
+      <li>✓ confirm or ✕ reject.</li>
+    </ol>
+  </TabItem>
+</Tabs>
+
+:::tip
+**1–9** applies your most used species. **Ctrl + Z** undoes.
+:::

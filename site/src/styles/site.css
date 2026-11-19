@@ -166,3 +166,8 @@ p { margin: 0; }
   .footer-inner { grid-template-columns: 1fr auto; align-items: start; }
 }
 .footer .credit { font-size: .8rem; opacity: .75; } .footer .credit a { text-decoration: underline; }
+.lang-btn {
+  display: inline-flex; align-items: center; gap: .35rem; height: 40px; padding: 0 .8rem;
+  border-radius: 999px; font-weight: 600; font-size: .85rem; color: var(--md-on-surface-variant);
+}
+.lang-btn:hover { background: var(--md-surface-container-high); color: var(--md-on-surface); }
