@@ -12,8 +12,8 @@ abstract: >-
   Interactive waveform + spectrogram audio player for bioacoustic analysis,
   annotation, and embeddable previews (Web, Streamlit, Gradio), with BirdNET
   detection support and Xeno-canto integration.
-version: 1.3.0
-date-released: "2026-11-18"
+version: 1.3.1
+date-released: "2026-11-19"
 repository-code: "https://github.com/LimitlessGreen/SignaVis"
 url: "https://limitlessgreen.github.io/SignaVis/"
 license: AGPL-3.0-only
@@ -31,8 +31,8 @@ keywords:
   - spectrogram
   - waveform
   - xeno-canto
-# Once the next GitHub release is archived on Zenodo, add the version DOI here, e.g.:
-# identifiers:
-#   - type: doi
-#     value: 10.5281/zenodo.XXXXXXX
-#     description: The concept DOI for all versions of this software.
+doi: 10.5281/zenodo.23949899
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23949899
+    description: The concept DOI for all versions of this software (resolves to the latest).
