@@ -24,6 +24,15 @@ export interface ProfileSpec {
     derivedDirs: string[];
 }
 
+export interface Suggestion { pattern: string; mappings: MappingSpec[]; matches: number; example: string }
+
+/** Profile from suggestions: all patterns, mappings merged (first suggestion wins per field). */
+export function profileFromSuggestions(base: ProfileSpec, sug: Suggestion[]): ProfileSpec {
+    const mappings: MappingSpec[] = [];
+    for (const s of sug) for (const m of s.mappings) if (!mappings.some((x) => x.field === m.field)) mappings.push({ ...m });
+    return { ...base, patterns: sug.map((s) => s.pattern), mappings };
+}
+
 export interface SampleRow {
     path: string; pattern: number | null; site: string | null; device: string | null;
     start: string | null; meta: [string, string][];

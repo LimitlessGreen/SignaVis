@@ -8,6 +8,7 @@ pub mod preview;
 pub mod profile_spec;
 pub mod query;
 pub mod scan;
+pub mod suggest;
 
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use pattern::PatternSet;

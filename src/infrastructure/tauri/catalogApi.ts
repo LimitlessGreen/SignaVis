@@ -1,7 +1,7 @@
 // infrastructure/tauri/catalogApi.ts — Lite commands of the project catalog (src-tauri-lite/src/catalog.rs)
 
 import type {
-    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo,
+    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion,
 } from '../../domain/catalog/catalog-types.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -14,6 +14,7 @@ const call = async <T>(cmd: string, args?: Record<string, unknown>) => {
 export const catalogApi = {
     preview: (source: string, profile: ProfileSpec, refresh = false) =>
         call<Preview>('catalog_preview', { source, profile, refresh }),
+    suggest: (source: string, refresh = false) => call<Suggestion[]>('catalog_suggest', { source, refresh }),
     import: (projectRoot: string, source: string, rootName: string, profile: ProfileSpec, importTables: boolean) =>
         call<ImportResult>('catalog_import', { projectRoot, source, rootName, profile, importTables }),
     profiles: (projectRoot: string) => call<ProfileSpec[]>('catalog_profiles', { projectRoot }),

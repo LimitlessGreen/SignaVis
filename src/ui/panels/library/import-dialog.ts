@@ -7,8 +7,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    emptyProfile, formatBytes, syncMappings,
-    type FieldRole, type ImportResult, type Preview, type ProfileSpec,
+    emptyProfile, formatBytes, profileFromSuggestions, syncMappings,
+    type FieldRole, type ImportResult, type Preview, type ProfileSpec, type Suggestion,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi, pickFolder } from '../../../infrastructure/tauri/catalogApi.ts';
 
@@ -47,6 +47,7 @@ export class ImportDialog {
     #busy = false;
     #importTables = true;
     #timer: ReturnType<typeof setTimeout> | null = null;
+    #suggestions: Suggestion[] = [];
 
     constructor(o: ImportDialogOptions) {
         this.#o = o;
@@ -92,12 +93,28 @@ export class ImportDialog {
             if (!p) return;
             this.#source = p;
             this.#rootName = p.split(/[\\/]/).filter(Boolean).pop() || 'source';
+            this.#status = 'Scanning folder…';
             this.#render();
-            await this.#runPreview(true);
+            try {
+                this.#suggestions = await catalogApi.suggest(p, true);
+            } catch (err) {
+                this.#suggestions = [];
+                this.#status = `Error: ${err}`;
+            }
+            // No profile yet: start from the suggestions (they are only a proposal, all editable).
+            if (!this.#profile.patterns.length && this.#suggestions.length) {
+                this.#profile = profileFromSuggestions(this.#profile, this.#suggestions);
+            }
+            this.#render();
+            await this.#runPreview(false);
         } else if (act === 'rescan') {
             await this.#runPreview(true);
         } else if (act === 'run-import') {
             await this.#import();
+        } else if (act === 'use-suggestions') {
+            this.#profile = profileFromSuggestions(this.#profile, this.#suggestions);
+            this.#render();
+            await this.#runPreview(false);
         } else if (act === 'add-pattern') {
             const ex = this.#preview?.unmatchedGroups[0]?.example;
             this.#profile.patterns.push(ex ? ex.replace(/[^/]+$/, '{file}.wav') : '');
@@ -251,6 +268,10 @@ export class ImportDialog {
             ${this.#saved.length ? `<label class="lib-field"><span>Saved profile</span><select class="field-select" data-k="saved">
               ${this.#saved.map((s) => `<option${s.name === p.name ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : ''}
             <label class="lib-field"><span>Profile name</span><input class="input" data-k="name" value="${esc(p.name)}"></label>
+            ${this.#suggestions.length ? `<div class="lib-field lib-field--wide"><span>Suggested from the folder</span>
+              <ul class="lib-suggestions">${this.#suggestions.map((s) => `<li><code>${esc(s.pattern)}</code>
+                <span class="lib-hint">${s.matches.toLocaleString()} files</span></li>`).join('')}</ul>
+              <button class="btn btn--sm" data-act="use-suggestions" title="Replace the patterns and field meanings with the suggestions">Use suggestions</button></div>` : ''}
             <label class="lib-field lib-field--wide"><span>Path patterns (one per line, first match wins)</span>
               <textarea class="input lib-patterns" data-k="patterns" rows="3" spellcheck="false"
                 placeholder="{site}/{recorder}_{start:%Y%m%d_%H%M%S}.wav">${esc(p.patterns.join('\n'))}</textarea></label>

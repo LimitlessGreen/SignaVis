@@ -103,6 +103,7 @@ pub fn run() {
             agile::agile_suspects,
             agile::agile_label_set_many,
             catalog::catalog_preview,
+            catalog::catalog_suggest,
             catalog::catalog_import,
             catalog::catalog_profiles,
             catalog::catalog_roots,

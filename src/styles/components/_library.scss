@@ -69,6 +69,7 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 .lib-field { display: flex; flex-direction: column; gap: 4px; > span:first-child { color: var(--color-text-secondary); } }
 .lib-patterns { font-family: var(--font-mono, monospace); font-size: 12px; resize: vertical; }
 .lib-hint { margin: 0; color: var(--color-text-secondary); font-size: 11px; }
+.lib-suggestions { margin: 0 0 4px; padding-left: 16px; li { margin: 2px 0; } code { font-size: 11px; word-break: break-all; } }
 .lib-help { font-size: 11px; color: var(--color-text-secondary); ul { margin: 4px 0 0 16px; padding: 0; } }
 .lib-check { display: flex; gap: 6px; align-items: flex-start; }
 .lib-import-status { color: var(--color-text-secondary); }

@@ -73,6 +73,15 @@ pub async fn catalog_preview(
     blocking(move || Ok(preview(&scanned, &built, 200))).await
 }
 
+/// Suggested import profiles (path templates + roles) for a folder.
+#[tauri::command]
+pub async fn catalog_suggest(
+    state: tauri::State<'_, CatalogState>, source: String, refresh: bool,
+) -> Result<Vec<aw_catalog::suggest::Suggestion>, String> {
+    let scanned = state.scan(&source, &ProfileSpec::default(), refresh)?;
+    blocking(move || Ok(aw_catalog::suggest::suggest_for_scan(&scanned, 6))).await
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {

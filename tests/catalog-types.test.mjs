@@ -45,3 +45,14 @@ test('continuousDays fills gaps between recording weeks', async () => {
     assert.deepEqual(continuousDays(['2023-03-15', '2023-03-13']), ['2023-03-13', '2023-03-14', '2023-03-15']);
     assert.deepEqual(continuousDays([]), []);
 });
+
+test('profileFromSuggestions keeps the first meaning per field', async () => {
+    const { profileFromSuggestions, emptyProfile } = await import('../src/domain/catalog/catalog-types.ts');
+    const p = profileFromSuggestions(emptyProfile('x'), [
+        { pattern: 'A_{rec}/{start:%Y}.wav', mappings: [{ field: 'rec', role: 'device', format: 'Rec {}' }, { field: 'start', role: 'start' }], matches: 3, example: '' },
+        { pattern: '{*}/A_{rec}/{start:%Y}.wav', mappings: [{ field: 'rec', role: 'meta:rec' }], matches: 1, example: '' },
+    ]);
+    assert.deepEqual(p.patterns, ['A_{rec}/{start:%Y}.wav', '{*}/A_{rec}/{start:%Y}.wav']);
+    assert.deepEqual(p.mappings.map((m) => m.role), ['device', 'start']);
+    assert.equal(p.name, 'x');
+});

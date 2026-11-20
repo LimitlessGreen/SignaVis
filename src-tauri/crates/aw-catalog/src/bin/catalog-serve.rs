@@ -68,6 +68,10 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let s = st.scan(&a, a.refresh)?;
             j(serde_json::to_value(preview(s, &p, 200)))
         }
+        "catalog_suggest" => {
+            let s = st.scan(&a, a.refresh)?;
+            j(serde_json::to_value(aw_catalog::suggest::suggest_for_scan(s, 6)))
+        }
         "catalog_import" => {
             let spec = a.profile.clone().ok_or("profile missing")?;
             let p = spec.build().map_err(|x| x.to_string())?;
