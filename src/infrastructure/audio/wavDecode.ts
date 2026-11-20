@@ -94,11 +94,9 @@ export function parseWav(buf: ArrayBuffer): WavInfo | null {
   return null;
 }
 
-/** Convert frames [from, to) to mono Float32 into dst[from ... to). */
-function convertBlock(buf: ArrayBuffer, info: WavInfo, from: number, to: number, dst: Float32Array): void {
-  const { channels: ch, bytesPerSample: bps, blockAlign, dataOffset, format } = info;
-  const start = dataOffset + from * blockAlign;
-  const n = to - from;
+/** Convert n frames starting at byte `start` of buf to mono Float32 into dst[from ...]. */
+function convertBlock(buf: ArrayBuffer, info: WavInfo, start: number, n: number, from: number, dst: Float32Array): void {
+  const { channels: ch, bytesPerSample: bps, blockAlign, format } = info;
   const inv = 1 / ch;
   // Fast paths: aligned typed-array views (all browsers are little-endian).
   if (format === 'pcm' && bps === 2 && start % 2 === 0) {
@@ -155,9 +153,104 @@ export async function decodeWavMono<B extends { getChannelData(ch: number): Floa
   const dst = out.getChannelData(0);
   for (let a = 0; a < info.frames; a += BLOCK_FRAMES) {
     const b = Math.min(info.frames, a + BLOCK_FRAMES);
-    convertBlock(buf, info, a, b, dst);
+    convertBlock(buf, info, info.dataOffset + a * info.blockAlign, b - a, a, dst);
     onProgress?.(b / info.frames);
     if (b < info.frames) await yieldToEventLoop();
+  }
+  return out;
+}
+
+/** Where the samples of a WAV blob are, plus its other chunks for the metadata parsers. */
+export interface WavBlobLayout {
+  info: WavInfo;
+  /**
+   * The file without its audio data: RIFF header, every other chunk, and the data chunk
+   * header with size 0. parseGuano/readFileMetadata/readRecordingStart read this like the file.
+   */
+  skeleton: ArrayBuffer;
+}
+
+/** Chunks larger than this (other than the audio data) are left out of the skeleton. */
+const MAX_META_CHUNK = 16 * 1024 * 1024;
+
+const readBytes = async (blob: Blob, a: number, b: number) => new Uint8Array(await blob.slice(a, b).arrayBuffer());
+
+/**
+ * Read the chunk structure of a WAV blob without loading its audio data (only chunk headers
+ * and small chunks are read). Returns null if the blob is not a WAV this reader can convert.
+ */
+export async function readWavBlobLayout(blob: Blob): Promise<WavBlobLayout | null> {
+  const head = await readBytes(blob, 0, 12);
+  if (!isWav(head.buffer as ArrayBuffer)) return null;
+  const parts: Uint8Array[] = [head];
+  let ds64Data = -1;
+  let dataOffset = -1, dataBytes = 0;
+  let pos = 12;
+  while (pos + 8 <= blob.size) {
+    const h = await readBytes(blob, pos, pos + 8);
+    const v = new DataView(h.buffer);
+    const id = String.fromCharCode(h[0], h[1], h[2], h[3]);
+    let len = v.getUint32(4, true);
+    const body = pos + 8;
+    if (id === 'data') {
+      if (len === 0xffffffff && ds64Data >= 0) len = ds64Data;
+      const avail = blob.size - body;
+      dataOffset = body;
+      dataBytes = len === 0 || len > avail ? avail : len;
+      const empty = new Uint8Array(8);
+      empty.set(h.subarray(0, 4));
+      parts.push(empty);
+      pos = body + dataBytes + (dataBytes & 1);
+      continue;
+    }
+    if (len <= MAX_META_CHUNK && body + len <= blob.size) {
+      const chunk = await readBytes(blob, pos, body + len + (len & 1));
+      if (id === 'ds64' && len >= 16) {
+        const dv = new DataView(chunk.buffer);
+        ds64Data = dv.getUint32(16, true) + dv.getUint32(20, true) * 2 ** 32;
+      }
+      parts.push(chunk);
+    }
+    pos = body + len + (len & 1);
+  }
+  if (dataOffset < 0) return null;
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const skeleton = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) { skeleton.set(p, at); at += p.length; }
+  new DataView(skeleton.buffer).setUint32(4, total - 8, true);
+  // Format from the skeleton (its data chunk is empty), position and length from the blob.
+  const fmtInfo = parseWav(skeleton.buffer);
+  if (!fmtInfo) return null;
+  const info: WavInfo = { ...fmtInfo, dataOffset, frames: Math.floor(dataBytes / fmtInfo.blockAlign) };
+  return { info, skeleton: skeleton.buffer };
+}
+
+/**
+ * Like decodeWavMono, but reads the samples block by block from a Blob/File, so the raw file
+ * is never held in memory as a whole (Chromium keeps large blobs outside the page, on disk).
+ */
+export async function decodeWavMonoFromBlob<B extends { getChannelData(ch: number): Float32Array }>(
+  blob: Blob,
+  info: WavInfo,
+  ctx: { createBuffer(channels: number, length: number, sampleRate: number): B },
+  onProgress?: (fraction: number) => void,
+): Promise<B> {
+  if (info.frames < 1) throw new Error('The WAV file contains no audio.');
+  let out: B;
+  try {
+    out = ctx.createBuffer(1, info.frames, info.sampleRate);
+  } catch (e: any) {
+    const gb = (info.frames * 4 / 1e9).toFixed(1);
+    throw new Error(`Recording too long to load: ${Math.round(info.frames / info.sampleRate / 60)} min needs ${gb} GB of memory (${e?.message || e}).`);
+  }
+  const dst = out.getChannelData(0);
+  for (let a = 0; a < info.frames; a += BLOCK_FRAMES) {
+    const n = Math.min(info.frames, a + BLOCK_FRAMES) - a;
+    const start = info.dataOffset + a * info.blockAlign;
+    const bytes = await blob.slice(start, start + n * info.blockAlign).arrayBuffer();
+    convertBlock(bytes, info, 0, n, a, dst);
+    onProgress?.((a + n) / info.frames);
   }
   return out;
 }

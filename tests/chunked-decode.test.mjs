@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseWav, decodeWavMono } from '../src/infrastructure/audio/wavDecode.ts';
+import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from '../src/infrastructure/audio/wavDecode.ts';
 import { parseFlacStreamInfo, flacBlockStarts, isFrameHeader } from '../src/infrastructure/audio/chunkedFlacDecode.ts';
 
 /** Minimal AudioContext stand-in: createBuffer only. */
 const fakeCtx = { createBuffer: (_c, len, sampleRate) => { const d = new Float32Array(len); return { length: len, sampleRate, getChannelData: () => d }; } };
 
 /** Build a WAV. `samples[ch][i]` in [-1, 1). */
-function makeWav({ samples, sampleRate = 48000, format = 'pcm', bytesPerSample = 2, extensible = false, rf64 = false, dataSizeOverride, oddChunk = false }) {
+function makeWav({ samples, sampleRate = 48000, format = 'pcm', bytesPerSample = 2, extensible = false, rf64 = false, dataSizeOverride, oddChunk = false, trailing = null }) {
   const ch = samples.length, n = samples[0].length, block = ch * bytesPerSample;
   const dataBytes = n * block;
   const parts = [];
@@ -36,6 +36,7 @@ function makeWav({ samples, sampleRate = 48000, format = 'pcm', bytesPerSample =
   const dh = Buffer.alloc(8); dh.write('data', 0, 'latin1');
   dh.writeUInt32LE(dataSizeOverride ?? (rf64 ? 0xffffffff : dataBytes), 4);
   parts.push(dh, data);
+  if (trailing) chunk(trailing[0], Buffer.from(trailing[1], 'utf8'));
   const body = Buffer.concat(parts);
   const riff = Buffer.alloc(12); riff.write(rf64 ? 'RF64' : 'RIFF', 0, 'latin1'); riff.writeUInt32LE(rf64 ? 0xffffffff : body.length + 4, 4); riff.write('WAVE', 8, 'latin1');
   const all = Buffer.concat([riff, body]);
@@ -114,4 +115,39 @@ test('FLAC block starts are real frame boundaries (ffprobe packet positions)', (
   let hits = 0;
   for (let i = flacFrames[0]; i < b.length; i++) if (isFrameHeader(b, i)) { hits++; assert.ok(frames.has(i), `false header at ${i}`); }
   assert.equal(hits, flacFrames.length);
+});
+
+const { parseGuano } = await import('../src/domain/ultrasound.ts');
+const { readRecordingStart } = await import('../src/domain/recordingTime.ts');
+const { readFileMetadata } = await import('../src/domain/fileMetadata.ts');
+
+test('WAV from a Blob: same layout, metadata and samples as reading the whole file', async () => {
+  const guano = 'GUANO|Version: 1.0\nTimestamp: 2026-05-01T21:30:00+02:00\nSpecies Auto ID: Myodau\n';
+  const L = ramp(300_000), R = ramp(300_000, 0.3);
+  const cases = [
+    { samples: [L, R], trailing: ['guan', guano] },
+    { samples: [L], oddChunk: true, trailing: ['guan', guano + 'x'] },
+    { samples: [L], rf64: true },
+    { samples: [L], dataSizeOverride: 0 },
+    { samples: [L, R], extensible: true, format: 'float', bytesPerSample: 4 },
+  ];
+  for (const opts of cases) {
+    const buf = makeWav(opts);
+    const blob = new Blob([buf]);
+    const layout = await readWavBlobLayout(blob);
+    const name = JSON.stringify(Object.keys(opts));
+    assert.ok(layout, name);
+    assert.deepEqual(layout.info, parseWav(buf), name);
+    assert.ok(layout.skeleton.byteLength < 4096, `${name}: skeleton has no audio`);
+    assert.deepEqual(parseGuano(layout.skeleton), parseGuano(buf), name);
+    assert.deepEqual(readRecordingStart(layout.skeleton, 'x.wav'), readRecordingStart(buf, 'x.wav'), name);
+    assert.deepEqual(readFileMetadata(layout.skeleton), readFileMetadata(buf), name);
+    const a = await decodeWavMono(buf, fakeCtx), b = await decodeWavMonoFromBlob(blob, layout.info, fakeCtx);
+    assert.deepEqual(b.getChannelData(0), a.getChannelData(0), name);
+  }
+  assert.ok(parseGuano(makeWav(cases[0])), 'fixture has GUANO after the data chunk');
+});
+
+test('readWavBlobLayout: not a WAV → null', async () => {
+  assert.equal(await readWavBlobLayout(new Blob([new Uint8Array([0x66, 0x4c, 0x61, 0x43, 0, 0, 0, 0, 0, 0, 0, 0])])), null);
 });

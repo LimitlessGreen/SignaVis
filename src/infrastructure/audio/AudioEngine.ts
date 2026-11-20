@@ -21,7 +21,7 @@
 import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
-import { parseWav, decodeWavMono } from './wavDecode.ts';
+import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from './wavDecode.ts';
 import { parseFlacStreamInfo, decodeFlacChunked } from './chunkedFlacDecode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
@@ -156,6 +156,8 @@ export class AudioEngine extends AudioEngineBase {
   recordingStart: RecordingStart | null = null;
   /** Metadata chunks of the loaded file (GUANO, BWF, INFO, AudioMoth, iXML), for display. */
   fileMetadata: MetadataGroup[] = [];
+  /** The loaded file's bytes (File, or the downloaded body), for readers that slice it (tile pipeline). */
+  sourceBlob: Blob | null = null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -258,20 +260,12 @@ export class AudioEngine extends AudioEngineBase {
   ) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
-    this.guano = parseGuano(arrayBuffer);
-    this.fileMetadata = readFileMetadata(arrayBuffer);
+    const blob = await downloadBlob(response, (loaded, total) => onProgress?.('download', loaded, total));
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
-    // Before decoding: decodeAudioData detaches the buffer.
-    const recordingStart = readRecordingStart(arrayBuffer, name);
     onProgress?.('decode');
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
-    await channelPeaksAsync(channelData(audioBuffer));
-    this.audioBuffer = audioBuffer;
-    this.recordingStart = recordingStart;
+    const audioBuffer = await this._decodeBlob(blob, name);
     await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -282,17 +276,46 @@ export class AudioEngine extends AudioEngineBase {
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
   async loadFromFile(file: File) {
-    const arrayBuffer = await file.arrayBuffer();
-    this.guano = parseGuano(arrayBuffer);
-    this.fileMetadata = readFileMetadata(arrayBuffer);
-    const recordingStart = readRecordingStart(arrayBuffer, file.name);
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    const audioBuffer = await this._decodeBlob(file, file.name);
+    await this._setupWaveSurfer(file, file.name);
+    return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
+  }
+
+  /**
+   * Metadata + decoding from a Blob/File. Long WAVs are read slice by slice straight from the
+   * blob (the raw file is never in page memory as a whole); everything else goes through one
+   * ArrayBuffer. Sets guano, fileMetadata, recordingStart, sourceBlob and audioBuffer.
+   */
+  async _decodeBlob(blob: Blob, name: string): Promise<AudioBuffer> {
+    const layout = blob.size >= CHUNKED_DECODE_MIN_BYTES ? await readWavBlobLayout(blob) : null;
+    let audioBuffer: AudioBuffer;
+    let recordingStart: RecordingStart | null;
+    if (layout) {
+      this.guano = parseGuano(layout.skeleton);
+      this.fileMetadata = readFileMetadata(layout.skeleton);
+      recordingStart = readRecordingStart(layout.skeleton, name);
+      const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
+      const ctx = new Ctor({ sampleRate: layout.info.sampleRate });
+      try {
+        audioBuffer = await decodeWavMonoFromBlob(blob, layout.info, ctx);
+      } finally {
+        ctx.close?.().catch(() => {});
+      }
+    } else {
+      const arrayBuffer = await blob.arrayBuffer();
+      this.guano = parseGuano(arrayBuffer);
+      this.fileMetadata = readFileMetadata(arrayBuffer);
+      // Before decoding: decodeAudioData detaches the buffer.
+      recordingStart = readRecordingStart(arrayBuffer, name);
+      audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    }
     // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
     await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
-    await this._setupWaveSurfer(file, file.name);
-    return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
+    this.sourceBlob = blob;
+    return audioBuffer;
   }
 
   /**
@@ -909,6 +932,7 @@ export class AudioEngine extends AudioEngineBase {
       this.wavesurfer = null;
     }
     this.audioBuffer = null;
+    this.sourceBlob = null;
   }
 
   // ── WaveSurfer Setup ─────────────────────────────────────────────────
@@ -1204,36 +1228,40 @@ export class AudioEngine extends AudioEngineBase {
   }
 
 }
-/** The body of `response`, reporting the bytes read so far (total is 0 when unknown). */
-export async function readWithProgress(
+/** Downloads at least this large (by Content-Length) go straight into a Blob, without byte progress. */
+const DIRECT_BLOB_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The body of `response` as a Blob, reporting progress.
+ *
+ * Large bodies use response.blob(): Chromium then keeps the bytes outside the page (on disk if
+ * needed) and slices of it read cheaply; progress is only reported at start and end. A Blob
+ * assembled from many part-blobs would avoid that gap but costs ~2/3 of its size again in the
+ * browser and renderer on every slice read (measured, 346 MB WAV). Smaller bodies are read with
+ * progress and turned into one flat Blob at the end.
+ */
+export async function downloadBlob(
   response: Response,
   onProgress: (loaded: number, total: number) => void,
-): Promise<ArrayBuffer> {
+): Promise<Blob> {
   const total = Number(response.headers.get('content-length')) || 0;
-  const reader = response.body?.getReader();
-  if (!reader) return response.arrayBuffer();
-  // Known length: read straight into one buffer (no second full-size copy at the end).
-  let out = new Uint8Array(total);
-  const chunks: Uint8Array[] = [];
+  const type = response.headers.get('content-type') || '';
+  const reader = total < DIRECT_BLOB_BYTES ? response.body?.getReader() : undefined;
+  // Without a reader the progress is unknown until the end (0 total = indeterminate).
+  onProgress(0, reader ? total : 0);
+  if (!reader) {
+    const blob = await response.blob();
+    onProgress(blob.size, total || blob.size);
+    return blob;
+  }
+  const parts: Uint8Array[] = [];
   let loaded = 0;
-  onProgress(0, total);
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (total && loaded + value.byteLength <= out.length) out.set(value, loaded);
-    else {
-      if (total && chunks.length === 0) chunks.push(out.subarray(0, loaded)); // length was wrong
-      chunks.push(value);
-    }
+    parts.push(value);
     loaded += value.byteLength;
     onProgress(loaded, total);
   }
-  if (chunks.length) {
-    out = new Uint8Array(loaded);
-    let offset = 0;
-    for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
-  } else if (loaded < out.length) {
-    out = out.slice(0, loaded);
-  }
-  return out.buffer;
+  return new Blob(parts as BlobPart[], { type });
 }

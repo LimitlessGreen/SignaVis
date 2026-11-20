@@ -851,8 +851,12 @@ export class PlayerState {
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            // Empty placeholder File: identifies the URL for the WASM tile cache; samples come from the decoded buffer.
-            const sourceRef = new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
+            // The downloaded bytes, named by the URL (identifies it for the WASM tile cache). WAVs are
+            // then sliced straight from this blob; other formats use the decoded buffer.
+            const blob = this._engine.sourceBlob;
+            const sourceRef = blob
+                ? new File([blob], url, { type: blob.type, lastModified: 0 })
+                : new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
             await this._onAudioLoaded(result, name, 'url-loaded', sourceRef, localPath);
         } catch (error) {
             this._onAudioLoadError(error, 'url');
