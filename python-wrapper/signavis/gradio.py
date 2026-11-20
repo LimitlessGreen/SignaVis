@@ -77,6 +77,8 @@ def player_value(
 
     ``select`` is ``(start_s, end_s)``; with ``play`` the span is played,
     otherwise the detection ``select_id`` is selected and scrolled into view.
+    Without ``detections`` the player keeps the labels it shows, so a value
+    that only selects a detection need not resend all of them.
     ``show_confidence`` switches the confidence next to the detection names on
     or off; ``None`` keeps the player's setting.
     ``view_mode`` shows ``"both"`` analysis views, or only the ``"waveform"``
@@ -183,7 +185,10 @@ async function sync() {
     player.options.labelConfidence = !!v.showConfidence;
     player.spectrogramLabels?.render();
   }
-  const labelsKey = JSON.stringify(v.detections || []);
+  // Without detections the player keeps the labels it has, once a file has some.
+  const labelsKey = v.detections === undefined && state.labels !== null
+    ? state.labels
+    : JSON.stringify(v.detections || []);
   if (labelsKey !== state.labels) {
     state.labels = labelsKey;
     player.setSpectrogramLabels(toLabels(v.detections));
