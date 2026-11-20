@@ -109,11 +109,11 @@ export class LibraryView {
         const it = this.#integrity;
         const parts: string[] = [];
         if (this.#hash) {
-            const what = this.#hash.kind === 'full' ? 'SHA-256 checksums' : 'Fingerprints';
+            const what = { header: 'Reading headers', quick: 'Fingerprints', full: 'SHA-256 checksums' }[this.#hash.kind];
             parts.push(`<span>${what} ${this.#hash.done.toLocaleString()} / ${this.#hash.total.toLocaleString()}</span>
               <button class="btn btn--sm btn--ghost" data-act="hash-stop" title="Stop; finished files are kept and the rest continues next time">Stop</button>`);
-        } else if (it && it.unhashed > 0) {
-            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-start" title="Fingerprint = start and end of each file. Recognises renamed or moved files and identical copies. About 1–2 min per 10 000 files on a USB disk.">Fingerprint ${it.unhashed.toLocaleString()} files</button>`);
+        } else if (it && (it.unhashed > 0 || it.noHeader > 0)) {
+            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-start" title="Reads duration, sample rate and embedded metadata, and a fingerprint (start and end of each file) that recognises renamed or moved files and identical copies. About 2–3 min per 10 000 files on a USB disk.">Analyse ${Math.max(it.unhashed, it.noHeader).toLocaleString()} files</button>`);
         } else if (it && it.fullUnhashed > 0) {
             // ~120 MB/s on a USB hard disk.
             const min = Math.max(1, Math.round(it.bytesWithoutChecksum / 120e6 / 60));
@@ -306,7 +306,7 @@ export class LibraryView {
         else if (act === 'hash-start' || act === 'hash-full') {
             const full = act === 'hash-full';
             this.#hash = {
-                projectRoot: this.#o.projectRoot, kind: full && !this.#integrity?.unhashed ? 'full' : 'quick',
+                projectRoot: this.#o.projectRoot, kind: full && !this.#integrity?.unhashed ? 'full' : this.#integrity?.noHeader ? 'header' : 'quick',
                 done: 0, total: (full ? this.#integrity?.fullUnhashed : this.#integrity?.unhashed) ?? 0, finished: false, failed: 0,
             };
             this.#renderIntegrity();
@@ -383,7 +383,7 @@ export class LibraryView {
             projectRoot: this.#o.projectRoot,
             onImported: () => {
                 void this.reload();
-                // Fingerprint new files in the background (renames are recognised on the next import).
+                // Headers + fingerprints of new files in the background (renames are recognised on the next import).
                 void catalogApi.hashStart(this.#o.projectRoot).catch(() => {}).finally(() => void this.#loadIntegrity());
             },
         });

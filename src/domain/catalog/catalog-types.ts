@@ -81,11 +81,11 @@ export interface Facets {
 export interface HeatCell { day: string; hour: number; count: number }
 export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
 export interface Integrity {
-    hashed: number; unhashed: number; fullHashed: number; fullUnhashed: number; bytesWithoutChecksum: number;
+    hashed: number; unhashed: number; noHeader: number; fullHashed: number; fullUnhashed: number; bytesWithoutChecksum: number;
     missing: number; changed: number;
     duplicateGroups: number; duplicates: DuplicateGroup[]; hashing: boolean;
 }
-export interface HashProgress { projectRoot: string; kind: 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
+export interface HashProgress { projectRoot: string; kind: 'header' | 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
 export interface RootInfo { id: number; name: string; kind: string; path: string | null; assets: number }
 
 /** Named fields of path templates, in first-seen order (`{*}` and duplicates skipped). */

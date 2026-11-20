@@ -176,11 +176,19 @@ pub async fn catalog_recording_path(
     }).await
 }
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum JobKind { Header, Quick, Full }
+
+impl From<HashKind> for JobKind {
+    fn from(k: HashKind) -> Self { match k { HashKind::Quick => JobKind::Quick, HashKind::Full => JobKind::Full } }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct HashProgress { project_root: String, kind: HashKind, done: usize, total: usize, finished: bool, failed: usize }
+struct HashProgress { project_root: String, kind: JobKind, done: usize, total: usize, finished: bool, failed: usize }
 
-/// Background job over all roots located on this machine: quick hashes (fingerprints), and with
+/// Background job over all roots located on this machine: audio headers, quick hashes (fingerprints), and with
 /// `full` afterwards SHA-256 checksums of the whole files. Progress as HASH_EVENT; resumable
 /// (commits in batches); one job at a time.
 #[tauri::command]
@@ -192,6 +200,25 @@ pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, C
         let result = (|| -> Result<(), String> {
             let roots = aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)?;
             let mut failed = 0;
+            // 1. Headers (duration, sample rate, channels, GUANO/comment) — small reads.
+            'headers: for r in &roots {
+                let Some(base) = r.path.clone() else { continue };
+                let todo = aw_catalog::header::header_todo(&*cat.lock().map_err(err)?, r.id).map_err(err)?;
+                for (i, chunk) in todo.chunks(500).enumerate() {
+                    let (infos, cancelled) = aw_catalog::header::read_batch(Path::new(&base), chunk, &cancel);
+                    failed += infos.iter().filter(|(_, r)| r.is_err()).count();
+                    aw_catalog::header::store_infos(&mut *cat.lock().map_err(err)?, &infos).map_err(err)?;
+                    let _ = app.emit(HASH_EVENT, HashProgress {
+                        project_root: project_root.clone(), kind: JobKind::Header, done: i * 500 + chunk.len(), total: todo.len(), finished: false, failed,
+                    });
+                    if cancelled { break 'headers; }
+                }
+            }
+            if cancel.load(Ordering::SeqCst) {
+                let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Header, done: 0, total: 0, finished: true, failed });
+                return Ok(());
+            }
+            // 2. Fingerprints, 3. (optional) SHA-256.
             let kinds: &[HashKind] = if full { &[HashKind::Quick, HashKind::Full] } else { &[HashKind::Quick] };
             'all: for &kind in kinds {
                 for r in &roots {
@@ -205,13 +232,13 @@ pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, C
                         aw_catalog::hash::store_hashes(&mut *cat.lock().map_err(err)?, kind, &done).map_err(err)?;
                         failed += rep.failed.len();
                         let _ = app.emit(HASH_EVENT, HashProgress {
-                            project_root: project_root.clone(), kind, done: i * batch + chunk.len(), total: todo.len(), finished: false, failed,
+                            project_root: project_root.clone(), kind: kind.into(), done: i * batch + chunk.len(), total: todo.len(), finished: false, failed,
                         });
                         if rep.cancelled { break 'all; }
                     }
                 }
             }
-            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: HashKind::Quick, done: 0, total: 0, finished: true, failed });
+            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Quick, done: 0, total: 0, finished: true, failed });
             Ok(())
         })();
         running.store(false, Ordering::SeqCst);
@@ -228,6 +255,7 @@ pub fn catalog_hash_cancel(state: tauri::State<'_, CatalogState>) { state.hash_c
 pub struct Integrity {
     pub hashed: i64,
     pub unhashed: i64,
+    pub no_header: i64,
     pub full_hashed: i64,
     pub full_unhashed: i64,
     pub bytes_without_checksum: i64,
@@ -250,6 +278,8 @@ pub async fn catalog_integrity(state: tauri::State<'_, CatalogState>, project_ro
         Ok(Integrity {
             hashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
             unhashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NULL AND status != 'missing'")?,
+            no_header: n("SELECT COUNT(*) FROM recording r JOIN asset a ON a.id = r.asset_id WHERE r.sample_rate IS NULL AND a.status != 'missing'
+                AND NOT EXISTS (SELECT 1 FROM meta m WHERE m.recording_id = r.id AND m.key = 'header:error')")?,
             full_hashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NOT NULL")?,
             full_unhashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
             bytes_without_checksum: n("SELECT COALESCE(SUM(size), 0) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,

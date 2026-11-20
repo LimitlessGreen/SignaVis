@@ -166,6 +166,9 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
             Some(k) => {
                 tx.execute("UPDATE asset SET size = ?2, mtime = ?3, quick_hash = NULL, full_hash = NULL, status = 'changed' WHERE id = ?1",
                     params![k.id, f.size as i64, f.mtime_ms])?;
+                // Content changed: read the header again.
+                tx.execute("UPDATE recording SET sample_rate = NULL, channels = NULL, duration_s = NULL WHERE asset_id = ?1", [k.id])?;
+                tx.execute("DELETE FROM meta WHERE origin = 'header' AND recording_id IN (SELECT id FROM recording WHERE asset_id = ?1)", [k.id])?;
                 rep.changed.push(f.rel_path.clone());
             }
             None => candidates.push(f.clone()),

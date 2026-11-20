@@ -3,6 +3,7 @@
 //! import, BirdNET selection tables as runs.
 
 pub mod hash;
+pub mod header;
 pub mod pattern;
 pub mod preview;
 pub mod profile_spec;

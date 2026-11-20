@@ -106,6 +106,9 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let cat = st.cat(&a.project_root)?;
             for r in aw_catalog::roots(cat, &machine_name()).map_err(e)? {
                 if let Some(base) = r.path {
+                    let todo = aw_catalog::header::header_todo(cat, r.id).map_err(e)?;
+                    let (infos, _) = aw_catalog::header::read_batch(Path::new(&base), &todo, &std::sync::atomic::AtomicBool::new(false));
+                    aw_catalog::header::store_infos(cat, &infos).map_err(e)?;
                     let kinds = if a.full { vec![aw_catalog::hash::HashKind::Quick, aw_catalog::hash::HashKind::Full] } else { vec![aw_catalog::hash::HashKind::Quick] };
                     for k in kinds {
                         aw_catalog::hash::hash_missing(cat, r.id, Path::new(&base), k, &std::sync::atomic::AtomicBool::new(false), &mut |_, _| {}).map_err(e)?;
@@ -121,6 +124,7 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let (groups, dups) = aw_catalog::hash::duplicates(cat, 50).map_err(e)?;
             Ok(json!({
                 "hashed": n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
+                "noHeader": n("SELECT COUNT(*) FROM recording WHERE sample_rate IS NULL")?,
                 "fullHashed": n("SELECT COUNT(*) FROM asset WHERE full_hash IS NOT NULL")?,
                 "fullUnhashed": n("SELECT COUNT(*) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
                 "bytesWithoutChecksum": n("SELECT COALESCE(SUM(size), 0) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
