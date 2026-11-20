@@ -1308,8 +1308,9 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
 .sun-chart-tip { position: absolute; top: 4px; padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; pointer-events: none;
   background: rgba(20, 22, 30, .88); color: #fff; }
 .sun-chart-summary { font-size: 12px; line-height: 1.4; }
-.sun-chart-events { display: grid; grid-template-columns: repeat(4, auto); gap: 2px 8px; margin-top: 4px; font-size: 11px;
-  color: var(--color-text-secondary, inherit); font-variant-numeric: tabular-nums;
-  span { display: inline-flex; align-items: center; gap: 4px; }
-  i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.sun-chart-events { display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 1px 6px; margin-top: 6px; font-size: 11px;
+  color: var(--color-text-secondary, inherit); font-variant-numeric: tabular-nums; white-space: nowrap;
+  .sun-ev-head { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
+  .sun-ev-row { color: var(--color-text-muted, inherit); }
+  i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
 }

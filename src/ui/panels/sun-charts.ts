@@ -218,28 +218,33 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     } else {
         f.summary.append('No recording time — set one to place it in the day.');
     }
+    // Event table: columns = thresholds, rows = morning / evening
     const ev = document.createElement('div');
     ev.className = 'sun-chart-events';
-    const cell = (label: string, e: typeof sr, side: 'rise' | 'set', key: SunPhase) => {
-        const span = document.createElement('span');
+    const cols: [string, SunPhase, typeof sr, string][] = [
+        ['Astro', 'astronomical', s.events.astronomical, 'Astronomical twilight (sun at −18°)'],
+        ['Naut.', 'nautical', s.events.nautical, 'Nautical twilight (sun at −12°)'],
+        ['Civil', 'civil', s.events.civil, 'Civil twilight (sun at −6°)'],
+        ['Sun', 'golden', sr, 'Sunrise / sunset'],
+    ];
+    const cell = (text: string, cls = '') => { const d = document.createElement('span'); d.textContent = text; if (cls) d.className = cls; return d; };
+    ev.appendChild(cell(''));
+    for (const [label, key, , title] of cols) {
+        const h = cell(label, 'sun-ev-head');
         const sw = document.createElement('i');
         sw.style.background = PHASE_COLOR[key];
-        span.appendChild(sw);
-        const v = typeof e === 'object' ? formatClock(e[side]) : e === 'always-above' ? '—' : '—';
-        span.append(`${label} ${v}`);
-        span.title = typeof e === 'object' ? '' : e === 'always-above' ? 'Sun never goes this low today' : 'Sun never gets this high today';
-        return span;
-    };
-    ev.append(
-        cell('Astro', s.events.astronomical, 'rise', 'astronomical'),
-        cell('Naut.', s.events.nautical, 'rise', 'nautical'),
-        cell('Civil', s.events.civil, 'rise', 'civil'),
-        cell('Rise', sr, 'rise', 'golden'),
-        cell('Set', sr, 'set', 'golden'),
-        cell('Civil', s.events.civil, 'set', 'civil'),
-        cell('Naut.', s.events.nautical, 'set', 'nautical'),
-        cell('Astro', s.events.astronomical, 'set', 'astronomical'),
-    );
+        h.prepend(sw);
+        h.title = title;
+        ev.appendChild(h);
+    }
+    for (const [row, side] of [['Dawn', 'rise'], ['Dusk', 'set']] as const) {
+        ev.appendChild(cell(row, 'sun-ev-row'));
+        for (const [, , e] of cols) {
+            const c = cell(typeof e === 'object' ? formatClock(e[side]) : '—');
+            if (typeof e !== 'object') c.title = e === 'always-above' ? 'The sun never sinks this low today' : 'The sun never rises this high today';
+            ev.appendChild(c);
+        }
+    }
     f.summary.appendChild(ev);
     return f.box;
 }
