@@ -75,7 +75,8 @@ export class RecordingContextBlock {
     }
 
     /** ctx null = no recording loaded. */
-    render(ctx: ResolvedContext | null) {
+    /** durationSec: length of the active recording (its span is shown in the light charts). */
+    render(ctx: ResolvedContext | null, durationSec = 0) {
         this.el.innerHTML = '';
         if (this.mapEl) this.mapEl.innerHTML = '';
         if (!ctx) return; // the surrounding section already says 'No recording loaded'
@@ -115,7 +116,7 @@ export class RecordingContextBlock {
         const target = this.mapEl || this.el;
         if (coords) target.appendChild(buildMiniMap(coords, () => this._openMap(coords)));
         // Where in the year and in the day (light) the recording sits
-        target.appendChild(this.sunCharts.render(coords, (ctx.date.value as string) || null, (ctx.time.value as string) || null));
+        target.appendChild(this.sunCharts.render(coords, (ctx.date.value as string) || null, (ctx.time.value as string) || null, durationSec));
     }
 
     _row(label: string, controls: HTMLElement[], source: string | null, manualFields: ContextField[]) {

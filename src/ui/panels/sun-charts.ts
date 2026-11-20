@@ -10,7 +10,7 @@
 
 import {
     SUN_PHASE_TEXT, dayLengthHours, formatClock, formatDuration, guessUtcOffset, phaseOf, seasonOf, seasonPart,
-    sunAltitude, sunDay, timeZoneAt, type Season, type SunPhase,
+    phaseSpans, sunAltitude, sunDay, timeZoneAt, type Season, type SunPhase,
 } from '../../domain/sun.ts';
 import type { Coords } from '../../app/recording-context.ts';
 import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
@@ -141,7 +141,7 @@ export const fmtOffset = (h: number) => {
 
 // ── Day dial ─────────────────────────────────────────────────────────
 
-export function buildDayDial(c: Coords, date: string, time: string | null, utcOffsetH: number) {
+export function buildDayDial(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0) {
     const s = sunDay(c.lat, c.lon, date, utcOffsetH);
     const alt = (min: number) => sunAltitude(c.lat, c.lon, s.doy, min, utcOffsetH, s.yearDays);
     const phiOf = (min: number) => (min / 1440) * TAU;
@@ -219,6 +219,18 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
         const a = alt(rec);
         const [hx, hy] = pol(R_OUT, phi);
         const [sx, sy] = pol(rAlt(a), phi);
+        // Recording span over the ring, sun path highlighted, end hand
+        const span = Math.min(durationMin, 1440);
+        if (span >= 1) {
+            const b = phi + (span / 1440) * TAU;
+            if (span >= 1440) el('circle', { cx: C, cy: C, r: (R_IN + R_OUT) / 2, class: 'sun-span sun-span--full', 'stroke-width': R_OUT - R_IN + 4 }, svg);
+            else el('path', { d: sector(R_IN - 2, R_OUT + 2, phi, b), class: 'sun-span' }, svg);
+            const pts: string[] = [];
+            for (let m = rec; m <= rec + span; m += 4) pts.push(P(rAlt(alt(m % 1440)), phiOf(m)));
+            el('path', { d: `M${pts.join(' L')}`, class: 'sun-span-curve' }, svg);
+            const [ex, ey] = pol(R_OUT, b);
+            el('line', { x1: C, y1: C, x2: ex, y2: ey, class: 'sun-hand sun-hand--end' }, svg);
+        }
         el('line', { x1: C, y1: C, x2: hx, y2: hy, class: 'sun-hand' }, svg);
         el('circle', { cx: sx, cy: sy, r: 6, class: a >= -0.833 ? 'sun-disc' : 'sun-disc sun-disc--down' }, svg);
         el('circle', { cx: C, cy: C, r: R_CORE, class: 'sun-core' }, svg);
@@ -230,7 +242,8 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
             const [d, up] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, true] : [toSet, false];
             rel = `${d < 0 ? '−' : '+'}${formatDuration(d).replace(' min', 'm').replace(' h ', 'h ')} ${up ? '☀↑' : '☀↓'}`;
         } else rel = sr === 'always-above' ? 'no sunset' : 'no sunrise';
-        lines = [[formatClock(rec), 'sun-c-big'], [SUN_PHASE_TEXT[phaseOf(a)], 'sun-c-mid'], [`${a >= 0 ? '+' : ''}${a.toFixed(1)}° · ${rel}`, 'sun-c-small']];
+        lines = [[formatClock(rec), 'sun-c-big'], [SUN_PHASE_TEXT[phaseOf(a)].replace(' twilight', ''), 'sun-c-mid'], [`${a >= 0 ? '+' : ''}${a.toFixed(1)}° · ${rel}`, 'sun-c-small']];
+        if (durationMin >= 1) lines.push([`→ ${formatClock(rec + durationMin)} · ${formatDuration(durationMin).replace(' min', 'm').replace(' h ', 'h ')}`, 'sun-c-small']);
     } else {
         el('circle', { cx: C, cy: C, r: R_CORE, class: 'sun-core' }, svg);
         lines = [['no time', 'sun-c-mid'], [`day ${formatDuration(s.dayLengthH * 60).replace(' min', 'm').replace(' h ', 'h ')}`, 'sun-c-small']];
@@ -324,15 +337,17 @@ export class SunCharts {
     el: HTMLElement;
     _key = '';
     _offset: number | null = null;
-    _last: [Coords | null, string | null, string | null] = [null, null, null];
+    _last: [Coords | null, string | null, string | null, number] = [null, null, null, 0];
 
     constructor() {
         this.el = document.createElement('div');
         this.el.className = 'sun-charts';
     }
 
-    render(coords: Coords | null, date: string | null, time: string | null) {
-        this._last = [coords, date, time];
+    /** durationSec: recording length; its span is drawn across the light phases. */
+    render(coords: Coords | null, date: string | null, time: string | null, durationSec = 0) {
+        this._last = [coords, date, time, durationSec];
+        const durationMin = Math.max(0, durationSec / 60);
         this.el.innerHTML = '';
         if (!coords || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { this.el.hidden = true; return this.el; }
         this.el.hidden = false;
@@ -391,12 +406,53 @@ export class SunCharts {
         const body = document.createElement('div');
         if (view === 'dial') {
             body.className = 'sun-dials';
-            body.append(buildDayDial(coords, date, time, off), buildYearDial(coords, date));
+            body.append(buildDayDial(coords, date, time, off, durationMin), buildYearDial(coords, date));
         } else {
             body.className = 'sun-lines';
-            body.append(buildDayChart(coords, date, time, off), buildYearChart(coords, date));
+            body.append(buildDayChart(coords, date, time, off, durationMin), buildYearChart(coords, date));
         }
         this.el.append(head, body);
+        const spans = this._spanStrip(coords, date, time, off, durationMin);
+        if (spans) body.firstElementChild?.after(spans);
         return this.el;
+    }
+
+    /** Proportional strip + legend of the light phases the recording passes through. */
+    _spanStrip(c: Coords, date: string, time: string | null, off: number, durationMin: number) {
+        const m = String(time ?? '').match(/^(\d{1,2}):(\d{2})/);
+        if (!m || durationMin < 1) return null;
+        const start = +m[1] * 60 + +m[2];
+        const spans = phaseSpans(c.lat, c.lon, date, start, durationMin, off);
+        const box = document.createElement('div');
+        box.className = 'sun-spans';
+        const bar = document.createElement('div');
+        bar.className = 'sun-spans-bar';
+        const legend = document.createElement('div');
+        legend.className = 'sun-spans-legend';
+        const total = spans.reduce((t, s) => t + (s.to - s.from), 0) || 1;
+        const short = (min: number) => formatDuration(min).replace(' min', 'm').replace(' h ', 'h ');
+        // Aggregate per phase for the legend (a long recording can pass a phase twice)
+        const sum = new Map<SunPhase, number>();
+        for (const s of spans) {
+            const seg = document.createElement('span');
+            seg.style.flexGrow = String(s.to - s.from);
+            seg.style.background = PHASE_COLOR[s.phase];
+            seg.title = `${formatClock(s.from)}–${formatClock(s.to)} · ${SUN_PHASE_TEXT[s.phase]} · ${short(s.to - s.from)}`;
+            bar.appendChild(seg);
+            sum.set(s.phase, (sum.get(s.phase) || 0) + (s.to - s.from));
+        }
+        for (const [p, min] of sum) {
+            const item = document.createElement('span');
+            const sw = document.createElement('i');
+            sw.style.background = PHASE_COLOR[p];
+            item.append(sw, `${SUN_PHASE_TEXT[p].replace(' twilight', '')} ${short(min)}`);
+            item.title = `${Math.round((min / total) * 100)} % of the recording`;
+            legend.appendChild(item);
+        }
+        const title = document.createElement('div');
+        title.className = 'sun-spans-title';
+        title.textContent = `Recording ${formatClock(start)}–${formatClock(start + durationMin)} · ${short(durationMin)}${durationMin > 1440 ? ' (first 24 h shown above)' : ''}`;
+        box.append(title, bar, legend);
+        return box;
     }
 }

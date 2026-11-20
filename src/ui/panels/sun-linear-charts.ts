@@ -145,7 +145,7 @@ export function buildYearChart(c: Coords, date: string) {
 
 // ── Day ──────────────────────────────────────────────────────────────
 
-export function buildDayChart(c: Coords, date: string, time: string | null, utcOffsetH: number) {
+export function buildDayChart(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0) {
     const H = 86;
     const plotH = 72;
     const f = frame('Sun & twilight', H);
@@ -176,6 +176,20 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
 
     const rec = parseTime(time);
     if (rec != null) {
+        // Recording span (wraps past midnight, at most one full day)
+        const end = rec + Math.min(durationMin, 1440);
+        if (end > rec) {
+            const parts: [number, number][] = end <= 1440 ? [[rec, end]] : [[rec, 1440], [0, end - 1440]];
+            for (const [a, b] of parts) {
+                svg('rect', { x: xOf(a), y: 0, width: Math.max(1, xOf(b) - xOf(a)), height: plotH, class: 'sun-chart-span' }, f.root);
+                const seg: string[] = [];
+                for (let m = a; m <= b; m += 5) seg.push(`${xOf(m).toFixed(1)},${yOf(alt(m)).toFixed(1)}`);
+                seg.push(`${xOf(b).toFixed(1)},${yOf(alt(b)).toFixed(1)}`);
+                svg('path', { d: `M${seg.join(' L')}`, class: 'sun-chart-span-curve' }, f.root);
+            }
+            const ex = xOf(end % 1440 || (end === 1440 ? 1440 : 0));
+            svg('line', { x1: ex, x2: ex, y1: 0, y2: plotH, class: 'sun-chart-marker sun-chart-marker--end' }, f.root);
+        }
         svg('line', { x1: xOf(rec), x2: xOf(rec), y1: 0, y2: plotH, class: 'sun-chart-marker' }, f.root);
         svg('circle', { cx: xOf(rec), cy: yOf(alt(rec)), r: 4, class: 'sun-chart-dot' }, f.root);
     }
@@ -192,7 +206,7 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     if (rec != null) {
         const a = alt(rec);
         const strong = document.createElement('strong');
-        strong.textContent = `${formatClock(rec)} · ${SUN_PHASE_TEXT[phaseOf(a)]}`;
+        strong.textContent = `${formatClock(rec)}${durationMin >= 1 ? `–${formatClock(rec + durationMin)}` : ''} · ${SUN_PHASE_TEXT[phaseOf(a)]}`;
         let rel = '';
         if (typeof sr === 'object') {
             const toRise = rec - sr.rise;
@@ -200,7 +214,7 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
             const [d, name] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, 'sunrise'] : [toSet, 'sunset'];
             rel = ` · ${formatDuration(d)} ${d < 0 ? 'before' : 'after'} ${name}`;
         }
-        f.summary.append(strong, ` · sun ${a.toFixed(1)}°${rel}`);
+        f.summary.append(strong, ` · ${durationMin >= 1 ? 'starts at ' : ''}sun ${a.toFixed(1)}°${rel}`);
     } else {
         f.summary.append('No recording time — set one to place it in the day.');
     }

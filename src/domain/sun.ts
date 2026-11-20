@@ -163,3 +163,25 @@ export function formatDuration(minutes: number): string {
     const h = Math.floor(m / 60);
     return h ? `${h} h ${m % 60} min` : `${m} min`;
 }
+
+export interface PhaseSpan { phase: SunPhase; from: number; to: number }
+
+/**
+ * Light phases a recording passes through, from `startMin` (local clock) for `durationMin`,
+ * merged into runs. Minute resolution; days after the first reuse the first day's sun
+ * (a few minutes off per day — fine for a recording that spans midnight).
+ */
+export function phaseSpans(lat: number, lon: number, date: string, startMin: number, durationMin: number, utcOffsetH = 0): PhaseSpan[] {
+    const doy = dayOfYear(date);
+    const yd = daysInYear(Number(date.slice(0, 4)));
+    const end = startMin + Math.max(0, durationMin);
+    const out: PhaseSpan[] = [];
+    for (let m = startMin; m < end; m = Math.min(m + 1, end)) {
+        const p = phaseOf(sunAltitude(lat, lon, doy, ((m % 1440) + 1440) % 1440, utcOffsetH, yd));
+        const last = out[out.length - 1];
+        const to = Math.min(m + 1, end);
+        if (last && last.phase === p) last.to = to; else out.push({ phase: p, from: m, to });
+        if (to >= end) break;
+    }
+    return out;
+}

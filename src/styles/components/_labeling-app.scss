@@ -1361,3 +1361,19 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
   button + button { border-left: 1px solid var(--color-border); }
   button[aria-pressed='true'] { background: var(--color-accent); color: #fff; }
 }
+.sun-chart-span { fill: rgba(255, 255, 255, .28); stroke: rgba(255, 255, 255, .7); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sun-chart-span-curve { fill: none; stroke: #b5520f; stroke-width: 3.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sun-chart-marker--end { stroke-dasharray: 3 2; }
+.sun-span { fill: rgba(255, 255, 255, .3); stroke: #fff; stroke-width: 1.2; }
+.sun-span--full { fill: none; stroke: rgba(255, 255, 255, .3); }
+.sun-span-curve { fill: none; stroke: #fff; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.sun-hand--end { stroke-dasharray: 3 2; opacity: .7; }
+.sun-spans { display: flex; flex-direction: column; gap: 4px; }
+.sun-spans-title { font-size: 12px; font-weight: 600; }
+.sun-spans-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 1px; background: var(--color-bg-surface);
+  span { min-width: 2px; }
+}
+.sun-spans-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;
+  span { display: inline-flex; align-items: center; gap: 4px; }
+  i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+}

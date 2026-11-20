@@ -50,3 +50,16 @@ test('UTC offset guess, seasons, clock format', () => {
     assert.equal(seasonOf(11, -33), 'spring');
     assert.equal(formatClock(-30), '23:30');
 });
+
+test('phaseSpans splits a 3 h dawn recording into light phases', async () => {
+    const { phaseSpans } = await import('../src/domain/sun.ts');
+    // Leipzig 12 May, 03:00–06:00 CEST: nautical → civil → low sun → (day after ~06:1x? no) …
+    const spans = phaseSpans(51.34, 12.37, '2026-05-12', 180, 180, 2);
+    assert.deepEqual(spans.map((s) => s.phase), ['astronomical', 'nautical', 'civil', 'golden']);
+    assert.equal(spans[0].from, 180);
+    assert.equal(spans.at(-1).to, 360);
+    near(spans.find((s) => s.phase === 'golden').from, 5 * 60 + 25, 3, 'sunrise boundary');
+    // Across midnight
+    const night = phaseSpans(51.34, 12.37, '2026-11-20', 23 * 60, 120, 1);
+    assert.equal(night.at(-1).to, 25 * 60);
+});
