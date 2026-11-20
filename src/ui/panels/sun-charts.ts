@@ -13,6 +13,10 @@ import {
     sunAltitude, sunDay, timeZoneAt, type Season, type SunPhase,
 } from '../../domain/sun.ts';
 import type { Coords } from '../../app/recording-context.ts';
+import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
+
+export type LightView = 'chart' | 'dial';
+const VIEW_KEY = 'aw.props.lightView';
 
 const NS = 'http://www.w3.org/2000/svg';
 const S = 260;              // viewBox size
@@ -360,12 +364,39 @@ export class SunCharts {
             sel.appendChild(o);
         }
         sel.addEventListener('change', () => { this._offset = Number(sel.value); this.render(...this._last); });
-        head.append(title, sel);
+        // View switch: charts (default) or dials, remembered
+        let view: LightView = 'chart';
+        try { if (localStorage.getItem(VIEW_KEY) === 'dial') view = 'dial'; } catch {}
+        const seg = document.createElement('div');
+        seg.className = 'sun-view-switch';
+        seg.setAttribute('role', 'group');
+        seg.setAttribute('aria-label', 'Light view');
+        for (const [v, text, tip] of [['chart', 'Chart', 'Time lines'], ['dial', 'Dial', 'Astronomical dials']] as const) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = text;
+            b.title = tip;
+            b.setAttribute('aria-pressed', String(v === view));
+            b.addEventListener('click', () => {
+                try { localStorage.setItem(VIEW_KEY, v); } catch {}
+                this.render(...this._last);
+            });
+            seg.appendChild(b);
+        }
+        const right = document.createElement('div');
+        right.className = 'sun-charts-tools';
+        right.append(seg, sel);
+        head.append(title, right);
 
-        const dials = document.createElement('div');
-        dials.className = 'sun-dials';
-        dials.append(buildDayDial(coords, date, time, off), buildYearDial(coords, date));
-        this.el.append(head, dials);
+        const body = document.createElement('div');
+        if (view === 'dial') {
+            body.className = 'sun-dials';
+            body.append(buildDayDial(coords, date, time, off), buildYearDial(coords, date));
+        } else {
+            body.className = 'sun-lines';
+            body.append(buildDayChart(coords, date, time, off), buildYearChart(coords, date));
+        }
+        this.el.append(head, body);
         return this.el;
     }
 }
