@@ -45,6 +45,22 @@ const TILE_PRELOAD_AHEAD = 1;
 // whole file at full resolution; cap it to the tiles around the view centre.
 const PREVIEW_MAX_TILES = 8;
 
+/**
+ * Source and destination of a tile spanning [x0, x1) px of the viewport, drawn
+ * from a canvas `w` wide. Both edges round to whole pixels the same way for
+ * neighbours, so tiles meet without a gap; the source never leaves the tile
+ * (drawImage would clip it and shrink the destination). Null if not visible.
+ */
+export function tileDrawRect(x0: number, x1: number, viewportWidth: number, w: number) {
+    const X0 = Math.round(x0), X1 = Math.round(x1);
+    const dx = Math.max(0, X0), right = Math.min(viewportWidth, X1);
+    if (right <= dx || X1 <= X0) return null;
+    const srcX = ((dx - X0) / (X1 - X0)) * w;
+    const srcW = ((right - dx) / (X1 - X0)) * w;
+    return { srcX, srcW, dx, dw: right - dx };
+}
+
+
 /** Limit the combined size of the pyramid workers' in-flight output blocks. */
 export function pyramidWorkerCount(p: StftParamsV2, hardwareConcurrency: number): number {
     const bins = p.scale.kind === 'linear' ? Math.floor(p.nFft / 2) + 1 : p.scale.bands;
@@ -554,21 +570,16 @@ export class WasmTileManager extends EventTarget {
                 if (x1 <= 0 || x0 >= viewportWidth) continue;
                 tile.lastUsed = Date.now();
 
-                // Snap to integer pixels to prevent sub-pixel gaps between adjacent tiles.
-                const visLeft = Math.floor(Math.max(0, x0));
-                const visRight = Math.ceil(Math.min(viewportWidth, x1));
-                if (visRight <= visLeft) continue;
-
+                if (Math.round(Math.min(viewportWidth, x1)) <= Math.round(Math.max(0, x0))) continue;
                 if (!tile.canvas) this._colorize(tile);
                 if (!tile.canvas) continue;
-                const w = tile.canvas.width;
-                const srcX = ((visLeft - x0) / (x1 - x0)) * w;
-                const srcW = Math.max(1, ((visRight - visLeft) / (x1 - x0)) * w);
+                const r = tileDrawRect(x0, x1, viewportWidth, tile.canvas.width);
+                if (!r) continue;
                 const srcY = freqViewSrcCrop?.srcY ?? 0;
                 const srcH = freqViewSrcCrop?.srcH ?? tile.canvas.height;
 
-                ctx.imageSmoothingEnabled = x1 - x0 < w; // smooth only when shrinking
-                ctx.drawImage(tile.canvas, srcX, srcY, srcW, srcH, visLeft, 0, visRight - visLeft, canvasHeight);
+                ctx.imageSmoothingEnabled = x1 - x0 < tile.canvas.width; // smooth only when shrinking
+                ctx.drawImage(tile.canvas, r.srcX, srcY, r.srcW, srcH, r.dx, 0, r.dw, canvasHeight);
             }
         }
 
