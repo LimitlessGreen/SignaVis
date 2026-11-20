@@ -1205,25 +1205,35 @@ export class AudioEngine extends AudioEngineBase {
 
 }
 /** The body of `response`, reporting the bytes read so far (total is 0 when unknown). */
-async function readWithProgress(
+export async function readWithProgress(
   response: Response,
   onProgress: (loaded: number, total: number) => void,
 ): Promise<ArrayBuffer> {
   const total = Number(response.headers.get('content-length')) || 0;
   const reader = response.body?.getReader();
   if (!reader) return response.arrayBuffer();
+  // Known length: read straight into one buffer (no second full-size copy at the end).
+  let out = new Uint8Array(total);
   const chunks: Uint8Array[] = [];
   let loaded = 0;
   onProgress(0, total);
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (total && loaded + value.byteLength <= out.length) out.set(value, loaded);
+    else {
+      if (total && chunks.length === 0) chunks.push(out.subarray(0, loaded)); // length was wrong
+      chunks.push(value);
+    }
     loaded += value.byteLength;
     onProgress(loaded, total);
   }
-  const out = new Uint8Array(loaded);
-  let offset = 0;
-  for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+  if (chunks.length) {
+    out = new Uint8Array(loaded);
+    let offset = 0;
+    for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+  } else if (loaded < out.length) {
+    out = out.slice(0, loaded);
+  }
   return out.buffer;
 }
