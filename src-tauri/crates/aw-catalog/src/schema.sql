@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS recording (
     sample_rate   INTEGER,
     channels      INTEGER,
     start_ms      INTEGER,                         -- UTC
+    local_offset_min INTEGER,                      -- local clock − UTC at start (for time-of-day filters)
     tz            TEXT,                            -- IANA zone of the local clock
     site_id       INTEGER REFERENCES site(id),
     device_id     INTEGER REFERENCES device(id),
@@ -79,7 +80,7 @@ CREATE TABLE IF NOT EXISTS recording (
 );
 CREATE INDEX IF NOT EXISTS recording_asset ON recording(asset_id);
 CREATE INDEX IF NOT EXISTS recording_site_time ON recording(site_id, start_ms);
-CREATE INDEX IF NOT EXISTS recording_time ON recording(start_ms);
+CREATE INDEX IF NOT EXISTS recording_time ON recording(start_ms, id);
 CREATE INDEX IF NOT EXISTS recording_device ON recording(device_id);
 
 -- Free metadata; `origin`: pattern / guano / header / manual / xc.

@@ -54,6 +54,10 @@ fn main() -> Result<()> {
         res.audio.len(), res.selection_tables.len(), res.skipped_dirs.len(), res.errors.len());
     for d in res.skipped_dirs.iter().take(8) { println!("           skip {d}"); }
 
+    let pv = timed("preview (100 samples)", || aw_catalog::preview::preview(&res, &opts, 100));
+    println!("           per pattern {:?}, unmatched {} in {} folders", pv.per_pattern, pv.unmatched, pv.unmatched_groups.len());
+    for g in &pv.groups { println!("           {:?} / {:?}: {} files, {} … {}", g.site, g.device, g.files, g.first.as_deref().unwrap_or("-"), g.last.as_deref().unwrap_or("-")); }
+    for i in &pv.issues { println!("           issue {} × {} e.g. {:?}", i.kind, i.count, i.examples.first()); }
     let mut cat = Catalog::open(&db)?;
     let root_id = cat.add_root("aufnahmen", "referenced", "bench", &root.to_string_lossy())?;
     let rep = timed("import audio (one transaction)", || import_scanned(&mut cat, root_id, &res.audio, &opts))?;
@@ -113,6 +117,19 @@ fn main() -> Result<()> {
     q("table page (sorted by time, offset 50000, 200 rows)",
       "SELECT r.id, a.rel_path, r.start_ms FROM recording r JOIN asset a ON a.id = r.asset_id ORDER BY r.start_ms LIMIT 200 OFFSET 50000")?;
 
+    let night = aw_catalog::query::Filter { hour_from: Some(18), hour_to: Some(7), ..Default::default() };
+    let fc = timed("facets, local night 18–07", || aw_catalog::query::facets(&cat, &night))?;
+    println!("           total {}, sites {:?}", fc.total, fc.sites.iter().map(|s| (&s.name, s.count)).collect::<Vec<_>>());
+    let mut cur = None;
+    let mut pages = 0;
+    timed("keyset paging through night, 500 per page", || -> Result<()> {
+        loop {
+            let pg = aw_catalog::query::list(&cat, &night, aw_catalog::query::Sort::Start, cur.as_ref(), 500)?;
+            pages += 1;
+            match pg.next { Some(c) => cur = Some(c), None => break Ok(()) }
+        }
+    })?;
+    println!("           {pages} pages");
     let t = Instant::now();
     cat.conn.execute("UPDATE label SET class = 'tawowl1', updated_at = 1 WHERE id = 12345", [])?;
     println!("{:>9.2} ms  single label update (autocommit, WAL)", t.elapsed().as_secs_f64() * 1e3);

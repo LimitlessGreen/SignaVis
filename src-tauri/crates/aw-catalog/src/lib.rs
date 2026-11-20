@@ -3,6 +3,9 @@
 //! import, BirdNET selection tables as runs.
 
 pub mod pattern;
+pub mod preview;
+pub mod profile_spec;
+pub mod query;
 pub mod scan;
 
 use chrono::{NaiveDateTime, TimeZone, Utc};
@@ -179,7 +182,7 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
         let mut ins_asset = tx.prepare(
             "INSERT OR IGNORE INTO asset(uid, root_id, rel_path, size, mtime, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
         let mut ins_rec = tx.prepare(
-            "INSERT INTO recording(uid, asset_id, source, start_ms, tz, site_id, device_id) VALUES (?1, ?2, 'file', ?3, ?4, ?5, ?6)")?;
+            "INSERT INTO recording(uid, asset_id, source, start_ms, local_offset_min, tz, site_id, device_id) VALUES (?1, ?2, 'file', ?3, ?4, ?5, ?6, ?7)")?;
         let mut ins_meta = tx.prepare(
             "INSERT OR REPLACE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'pattern')")?;
         for f in files {
@@ -197,7 +200,7 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
             let site_id = res.site.as_deref().map(|s| upsert_named(&tx, "site", s, &mut sites)).transpose()?;
             let device_id = res.device.as_deref().map(|s| upsert_named(&tx, "device", s, &mut devices)).transpose()?;
             let start = res.start.map(|t| local_to_utc_ms(t, profile.utc_offset_min));
-            ins_rec.execute(params![new_uid(), asset_id, start, profile.tz, site_id, device_id])?;
+            ins_rec.execute(params![new_uid(), asset_id, start, start.map(|_| profile.utc_offset_min), profile.tz, site_id, device_id])?;
             let rec_id = tx.last_insert_rowid();
             for (k, v) in &res.meta { ins_meta.execute(params![rec_id, k, v])?; }
             rep.inserted += 1;
