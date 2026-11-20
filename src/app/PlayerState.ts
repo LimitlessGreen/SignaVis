@@ -12,7 +12,7 @@ import {
     PERCH_FRAME_RATE,
 } from '../shared/constants.ts';
 
-import { clamp, formatTime, isTypingContext, escapeHtml, clampNumber } from '../shared/utils.ts';
+import { clamp, formatTime, isTypingContext, escapeHtml, clampNumber, channelData } from '../shared/utils.ts';
 import { AudioEngine } from '../infrastructure/audio/AudioEngine.ts';
 import { AudioEngineBase } from '../infrastructure/audio/AudioEngineBase.ts';
 import { GestureRecognizer } from '../ui/components/gestures/gestures.ts';
@@ -20,7 +20,7 @@ import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from '../domain/t
 import { InteractionState } from './interactionState.ts';
 import { CoordinateSystem } from '../domain/coordinateSystem.ts';
 
-import { computeAmplitudePeak } from '../domain/spectrogram.ts';
+import { envelopePeakAbs } from '../domain/waveformEnvelope.ts';
 import { PresetManager } from '../domain/PresetManager.ts';
 import { SpectrogramController } from './SpectrogramController.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
@@ -871,7 +871,7 @@ export class PlayerState {
         this._freqZoom.resetSilent();
         this._updateUltrasoundChip();
         this._emit('ultrasoundinfo', this.ultrasoundInfo);
-        this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
+        this.amplitudePeakAbs = this._engine.audioBuffer ? envelopePeakAbs(channelData(this._engine.audioBuffer)) : 0;
         this._updateNormalizeBtn();
         this._updateAmplitudeLabels();
         if (this._engine.audioBuffer) {

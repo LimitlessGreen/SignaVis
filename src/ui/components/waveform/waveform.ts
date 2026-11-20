@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { CQT_FMIN } from '../../../shared/constants.ts';
+import { envelopeMinMax } from '../../../domain/waveformEnvelope.ts';
 import { clamp, channelData as cachedChannelData, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
@@ -304,14 +305,10 @@ export function renderOverviewWaveform({
     for (let x = 0; x < W; x++) {
         const start = s0 + Math.floor(x * span / W);
         const end = Math.min(s1, Math.max(start + 1, s0 + Math.floor((x + 1) * span / W)));
-        let min = 1;
-        let max = -1;
-        for (let i = start; i < end; i++) {
-            const v = clamp(channelData[i] * ampScale, -1, 1);
-            if (v < min) min = v;
-            if (v > max) max = v;
-        }
-        if (min > max) continue;
+        const [lo, hi] = envelopeMinMax(channelData, start, end);
+        if (!(lo <= hi)) continue;
+        const min = clamp(lo * ampScale, -1, 1);
+        const max = clamp(hi * ampScale, -1, 1);
         const y0 = mid - max * amp;
         const y1 = mid - min * amp;
         ctx.fillRect(x, y0, 1, Math.max(dpr, y1 - y0));
