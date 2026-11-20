@@ -1,0 +1,163 @@
+/**
+ * WAV reading without decodeAudioData, for recordings too long for a single decode call.
+ *
+ * Chrome's decodeAudioData builds one AudioBuffer per channel at the context rate and rejects
+ * long WAVs (already ~12 min at 48 kHz in some builds) with "Unable to decode audio data".
+ * PCM needs no decoder: the header is parsed here and the samples are converted block by block
+ * to mono Float32, straight into one preallocated buffer. Between blocks the loop yields so the
+ * main thread stays responsive.
+ *
+ * Supports RIFF, RF64/BW64 (ds64 sizes), PCM 8/16/24/32 bit, IEEE float 32/64 bit and
+ * WAVE_FORMAT_EXTENSIBLE with either subformat. A data chunk that claims more bytes than the
+ * file holds (recorder stopped before rewriting the header) is read up to the end of the file.
+ */
+
+export interface WavInfo {
+  /** 'pcm' = integer samples, 'float' = IEEE float. */
+  format: 'pcm' | 'float';
+  channels: number;
+  sampleRate: number;
+  /** Bytes per sample in the file (container size; valid bits may be fewer, left-aligned). */
+  bytesPerSample: number;
+  /** Bytes per frame (all channels). */
+  blockAlign: number;
+  /** Byte offset of the first sample. */
+  dataOffset: number;
+  /** Number of complete frames available in the file. */
+  frames: number;
+}
+
+const WAVE_FORMAT_PCM = 1;
+const WAVE_FORMAT_IEEE_FLOAT = 3;
+const WAVE_FORMAT_EXTENSIBLE = 0xfffe;
+
+function fourcc(v: DataView, at: number): string {
+  return String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3));
+}
+
+/** True for RIFF/RF64/BW64 files of type WAVE. */
+export function isWav(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 12) return false;
+  const v = new DataView(buf);
+  const id = fourcc(v, 0);
+  return (id === 'RIFF' || id === 'RF64' || id === 'BW64') && fourcc(v, 8) === 'WAVE';
+}
+
+/** Parse the header. Returns null for WAVs this reader cannot convert (compressed formats, RIFX). */
+export function parseWav(buf: ArrayBuffer): WavInfo | null {
+  if (!isWav(buf)) return null;
+  const v = new DataView(buf);
+  const size = buf.byteLength;
+  let ds64Data = -1;
+  let fmt: { tag: number; channels: number; sampleRate: number; blockAlign: number; bits: number } | null = null;
+  let pos = 12;
+  while (pos + 8 <= size) {
+    const id = fourcc(v, pos);
+    let len = v.getUint32(pos + 4, true);
+    const body = pos + 8;
+    if (id === 'ds64' && body + 16 <= size) {
+      // ds64: riffSize(8), dataSize(8), sampleCount(8). Sizes above 2^53 do not occur in practice.
+      ds64Data = v.getUint32(body + 8, true) + v.getUint32(body + 12, true) * 2 ** 32;
+    } else if (id === 'fmt ' && body + 16 <= size) {
+      let tag = v.getUint16(body, true);
+      if (tag === WAVE_FORMAT_EXTENSIBLE && len >= 40 && body + 26 <= size) tag = v.getUint16(body + 24, true);
+      fmt = {
+        tag,
+        channels: v.getUint16(body + 2, true),
+        sampleRate: v.getUint32(body + 4, true),
+        blockAlign: v.getUint16(body + 12, true),
+        bits: v.getUint16(body + 14, true),
+      };
+    } else if (id === 'data') {
+      if (!fmt || fmt.channels < 1 || fmt.sampleRate < 1 || fmt.blockAlign < 1) return null;
+      if (len === 0xffffffff && ds64Data >= 0) len = ds64Data;
+      // 0 / 0xFFFFFFFF / too large: header not finalized, read to the end of the file.
+      const avail = size - body;
+      const bytes = len === 0 || len > avail ? avail : len;
+      const bytesPerSample = fmt.blockAlign / fmt.channels;
+      const pcm = fmt.tag === WAVE_FORMAT_PCM && [1, 2, 3, 4].includes(bytesPerSample);
+      const float = fmt.tag === WAVE_FORMAT_IEEE_FLOAT && (bytesPerSample === 4 || bytesPerSample === 8);
+      if (!pcm && !float) return null;
+      return {
+        format: pcm ? 'pcm' : 'float',
+        channels: fmt.channels,
+        sampleRate: fmt.sampleRate,
+        bytesPerSample,
+        blockAlign: fmt.blockAlign,
+        dataOffset: body,
+        frames: Math.floor(bytes / fmt.blockAlign),
+      };
+    }
+    // Chunks are padded to an even length.
+    pos = body + len + (len & 1);
+  }
+  return null;
+}
+
+/** Convert frames [from, to) to mono Float32 into dst[from ... to). */
+function convertBlock(buf: ArrayBuffer, info: WavInfo, from: number, to: number, dst: Float32Array): void {
+  const { channels: ch, bytesPerSample: bps, blockAlign, dataOffset, format } = info;
+  const start = dataOffset + from * blockAlign;
+  const n = to - from;
+  const inv = 1 / ch;
+  // Fast paths: aligned typed-array views (all browsers are little-endian).
+  if (format === 'pcm' && bps === 2 && start % 2 === 0) {
+    const s = new Int16Array(buf, start, n * ch);
+    if (ch === 1) for (let i = 0; i < n; i++) dst[from + i] = s[i] / 32768;
+    else for (let i = 0, j = 0; i < n; i++) { let acc = 0; for (let c = 0; c < ch; c++) acc += s[j++]; dst[from + i] = acc * inv / 32768; }
+    return;
+  }
+  if (format === 'float' && bps === 4 && start % 4 === 0) {
+    const s = new Float32Array(buf, start, n * ch);
+    if (ch === 1) dst.set(s, from);
+    else for (let i = 0, j = 0; i < n; i++) { let acc = 0; for (let c = 0; c < ch; c++) acc += s[j++]; dst[from + i] = acc * inv; }
+    return;
+  }
+  const v = new DataView(buf, start, n * blockAlign);
+  for (let i = 0; i < n; i++) {
+    let acc = 0;
+    for (let c = 0; c < ch; c++) {
+      const at = i * blockAlign + c * bps;
+      if (format === 'float') acc += bps === 4 ? v.getFloat32(at, true) : v.getFloat64(at, true);
+      else if (bps === 1) acc += (v.getUint8(at) - 128) / 128;
+      else if (bps === 2) acc += v.getInt16(at, true) / 32768;
+      else if (bps === 3) acc += ((v.getUint8(at) | (v.getUint8(at + 1) << 8) | (v.getInt8(at + 2) << 16))) / 8388608;
+      else acc += v.getInt32(at, true) / 2147483648;
+    }
+    dst[from + i] = acc * inv;
+  }
+}
+
+/** Frames converted per step; ~20 s at 48 kHz, a few ms of work. */
+const BLOCK_FRAMES = 1 << 20;
+
+const yieldToEventLoop = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/**
+ * Read a WAV into one mono buffer at the file's sample rate.
+ * `ctx` only allocates the buffer (no resampling happens).
+ */
+export async function decodeWavMono<B extends { getChannelData(ch: number): Float32Array }>(
+  buf: ArrayBuffer,
+  ctx: { createBuffer(channels: number, length: number, sampleRate: number): B },
+  onProgress?: (fraction: number) => void,
+): Promise<B> {
+  const info = parseWav(buf);
+  if (!info) throw new Error('Unsupported WAV encoding (only PCM and float WAVs can be read in blocks).');
+  if (info.frames < 1) throw new Error('The WAV file contains no audio.');
+  let out: B;
+  try {
+    out = ctx.createBuffer(1, info.frames, info.sampleRate);
+  } catch (e: any) {
+    const gb = (info.frames * 4 / 1e9).toFixed(1);
+    throw new Error(`Recording too long to load: ${Math.round(info.frames / info.sampleRate / 60)} min needs ${gb} GB of memory (${e?.message || e}).`);
+  }
+  const dst = out.getChannelData(0);
+  for (let a = 0; a < info.frames; a += BLOCK_FRAMES) {
+    const b = Math.min(info.frames, a + BLOCK_FRAMES);
+    convertBlock(buf, info, a, b, dst);
+    onProgress?.(b / info.frames);
+    if (b < info.frames) await yieldToEventLoop();
+  }
+  return out;
+}

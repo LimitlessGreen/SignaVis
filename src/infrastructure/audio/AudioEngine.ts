@@ -21,6 +21,8 @@
 import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
+import { parseWav, decodeWavMono } from './wavDecode.ts';
+import { parseFlacStreamInfo, decodeFlacChunked } from './chunkedFlacDecode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
@@ -79,6 +81,14 @@ function normalizeListenMode(mode: ListenMode): ListenMode {
  * @property {number} currentTimeSec
  */
 
+/** Block-wise decoder for formats that support it, or null. */
+function chunkedDecoder(buf: ArrayBuffer): ((buf: ArrayBuffer, ctx: BaseAudioContext) => Promise<AudioBuffer>) | null {
+  if (parseWav(buf)) return (b, ctx) => decodeWavMono(b, ctx);
+  if (parseFlacStreamInfo(buf)) return (b, ctx) => decodeFlacChunked(b, ctx);
+  if (isMp3(buf)) return (b, ctx) => decodeMp3Chunked(b, ctx);
+  return null;
+}
+
 /**
  * Decode an ArrayBuffer into an AudioBuffer, preserving the file's native
  * sample rate by pre-parsing the header before creating the AudioContext.
@@ -91,16 +101,17 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
   const nativeSr = parseNativeSampleRate(arrayBuffer);
   const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
   try {
-    const mp3 = isMp3(arrayBuffer);
-    // Long MP3s exceed what one decodeAudioData call can allocate: decode block by block to mono.
-    if (mp3 && arrayBuffer.byteLength >= CHUNKED_DECODE_MIN_BYTES) return await decodeMp3Chunked(arrayBuffer, ctx);
+    // Long recordings exceed what one decodeAudioData call can allocate: WAV is read directly,
+    // MP3 and FLAC are decoded block by block, all to mono.
+    const chunked = chunkedDecoder(arrayBuffer);
+    if (chunked && arrayBuffer.byteLength >= CHUNKED_DECODE_MIN_BYTES) return await chunked(arrayBuffer, ctx);
     try {
       // decodeAudioData detaches its input; keep a copy for the chunked fallback.
-      return await ctx.decodeAudioData(mp3 ? arrayBuffer.slice(0) : arrayBuffer);
+      return await ctx.decodeAudioData(chunked ? arrayBuffer.slice(0) : arrayBuffer);
     } catch (err) {
-      if (!mp3) throw err;
-      console.warn('[AudioEngine] decodeAudioData failed, retrying chunked MP3 decode', err);
-      return await decodeMp3Chunked(arrayBuffer, ctx);
+      if (!chunked) throw new Error(`The browser could not decode this audio format (${(err as any)?.message || err}).`);
+      console.warn('[AudioEngine] decodeAudioData failed, retrying block-wise decode', err);
+      return await chunked(arrayBuffer, ctx);
     }
   } finally {
     ctx.close?.().catch(() => {});
