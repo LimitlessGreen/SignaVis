@@ -13,6 +13,7 @@
 //   'tileready'  — a tile finished loading (or the colour options changed)
 // ═══════════════════════════════════════════════════════════════════════
 
+import { floatWavHeader, writePcmWavFile } from '../infrastructure/storage/pcmCache.ts';
 import {
     buildOverviewImage,
     buildSpectrogramGrayscale,
@@ -160,7 +161,7 @@ export function v2BinFrequencies(p: StftParamsV2, sampleRate: number): Float64Ar
     return Float64Array.from({ length: s.bands }, (_, i) => inv(a + (b - a) * (i + 1) / (s.bands + 1)));
 }
 
-/** Any source qualifies: WAV files are read directly, everything else via pcmWavBlob(). */
+/** Any source qualifies: WAV files are read directly, everything else via pcmWavSource(). */
 export function isWasmTileSource(file: File | null): file is File {
     return !!file && typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
 }
@@ -176,19 +177,20 @@ export function isWavFile(file: File): boolean {
  * (~6 h at 48 kHz).
  */
 export function pcmWavBlob(channelData: Float32Array, sampleRate: number): Blob {
-    const dataBytes = channelData.byteLength;
-    const h = new DataView(new ArrayBuffer(44));
-    const tag = (at: number, s: string) => { for (let i = 0; i < 4; i++) h.setUint8(at + i, s.charCodeAt(i)); };
-    tag(0, 'RIFF'); h.setUint32(4, 36 + dataBytes, true); tag(8, 'WAVE');
-    tag(12, 'fmt '); h.setUint32(16, 16, true);
-    h.setUint16(20, 3, true);                 // WAVE_FORMAT_IEEE_FLOAT
-    h.setUint16(22, 1, true);                 // mono
-    h.setUint32(24, sampleRate, true);
-    h.setUint32(28, sampleRate * 4, true);    // byte rate
-    h.setUint16(32, 4, true);                 // block align
-    h.setUint16(34, 32, true);                // bits per sample
-    tag(36, 'data'); h.setUint32(40, dataBytes, true);
-    return new Blob([h.buffer, channelData as Float32Array<ArrayBuffer>]);
+    return new Blob([floatWavHeader(channelData.length, sampleRate), channelData as Float32Array<ArrayBuffer>]);
+}
+
+/**
+ * Decoded PCM as a sliceable float WAV: a disk-backed OPFS file when possible (no second copy
+ * of the audio in memory), else pcmWavBlob().
+ */
+export async function pcmWavSource(channelData: Float32Array, sampleRate: number): Promise<Blob> {
+    try {
+        return await writePcmWavFile(channelData, sampleRate);
+    } catch (err) {
+        console.warn('[WasmTileManager] OPFS PCM cache unavailable, keeping the samples in memory', err);
+        return pcmWavBlob(channelData, sampleRate);
+    }
 }
 
 export class WasmTileManager extends EventTarget {

@@ -24,7 +24,7 @@ import {
     AUTO_CONTRAST,
 } from '../shared/constants.ts';
 
-import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavSource, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily.
 import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 
@@ -297,10 +297,10 @@ export class SpectrogramController extends EventTarget {
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
-            const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
+            const ok = await this._startTileMode(options, autoAdjust, async () => WasmTileManager.create({
                 file,
                 nativePath:   this._sourcePath,
-                source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
+                source:       isWavFile(file) ? undefined : await pcmWavSource(cachedChannelData(audioBuffer), audioBuffer.sampleRate),
                 wasmParams:   v2Params,
                 duration:     this._audioBuffer!.duration,
                 colorOptions: this._getCurrentColorOptions(),
