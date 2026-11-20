@@ -66,3 +66,27 @@ test('maxAbsPeaks: max |sample| per bin from the pyramid', async () => {
         assert.equal(out[i], Math.max(-lo, hi), `bin ${i}`);
     }
 });
+
+test('channelPeaksAsync in the peaks worker equals the main-thread pyramid', async () => {
+    // Run the real worker module in-process: a fake `self` receives its onmessage handler.
+    const workerSide = { onmessage: null, postMessage: (msg, transfer) => queueMicrotask(() => fake.onmessage?.({ data: structuredClone(msg, { transfer }) })) };
+    const fake = { onmessage: null, onerror: null, terminated: false,
+        postMessage(msg, transfer) { const data = structuredClone(msg, { transfer }); setTimeout(() => workerSide.onmessage({ data }), 0); },
+        terminate() { this.terminated = true; } };
+    globalThis.self = workerSide;
+    await import('../src/infrastructure/waveformPeaks.worker.ts');
+    delete globalThis.self;
+    const { channelPeaksAsync, channelPeaks } = await import('../src/domain/waveformEnvelope.ts');
+    const n = (1 << 23) + 12_345;                      // above the worker threshold, partial last piece
+    const v = signal(n, 21), ref = signal(n, 21);
+    const before = v.slice(0, 1000);
+    const p = await channelPeaksAsync(v, 1 << 16, () => fake);
+    assert.ok(fake.terminated);
+    assert.deepEqual(v.subarray(0, 1000), before, 'source untouched');
+    const sync = channelPeaks(ref);
+    for (const lvl of ['fine', 'coarse']) {
+        assert.deepEqual(p[lvl].min, sync[lvl].min, lvl);
+        assert.deepEqual(p[lvl].max, sync[lvl].max, lvl);
+    }
+    assert.equal(channelPeaks(v), p, 'cached');
+});

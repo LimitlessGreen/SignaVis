@@ -1,3 +1,4 @@
+import { pumpSamples } from '../shared/pumpSamples.ts';
 // Min/max per block of samples, built once per channel: a fine level (32) for
 // medium zoom, a coarse one (1024, from the fine one) for zoomed-out views of
 // long recordings. Drawing and peak levels then touch a fraction of the samples.
@@ -20,6 +21,24 @@ function reduceRange(min: Float32Array, max: Float32Array, factor: number, outMi
             if (max[i] > hi) hi = max[i];
         }
         outMin[b] = lo; outMax[b] = hi;
+    }
+}
+
+/**
+ * Fine (PEAK_BLOCK_FINE) min/max of `piece`, which starts at a sample offset that is a multiple
+ * of PEAK_BLOCK_FINE, into outMin/outMax starting at block b0. Shared with the peaks worker.
+ */
+export function reduceFineInto(piece: Float32Array, outMin: Float32Array, outMax: Float32Array, b0: number): void {
+    const n = Math.ceil(piece.length / PEAK_BLOCK_FINE);
+    for (let b = 0; b < n; b++) {
+        let lo = Infinity, hi = -Infinity;
+        const end = Math.min(piece.length, (b + 1) * PEAK_BLOCK_FINE);
+        for (let i = b * PEAK_BLOCK_FINE; i < end; i++) {
+            const v = piece[i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+        outMin[b0 + b] = lo; outMax[b0 + b] = hi;
     }
 }
 
@@ -46,22 +65,82 @@ export function channelPeaks(data: Float32Array): ChannelPeaks {
  * between (a 3 h recording takes seconds to scan). Fills the cache, so later synchronous
  * channelPeaks()/envelopeMinMax() calls are free.
  */
-export async function channelPeaksAsync(data: Float32Array, sliceBlocks = 1 << 16): Promise<ChannelPeaks> {
+export async function channelPeaksAsync(
+    data: Float32Array,
+    sliceBlocks = 1 << 16,
+    createWorker: (() => Worker) | null = defaultPeaksWorker,
+): Promise<ChannelPeaks> {
     const cached = cache.get(data);
     if (cached) return cached;
-    const n = Math.ceil(data.length / PEAK_BLOCK_FINE);
-    const min = new Float32Array(n), max = new Float32Array(n);
-    for (let b = 0; b < n; b += sliceBlocks) {
-        reduceRange(data, data, PEAK_BLOCK_FINE, min, max, b, Math.min(n, b + sliceBlocks));
-        await new Promise<void>((r) => setTimeout(r, 0));
-        // A synchronous caller may have built it meanwhile.
-        const done = cache.get(data);
-        if (done) return done;
+    let fine: Peaks | null = null;
+    if (createWorker && data.length >= WORKER_MIN_SAMPLES) {
+        try {
+            fine = await finePeaksInWorker(data, createWorker);
+        } catch (err) {
+            console.warn('[waveformEnvelope] peaks worker failed, building on the main thread', err);
+        }
     }
-    const fine = { block: PEAK_BLOCK_FINE, min, max };
-    const peaks = { fine, coarse: reducePeaks(min, max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK) };
+    if (!fine) {
+        const n = Math.ceil(data.length / PEAK_BLOCK_FINE);
+        const min = new Float32Array(n), max = new Float32Array(n);
+        for (let b = 0; b < n; b += sliceBlocks) {
+            reduceRange(data, data, PEAK_BLOCK_FINE, min, max, b, Math.min(n, b + sliceBlocks));
+            await new Promise<void>((r) => setTimeout(r, 0));
+            // A synchronous caller may have built it meanwhile.
+            const done = cache.get(data);
+            if (done) return done;
+        }
+        fine = { block: PEAK_BLOCK_FINE, min, max };
+    }
+    const done = cache.get(data);
+    if (done) return done;
+    const peaks = { fine, coarse: reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK) };
     cache.set(data, peaks);
     return peaks;
+}
+
+/** Below this many samples the main thread builds the pyramid itself (a worker costs more). */
+const WORKER_MIN_SAMPLES = 1 << 23;
+/** Samples per piece sent to the worker (16 MB, a multiple of PEAK_BLOCK_FINE). */
+const WORKER_PIECE = 1 << 22;
+
+let workerCtor: (new () => Worker) | null | undefined;
+function defaultPeaksWorker(): Worker {
+    if (!workerCtor) throw new Error('peaks worker not loaded');
+    return new workerCtor();
+}
+/** Load the inline worker once (Vite `?worker&inline`); without it the main thread is used. */
+export async function loadPeaksWorker(): Promise<boolean> {
+    if (workerCtor === undefined) {
+        try { workerCtor = (await import('../infrastructure/waveformPeaks.worker.ts?worker&inline')).default; }
+        catch { workerCtor = null; }
+    }
+    return !!workerCtor;
+}
+
+/** Fine level built in a worker; the main thread only copies pieces (see pumpSamples). */
+async function finePeaksInWorker(data: Float32Array, createWorker: () => Worker): Promise<Peaks> {
+    if (createWorker === defaultPeaksWorker && !(await loadPeaksWorker())) throw new Error('no worker');
+    const worker = createWorker();
+    const waiting: Array<{ resolve: (v: any) => void; reject: (e: Error) => void }> = [];
+    worker.onmessage = (e: MessageEvent) => {
+        const w = waiting.shift();
+        if (e.data?.type === 'error') w?.reject(new Error(e.data.message)); else w?.resolve(e.data);
+    };
+    worker.onerror = (e) => { while (waiting.length) waiting.shift()!.reject(new Error(e.message || 'worker error')); };
+    const ask = (msg: any, transfer: Transferable[] = []) => new Promise<any>((resolve, reject) => {
+        waiting.push({ resolve, reject });
+        worker.postMessage(msg, transfer);
+    });
+    try {
+        await ask({ type: 'start', length: data.length });
+        await pumpSamples(data, WORKER_PIECE, async (piece, offset) =>
+            (await ask({ type: 'piece', data: piece.buffer, length: piece.length, offset }, [piece.buffer])).data);
+        const r = await ask({ type: 'finish' });
+        return { block: PEAK_BLOCK_FINE, min: r.min, max: r.max };
+    } finally {
+        worker.terminate();
+    }
 }
 
 /**

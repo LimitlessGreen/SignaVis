@@ -1,10 +1,10 @@
 // Writes one OPFS file with a synchronous access handle (in place, ~2× faster than
 // createWritable, which writes a swap file). Messages:
 //   { type: 'open', dir, name }  → { type: 'ok' }
-//   { type: 'write', data }      → { type: 'ok' }   (data: transferred ArrayBuffer, appended)
+//   { type: 'write', data, length? } → { type: 'ok', data }  (appends `length` bytes, default all; buffer handed back)
 //   { type: 'close' }            → { type: 'ok' }
 // Any failure answers { type: 'error', message } and closes the handle.
-type Ctx = { postMessage(msg: any): void; onmessage: ((e: MessageEvent) => void) | null };
+type Ctx = { postMessage(msg: any, transfer?: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null };
 const ctx = self as unknown as Ctx;
 
 let handle: any = null;
@@ -21,9 +21,12 @@ ctx.onmessage = async (e: MessageEvent) => {
             handle.truncate(0);
             at = 0;
         } else if (msg.type === 'write') {
-            const n = handle.write(new Uint8Array(msg.data), { at });
-            if (n !== msg.data.byteLength) throw new Error(`short write (${n} of ${msg.data.byteLength} bytes)`);
+            const len = msg.length ?? msg.data.byteLength;
+            const n = handle.write(new Uint8Array(msg.data, 0, len), { at });
+            if (n !== len) throw new Error(`short write (${n} of ${len} bytes)`);
             at += n;
+            ctx.postMessage({ type: 'ok', data: msg.data }, [msg.data]);
+            return;
         } else if (msg.type === 'close') {
             handle.flush();
             handle.close();

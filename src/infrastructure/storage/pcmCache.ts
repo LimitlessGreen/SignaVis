@@ -8,6 +8,8 @@
 // CodedAudioFileReader "CacheInTemporaryFile" (float samples, so values are preserved).
 // ═══════════════════════════════════════════════════════════════════════
 
+import { pumpSamples } from '../../shared/pumpSamples.ts';
+
 /** OPFS directory for the cache files. */
 export const PCM_CACHE_DIR = 'signavis-pcm-cache';
 /** Files of other pages/sessions older than this are removed. */
@@ -94,13 +96,13 @@ async function writeInWorker(channelData: Float32Array, sampleRate: number, name
     } catch {
         return false;
     }
-    const replies: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+    const replies: Array<{ resolve: (v: any) => void; reject: (e: Error) => void }> = [];
     worker.onmessage = (e: MessageEvent) => {
         const r = replies.shift();
-        if (e.data.type === 'ok') r?.resolve(); else r?.reject(new Error(e.data.message));
+        if (e.data.type === 'ok') r?.resolve(e.data); else r?.reject(new Error(e.data.message));
     };
     worker.onerror = (e) => { while (replies.length) replies.shift()!.reject(new Error(e.message || 'worker error')); };
-    const send = (msg: any, transfer: Transferable[] = []) => new Promise<void>((resolve, reject) => {
+    const send = (msg: any, transfer: Transferable[] = []) => new Promise<any>((resolve, reject) => {
         replies.push({ resolve, reject });
         worker.postMessage(msg, transfer);
     });
@@ -110,13 +112,11 @@ async function writeInWorker(channelData: Float32Array, sampleRate: number, name
         } catch {
             return false; // no createSyncAccessHandle (e.g. older Safari): use createWritable
         }
-        const pending: Promise<void>[] = [send({ type: 'write', data: floatWavHeader(channelData.length, sampleRate) })];
-        for (let i = 0; i < channelData.length; i += WORKER_WRITE_SAMPLES) {
-            const piece = channelData.slice(i, Math.min(channelData.length, i + WORKER_WRITE_SAMPLES));
-            pending.push(send({ type: 'write', data: piece.buffer }, [piece.buffer]));
-            if (pending.length >= 2) await pending.shift();
-        }
-        await Promise.all(pending);
+        const header = floatWavHeader(channelData.length, sampleRate);
+        await send({ type: 'write', data: header }, [header]);
+        // Pooled pieces: the worker hands each buffer back after writing it.
+        await pumpSamples(channelData, WORKER_WRITE_SAMPLES, async (piece) =>
+            (await send({ type: 'write', data: piece.buffer, length: piece.byteLength }, [piece.buffer])).data);
         await send({ type: 'close' });
         return true;
     } finally {
