@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import sitemap from '@astrojs/sitemap';
 import { readdirSync } from 'node:fs';
+import { analyticsScript } from './src/lib/analytics.ts';
 
 // German pages that really exist; other /de/docs/ URLs are English fallbacks
 // (noindex, see src/route-data.ts) and stay out of the sitemap.
@@ -48,6 +49,7 @@ export default defineConfig({
         { tag: 'meta', attrs: { name: 'google-site-verification', content: GOOGLE_VERIFICATION } },
         { tag: 'meta', attrs: { property: 'og:image', content: OG_IMAGE } },
         { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+        { tag: 'script', content: analyticsScript },
       ],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' }],
       customCss: ['@fontsource-variable/inter', './src/styles/m3-tokens.css', './src/styles/starlight-m3.css'],
@@ -63,6 +65,7 @@ export default defineConfig({
             { label: 'Species format', translations: { de: 'Artenformat' }, slug: 'docs/labeling/species-format' },
             { label: 'Xeno-canto format', translations: { de: 'Xeno-canto-Format' }, slug: 'docs/labeling/xeno-canto-format' },
             { label: 'Cite SignaVis', translations: { de: 'SignaVis zitieren' }, link: '/docs/cite/' },
+            { label: 'Privacy', translations: { de: 'Datenschutz' }, link: '/docs/privacy/' },
           ],
         },
         {
