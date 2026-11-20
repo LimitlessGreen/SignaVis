@@ -562,6 +562,11 @@ html.is-mobile {
   .m-set-body { padding: 0 14px 24px; }
   .m-an-detectors .m-set-group { margin-bottom: 4px; }
   .m-an-note { margin: 0 0 16px; }
+  .m-xckey-line { display: flex; gap: 6px; }
+  .m-xckey-input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--m-line); border-radius: 6px; background: transparent; color: inherit; }
+  .m-xckey-line .m-set-btn { width: auto; flex: none; padding-inline: 12px; }
+  .m-xckey-input { height: 40px; box-sizing: border-box; }
+  .m-xckey-link { display: block; margin-top: 6px; color: var(--m-accent); }
   .m-set-group { margin: 6px 0 18px; }
   .m-set-group h3 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--m-muted); }
   .m-set-row {

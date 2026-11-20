@@ -76,6 +76,8 @@ export interface MobileAppHost {
   restoreLabel?(lbl: any): void;
   /** Called when phone mode is entered (true) or left (false). */
   onModeChange?(phone: boolean): void;
+  /** Xeno-canto API key (shared with the desktop XC panel); setting it imports the open recording's labels + metadata. */
+  xcKey?: { get(): string; set(key: string): void | Promise<void> };
   /**
    * The app's analysis controls (desktop Analyse panel). The phone screen drives these
    * elements, so BirdNET / BirdBox keep one implementation.
@@ -1354,6 +1356,41 @@ export class MobileApp {
         location.replace(u.toString());
       } });
     });
+
+    if (this.h.xcKey) {
+      const xk = this.h.xcKey;
+      const xc = group('Xeno-canto');
+      const row = el('form', 'm-set-row m-set-col m-xckey');
+      row.appendChild(el('span', 'm-set-label', t('set.xcKey')));
+      const line = el('div', 'm-xckey-line');
+      const inp = el('input', 'm-xckey-input');
+      inp.type = 'password';
+      inp.autocomplete = 'off';
+      inp.spellcheck = false;
+      inp.value = xk.get();
+      inp.placeholder = t('set.xcKeyPh');
+      inp.setAttribute('aria-label', t('set.xcKey'));
+      const eye = button('m-set-btn m-xckey-eye', '', t('set.xcKeyShow'), () => {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      });
+      eye.textContent = '👁';
+      const save = el('button', 'm-set-btn', t('set.xcKeySave'));
+      save.type = 'submit';
+      line.append(inp, eye, save);
+      row.append(line, el('small', 'm-hint', t(xk.get() ? 'set.xcKeySet' : 'set.xcKeyHint')));
+      row.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        save.disabled = true;
+        try { await xk.set(inp.value.trim()); this.toast(t(inp.value.trim() ? 'set.xcKeySaved' : 'set.xcKeyCleared'), null); }
+        finally { save.disabled = false; this.renderSettings(); }
+      });
+      xc.appendChild(row);
+      const a = el('a', 'm-hint m-xckey-link', t('set.xcKeyWhere'));
+      a.href = 'https://xeno-canto.org/account';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      xc.appendChild(a);
+    }
 
     const help = group(t('set.gestures'));
     const ul = el('ul', 'm-set-help');
