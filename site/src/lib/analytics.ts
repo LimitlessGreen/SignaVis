@@ -19,13 +19,28 @@ export const analyticsScript = `(() => {
   s.src = ${JSON.stringify(UMAMI_SRC)};
   s.dataset.websiteId = ${JSON.stringify(UMAMI_WEBSITE_ID)};
   s.dataset.doNotTrack = 'true';
-  // Clicks before the tracker has loaded are queued and sent once it is ready.
-  const queue = [];
-  const send = (name, data) => { try { window.umami.track(name, data); } catch (e) {} };
-  s.onload = () => { if (window.umami) queue.splice(0).forEach(([n, d]) => send(n, d)); };
+  // Before the tracker has loaded, send the event directly (same payload as Umami's
+  // tracker). keepalive lets the request finish even if the click navigates away.
+  const dnt = ['1', 'yes'].includes(String(navigator.doNotTrack || window.doNotTrack));
+  const direct = (name, data) => {
+    if (dnt) return;
+    try {
+      fetch(new URL('/api/send', s.src).href, {
+        method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'event', payload: {
+          website: s.dataset.websiteId, hostname: location.hostname, url: location.pathname + location.search,
+          title: document.title, referrer: document.referrer, language: navigator.language,
+          screen: screen.width + 'x' + screen.height, name, data,
+        } }),
+      }).catch(() => {});
+    } catch (e) {}
+  };
   document.head.appendChild(s);
 
-  const track = (name, data) => { if (window.umami) send(name, data); else queue.push([name, data]); };
+  const track = (name, data) => {
+    if (window.umami) { try { window.umami.track(name, data); } catch (e) {} }
+    else direct(name, data);
+  };
   const from = location.pathname.replace(/^\\/SignaVis/, '') || '/';
   document.addEventListener('click', (ev) => {
     const a = ev.target instanceof Element && ev.target.closest('a[href]');
