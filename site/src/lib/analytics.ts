@@ -19,9 +19,13 @@ export const analyticsScript = `(() => {
   s.src = ${JSON.stringify(UMAMI_SRC)};
   s.dataset.websiteId = ${JSON.stringify(UMAMI_WEBSITE_ID)};
   s.dataset.doNotTrack = 'true';
+  // Clicks before the tracker has loaded are queued and sent once it is ready.
+  const queue = [];
+  const send = (name, data) => { try { window.umami.track(name, data); } catch (e) {} };
+  s.onload = () => { if (window.umami) queue.splice(0).forEach(([n, d]) => send(n, d)); };
   document.head.appendChild(s);
 
-  const track = (name, data) => { try { window.umami && window.umami.track(name, data); } catch (e) {} };
+  const track = (name, data) => { if (window.umami) send(name, data); else queue.push([name, data]); };
   const from = location.pathname.replace(/^\\/SignaVis/, '') || '/';
   document.addEventListener('click', (ev) => {
     const a = ev.target instanceof Element && ev.target.closest('a[href]');
