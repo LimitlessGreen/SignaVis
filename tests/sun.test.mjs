@@ -43,6 +43,9 @@ test('UTC offset guess, seasons, clock format', () => {
     assert.equal(guessUtcOffset(51.3, 12.4, '2026-11-20'), 1);
     assert.equal(guessUtcOffset(51.5, -0.12, '2026-11-20'), 0);
     assert.equal(guessUtcOffset(40.7, -74, '2026-11-20'), -5);
+    assert.equal(guessUtcOffset(40.7, -74, '2026-07-01'), -4);
+    assert.equal(guessUtcOffset(28.6, 77.2, '2026-07-01'), 5.5);
+    assert.equal(guessUtcOffset(43.4, -8.4, '2026-11-20'), 1); // Spain keeps CET in the far west
     assert.equal(seasonOf(11, 51), 'autumn');
     assert.equal(seasonOf(11, -33), 'spring');
     assert.equal(formatClock(-30), '23:30');

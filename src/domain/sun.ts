@@ -7,6 +7,8 @@
  * the zone given by `utcOffsetH`; values outside 0…1440 belong to the previous/next day.
  */
 
+import tzLookup from '@photostructure/tz-lookup';
+
 const RAD = Math.PI / 180;
 
 /** Sun altitude thresholds in degrees (upper limb with refraction for sunrise/sunset). */
@@ -112,26 +114,29 @@ export function sunDay(lat: number, lon: number, date: string, utcOffsetH = 0): 
     };
 }
 
-/**
- * Best guess of the local clock's UTC offset from the coordinates: the nautical zone
- * (lon/15) plus European summer time inside Europe. The user can correct it.
- */
-export function guessUtcOffset(lat: number, lon: number, date: string): number {
-    let off = Math.round(lon / 15);
-    const inEurope = lat > 35 && lat < 72 && lon > -11 && lon < 40;
-    if (inEurope) {
-        // Western/Central/Eastern European time rather than the nautical zones
-        if (lon < -7.5 || (lat > 49.8 && lon < 1.8)) off = 0;   // Portugal, Ireland, UK
-        else if (lon < 22) off = 1;                              // Spain … Poland
-        else off = 2;                                            // Finland, Baltics, Greece, Romania …
-        const y = Number(date.slice(0, 4));
-        const lastSunday = (m: number) => { const d = new Date(Date.UTC(y, m + 1, 0)); return d.getUTCDate() - d.getUTCDay(); };
-        const md = date.slice(5);
-        const start = `03-${String(lastSunday(2)).padStart(2, '0')}`;
-        const end = `10-${String(lastSunday(9)).padStart(2, '0')}`;
-        if (md >= start && md < end) off += 1;
-    }
-    return off;
+/** IANA time zone at a place (e.g. "Europe/Berlin"), or null when the lookup fails. */
+export function timeZoneAt(lat: number, lon: number): string | null {
+    try { return tzLookup(lat, lon) || null; } catch { return null; }
+}
+
+/** UTC offset in hours (fractional for e.g. India) of an IANA zone on a date at a local clock time — includes summer time. */
+export function zoneOffsetHours(zone: string, date: string, time = '12:00'): number | null {
+    try {
+        // Offset at the UTC instant of that wall-clock time; good enough except within the DST switch hour
+        const utc = Date.parse(`${date}T${time}:00Z`);
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts(utc);
+        const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+        const m = name.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        if (!m) return name === 'GMT' ? 0 : null;
+        return (m[1] === '-' ? -1 : 1) * (Number(m[2]) + Number(m[3] || 0) / 60);
+    } catch { return null; }
+}
+
+/** Local clock offset at a place: real time zone with summer time, else the nautical zone. */
+export function guessUtcOffset(lat: number, lon: number, date: string, time?: string): number {
+    const zone = timeZoneAt(lat, lon);
+    const off = zone ? zoneOffsetHours(zone, date, time) : null;
+    return off ?? Math.round(lon / 15);
 }
 
 /** Meteorological season for a month (1–12), hemisphere-aware. */
