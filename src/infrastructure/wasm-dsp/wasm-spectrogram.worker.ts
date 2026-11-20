@@ -15,7 +15,7 @@ import {
     initSync, WasmStft, WasmPyramidBuilderV2,
     decodeF16, wavInfo, wavChannel0,
 } from './pkg/aw_dsp_wasm.js';
-import { WASM_PYRAMID_BLOCK_FRAMES } from '../../shared/constants.ts';
+import { WASM_PYRAMID_BLOCK_FRAMES, wasmComputeBlockFrames } from '../../shared/constants.ts';
 import { bandFloorSampled } from './bandFloorSampled.ts';
 
 const PREVIEW_STAT_SAMPLES = 12;   // windows sampled for provisional contrast stats
@@ -374,7 +374,7 @@ function startCoordinator(ports: MessagePort[]) {
             const bins = stft.outBins();
             const total = stft.nFrames(samples.length);
             const data = new Float32Array(total * bins);
-            const per = Math.max(256, Math.ceil(total / (ports.length * 2)));
+            const per = wasmComputeBlockFrames(total, ports.length);
             const jobs: Promise<void>[] = [];
             for (let f0 = 0; f0 < total; f0 += per) {
                 const n = Math.min(per, total - f0);

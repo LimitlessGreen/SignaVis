@@ -265,3 +265,12 @@ export const COLOUR_SCALES = {
 };
 
 
+
+/**
+ * Frames per block when a whole spectrogram is computed in the WASM workers:
+ * enough blocks to keep every worker busy, but each at most 1024 frames, since
+ * a worker's WebAssembly memory grows to its largest block and never shrinks.
+ */
+export function wasmComputeBlockFrames(totalFrames: number, workers: number): number {
+    return Math.max(256, Math.min(1024, Math.ceil(totalFrames / (Math.max(1, workers) * 2))));
+}
