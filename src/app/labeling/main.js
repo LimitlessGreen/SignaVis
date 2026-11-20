@@ -2364,7 +2364,7 @@ const recordingExplorer = new RecordingExplorer({
   onFolderBirdnet: (what) => runBirdnetOnFolder(what),
   getMissingContext: (entry) => {
     const ctx = resolveRecordingContext({
-      manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, filename: entry.filename,
+      manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, start: entry.recordingStart, filename: entry.filename,
     });
     return [!ctx.coords.value && 'location', !ctx.date.value && 'date'].filter(Boolean);
   },
@@ -2756,7 +2756,7 @@ const mobileApp = new MobileApp({
     thumb: e.thumb ?? null,
     audioUrl: e.audioUrl ?? null,
     ...(() => {
-      const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, filename: e.filename });
+      const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, start: e.recordingStart, filename: e.filename });
       const c = ctx.coords.value;
       return {
         date: ctx.date.value, time: ctx.time.value, addedAt: e.addedAt ?? null,
@@ -2808,6 +2808,7 @@ const mobileApp = new MobileApp({
       scientific: sci || null,
       common: name?.display || meta.en || null,
       meta,
+      fileMetadata: player.fileMetadata || [],
       file: { filename: e.filename || null, sampleRate: e.sampleRate || state.sampleRate || null, duration, channels },
       context,
       labels: {
@@ -3511,7 +3512,9 @@ function currentRecordingContext() {
   return resolveRecordingContext({
     manual: entry.context,
     xc: entry.xcRecordingMeta || state.recordingMeta,
-    guano: entry.guano,
+    // The player's GUANO when the entry has none yet (a new file is added after its first load).
+    guano: entry.guano || player.ultrasoundInfo?.guano || null,
+    start: entry.recordingStart || player.recordingStart || null,
     filename: entry.filename,
   });
 }
@@ -4440,7 +4443,11 @@ player.on('ready', (e) => {
     if (recordingManager?.activeId) {
       // Keep a known start when this load could not tell (e.g. metadata stripped).
       const known = recordingManager.getById(recordingManager.activeId)?.recordingStart || null;
-      recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known });
+      // GUANO too: 'ultrasoundinfo' fires before a newly added file is the active entry.
+      const guano = player.ultrasoundInfo?.guano;
+      recordingManager.update(recordingManager.activeId, {
+        sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known, ...(guano ? { guano } : {}),
+      });
     }
   }
   propsPanel.setRecordingMeta(state.recordingMeta, {
