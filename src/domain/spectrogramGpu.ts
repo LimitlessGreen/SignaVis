@@ -92,6 +92,9 @@ void main() {
         int step = max(1, (e - s + ${MAX_TAPS}) / ${MAX_TAPS});
         v = -1e30;
         for (int f = s; f <= e; f += step) v = max(v, column(f, b0, b1));
+        // Edge pixel of a tile whose span holds none of its frames: nearest one,
+        // else it paints black over the neighbouring tile.
+        if (s > e) v = column(clamp(s, 0, u_frames - 1), b0, b1);
     }
     float t = clamp((v - u_lo) * u_rcpRange, 0.0, 1.0);
     fragColor = texture(u_lut, vec2(t, 0.5));
