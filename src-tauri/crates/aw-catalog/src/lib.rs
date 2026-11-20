@@ -332,3 +332,34 @@ mod tests {
         assert_eq!(r.meta, vec![("serial".to_string(), "AM07".to_string())]);
     }
 }
+
+/// Absolute path of a recording's file on this machine, if its root is located here.
+pub fn recording_path(cat: &Catalog, recording_id: i64, machine: &str) -> Result<Option<std::path::PathBuf>> {
+    let row: Option<(String, String)> = cat.conn.query_row(
+        "SELECT l.path, a.rel_path FROM recording r JOIN asset a ON a.id = r.asset_id
+         JOIN root_location l ON l.root_id = a.root_id AND l.machine = ?2 WHERE r.id = ?1",
+        params![recording_id, machine], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    Ok(row.map(|(base, rel)| Path::new(&base).join(rel)))
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootInfo { pub id: i64, pub name: String, pub kind: String, pub path: Option<String>, pub assets: i64 }
+
+pub fn roots(cat: &Catalog, machine: &str) -> Result<Vec<RootInfo>> {
+    let mut st = cat.conn.prepare(
+        "SELECT r.id, r.name, r.kind, l.path, (SELECT COUNT(*) FROM asset a WHERE a.root_id = r.id)
+         FROM root r LEFT JOIN root_location l ON l.root_id = r.id AND l.machine = ?1 ORDER BY r.name")?;
+    let v = st.query_map([machine], |r| Ok(RootInfo { id: r.get(0)?, name: r.get(1)?, kind: r.get(2)?, path: r.get(3)?, assets: r.get(4)? }))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(v)
+}
+
+/// Stable name of this machine for `root_location`.
+pub fn machine_name() -> String {
+    std::env::var("COMPUTERNAME").ok()
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_string()))
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "local".into())
+}

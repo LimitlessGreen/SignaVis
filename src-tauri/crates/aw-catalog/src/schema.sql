@@ -178,3 +178,10 @@ CREATE TABLE IF NOT EXISTS job_error (
     job_id INTEGER NOT NULL REFERENCES job(id) ON DELETE CASCADE,
     asset_id INTEGER REFERENCES asset(id), message TEXT NOT NULL
 );
+
+-- Saved import profiles (ProfileSpec JSON), reusable and exportable.
+CREATE TABLE IF NOT EXISTS import_profile (
+    name       TEXT PRIMARY KEY,
+    spec_json  TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);

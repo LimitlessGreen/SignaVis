@@ -1,0 +1,337 @@
+// ═══════════════════════════════════════════════════════════════════════
+// ui/panels/library/library-view.ts — the project library (Lite)
+//
+// Full-window view over the project catalog: facets (sites, recorders),
+// period and time of day, path search; a calendar heatmap; a virtual table
+// that pages through the catalog (keyset) as you scroll. Double-click opens
+// a recording in the editor. "Import folder…" opens the import dialog.
+// ═══════════════════════════════════════════════════════════════════════
+
+import {
+    formatBytes, localTime,
+    type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HeatCell,
+} from '../../../domain/catalog/catalog-types.ts';
+import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
+import { ImportDialog } from './import-dialog.ts';
+
+const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const ROW_H = 26;
+const PAGE = 500;
+
+const TIME_PRESETS: { label: string; from: number | null; to: number | null }[] = [
+    { label: 'All day', from: null, to: null },
+    { label: 'Night 18–07', from: 18, to: 7 },
+    { label: 'Dusk 17–22', from: 17, to: 22 },
+    { label: 'Dawn 04–09', from: 4, to: 9 },
+    { label: 'Day 07–18', from: 7, to: 18 },
+];
+
+export interface LibraryViewOptions {
+    projectRoot: string;
+    /** Open a recording (absolute path) in the editor. */
+    openRecording: (path: string, row: CatalogRow) => Promise<void> | void;
+    onClose: () => void;
+}
+
+export class LibraryView {
+    el: HTMLElement;
+    #o: LibraryViewOptions;
+    #filter: CatalogFilter = {};
+    #sort: CatalogSort = 'start';
+    #facets: Facets | null = null;
+    #heat: HeatCell[] = [];
+    #rows: CatalogRow[] = [];
+    #next: CatalogCursor | null = null;
+    #loading = false;
+    #gen = 0;
+    #selected = -1;
+    #importDialog: ImportDialog | null = null;
+    #searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+    constructor(o: LibraryViewOptions) {
+        this.#o = o;
+        this.el = document.createElement('div');
+        this.el.className = 'lib-overlay';
+        this.el.tabIndex = -1;
+        this.el.innerHTML = `
+          <header class="lib-head">
+            <h2>Library</h2>
+            <span class="lib-stats"></span>
+            <span class="lib-spacer"></span>
+            <button class="btn btn--sm" data-act="open-import">Import folder…</button>
+            <button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>
+          </header>
+          <div class="lib-body">
+            <aside class="lib-facets"></aside>
+            <main class="lib-main">
+              <canvas class="lib-heat" height="110" title="Recordings per day (columns) and hour (rows, local time)"></canvas>
+              <div class="lib-grid-head">
+                <span class="c-path" data-sort="path">Path</span><span class="c-time" data-sort="start">Start (local)</span>
+                <span class="c-site">Site</span><span class="c-dev">Recorder</span><span class="c-size">Size</span><span class="c-lab">Labels</span>
+              </div>
+              <div class="lib-grid"><div class="lib-grid-spacer"></div><div class="lib-grid-rows"></div></div>
+            </main>
+          </div>
+          <div class="lib-import-host" hidden></div>`;
+        this.el.addEventListener('click', (e) => this.#onClick(e));
+        this.el.addEventListener('change', (e) => this.#onChange(e));
+        this.el.addEventListener('input', (e) => this.#onSearch(e));
+        this.el.addEventListener('keydown', (e) => this.#onKey(e));
+        this.el.querySelector('.lib-grid')!.addEventListener('scroll', () => this.#renderRows(), { passive: true });
+        this.el.querySelector('.lib-grid')!.addEventListener('dblclick', (e) => {
+            const r = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
+            if (r) void this.#open(Number(r.dataset.i));
+        });
+        new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); }).observe(this.el);
+        void this.reload();
+    }
+
+    focus() { this.el.focus(); }
+
+    async reload() {
+        const gen = ++this.#gen;
+        this.#rows = [];
+        this.#next = null;
+        this.#selected = -1;
+        try {
+            const [facets, heat] = await Promise.all([
+                catalogApi.facets(this.#o.projectRoot, this.#filter),
+                catalogApi.heatmap(this.#o.projectRoot, this.#filter),
+            ]);
+            if (gen !== this.#gen) return;
+            this.#facets = facets;
+            this.#heat = heat;
+        } catch (e) {
+            this.#facets = null;
+            this.el.querySelector('.lib-stats')!.textContent = `Catalog error: ${e}`;
+            return;
+        }
+        this.#renderFacets();
+        this.#renderStats();
+        this.#drawHeat();
+        await this.#loadMore(gen);
+    }
+
+    async #loadMore(gen = this.#gen) {
+        if (this.#loading || (this.#rows.length && !this.#next)) return;
+        this.#loading = true;
+        try {
+            const page = await catalogApi.list(this.#o.projectRoot, this.#filter, this.#sort, this.#next, PAGE);
+            if (gen !== this.#gen) return;
+            this.#rows.push(...page.rows);
+            this.#next = page.next;
+        } finally {
+            this.#loading = false;
+        }
+        this.#renderRows();
+    }
+
+    #renderStats() {
+        const f = this.#facets;
+        if (!f) return;
+        const hours = f.seconds != null ? `${Math.round(f.seconds / 3600).toLocaleString()} h · ` : '';
+        const span = f.firstMs != null && f.lastMs != null
+            ? ` · ${new Date(f.firstMs).toISOString().slice(0, 10)} – ${new Date(f.lastMs).toISOString().slice(0, 10)}` : '';
+        this.el.querySelector('.lib-stats')!.textContent =
+            `${f.total.toLocaleString()} recordings · ${hours}${formatBytes(f.bytes)}${span}${f.noStart ? ` · ${f.noStart} without start time` : ''}`;
+    }
+
+    #renderFacets() {
+        const f = this.#facets;
+        const host = this.el.querySelector('.lib-facets')!;
+        if (!f) { host.innerHTML = ''; return; }
+        const list = (kind: 'site' | 'device', title: string, vals: Facets['sites'], sel: number[] = []) => vals.length ? `
+          <section><h4>${title}${sel.length ? ` <button class="btn btn--sm btn--ghost" data-act="clear-${kind}">all</button>` : ''}</h4>
+          ${vals.map((v) => `<label class="lib-facet"><input type="checkbox" data-facet="${kind}" value="${v.id}"${sel.includes(v.id) ? ' checked' : ''}>
+            <span>${esc(v.name)}</span><span class="num">${v.count.toLocaleString()}</span></label>`).join('')}</section>` : '';
+        const tf = this.#filter;
+        const preset = TIME_PRESETS.findIndex((p) => p.from === (tf.hourFrom ?? null) && p.to === (tf.hourTo ?? null));
+        host.innerHTML = `
+          <section><h4>Search</h4><input class="input" data-k="path" placeholder="Path contains…" value="${esc(tf.pathContains ?? '')}"></section>
+          <section><h4>Time of day (local)</h4>
+            <select class="field-select" data-k="tod">${TIME_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
+              ${preset < 0 ? `<option selected>${tf.hourFrom}–${tf.hourTo}</option>` : ''}</select></section>
+          <section><h4>Period</h4>
+            <label class="lib-row"><span>from</span><input class="input" type="date" data-k="from" value="${tf.fromMs != null ? new Date(tf.fromMs).toISOString().slice(0, 10) : ''}"></label>
+            <label class="lib-row"><span>to</span><input class="input" type="date" data-k="to" value="${tf.toMs != null ? new Date(tf.toMs - 86_400_000).toISOString().slice(0, 10) : ''}"></label></section>
+          <section><h4>Labels</h4><select class="field-select" data-k="labels">
+            <option value=""${tf.hasLabels == null ? ' selected' : ''}>any</option>
+            <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
+            <option value="0"${tf.hasLabels === false ? ' selected' : ''}>without labels</option></select></section>
+          ${list('site', 'Sites', f.sites, tf.siteIds)}
+          ${list('device', 'Recorders', f.devices, tf.deviceIds)}`;
+    }
+
+    #renderRows() {
+        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
+        const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
+        const total = this.#facets?.total ?? this.#rows.length;
+        spacer.style.height = `${total * ROW_H}px`;
+        const first = Math.max(0, Math.floor(grid.scrollTop / ROW_H) - 5);
+        const last = Math.min(total, Math.ceil((grid.scrollTop + grid.clientHeight) / ROW_H) + 5);
+        if (last > this.#rows.length && this.#next) void this.#loadMore();
+        host.style.transform = `translateY(${first * ROW_H}px)`;
+        let html = '';
+        for (let i = first; i < Math.min(last, this.#rows.length); i++) {
+            const r = this.#rows[i];
+            html += `<div class="lib-r${i === this.#selected ? ' is-sel' : ''}" data-i="${i}" title="${esc(r.path)}">
+              <span class="c-path">${esc(r.path ?? '')}</span><span class="c-time">${esc(localTime(r))}</span>
+              <span class="c-site">${esc(r.site ?? '')}</span><span class="c-dev">${esc(r.device ?? '')}</span>
+              <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
+        }
+        host.innerHTML = html;
+        this.el.querySelectorAll<HTMLElement>('.lib-grid-head [data-sort]').forEach((h) =>
+            h.classList.toggle('is-sorted', h.dataset.sort === this.#sort));
+    }
+
+    #drawHeat() {
+        const c = this.el.querySelector<HTMLCanvasElement>('.lib-heat');
+        if (!c) return;
+        const W = c.clientWidth || 600, H = 110, PLOT = 96, LEFT = 24;
+        const dpr = window.devicePixelRatio || 1;
+        c.width = Math.round(W * dpr);
+        c.height = Math.round(H * dpr);
+        const g = c.getContext('2d')!;
+        g.scale(dpr, dpr);
+        g.clearRect(0, 0, W, H);
+        const days = continuousDays(this.#heat.map((h) => h.day));
+        if (!days.length) return;
+        const css = getComputedStyle(this.el);
+        const accent = css.getPropertyValue('--color-accent').trim() || '#38bdf8';
+        const muted = css.getPropertyValue('--color-text-secondary').trim() || '#888';
+        const max = Math.max(...this.#heat.map((h) => h.count));
+        const cw = (W - LEFT) / days.length;
+        const ch = PLOT / 24;
+        const idx = new Map(days.map((d, i) => [d, i]));
+        g.fillStyle = accent;
+        for (const h of this.#heat) {
+            g.globalAlpha = 0.15 + 0.85 * (h.count / max);
+            g.fillRect(LEFT + idx.get(h.day)! * cw, h.hour * ch, Math.max(1, cw - 0.5), ch - 0.5);
+        }
+        g.globalAlpha = 1;
+        g.fillStyle = muted;
+        g.font = '10px sans-serif';
+        g.textBaseline = 'middle';
+        for (const hr of [0, 6, 12, 18]) g.fillText(String(hr).padStart(2, '0'), 2, hr * ch + ch / 2);
+        // Date ticks: about every 80 px, on day boundaries.
+        g.textBaseline = 'alphabetic';
+        const every = Math.max(1, Math.ceil(80 / cw));
+        for (let i = 0; i < days.length; i += every) g.fillText(days[i].slice(5), LEFT + i * cw, H - 2);
+    }
+
+    /** Mark the selected row without re-rendering (a re-render between the clicks would break double-click). */
+    #select(i: number) {
+        this.#selected = i;
+        this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((r) => r.classList.toggle('is-sel', Number(r.dataset.i) === i));
+    }
+
+    async #open(i: number) {
+        const row = this.#rows[i];
+        if (!row) return;
+        this.#select(i);
+        const path = await catalogApi.recordingPath(this.#o.projectRoot, row.id);
+        if (!path) {
+            this.el.querySelector('.lib-stats')!.textContent = 'This recording\'s source folder is not located on this computer.';
+            return;
+        }
+        await this.#o.openRecording(path, row);
+    }
+
+    #onClick(e: Event) {
+        const t = e.target as HTMLElement;
+        const sortBy = t.closest<HTMLElement>('[data-sort]')?.dataset.sort as CatalogSort | undefined;
+        if (sortBy && sortBy !== this.#sort) { this.#sort = sortBy; void this.reload(); return; }
+        const row = t.closest<HTMLElement>('.lib-r');
+        if (row) { this.#select(Number(row.dataset.i)); return; }
+        const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
+        if (act === 'close') this.#o.onClose();
+        else if (act === 'open-import') this.#showImport();
+        else if (act === 'import-close') this.#hideImport();
+        else if (act === 'clear-site') { this.#filter.siteIds = []; void this.reload(); }
+        else if (act === 'clear-device') { this.#filter.deviceIds = []; void this.reload(); }
+    }
+
+    #onChange(e: Event) {
+        const t = e.target as HTMLInputElement;
+        if (t.closest('.lib-import-host')) return;
+        const f = this.#filter;
+        if (t.dataset.facet) {
+            const key = t.dataset.facet === 'site' ? 'siteIds' : 'deviceIds';
+            const set = new Set(f[key] ?? []);
+            if (t.checked) set.add(Number(t.value)); else set.delete(Number(t.value));
+            f[key] = [...set];
+        } else if (t.dataset.k === 'tod') {
+            const p = TIME_PRESETS[Number(t.value)];
+            if (!p) return;
+            f.hourFrom = p.from;
+            f.hourTo = p.to;
+        } else if (t.dataset.k === 'from') {
+            f.fromMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) : null;
+        } else if (t.dataset.k === 'to') {
+            f.toMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) + 86_400_000 : null;
+        } else if (t.dataset.k === 'labels') {
+            f.hasLabels = t.value === '' ? null : t.value === '1';
+        } else return;
+        void this.reload();
+    }
+
+    #onSearch(e: Event) {
+        const t = e.target as HTMLInputElement;
+        if (t.dataset.k !== 'path') return;
+        if (this.#searchTimer) clearTimeout(this.#searchTimer);
+        this.#searchTimer = setTimeout(() => {
+            this.#filter.pathContains = t.value.trim() || null;
+            void this.reload().then(() => {
+                const inp = this.el.querySelector<HTMLInputElement>('[data-k="path"]');
+                if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+            });
+        }, 300);
+    }
+
+    #onKey(e: KeyboardEvent) {
+        if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+        if (e.key === 'Escape') {
+            if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose();
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            this.#selected = Math.max(0, Math.min(this.#rows.length - 1, this.#selected + (e.key === 'ArrowDown' ? 1 : -1)));
+            const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+            const y = this.#selected * ROW_H;
+            if (y < grid.scrollTop) grid.scrollTop = y;
+            else if (y + ROW_H > grid.scrollTop + grid.clientHeight) grid.scrollTop = y + ROW_H - grid.clientHeight;
+            this.#renderRows();
+        } else if (e.key === 'Enter' && this.#selected >= 0) {
+            void this.#open(this.#selected);
+        }
+    }
+
+    #showImport() {
+        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        this.#importDialog = new ImportDialog({ projectRoot: this.#o.projectRoot, onImported: () => void this.reload() });
+        host.innerHTML = `<div class="lib-import-head"><h3>Import folder</h3><span class="lib-spacer"></span>
+          <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>`;
+        host.appendChild(this.#importDialog.el);
+        host.hidden = false;
+    }
+
+    #hideImport() {
+        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        host.hidden = true;
+        host.innerHTML = '';
+        this.#importDialog = null;
+        this.el.focus();
+    }
+}
+
+/** Every day from the first to the last given day (ISO dates), so gaps stay visible. */
+export function continuousDays(days: string[]): string[] {
+    if (!days.length) return [];
+    const sorted = [...days].sort();
+    const out: string[] = [];
+    const end = Date.parse(`${sorted[sorted.length - 1]}T00:00:00Z`);
+    for (let t = Date.parse(`${sorted[0]}T00:00:00Z`); t <= end && out.length < 20_000; t += 86_400_000) {
+        out.push(new Date(t).toISOString().slice(0, 10));
+    }
+    return out;
+}

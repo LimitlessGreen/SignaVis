@@ -13,7 +13,7 @@ pub struct ScannedFile {
     pub mtime_ms: i64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ScanResult {
     pub audio: Vec<ScannedFile>,
     /// BirdNET/Raven selection tables (`*.selection.table.txt`).

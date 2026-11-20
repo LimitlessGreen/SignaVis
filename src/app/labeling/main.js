@@ -79,10 +79,13 @@ import {
 } from '../../app/analysis-backend-config.ts';
 import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
 import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
-import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines, ListChecks } from 'lucide-static';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines, ListChecks, Library } from 'lucide-static';
 import { SpeciesListStore, speciesFilterSet } from '../../domain/species-lists.ts';
 import { SpeciesListsPanel } from '../../ui/panels/species-lists-panel.ts';
 import { SimilarPanel } from '../../ui/panels/similar-panel.ts';
+import { LibraryView } from '../../ui/panels/library/library-view.ts';
+import { catalogApi } from '../../infrastructure/tauri/catalogApi.ts';
+import { formatBytes } from '../../domain/catalog/catalog-types.ts';
 import {
   buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
   getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
@@ -3698,6 +3701,57 @@ if (isLite()) {
   sidebar.addPanel('similar', {
     icon: AudioLines, label: 'Similar', element: similarPanel.el,
     onActivate: () => similarPanel.refresh(),
+  });
+}
+// ── Library (project catalog, Lite + folder project only) ─────────
+if (isLite()) {
+  const libRoot = () => (projectKind === 'folder' && projectStore?.rootPath) || null;
+  const libPanel = document.createElement('div');
+  libPanel.className = 'scroll-panel library-panel';
+  let libView = null;
+  const closeLibrary = () => { libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
+  const openLibrary = (startImport = false) => {
+    const root = libRoot();
+    if (!root) return;
+    libView?.el.remove();
+    libView = new LibraryView({
+      projectRoot: root,
+      onClose: closeLibrary,
+      openRecording: async (path) => {
+        const file = await readAudioPath(path);
+        if (!file) { showLoadError(`File not found: ${path}`, 'Cannot open'); return; }
+        closeLibrary();
+        await loadLocalAudioFile(file, { filePath: path });
+      },
+    });
+    document.body.appendChild(libView.el);
+    libView.focus();
+    if (startImport) libView.el.querySelector('[data-act="open-import"]')?.click();
+  };
+  async function refreshLibraryPanel() {
+    const root = libRoot();
+    if (!root) {
+      libPanel.innerHTML = '<p class="lib-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab).</p>';
+      return;
+    }
+    let stats = '';
+    try {
+      const f = await catalogApi.facets(root, {});
+      stats = f.total ? `${f.total.toLocaleString()} recordings · ${formatBytes(f.bytes)} · ${f.sites.length} sites · ${f.devices.length} recorders`
+        : 'No recordings imported yet.';
+    } catch (e) { stats = `Catalog error: ${e}`; }
+    libPanel.innerHTML = `<div class="lib-panel-stats"></div><div class="lib-panel-actions">
+      <button class="btn btn--primary" data-lib="open">Open library</button>
+      <button class="btn" data-lib="import">Import folder…</button></div>`;
+    libPanel.querySelector('.lib-panel-stats').textContent = stats;
+  }
+  libPanel.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-lib]')?.dataset.lib;
+    if (act) openLibrary(act === 'import');
+  });
+  sidebar.addPanel('library', {
+    icon: Library, label: 'Library', element: libPanel,
+    onActivate: () => void refreshLibraryPanel(),
   });
 }
 // Project is the starting point: set + recordings

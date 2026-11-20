@@ -91,3 +91,36 @@ mod tests {
 
     fn role_bad() -> Vec<MappingSpec> { vec![MappingSpec { field: "x".into(), role: "nope".into(), ..Default::default() }] }
 }
+
+impl crate::Catalog {
+    pub fn save_profile(&self, spec: &ProfileSpec) -> crate::Result<()> {
+        spec.build()?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO import_profile(name, spec_json, updated_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![spec.name, serde_json::to_string(spec)?, crate::now_ms()])?;
+        Ok(())
+    }
+
+    pub fn profiles(&self) -> crate::Result<Vec<ProfileSpec>> {
+        let mut st = self.conn.prepare("SELECT spec_json FROM import_profile ORDER BY updated_at DESC")?;
+        let v = st.query_map([], |r| r.get::<_, String>(0))?
+            .filter_map(|s| s.ok().and_then(|s| serde_json::from_str(&s).ok()))
+            .collect();
+        Ok(v)
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    #[test]
+    fn profiles_are_saved_and_validated() {
+        let cat = crate::Catalog::open_in_memory().unwrap();
+        let spec = ProfileSpec { name: "a".into(), patterns: vec!["{x}.wav".into()], ..Default::default() };
+        cat.save_profile(&spec).unwrap();
+        assert_eq!(cat.profiles().unwrap(), vec![spec]);
+        let bad = ProfileSpec { name: "b".into(), patterns: vec!["{x.wav".into()], ..Default::default() };
+        assert!(cat.save_profile(&bad).is_err());
+    }
+}
