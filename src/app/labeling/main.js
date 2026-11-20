@@ -3493,7 +3493,9 @@ function recordingContextForAnalysis() {
 
 function renderRecordingContext() {
   const ctx = currentRecordingContext();
-  recordingContextBlock.render(ctx);
+  let durationSec = 0;
+  try { durationSec = player.duration || 0; } catch { /* player not ready */ }
+  recordingContextBlock.render(ctx, durationSec);
   const line = document.getElementById('birdnetLocationLine');
   if (ctx?.coords.value) {
     const date = ctx.date.value ? ` · ${ctx.date.value}` : '';
@@ -4416,6 +4418,7 @@ player.on('ready', (e) => {
     duration: player.duration || 0,
     filename: fileLabel.textContent || '',
   });
+  try { renderRecordingContext(); } catch { /* not initialized yet */ } // duration now known
 
   // Show long-recording warning unless it was already shown via the API pre-check.
   // Not needed when the WASM tile pipeline handles the file.

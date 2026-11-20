@@ -8,6 +8,7 @@ import {
     type ContextField, type ContextValues, type Coords, type ResolvedContext,
 } from '../../app/recording-context.ts';
 import { openMapModal } from '../components/geo-map-modal/geo-map-modal.ts';
+import { SunCharts } from './sun-charts.ts';
 
 const MINI_MAP_ZOOM = 10;
 const TILE = 256;
@@ -65,6 +66,7 @@ export class RecordingContextBlock {
     el: HTMLElement;
     mapEl: HTMLElement | null;
     onChange: RecordingContextBlockOptions['onChange'];
+    sunCharts = new SunCharts();
 
     constructor(opts: RecordingContextBlockOptions) {
         this.el = opts.el;
@@ -73,7 +75,8 @@ export class RecordingContextBlock {
     }
 
     /** ctx null = no recording loaded. */
-    render(ctx: ResolvedContext | null) {
+    /** durationSec: length of the active recording (its span is shown in the light charts). */
+    render(ctx: ResolvedContext | null, durationSec = 0) {
         this.el.innerHTML = '';
         if (this.mapEl) this.mapEl.innerHTML = '';
         if (!ctx) return; // the surrounding section already says 'No recording loaded'
@@ -110,7 +113,10 @@ export class RecordingContextBlock {
             ctx.device.source, ctx.device.source === 'manual' ? ['device'] : []));
 
         this.el.appendChild(grid);
-        if (coords) (this.mapEl || this.el).appendChild(buildMiniMap(coords, () => this._openMap(coords)));
+        const target = this.mapEl || this.el;
+        if (coords) target.appendChild(buildMiniMap(coords, () => this._openMap(coords)));
+        // Where in the year and in the day (light) the recording sits
+        target.appendChild(this.sunCharts.render(coords, (ctx.date.value as string) || null, (ctx.time.value as string) || null, durationSec));
     }
 
     _row(label: string, controls: HTMLElement[], source: string | null, manualFields: ContextField[]) {
