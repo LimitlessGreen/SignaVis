@@ -10,11 +10,9 @@ export type ChannelPeaks = { fine: Peaks; coarse: Peaks };
 
 const cache = new WeakMap<Float32Array, ChannelPeaks>();
 
-function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
-    const n = Math.ceil(min.length / factor);
-    const outMin = new Float32Array(n);
-    const outMax = new Float32Array(n);
-    for (let b = 0; b < n; b++) {
+/** Reduce blocks [b0, b1) of `factor` values each into outMin/outMax. */
+function reduceRange(min: Float32Array, max: Float32Array, factor: number, outMin: Float32Array, outMax: Float32Array, b0: number, b1: number): void {
+    for (let b = b0; b < b1; b++) {
         let lo = Infinity, hi = -Infinity;
         const end = Math.min(min.length, (b + 1) * factor);
         for (let i = b * factor; i < end; i++) {
@@ -23,6 +21,13 @@ function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block
         }
         outMin[b] = lo; outMax[b] = hi;
     }
+}
+
+function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
+    const n = Math.ceil(min.length / factor);
+    const outMin = new Float32Array(n);
+    const outMax = new Float32Array(n);
+    reduceRange(min, max, factor, outMin, outMax, 0, n);
     return { block, min: outMin, max: outMax };
 }
 
@@ -34,6 +39,49 @@ export function channelPeaks(data: Float32Array): ChannelPeaks {
     peaks = { fine, coarse };
     cache.set(data, peaks);
     return peaks;
+}
+
+/**
+ * channelPeaks() built in slices of `sliceBlocks` fine blocks, yielding to the event loop in
+ * between (a 3 h recording takes seconds to scan). Fills the cache, so later synchronous
+ * channelPeaks()/envelopeMinMax() calls are free.
+ */
+export async function channelPeaksAsync(data: Float32Array, sliceBlocks = 1 << 16): Promise<ChannelPeaks> {
+    const cached = cache.get(data);
+    if (cached) return cached;
+    const n = Math.ceil(data.length / PEAK_BLOCK_FINE);
+    const min = new Float32Array(n), max = new Float32Array(n);
+    for (let b = 0; b < n; b += sliceBlocks) {
+        reduceRange(data, data, PEAK_BLOCK_FINE, min, max, b, Math.min(n, b + sliceBlocks));
+        await new Promise<void>((r) => setTimeout(r, 0));
+        // A synchronous caller may have built it meanwhile.
+        const done = cache.get(data);
+        if (done) return done;
+    }
+    const fine = { block: PEAK_BLOCK_FINE, min, max };
+    const peaks = { fine, coarse: reducePeaks(min, max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK) };
+    cache.set(data, peaks);
+    return peaks;
+}
+
+/**
+ * Max |sample| in `n` bins, from the coarse level (bins hold whole coarse blocks; trailing bins
+ * past the end are 0). For overview peaks where exact bin edges do not matter.
+ */
+export function maxAbsPeaks(data: Float32Array, n: number): Float32Array {
+    const { coarse } = channelPeaks(data);
+    const per = Math.max(1, Math.ceil(coarse.min.length / n));
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        let m = 0;
+        const end = Math.min(coarse.min.length, (i + 1) * per);
+        for (let j = i * per; j < end; j++) {
+            const v = Math.max(-coarse.min[j], coarse.max[j]);
+            if (v > m) m = v;
+        }
+        out[i] = m;
+    }
+    return out;
 }
 
 /** [min, max] of data[start, end), NaN ignored; [Infinity, -Infinity] if empty. */

@@ -34,3 +34,35 @@ test('envelopePeakAbs equals computeAmplitudePeak', () => {
         assert.equal(envelopePeakAbs(v), computeAmplitudePeak(v));
     }
 });
+
+test('channelPeaksAsync builds the same pyramid in slices and fills the cache', async () => {
+    const { channelPeaks, channelPeaksAsync } = await import('../src/domain/waveformEnvelope.ts');
+    const v = signal(3_000_017, 5), ref = signal(3_000_017, 5);
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 0);
+    let p;
+    try { p = await channelPeaksAsync(v, 4096); } finally { clearInterval(timer); }
+    assert.ok(ticks > 3, `event loop ran ${ticks}× while building`);
+    assert.equal(channelPeaks(v), p, 'cached');
+    const sync = channelPeaks(ref);
+    for (const lvl of ['fine', 'coarse']) {
+        assert.equal(p[lvl].block, sync[lvl].block);
+        assert.deepEqual(p[lvl].min, sync[lvl].min, lvl);
+        assert.deepEqual(p[lvl].max, sync[lvl].max, lvl);
+    }
+});
+
+test('maxAbsPeaks: max |sample| per bin from the pyramid', async () => {
+    const { maxAbsPeaks } = await import('../src/domain/waveformEnvelope.ts');
+    const v = signal(1_000_000, 9);
+    v[17] = 0;
+    const out = maxAbsPeaks(v, 100);
+    assert.equal(out.length, 100);
+    // Bins follow coarse-block boundaries; each bin covers its samples exactly.
+    const per = Math.ceil(Math.ceil(v.length / 1024) / 100) * 1024;
+    for (let i = 0; i < 100; i++) {
+        const [lo, hi] = naive(v, i * per, Math.min(v.length, (i + 1) * per));
+        if (i * per >= v.length) { assert.equal(out[i], 0); continue; }
+        assert.equal(out[i], Math.max(-lo, hi), `bin ${i}`);
+    }
+});

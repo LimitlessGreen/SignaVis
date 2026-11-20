@@ -26,7 +26,7 @@ import { parseFlacStreamInfo, decodeFlacChunked } from './chunkedFlacDecode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
-import { envelopePeakAbs } from '../../domain/waveformEnvelope.ts';
+import { envelopePeakAbs, channelPeaksAsync, maxAbsPeaks } from '../../domain/waveformEnvelope.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
@@ -116,20 +116,6 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
   } finally {
     ctx.close?.().catch(() => {});
   }
-}
-
-/** Max-abs envelope with at most `n` points (WaveSurfer is invisible here; it only needs some peaks). */
-function coarsePeaks(data: Float32Array, n = 8192): Float32Array {
-  const len = Math.min(n, data.length) || 1;
-  const out = new Float32Array(len);
-  const step = data.length / len;
-  for (let i = 0; i < len; i++) {
-    const a = Math.floor(i * step), b = Math.min(data.length, Math.floor((i + 1) * step));
-    let m = 0;
-    for (let j = a; j < b; j += 16) { const v = Math.abs(data[j]); if (v > m) m = v; }
-    out[i] = m;
-  }
-  return out;
 }
 
 /**
@@ -251,6 +237,8 @@ export class AudioEngine extends AudioEngineBase {
     this.fileMetadata = readFileMetadata(arrayBuffer);
     const recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
+    await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
 
@@ -280,6 +268,8 @@ export class AudioEngine extends AudioEngineBase {
     const recordingStart = readRecordingStart(arrayBuffer, name);
     onProgress?.('decode');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
+    await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
     await this._setupWaveSurfer(url, name);
@@ -297,6 +287,8 @@ export class AudioEngine extends AudioEngineBase {
     this.fileMetadata = readFileMetadata(arrayBuffer);
     const recordingStart = readRecordingStart(arrayBuffer, file.name);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
+    await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
     await this._setupWaveSurfer(file, file.name);
@@ -950,7 +942,7 @@ export class AudioEngine extends AudioEngineBase {
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects.
     // Peaks + duration from our own decoded buffer stop WaveSurfer from decoding the file a
     // second time (that fails for long recordings, which only decode in chunks).
-    const peaks = this.audioBuffer ? [coarsePeaks(channelData(this.audioBuffer))] : undefined;
+    const peaks = this.audioBuffer ? [maxAbsPeaks(channelData(this.audioBuffer), Math.min(8192, this.audioBuffer.length))] : undefined;
     const duration = this.audioBuffer?.duration;
     if (typeof source === 'string') {
       ws.load(source, peaks, duration);
