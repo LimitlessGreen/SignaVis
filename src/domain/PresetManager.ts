@@ -29,6 +29,8 @@ export interface PresetManagerCallbacks {
     onDspCommand?: ((cmd: UndoCommand) => void) | null;
     /** Sample rate of the loaded audio, for the window length in ms. */
     getSampleRate?: () => number | undefined;
+    /** Built-in preset of a fresh player (no favourite, no last settings); default 'classic'. */
+    defaultPreset?: string;
 }
 
 const LS_USER_PRESETS  = 'aw-user-presets';
@@ -44,6 +46,7 @@ export class PresetManager {
     gainCeil: any;
     maxFreqHz: any;
     title: any;
+    #defaultPreset = 'classic';
     #d: any;
     #onRegen: (opts?: any) => void;
     #onStage1: () => void;
@@ -73,7 +76,8 @@ export class PresetManager {
      *   Called after each DSP parameter change with an undo/redo command object.
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
      */
-    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate }: PresetManagerCallbacks) {
+    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate, defaultPreset }: PresetManagerCallbacks) {
+        this.#defaultPreset = defaultPreset && DSP_PROFILES[defaultPreset] ? defaultPreset : 'classic';
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
         this.#onStage1   = onStage1Rebuild;
@@ -210,7 +214,7 @@ export class PresetManager {
         for (const name of Object.keys(DSP_PROFILES)) {
             const opt = document.createElement('option');
             opt.value = name;
-            opt.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+            opt.textContent = DSP_PROFILES[name].label ?? name.charAt(0).toUpperCase() + name.slice(1);
             sel.appendChild(opt);
         }
         const userPresets = this.loadUserPresets();
@@ -232,7 +236,7 @@ export class PresetManager {
         if (fav && Array.from(sel.options).some(o => o.value === fav)) {
             sel.value = fav;
         } else {
-            sel.value = 'classic';
+            sel.value = this.#defaultPreset;
         }
     }
 
@@ -280,7 +284,7 @@ export class PresetManager {
         }
         if (!p) p = this.loadLastSettings();
         if (!p) {
-            const defaultKey = this.#d.presetSelect?.value || 'classic';
+            const defaultKey = this.#d.presetSelect?.value || this.#defaultPreset;
             p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
@@ -373,7 +377,7 @@ export class PresetManager {
 
     /**
      * Settings of the preset the controls are measured against: the selected preset,
-     * else the favourite, else 'classic'. Missing fields fall back to the DSP defaults.
+     * else the favourite, else the default preset. Missing fields fall back to the DSP defaults.
      */
     getReferenceSettings(): Record<string, any> {
         const resolve = (name: string) => name.startsWith('user:')
@@ -381,7 +385,7 @@ export class PresetManager {
             : DSP_PROFILES[name];
         const p = resolve(this.#d.presetSelect?.value || '')
             || resolve(this.getFavouritePreset() || '')
-            || DSP_PROFILES.classic;
+            || DSP_PROFILES[this.#defaultPreset];
         return { ...DSP_SETTINGS_DEFAULTS, ...p };
     }
 

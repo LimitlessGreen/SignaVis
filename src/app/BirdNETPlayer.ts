@@ -170,6 +170,7 @@ export class BirdNETPlayer {
      * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
      * @param {number}      [options.spectrogramHeight] - initial spectrogram height in px (default: 2× waveform height)
      * @param {boolean}     [options.keyboardShortcuts] - react to document-level keyboard shortcuts (default: true)
+     * @param {string}      [options.defaultPreset] - built-in DSP preset of a fresh player without favourite or saved settings, e.g. 'classicSmall' (default: classic)
      * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
      * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)
      * @param {'auto'|'on'|'off'} [options.compactToolbar] - responsive toolbar compaction mode (default: auto)

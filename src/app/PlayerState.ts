@@ -199,6 +199,7 @@ export class PlayerState {
                 }
             },
             storage: this._storage,
+            defaultPreset: options.defaultPreset,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
             // Called during construction, before _engine exists.
