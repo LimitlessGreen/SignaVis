@@ -2834,6 +2834,9 @@ const mobileApp = new MobileApp({
     birdboxStatus: document.getElementById('birdboxStatus'),
     birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
     birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+    modelSeg: document.getElementById('birdnetModelSeg'),
+    birdboxConf: document.getElementById('birdboxConf'),
+    birdboxGap: document.getElementById('birdboxGap'),
     run: (job) => { if (job === 'birdnet') birdnetPanel.analyze(); else birdboxPanel.run(); },
   },
   live: {
