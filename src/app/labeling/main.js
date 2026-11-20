@@ -2223,6 +2223,7 @@ async function activateRecordingEntry(entry) {
     duration: player.duration || 0,
     filename: entry.filename,
     species: _isSoundscape ? '' : _entryEn,
+    fileMetadata: player.fileMetadata || [],
   });
 
   syncToPlayer();
@@ -2364,7 +2365,7 @@ const recordingExplorer = new RecordingExplorer({
   onFolderBirdnet: (what) => runBirdnetOnFolder(what),
   getMissingContext: (entry) => {
     const ctx = resolveRecordingContext({
-      manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, filename: entry.filename,
+      manual: entry.context, xc: entry.xcRecordingMeta, guano: entry.guano, start: entry.recordingStart, filename: entry.filename,
     });
     return [!ctx.coords.value && 'location', !ctx.date.value && 'date'].filter(Boolean);
   },
@@ -2756,7 +2757,7 @@ const mobileApp = new MobileApp({
     thumb: e.thumb ?? null,
     audioUrl: e.audioUrl ?? null,
     ...(() => {
-      const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, filename: e.filename });
+      const ctx = resolveRecordingContext({ manual: e.context, xc: e.xcRecordingMeta, guano: e.guano, start: e.recordingStart, filename: e.filename });
       const c = ctx.coords.value;
       return {
         date: ctx.date.value, time: ctx.time.value, addedAt: e.addedAt ?? null,
@@ -2789,6 +2790,37 @@ const mobileApp = new MobileApp({
     labelStore.add({ ...lbl });
     touchOwnSet(lbl.setId);
   },
+  getDetails: () => {
+    const e = recordingManager.getActive();
+    const context = currentRecordingContext();
+    if (!e || !context) return null;
+    const meta = { ...(e.xcRecordingMeta || {}), ...(state.recordingMeta || {}) };
+    const isSoundscape = String(meta.gen || '').toLowerCase() === 'sonus';
+    const sci = !isSoundscape && meta.gen ? `${meta.gen} ${meta.sp || ''}`.trim() : '';
+    const name = sci ? resolveName({ scientificName: sci, label: meta.en || sci }) : null;
+    let duration = e.duration ?? null;
+    let channels = null;
+    try { duration = player.duration || duration; channels = player._state?.audioBuffer?.numberOfChannels ?? null; } catch { /* not ready */ }
+    const labels = state.labels;
+    const own = labels.filter((l) => l.setId === OWN_SOURCE_ID);
+    return {
+      title: e.xcId ? toXcId(e.xcId) : (e.filename || mt('rec.audioFile')),
+      xcId: e.xcId ? xcNumber(e.xcId) : null,
+      scientific: sci || null,
+      common: name?.display || meta.en || null,
+      meta,
+      fileMetadata: player.fileMetadata || [],
+      file: { filename: e.filename || null, sampleRate: e.sampleRate || state.sampleRate || null, duration, channels },
+      context,
+      labels: {
+        total: labels.length,
+        own: own.length,
+        detections: labels.length - own.length,
+        species: new Set(labels.map((l) => l.scientificName || l.label).filter(Boolean)).size,
+      },
+    };
+  },
+  setContext: (field, value) => recordingContextBlock.onChange(field, value),
   analysis: {
     confInput: document.getElementById('birdnetConfidence'),
     overlapSelect: document.getElementById('birdnetOverlap'),
@@ -3481,7 +3513,9 @@ function currentRecordingContext() {
   return resolveRecordingContext({
     manual: entry.context,
     xc: entry.xcRecordingMeta || state.recordingMeta,
-    guano: entry.guano,
+    // The player's GUANO when the entry has none yet (a new file is added after its first load).
+    guano: entry.guano || player.ultrasoundInfo?.guano || null,
+    start: entry.recordingStart || player.recordingStart || null,
     filename: entry.filename,
   });
 }
@@ -4410,13 +4444,18 @@ player.on('ready', (e) => {
     if (recordingManager?.activeId) {
       // Keep a known start when this load could not tell (e.g. metadata stripped).
       const known = recordingManager.getById(recordingManager.activeId)?.recordingStart || null;
-      recordingManager.update(recordingManager.activeId, { sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known });
+      // GUANO too: 'ultrasoundinfo' fires before a newly added file is the active entry.
+      const guano = player.ultrasoundInfo?.guano;
+      recordingManager.update(recordingManager.activeId, {
+        sampleRate: e.detail.sampleRate, recordingStart: player.recordingStart || known, ...(guano ? { guano } : {}),
+      });
     }
   }
   propsPanel.setRecordingMeta(state.recordingMeta, {
     sampleRate: state.sampleRate,
     duration: player.duration || 0,
     filename: fileLabel.textContent || '',
+    fileMetadata: player.fileMetadata || [],
   });
   try { renderRecordingContext(); } catch { /* not initialized yet */ } // duration now known
 

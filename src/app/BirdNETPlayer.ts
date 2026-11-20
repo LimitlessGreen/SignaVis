@@ -1023,6 +1023,9 @@ export class BirdNETPlayer {
      */
     get recordingStart(): RecordingStart | null { return this._state?.recordingStart ?? null; }
 
+    /** Metadata chunks of the loaded file (GUANO, BWF, WAV INFO, AudioMoth, iXML), [] when none. */
+    get fileMetadata() { return this._state?.fileMetadata ?? []; }
+
     /** Wall-clock time at `seconds` into the recording ("2023-05-12T19:00:03.000+01:00"), null when the start is unknown. */
     clockTimeAt(seconds: number): string | null {
         const start = this.recordingStart;

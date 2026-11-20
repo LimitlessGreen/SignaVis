@@ -6,7 +6,7 @@
  * and Explore. It is not uploaded: XC already has these data via xc_nr.
  */
 
-export type ContextSource = 'manual' | 'xc' | 'guano' | 'filename';
+export type ContextSource = 'manual' | 'xc' | 'guano' | 'header' | 'filename';
 export type ContextField = 'date' | 'time' | 'coords' | 'locality' | 'device';
 
 export interface Coords { lat: number; lon: number }
@@ -22,7 +22,7 @@ export interface ContextValues {
 export type ResolvedContext = { [K in ContextField]: { value: NonNullable<ContextValues[K]> | null; source: ContextSource | null } };
 
 export const CONTEXT_SOURCE_TEXT: Record<ContextSource, string> = {
-    manual: 'manual', xc: 'XC', guano: 'GUANO', filename: 'file name',
+    manual: 'manual', xc: 'XC', guano: 'GUANO', header: 'file header', filename: 'file name',
 };
 
 const FIELDS: ContextField[] = ['date', 'time', 'coords', 'locality', 'device'];
@@ -109,16 +109,30 @@ export function contextFromFilename(name: any): ContextValues {
     return { date, time: normTime(`${m[4]}:${m[5]}`) };
 }
 
+/**
+ * Date/time from the file's start time (readRecordingStart: AudioMoth, BWF, WAV INFO). GUANO and
+ * file-name starts are left out: their own layers cover them.
+ */
+export function contextFromStart(start: { ms: number; source: string } | null | undefined): ContextValues {
+    if (!start || !Number.isFinite(start.ms) || !['AudioMoth', 'BWF', 'WAV INFO'].includes(start.source)) return {};
+    const d = new Date(start.ms);   // wall-clock time written as UTC
+    return {
+        date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+        time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`,
+    };
+}
+
 const isSet = (v: any) => v != null && v !== '';
 
 /**
- * Resolve each field from the first source that has it: manual > XC > GUANO > file name.
+ * Resolve each field from the first source that has it: manual > XC > GUANO > file header > file name.
  */
-export function resolveRecordingContext(src: { manual?: ContextValues | null; xc?: any; guano?: any; filename?: any }): ResolvedContext {
+export function resolveRecordingContext(src: { manual?: ContextValues | null; xc?: any; guano?: any; start?: any; filename?: any }): ResolvedContext {
     const layers: [ContextSource, ContextValues][] = [
         ['manual', src.manual || {}],
         ['xc', contextFromXc(src.xc)],
         ['guano', contextFromGuano(src.guano)],
+        ['header', contextFromStart(src.start)],
         ['filename', contextFromFilename(src.filename)],
     ];
     const out: any = {};

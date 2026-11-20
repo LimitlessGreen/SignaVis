@@ -21,6 +21,8 @@ import { t, getLang, setLang } from './i18n.ts';
 import { renderThumb, thumbFromUrl } from './thumb.ts';
 import { SpectrogramGestures } from './gestures.ts';
 import { getSpectrogramColor } from '../../domain/spectrogram.ts';
+import { MobileDetailsView, type MobileDetails } from './details.ts';
+import type { ContextField, ContextValues } from '../../app/recording-context.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -81,6 +83,10 @@ export interface MobileAppHost {
   analysis?: AnalysisControls;
   /** Live screen: microphone + BirdNET every 3 s; the recording is added to the project. */
   live?: LiveHost;
+  /** Properties of the active recording for the Details screen (null: none open). */
+  getDetails?(): MobileDetails | null;
+  /** Store a manual date/time/place/position of the active recording (null: back to automatic). */
+  setContext?(field: ContextField, value: ContextValues[ContextField] | null): void;
 }
 
 export interface LivePrediction { scientific: string; common: string; confidence: number }
@@ -113,7 +119,7 @@ export interface AnalysisControls {
   run(job: 'birdnet' | 'birdbox'): void;
 }
 
-type Screen = 'recordings' | 'queue' | 'review' | 'analyse' | 'live' | 'species' | 'settings';
+type Screen = 'recordings' | 'queue' | 'review' | 'analyse' | 'live' | 'species' | 'settings' | 'details';
 
 const FALLBACK_IMG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
 
@@ -130,6 +136,7 @@ const I = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.2"/><circle cx="13" cy="16" r="1.2"/></svg>',
   globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   zoomIn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   zoomOut: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
@@ -282,6 +289,8 @@ export class MobileApp {
   private cfg: PhoneSettings = loadSettings();
   private setBackTo: Screen = 'recordings';
   private setBody!: HTMLElement;
+  private details: MobileDetailsView | null = null;
+  private detBackTo: Screen = 'review';
   // Own overview strip under the spectrogram
   private ov!: HTMLElement;
   private ovWin!: HTMLElement;
@@ -349,7 +358,7 @@ export class MobileApp {
     this.root = el('div', 'm-app');
     this.root.setAttribute('aria-label', 'SignaVis');
     const body = el('div', 'm-screens');
-    body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies(), this.buildSettings());
+    body.append(this.buildRecordings(), this.buildQueue(), this.buildReview(), this.buildAnalyse(), this.buildLive(), this.buildSpecies(), this.buildSettings(), this.buildDetails());
     const nav = el('nav', 'm-nav');
     nav.setAttribute('aria-label', t('nav.label'));
     const second: [Screen, string, string] = REVIEW_WORKFLOW ? ['queue', I.check, t('nav.review')] : ['review', I.wave, t('nav.player')];
@@ -416,6 +425,7 @@ export class MobileApp {
     this.renderReview();
     this.renderQueue();
     if (this.screen === 'species') this.renderSpecies();
+    if (this.screen === 'details') this.details?.render();
   }
 
   // ── Mode ────────────────────────────────────────────────────────────
@@ -477,11 +487,12 @@ export class MobileApp {
     for (const [id, s] of this.screens) s.hidden = id !== screen;
     const navOn = screen === 'analyse' ? (this.anBackTo === 'review' ? this.rvFrom : this.anBackTo)
       : screen === 'review' && REVIEW_WORKFLOW ? this.rvFrom
-      : screen === 'settings' ? this.setBackTo : screen;
+      : screen === 'settings' ? this.setBackTo : screen === 'details' ? (this.detBackTo === 'review' && REVIEW_WORKFLOW ? this.rvFrom : this.detBackTo) : screen;
     for (const [id, b] of this.navBtns) b.classList.toggle('on', id === navOn);
     if (screen === 'analyse') this.renderAnalyse();
     if (screen === 'species') this.renderSpecies();
     if (screen === 'settings') this.renderSettings();
+    if (screen === 'details') this.details?.render();
     if (screen === 'live') this.renderLive();
     if (screen === 'recordings') this.renderRecordings();
     if (screen === 'queue') this.renderQueue();
@@ -795,6 +806,7 @@ export class MobileApp {
     this.rvSub = el('small', '', '');
     titleBox.append(this.rvTitle, this.rvSub);
     bar.appendChild(titleBox);
+    if (this.h.getDetails) bar.appendChild(button('m-icon-btn', I.info, t('det.open'), () => this.openDetails('review')));
     if (this.h.analysis) bar.appendChild(button('m-icon-btn', I.analyse, t('rv.analyse'), () => this.openAnalyse('review')));
     if (!REVIEW_WORKFLOW) bar.appendChild(button('m-icon-btn', I.gear, t('set.title'), () => this.openSettings('review')));
 
@@ -1259,6 +1271,31 @@ export class MobileApp {
     this.setBody = el('div', 'm-scroll m-set-body');
     s.append(bar, this.setBody);
     this.screens.set('settings', s);
+    return s;
+  }
+
+  // ── Details (properties of the active recording) ──────────────────
+
+  openDetails(from: Screen) {
+    this.detBackTo = from;
+    this.show('details');
+  }
+
+  private buildDetails(): HTMLElement {
+    const s = el('section', 'm-screen m-details');
+    const bar = el('header', 'm-appbar');
+    bar.appendChild(button('m-icon-btn', I.back, t('common.back'), () => this.show(this.detBackTo)));
+    bar.appendChild(el('h1', '', t('det.title')));
+    s.appendChild(bar);
+    if (this.h.getDetails) {
+      const host = this.h;
+      this.details = new MobileDetailsView({
+        getDetails: () => host.getDetails!(),
+        setContext: host.setContext ? (f, v) => { host.setContext!(f, v); this.details?.render(); } : undefined,
+      });
+      s.appendChild(this.details.body);
+    }
+    this.screens.set('details', s);
     return s;
   }
 
