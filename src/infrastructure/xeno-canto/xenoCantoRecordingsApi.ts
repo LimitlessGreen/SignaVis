@@ -240,6 +240,9 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels: any, options: any = {
     const recAlt = firstNonEmpty([rec.alt, rec.altitude]) || '';
     const recAnimalSeen = firstNonEmpty([rec['animal-seen'], rec.animal_seen, rec.animalSeen]) || '';
     const recPlaybackUsed = firstNonEmpty([rec['playback-used'], rec.playback_used, rec.playbackUsed]) || '';
+    const recDevice = firstNonEmpty([rec.dvc, rec.device]) || '';
+    const recMic = firstNonEmpty([rec.mic, rec.microphone]) || '';
+    const recTemp = firstNonEmpty([rec.temp, rec.temperature]) || '';
     const recAlso = Array.isArray(rec.also) ? rec.also.filter(Boolean).join(', ') : '';
 
     const labels = [];
@@ -269,6 +272,12 @@ export function mapXenoCantoLabelsToSpectrogram(rawLabels: any, options: any = {
     if (recPlaybackUsed) recordingMeta.playbackUsed = recPlaybackUsed;
     if (recAlso) recordingMeta.backgroundSpecies = recAlso;
     if (recordist) recordingMeta.recordist = recordist;
+    if (recType) recordingMeta.soundType = recType;
+    if (recSex) recordingMeta.sex = recSex;
+    if (recStage) recordingMeta.stage = recStage;
+    if (recDevice) recordingMeta.device = recDevice;
+    if (recMic) recordingMeta.microphone = recMic;
+    if (recTemp) recordingMeta.temperature = recTemp;
 
     return { labels, recordingMeta };
 }

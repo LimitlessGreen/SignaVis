@@ -1293,6 +1293,9 @@ export class PlayerState {
     /** When the loaded recording started (file metadata or name), null when unknown. */
     get recordingStart(): RecordingStart | null { return this._engine.recordingStart ?? null; }
 
+    /** Metadata chunks of the loaded file (GUANO, BWF, WAV INFO, AudioMoth, iXML). */
+    get fileMetadata() { return this._engine.fileMetadata ?? []; }
+
     /** Overview strip: 'waveform' or a whole-file 'spectrogram' (max-pooled). */
     _setOverviewMode(mode: OverviewMode) {
         const next: OverviewMode = mode === 'spectrogram' ? 'spectrogram' : 'waveform';

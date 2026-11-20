@@ -22,6 +22,7 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
+import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
 import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
@@ -156,6 +157,8 @@ export class AudioEngine extends AudioEngineBase {
   guano: Record<string, string> | null;
   /** When the loaded recording started (metadata or file name), null when unknown. */
   recordingStart: RecordingStart | null = null;
+  /** Metadata chunks of the loaded file (GUANO, BWF, INFO, AudioMoth, iXML), for display. */
+  fileMetadata: MetadataGroup[] = [];
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -215,6 +218,7 @@ export class AudioEngine extends AudioEngineBase {
     this._peak = 1;
     /** @type {Record<string,string>|null} GUANO metadata of the loaded WAV (bat detectors). */
     this.guano = null;
+    this.fileMetadata = [];
   }
 
   // ── Derived state ────────────────────────────────────────────────────
@@ -233,6 +237,7 @@ export class AudioEngine extends AudioEngineBase {
    */
   async loadFromArrayBuffer(arrayBuffer: ArrayBuffer, name?: string) {
     this.guano = parseGuano(arrayBuffer);
+    this.fileMetadata = readFileMetadata(arrayBuffer);
     const recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;
@@ -256,6 +261,7 @@ export class AudioEngine extends AudioEngineBase {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
     this.guano = parseGuano(arrayBuffer);
+    this.fileMetadata = readFileMetadata(arrayBuffer);
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
@@ -277,6 +283,7 @@ export class AudioEngine extends AudioEngineBase {
   async loadFromFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
     this.guano = parseGuano(arrayBuffer);
+    this.fileMetadata = readFileMetadata(arrayBuffer);
     const recordingStart = readRecordingStart(arrayBuffer, file.name);
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
     this.audioBuffer = audioBuffer;

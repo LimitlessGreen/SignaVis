@@ -229,6 +229,12 @@ const en = {
   'det.nSpecies': 'species',
   'det.nDetections': 'detections',
   'det.nOwn': 'my labels',
+  'det.src.header': 'file header',
+  'det.soundType': 'Sound type',
+  'det.sex': 'Sex',
+  'det.stage': 'Life stage',
+  'det.temp': 'Temperature',
+  'det.fileMeta': 'File metadata',
 } satisfies Dict;
 
 export type MKey = keyof typeof en;
@@ -440,6 +446,12 @@ const de: Partial<Record<MKey, Entry>> = {
   'det.nSpecies': 'Arten',
   'det.nDetections': 'Erkennungen',
   'det.nOwn': 'eigene Labels',
+  'det.src.header': 'Datei-Header',
+  'det.soundType': 'Lautäußerung',
+  'det.sex': 'Geschlecht',
+  'det.stage': 'Lebensstadium',
+  'det.temp': 'Temperatur',
+  'det.fileMeta': 'Datei-Metadaten',
 };
 
 const DICTS: Record<string, Partial<Record<MKey, Entry>>> = { en, de };

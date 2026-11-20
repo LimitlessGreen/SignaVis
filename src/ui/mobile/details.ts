@@ -9,6 +9,7 @@ import { formatCoords, type ContextField, type ContextValues, type Coords, type 
 import { buildMiniMap } from '../panels/recording-context-block.ts';
 import { SunCharts } from '../panels/sun-charts.ts';
 import { openMapModal } from '../components/geo-map-modal/geo-map-modal.ts';
+import type { MetadataGroup } from '../../domain/fileMetadata.ts';
 import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
 import { t, getLang, type MKey } from './i18n.ts';
 
@@ -22,6 +23,8 @@ export interface MobileDetails {
   /** Normalized Xeno-canto metadata (recordist, quality, license, method, remarks, …). */
   meta?: Record<string, any> | null;
   file: { filename?: string | null; sampleRate?: number | null; duration?: number | null; channels?: number | null };
+  /** Metadata chunks of the file (GUANO, BWF, WAV INFO, AudioMoth, iXML). */
+  fileMetadata?: MetadataGroup[];
   context: ResolvedContext;
   labels: { total: number; own: number; detections: number; species: number };
 }
@@ -86,7 +89,7 @@ export function fmtLongDate(date: string | null | undefined, lang = getLang()) {
   return d.toLocaleDateString(lang, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.src.xc', guano: 'det.src.guano', filename: 'det.src.filename' };
+const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.src.xc', guano: 'det.src.guano', header: 'det.src.header', filename: 'det.src.filename' };
 
 export class MobileDetailsView {
   readonly body: HTMLElement;
@@ -114,7 +117,10 @@ export class MobileDetailsView {
     }
     const notes = this.notes(d);
     if (notes) b.appendChild(notes);
-    b.append(this.file(d), this.labels(d));
+    b.append(this.file(d));
+    const fm = this.fileMeta(d);
+    if (fm) b.appendChild(fm);
+    b.appendChild(this.labels(d));
   }
 
   private card(title: string, content?: HTMLElement | null, cls = '') {
@@ -274,7 +280,11 @@ export class MobileDetailsView {
     const yn = (v: any) => { const x = yesNo(v); return x ? t(x === 'yes' ? 'det.yes' : 'det.no') : ''; };
     const dl = this.rows([
       [t('det.recordist'), m.recordist],
+      [t('det.soundType'), m.soundType],
+      [t('det.sex'), m.sex],
+      [t('det.stage'), m.stage],
       [t('det.method'), m.method],
+      [t('det.temp'), m.temperature],
       [t('det.seen'), yn(m.animalSeen)],
       [t('det.playback'), yn(m.playbackUsed)],
       [t('det.license'), this.license(m.license)],
@@ -301,6 +311,24 @@ export class MobileDetailsView {
     a.target = '_blank';
     a.rel = 'noopener';
     return a;
+  }
+
+  /** Every metadata chunk of the file, one collapsible group per source (GUANO first: usually the richest). */
+  private fileMeta(d: MobileDetails) {
+    const groups = (d.fileMetadata || []).filter((g) => g.entries.length);
+    if (!groups.length) return null;
+    const c = this.card(t('det.fileMeta'));
+    groups.forEach((g, i) => {
+      const box = el('details', 'm-dgroup');
+      box.open = i === 0;
+      const sum = el('summary');
+      sum.append(el('span', '', g.source), el('span', 'm-dcount', String(g.entries.length)));
+      box.appendChild(sum);
+      const dl = this.rows(g.entries.map(([k, v]) => [k.split('|').join(' · '), v]));
+      if (dl) box.appendChild(dl);
+      c.appendChild(box);
+    });
+    return c;
   }
 
   private file(d: MobileDetails) {
