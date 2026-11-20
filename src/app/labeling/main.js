@@ -2223,6 +2223,7 @@ async function activateRecordingEntry(entry) {
     duration: player.duration || 0,
     filename: entry.filename,
     species: _isSoundscape ? '' : _entryEn,
+    fileMetadata: player.fileMetadata || [],
   });
 
   syncToPlayer();
@@ -4454,6 +4455,7 @@ player.on('ready', (e) => {
     sampleRate: state.sampleRate,
     duration: player.duration || 0,
     filename: fileLabel.textContent || '',
+    fileMetadata: player.fileMetadata || [],
   });
   try { renderRecordingContext(); } catch { /* not initialized yet */ } // duration now known
 

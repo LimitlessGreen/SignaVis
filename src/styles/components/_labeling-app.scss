@@ -1380,3 +1380,9 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
 // Night-coloured swatches/segments need an edge on dark surfaces
 .sun-chart-events i, .sun-spans-legend i { box-shadow: inset 0 0 0 1px var(--color-border); }
 .sun-spans-bar { box-shadow: inset 0 0 0 1px var(--color-border); }
+
+.props-filemeta {
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border);
+  summary { padding: 4px 0; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--color-text-secondary); }
+}

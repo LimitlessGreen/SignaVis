@@ -32,6 +32,10 @@ const RECORDING_FIELDS = [
   { key: 'recordist',   label: 'Recordist' },
   { key: 'species',     label: 'Species' },
   { key: 'quality',     label: 'Quality' },
+  { key: 'soundType',   label: 'Sound type' },
+  { key: 'sex',         label: 'Sex' },
+  { key: 'stage',       label: 'Life stage' },
+  { key: 'temperature', label: 'Temperature' },
   { key: 'license',     label: 'License' },
   { key: 'alt',         label: 'Altitude' },
   { key: 'method',      label: 'Method' },
@@ -369,6 +373,28 @@ export class PropertiesPanel {
 
     // Date, place, coordinates and device are in the context block above
     this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
+
+    // Metadata chunks of the file (GUANO, BWF, WAV INFO, AudioMoth, iXML), one collapsible group each
+    for (const g of (this._audioInfo?.fileMetadata || []) as { source: string; entries: [string, string][] }[]) {
+      if (!g.entries?.length) continue;
+      const box = document.createElement('details');
+      box.className = 'props-filemeta';
+      const sum = document.createElement('summary');
+      sum.textContent = `${g.source} (${g.entries.length})`;
+      box.appendChild(sum);
+      const dl = document.createElement('dl');
+      dl.className = 'props-grid';
+      for (const [k, v] of g.entries) {
+        const dt = document.createElement('dt');
+        dt.textContent = k.split('|').join(' · ');
+        const dd = document.createElement('dd');
+        dd.textContent = v;
+        dd.classList.add('props-readonly');
+        dl.append(dt, dd);
+      }
+      box.appendChild(dl);
+      this._recBody.appendChild(box);
+    }
   }
 
   _renderSet() {
