@@ -17,6 +17,8 @@ import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
 
 export type LightView = 'chart' | 'dial';
 const VIEW_KEY = 'aw.props.lightView';
+/** Recordings shorter than this are shown as a moment, not a span. */
+export const SPAN_MIN_MINUTES = 10;
 
 const NS = 'http://www.w3.org/2000/svg';
 const S = 260;              // viewBox size
@@ -347,7 +349,8 @@ export class SunCharts {
     /** durationSec: recording length; its span is drawn across the light phases. */
     render(coords: Coords | null, date: string | null, time: string | null, durationSec = 0) {
         this._last = [coords, date, time, durationSec];
-        const durationMin = Math.max(0, durationSec / 60);
+        // Most recordings last seconds or minutes: their span would be invisible noise.
+        const durationMin = durationSec / 60 >= SPAN_MIN_MINUTES ? durationSec / 60 : 0;
         this.el.innerHTML = '';
         if (!coords || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { this.el.hidden = true; return this.el; }
         this.el.hidden = false;
@@ -423,6 +426,7 @@ export class SunCharts {
         if (!m || durationMin < 1) return null;
         const start = +m[1] * 60 + +m[2];
         const spans = phaseSpans(c.lat, c.lon, date, start, durationMin, off);
+        if (spans.length < 2) return null; // stays in one light phase: the summary line says it
         const box = document.createElement('div');
         box.className = 'sun-spans';
         const bar = document.createElement('div');
