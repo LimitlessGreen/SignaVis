@@ -76,6 +76,8 @@ export interface MobileAppHost {
   restoreLabel?(lbl: any): void;
   /** Called when phone mode is entered (true) or left (false). */
   onModeChange?(phone: boolean): void;
+  /** Xeno-canto API key (shared with the desktop XC panel); setting it imports the open recording's labels + metadata. */
+  xcKey?: { get(): string; set(key: string): void | Promise<void> };
   /**
    * The app's analysis controls (desktop Analyse panel). The phone screen drives these
    * elements, so BirdNET / BirdBox keep one implementation.
@@ -115,6 +117,11 @@ export interface AnalysisControls {
   birdboxStatus?: HTMLElement | null;
   birdboxProgressWrap?: HTMLElement | null;
   birdboxProgressBar?: HTMLElement | null;
+  /** Desktop model picker (`.seg-btn[data-value]` buttons); the phone clicks them, so one picker stays the truth. */
+  modelSeg?: HTMLElement | null;
+  /** BirdBox sliders: minimum confidence and the gap that fuses neighbouring boxes. */
+  birdboxConf?: HTMLInputElement | null;
+  birdboxGap?: HTMLInputElement | null;
   /** Start an analysis (same as the desktop buttons). */
   run(job: 'birdnet' | 'birdbox'): void;
 }
@@ -155,6 +162,11 @@ const SKIP_SEC = 5;
 const PHONE_MAX_HZ = 12000;
 /** Queue, ✓/✕ and swiping on the phone. Off: the phone is a viewer; labeling stays on the desktop. */
 const REVIEW_WORKFLOW = false;
+
+/** Phone texts for the desktop model picker's notes (the desktop ones are English only). */
+const MODEL_NOTES: Record<string, 'an.note.v3' | 'an.note.v3full' | 'an.note.v24' | 'an.note.anura' | 'an.note.custom'> = {
+  'v3.0': 'an.note.v3', 'v3.0-12k': 'an.note.v3full', 'v2.4': 'an.note.v24', anurapam: 'an.note.anura', custom: 'an.note.custom',
+};
 /** Species colours on the spectrogram and in the species strip; picked to stand out on the inferno palette. */
 const PALETTE = ['#22d3ee', '#a3e635', '#f472b6', '#a78bfa', '#60a5fa', '#facc15', '#2dd4bf', '#fb923c', '#e879f9', '#f87171'];
 /** Phone-only viewer settings (the spectrogram settings live in the player and are stored there). */
@@ -324,6 +336,7 @@ export class MobileApp {
   private anConfVal!: HTMLElement;
   private anRun!: HTMLButtonElement;
   private anExpert!: HTMLElement;
+  private anDetectors!: HTMLElement;
   private anBackTo: Screen = 'review';
   private anJob: 'idle' | 'birdnet' | 'birdbox' = 'idle';
   private anJobStarted = false;
@@ -1344,6 +1357,41 @@ export class MobileApp {
       } });
     });
 
+    if (this.h.xcKey) {
+      const xk = this.h.xcKey;
+      const xc = group('Xeno-canto');
+      const row = el('form', 'm-set-row m-set-col m-xckey');
+      row.appendChild(el('span', 'm-set-label', t('set.xcKey')));
+      const line = el('div', 'm-xckey-line');
+      const inp = el('input', 'm-xckey-input');
+      inp.type = 'password';
+      inp.autocomplete = 'off';
+      inp.spellcheck = false;
+      inp.value = xk.get();
+      inp.placeholder = t('set.xcKeyPh');
+      inp.setAttribute('aria-label', t('set.xcKey'));
+      const eye = button('m-set-btn m-xckey-eye', '', t('set.xcKeyShow'), () => {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      });
+      eye.textContent = '👁';
+      const save = el('button', 'm-set-btn', t('set.xcKeySave'));
+      save.type = 'submit';
+      line.append(inp, eye, save);
+      row.append(line, el('small', 'm-hint', t(xk.get() ? 'set.xcKeySet' : 'set.xcKeyHint')));
+      row.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        save.disabled = true;
+        try { await xk.set(inp.value.trim()); this.toast(t(inp.value.trim() ? 'set.xcKeySaved' : 'set.xcKeyCleared'), null); }
+        finally { save.disabled = false; this.renderSettings(); }
+      });
+      xc.appendChild(row);
+      const a = el('a', 'm-hint m-xckey-link', t('set.xcKeyWhere'));
+      a.href = 'https://xeno-canto.org/account';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      xc.appendChild(a);
+    }
+
     const help = group(t('set.gestures'));
     const ul = el('ul', 'm-set-help');
     for (const k of ['set.g.pinch', 'set.g.drag', 'set.g.tap', 'set.g.double', 'set.g.hold', 'set.g.overview'] as const) ul.appendChild(el('li', '', t(k)));
@@ -1937,7 +1985,8 @@ export class MobileApp {
     this.buildExpert();
     expertCard.append(expertBtn, this.anExpert);
 
-    body.append(this.anProgress, what, conf, expertCard);
+    this.anDetectors = el('div', 'm-an-detectors');
+    body.append(this.anProgress, what, conf, this.anDetectors, expertCard);
 
     const foot = el('div', 'm-an-foot');
     this.anRun = el('button', 'm-cta', t('an.run'));
@@ -2019,6 +2068,46 @@ export class MobileApp {
     const mg = this.anExpert.querySelector<HTMLInputElement>('[data-mirror="merge"]');
     if (mg && a.mergeCheckbox) mg.checked = a.mergeCheckbox.checked;
     this.anRun.disabled = !rec || this.anJob !== 'idle';
+    this.renderDetectors();
+  }
+
+  /** BirdNET model and BirdBox sliders, read fresh from the desktop controls each time. */
+  private renderDetectors() {
+    const a = this.h.analysis;
+    const box = this.anDetectors;
+    box.replaceChildren();
+    if (!a) return;
+    const btns = [...(a.modelSeg?.querySelectorAll<HTMLButtonElement>('.seg-btn[data-value]') || [])];
+    // „Custom“ needs a folder URL: that stays a desktop thing (shown only if it is the current pick).
+    const shown = btns.filter((b) => b.dataset.value !== 'custom' || b.getAttribute('aria-checked') === 'true');
+    if (shown.length) {
+      const g = el('div', 'm-set-group');
+      g.appendChild(el('h3', '', t('an.model')));
+      const cur = shown.find((b) => b.getAttribute('aria-checked') === 'true');
+      this.segRow(g, t('an.modelLabel'), shown.map((b) => [b.dataset.value!, (b.textContent || '').trim()] as [string, string]),
+        cur?.dataset.value ?? '', (v) => {
+          if (this.anJob !== 'idle') return;
+          shown.find((b) => b.dataset.value === v)?.click();
+          this.renderDetectors();
+        });
+      const note = cur ? MODEL_NOTES[cur.dataset.value!] : undefined;
+      box.appendChild(g);
+      if (note || cur?.dataset.note) box.appendChild(el('p', 'm-hint m-an-note', note ? t(note) : cur!.dataset.note!));
+    }
+    if (a.birdboxBtn && (a.birdboxConf || a.birdboxGap)) {
+      const g = el('div', 'm-set-group');
+      g.appendChild(el('h3', '', t('an.birdboxSet')));
+      if (a.birdboxConf) {
+        const c = a.birdboxConf;
+        this.sliderRow(g, t('an.minConf'), c, null, () => Number(c.value).toFixed(2));
+      }
+      if (a.birdboxGap) {
+        const gp = a.birdboxGap;
+        this.sliderRow(g, t('an.bbGap'), gp, null, () => `${Number(gp.value).toFixed(2)} s`);
+      }
+      box.appendChild(g);
+      box.appendChild(el('p', 'm-hint m-an-note', t('an.bbHint')));
+    }
   }
 
   /** Analyse the active recording with the current settings and show it in the review screen. */

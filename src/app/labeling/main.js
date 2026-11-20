@@ -2821,6 +2821,10 @@ const mobileApp = new MobileApp({
     };
   },
   setContext: (field, value) => recordingContextBlock.onChange(field, value),
+  xcKey: {
+    get: () => xcPanel.apiKey || '',
+    set: async (key) => { await applyXcKey(key); mobileApp.refresh(); },
+  },
   analysis: {
     confInput: document.getElementById('birdnetConfidence'),
     overlapSelect: document.getElementById('birdnetOverlap'),
@@ -2834,6 +2838,9 @@ const mobileApp = new MobileApp({
     birdboxStatus: document.getElementById('birdboxStatus'),
     birdboxProgressWrap: document.getElementById('birdboxProgressWrap'),
     birdboxProgressBar: document.getElementById('birdboxProgressBar'),
+    modelSeg: document.getElementById('birdnetModelSeg'),
+    birdboxConf: document.getElementById('birdboxConf'),
+    birdboxGap: document.getElementById('birdboxGap'),
     run: (job) => { if (job === 'birdnet') birdnetPanel.analyze(); else birdboxPanel.run(); },
   },
   live: {
@@ -4026,9 +4033,14 @@ xcNokeySetKeyBtn.addEventListener('click', () => saveNokeyKey());
 async function saveNokeyKey() {
   const key = xcNokeyKeyInput.value.trim();
   if (!key) return;
+  closeXcNokeyModal();
+  await applyXcKey(key);
+}
+/** Save the XC API key, then import labels + metadata of the open XC recording (desktop dialog + phone settings). */
+async function applyXcKey(key) {
   xcPanel.setApiKey(key);   // localStorage + state + callbacks
   updateXcKeyIndicator();
-  closeXcNokeyModal();
+  if (!key) return;
   // Re-import labels now that a key is available
   const xcId = currentXcId || xcPanel.xcId;
   if (xcId) {
