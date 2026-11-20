@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { CQT_FMIN } from '../../../shared/constants.ts';
-import { envelopeMinMax } from '../../../domain/waveformEnvelope.ts';
+import { envelopeMinMax, channelPeaks, PEAK_BLOCK, PEAK_BLOCK_FINE, type ChannelPeaks } from '../../../domain/waveformEnvelope.ts';
 import { clamp, channelData as cachedChannelData, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
@@ -69,39 +69,8 @@ function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond, s
 
 // ─── Peak cache ─────────────────────────────────────────────────────
 
-// Min/max per block of samples, built once per buffer: a fine level (32) for
-// medium zoom, a coarse one (1024, from the fine one) for zoomed-out views of
-// long recordings. Scrolling then touches a fraction of the samples.
-const PEAK_BLOCK_FINE = 32;
-const PEAK_BLOCK = 1024;
-type Peaks = { block: number; min: Float32Array; max: Float32Array };
-const peakCache = new WeakMap<AudioBuffer, { fine: Peaks; coarse: Peaks }>();
-
-function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
-    const n = Math.ceil(min.length / factor);
-    const outMin = new Float32Array(n);
-    const outMax = new Float32Array(n);
-    for (let b = 0; b < n; b++) {
-        let lo = Infinity, hi = -Infinity;
-        const end = Math.min(min.length, (b + 1) * factor);
-        for (let i = b * factor; i < end; i++) {
-            if (min[i] < lo) lo = min[i];
-            if (max[i] > hi) hi = max[i];
-        }
-        outMin[b] = lo; outMax[b] = hi;
-    }
-    return { block, min: outMin, max: outMax };
-}
-
-function getPeaks(audioBuffer: AudioBuffer) {
-    let peaks = peakCache.get(audioBuffer);
-    if (peaks) return peaks;
-    const data = cachedChannelData(audioBuffer);
-    const fine = reducePeaks(data, data, PEAK_BLOCK_FINE, PEAK_BLOCK_FINE);
-    const coarse = reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK);
-    peaks = { fine, coarse };
-    peakCache.set(audioBuffer, peaks);
-    return peaks;
+function getPeaks(audioBuffer: AudioBuffer): ChannelPeaks {
+    return channelPeaks(cachedChannelData(audioBuffer));
 }
 
 function setCanvasSize(canvas: HTMLCanvasElement, width: number, height: number) {

@@ -24,7 +24,7 @@ import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3D
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
-import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
+import { envelopePeakAbs } from '../../domain/waveformEnvelope.ts';
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
@@ -772,7 +772,7 @@ export class AudioEngine extends AudioEngineBase {
   }
 
   _updateNormGain() {
-    const peak = this.audioBuffer ? computeAmplitudePeak(channelData(this.audioBuffer)) : 1;
+    const peak = this.audioBuffer ? envelopePeakAbs(channelData(this.audioBuffer)) : 1;
     this.normGain = clamp(AudioEngine.NORM_TARGET / peak, 0.05, AudioEngine.NORM_MAX_GAIN);
   }
 

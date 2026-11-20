@@ -1,50 +1,65 @@
-// Min/max per block of samples, computed once per channel, so drawing the
-// waveform of a long recording does not scan every sample on every draw.
+// Min/max per block of samples, built once per channel: a fine level (32) for
+// medium zoom, a coarse one (1024, from the fine one) for zoomed-out views of
+// long recordings. Drawing and peak levels then touch a fraction of the samples.
 
-const BLOCK = 256;
+export const PEAK_BLOCK_FINE = 32;
+export const PEAK_BLOCK = 1024;
 
-interface Envelope { min: Float32Array; max: Float32Array }
+export type Peaks = { block: number; min: Float32Array; max: Float32Array };
+export type ChannelPeaks = { fine: Peaks; coarse: Peaks };
 
-const cache = new WeakMap<Float32Array, Envelope>();
+const cache = new WeakMap<Float32Array, ChannelPeaks>();
 
-function envelope(data: Float32Array): Envelope {
-    let env = cache.get(data);
-    if (env) return env;
-    const n = Math.ceil(data.length / BLOCK);
-    const min = new Float32Array(n).fill(Infinity), max = new Float32Array(n).fill(-Infinity);
+function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
+    const n = Math.ceil(min.length / factor);
+    const outMin = new Float32Array(n);
+    const outMax = new Float32Array(n);
     for (let b = 0; b < n; b++) {
         let lo = Infinity, hi = -Infinity;
-        for (let i = b * BLOCK, e = Math.min(data.length, i + BLOCK); i < e; i++) {
-            const v = data[i];
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
+        const end = Math.min(min.length, (b + 1) * factor);
+        for (let i = b * factor; i < end; i++) {
+            if (min[i] < lo) lo = min[i];
+            if (max[i] > hi) hi = max[i];
         }
-        min[b] = lo; max[b] = hi;
+        outMin[b] = lo; outMax[b] = hi;
     }
-    env = { min, max };
-    cache.set(data, env);
-    return env;
+    return { block, min: outMin, max: outMax };
+}
+
+export function channelPeaks(data: Float32Array): ChannelPeaks {
+    let peaks = cache.get(data);
+    if (peaks) return peaks;
+    const fine = reducePeaks(data, data, PEAK_BLOCK_FINE, PEAK_BLOCK_FINE);
+    const coarse = reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK);
+    peaks = { fine, coarse };
+    cache.set(data, peaks);
+    return peaks;
 }
 
 /** [min, max] of data[start, end), NaN ignored; [Infinity, -Infinity] if empty. */
 export function envelopeMinMax(data: Float32Array, start: number, end: number): [number, number] {
     let lo = Infinity, hi = -Infinity;
-    const scan = (a: number, b: number) => {
+    const take = (min: Float32Array, max: Float32Array, a: number, b: number) => {
         for (let i = a; i < b; i++) {
-            const v = data[i];
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
+            if (min[i] < lo) lo = min[i];
+            if (max[i] > hi) hi = max[i];
         }
     };
-    const b0 = Math.ceil(start / BLOCK), b1 = Math.floor(end / BLOCK);
-    if (b1 - b0 < 2) { scan(start, end); return [lo, hi]; }
-    const env = envelope(data);
-    scan(start, b0 * BLOCK);
-    for (let b = b0; b < b1; b++) {
-        if (env.min[b] < lo) lo = env.min[b];
-        if (env.max[b] > hi) hi = env.max[b];
+    // Samples to the fine boundaries, fine blocks to the coarse boundaries, coarse blocks between.
+    const f0 = Math.ceil(start / PEAK_BLOCK_FINE), f1 = Math.floor(end / PEAK_BLOCK_FINE);
+    if (f1 - f0 < 2) { take(data, data, start, end); return [lo, hi]; }
+    const { fine, coarse } = channelPeaks(data);
+    const r = PEAK_BLOCK / PEAK_BLOCK_FINE;
+    const c0 = Math.ceil(f0 / r), c1 = Math.floor(f1 / r);
+    take(data, data, start, f0 * PEAK_BLOCK_FINE);
+    if (c1 > c0) {
+        take(fine.min, fine.max, f0, c0 * r);
+        take(coarse.min, coarse.max, c0, c1);
+        take(fine.min, fine.max, c1 * r, f1);
+    } else {
+        take(fine.min, fine.max, f0, f1);
     }
-    scan(b1 * BLOCK, end);
+    take(data, data, f1 * PEAK_BLOCK_FINE, end);
     return [lo, hi];
 }
 
