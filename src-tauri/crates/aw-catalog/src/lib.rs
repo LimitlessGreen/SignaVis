@@ -47,16 +47,67 @@ impl Catalog {
     }
 }
 
-/// How pattern fields map to catalog entities.
+/// What a pattern field means. Field names in templates are free; the profile maps them.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FieldRole {
+    /// Value names a site (`site` row).
+    Site,
+    /// Value names a recorder/device (`device` row).
+    Device,
+    /// Date-time field = recording start (local clock).
+    Start,
+    /// Date part of the start (combined with `StartTime`).
+    StartDate,
+    /// Time-of-day part of the start.
+    StartTime,
+    /// Stored as metadata under another key.
+    Meta(String),
+    /// Matched but dropped.
+    Ignore,
+}
+
 #[derive(Debug, Clone)]
-pub struct ImportOptions {
+pub struct FieldMapping {
+    pub field: String,
+    pub role: FieldRole,
+    /// Display name for Site/Device rows, `{}` = value (e.g. "Site {}"). None = value as is.
+    pub format: Option<String>,
+    /// Value replacements before formatting (e.g. "34" → "34 (swapped)").
+    pub lookup: HashMap<String, String>,
+}
+
+impl FieldMapping {
+    pub fn new(field: &str, role: FieldRole) -> Self {
+        Self { field: field.into(), role, format: None, lookup: HashMap::new() }
+    }
+    pub fn with_format(mut self, f: &str) -> Self { self.format = Some(f.into()); self }
+    fn value(&self, raw: &str) -> String {
+        let v = self.lookup.get(raw).map_or(raw, |s| s.as_str());
+        match &self.format { Some(f) => f.replace("{}", v), None => v.to_string() }
+    }
+}
+
+/// Import profile: templates + field roles + clock. Saved per project and reusable
+/// (presets for common recorders; profiles of other users can be imported).
+/// Unmapped fields go to `meta` under their own name.
+#[derive(Debug, Clone)]
+pub struct ImportProfile {
+    pub name: String,
     pub patterns: PatternSet,
-    /// Field naming the site / device; their values become `site` / `device` rows ("prefix + value").
-    pub site_field: Option<(String, String)>,
-    pub device_field: Option<(String, String)>,
-    /// Offset of the recorder clock to UTC in minutes (spike; later an IANA zone).
+    pub mappings: Vec<FieldMapping>,
+    /// Offset of the recorder clock to UTC in minutes (spike; IANA zone per site later).
     pub utc_offset_min: i32,
     pub tz: Option<String>,
+}
+
+impl ImportProfile {
+    pub fn describe(&self) -> String {
+        let mut s = format!("profile {}\n", self.name);
+        for p in &self.patterns.0 { s += &format!("pattern {}\n", p.template); }
+        for m in &self.mappings { s += &format!("map {} -> {:?} {:?}\n", m.field, m.role, m.format); }
+        s
+    }
+    fn mapping(&self, field: &str) -> Option<&FieldMapping> { self.mappings.iter().find(|m| m.field == field) }
 }
 
 #[derive(Debug, Default)]
@@ -65,6 +116,8 @@ pub struct ImportReport {
     pub inserted: usize,
     pub already_known: usize,
     pub unmatched: Vec<String>,
+    /// Matched, but no start time could be derived.
+    pub no_start: usize,
     pub per_pattern: Vec<usize>,
 }
 
@@ -80,14 +133,47 @@ fn local_to_utc_ms(t: NaiveDateTime, offset_min: i32) -> i64 {
     Utc.from_utc_datetime(&t).timestamp_millis() - offset_min as i64 * 60_000
 }
 
+/// Resolved catalog values of one path match.
+#[derive(Debug, Default, PartialEq)]
+pub struct Resolved {
+    pub site: Option<String>,
+    pub device: Option<String>,
+    pub start: Option<NaiveDateTime>,
+    pub meta: Vec<(String, String)>,
+}
+
+/// Apply the profile's roles to a match (also used by the import preview).
+pub fn resolve(profile: &ImportProfile, m: &pattern::PatternMatch) -> Resolved {
+    let mut r = Resolved::default();
+    let (mut date, mut time) = (None, None);
+    for (field, raw) in &m.fields {
+        match profile.mapping(field) {
+            None => r.meta.push((field.clone(), raw.clone())),
+            Some(map) => match &map.role {
+                FieldRole::Site => r.site = Some(map.value(raw)),
+                FieldRole::Device => r.device = Some(map.value(raw)),
+                FieldRole::Start => r.start = m.times.get(field).copied(),
+                FieldRole::StartDate => date = m.times.get(field).map(|t| t.date()),
+                FieldRole::StartTime => time = m.time_only.get(field).copied()
+                    .or_else(|| m.times.get(field).map(|t| t.time())),
+                FieldRole::Meta(key) => r.meta.push((key.clone(), map.value(raw))),
+                FieldRole::Ignore => {}
+            },
+        }
+    }
+    if r.start.is_none() {
+        if let Some(d) = date { r.start = Some(d.and_time(time.unwrap_or_default())); }
+    }
+    r
+}
+
 /// Referenced import of scanned audio files into `root_id`. Idempotent per (root, rel_path).
-pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFile], opts: &ImportOptions) -> Result<ImportReport> {
+pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFile], profile: &ImportProfile) -> Result<ImportReport> {
     let tx = cat.conn.transaction()?;
-    let pattern_text = opts.patterns.0.iter().map(|p| p.template.as_str()).collect::<Vec<_>>().join("\n");
     tx.execute("INSERT INTO import_batch(uid, created_at, root_id, source, pattern) VALUES (?1, ?2, ?3, 'folder', ?4)",
-        params![new_uid(), now_ms(), root_id, pattern_text])?;
+        params![new_uid(), now_ms(), root_id, profile.describe()])?;
     let import_id = tx.last_insert_rowid();
-    let mut rep = ImportReport { import_id, per_pattern: vec![0; opts.patterns.0.len()], ..Default::default() };
+    let mut rep = ImportReport { import_id, per_pattern: vec![0; profile.patterns.0.len()], ..Default::default() };
     let (mut sites, mut devices) = (HashMap::new(), HashMap::new());
     {
         let mut ins_asset = tx.prepare(
@@ -102,24 +188,18 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
                 continue;
             }
             let asset_id = tx.last_insert_rowid();
-            let m = opts.patterns.matches(&f.rel_path);
-            if m.is_none() { rep.unmatched.push(f.rel_path.clone()); }
-            let (mut site_id, mut device_id, mut start) = (None, None, None);
-            if let Some((i, m)) = &m {
-                rep.per_pattern[*i] += 1;
-                start = m.start.map(|t| local_to_utc_ms(t, opts.utc_offset_min));
-                if let Some((field, prefix)) = &opts.site_field {
-                    if let Some(v) = m.fields.get(field) { site_id = Some(upsert_named(&tx, "site", &format!("{prefix}{v}"), &mut sites)?); }
-                }
-                if let Some((field, prefix)) = &opts.device_field {
-                    if let Some(v) = m.fields.get(field) { device_id = Some(upsert_named(&tx, "device", &format!("{prefix}{v}"), &mut devices)?); }
-                }
-            }
-            ins_rec.execute(params![new_uid(), asset_id, start, opts.tz, site_id, device_id])?;
+            let res = match profile.patterns.matches(&f.rel_path) {
+                Some((i, m)) => { rep.per_pattern[i] += 1; Some(resolve(profile, &m)) }
+                None => { rep.unmatched.push(f.rel_path.clone()); None }
+            };
+            if res.as_ref().is_some_and(|r| r.start.is_none()) { rep.no_start += 1; }
+            let res = res.unwrap_or_default();
+            let site_id = res.site.as_deref().map(|s| upsert_named(&tx, "site", s, &mut sites)).transpose()?;
+            let device_id = res.device.as_deref().map(|s| upsert_named(&tx, "device", s, &mut devices)).transpose()?;
+            let start = res.start.map(|t| local_to_utc_ms(t, profile.utc_offset_min));
+            ins_rec.execute(params![new_uid(), asset_id, start, profile.tz, site_id, device_id])?;
             let rec_id = tx.last_insert_rowid();
-            if let Some((_, m)) = &m {
-                for (k, v) in &m.fields { ins_meta.execute(params![rec_id, k, v])?; }
-            }
+            for (k, v) in &res.meta { ins_meta.execute(params![rec_id, k, v])?; }
             rep.inserted += 1;
         }
     }
@@ -207,10 +287,14 @@ mod tests {
         let root = cat.add_root("sk", "referenced", "test", "/x").unwrap();
         let files: Vec<_> = ["Rekorder_11_Standort_2/Woche_1/SK11_2023_03_13_17_00_01.wav", "odd/file.wav"]
             .iter().map(|p| scan::ScannedFile { rel_path: p.to_string(), size: 1, mtime_ms: 0 }).collect();
-        let opts = ImportOptions {
-            patterns: PatternSet::parse(&["Rekorder_{recorder}_Standort_{site}/Woche_{week:int}/SK{recorder}_{start:%Y_%m_%d_%H_%M_%S}.wav"]).unwrap(),
-            site_field: Some(("site".into(), "Standort ".into())),
-            device_field: Some(("recorder".into(), "Rekorder ".into())),
+        let opts = ImportProfile {
+            name: "test".into(),
+            patterns: PatternSet::parse(&["Rekorder_{rec}_Standort_{loc}/Woche_{week:int}/SK{rec}_{t:%Y_%m_%d_%H_%M_%S}.wav"]).unwrap(),
+            mappings: vec![
+                FieldMapping::new("loc", FieldRole::Site).with_format("Standort {}"),
+                FieldMapping::new("rec", FieldRole::Device).with_format("Rekorder {}"),
+                FieldMapping::new("t", FieldRole::Start),
+            ],
             utc_offset_min: 60, tz: Some("Europe/Berlin".into()),
         };
         let r = import_scanned(&mut cat, root, &files, &opts).unwrap();
@@ -222,5 +306,26 @@ mod tests {
         assert_eq!(site, "Standort 2");
         assert_eq!(start, Utc.with_ymd_and_hms(2023, 3, 13, 16, 0, 1).unwrap().timestamp_millis());
         assert_eq!(count(&cat, "SELECT COUNT(*) FROM meta WHERE key = 'week' AND value = '1'").unwrap(), 1);
+        assert_eq!(count(&cat, "SELECT COUNT(*) FROM meta WHERE key IN ('loc', 'rec', 't')").unwrap(), 0, "mapped fields not duplicated");
+    }
+
+    #[test]
+    fn date_and_time_from_different_fields() {
+        let profile = ImportProfile {
+            name: "am".into(),
+            patterns: PatternSet::parse(&["{site}/{day:%Y-%m-%d}/{dev}_{clock:%H%M%S}.flac"]).unwrap(),
+            mappings: vec![
+                FieldMapping::new("site", FieldRole::Site),
+                FieldMapping::new("dev", FieldRole::Meta("serial".into())),
+                FieldMapping::new("day", FieldRole::StartDate),
+                FieldMapping::new("clock", FieldRole::StartTime),
+            ],
+            utc_offset_min: 0, tz: None,
+        };
+        let m = profile.patterns.matches("Moor/2024-05-01/AM07_043000.flac").unwrap().1;
+        let r = resolve(&profile, &m);
+        assert_eq!(r.site.as_deref(), Some("Moor"));
+        assert_eq!(r.start.unwrap().to_string(), "2024-05-01 04:30:00");
+        assert_eq!(r.meta, vec![("serial".to_string(), "AM07".to_string())]);
     }
 }

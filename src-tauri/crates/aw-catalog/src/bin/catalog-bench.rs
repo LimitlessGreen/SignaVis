@@ -1,7 +1,9 @@
 //! Phase-0 measurement: scan a folder, import with path templates, import selection tables,
 //! add synthetic labels, time typical queries, report sizes.
 //!
-//! catalog-bench <root> <catalog.sqlite> [--synthetic-labels N] [pattern ...]
+//! catalog-bench <root> <catalog.sqlite> --pattern T [--pattern T2 …]
+//!     [--map field=site|device|start|date|time|ignore|meta:key[,format with {}]] [--utc-offset MIN]
+//!     [--synthetic-labels N]
 
 use aw_catalog::{*, pattern::PatternSet, scan};
 use rusqlite::params;
@@ -16,20 +18,35 @@ fn timed<T>(what: &str, f: impl FnOnce() -> T) -> T {
 }
 
 fn main() -> Result<()> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let mut n_labels = 100_000usize;
-    if let Some(i) = args.iter().position(|a| a == "--synthetic-labels") {
-        n_labels = args[i + 1].parse()?;
-        args.drain(i..=i + 1);
+    let mut args = std::env::args().skip(1);
+    let root = PathBuf::from(args.next().ok_or("root missing")?);
+    let db = PathBuf::from(args.next().ok_or("catalog path missing")?);
+    let (mut templates, mut mappings, mut n_labels, mut offset) = (Vec::new(), Vec::new(), 100_000usize, 0i32);
+    while let Some(a) = args.next() {
+        let v = args.next().ok_or_else(|| format!("{a} needs a value"))?;
+        match a.as_str() {
+            "--pattern" => templates.push(v),
+            "--synthetic-labels" => n_labels = v.parse()?,
+            "--utc-offset" => offset = v.parse()?,
+            "--map" => {
+                let (field, rest) = v.split_once('=').ok_or("--map field=role")?;
+                let (role, format) = match rest.split_once(',') { Some((r, f)) => (r, Some(f)), None => (rest, None) };
+                let role = match role {
+                    "site" => FieldRole::Site, "device" => FieldRole::Device, "start" => FieldRole::Start,
+                    "date" => FieldRole::StartDate, "time" => FieldRole::StartTime, "ignore" => FieldRole::Ignore,
+                    r if r.starts_with("meta:") => FieldRole::Meta(r[5..].to_string()),
+                    r => return Err(format!("unknown role {r}").into()),
+                };
+                let mut m = FieldMapping::new(field, role);
+                if let Some(f) = format { m = m.with_format(f); }
+                mappings.push(m);
+            }
+            _ => return Err(format!("unknown option {a}").into()),
+        }
     }
-    let root = PathBuf::from(&args[0]);
-    let db = PathBuf::from(&args[1]);
-    let templates: Vec<&str> = if args.len() > 2 { args[2..].iter().map(|s| s.as_str()).collect() } else {
-        vec![
-            "Rekorder_{recorder}_Standort_{site}/Woche_{week:int}*/SK{recorder}_{start:%Y_%m_%d_%H_%M_%S}.wav",
-            "Rekorder_{*}_Standort_{*}/Rekorder_{recorder}_Standort_{site}/Woche_{week:int}*/SK{recorder}_{start:%Y_%m_%d_%H_%M_%S}.wav",
-        ]
-    };
+    if templates.is_empty() { return Err("at least one --pattern".into()); }
+    let refs: Vec<&str> = templates.iter().map(|s| s.as_str()).collect();
+    let opts = ImportProfile { name: "bench".into(), patterns: PatternSet::parse(&refs)?, mappings, utc_offset_min: offset, tz: None };
     let _ = std::fs::remove_file(&db);
 
     let res = timed("scan (cold or warm cache, see note)", || scan::scan(&root, &scan::ScanOptions::default()));
@@ -39,15 +56,8 @@ fn main() -> Result<()> {
 
     let mut cat = Catalog::open(&db)?;
     let root_id = cat.add_root("aufnahmen", "referenced", "bench", &root.to_string_lossy())?;
-    let opts = ImportOptions {
-        patterns: PatternSet::parse(&templates)?,
-        site_field: Some(("site".into(), "Standort ".into())),
-        device_field: Some(("recorder".into(), "Rekorder ".into())),
-        utc_offset_min: 60,
-        tz: Some("Europe/Berlin".into()),
-    };
     let rep = timed("import audio (one transaction)", || import_scanned(&mut cat, root_id, &res.audio, &opts))?;
-    println!("           inserted {}, per pattern {:?}, unmatched {}", rep.inserted, rep.per_pattern, rep.unmatched.len());
+    println!("           inserted {}, per pattern {:?}, unmatched {}, no start {}", rep.inserted, rep.per_pattern, rep.unmatched.len(), rep.no_start);
     for u in rep.unmatched.iter().take(5) { println!("           unmatched {u}"); }
     let rep2 = timed("re-import (all known)", || import_scanned(&mut cat, root_id, &res.audio, &opts))?;
     println!("           already known {}", rep2.already_known);
@@ -84,12 +94,12 @@ fn main() -> Result<()> {
         Ok(())
     };
     q("stats per site × week (files, hours)",
-      "SELECT s.name, m.value, COUNT(*), SUM(a.size) FROM recording r JOIN site s ON s.id = r.site_id
-       JOIN meta m ON m.recording_id = r.id AND m.key = 'week' JOIN asset a ON a.id = r.asset_id GROUP BY 1, 2")?;
+      "SELECT s.name, r.start_ms / 604800000, COUNT(*), SUM(a.size) FROM recording r JOIN site s ON s.id = r.site_id
+       JOIN asset a ON a.id = r.asset_id GROUP BY 1, 2")?;
     q("calendar heatmap day × hour, all",
       "SELECT start_ms / 86400000, (start_ms / 3600000) % 24, COUNT(*) FROM recording GROUP BY 1, 2")?;
     q("filter: site 2, night (UTC 17–05), March",
-      "SELECT r.id FROM recording r JOIN site s ON s.id = r.site_id WHERE s.name = 'Standort 2'
+      "SELECT r.id FROM recording r JOIN site s ON s.id = r.site_id WHERE s.id = 1
        AND r.start_ms BETWEEN 1677628800000 AND 1680307200000 AND ((r.start_ms / 3600000) % 24 >= 17 OR (r.start_ms / 3600000) % 24 < 5)")?;
     q("detections class X score ≥ 0.5 with path",
       "SELECT a.rel_path, d.t0, d.score FROM detection d JOIN recording r ON r.id = d.recording_id

@@ -3,14 +3,16 @@
 //! Syntax (matched against the whole path relative to the root, `/` separated):
 //! - `{name}`            one or more characters, no `/` (shortest match)
 //! - `{name:int}`        digits
-//! - `{name:%Y_%m_%d}`   date/time with strftime codes %Y %m %d %H %M %S %y %j;
-//!                       the field must be called `start` to set the recording start
+//! - `{name:%Y_%m_%d}`   date and/or time with strftime codes %Y %m %d %H %M %S %y %j;
+//!                       the parsed value is in `PatternMatch::times` (date-only → date at 00:00,
+//!                       time-only → `time_only`). Which field is the recording start is decided
+//!                       by the import profile, not by the field name.
 //! - `{*}`               anonymous field (same as `{name}`, value dropped)
 //! - `*`                 any characters within one path segment
 //! - `**/`               zero or more directories
 //! Everything else is literal (regex characters are escaped).
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, NaiveTime};
 use regex::Regex;
 use std::collections::BTreeMap;
 
@@ -25,7 +27,10 @@ pub struct PathPattern {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternMatch {
     pub fields: BTreeMap<String, String>,
-    pub start: Option<NaiveDateTime>,
+    /// Parsed date/time fields (full date-time or date at 00:00).
+    pub times: BTreeMap<String, NaiveDateTime>,
+    /// Parsed time-of-day fields without a date.
+    pub time_only: BTreeMap<String, NaiveTime>,
 }
 
 #[derive(Debug)]
@@ -108,12 +113,14 @@ impl PathPattern {
     pub fn matches(&self, rel_path: &str) -> Option<PatternMatch> {
         let caps = self.re.captures(rel_path)?;
         let mut fields = BTreeMap::new();
-        let mut start = None;
+        let (mut times, mut time_only) = (BTreeMap::new(), BTreeMap::new());
         for (group, name, fmt) in &self.fields {
             let v = caps.name(group)?.as_str();
             if let Some(fmt) = fmt {
-                let parsed = parse_time(v, fmt)?;
-                if name == "start" { start = Some(parsed); }
+                match parse_time(v, fmt)? {
+                    Parsed::DateTime(t) => { times.insert(name.clone(), t); }
+                    Parsed::Time(t) => { time_only.insert(name.clone(), t); }
+                }
             }
             // A field used twice must agree (e.g. recorder in folder and file name).
             if let Some(prev) = fields.get(name) {
@@ -121,14 +128,18 @@ impl PathPattern {
             }
             fields.insert(name.clone(), v.to_string());
         }
-        Some(PatternMatch { fields, start })
+        Some(PatternMatch { fields, times, time_only })
     }
 }
 
-fn parse_time(v: &str, fmt: &str) -> Option<NaiveDateTime> {
-    if let Ok(t) = NaiveDateTime::parse_from_str(v, fmt) { return Some(t); }
-    // Date-only formats.
-    chrono::NaiveDate::parse_from_str(v, fmt).ok().and_then(|d| d.and_hms_opt(0, 0, 0))
+enum Parsed { DateTime(NaiveDateTime), Time(NaiveTime) }
+
+fn parse_time(v: &str, fmt: &str) -> Option<Parsed> {
+    if let Ok(t) = NaiveDateTime::parse_from_str(v, fmt) { return Some(Parsed::DateTime(t)); }
+    if let Some(t) = chrono::NaiveDate::parse_from_str(v, fmt).ok().and_then(|d| d.and_hms_opt(0, 0, 0)) {
+        return Some(Parsed::DateTime(t));
+    }
+    NaiveTime::parse_from_str(v, fmt).ok().map(Parsed::Time)
 }
 
 /// Several templates, first match wins.
@@ -158,7 +169,7 @@ mod tests {
         assert_eq!(m.fields["recorder"], "11");
         assert_eq!(m.fields["site"], "2");
         assert_eq!(m.fields["week"], "1");
-        assert_eq!(m.start.unwrap().to_string(), "2023-03-13 17:00:01");
+        assert_eq!(m.times["start"].to_string(), "2023-03-13 17:00:01");
     }
 
     #[test]
@@ -185,6 +196,14 @@ mod tests {
         assert!(p.matches("a/20241301_043000.WAV").is_none(), "month 13 rejected");
         let w = PathPattern::new("Rekorder_{r}/Woche_{w}*/x.wav").unwrap();
         assert_eq!(w.matches("Rekorder_1/Woche_3_Rest/x.wav").unwrap().fields["w"], "3", "lazy field, rest eaten by *");
+    }
+
+    #[test]
+    fn date_in_folder_time_in_file() {
+        let p = PathPattern::new("{day:%Y-%m-%d}/{rec}_{clock:%H%M%S}.flac").unwrap();
+        let m = p.matches("2024-05-01/AM07_043000.flac").unwrap();
+        assert_eq!(m.times["day"].to_string(), "2024-05-01 00:00:00");
+        assert_eq!(m.time_only["clock"].to_string(), "04:30:00");
     }
 
     #[test]
