@@ -717,7 +717,7 @@ export class BirdNETPlayer {
         if (!this._state) return;
         this._state._spectro.clearExternalMode();
         this._state._spectro.setDspControlsEnabled(true);
-        if (this._state.audioBuffer) this._state._spectro.generate();
+        if (this._state.audioBuffer) this._state._regenerateSpectrogram();
     }
 
     /**
@@ -1096,6 +1096,9 @@ export class BirdNETPlayer {
     cancelRecording(): void { this._liveRecorder?.cancel(); }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
+    /** Show both analysis views, or only the waveform or the spectrogram. A hidden spectrogram is not computed. */
+    setViewMode(mode: 'both' | 'waveform' | 'spectrogram') { this._state?._setViewMode(mode); }
+    get viewMode(): 'both' | 'waveform' | 'spectrogram' { return this._state?._viewMode ?? 'both'; }
     setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }
 
     get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }

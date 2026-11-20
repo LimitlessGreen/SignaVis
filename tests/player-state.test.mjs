@@ -280,3 +280,56 @@ test('PlayerState: constructor options.followTargetRatio propagates to config', 
 
     ps.dispose();
 });
+
+// ─── View mode at runtime ─────────────────────────────────────────────
+
+function headlessWithAudio(viewMode) {
+    const emitted = [];
+    const container = createFakeContainer();
+    container.classList.add('daw-shell', `view-mode-${viewMode}`);
+    const ps = new PlayerState(container, null, (name, detail) => emitted.push({ name, detail }), {
+        engine: new MockAudioEngine(), storage: new InMemoryStorageAdapter(),
+        viewMode, enableTouchGestures: false, enablePerfOverlay: false,
+    });
+    const buffer = { duration: 600, sampleRate: 48000, numberOfChannels: 1, getChannelData: () => new Float32Array(0) };
+    Object.defineProperty(ps, 'audioBuffer', { get: () => buffer });
+    const generated = [];
+    ps._spectro.generate = async (opts) => { generated.push(opts); };
+    Object.defineProperty(ps._spectro, 'hasData', { get: () => generated.length > 0, configurable: true });
+    return { ps, generated, emitted, container };
+}
+
+test('PlayerState: a hidden spectrogram is computed only once it is shown', async () => {
+    const { ps, generated, emitted, container } = headlessWithAudio('waveform');
+
+    ps._regenerateSpectrogram();
+    assert.strictEqual(generated.length, 0, 'not computed while hidden');
+
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 1, 'computed when shown');
+    assert.strictEqual(ps._showSpectrogram, true);
+    assert.ok(container.classList.contains('view-mode-both'), 'the shell shows the new mode');
+    assert.ok(!container.classList.contains('view-mode-waveform'));
+    assert.deepStrictEqual(emitted.at(-1), { name: 'viewmodechange', detail: { mode: 'both' } });
+
+    ps._setViewMode('waveform');
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 1, 'not recomputed when shown again');
+    ps.dispose();
+});
+
+test('PlayerState: a setting changed while hidden recomputes when shown', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    await ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+
+    ps._regenerateSpectrogram({ autoAdjust: false });
+    assert.strictEqual(generated.length, 1);
+
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 2);
+    ps.dispose();
+});

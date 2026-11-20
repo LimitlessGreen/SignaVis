@@ -190,7 +190,7 @@ export class PlayerState {
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
         this._presets = new PresetManager(this.d, {
-            onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._spectro.generate(opts); },
+            onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
                 if (this._spectro.hasData) {
                     this._spectro.buildGrayscale();
@@ -902,13 +902,64 @@ export class PlayerState {
         this._drawOverviewWaveform();
         this._syncOverviewWindowToViewport();
 
-        await this._spectro.generate({ autoAdjust: true });
-        if (this.autoFreqView) this.applyAutoFreqView();
+        // Hidden, the spectrogram is computed only once it is shown (setViewMode).
+        if (this._showSpectrogram) await this._generateSpectrogram();
         this._offerUltrasoundListening();
         this._drawMainWaveform();
         this._drawOverviewWaveform();
-        this._createFrequencyLabels();
         this._seekToTime(0, true);
+    }
+
+    _spectroGeneration: Promise<void> | null = null;
+    _spectroGenerationFor: AudioBuffer | null = null;
+    _spectroStale = false;
+
+    /** Recompute after a setting changed; a hidden spectrogram waits until it is shown. */
+    _regenerateSpectrogram(opts?: unknown) {
+        if (!this._showSpectrogram) { this._spectroStale = true; return; }
+        void this._spectro.generate(opts as any);
+    }
+
+    _generateSpectrogram(): Promise<void> {
+        const buffer = this.audioBuffer;
+        if (this._spectroGeneration && this._spectroGenerationFor === buffer) return this._spectroGeneration;
+        this._spectroStale = false;
+        this._spectroGenerationFor = buffer;
+        const generation: Promise<void> = (async () => {
+            await this._spectro.generate({ autoAdjust: true });
+            if (this.audioBuffer !== buffer) return;
+            if (this.autoFreqView) this.applyAutoFreqView();
+            this._createFrequencyLabels();
+            this._drawOverviewWaveform();
+        })().finally(() => {
+            if (this._spectroGeneration === generation) this._spectroGeneration = null;
+        });
+        this._spectroGeneration = generation;
+        return generation;
+    }
+
+    /** Which analysis views are visible: 'both', 'waveform' or 'spectrogram'. */
+    _setViewMode(mode: string) {
+        const next = mode === 'waveform' || mode === 'spectrogram' ? mode : 'both';
+        if (next === this._viewMode) return;
+        const shell = this.container.classList.contains('daw-shell')
+            ? this.container
+            : this.container.querySelector('.daw-shell');
+        shell?.classList.remove(`view-mode-${this._viewMode}`);
+        shell?.classList.add(`view-mode-${next}`);
+        this._viewMode = next;
+        this.options.viewMode = next;
+        this._showWaveform = next !== 'spectrogram';
+        this._showSpectrogram = next !== 'waveform';
+        this._viewport.updateLayout({ showSpectrogram: this._showSpectrogram, showWaveform: this._showWaveform });
+        this._invalidateSpectrogramHeightCache();
+        this._applyLocalViewHeights();
+        this._drawnViewport = '';
+        if (this._showSpectrogram && this.audioBuffer && (!this._spectro.hasData || this._spectroStale)) {
+            void this._generateSpectrogram().then(() => this._drawViewport(false));
+        }
+        this._drawViewport(false);
+        this._emit('viewmodechange', { mode: next });
     }
 
     /** Zoom the frequency axis to 0 … top of the activity (no-op when it spans the whole range). */

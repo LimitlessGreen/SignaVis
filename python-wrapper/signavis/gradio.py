@@ -71,6 +71,7 @@ def player_value(
     play: bool = True,
     select_id: Optional[str] = None,
     show_confidence: Optional[bool] = None,
+    view_mode: Optional[str] = None,
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
@@ -78,8 +79,15 @@ def player_value(
     otherwise the detection ``select_id`` is selected and scrolled into view.
     ``show_confidence`` switches the confidence next to the detection names on
     or off; ``None`` keeps the player's setting.
+    ``view_mode`` shows ``"both"`` analysis views, or only the ``"waveform"``
+    or the ``"spectrogram"``; a hidden spectrogram is not computed, which
+    saves time and memory for long recordings. ``None`` keeps the current view.
     """
+    if view_mode not in (None, "both", "waveform", "spectrogram"):
+        raise ValueError(f"view_mode must be 'both', 'waveform' or 'spectrogram', not {view_mode!r}")
     value: dict = {"src": src}
+    if view_mode is not None:
+        value["viewMode"] = view_mode
     if show_confidence is not None:
         value["showConfidence"] = bool(show_confidence)
     if detections is not None:
@@ -163,6 +171,8 @@ async function sync() {
   element.style.minHeight = v.src ? '' : '120px';
   if (!v.src) return;
   const player = await ensurePlayer();
+  // Before loading, so a hidden spectrogram is never computed.
+  if (v.viewMode && v.viewMode !== player.viewMode) player.setViewMode(v.viewMode);
   if (v.src !== state.src) {
     state.src = v.src;
     state.labels = null;

@@ -38,6 +38,12 @@ class TestPlayerValue(unittest.TestCase):
         sel = player_value("a.wav", select=(1, 2), play=False, select_id="det-3")["select"]
         self.assertEqual(sel["id"], "det-3")
 
+    def test_the_view_mode_is_passed_on(self):
+        self.assertNotIn("viewMode", player_value("a.wav"))
+        self.assertEqual(player_value("a.wav", view_mode="waveform")["viewMode"], "waveform")
+        with self.assertRaises(ValueError):
+            player_value("a.wav", view_mode="spectrum")
+
 
 @unittest.skipIf(gr is None, "gradio not installed")
 class TestFileUrl(unittest.TestCase):
