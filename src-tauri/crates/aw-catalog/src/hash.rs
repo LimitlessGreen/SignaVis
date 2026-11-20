@@ -2,7 +2,10 @@
 //!
 //! Quick hash = xxh3-128 over (size, first 64 KiB, last 64 KiB). Reads ≤ 128 KiB per file, so it
 //! is cheap even for 100 k files on a USB disk, and recordings of the same length differ in their
-//! audio bytes. It identifies a file across renames; it is not a cryptographic checksum.
+//! audio bytes. It finds candidates fast; it is not a cryptographic checksum.
+//! Full hash = SHA-256 over the whole file ('sha256:<hex>'): confirms a re-link or a duplicate,
+//! and gives checksums for archiving/publication (sha256sum, BagIt). Reads every byte, so it runs
+//! as a separate, resumable background step.
 
 use crate::{Catalog, ImportProfile, Result, resolve, scan::ScannedFile};
 use rusqlite::{OptionalExtension, params};
@@ -43,22 +46,44 @@ fn read_full(f: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
     Ok(n)
 }
 
+pub fn full_hash(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut f = File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        match f.read(&mut buf)? { 0 => break, n => h.update(&buf[..n]) }
+    }
+    Ok(format!("sha256:{:x}", h.finalize()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HashKind { Quick, Full }
+
+impl HashKind {
+    fn column(self) -> &'static str { match self { HashKind::Quick => "quick_hash", HashKind::Full => "full_hash" } }
+    pub fn compute(self, path: &Path) -> std::io::Result<String> {
+        match self { HashKind::Quick => quick_hash(path), HashKind::Full => full_hash(path) }
+    }
+}
+
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HashReport { pub hashed: usize, pub failed: Vec<String>, pub cancelled: bool }
 
-/// Present assets of a root without quick hash: (asset id, relative path).
-pub fn hash_todo(cat: &Catalog, root_id: i64) -> Result<Vec<(i64, String)>> {
-    let mut st = cat.conn.prepare(
-        "SELECT id, rel_path FROM asset WHERE root_id = ?1 AND quick_hash IS NULL AND status != 'missing' ORDER BY rel_path")?;
+/// Present assets of a root without a hash of `kind`: (asset id, relative path).
+pub fn hash_todo(cat: &Catalog, root_id: i64, kind: HashKind) -> Result<Vec<(i64, String)>> {
+    let mut st = cat.conn.prepare(&format!(
+        "SELECT id, rel_path FROM asset WHERE root_id = ?1 AND {} IS NULL AND status != 'missing' ORDER BY rel_path", kind.column()))?;
     let v = st.query_map([root_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
     Ok(v)
 }
 
-pub fn store_hashes(cat: &mut Catalog, hashes: &[(i64, String)]) -> Result<()> {
+pub fn store_hashes(cat: &mut Catalog, kind: HashKind, hashes: &[(i64, String)]) -> Result<()> {
     let tx = cat.conn.transaction()?;
     {
-        let mut up = tx.prepare("UPDATE asset SET quick_hash = ?2 WHERE id = ?1")?;
+        let mut up = tx.prepare(&format!("UPDATE asset SET {} = ?2 WHERE id = ?1", kind.column()))?;
         for (id, h) in hashes { up.execute(params![id, h])?; }
     }
     tx.commit()?;
@@ -66,11 +91,11 @@ pub fn store_hashes(cat: &mut Catalog, hashes: &[(i64, String)]) -> Result<()> {
 }
 
 /// Hash one batch from disk (no catalog access, so callers can hold no lock meanwhile).
-pub fn hash_batch(base: &Path, batch: &[(i64, String)], cancel: &AtomicBool, rep: &mut HashReport) -> Vec<(i64, String)> {
+pub fn hash_batch(base: &Path, kind: HashKind, batch: &[(i64, String)], cancel: &AtomicBool, rep: &mut HashReport) -> Vec<(i64, String)> {
     let mut done = Vec::with_capacity(batch.len());
     for (id, rel) in batch {
         if cancel.load(Ordering::Relaxed) { rep.cancelled = true; break; }
-        match quick_hash(&base.join(rel)) {
+        match kind.compute(&base.join(rel)) {
             Ok(h) => done.push((*id, h)),
             Err(e) => rep.failed.push(format!("{rel}: {e}")),
         }
@@ -81,15 +106,16 @@ pub fn hash_batch(base: &Path, batch: &[(i64, String)], cancel: &AtomicBool, rep
 
 pub const HASH_BATCH: usize = 500;
 
-/// Fill missing quick hashes of a root's present assets. Commits every batch (resumable).
-pub fn hash_missing(cat: &mut Catalog, root_id: i64, base: &Path, cancel: &AtomicBool,
+/// Fill missing hashes of `kind` for a root's present assets. Commits every batch (resumable).
+pub fn hash_missing(cat: &mut Catalog, root_id: i64, base: &Path, kind: HashKind, cancel: &AtomicBool,
                     progress: &mut dyn FnMut(usize, usize)) -> Result<HashReport> {
-    let todo = hash_todo(cat, root_id)?;
+    let todo = hash_todo(cat, root_id, kind)?;
     let mut rep = HashReport::default();
-    for (i, chunk) in todo.chunks(HASH_BATCH).enumerate() {
-        let done = hash_batch(base, chunk, cancel, &mut rep);
-        store_hashes(cat, &done)?;
-        progress(i * HASH_BATCH + chunk.len(), todo.len());
+    let batch = if kind == HashKind::Full { 50 } else { HASH_BATCH };
+    for (i, chunk) in todo.chunks(batch).enumerate() {
+        let done = hash_batch(base, kind, chunk, cancel, &mut rep);
+        store_hashes(cat, kind, &done)?;
+        progress(i * batch + chunk.len(), todo.len());
         if rep.cancelled { break; }
     }
     Ok(rep)
@@ -97,7 +123,7 @@ pub fn hash_missing(cat: &mut Catalog, root_id: i64, base: &Path, cancel: &Atomi
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Moved { pub from: String, pub to: String, pub by: &'static str }
+pub struct Moved { pub from: String, pub to: String, /** hash | sha256 | size+mtime */ pub by: &'static str }
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,7 +141,7 @@ pub struct ReconcileReport {
     pub new_count: usize,
 }
 
-struct Known { id: i64, size: i64, mtime: i64, hash: Option<String>, status: String }
+struct Known { id: i64, size: i64, mtime: i64, hash: Option<String>, full: Option<String>, status: String }
 
 /// Compare a fresh scan of a root with the catalog. Renamed or moved files are matched by quick
 /// hash (or, for assets not hashed yet, by unique size + mtime) and re-linked instead of being
@@ -123,9 +149,9 @@ struct Known { id: i64, size: i64, mtime: i64, hash: Option<String>, status: Str
 pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[ScannedFile],
                  profile: Option<&ImportProfile>) -> Result<ReconcileReport> {
     let mut known: HashMap<String, Known> = {
-        let mut st = cat.conn.prepare("SELECT rel_path, id, size, mtime, quick_hash, status FROM asset WHERE root_id = ?1")?;
+        let mut st = cat.conn.prepare("SELECT rel_path, id, size, mtime, quick_hash, full_hash, status FROM asset WHERE root_id = ?1")?;
         st.query_map([root_id], |r| Ok((r.get::<_, String>(0)?, Known {
-            id: r.get(1)?, size: r.get(2)?, mtime: r.get(3)?, hash: r.get(4)?, status: r.get(5)?,
+            id: r.get(1)?, size: r.get(2)?, mtime: r.get(3)?, hash: r.get(4)?, full: r.get(5)?, status: r.get(6)?,
         })))?.collect::<std::result::Result<_, _>>()?
     };
     let mut rep = ReconcileReport::default();
@@ -154,6 +180,15 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
         if gone.iter().any(|(_, k)| k.hash.is_some()) {
             if let Ok(h) = quick_hash(&base.join(&f.rel_path)) {
                 hit = gone.iter().position(|(_, k)| k.hash.as_deref() == Some(h.as_str())).map(|i| (i, "hash"));
+                // Confirm with SHA-256 when the old file had one (reads the candidate once).
+                if let Some((i, _)) = hit {
+                    if let Some(old) = gone[i].1.full.clone() {
+                        match full_hash(&base.join(&f.rel_path)) {
+                            Ok(new) if new == old => hit = Some((i, "sha256")),
+                            _ => hit = None,
+                        }
+                    }
+                }
             }
         }
         if hit.is_none() {
@@ -205,7 +240,11 @@ fn relink_fields(tx: &rusqlite::Transaction, asset_id: i64, r: &crate::Resolved,
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DuplicateGroup { pub hash: String, pub size: i64, pub paths: Vec<String> }
+pub struct DuplicateGroup {
+    pub hash: String, pub size: i64, pub paths: Vec<String>,
+    /// All members have the same SHA-256 (else: same quick hash only, not yet confirmed).
+    pub verified: bool,
+}
 
 /// Files with identical quick hash (same content), largest groups first.
 pub fn duplicates(cat: &Catalog, limit: usize) -> Result<(usize, Vec<DuplicateGroup>)> {
@@ -213,11 +252,13 @@ pub fn duplicates(cat: &Catalog, limit: usize) -> Result<(usize, Vec<DuplicateGr
         "SELECT COUNT(*) FROM (SELECT 1 FROM asset WHERE quick_hash IS NOT NULL AND status != 'missing' GROUP BY quick_hash HAVING COUNT(*) > 1)",
         [], |r| r.get(0))?;
     let mut st = cat.conn.prepare(
-        "SELECT quick_hash, MAX(size), GROUP_CONCAT(rel_path, char(10)) FROM asset
+        "SELECT quick_hash, MAX(size), GROUP_CONCAT(rel_path, char(10)),
+                COUNT(full_hash) = COUNT(*) AND COUNT(DISTINCT full_hash) = 1 FROM asset
          WHERE quick_hash IS NOT NULL AND status != 'missing' GROUP BY quick_hash HAVING COUNT(*) > 1
          ORDER BY COUNT(*) DESC, MIN(rel_path) LIMIT ?1")?;
     let v = st.query_map([limit as i64], |r| Ok(DuplicateGroup {
         hash: r.get(0)?, size: r.get(1)?, paths: r.get::<_, String>(2)?.split('\n').map(String::from).collect(),
+        verified: r.get(3)?,
     }))?.collect::<std::result::Result<_, _>>()?;
     Ok((total as usize, v))
 }
@@ -283,7 +324,7 @@ mod tests {
         cat.conn.execute("INSERT INTO label(uid, label_set_id, recording_id, t0, t1, class, created_at, updated_at)
             SELECT 'l1', 1, r.id, 0, 5, 'owl', 0, 0 FROM recording r JOIN asset a ON a.id = r.asset_id
             WHERE a.rel_path = 'S1/R1_20240501_040000.wav'", []).unwrap();
-        let rep = hash_missing(&mut cat, root, &dir, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        let rep = hash_missing(&mut cat, root, &dir, HashKind::Quick, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
         assert_eq!(rep.hashed, 3);
 
         // Hashed file moved to another site folder; second one renamed before hashing would also work
@@ -307,10 +348,56 @@ mod tests {
         assert_eq!((site.as_str(), labels), ("Site 2", 1));
 
         import_scanned(&mut cat, root, &rep.new_files, &profile).unwrap();
-        hash_missing(&mut cat, root, &dir, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        hash_missing(&mut cat, root, &dir, HashKind::Quick, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
         let (n, groups) = duplicates(&cat, 10).unwrap();
         assert_eq!(n, 1);
         assert_eq!(groups[0].paths, vec!["S1/R1_20240501_050000.wav", "S1/copy.wav"]);
+        assert!(!groups[0].verified);
+        hash_missing(&mut cat, root, &dir, HashKind::Full, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        assert!(duplicates(&cat, 10).unwrap().1[0].verified);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sha256_rejects_a_quick_hash_collision() {
+        let dir = std::env::temp_dir().join(format!("aw-hash-d-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let a = noise(1, 300_000);
+        let mut b = a.clone();
+        b[150_000] ^= 1;   // same size, head and tail: equal quick hash
+        write(&dir, "a.wav", &a);
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        let profile = ProfileSpec { name: "t".into(), patterns: vec!["{x}.wav".into()], ..Default::default() }.build().unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &profile).unwrap();
+        for k in [HashKind::Quick, HashKind::Full] {
+            hash_missing(&mut cat, root, &dir, k, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        }
+        assert!(aw_full(&cat).starts_with("sha256:"));
+        std::fs::remove_file(dir.join("a.wav")).unwrap();
+        write(&dir, "b.wav", &b);
+        let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, None).unwrap();
+        assert!(rep.moved.is_empty(), "different content must not be re-linked");
+        assert_eq!((rep.missing.len(), rep.new_count), (1, 1));
+        // Same content renamed: confirmed by SHA-256.
+        std::fs::remove_file(dir.join("b.wav")).unwrap();
+        write(&dir, "c.wav", &a);
+        let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, None).unwrap();
+        assert_eq!(rep.moved[0].by, "sha256");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn aw_full(cat: &Catalog) -> String {
+        cat.conn.query_row("SELECT full_hash FROM asset LIMIT 1", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn full_hash_matches_sha256sum() {
+        let dir = std::env::temp_dir().join(format!("aw-hash-e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write(&dir, "x.wav", b"abc");
+        assert_eq!(full_hash(&dir.join("x.wav")).unwrap(),
+            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

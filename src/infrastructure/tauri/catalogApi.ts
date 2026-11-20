@@ -22,7 +22,7 @@ export const catalogApi = {
     list: (projectRoot: string, filter: CatalogFilter, sort: CatalogSort, after: CatalogCursor | null, limit: number) =>
         call<CatalogPage>('catalog_list', { projectRoot, filter, sort, after, limit }),
     heatmap: (projectRoot: string, filter: CatalogFilter) => call<HeatCell[]>('catalog_heatmap', { projectRoot, filter }),
-    hashStart: (projectRoot: string) => call<void>('catalog_hash_start', { projectRoot }),
+    hashStart: (projectRoot: string, full = false) => call<void>('catalog_hash_start', { projectRoot, full }),
     hashCancel: () => call<void>('catalog_hash_cancel'),
     integrity: (projectRoot: string) => call<Integrity>('catalog_integrity', { projectRoot }),
     /** Subscribe to hashing progress; returns an unsubscribe function. */

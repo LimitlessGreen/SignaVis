@@ -69,7 +69,7 @@ fn main() -> Result<()> {
     if std::env::var_os("BENCH_HASH").is_some() {
         let t = Instant::now();
         let mut last = Instant::now();
-        let hr = aw_catalog::hash::hash_missing(&mut cat, root_id, &root, &std::sync::atomic::AtomicBool::new(false), &mut |d, n| {
+        let hr = aw_catalog::hash::hash_missing(&mut cat, root_id, &root, aw_catalog::hash::HashKind::Quick, &std::sync::atomic::AtomicBool::new(false), &mut |d, n| {
             if last.elapsed().as_secs() >= 30 { println!("           … {d}/{n} after {:.0} s", t.elapsed().as_secs_f64()); last = Instant::now(); }
         })?;
         println!("{:>9.1} ms  quick hash {} files, {} failed", t.elapsed().as_secs_f64() * 1e3, hr.hashed, hr.failed.len());

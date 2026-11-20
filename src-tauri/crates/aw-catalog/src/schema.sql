@@ -38,13 +38,14 @@ CREATE TABLE IF NOT EXISTS asset (
     size        INTEGER NOT NULL,
     mtime       INTEGER NOT NULL,
     quick_hash  TEXT,                  -- size + head/tail hash, for re-link and duplicates
-    full_hash   TEXT,
+    full_hash   TEXT,                  -- 'sha256:<hex>' over the whole file
     status      TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'missing', 'changed')),
     derived_of  INTEGER REFERENCES asset(id),   -- normalised copy, excerpt, …
     import_id   INTEGER REFERENCES import_batch(id),
     UNIQUE (root_id, rel_path)
 );
 CREATE INDEX IF NOT EXISTS asset_quick_hash ON asset(quick_hash);
+CREATE INDEX IF NOT EXISTS asset_full_hash ON asset(full_hash);
 
 CREATE TABLE IF NOT EXISTS site (
     id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE,

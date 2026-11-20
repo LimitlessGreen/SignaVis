@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use aw_catalog::hash::HashKind;
 use tauri::Emitter;
 
 pub const HASH_EVENT: &str = "lite-catalog-hash";
@@ -168,12 +169,13 @@ pub async fn catalog_recording_path(
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct HashProgress { project_root: String, done: usize, total: usize, finished: bool, failed: usize }
+struct HashProgress { project_root: String, kind: HashKind, done: usize, total: usize, finished: bool, failed: usize }
 
-/// Background job: quick hashes for all present assets without one (all roots located here).
-/// Progress as HASH_EVENT; resumable (commits in batches); one job at a time.
+/// Background job over all roots located on this machine: quick hashes (fingerprints), and with
+/// `full` afterwards SHA-256 checksums of the whole files. Progress as HASH_EVENT; resumable
+/// (commits in batches); one job at a time.
 #[tauri::command]
-pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, CatalogState>, project_root: String) -> Result<(), String> {
+pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, CatalogState>, project_root: String, full: bool) -> Result<(), String> {
     if state.hash_running.swap(true, Ordering::SeqCst) { return Err("hashing is already running".into()); }
     state.hash_cancel.store(false, Ordering::SeqCst);
     let (cat, cancel, running) = (state.get(&project_root)?, state.hash_cancel.clone(), state.hash_running.clone());
@@ -181,22 +183,26 @@ pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, C
         let result = (|| -> Result<(), String> {
             let roots = aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)?;
             let mut failed = 0;
-            'roots: for r in roots {
-                let Some(base) = r.path.clone() else { continue };
-                let todo = aw_catalog::hash::hash_todo(&*cat.lock().map_err(err)?, r.id).map_err(err)?;
-                // Read the files without holding the catalog; lock only to store each batch.
-                for (i, chunk) in todo.chunks(aw_catalog::hash::HASH_BATCH).enumerate() {
-                    let mut rep = aw_catalog::hash::HashReport::default();
-                    let done = aw_catalog::hash::hash_batch(Path::new(&base), chunk, &cancel, &mut rep);
-                    aw_catalog::hash::store_hashes(&mut *cat.lock().map_err(err)?, &done).map_err(err)?;
-                    failed += rep.failed.len();
-                    let _ = app.emit(HASH_EVENT, HashProgress {
-                        project_root: project_root.clone(), done: i * aw_catalog::hash::HASH_BATCH + chunk.len(), total: todo.len(), finished: false, failed,
-                    });
-                    if rep.cancelled { break 'roots; }
+            let kinds: &[HashKind] = if full { &[HashKind::Quick, HashKind::Full] } else { &[HashKind::Quick] };
+            'all: for &kind in kinds {
+                for r in &roots {
+                    let Some(base) = r.path.clone() else { continue };
+                    let todo = aw_catalog::hash::hash_todo(&*cat.lock().map_err(err)?, r.id, kind).map_err(err)?;
+                    let batch = if kind == HashKind::Full { 20 } else { aw_catalog::hash::HASH_BATCH };
+                    // Read the files without holding the catalog; lock only to store each batch.
+                    for (i, chunk) in todo.chunks(batch).enumerate() {
+                        let mut rep = aw_catalog::hash::HashReport::default();
+                        let done = aw_catalog::hash::hash_batch(Path::new(&base), kind, chunk, &cancel, &mut rep);
+                        aw_catalog::hash::store_hashes(&mut *cat.lock().map_err(err)?, kind, &done).map_err(err)?;
+                        failed += rep.failed.len();
+                        let _ = app.emit(HASH_EVENT, HashProgress {
+                            project_root: project_root.clone(), kind, done: i * batch + chunk.len(), total: todo.len(), finished: false, failed,
+                        });
+                        if rep.cancelled { break 'all; }
+                    }
                 }
             }
-            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), done: 0, total: 0, finished: true, failed });
+            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: HashKind::Quick, done: 0, total: 0, finished: true, failed });
             Ok(())
         })();
         running.store(false, Ordering::SeqCst);
@@ -213,6 +219,9 @@ pub fn catalog_hash_cancel(state: tauri::State<'_, CatalogState>) { state.hash_c
 pub struct Integrity {
     pub hashed: i64,
     pub unhashed: i64,
+    pub full_hashed: i64,
+    pub full_unhashed: i64,
+    pub bytes_without_checksum: i64,
     pub missing: i64,
     pub changed: i64,
     pub duplicate_groups: usize,
@@ -232,6 +241,9 @@ pub async fn catalog_integrity(state: tauri::State<'_, CatalogState>, project_ro
         Ok(Integrity {
             hashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
             unhashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NULL AND status != 'missing'")?,
+            full_hashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NOT NULL")?,
+            full_unhashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
+            bytes_without_checksum: n("SELECT COALESCE(SUM(size), 0) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
             missing: n("SELECT COUNT(*) FROM asset WHERE status = 'missing'")?,
             changed: n("SELECT COUNT(*) FROM asset WHERE status = 'changed'")?,
             duplicate_groups: groups, duplicates: dups, hashing,

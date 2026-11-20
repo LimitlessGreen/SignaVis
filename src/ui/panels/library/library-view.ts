@@ -100,6 +100,7 @@ export class LibraryView {
 
     async #loadIntegrity() {
         try { this.#integrity = await catalogApi.integrity(this.#o.projectRoot); } catch { this.#integrity = null; }
+        if (this.#integrity && !this.#integrity.hashing) this.#hash = null;
         this.#renderIntegrity();
     }
 
@@ -108,10 +109,17 @@ export class LibraryView {
         const it = this.#integrity;
         const parts: string[] = [];
         if (this.#hash) {
-            parts.push(`<span title="Content fingerprints recognise renamed or moved files and identical copies">Fingerprints ${this.#hash.done.toLocaleString()} / ${this.#hash.total.toLocaleString()}</span>
-              <button class="btn btn--sm btn--ghost" data-act="hash-stop">Stop</button>`);
+            const what = this.#hash.kind === 'full' ? 'SHA-256 checksums' : 'Fingerprints';
+            parts.push(`<span>${what} ${this.#hash.done.toLocaleString()} / ${this.#hash.total.toLocaleString()}</span>
+              <button class="btn btn--sm btn--ghost" data-act="hash-stop" title="Stop; finished files are kept and the rest continues next time">Stop</button>`);
         } else if (it && it.unhashed > 0) {
-            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-start" title="Read the start and end of each file once (about 1–2 min per 10 000 files on a USB disk)">Fingerprint ${it.unhashed.toLocaleString()} files</button>`);
+            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-start" title="Fingerprint = start and end of each file. Recognises renamed or moved files and identical copies. About 1–2 min per 10 000 files on a USB disk.">Fingerprint ${it.unhashed.toLocaleString()} files</button>`);
+        } else if (it && it.fullUnhashed > 0) {
+            // ~120 MB/s on a USB hard disk.
+            const min = Math.max(1, Math.round(it.bytesWithoutChecksum / 120e6 / 60));
+            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-full" title="SHA-256 over every byte: proves that files are unchanged and copies identical; checksum lists for archiving and publication. Reads ${formatBytes(it.bytesWithoutChecksum)} (about ${min} min on a USB hard disk).">Checksums for ${it.fullUnhashed.toLocaleString()} files</button>`);
+        } else if (it && it.fullHashed > 0) {
+            parts.push('<span title="All present files have a SHA-256 checksum">✓ checksums</span>');
         }
         if (it?.missing) parts.push(`<button class="btn btn--sm btn--ghost lib-warn" data-act="show-missing" title="Files the catalog knows but that were not found at the last import of their source">${it.missing.toLocaleString()} missing</button>`);
         if (it?.duplicateGroups) parts.push(`<button class="btn btn--sm btn--ghost lib-warn" data-act="show-dups">${it.duplicateGroups.toLocaleString()} identical copies</button>`);
@@ -125,8 +133,9 @@ export class LibraryView {
         host.innerHTML = `<div class="lib-import-head"><h3>Identical copies</h3>
             <span class="lib-stats">${it.duplicateGroups.toLocaleString()} groups of files with the same content${it.duplicateGroups > it.duplicates.length ? ` (first ${it.duplicates.length} shown)` : ''}</span>
             <span class="lib-spacer"></span><button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>
-          <div class="lib-import-preview"><table class="lib-table lib-table--compact"><thead><tr><th>Files</th><th class="num">Size</th></tr></thead><tbody>
-          ${it.duplicates.map((g) => `<tr><td>${g.paths.map((p) => `<div><code>${esc(p)}</code></div>`).join('')}</td><td class="num">${formatBytes(g.size)}</td></tr>`).join('')}
+          <div class="lib-import-preview"><table class="lib-table lib-table--compact"><thead><tr><th>Files</th><th class="num">Size</th><th>Checked</th></tr></thead><tbody>
+          ${it.duplicates.map((g) => `<tr><td>${g.paths.map((p) => `<div><code>${esc(p)}</code></div>`).join('')}</td><td class="num">${formatBytes(g.size)}</td>
+            <td title="${g.verified ? 'Same SHA-256: byte-identical' : 'Same fingerprint (size, start, end); compute checksums to confirm'}">${g.verified ? 'SHA-256 ✓' : 'fingerprint'}</td></tr>`).join('')}
           </tbody></table></div>`;
         host.hidden = false;
     }
@@ -294,10 +303,17 @@ export class LibraryView {
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
         else if (act === 'open-import') this.#showImport();
-        else if (act === 'hash-start') void catalogApi.hashStart(this.#o.projectRoot).then(() => {
-            this.#hash = { projectRoot: this.#o.projectRoot, done: 0, total: this.#integrity?.unhashed ?? 0, finished: false, failed: 0 };
+        else if (act === 'hash-start' || act === 'hash-full') {
+            const full = act === 'hash-full';
+            this.#hash = {
+                projectRoot: this.#o.projectRoot, kind: full && !this.#integrity?.unhashed ? 'full' : 'quick',
+                done: 0, total: (full ? this.#integrity?.fullUnhashed : this.#integrity?.unhashed) ?? 0, finished: false, failed: 0,
+            };
             this.#renderIntegrity();
-        }).catch((err) => { this.el.querySelector('.lib-stats')!.textContent = String(err); });
+            void catalogApi.hashStart(this.#o.projectRoot, full)
+                .catch((err) => { this.#hash = null; this.el.querySelector('.lib-stats')!.textContent = String(err); })
+                .finally(() => void this.#loadIntegrity());
+        }
         else if (act === 'hash-stop') void catalogApi.hashCancel();
         else if (act === 'show-dups') this.#showDuplicates();
         else if (act === 'show-missing') { this.#filter = { status: 'missing' }; void this.reload(); }

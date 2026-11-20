@@ -36,7 +36,7 @@ export interface Preview {
     issues: { kind: 'no-start' | 'implausible-time' | 'duplicate-time'; count: number; examples: string[] }[];
     samples: SampleRow[];
 }
-export interface MovedFile { from: string; to: string; by: 'hash' | 'size+mtime' }
+export interface MovedFile { from: string; to: string; by: 'hash' | 'sha256' | 'size+mtime' }
 export interface ImportResult {
     rootId: number; moved: number; movedExamples: MovedFile[]; missing: number; changed: number; inserted: number; alreadyKnown: number; unmatched: number; noStart: number;
     tables: number; detections: number;
@@ -70,12 +70,13 @@ export interface Facets {
     noStart: number; sites: FacetValue[]; devices: FacetValue[];
 }
 export interface HeatCell { day: string; hour: number; count: number }
-export interface DuplicateGroup { hash: string; size: number; paths: string[] }
+export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
 export interface Integrity {
-    hashed: number; unhashed: number; missing: number; changed: number;
+    hashed: number; unhashed: number; fullHashed: number; fullUnhashed: number; bytesWithoutChecksum: number;
+    missing: number; changed: number;
     duplicateGroups: number; duplicates: DuplicateGroup[]; hashing: boolean;
 }
-export interface HashProgress { projectRoot: string; done: number; total: number; finished: boolean; failed: number }
+export interface HashProgress { projectRoot: string; kind: 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
 export interface RootInfo { id: number; name: string; kind: string; path: string | null; assets: number }
 
 /** Named fields of path templates, in first-seen order (`{*}` and duplicates skipped). */
