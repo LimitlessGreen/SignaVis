@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 mod agile;
+mod catalog;
 mod data_cache;
 mod embed_map;
 mod hdbscan;
@@ -101,6 +102,14 @@ pub fn run() {
             agile::agile_scores,
             agile::agile_suspects,
             agile::agile_label_set_many,
+            catalog::catalog_preview,
+            catalog::catalog_import,
+            catalog::catalog_profiles,
+            catalog::catalog_roots,
+            catalog::catalog_facets,
+            catalog::catalog_list,
+            catalog::catalog_heatmap,
+            catalog::catalog_recording_path,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,
@@ -116,6 +125,7 @@ pub fn run() {
         .manage(launch::LaunchQueue::default())
         .manage(updater::PendingUpdate::default())
         .manage(embeddings::EmbedState::default())
+        .manage(catalog::CatalogState::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
             // Windows, have to do it themselves at run time.
