@@ -383,7 +383,7 @@ export class SpectrogramController extends EventTarget {
             this._bandFloor   = result.bandFloor ?? null;
 
             // Persist to cache (non-blocking).
-            spectrogramCache.set(cacheKey, {
+            if (spectrogramCache.accepts(this._data.byteLength)) spectrogramCache.set(cacheKey, {
                 dataBuffer: new Uint8Array(((this._data as Float32Array)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,

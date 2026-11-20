@@ -87,6 +87,14 @@ export class SpectrogramCache {
     // ── Public API ───────────────────────────────────────────────────────
 
     /**
+     * Whether an entry of this size is cached at all. Larger ones would evict
+     * most other entries, and writing one holds two extra copies of it.
+     */
+    accepts(byteSize: number): boolean {
+        return this._maxBytes <= 0 || byteSize <= this._maxBytes / 4;
+    }
+
+    /**
      * Compute a cache key from audio channel data + DSP parameters.
      *
      * @param {Float32Array} channelData
@@ -161,6 +169,7 @@ export class SpectrogramCache {
      * @param {CacheEntry}  entry
      */
     async set(key: string, entry: CacheEntry) {
+        if (!this.accepts(this._estimateEntryBytes(entry))) return;
         // Guard: skip write if origin storage is critically low
         if (this._minFreeBytes > 0 && await this._isStorageCritical()) return;
 
