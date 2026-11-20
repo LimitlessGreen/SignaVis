@@ -18,6 +18,37 @@ pub struct AudioInfo {
     pub channels: Option<u32>,
     /// (key, value) from GUANO / INFO chunks, keys like "guano:Make", "comment".
     pub meta: Vec<(String, String)>,
+    /// Clock offset written by the recorder (GUANO Timestamp with offset, AudioMoth "(UTC+1)").
+    pub offset_min: Option<i32>,
+}
+
+/// Offset from GUANO `Timestamp` ("2023-10-29T02:30:00+01:00", "…Z") or an AudioMoth comment
+/// ("Recorded at 02:30:00 29/10/2023 (UTC+1) by AudioMoth …", "(UTC-5:30)", "(UTC)").
+pub fn offset_from_meta(meta: &[(String, String)]) -> Option<i32> {
+    use std::sync::LazyLock;
+    static ISO: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|([+-])(\d{2}):?(\d{2}))$").unwrap());
+    static AM: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)").unwrap());
+    for (k, v) in meta {
+        if k == "guano:Timestamp" {
+            if let Some(c) = ISO.captures(v.trim()) {
+                if &c[1] == "Z" { return Some(0); }
+                let sign = if &c[2] == "-" { -1 } else { 1 };
+                return Some(sign * (c[3].parse::<i32>().ok()? * 60 + c[4].parse::<i32>().ok()?));
+            }
+        }
+    }
+    for (k, v) in meta {
+        if k == "comment" && v.contains("AudioMoth") {
+            if let Some(c) = AM.captures(v) {
+                let Some(sign) = c.get(1) else { return Some(0) };
+                let sign = if sign.as_str() == "-" { -1 } else { 1 };
+                let h: i32 = c[2].parse().ok()?;
+                let m: i32 = c.get(3).map_or(Some(0), |x| x.as_str().parse().ok())?;
+                return Some(sign * (h * 60 + m));
+            }
+        }
+    }
+    None
 }
 
 pub fn read_info(path: &Path) -> std::io::Result<AudioInfo> {
@@ -41,6 +72,7 @@ pub fn read_info(path: &Path) -> std::io::Result<AudioInfo> {
     let lower = path.to_string_lossy().to_lowercase();
     if lower.ends_with(".wav") || lower.ends_with(".w4v") {
         info.meta = wav_chunks(path).unwrap_or_default();
+        info.offset_min = offset_from_meta(&info.meta);
     }
     Ok(info)
 }
@@ -116,13 +148,20 @@ pub fn read_batch(base: &Path, batch: &[(i64, String)], cancel: &AtomicBool) -> 
 pub fn store_infos(cat: &mut Catalog, infos: &[(i64, std::result::Result<AudioInfo, String>)]) -> Result<()> {
     let tx = cat.conn.transaction()?;
     {
-        let mut up = tx.prepare("UPDATE recording SET duration_s = ?2, sample_rate = ?3, channels = ?4 WHERE id = ?1")?;
+        let mut up = tx.prepare("UPDATE recording SET duration_s = ?2, sample_rate = ?3, channels = ?4, header_offset_min = ?5 WHERE id = ?1")?;
+        // The recorder's own offset fixes UTC for this file (wall time from the name stays).
+        let mut fix = tx.prepare(
+            "UPDATE recording SET start_ms = start_ms + (COALESCE(local_offset_min, 0) - ?2) * 60000, local_offset_min = ?2, tz = ?3
+             WHERE id = ?1 AND start_ms IS NOT NULL AND COALESCE(local_offset_min, 0) != ?2")?;
         // Header metadata never replaces values from the path pattern or manual edits.
         let mut meta = tx.prepare("INSERT OR IGNORE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'header')")?;
         for (id, r) in infos {
             match r {
                 Ok(i) => {
-                    up.execute(params![id, i.duration_s, i.sample_rate.unwrap_or(0), i.channels])?;
+                    up.execute(params![id, i.duration_s, i.sample_rate.unwrap_or(0), i.channels, i.offset_min])?;
+                    if let Some(o) = i.offset_min {
+                        fix.execute(params![id, o, crate::clock::Clock::Fixed(o).label()])?;
+                    }
                     for (k, v) in &i.meta { meta.execute(params![id, k, v])?; }
                 }
                 Err(e) => { meta.execute(params![id, "header:error", e])?; }
@@ -184,6 +223,19 @@ mod tests {
         assert!(i.meta.contains(&("guano:Loc Position".into(), "52.1 10.5".into())));
         assert!(i.meta.iter().any(|(k, v)| k == "comment" && v.contains("AudioMoth")));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn offsets_from_guano_and_audiomoth() {
+        let m = |k: &str, v: &str| vec![(k.to_string(), v.to_string())];
+        assert_eq!(offset_from_meta(&m("guano:Timestamp", "2023-10-29T02:30:00+01:00")), Some(60));
+        assert_eq!(offset_from_meta(&m("guano:Timestamp", "2023-10-29T02:30:00.5-0530")), Some(-330));
+        assert_eq!(offset_from_meta(&m("guano:Timestamp", "2023-10-29T01:30:00Z")), Some(0));
+        assert_eq!(offset_from_meta(&m("guano:Timestamp", "2023-10-29T02:30:00")), None, "no offset: unknown");
+        assert_eq!(offset_from_meta(&m("comment", "Recorded at 02:30:00 29/10/2023 (UTC+1) by AudioMoth 24F3")), Some(60));
+        assert_eq!(offset_from_meta(&m("comment", "Recorded at 21:00:00 24/02/2019 (UTC) by AudioMoth 0FE0")), Some(0));
+        assert_eq!(offset_from_meta(&m("comment", "Recorded at 21:00:00 24/02/2019 (UTC+5:30) by AudioMoth 0FE0")), Some(330));
+        assert_eq!(offset_from_meta(&m("comment", "(UTC+1) written by some other recorder")), None);
     }
 
     #[test]

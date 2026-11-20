@@ -139,6 +139,8 @@ export class LibraryView {
         const periodRow = (p: ClockPeriod, i: number) => `<div class="lib-row lib-period" data-i="${i}">
             <input class="input" type="datetime-local" step="1" data-k="from" value="${esc(p.from ?? '')}" title="Recorder time from which this clock applies; empty = from the first recording">
             <input class="input" data-k="clock" list="lib-clock-list" value="${esc(p.clock)}">
+            ${i > 0 ? `<input class="input lib-from-path" data-k="fromPath" value="${esc(p.fromPath ?? '')}" placeholder="first file: automatic"
+              title="Only matters when the clock was set back while recording (times repeat): the first file after the change. Empty = decided by file order.">` : ''}
             <button class="btn btn--sm btn--ghost" data-act="period-del" title="Remove">✕</button></div>`;
         const devRow = (d: DeviceInfo) => `<tr data-device="${d.id}"><td>${esc(d.name)}<div class="lib-hint">${esc(d.sites.join(', '))}</div></td>
             <td class="num">${d.recordings.toLocaleString()}</td>
@@ -150,12 +152,15 @@ export class LibraryView {
           <div class="lib-import-preview">
             <p class="lib-hint">File names carry the recorder's own clock. Most recorders do not switch to daylight saving by themselves,
               but people sometimes set them by hand at a visit. Give each recorder its clock, with a change from a given recorder time
-              if it was reset. Wall times stay, absolute times are recomputed.</p>
+              if it was reset. Wall times stay, absolute times are recomputed. If the clock was set back while recording, the same
+              times occur twice: file order (folder, name) decides which side a file is on, or name the first file after the change.
+              An offset written into the file by the recorder (GUANO, AudioMoth) always wins.</p>
             ${shifts.length ? `<h4>Detected changes <button class="btn btn--sm" data-act="shifts-apply-all">Apply all</button></h4>
               <table class="lib-table lib-table--compact"><thead><tr><th>Recorder</th><th>From (recorder time)</th><th>Clock</th><th>Why</th><th></th></tr></thead><tbody>
               ${shifts.map((x, i) => `<tr data-shift="${i}"><td>${esc(x.device)}</td><td>${esc(fmt(x.kind === 'like-others' ? null : x.from))}</td>
                 <td>${esc(x.clockBefore)} → ${esc(x.clockAfter)}</td>
                 <td class="lib-hint">${x.kind === 'jump' ? `recording window moves by ${x.shiftMin > 0 ? '+' : ''}${x.shiftMin / 60} h from this night on`
+                  : x.kind === 'set-back' ? `set back while recording: ${x.duplicates} files share a start time; file order decides before/after${x.unhashed ? ' (not fingerprinted yet: copies cannot be excluded)' : ''}`
                   : 'started after the others were changed and uses their new window'}</td>
                 <td><button class="btn btn--sm btn--ghost" data-act="shift-apply">Apply</button></td></tr>`).join('')}</tbody></table>` : ''}
             <datalist id="lib-clock-list">${[-60, 0, 60, 120].map((m) => `<option value="${fixedClockLabel(m)}">`).join('')}
@@ -169,6 +174,7 @@ export class LibraryView {
     #readPeriods(tr: HTMLElement): ClockPeriod[] {
         return [...tr.querySelectorAll<HTMLElement>('.lib-period')].map((r) => ({
             from: r.querySelector<HTMLInputElement>('[data-k="from"]')!.value || null,
+            fromPath: r.querySelector<HTMLInputElement>('[data-k="fromPath"]')?.value.trim() || null,
             clock: r.querySelector<HTMLInputElement>('[data-k="clock"]')!.value.trim(),
         })).filter((p) => p.clock);
     }
@@ -177,7 +183,8 @@ export class LibraryView {
         const r = await catalogApi.setDeviceClocks(this.#o.projectRoot, deviceId, periods);
         return `${r.updated.toLocaleString()} updated`
             + (r.gap ? `, ${r.gap} in the spring-forward gap (+1 h)` : '')
-            + (r.ambiguous ? `, ${r.ambiguous} in the repeated autumn hour (earlier taken)` : '');
+            + (r.ambiguous ? `, ${r.ambiguous} in a repeated hour (decided by file order)` : '')
+            + (r.fromHeader ? `, ${r.fromHeader} use the offset written by the recorder` : '');
     }
 
     async #onClockAction(act: string, t: HTMLElement) {
@@ -296,8 +303,8 @@ export class LibraryView {
             <option value=""${tf.hasLabels == null ? ' selected' : ''}>any</option>
             <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
             <option value="0"${tf.hasLabels === false ? ' selected' : ''}>without labels</option></select></section>
-          ${list('site', 'Sites <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.sites, tf.siteIds)}
-          ${list('device', 'Recorders', f.devices, tf.deviceIds)}`;
+          ${list('site', 'Sites', f.sites, tf.siteIds)}
+          ${list('device', 'Recorders <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.devices, tf.deviceIds)}`;
     }
 
     #renderRows() {

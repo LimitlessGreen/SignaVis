@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS clock_period (
     id           INTEGER PRIMARY KEY,
     device_id    INTEGER NOT NULL REFERENCES device(id) ON DELETE CASCADE,
     from_wall_ms INTEGER,
+    -- First file under the new clock. Needed when the clock is set back while recording: the same
+    -- wall times then occur twice, and file order (folder, name) decides which side a file is on.
+    from_path    TEXT,
     clock        TEXT NOT NULL,
     note         TEXT,
     UNIQUE (device_id, from_wall_ms)
@@ -86,6 +89,7 @@ CREATE TABLE IF NOT EXISTS recording (
     channels      INTEGER,
     start_ms      INTEGER,                         -- UTC
     local_offset_min INTEGER,                      -- local clock − UTC at start (for time-of-day filters)
+    header_offset_min INTEGER,                     -- offset written by the recorder (GUANO/AudioMoth); wins over clock periods
     tz            TEXT,                            -- IANA zone of the local clock
     site_id       INTEGER REFERENCES site(id),
     device_id     INTEGER REFERENCES device(id),

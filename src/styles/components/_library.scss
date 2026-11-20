@@ -72,6 +72,7 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 .lib-suggestions { margin: 0 0 4px; padding-left: 16px; li { margin: 2px 0; } code { font-size: 11px; word-break: break-all; } }
 .lib-periods { display: flex; flex-direction: column; gap: 4px; }
 .lib-period .input[type="datetime-local"] { max-width: 200px; }
+.lib-period .lib-from-path { max-width: 220px; }
 .lib-help { font-size: 11px; color: var(--color-text-secondary); ul { margin: 4px 0 0 16px; padding: 0; } }
 .lib-check { display: flex; gap: 6px; align-items: flex-start; }
 .lib-import-status { color: var(--color-text-secondary); }

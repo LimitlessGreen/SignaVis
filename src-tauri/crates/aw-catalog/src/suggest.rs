@@ -251,6 +251,14 @@ fn template_for(group: &[Vec<Tok>]) -> Option<(String, Vec<MappingSpec>)> {
     Some((pattern, mappings))
 }
 
+/// `b` = `a` with a literal (no field, no `/`) inserted before the extension → `a` with `*` there.
+fn literal_suffix_variant(a: &str, b: &str) -> Option<String> {
+    let dot = a.rfind('.').filter(|&d| !a[d..].contains('/'))?;
+    let (stem, ext) = a.split_at(dot);
+    let extra = b.strip_prefix(stem)?.strip_suffix(ext)?;
+    (!extra.is_empty() && !extra.contains(['{', '}', '/', '*'])).then(|| format!("{stem}*{ext}"))
+}
+
 /// Suggestions for a scan: an evenly spread sample of at most 5000 audio paths.
 pub fn suggest_for_scan(scan: &crate::scan::ScanResult, max: usize) -> Vec<Suggestion> {
     let step = (scan.audio.len() / 5000).max(1);
@@ -294,6 +302,17 @@ pub fn suggest(paths: &[String], max: usize) -> Vec<Suggestion> {
             Some((format!("{}{}", "{*}/".repeat(k), out[i].pattern), out[i].mappings.clone()))
         });
         let Some((pattern, mappings)) = reused.or_else(|| template_for(&g)) else { continue };
+        // Same layout with an extra literal before the extension (recorders add "_1" to repeated
+        // names): widen the existing pattern with `*` instead of a near-duplicate.
+        if let Some(k) = out.iter().position(|o| literal_suffix_variant(&o.pattern, &pattern).is_some()) {
+            let widened = literal_suffix_variant(&out[k].pattern, &pattern).unwrap();
+            if let Ok(pp) = PathPattern::new(&widened) {
+                out[k].matches = paths.iter().filter(|p| pp.matches(p).is_some()).count();
+                out[k].pattern = widened;
+                compiled[k] = pp;
+                continue;
+            }
+        }
         if out.iter().any(|s| s.pattern == pattern) { continue; }
         let Ok(pp) = PathPattern::new(&pattern) else { continue };
         let matches = paths.iter().filter(|p| pp.matches(p).is_some()).count();
@@ -366,6 +385,16 @@ mod tests {
             "{*}/Rekorder_{rekorder}_Standort_{standort}/Woche_{woche}/SK{rekorder}_{start:%Y_%m_%d_%H_%M_%S}.wav",
         ]);
         assert_eq!(s[1].mappings[0].role, "device");
+    }
+
+    #[test]
+    fn suffix_variants_are_merged_into_one_pattern() {
+        let s = suggest(&paths(&[
+            "R7/20231029_015000.wav", "R7/20231029_020000.wav", "R7/20231029_021000.wav",
+            "R7/20231029_020000_1.wav", "R7/20231029_021000_1.wav",
+        ]), 3);
+        assert_eq!(s.len(), 1);
+        assert_eq!((s[0].pattern.as_str(), s[0].matches), ("R7/{start:%Y%m%d_%H%M%S}*.wav", 5));
     }
 
     #[test]

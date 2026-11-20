@@ -28,6 +28,8 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("recording", "local_offset_min", "INTEGER"),
     ("site", "tz", "TEXT"),
+    ("clock_period", "from_path", "TEXT"),
+    ("recording", "header_offset_min", "INTEGER"),
 ];
 
 fn migrate(conn: &Connection) -> Result<()> {
