@@ -114,6 +114,8 @@ pub fn run() {
             catalog::catalog_hash_start,
             catalog::catalog_hash_cancel,
             catalog::catalog_integrity,
+            catalog::catalog_sites,
+            catalog::catalog_set_site_clock,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,

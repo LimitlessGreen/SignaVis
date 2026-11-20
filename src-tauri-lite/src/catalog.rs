@@ -289,3 +289,19 @@ pub async fn catalog_integrity(state: tauri::State<'_, CatalogState>, project_ro
         })
     }).await
 }
+
+#[tauri::command]
+pub async fn catalog_sites(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<aw_catalog::SiteInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::sites(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+/// Change a site's recorder clock ("Europe/Berlin", "UTC+01:00"); wall times stay, UTC is recomputed.
+#[tauri::command]
+pub async fn catalog_set_site_clock(
+    state: tauri::State<'_, CatalogState>, project_root: String, site_id: i64, clock: String,
+) -> Result<aw_catalog::clock::ClockReport, String> {
+    let c = aw_catalog::clock::Clock::parse(&clock).ok_or_else(|| format!("unknown clock '{clock}'"))?;
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::clock::set_site_clock(&mut *cat.lock().map_err(err)?, site_id, c).map_err(err)).await
+}

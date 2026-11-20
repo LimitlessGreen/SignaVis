@@ -8,11 +8,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    formatBytes, localTime,
+    fixedClockLabel, formatBytes, localTime,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
-import { ImportDialog } from './import-dialog.ts';
+import { ImportDialog, timeZones } from './import-dialog.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
@@ -126,6 +126,45 @@ export class LibraryView {
         host.innerHTML = parts.join('');
     }
 
+    async #showClocks() {
+        const sites = await catalogApi.sites(this.#o.projectRoot);
+        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const row = (s: (typeof sites)[number]) => {
+            const cur = s.tz ?? (s.clocks.length === 1 ? s.clocks[0] : '');
+            return `<tr data-site="${s.id}"><td>${esc(s.name)}</td><td class="num">${s.recordings.toLocaleString()}</td>
+              <td>${esc(s.clocks.join(', ') || '—')}</td>
+              <td><input class="input" data-k="clock" list="lib-clock-list" value="${esc(cur)}" placeholder="UTC+01:00 or Europe/Berlin"></td>
+              <td><button class="btn btn--sm" data-act="clock-apply">Apply</button> <span class="lib-hint" data-k="clock-result"></span></td></tr>`;
+        };
+        host.innerHTML = `<div class="lib-import-head"><h3>Recorder clocks</h3><span class="lib-spacer"></span>
+            <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>
+          <div class="lib-import-preview">
+            <p class="lib-hint">The times in file names are the recorder's wall clock. Most recorders do not switch to daylight saving:
+              use a fixed offset (e.g. <code>UTC+01:00</code>). Use a time zone (e.g. <code>Europe/Berlin</code>) only if the recorder
+              followed daylight saving. Changing the clock keeps the wall times and recomputes the absolute times.</p>
+            <datalist id="lib-clock-list">${[-60, 0, 60, 120].map((m) => `<option value="${fixedClockLabel(m)}">`).join('')}
+              ${timeZones().map((z) => `<option value="${esc(z)}">`).join('')}</datalist>
+            <table class="lib-table lib-table--compact"><thead><tr><th>Site</th><th class="num">Recordings</th><th>Clock now</th><th>New clock</th><th></th></tr></thead>
+            <tbody>${sites.map(row).join('')}</tbody></table></div>`;
+        host.hidden = false;
+    }
+
+    async #applyClock(tr: HTMLElement) {
+        const clock = tr.querySelector<HTMLInputElement>('[data-k="clock"]')!.value.trim();
+        const out = tr.querySelector<HTMLElement>('[data-k="clock-result"]')!;
+        try {
+            const r = await catalogApi.setSiteClock(this.#o.projectRoot, Number(tr.dataset.site), clock);
+            out.textContent = `${r.updated.toLocaleString()} updated`
+                + (r.gap ? `, ${r.gap} in the spring-forward gap (+1 h)` : '')
+                + (r.ambiguous ? `, ${r.ambiguous} in the repeated autumn hour (earlier taken)` : '');
+            const cell = tr.children[2] as HTMLElement;
+            cell.textContent = clock;
+            void this.reload();
+        } catch (e) {
+            out.textContent = `Error: ${e}`;
+        }
+    }
+
     #showDuplicates() {
         const it = this.#integrity;
         if (!it) return;
@@ -183,7 +222,7 @@ export class LibraryView {
     #renderStats() {
         const f = this.#facets;
         if (!f) return;
-        const hours = f.seconds != null ? `${Math.round(f.seconds / 3600).toLocaleString()} h · ` : '';
+        const hours = f.seconds ? `${formatDuration(f.seconds)} · ` : '';
         const span = f.firstMs != null && f.lastMs != null
             ? ` · ${new Date(f.firstMs).toISOString().slice(0, 10)} – ${new Date(f.lastMs).toISOString().slice(0, 10)}` : '';
         this.el.querySelector('.lib-stats')!.textContent =
@@ -213,7 +252,7 @@ export class LibraryView {
             <option value=""${tf.hasLabels == null ? ' selected' : ''}>any</option>
             <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
             <option value="0"${tf.hasLabels === false ? ' selected' : ''}>without labels</option></select></section>
-          ${list('site', 'Sites', f.sites, tf.siteIds)}
+          ${list('site', 'Sites <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clock per site (time zone, daylight saving)">clock…</button>', f.sites, tf.siteIds)}
           ${list('device', 'Recorders', f.devices, tf.deviceIds)}`;
     }
 
@@ -316,6 +355,8 @@ export class LibraryView {
         }
         else if (act === 'hash-stop') void catalogApi.hashCancel();
         else if (act === 'show-dups') this.#showDuplicates();
+        else if (act === 'clocks') void this.#showClocks();
+        else if (act === 'clock-apply') void this.#applyClock(t.closest<HTMLElement>('[data-site]')!);
         else if (act === 'show-missing') { this.#filter = { status: 'missing' }; void this.reload(); }
         else if (act === 'import-close') this.#hideImport();
         else if (act === 'clear-status') { this.#filter.status = null; void this.reload(); }
@@ -412,4 +453,11 @@ export function continuousDays(days: string[]): string[] {
         out.push(new Date(t).toISOString().slice(0, 10));
     }
     return out;
+}
+
+/** 12 min · 3.4 h · 1,710 h */
+export function formatDuration(seconds: number): string {
+    if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+    const h = seconds / 3600;
+    return `${h < 10 ? h.toFixed(1) : Math.round(h).toLocaleString()} h`;
 }

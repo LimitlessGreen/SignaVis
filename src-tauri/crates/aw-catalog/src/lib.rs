@@ -2,6 +2,7 @@
 //! Plan: SignaVis-lab/plans/data-management-plan.md. Phase 0: schema, path templates, referenced
 //! import, BirdNET selection tables as runs.
 
+pub mod clock;
 pub mod hash;
 pub mod header;
 pub mod pattern;
@@ -11,7 +12,7 @@ pub mod query;
 pub mod scan;
 pub mod suggest;
 
-use chrono::{NaiveDateTime, TimeZone, Utc};
+use chrono::{NaiveDateTime, Utc};
 use pattern::PatternSet;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
@@ -21,6 +22,22 @@ pub const SCHEMA_VERSION: &str = "1";
 const SCHEMA: &str = include_str!("schema.sql");
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Columns added after schema 1 was first written: CREATE TABLE IF NOT EXISTS does not add them
+/// to an existing catalog, so add what is missing. Keep this list append-only.
+const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
+    ("recording", "local_offset_min", "INTEGER"),
+    ("site", "tz", "TEXT"),
+];
+
+fn migrate(conn: &Connection) -> Result<()> {
+    for (table, col, decl) in ADDED_COLUMNS {
+        let has: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2", params![table, col], |r| r.get(0))?;
+        if !has { conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {decl}"))?; }
+    }
+    Ok(())
+}
 
 pub fn now_ms() -> i64 { Utc::now().timestamp_millis() }
 pub fn new_uid() -> String { uuid::Uuid::now_v7().to_string() }
@@ -38,6 +55,7 @@ impl Catalog {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         conn.execute(
             "INSERT OR IGNORE INTO catalog_info(key, value) VALUES ('schema', ?1)", [SCHEMA_VERSION])?;
         Ok(Self { conn })
@@ -101,9 +119,15 @@ pub struct ImportProfile {
     pub name: String,
     pub patterns: PatternSet,
     pub mappings: Vec<FieldMapping>,
-    /// Offset of the recorder clock to UTC in minutes (spike; IANA zone per site later).
+    /// Recorder clock: fixed minutes ahead of UTC (no daylight saving) unless `tz` names an IANA zone.
     pub utc_offset_min: i32,
     pub tz: Option<String>,
+}
+
+impl ImportProfile {
+    pub fn clock(&self) -> clock::Clock {
+        self.tz.as_deref().and_then(clock::Clock::parse).unwrap_or(clock::Clock::Fixed(self.utc_offset_min))
+    }
 }
 
 impl ImportProfile {
@@ -135,9 +159,6 @@ fn upsert_named(tx: &rusqlite::Transaction, table: &str, name: &str, cache: &mut
     Ok(id)
 }
 
-pub(crate) fn local_to_utc_ms(t: NaiveDateTime, offset_min: i32) -> i64 {
-    Utc.from_utc_datetime(&t).timestamp_millis() - offset_min as i64 * 60_000
-}
 
 /// Resolved catalog values of one path match.
 #[derive(Debug, Default, PartialEq)]
@@ -202,8 +223,9 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
             let res = res.unwrap_or_default();
             let site_id = res.site.as_deref().map(|s| upsert_named(&tx, "site", s, &mut sites)).transpose()?;
             let device_id = res.device.as_deref().map(|s| upsert_named(&tx, "device", s, &mut devices)).transpose()?;
-            let start = res.start.map(|t| local_to_utc_ms(t, profile.utc_offset_min));
-            ins_rec.execute(params![new_uid(), asset_id, start, start.map(|_| profile.utc_offset_min), profile.tz, site_id, device_id])?;
+            let clk = profile.clock();
+            let utc = res.start.map(|t| clk.to_utc(t));
+            ins_rec.execute(params![new_uid(), asset_id, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label()), site_id, device_id])?;
             let rec_id = tx.last_insert_rowid();
             for (k, v) in &res.meta { ins_meta.execute(params![rec_id, k, v])?; }
             rep.inserted += 1;
@@ -286,6 +308,24 @@ pub fn count(cat: &Catalog, sql: &str) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn old_catalog_gets_new_columns() {
+        let path = std::env::temp_dir().join(format!("aw-migrate-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch("CREATE TABLE site (id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE);
+                             CREATE TABLE recording (id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, asset_id INTEGER, source TEXT NOT NULL,
+                               start_ms INTEGER, tz TEXT, site_id INTEGER, device_id INTEGER);").unwrap();
+        }
+        let cat = Catalog::open(&path).unwrap();
+        assert!(sites(&cat).unwrap().is_empty());
+        cat.conn.execute("UPDATE recording SET local_offset_min = 0", []).unwrap();
+        drop(cat);
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn import_is_idempotent_and_maps_fields() {
@@ -365,4 +405,21 @@ pub fn machine_name() -> String {
         .or_else(|| std::env::var("HOSTNAME").ok())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "local".into())
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteInfo { pub id: i64, pub name: String, pub tz: Option<String>, pub recordings: i64, pub clocks: Vec<String> }
+
+/// Sites with their clock (site setting, and the clocks actually used by their recordings).
+pub fn sites(cat: &Catalog) -> Result<Vec<SiteInfo>> {
+    let mut st = cat.conn.prepare(
+        "SELECT s.id, s.name, s.tz, COUNT(r.id), COALESCE(GROUP_CONCAT(DISTINCT r.tz), '')
+         FROM site s LEFT JOIN recording r ON r.site_id = s.id GROUP BY s.id")?;
+    let mut v: Vec<SiteInfo> = st.query_map([], |r| Ok(SiteInfo {
+        id: r.get(0)?, name: r.get(1)?, tz: r.get(2)?, recordings: r.get(3)?,
+        clocks: r.get::<_, String>(4)?.split(',').filter(|x| !x.is_empty()).map(String::from).collect(),
+    }))?.collect::<std::result::Result<_, _>>()?;
+    v.sort_by(|a, b| query::natural_cmp(&a.name, &b.name));
+    Ok(v)
 }

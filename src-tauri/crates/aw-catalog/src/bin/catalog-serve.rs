@@ -36,6 +36,8 @@ struct Args {
     recording_id: Option<i64>,
     #[serde(default)]
     full: bool,
+    site_id: Option<i64>,
+    clock: Option<String>,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -67,6 +69,12 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let p = a.profile.clone().ok_or("profile missing")?.build().map_err(|x| x.to_string())?;
             let s = st.scan(&a, a.refresh)?;
             j(serde_json::to_value(preview(s, &p, 200)))
+        }
+        "catalog_sites" => j(serde_json::to_value(aw_catalog::sites(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_set_site_clock" => {
+            let c = aw_catalog::clock::Clock::parse(a.clock.as_deref().unwrap_or("")).ok_or("unknown clock")?;
+            let cat = st.cat(&a.project_root)?;
+            j(serde_json::to_value(aw_catalog::clock::set_site_clock(cat, a.site_id.ok_or("siteId missing")?, c).map_err(e)?))
         }
         "catalog_suggest" => {
             let s = st.scan(&a, a.refresh)?;

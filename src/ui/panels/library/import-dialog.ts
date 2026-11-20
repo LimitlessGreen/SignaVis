@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    emptyProfile, formatBytes, profileFromSuggestions, syncMappings,
+    emptyProfile, fixedClockLabel, formatBytes, profileFromSuggestions, syncMappings,
     type FieldRole, type ImportResult, type Preview, type ProfileSpec, type Suggestion,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi, pickFolder } from '../../../infrastructure/tauri/catalogApi.ts';
@@ -29,6 +29,12 @@ const ISSUE_TEXT: Record<string, string> = {
     'implausible-time': 'implausible start time (before 2000 or in the future)',
     'duplicate-time': 'same recorder and start time twice (duplicate files?)',
 };
+
+let zones: string[] | null = null;
+export function timeZones(): string[] {
+    zones ??= (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? ['UTC', 'Europe/Berlin'];
+    return zones;
+}
 
 export interface ImportDialogOptions {
     projectRoot: string;
@@ -154,6 +160,14 @@ export class ImportDialog {
                 break;
             }
             case 'offset': p.utcOffsetMin = Number(t.value) || 0; break;
+            case 'clockMode':
+                p.tz = t.value === 'zone' ? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC') : null;
+                this.#render();
+                break;
+            case 'tz':
+                if (!timeZones().includes(t.value)) return;   // wait for a complete zone name
+                p.tz = t.value;
+                break;
             case 'derived': p.derivedDirs = t.value.split(',').map((s) => s.trim()).filter(Boolean); this.#schedulePreview(true); return;
             case 'name': p.name = t.value.trim() || 'profile'; return;
             case 'rootName': this.#rootName = t.value.trim(); return;
@@ -284,8 +298,15 @@ export class ImportDialog {
                 <li>A field used twice (folder and file name) must have the same value.</li>
               </ul></details>
             <div class="lib-field lib-field--wide"><span>What the fields mean</span><div class="lib-map"></div></div>
-            <label class="lib-field"><span>Recorder clock (minutes ahead of UTC)</span>
-              <input class="input" type="number" step="15" data-k="offset" value="${p.utcOffsetMin}" title="e.g. 60 for CET, 120 for CEST"></label>
+            <div class="lib-field"><span>Recorder clock</span>
+              <select class="field-select" data-k="clockMode">
+                <option value="fixed"${p.tz ? '' : ' selected'}>Fixed offset, no daylight saving (most recorders)</option>
+                <option value="zone"${p.tz ? ' selected' : ''}>Time zone with daylight saving</option></select>
+              ${p.tz ? `<input class="input" data-k="tz" list="lib-tz-list" value="${esc(p.tz)}" placeholder="Europe/Berlin">
+                <datalist id="lib-tz-list">${timeZones().map((z) => `<option value="${esc(z)}">`).join('')}</datalist>`
+              : `<span class="lib-row"><input class="input" type="number" step="15" data-k="offset" value="${p.utcOffsetMin}"
+                title="Minutes ahead of UTC, e.g. 60 for CET, 0 for recorders set to UTC"><span class="lib-hint">min = ${fixedClockLabel(p.utcOffsetMin)}</span></span>`}
+              <span class="lib-hint">Can be changed per site later in the library.</span></div>
             <label class="lib-field"><span>Extra folders to skip (regex, comma separated)</span>
               <input class="input" data-k="derived" value="${esc(p.derivedDirs.join(', '))}" placeholder="e.g. backup.*, test"></label>
             <label class="lib-check"><input type="checkbox" data-k="tables"${this.#importTables ? ' checked' : ''}> Import BirdNET/Raven tables found next to the recordings as a result run</label>

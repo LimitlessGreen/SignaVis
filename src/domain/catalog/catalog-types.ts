@@ -86,6 +86,15 @@ export interface Integrity {
     duplicateGroups: number; duplicates: DuplicateGroup[]; hashing: boolean;
 }
 export interface HashProgress { projectRoot: string; kind: 'header' | 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
+export interface SiteInfo { id: number; name: string; tz: string | null; recordings: number; clocks: string[] }
+export interface ClockReport { updated: number; ambiguous: number; gap: number }
+
+/** "UTC+01:00" for a fixed offset in minutes. */
+export function fixedClockLabel(min: number): string {
+    const a = Math.abs(min);
+    return `UTC${min < 0 ? '-' : '+'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
+}
+
 export interface RootInfo { id: number; name: string; kind: string; path: string | null; assets: number }
 
 /** Named fields of path templates, in first-seen order (`{*}` and duplicates skipped). */

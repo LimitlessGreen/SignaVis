@@ -47,6 +47,9 @@ pub fn parse_role(role: &str) -> Result<FieldRole, PatternError> {
 
 impl ProfileSpec {
     pub fn build(&self) -> Result<ImportProfile, PatternError> {
+        if let Some(tz) = self.tz.as_deref().filter(|t| !t.is_empty()) {
+            if crate::clock::Clock::parse(tz).is_none() { return Err(PatternError(format!("unknown time zone '{tz}'"))); }
+        }
         let refs: Vec<&str> = self.patterns.iter().map(|s| s.as_str()).collect();
         let mappings = self.mappings.iter().map(|m| Ok(FieldMapping {
             field: m.field.clone(),

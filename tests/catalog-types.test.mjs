@@ -56,3 +56,16 @@ test('profileFromSuggestions keeps the first meaning per field', async () => {
     assert.deepEqual(p.mappings.map((m) => m.role), ['device', 'start']);
     assert.equal(p.name, 'x');
 });
+
+test('fixedClockLabel', async () => {
+    const { fixedClockLabel } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.equal(fixedClockLabel(60), 'UTC+01:00');
+    assert.equal(fixedClockLabel(-330), 'UTC-05:30');
+    assert.equal(fixedClockLabel(0), 'UTC+00:00');
+});
+
+test('formatDuration', async () => {
+    const { formatDuration } = await import('../src/ui/panels/library/library-view.ts');
+    assert.equal(formatDuration(720), '12 min');
+    assert.equal(formatDuration(3.4 * 3600), '3.4 h');
+});
