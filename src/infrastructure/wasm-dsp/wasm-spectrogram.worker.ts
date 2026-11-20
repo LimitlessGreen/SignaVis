@@ -13,9 +13,10 @@
 
 import {
     initSync, WasmStft, WasmPyramidBuilderV2,
-    decodeF16, wavInfo, wavChannel0, bandFloor,
+    decodeF16, wavInfo, wavChannel0,
 } from './pkg/aw_dsp_wasm.js';
 import { WASM_PYRAMID_BLOCK_FRAMES } from '../../shared/constants.ts';
+import { bandFloorSampled } from './bandFloorSampled.ts';
 
 const PREVIEW_STAT_SAMPLES = 12;   // windows sampled for provisional contrast stats
 const PREVIEW_STAT_FRAMES = 128;   // frames per window
@@ -386,7 +387,7 @@ function startCoordinator(ports: MessagePort[]) {
             }
             await Promise.all(jobs);
             return { data, nFrames: total, bins, hop: p.hop as number, winLen: p.winLen as number,
-                bandFloor: bandFloor(data, bins) };
+                bandFloor: bandFloorSampled(data, bins) };
         } finally {
             stft.free();
         }
