@@ -36,3 +36,4 @@ ctx.onmessage = async (e: MessageEvent) => {
         ctx.postMessage({ type: 'error', message: err?.message || String(err) });
     }
 };
+export {};
