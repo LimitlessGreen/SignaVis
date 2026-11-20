@@ -333,3 +333,22 @@ test('PlayerState: a setting changed while hidden recomputes when shown', async 
     assert.strictEqual(generated.length, 2);
     ps.dispose();
 });
+
+test('PlayerState: loading ends the loading overlay while the spectrogram is hidden', async () => {
+    const { ps, generated } = headlessWithAudio('waveform');
+    const overlay = { hidden: false };
+    ps.d.recomputingOverlay = overlay;
+    for (const key of ['fileInfo', 'sampleRateInfo', 'totalTimeDisplay', 'currentTimeDisplay']) {
+        ps.d[key] = { innerHTML: '', textContent: '', classList: makeClassList(), style: {} };
+    }
+    // Drawing needs canvases this headless state has none of.
+    for (const name of ['_drawMainWaveform', '_drawOverviewWaveform', '_syncTrackWidth', '_syncOverviewWindowToViewport', '_seekToTime', '_setPixelsPerSecond']) {
+        ps[name] = () => {};
+    }
+
+    await ps._onAudioLoaded({ duration: 600, sampleRate: 48000 }, 'long.wav');
+
+    assert.strictEqual(generated.length, 0, 'the hidden spectrogram is not computed');
+    assert.strictEqual(overlay.hidden, true);
+    ps.dispose();
+});

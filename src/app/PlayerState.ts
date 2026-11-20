@@ -902,8 +902,10 @@ export class PlayerState {
         this._drawOverviewWaveform();
         this._syncOverviewWindowToViewport();
 
-        // Hidden, the spectrogram is computed only once it is shown (setViewMode).
+        // Hidden, the spectrogram is computed only once it is shown (setViewMode);
+        // until then nothing else ends the loading overlay.
         if (this._showSpectrogram) await this._generateSpectrogram();
+        else if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
         this._offerUltrasoundListening();
         this._drawMainWaveform();
         this._drawOverviewWaveform();
