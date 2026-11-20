@@ -87,6 +87,22 @@ export interface Integrity {
 }
 export interface HashProgress { projectRoot: string; kind: 'header' | 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
 export interface SiteInfo { id: number; name: string; tz: string | null; recordings: number; clocks: string[] }
+export interface ClockPeriod { from: string | null; clock: string; note?: string | null }
+export interface DeviceInfo { id: number; name: string; recordings: number; sites: string[]; periods: ClockPeriod[] }
+export interface ClockShift {
+    deviceId: number; device: string; from: string; shiftMin: number; clockBefore: string; clockAfter: string;
+    kind: 'jump' | 'like-others';
+}
+
+/** Clock periods of a recorder after accepting a detected change. */
+export function periodsWithShift(current: ClockPeriod[], s: ClockShift): ClockPeriod[] {
+    if (s.kind === 'like-others') return [{ from: null, clock: s.clockAfter, note: 'like the other recorders after the change' }];
+    const base = current.length ? current.filter((p) => p.from !== s.from) : [{ from: null, clock: s.clockBefore }];
+    const note = `detected: recording window ${s.shiftMin > 0 ? '+' : ''}${s.shiftMin / 60} h`;
+    return [...base, { from: s.from, clock: s.clockAfter, note }]
+        .sort((a, b) => (a.from ?? '').localeCompare(b.from ?? ''));
+}
+
 export interface ClockReport { updated: number; ambiguous: number; gap: number }
 
 /** "UTC+01:00" for a fixed offset in minutes. */

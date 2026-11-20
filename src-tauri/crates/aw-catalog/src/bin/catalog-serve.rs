@@ -38,6 +38,9 @@ struct Args {
     full: bool,
     site_id: Option<i64>,
     clock: Option<String>,
+    device_id: Option<i64>,
+    #[serde(default)]
+    periods: Vec<aw_catalog::clock::ClockPeriod>,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -76,6 +79,13 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let cat = st.cat(&a.project_root)?;
             j(serde_json::to_value(aw_catalog::clock::set_site_clock(cat, a.site_id.ok_or("siteId missing")?, c).map_err(e)?))
         }
+        "catalog_clock_shifts" => j(serde_json::to_value(aw_catalog::clock::detect_clock_shifts(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_device_clocks" => j(serde_json::to_value(aw_catalog::clock::device_clocks(st.cat(&a.project_root)?, a.device_id.ok_or("deviceId missing")?).map_err(e)?)),
+        "catalog_set_device_clocks" => {
+            let cat = st.cat(&a.project_root)?;
+            j(serde_json::to_value(aw_catalog::clock::set_device_clocks(cat, a.device_id.ok_or("deviceId missing")?, &a.periods).map_err(e)?))
+        }
+        "catalog_devices" => j(serde_json::to_value(aw_catalog::devices(st.cat(&a.project_root)?).map_err(e)?)),
         "catalog_suggest" => {
             let s = st.scan(&a, a.refresh)?;
             j(serde_json::to_value(aw_catalog::suggest::suggest_for_scan(s, 6)))

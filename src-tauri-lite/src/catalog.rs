@@ -305,3 +305,25 @@ pub async fn catalog_set_site_clock(
     let cat = state.get(&project_root)?;
     blocking(move || aw_catalog::clock::set_site_clock(&mut *cat.lock().map_err(err)?, site_id, c).map_err(err)).await
 }
+
+#[tauri::command]
+pub async fn catalog_devices(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<aw_catalog::DeviceInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::devices(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+/// Likely manual clock changes (recording window jumps by whole hours between nights).
+#[tauri::command]
+pub async fn catalog_clock_shifts(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<aw_catalog::clock::ClockShift>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::clock::detect_clock_shifts(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+/// Replace a recorder's clock periods; wall times stay, UTC is recomputed.
+#[tauri::command]
+pub async fn catalog_set_device_clocks(
+    state: tauri::State<'_, CatalogState>, project_root: String, device_id: i64, periods: Vec<aw_catalog::clock::ClockPeriod>,
+) -> Result<aw_catalog::clock::ClockReport, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::clock::set_device_clocks(&mut *cat.lock().map_err(err)?, device_id, &periods).map_err(err)).await
+}

@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS deployment (
     start_ms INTEGER, end_ms INTEGER, notes TEXT
 );
 
+-- Recorder clock over time: from wall time `from_wall_ms` (recorder clock, NULL = from the start) the
+-- clock is `clock` (IANA zone or 'UTC+01:00'). Recorders get set by hand (e.g. to summer time at a visit).
+CREATE TABLE IF NOT EXISTS clock_period (
+    id           INTEGER PRIMARY KEY,
+    device_id    INTEGER NOT NULL REFERENCES device(id) ON DELETE CASCADE,
+    from_wall_ms INTEGER,
+    clock        TEXT NOT NULL,
+    note         TEXT,
+    UNIQUE (device_id, from_wall_ms)
+);
+
 CREATE TABLE IF NOT EXISTS recording (
     id            INTEGER PRIMARY KEY,
     uid           TEXT NOT NULL UNIQUE,

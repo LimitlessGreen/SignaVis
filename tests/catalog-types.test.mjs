@@ -77,3 +77,11 @@ test('profile files round-trip and reject foreign JSON', async () => {
     assert.throws(() => profileFromFile('{"name":"x"}'), /Not a SignaVis import profile/);
     assert.throws(() => profileFromFile('nope'), /Not a JSON file/);
 });
+
+test('periodsWithShift adds the change after the existing clock', async () => {
+    const { periodsWithShift } = await import('../src/domain/catalog/catalog-types.ts');
+    const jump = { deviceId: 1, device: 'R', from: '2023-03-27T18:00:02', shiftMin: 60, clockBefore: 'UTC+01:00', clockAfter: 'UTC+02:00', kind: 'jump' };
+    assert.deepEqual(periodsWithShift([], jump).map((p) => [p.from, p.clock]), [[null, 'UTC+01:00'], ['2023-03-27T18:00:02', 'UTC+02:00']]);
+    assert.deepEqual(periodsWithShift([{ from: null, clock: 'UTC+00:00' }], jump).map((p) => p.clock), ['UTC+00:00', 'UTC+02:00']);
+    assert.deepEqual(periodsWithShift([], { ...jump, kind: 'like-others' }).map((p) => [p.from, p.clock]), [[null, 'UTC+02:00']]);
+});

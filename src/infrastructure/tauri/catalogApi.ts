@@ -1,7 +1,7 @@
 // infrastructure/tauri/catalogApi.ts — Lite commands of the project catalog (src-tauri-lite/src/catalog.rs)
 
 import type {
-    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion, SiteInfo, ClockReport,
+    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion, SiteInfo, ClockReport, ClockPeriod, ClockShift, DeviceInfo,
 } from '../../domain/catalog/catalog-types.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -34,6 +34,10 @@ export const catalogApi = {
     sites: (projectRoot: string) => call<SiteInfo[]>('catalog_sites', { projectRoot }),
     setSiteClock: (projectRoot: string, siteId: number, clock: string) =>
         call<ClockReport>('catalog_set_site_clock', { projectRoot, siteId, clock }),
+    devices: (projectRoot: string) => call<DeviceInfo[]>('catalog_devices', { projectRoot }),
+    clockShifts: (projectRoot: string) => call<ClockShift[]>('catalog_clock_shifts', { projectRoot }),
+    setDeviceClocks: (projectRoot: string, deviceId: number, periods: ClockPeriod[]) =>
+        call<ClockReport>('catalog_set_device_clocks', { projectRoot, deviceId, periods }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
 };

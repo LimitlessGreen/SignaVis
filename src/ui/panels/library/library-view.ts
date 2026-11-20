@@ -9,6 +9,8 @@
 
 import {
     fixedClockLabel, formatBytes, localTime,
+    periodsWithShift,
+    type ClockPeriod, type ClockShift, type DeviceInfo,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
@@ -48,6 +50,8 @@ export class LibraryView {
     #importDialog: ImportDialog | null = null;
     #searchTimer: ReturnType<typeof setTimeout> | null = null;
     #integrity: Integrity | null = null;
+    #devices: DeviceInfo[] = [];
+    #shifts: ClockShift[] = [];
     #hash: HashProgress | null = null;
     #unlisten: (() => void) | null = null;
 
@@ -127,41 +131,81 @@ export class LibraryView {
     }
 
     async #showClocks() {
-        const sites = await catalogApi.sites(this.#o.projectRoot);
+        const [devices, shifts] = await Promise.all([catalogApi.devices(this.#o.projectRoot), catalogApi.clockShifts(this.#o.projectRoot)]);
+        this.#devices = devices;
+        this.#shifts = shifts;
         const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
-        const row = (s: (typeof sites)[number]) => {
-            const cur = s.tz ?? (s.clocks.length === 1 ? s.clocks[0] : '');
-            return `<tr data-site="${s.id}"><td>${esc(s.name)}</td><td class="num">${s.recordings.toLocaleString()}</td>
-              <td>${esc(s.clocks.join(', ') || '—')}</td>
-              <td><input class="input" data-k="clock" list="lib-clock-list" value="${esc(cur)}" placeholder="UTC+01:00 or Europe/Berlin"></td>
-              <td><button class="btn btn--sm" data-act="clock-apply">Apply</button> <span class="lib-hint" data-k="clock-result"></span></td></tr>`;
-        };
+        const fmt = (t: string | null) => (t ? t.replace('T', ' ') : 'start');
+        const periodRow = (p: ClockPeriod, i: number) => `<div class="lib-row lib-period" data-i="${i}">
+            <input class="input" type="datetime-local" step="1" data-k="from" value="${esc(p.from ?? '')}" title="Recorder time from which this clock applies; empty = from the first recording">
+            <input class="input" data-k="clock" list="lib-clock-list" value="${esc(p.clock)}">
+            <button class="btn btn--sm btn--ghost" data-act="period-del" title="Remove">✕</button></div>`;
+        const devRow = (d: DeviceInfo) => `<tr data-device="${d.id}"><td>${esc(d.name)}<div class="lib-hint">${esc(d.sites.join(', '))}</div></td>
+            <td class="num">${d.recordings.toLocaleString()}</td>
+            <td><div class="lib-periods">${(d.periods.length ? d.periods : [{ from: null, clock: '' }]).map(periodRow).join('')}</div>
+              <button class="btn btn--sm btn--ghost" data-act="period-add">+ change</button></td>
+            <td><button class="btn btn--sm" data-act="device-clock-apply">Apply</button> <span class="lib-hint" data-k="clock-result"></span></td></tr>`;
         host.innerHTML = `<div class="lib-import-head"><h3>Recorder clocks</h3><span class="lib-spacer"></span>
             <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>
           <div class="lib-import-preview">
-            <p class="lib-hint">The times in file names are the recorder's wall clock. Most recorders do not switch to daylight saving:
-              use a fixed offset (e.g. <code>UTC+01:00</code>). Use a time zone (e.g. <code>Europe/Berlin</code>) only if the recorder
-              followed daylight saving. Changing the clock keeps the wall times and recomputes the absolute times.</p>
+            <p class="lib-hint">File names carry the recorder's own clock. Most recorders do not switch to daylight saving by themselves,
+              but people sometimes set them by hand at a visit. Give each recorder its clock, with a change from a given recorder time
+              if it was reset. Wall times stay, absolute times are recomputed.</p>
+            ${shifts.length ? `<h4>Detected changes <button class="btn btn--sm" data-act="shifts-apply-all">Apply all</button></h4>
+              <table class="lib-table lib-table--compact"><thead><tr><th>Recorder</th><th>From (recorder time)</th><th>Clock</th><th>Why</th><th></th></tr></thead><tbody>
+              ${shifts.map((x, i) => `<tr data-shift="${i}"><td>${esc(x.device)}</td><td>${esc(fmt(x.kind === 'like-others' ? null : x.from))}</td>
+                <td>${esc(x.clockBefore)} → ${esc(x.clockAfter)}</td>
+                <td class="lib-hint">${x.kind === 'jump' ? `recording window moves by ${x.shiftMin > 0 ? '+' : ''}${x.shiftMin / 60} h from this night on`
+                  : 'started after the others were changed and uses their new window'}</td>
+                <td><button class="btn btn--sm btn--ghost" data-act="shift-apply">Apply</button></td></tr>`).join('')}</tbody></table>` : ''}
             <datalist id="lib-clock-list">${[-60, 0, 60, 120].map((m) => `<option value="${fixedClockLabel(m)}">`).join('')}
               ${timeZones().map((z) => `<option value="${esc(z)}">`).join('')}</datalist>
-            <table class="lib-table lib-table--compact"><thead><tr><th>Site</th><th class="num">Recordings</th><th>Clock now</th><th>New clock</th><th></th></tr></thead>
-            <tbody>${sites.map(row).join('')}</tbody></table></div>`;
+            <h4>Recorders</h4>
+            <table class="lib-table lib-table--compact"><thead><tr><th>Recorder</th><th class="num">Recordings</th><th>Clock (from recorder time)</th><th></th></tr></thead>
+            <tbody>${devices.map(devRow).join('')}</tbody></table></div>`;
         host.hidden = false;
     }
 
-    async #applyClock(tr: HTMLElement) {
-        const clock = tr.querySelector<HTMLInputElement>('[data-k="clock"]')!.value.trim();
-        const out = tr.querySelector<HTMLElement>('[data-k="clock-result"]')!;
+    #readPeriods(tr: HTMLElement): ClockPeriod[] {
+        return [...tr.querySelectorAll<HTMLElement>('.lib-period')].map((r) => ({
+            from: r.querySelector<HTMLInputElement>('[data-k="from"]')!.value || null,
+            clock: r.querySelector<HTMLInputElement>('[data-k="clock"]')!.value.trim(),
+        })).filter((p) => p.clock);
+    }
+
+    async #applyPeriods(deviceId: number, periods: ClockPeriod[]): Promise<string> {
+        const r = await catalogApi.setDeviceClocks(this.#o.projectRoot, deviceId, periods);
+        return `${r.updated.toLocaleString()} updated`
+            + (r.gap ? `, ${r.gap} in the spring-forward gap (+1 h)` : '')
+            + (r.ambiguous ? `, ${r.ambiguous} in the repeated autumn hour (earlier taken)` : '');
+    }
+
+    async #onClockAction(act: string, t: HTMLElement) {
         try {
-            const r = await catalogApi.setSiteClock(this.#o.projectRoot, Number(tr.dataset.site), clock);
-            out.textContent = `${r.updated.toLocaleString()} updated`
-                + (r.gap ? `, ${r.gap} in the spring-forward gap (+1 h)` : '')
-                + (r.ambiguous ? `, ${r.ambiguous} in the repeated autumn hour (earlier taken)` : '');
-            const cell = tr.children[2] as HTMLElement;
-            cell.textContent = clock;
-            void this.reload();
+            if (act === 'period-add') {
+                const box = t.closest('td')!.querySelector('.lib-periods')!;
+                const i = box.children.length;
+                box.insertAdjacentHTML('beforeend', `<div class="lib-row lib-period" data-i="${i}">
+                  <input class="input" type="datetime-local" step="1" data-k="from"><input class="input" data-k="clock" list="lib-clock-list" placeholder="UTC+02:00">
+                  <button class="btn btn--sm btn--ghost" data-act="period-del" title="Remove">✕</button></div>`);
+            } else if (act === 'period-del') {
+                t.closest('.lib-period')!.remove();
+            } else if (act === 'device-clock-apply') {
+                const tr = t.closest<HTMLElement>('tr[data-device]')!;
+                tr.querySelector('[data-k="clock-result"]')!.textContent = await this.#applyPeriods(Number(tr.dataset.device), this.#readPeriods(tr));
+                void this.reload();
+            } else if (act === 'shift-apply' || act === 'shifts-apply-all') {
+                const list = act === 'shift-apply' ? [this.#shifts[Number(t.closest<HTMLElement>('[data-shift]')!.dataset.shift)]] : this.#shifts;
+                for (const x of list) {
+                    const d = this.#devices.find((v) => v.id === x.deviceId);
+                    await this.#applyPeriods(x.deviceId, periodsWithShift(d?.periods ?? [], x));
+                }
+                await this.#showClocks();
+                void this.reload();
+            }
         } catch (e) {
-            out.textContent = `Error: ${e}`;
+            const out = t.closest('tr')?.querySelector('[data-k="clock-result"]');
+            if (out) out.textContent = `Error: ${e}`; else this.el.querySelector('.lib-stats')!.textContent = `Error: ${e}`;
         }
     }
 
@@ -252,7 +296,7 @@ export class LibraryView {
             <option value=""${tf.hasLabels == null ? ' selected' : ''}>any</option>
             <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
             <option value="0"${tf.hasLabels === false ? ' selected' : ''}>without labels</option></select></section>
-          ${list('site', 'Sites <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clock per site (time zone, daylight saving)">clock…</button>', f.sites, tf.siteIds)}
+          ${list('site', 'Sites <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.sites, tf.siteIds)}
           ${list('device', 'Recorders', f.devices, tf.deviceIds)}`;
     }
 
@@ -356,7 +400,9 @@ export class LibraryView {
         else if (act === 'hash-stop') void catalogApi.hashCancel();
         else if (act === 'show-dups') this.#showDuplicates();
         else if (act === 'clocks') void this.#showClocks();
-        else if (act === 'clock-apply') void this.#applyClock(t.closest<HTMLElement>('[data-site]')!);
+        else if (act && ['period-add', 'period-del', 'device-clock-apply', 'shift-apply', 'shifts-apply-all'].includes(act)) {
+            void this.#onClockAction(act, t.closest<HTMLElement>('[data-act]')!);
+        }
         else if (act === 'show-missing') { this.#filter = { status: 'missing' }; void this.reload(); }
         else if (act === 'import-close') this.#hideImport();
         else if (act === 'clear-status') { this.#filter.status = null; void this.reload(); }

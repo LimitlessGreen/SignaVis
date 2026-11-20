@@ -411,6 +411,26 @@ pub fn machine_name() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct SiteInfo { pub id: i64, pub name: String, pub tz: Option<String>, pub recordings: i64, pub clocks: Vec<String> }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInfo { pub id: i64, pub name: String, pub recordings: i64, pub sites: Vec<String>, pub periods: Vec<clock::ClockPeriod> }
+
+/// Recorders with their sites and clock periods.
+pub fn devices(cat: &Catalog) -> Result<Vec<DeviceInfo>> {
+    let mut st = cat.conn.prepare(
+        "SELECT d.id, d.name, COUNT(r.id), COALESCE((SELECT GROUP_CONCAT(DISTINCT s.name) FROM recording r2 JOIN site s ON s.id = r2.site_id WHERE r2.device_id = d.id), '')
+         FROM device d LEFT JOIN recording r ON r.device_id = d.id GROUP BY d.id")?;
+    let rows: Vec<(i64, String, i64, String)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    let mut v = Vec::new();
+    for (id, name, n, sites) in rows {
+        v.push(DeviceInfo { id, name, recordings: n, sites: sites.split(',').filter(|x| !x.is_empty()).map(String::from).collect(),
+            periods: clock::device_clocks(cat, id)? });
+    }
+    v.sort_by(|a, b| query::natural_cmp(&a.name, &b.name));
+    Ok(v)
+}
+
 /// Sites with their clock (site setting, and the clocks actually used by their recordings).
 pub fn sites(cat: &Catalog) -> Result<Vec<SiteInfo>> {
     let mut st = cat.conn.prepare(
