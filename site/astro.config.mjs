@@ -65,6 +65,7 @@ export default defineConfig({
             { label: 'Species format', translations: { de: 'Artenformat' }, slug: 'docs/labeling/species-format' },
             { label: 'Xeno-canto format', translations: { de: 'Xeno-canto-Format' }, slug: 'docs/labeling/xeno-canto-format' },
             { label: 'Cite SignaVis', translations: { de: 'SignaVis zitieren' }, link: '/docs/cite/' },
+            { label: 'Privacy', translations: { de: 'Datenschutz' }, link: '/docs/privacy/' },
           ],
         },
         {

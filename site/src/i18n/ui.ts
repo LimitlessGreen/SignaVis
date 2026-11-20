@@ -57,7 +57,7 @@ export const ui = {
       web: ['Web app', 'Runs in the browser, no installation required.'],
       python: ['Python package', 'For Jupyter, Streamlit and Gradio: <code>pip install signavis</code>'],
     },
-    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support', footerCite: 'Cite',
+    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support', footerCite: 'Cite', footerPrivacy: 'Privacy',
   },
   de: {
     metaTitle: 'SignaVis – Kostenloser Spektrogramm-Viewer für Vogelstimmen',
@@ -109,6 +109,6 @@ export const ui = {
       web: ['Web-App', 'Läuft im Browser, keine Installation erforderlich.'],
       python: ['Python-Paket', 'Für Jupyter, Streamlit und Gradio: <code>pip install signavis</code>'],
     },
-    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen', footerCite: 'Zitieren',
+    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen', footerCite: 'Zitieren', footerPrivacy: 'Datenschutz',
   },
 } as const;
