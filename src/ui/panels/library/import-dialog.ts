@@ -7,10 +7,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    emptyProfile, fixedClockLabel, formatBytes, profileFromSuggestions, syncMappings,
+    emptyProfile, fixedClockLabel, formatBytes, profileFromFile, profileFromSuggestions, profileToFile, syncMappings,
     type FieldRole, type ImportResult, type Preview, type ProfileSpec, type Suggestion,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi, pickFolder } from '../../../infrastructure/tauri/catalogApi.ts';
+import { saveFile } from '../../../infrastructure/saveFile.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
@@ -121,6 +122,27 @@ export class ImportDialog {
             this.#profile = profileFromSuggestions(this.#profile, this.#suggestions);
             this.#render();
             await this.#runPreview(false);
+        } else if (act === 'profile-export') {
+            const name = this.#profile.name.replace(/[^\w.-]+/g, '_') || 'profile';
+            await saveFile(profileToFile(this.#profile), `${name}.signavis-profile.json`, 'application/json');
+        } else if (act === 'profile-load') {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json,application/json';
+            input.onchange = async () => {
+                const f = input.files?.[0];
+                if (!f) return;
+                try {
+                    this.#profile = profileFromFile(await f.text());
+                    this.#status = `Loaded profile “${this.#profile.name}”.`;
+                    this.#render();
+                    await this.#runPreview(false);
+                } catch (err) {
+                    this.#status = String((err as Error).message || err);
+                    this.#renderStatus();
+                }
+            };
+            input.click();
         } else if (act === 'add-pattern') {
             const ex = this.#preview?.unmatchedGroups[0]?.example;
             this.#profile.patterns.push(ex ? ex.replace(/[^/]+$/, '{file}.wav') : '');
@@ -281,7 +303,9 @@ export class ImportDialog {
             <p class="lib-hint">The files stay where they are; the project only references them.</p>
             ${this.#saved.length ? `<label class="lib-field"><span>Saved profile</span><select class="field-select" data-k="saved">
               ${this.#saved.map((s) => `<option${s.name === p.name ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : ''}
-            <label class="lib-field"><span>Profile name</span><input class="input" data-k="name" value="${esc(p.name)}"></label>
+            <label class="lib-field"><span>Profile name</span><span class="lib-row"><input class="input" data-k="name" value="${esc(p.name)}">
+              <button class="btn btn--sm btn--ghost" data-act="profile-load" title="Load a profile file (e.g. from a colleague with the same folder layout)">Load…</button>
+              <button class="btn btn--sm btn--ghost" data-act="profile-export" title="Save this profile as a file to share or reuse">Save…</button></span></label>
             ${this.#suggestions.length ? `<div class="lib-field lib-field--wide"><span>Suggested from the folder</span>
               <ul class="lib-suggestions">${this.#suggestions.map((s) => `<li><code>${esc(s.pattern)}</code>
                 <span class="lib-hint">${s.matches.toLocaleString()} files</span></li>`).join('')}</ul>

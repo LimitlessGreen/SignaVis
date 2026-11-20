@@ -69,3 +69,11 @@ test('formatDuration', async () => {
     assert.equal(formatDuration(720), '12 min');
     assert.equal(formatDuration(3.4 * 3600), '3.4 h');
 });
+
+test('profile files round-trip and reject foreign JSON', async () => {
+    const { profileToFile, profileFromFile } = await import('../src/domain/catalog/catalog-types.ts');
+    const p = { name: 'SK', patterns: ['{a}.wav'], mappings: [{ field: 'a', role: 'site', format: 'Site {}' }], utcOffsetMin: 60, tz: null, derivedDirs: ['backup'] };
+    assert.deepEqual(profileFromFile(profileToFile(p)), p);
+    assert.throws(() => profileFromFile('{"name":"x"}'), /Not a SignaVis import profile/);
+    assert.throws(() => profileFromFile('nope'), /Not a JSON file/);
+});

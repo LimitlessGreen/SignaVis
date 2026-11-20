@@ -145,3 +145,27 @@ export function formatBytes(n: number): string {
 export function emptyProfile(name = 'default'): ProfileSpec {
     return { name, patterns: [], mappings: [], utcOffsetMin: 0, tz: null, derivedDirs: [] };
 }
+
+export const PROFILE_FILE_KIND = 'signavis-import-profile/1';
+
+/** JSON file content for sharing a profile. */
+export function profileToFile(p: ProfileSpec): string {
+    return JSON.stringify({ kind: PROFILE_FILE_KIND, profile: p }, null, 2);
+}
+
+/** Parse a shared profile; throws with a readable message for foreign files. */
+export function profileFromFile(text: string): ProfileSpec {
+    let j: any;
+    try { j = JSON.parse(text); } catch { throw new Error('Not a JSON file.'); }
+    const p = j?.kind === PROFILE_FILE_KIND ? j.profile : null;
+    if (!p || typeof p.name !== 'string' || !Array.isArray(p.patterns) || !p.patterns.every((x: unknown) => typeof x === 'string')) {
+        throw new Error('Not a SignaVis import profile.');
+    }
+    const mappings = Array.isArray(p.mappings) ? p.mappings.filter((m: any) => typeof m?.field === 'string' && typeof m?.role === 'string') : [];
+    return {
+        name: p.name, patterns: p.patterns, mappings,
+        utcOffsetMin: Number.isFinite(p.utcOffsetMin) ? p.utcOffsetMin : 0,
+        tz: typeof p.tz === 'string' && p.tz ? p.tz : null,
+        derivedDirs: Array.isArray(p.derivedDirs) ? p.derivedDirs.filter((d: unknown) => typeof d === 'string') : [],
+    };
+}
