@@ -17,7 +17,11 @@ use aw_catalog::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
+
+pub const HASH_EVENT: &str = "lite-catalog-hash";
 
 const CATALOG_FILE: &str = ".signavis/catalog.sqlite";
 
@@ -26,6 +30,8 @@ pub struct CatalogState {
     open: Mutex<HashMap<String, Arc<Mutex<Catalog>>>>,
     /// Last scan per source folder (preview → import without scanning twice).
     scans: Mutex<HashMap<String, Arc<ScanResult>>>,
+    hash_cancel: Arc<AtomicBool>,
+    hash_running: Arc<AtomicBool>,
 }
 
 fn err(e: impl std::fmt::Display) -> String { e.to_string() }
@@ -70,6 +76,11 @@ pub async fn catalog_preview(
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
     pub root_id: i64,
+    /// Re-import of a known source: files found under a new name/folder, gone, changed.
+    pub moved: usize,
+    pub moved_examples: Vec<aw_catalog::hash::Moved>,
+    pub missing: usize,
+    pub changed: usize,
     pub inserted: usize,
     pub already_known: usize,
     pub unmatched: usize,
@@ -91,7 +102,9 @@ pub async fn catalog_import(
         let mut cat = cat.lock().map_err(err)?;
         cat.save_profile(&profile).map_err(err)?;
         let root_id = cat.add_root(&root_name, "referenced", &machine_name(), &source).map_err(err)?;
-        let rep = import_scanned(&mut cat, root_id, &scanned.audio, &built).map_err(err)?;
+        // Known source (same name): match renamed/moved files first, import only what is new.
+        let rec = aw_catalog::hash::reconcile(&mut cat, root_id, Path::new(&source), &scanned.audio, Some(&built)).map_err(err)?;
+        let rep = import_scanned(&mut cat, root_id, &rec.new_files, &built).map_err(err)?;
         let (mut tables, mut detections) = (0, 0);
         if import_tables && !scanned.selection_tables.is_empty() {
             let t = import_selection_tables(&mut cat, Path::new(&source), root_id, &scanned.selection_tables, "BirdNET (imported)")
@@ -99,7 +112,8 @@ pub async fn catalog_import(
             (tables, detections) = (t.tables, t.detections);
         }
         Ok(ImportResult {
-            root_id, inserted: rep.inserted, already_known: rep.already_known, unmatched: rep.unmatched.len(),
+            root_id, moved: rec.moved.len(), moved_examples: rec.moved.into_iter().take(20).collect(),
+            missing: rec.missing.len(), changed: rec.changed.len(), inserted: rep.inserted, already_known: rep.already_known + rec.unchanged, unmatched: rep.unmatched.len(),
             no_start: rep.no_start, tables, detections,
         })
     }).await
@@ -149,5 +163,78 @@ pub async fn catalog_recording_path(
     blocking(move || {
         let p = aw_catalog::recording_path(&*cat.lock().map_err(err)?, recording_id, &machine_name()).map_err(err)?;
         Ok(p.map(|p| p.to_string_lossy().into_owned()))
+    }).await
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HashProgress { project_root: String, done: usize, total: usize, finished: bool, failed: usize }
+
+/// Background job: quick hashes for all present assets without one (all roots located here).
+/// Progress as HASH_EVENT; resumable (commits in batches); one job at a time.
+#[tauri::command]
+pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, CatalogState>, project_root: String) -> Result<(), String> {
+    if state.hash_running.swap(true, Ordering::SeqCst) { return Err("hashing is already running".into()); }
+    state.hash_cancel.store(false, Ordering::SeqCst);
+    let (cat, cancel, running) = (state.get(&project_root)?, state.hash_cancel.clone(), state.hash_running.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| -> Result<(), String> {
+            let roots = aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)?;
+            let mut failed = 0;
+            'roots: for r in roots {
+                let Some(base) = r.path.clone() else { continue };
+                let todo = aw_catalog::hash::hash_todo(&*cat.lock().map_err(err)?, r.id).map_err(err)?;
+                // Read the files without holding the catalog; lock only to store each batch.
+                for (i, chunk) in todo.chunks(aw_catalog::hash::HASH_BATCH).enumerate() {
+                    let mut rep = aw_catalog::hash::HashReport::default();
+                    let done = aw_catalog::hash::hash_batch(Path::new(&base), chunk, &cancel, &mut rep);
+                    aw_catalog::hash::store_hashes(&mut *cat.lock().map_err(err)?, &done).map_err(err)?;
+                    failed += rep.failed.len();
+                    let _ = app.emit(HASH_EVENT, HashProgress {
+                        project_root: project_root.clone(), done: i * aw_catalog::hash::HASH_BATCH + chunk.len(), total: todo.len(), finished: false, failed,
+                    });
+                    if rep.cancelled { break 'roots; }
+                }
+            }
+            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), done: 0, total: 0, finished: true, failed });
+            Ok(())
+        })();
+        running.store(false, Ordering::SeqCst);
+        if let Err(e) = result { eprintln!("[catalog] hashing failed: {e}"); }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn catalog_hash_cancel(state: tauri::State<'_, CatalogState>) { state.hash_cancel.store(true, Ordering::SeqCst); }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Integrity {
+    pub hashed: i64,
+    pub unhashed: i64,
+    pub missing: i64,
+    pub changed: i64,
+    pub duplicate_groups: usize,
+    pub duplicates: Vec<aw_catalog::hash::DuplicateGroup>,
+    pub hashing: bool,
+}
+
+/// Hash coverage, missing/changed files and same-content groups.
+#[tauri::command]
+pub async fn catalog_integrity(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Integrity, String> {
+    let cat = state.get(&project_root)?;
+    let hashing = state.hash_running.load(Ordering::SeqCst);
+    blocking(move || {
+        let c = cat.lock().map_err(err)?;
+        let n = |sql: &str| aw_catalog::count(&c, sql).map_err(err);
+        let (groups, dups) = aw_catalog::hash::duplicates(&c, 50).map_err(err)?;
+        Ok(Integrity {
+            hashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
+            unhashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NULL AND status != 'missing'")?,
+            missing: n("SELECT COUNT(*) FROM asset WHERE status = 'missing'")?,
+            changed: n("SELECT COUNT(*) FROM asset WHERE status = 'changed'")?,
+            duplicate_groups: groups, duplicates: dups, hashing,
+        })
     }).await
 }

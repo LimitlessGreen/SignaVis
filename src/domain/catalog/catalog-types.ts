@@ -36,8 +36,9 @@ export interface Preview {
     issues: { kind: 'no-start' | 'implausible-time' | 'duplicate-time'; count: number; examples: string[] }[];
     samples: SampleRow[];
 }
+export interface MovedFile { from: string; to: string; by: 'hash' | 'size+mtime' }
 export interface ImportResult {
-    rootId: number; inserted: number; alreadyKnown: number; unmatched: number; noStart: number;
+    rootId: number; moved: number; movedExamples: MovedFile[]; missing: number; changed: number; inserted: number; alreadyKnown: number; unmatched: number; noStart: number;
     tables: number; detections: number;
 }
 
@@ -53,12 +54,14 @@ export interface CatalogFilter {
     hasLabels?: boolean | null;
     detection?: { runId?: number | null; class: string; minScore: number } | null;
     noStart?: boolean;
+    status?: 'ok' | 'missing' | 'changed' | null;
 }
 export type CatalogSort = 'start' | 'path';
 export interface CatalogCursor { key: number | string | null; id: number }
 export interface CatalogRow {
     id: number; rootId: number | null; path: string | null; size: number | null; startMs: number | null;
     localOffsetMin: number | null; durationS: number | null; site: string | null; device: string | null; labels: number;
+    status: 'ok' | 'missing' | 'changed' | null;
 }
 export interface CatalogPage { rows: CatalogRow[]; next: CatalogCursor | null }
 export interface FacetValue { id: number; name: string; count: number }
@@ -67,6 +70,12 @@ export interface Facets {
     noStart: number; sites: FacetValue[]; devices: FacetValue[];
 }
 export interface HeatCell { day: string; hour: number; count: number }
+export interface DuplicateGroup { hash: string; size: number; paths: string[] }
+export interface Integrity {
+    hashed: number; unhashed: number; missing: number; changed: number;
+    duplicateGroups: number; duplicates: DuplicateGroup[]; hashing: boolean;
+}
+export interface HashProgress { projectRoot: string; done: number; total: number; finished: boolean; failed: number }
 export interface RootInfo { id: number; name: string; kind: string; path: string | null; assets: number }
 
 /** Named fields of path templates, in first-seen order (`{*}` and duplicates skipped). */

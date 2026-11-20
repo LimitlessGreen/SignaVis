@@ -36,6 +36,7 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -532,6 +533,12 @@ checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
 dependencies = [
  "windows-link",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40de123dbb523ebcc00d61ec01840ad192578afc378d859f3429caa38308fad5"
 
 [[package]]
 name = "zmij"

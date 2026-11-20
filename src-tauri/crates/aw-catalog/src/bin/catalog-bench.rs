@@ -66,6 +66,17 @@ fn main() -> Result<()> {
     let rep2 = timed("re-import (all known)", || import_scanned(&mut cat, root_id, &res.audio, &opts))?;
     println!("           already known {}", rep2.already_known);
 
+    if std::env::var_os("BENCH_HASH").is_some() {
+        let t = Instant::now();
+        let mut last = Instant::now();
+        let hr = aw_catalog::hash::hash_missing(&mut cat, root_id, &root, &std::sync::atomic::AtomicBool::new(false), &mut |d, n| {
+            if last.elapsed().as_secs() >= 30 { println!("           … {d}/{n} after {:.0} s", t.elapsed().as_secs_f64()); last = Instant::now(); }
+        })?;
+        println!("{:>9.1} ms  quick hash {} files, {} failed", t.elapsed().as_secs_f64() * 1e3, hr.hashed, hr.failed.len());
+        let (n, groups) = aw_catalog::hash::duplicates(&cat, 3)?;
+        println!("           duplicate groups (same content): {n}");
+        for g in &groups { println!("           {:?}", g.paths); }
+    }
     let tr = timed("import selection tables", || import_selection_tables(&mut cat, &root, root_id, &res.selection_tables, "BirdNET (imported)"))?;
     println!("           tables {}, detections {}, unmatched {}", tr.tables, tr.detections, tr.unmatched_tables.len());
 

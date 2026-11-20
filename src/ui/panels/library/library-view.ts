@@ -9,7 +9,7 @@
 
 import {
     formatBytes, localTime,
-    type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HeatCell,
+    type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { ImportDialog } from './import-dialog.ts';
@@ -47,6 +47,9 @@ export class LibraryView {
     #selected = -1;
     #importDialog: ImportDialog | null = null;
     #searchTimer: ReturnType<typeof setTimeout> | null = null;
+    #integrity: Integrity | null = null;
+    #hash: HashProgress | null = null;
+    #unlisten: (() => void) | null = null;
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -58,6 +61,7 @@ export class LibraryView {
             <h2>Library</h2>
             <span class="lib-stats"></span>
             <span class="lib-spacer"></span>
+            <span class="lib-integrity"></span>
             <button class="btn btn--sm" data-act="open-import">Import folder…</button>
             <button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>
           </header>
@@ -83,7 +87,48 @@ export class LibraryView {
             if (r) void this.#open(Number(r.dataset.i));
         });
         new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); }).observe(this.el);
+        void catalogApi.onHashProgress((p) => {
+            if (p.projectRoot !== this.#o.projectRoot) return;
+            this.#hash = p.finished ? null : p;
+            if (p.finished) void this.#loadIntegrity(); else this.#renderIntegrity();
+        }).then((u) => { this.#unlisten = u; }).catch(() => {});
         void this.reload();
+        void this.#loadIntegrity();
+    }
+
+    dispose() { this.#unlisten?.(); }
+
+    async #loadIntegrity() {
+        try { this.#integrity = await catalogApi.integrity(this.#o.projectRoot); } catch { this.#integrity = null; }
+        this.#renderIntegrity();
+    }
+
+    #renderIntegrity() {
+        const host = this.el.querySelector<HTMLElement>('.lib-integrity')!;
+        const it = this.#integrity;
+        const parts: string[] = [];
+        if (this.#hash) {
+            parts.push(`<span title="Content fingerprints recognise renamed or moved files and identical copies">Fingerprints ${this.#hash.done.toLocaleString()} / ${this.#hash.total.toLocaleString()}</span>
+              <button class="btn btn--sm btn--ghost" data-act="hash-stop">Stop</button>`);
+        } else if (it && it.unhashed > 0) {
+            parts.push(`<button class="btn btn--sm btn--ghost" data-act="hash-start" title="Read the start and end of each file once (about 1–2 min per 10 000 files on a USB disk)">Fingerprint ${it.unhashed.toLocaleString()} files</button>`);
+        }
+        if (it?.missing) parts.push(`<button class="btn btn--sm btn--ghost lib-warn" data-act="show-missing" title="Files the catalog knows but that were not found at the last import of their source">${it.missing.toLocaleString()} missing</button>`);
+        if (it?.duplicateGroups) parts.push(`<button class="btn btn--sm btn--ghost lib-warn" data-act="show-dups">${it.duplicateGroups.toLocaleString()} identical copies</button>`);
+        host.innerHTML = parts.join('');
+    }
+
+    #showDuplicates() {
+        const it = this.#integrity;
+        if (!it) return;
+        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        host.innerHTML = `<div class="lib-import-head"><h3>Identical copies</h3>
+            <span class="lib-stats">${it.duplicateGroups.toLocaleString()} groups of files with the same content${it.duplicateGroups > it.duplicates.length ? ` (first ${it.duplicates.length} shown)` : ''}</span>
+            <span class="lib-spacer"></span><button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>
+          <div class="lib-import-preview"><table class="lib-table lib-table--compact"><thead><tr><th>Files</th><th class="num">Size</th></tr></thead><tbody>
+          ${it.duplicates.map((g) => `<tr><td>${g.paths.map((p) => `<div><code>${esc(p)}</code></div>`).join('')}</td><td class="num">${formatBytes(g.size)}</td></tr>`).join('')}
+          </tbody></table></div>`;
+        host.hidden = false;
     }
 
     focus() { this.el.focus(); }
@@ -147,6 +192,7 @@ export class LibraryView {
         const tf = this.#filter;
         const preset = TIME_PRESETS.findIndex((p) => p.from === (tf.hourFrom ?? null) && p.to === (tf.hourTo ?? null));
         host.innerHTML = `
+          ${tf.status ? `<section><h4>Status: ${esc(tf.status)} <button class="btn btn--sm btn--ghost" data-act="clear-status">all</button></h4></section>` : ''}
           <section><h4>Search</h4><input class="input" data-k="path" placeholder="Path contains…" value="${esc(tf.pathContains ?? '')}"></section>
           <section><h4>Time of day (local)</h4>
             <select class="field-select" data-k="tod">${TIME_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
@@ -175,7 +221,8 @@ export class LibraryView {
         let html = '';
         for (let i = first; i < Math.min(last, this.#rows.length); i++) {
             const r = this.#rows[i];
-            html += `<div class="lib-r${i === this.#selected ? ' is-sel' : ''}" data-i="${i}" title="${esc(r.path)}">
+            const gone = r.status === 'missing';
+            html += `<div class="lib-r${i === this.#selected ? ' is-sel' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
               <span class="c-path">${esc(r.path ?? '')}</span><span class="c-time">${esc(localTime(r))}</span>
               <span class="c-site">${esc(r.site ?? '')}</span><span class="c-dev">${esc(r.device ?? '')}</span>
               <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
@@ -247,7 +294,15 @@ export class LibraryView {
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
         else if (act === 'open-import') this.#showImport();
+        else if (act === 'hash-start') void catalogApi.hashStart(this.#o.projectRoot).then(() => {
+            this.#hash = { projectRoot: this.#o.projectRoot, done: 0, total: this.#integrity?.unhashed ?? 0, finished: false, failed: 0 };
+            this.#renderIntegrity();
+        }).catch((err) => { this.el.querySelector('.lib-stats')!.textContent = String(err); });
+        else if (act === 'hash-stop') void catalogApi.hashCancel();
+        else if (act === 'show-dups') this.#showDuplicates();
+        else if (act === 'show-missing') { this.#filter = { status: 'missing' }; void this.reload(); }
         else if (act === 'import-close') this.#hideImport();
+        else if (act === 'clear-status') { this.#filter.status = null; void this.reload(); }
         else if (act === 'clear-site') { this.#filter.siteIds = []; void this.reload(); }
         else if (act === 'clear-device') { this.#filter.deviceIds = []; void this.reload(); }
     }
@@ -308,7 +363,14 @@ export class LibraryView {
 
     #showImport() {
         const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
-        this.#importDialog = new ImportDialog({ projectRoot: this.#o.projectRoot, onImported: () => void this.reload() });
+        this.#importDialog = new ImportDialog({
+            projectRoot: this.#o.projectRoot,
+            onImported: () => {
+                void this.reload();
+                // Fingerprint new files in the background (renames are recognised on the next import).
+                void catalogApi.hashStart(this.#o.projectRoot).catch(() => {}).finally(() => void this.#loadIntegrity());
+            },
+        });
         host.innerHTML = `<div class="lib-import-head"><h3>Import folder</h3><span class="lib-spacer"></span>
           <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>`;
         host.appendChild(this.#importDialog.el);

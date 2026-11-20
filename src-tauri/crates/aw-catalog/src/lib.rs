@@ -2,6 +2,7 @@
 //! Plan: SignaVis-lab/plans/data-management-plan.md. Phase 0: schema, path templates, referenced
 //! import, BirdNET selection tables as runs.
 
+pub mod hash;
 pub mod pattern;
 pub mod preview;
 pub mod profile_spec;
@@ -132,7 +133,7 @@ fn upsert_named(tx: &rusqlite::Transaction, table: &str, name: &str, cache: &mut
     Ok(id)
 }
 
-fn local_to_utc_ms(t: NaiveDateTime, offset_min: i32) -> i64 {
+pub(crate) fn local_to_utc_ms(t: NaiveDateTime, offset_min: i32) -> i64 {
     Utc.from_utc_datetime(&t).timestamp_millis() - offset_min as i64 * 60_000
 }
 

@@ -74,13 +74,15 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let cat = st.cat(&a.project_root)?;
             cat.save_profile(&spec).map_err(e)?;
             let root_id = cat.add_root(a.root_name.as_deref().unwrap_or("source"), "referenced", &machine_name(), &src).map_err(e)?;
-            let r = import_scanned(cat, root_id, &s.audio, &p).map_err(e)?;
+            let rec = aw_catalog::hash::reconcile(cat, root_id, Path::new(&src), &s.audio, Some(&p)).map_err(e)?;
+            let r = import_scanned(cat, root_id, &rec.new_files, &p).map_err(e)?;
             let (mut tables, mut detections) = (0, 0);
             if a.import_tables && !s.selection_tables.is_empty() {
                 let t = import_selection_tables(cat, Path::new(&src), root_id, &s.selection_tables, "BirdNET (imported)").map_err(e)?;
                 (tables, detections) = (t.tables, t.detections);
             }
-            Ok(json!({ "rootId": root_id, "inserted": r.inserted, "alreadyKnown": r.already_known,
+            Ok(json!({ "rootId": root_id, "inserted": r.inserted, "alreadyKnown": r.already_known + rec.unchanged,
+                "moved": rec.moved.len(), "movedExamples": rec.moved, "missing": rec.missing.len(), "changed": rec.changed.len(),
                 "unmatched": r.unmatched.len(), "noStart": r.no_start, "tables": tables, "detections": detections }))
         }
         "catalog_profiles" => j(serde_json::to_value(st.cat(&a.project_root)?.profiles().map_err(e)?)),
@@ -92,6 +94,29 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_recording_path" => {
             let p = aw_catalog::recording_path(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?, &machine_name()).map_err(e)?;
             Ok(json!(p.map(|p| p.to_string_lossy().into_owned())))
+        }
+        // Synchronous here (dev tool); Lite runs it as a background job with progress events.
+        "catalog_hash_start" => {
+            let cat = st.cat(&a.project_root)?;
+            for r in aw_catalog::roots(cat, &machine_name()).map_err(e)? {
+                if let Some(base) = r.path {
+                    aw_catalog::hash::hash_missing(cat, r.id, Path::new(&base), &std::sync::atomic::AtomicBool::new(false), &mut |_, _| {}).map_err(e)?;
+                }
+            }
+            Ok(Value::Null)
+        }
+        "catalog_hash_cancel" => Ok(Value::Null),
+        "catalog_integrity" => {
+            let cat = st.cat(&a.project_root)?;
+            let n = |sql: &str| aw_catalog::count(cat, sql).map_err(e);
+            let (groups, dups) = aw_catalog::hash::duplicates(cat, 50).map_err(e)?;
+            Ok(json!({
+                "hashed": n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
+                "unhashed": n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NULL AND status != 'missing'")?,
+                "missing": n("SELECT COUNT(*) FROM asset WHERE status = 'missing'")?,
+                "changed": n("SELECT COUNT(*) FROM asset WHERE status = 'changed'")?,
+                "duplicateGroups": groups, "duplicates": dups, "hashing": false,
+            }))
         }
         _ => Err(format!("unknown command {cmd}")),
     }

@@ -1,7 +1,7 @@
 // infrastructure/tauri/catalogApi.ts — Lite commands of the project catalog (src-tauri-lite/src/catalog.rs)
 
 import type {
-    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HeatCell, ImportResult, Preview, ProfileSpec, RootInfo,
+    CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo,
 } from '../../domain/catalog/catalog-types.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -22,6 +22,14 @@ export const catalogApi = {
     list: (projectRoot: string, filter: CatalogFilter, sort: CatalogSort, after: CatalogCursor | null, limit: number) =>
         call<CatalogPage>('catalog_list', { projectRoot, filter, sort, after, limit }),
     heatmap: (projectRoot: string, filter: CatalogFilter) => call<HeatCell[]>('catalog_heatmap', { projectRoot, filter }),
+    hashStart: (projectRoot: string) => call<void>('catalog_hash_start', { projectRoot }),
+    hashCancel: () => call<void>('catalog_hash_cancel'),
+    integrity: (projectRoot: string) => call<Integrity>('catalog_integrity', { projectRoot }),
+    /** Subscribe to hashing progress; returns an unsubscribe function. */
+    onHashProgress: async (cb: (p: HashProgress) => void): Promise<() => void> => {
+        const { listen } = await import('@tauri-apps/api/event');
+        return listen<HashProgress>('lite-catalog-hash', (e) => cb(e.payload));
+    },
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
 };

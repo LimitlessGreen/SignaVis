@@ -3709,10 +3709,11 @@ if (isLite()) {
   const libPanel = document.createElement('div');
   libPanel.className = 'scroll-panel library-panel';
   let libView = null;
-  const closeLibrary = () => { libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
+  const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
   const openLibrary = (startImport = false) => {
     const root = libRoot();
     if (!root) return;
+    libView?.dispose();
     libView?.el.remove();
     libView = new LibraryView({
       projectRoot: root,

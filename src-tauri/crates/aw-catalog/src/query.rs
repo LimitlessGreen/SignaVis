@@ -28,6 +28,8 @@ pub struct Filter {
     pub has_labels: Option<bool>,
     pub detection: Option<DetectionFilter>,
     pub no_start: bool,
+    /// Asset status: ok / missing / changed.
+    pub status: Option<String>,
 }
 
 const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
@@ -83,6 +85,7 @@ fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
         push(cond, vals, &mut p);
     }
     if f.no_start { push("r.start_ms IS NULL".into(), vec![], &mut p); }
+    if let Some(st) = &f.status { push("a.status = ?".into(), vec![Box::new(st.clone())], &mut p); }
     (w.join(" AND "), p)
 }
 
@@ -110,6 +113,7 @@ pub struct Row {
     pub site: Option<String>,
     pub device: Option<String>,
     pub labels: i64,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,12 +146,13 @@ pub fn list(cat: &Catalog, f: &Filter, sort: Sort, after: Option<&Cursor>, limit
     let sql = format!(
         "SELECT r.id, a.root_id, a.rel_path, a.size, r.start_ms, r.local_offset_min, r.duration_s,
                 (SELECT name FROM site WHERE id = r.site_id), (SELECT name FROM device WHERE id = r.device_id),
-                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id)
+                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id), a.status
          {FROM} WHERE {w} ORDER BY {order} LIMIT {}", limit + 1);
     let mut st = cat.conn.prepare(&sql)?;
     let mut rows: Vec<Row> = st.query_map(params_from_iter(p.iter()), |r| Ok(Row {
         id: r.get(0)?, root_id: r.get(1)?, path: r.get(2)?, size: r.get(3)?, start_ms: r.get(4)?,
         local_offset_min: r.get(5)?, duration_s: r.get(6)?, site: r.get(7)?, device: r.get(8)?, labels: r.get(9)?,
+        status: r.get(10)?,
     }))?.collect::<std::result::Result<_, _>>()?;
     let next = if rows.len() > limit {
         rows.truncate(limit);

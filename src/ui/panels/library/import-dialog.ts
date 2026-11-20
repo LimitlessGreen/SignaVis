@@ -160,6 +160,9 @@ export class ImportDialog {
             const r = await catalogApi.import(this.#o.projectRoot, this.#source, this.#rootName, this.#profile, this.#importTables);
             this.#status = `Imported ${r.inserted.toLocaleString()} recordings`
                 + (r.alreadyKnown ? `, ${r.alreadyKnown.toLocaleString()} already known` : '')
+                + (r.moved ? `, ${r.moved.toLocaleString()} renamed or moved (labels kept)` : '')
+                + (r.missing ? `, ${r.missing.toLocaleString()} no longer found` : '')
+                + (r.changed ? `, ${r.changed.toLocaleString()} changed` : '')
                 + (r.unmatched ? `, ${r.unmatched} without pattern match` : '')
                 + (r.detections ? `, ${r.detections.toLocaleString()} BirdNET detections from ${r.tables} tables` : '') + '.';
             this.#o.onImported(r);

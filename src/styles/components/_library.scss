@@ -12,6 +12,8 @@
     h2, h3 { margin: 0; font-size: 15px; }
 }
 .lib-stats { color: var(--color-text-secondary); font-size: 12px; }
+.lib-integrity { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-secondary); }
+.lib-warn { color: var(--color-detection); }
 .lib-spacer { flex: 1; }
 .lib-body { flex: 1; display: flex; min-height: 0; }
 .lib-facets {
@@ -50,6 +52,7 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
     height: 26px; font-size: 12px; cursor: default; border-bottom: 1px solid var(--color-border);
     &:hover { background: var(--input-hover-bg); }
     &.is-sel { background: var(--color-accent-faint); box-shadow: inset 2px 0 var(--color-accent); }
+    &.is-missing { opacity: .5; text-decoration: line-through; }
     .c-path { direction: rtl; text-align: left; }   // keep the file name visible when the path is long
 }
 
