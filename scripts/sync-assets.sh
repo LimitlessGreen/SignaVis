@@ -20,6 +20,7 @@ cp dist/birdnet-player.css     "${ASSETS_DIR}/birdnet-player.css"
 # The bundle loads the aw-dsp WASM from a separate file (next to the script,
 # or from SIGNAVIS_WASM_URL when the bundle is inlined).
 cp dist/aw_dsp_wasm_bg.wasm    "${ASSETS_DIR}/aw_dsp_wasm_bg.wasm"
+cp src-tauri/crates/aw-dsp-wasm/THIRD_PARTY_LICENSES.txt "${ASSETS_DIR}/aw_dsp_wasm.THIRD_PARTY_LICENSES.txt"
 # Embeds (signavis.gradio) load tokens + player styles scoped to the player root.
 node scripts/scope-css.mjs dist/tokens.css dist/birdnet-player.css "${ASSETS_DIR}/birdnet-player.embed.css"
 # Gradio embeds run offline, so WaveSurfer ships alongside (BSD-3-Clause).

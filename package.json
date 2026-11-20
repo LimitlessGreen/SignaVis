@@ -86,6 +86,7 @@
     "test:analysis-smoke": "node --experimental-loader ./scripts/ignore-styles-loader.mjs --experimental-strip-types --test tests/analysis-backend-e2e-smoke.test.ts",
     "prepare": "npm run build:css && node ./scripts/install-githooks.js",
     "prepack": "npm run build:css",
+    "notices:wasm": "node ./scripts/generate-wasm-notices.mjs",
     "sync:assets": "bash ./scripts/sync-assets.sh --no-build",
     "hooks:install": "node ./scripts/postinstall.js --required",
     "version:sync": "node ./scripts/sync-version.js",

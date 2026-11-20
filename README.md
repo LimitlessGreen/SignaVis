@@ -168,4 +168,11 @@ release also gets its own version DOI on Zenodo. APA and more: <https://limitles
 
 ## License
 
-GNU AGPL-3.0
+SignaVis is licensed under the GNU AGPL-3.0-only (`LICENSE`).
+
+Exception: the Python package [`signavis`](python-wrapper/) — including the
+player bundle, styles and WebAssembly module it ships — is available under
+your choice of the MIT License (`python-wrapper/LICENSE-MIT`) or the
+AGPL-3.0-only, so it can be embedded in permissively licensed applications.
+Third-party notices for the bundled files are listed in the
+[package README](python-wrapper/README.md#license).

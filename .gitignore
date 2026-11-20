@@ -25,6 +25,7 @@ python-wrapper/dist/
 python-wrapper/*.egg-info/
 python-wrapper/signavis/assets/birdnet-player.*
 python-wrapper/signavis/assets/aw_dsp_wasm_bg.wasm
+python-wrapper/signavis/assets/aw_dsp_wasm.*
 python-wrapper/signavis/assets/wavesurfer.*
 
 # Misc build/temp

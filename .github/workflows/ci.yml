@@ -112,6 +112,12 @@ jobs:
           python -m pip install --upgrade pip build twine
           python -m build
           python -m twine check dist/*
+          python - <<'PY'
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          for notice in ("wavesurfer.LICENSE.txt", "aw_dsp_wasm.THIRD_PARTY_LICENSES.txt"):
+              assert f"signavis/assets/{notice}" in names, f"{notice} missing from wheel"
+          PY
 
       - name: Upload Python artifacts
         uses: actions/upload-artifact@v7
