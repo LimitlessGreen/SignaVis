@@ -590,6 +590,53 @@ html.is-mobile {
   .m-swatch i { display: block; height: 22px; border-radius: 4px; }
   .m-swatch.on { border-color: var(--m-accent); box-shadow: inset 0 0 0 1.5px var(--m-accent); }
   .m-set-help { margin: 0; padding: 10px 12px 10px 28px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; font-size: 13px; line-height: 1.6; }
+
+  // ── Details (recording properties) ──
+  .m-det-body { padding: 4px 14px 28px; display: flex; flex-direction: column; gap: 12px; }
+  .m-dhero { display: flex; gap: 12px; align-items: center; padding: 12px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; }
+  .m-dhero-img { width: 76px; height: 76px; flex-shrink: 0; object-fit: cover; border-radius: 6px; background: var(--m-line); }
+  .m-dhero-tx { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .m-dhero-tx h2 { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.2; }
+  .m-dhero-sci { font-size: 13px; color: var(--m-muted); }
+  .m-dhero-file { font-size: 11.5px; color: var(--m-muted); font-family: var(--m-mono); overflow-wrap: anywhere; }
+  .m-dhero-chips, .m-dtags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .m-dchip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid var(--m-line); border-radius: 4px; font-size: 12px; color: inherit; text-decoration: none; background: color-mix(in srgb, currentColor 5%, transparent); }
+  a.m-dchip { color: var(--m-accent); }
+  .m-qual { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; font-weight: 800; font-size: 13px; color: #04111b; background: #94a3b8; }
+  .m-qual--a { background: #4ade80; }
+  .m-qual--b { background: #a3e635; }
+  .m-qual--c { background: #facc15; }
+  .m-qual--d { background: #fb923c; }
+  .m-qual--e { background: #f87171; }
+  .m-dcard { padding: 10px 12px 12px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 8px; }
+  .m-dcard > h3 { margin: 0 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--m-muted); }
+  .m-dbig { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .m-drow { display: flex; align-items: center; gap: 10px; min-height: 40px; border-top: 1px solid var(--m-line); }
+  .m-drow-k { width: 72px; flex-shrink: 0; font-size: 12.5px; color: var(--m-muted); }
+  .m-drow-v { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .m-dinput { flex: 1; min-width: 0; height: 32px; padding: 0 8px; font: inherit; font-size: 14px; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 4px; }
+  .m-dinput:focus { outline: none; border-color: var(--m-accent); background: color-mix(in srgb, currentColor 5%, transparent); }
+  .m-dinput:not(:focus) { padding-left: 0; }
+  .m-dsrc { flex-shrink: 0; font-size: 10.5px; padding: 2px 6px; border-radius: 3px; color: var(--m-muted); border: 1px solid var(--m-line); white-space: nowrap; }
+  .m-dreset { flex-shrink: 0; width: 32px; height: 32px; border: 0; background: none; color: var(--m-accent); font-size: 16px; cursor: pointer; }
+  .m-dmono { font-family: var(--m-mono); font-size: 13px; flex: 1; min-width: 0; }
+  .m-dacts { display: flex; gap: 8px; margin-top: 8px; }
+  .m-dacts .m-set-btn { flex: 1; }
+  .m-dcard .rc-minimap { height: 140px; margin-top: 8px; border-radius: 6px; }
+  .m-dl { display: grid; grid-template-columns: max-content 1fr; gap: 0 12px; margin: 0; }
+  .m-dl dt, .m-dl dd { margin: 0; padding: 8px 0; border-top: 1px solid var(--m-line); font-size: 14px; }
+  .m-dl dt { font-size: 12.5px; color: var(--m-muted); }
+  .m-dl dd { overflow-wrap: anywhere; }
+  .m-dl a { color: var(--m-accent); }
+  .m-dcard > .m-dl:first-of-type dt:first-child, .m-dcard > .m-dl:first-of-type dt:first-child + dd { border-top: 0; }
+  .m-dsub { margin: 10px 0 0; font-size: 12.5px; color: var(--m-muted); }
+  .m-dquote { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--m-accent); background: color-mix(in srgb, currentColor 5%, transparent); font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+  .m-dmuted { margin: 0; color: var(--m-muted); font-size: 13px; }
+  .m-dstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .m-dstat { display: flex; flex-direction: column; align-items: center; padding: 8px 4px; border: 1px solid var(--m-line); border-radius: 6px; }
+  .m-dstat b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .m-dstat span { font-size: 11.5px; color: var(--m-muted); }
+  .m-dcard--light .sun-charts { margin: 0; }
 }
 
 /* Quick spectrogram panel on the player + shared slider rows */

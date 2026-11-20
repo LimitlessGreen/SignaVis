@@ -2789,6 +2789,36 @@ const mobileApp = new MobileApp({
     labelStore.add({ ...lbl });
     touchOwnSet(lbl.setId);
   },
+  getDetails: () => {
+    const e = recordingManager.getActive();
+    const context = currentRecordingContext();
+    if (!e || !context) return null;
+    const meta = { ...(e.xcRecordingMeta || {}), ...(state.recordingMeta || {}) };
+    const isSoundscape = String(meta.gen || '').toLowerCase() === 'sonus';
+    const sci = !isSoundscape && meta.gen ? `${meta.gen} ${meta.sp || ''}`.trim() : '';
+    const name = sci ? resolveName({ scientificName: sci, label: meta.en || sci }) : null;
+    let duration = e.duration ?? null;
+    let channels = null;
+    try { duration = player.duration || duration; channels = player._state?.audioBuffer?.numberOfChannels ?? null; } catch { /* not ready */ }
+    const labels = state.labels;
+    const own = labels.filter((l) => l.setId === OWN_SOURCE_ID);
+    return {
+      title: e.xcId ? toXcId(e.xcId) : (e.filename || mt('rec.audioFile')),
+      xcId: e.xcId ? xcNumber(e.xcId) : null,
+      scientific: sci || null,
+      common: name?.display || meta.en || null,
+      meta,
+      file: { filename: e.filename || null, sampleRate: e.sampleRate || state.sampleRate || null, duration, channels },
+      context,
+      labels: {
+        total: labels.length,
+        own: own.length,
+        detections: labels.length - own.length,
+        species: new Set(labels.map((l) => l.scientificName || l.label).filter(Boolean)).size,
+      },
+    };
+  },
+  setContext: (field, value) => recordingContextBlock.onChange(field, value),
   analysis: {
     confInput: document.getElementById('birdnetConfidence'),
     overlapSelect: document.getElementById('birdnetOverlap'),
