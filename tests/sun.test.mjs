@@ -63,3 +63,13 @@ test('phaseSpans splits a 3 h dawn recording into light phases', async () => {
     const night = phaseSpans(51.34, 12.37, '2026-11-20', 23 * 60, 120, 1);
     assert.equal(night.at(-1).to, 25 * 60);
 });
+
+test('clockDiff wraps event times from large offsets; offsets list has :30 and :45 zones', async () => {
+    const { clockDiff, crossing, UTC_OFFSETS } = await import('../src/domain/sun.ts');
+    // Equator at 150°W with UTC+14 (CodeRabbit case): sunrise lands near minute 1800 (= 06:00)
+    const c = crossing(0, -150, 79, -0.833, 14);
+    assert.ok(c.rise > 1440);
+    near(clockDiff(12 * 60, c.rise), 6 * 60, 15, 'noon is ~6 h after sunrise');
+    assert.equal(clockDiff(30, 1430), 40);
+    assert.ok(UTC_OFFSETS.includes(5.5) && UTC_OFFSETS.includes(5.75) && UTC_OFFSETS.includes(-3.5));
+});

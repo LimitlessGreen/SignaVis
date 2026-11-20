@@ -7,7 +7,7 @@
  */
 
 import {
-    SUN_PHASE_TEXT, dayLengthHours, formatClock, formatDuration, phaseOf, seasonOf, seasonPart,
+    SUN_PHASE_TEXT, dayLengthHours, clockDiff, formatClock, formatDuration, phaseOf, seasonOf, seasonPart,
     sunAltitude, sunDay, type SunPhase,
 } from '../../domain/sun.ts';
 import type { Coords } from '../../app/recording-context.ts';
@@ -209,8 +209,8 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
         strong.textContent = `${formatClock(rec)}${durationMin >= 1 ? `–${formatClock(rec + durationMin)}` : ''} · ${SUN_PHASE_TEXT[phaseOf(a)]}`;
         let rel = '';
         if (typeof sr === 'object') {
-            const toRise = rec - sr.rise;
-            const toSet = rec - sr.set;
+            const toRise = clockDiff(rec, sr.rise);
+            const toSet = clockDiff(rec, sr.set);
             const [d, name] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, 'sunrise'] : [toSet, 'sunset'];
             rel = ` · ${formatDuration(d)} ${d < 0 ? 'before' : 'after'} ${name}`;
         }

@@ -185,3 +185,14 @@ export function phaseSpans(lat: number, lon: number, date: string, startMin: num
     }
     return out;
 }
+
+/**
+ * Signed minutes from `event` to `t` on a 24 h clock, wrapped to −720…720. Event times from
+ * crossing() can fall outside 0…1440 (large offsets); this keeps "before/after sunrise" right.
+ */
+export function clockDiff(t: number, event: number): number {
+    return ((((t - event + 720) % 1440) + 1440) % 1440) - 720;
+}
+
+/** UTC offsets in use: whole and half hours plus Nepal/Chatham/Eucla (…:45). */
+export const UTC_OFFSETS: number[] = [...Array.from({ length: 53 }, (_, i) => -12 + i * 0.5), 5.75, 8.75, 12.75].sort((a, b) => a - b);

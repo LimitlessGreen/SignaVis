@@ -9,8 +9,8 @@
  */
 
 import {
-    SUN_PHASE_TEXT, dayLengthHours, formatClock, formatDuration, guessUtcOffset, phaseOf, seasonOf, seasonPart,
-    phaseSpans, sunAltitude, sunDay, timeZoneAt, type Season, type SunPhase,
+    SUN_PHASE_TEXT, dayLengthHours, clockDiff, formatClock, formatDuration, guessUtcOffset, phaseOf, seasonOf, seasonPart,
+    phaseSpans, sunAltitude, sunDay, timeZoneAt, UTC_OFFSETS, type Season, type SunPhase,
 } from '../../domain/sun.ts';
 import type { Coords } from '../../app/recording-context.ts';
 import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
@@ -239,8 +239,8 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
         let rel = '';
         const sr = s.events.horizon;
         if (typeof sr === 'object') {
-            const toRise = rec - sr.rise;
-            const toSet = rec - sr.set;
+            const toRise = clockDiff(rec, sr.rise);
+            const toSet = clockDiff(rec, sr.set);
             const [d, up] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, true] : [toSet, false];
             rel = `${d < 0 ? '−' : '+'}${formatDuration(d).replace(' min', 'm').replace(' h ', 'h ')} ${up ? '☀↑' : '☀↓'}`;
         } else rel = sr === 'always-above' ? 'no sunset' : 'no sunrise';
@@ -372,7 +372,7 @@ export class SunCharts {
         const opts = new Map<number, string>();
         opts.set(local, `${zone ? zone.split('/').pop()!.replace(/_/g, ' ') : 'Local'} · ${fmtOffset(local)}`);
         if (!opts.has(0)) opts.set(0, 'UTC');
-        for (let h = -12; h <= 14; h += 0.5) if (!opts.has(h)) opts.set(h, fmtOffset(h));
+        for (const h of UTC_OFFSETS) if (!opts.has(h)) opts.set(h, fmtOffset(h));
         if (!opts.has(off)) opts.set(off, fmtOffset(off));
         for (const [h, text] of opts) {
             const o = document.createElement('option');
