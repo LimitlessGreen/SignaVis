@@ -38,7 +38,7 @@ import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, findCallExcerpt, type UltrasoundInfo } from '../domain/ultrasound.ts';
 import { UltrasoundDialog, loadUltrasoundDefault, saveUltrasoundDefault, type UltrasoundChoice } from '../ui/components/ultrasound-dialog/ultrasound-dialog.ts';
-import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
+import { computeBandProfileAsync, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -870,8 +870,11 @@ export class PlayerState {
         this._usDialog?.close(null);
         this._setTimeExpansion(1);
         this.detectorSettings.carrierHz = 0;
-        const ch0 = this._engine.audioBuffer?.getChannelData(0) ?? null;
-        this.bandProfile = ch0 ? computeBandProfile(ch0, sampleRate) : null;
+        const buffer = this._engine.audioBuffer;
+        const ch0 = buffer?.getChannelData(0) ?? null;
+        // Sliced: on hours of audio the scan would block the page for ~0.25 s.
+        this.bandProfile = ch0 ? await computeBandProfileAsync(ch0, sampleRate) : null;
+        if (this._engine.audioBuffer !== buffer) return; // another file was loaded meanwhile
         this.ultrasoundInfo = ch0 ? analyzeUltrasound(ch0, sampleRate, this._engine.guano, this.bandProfile) : null;
         this._freqZoom.resetSilent();
         this._updateUltrasoundChip();
