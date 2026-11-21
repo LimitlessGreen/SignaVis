@@ -1,9 +1,8 @@
 // overlay-peek.ts — keep floating bars over the spectrogram from hiding what is under them.
 //
-// 1. Near: when the pointer comes within NEAR_PX of a bar it fades out and lets clicks / drags through
-//    to the spectrogram. The grip (⋮⋮) at its left edge stays visible: pointing at it brings the bar
-//    back until the pointer leaves the bar (plus margin). While a mouse button is held (drawing,
-//    moving a box) bars stay faded.
+// 1. Drag: while a press that started off the bar (drawing, moving a box, dragging the playhead) comes
+//    within NEAR_PX of it, the bar fades out and lets the drag through. Plain hovering never hides it,
+//    so its buttons stay usable.
 // 2. Hold H (installOverlayPeekKey, app-wide): all bars and the label captions fade out; let go to bring them back.
 
 export const NEAR_PX = 28;
@@ -17,15 +16,14 @@ export function distToBox(r: Box, x: number, y: number): number {
     return Math.hypot(dx, dy);
 }
 
-/** Next state of one bar for a pointer position: faded or not, engaged (opened via the grip) or not. */
+/** Next state of one bar for a pointer event: faded or not, and whether the current press started on it. */
 export function peekState(
-    s: { engaged: boolean }, bar: Box, grip: Box | null, x: number, y: number, buttons: number,
-): { faded: boolean; engaged: boolean } {
-    if (buttons) return { faded: true, engaged: false };
-    const onGrip = !!grip && distToBox(grip, x, y) === 0;
+    s: { pressOnBar: boolean }, bar: Box, x: number, y: number, buttons: number, type = 'pointermove',
+): { faded: boolean; pressOnBar: boolean } {
+    if (!buttons) return { faded: false, pressOnBar: false };
     const d = distToBox(bar, x, y);
-    const engaged = onGrip || (s.engaged && d <= NEAR_PX);
-    return { faded: !engaged && d <= NEAR_PX, engaged };
+    const pressOnBar = type === 'pointerdown' ? d === 0 : s.pressOnBar;
+    return { faded: !pressOnBar && d <= NEAR_PX, pressOnBar };
 }
 
 const HIDE_CLASS = 'aw-overlays-peek';
@@ -44,22 +42,15 @@ function onKeyUp(e: KeyboardEvent) { if (e.key === 'h' || e.key === 'H') documen
 function onBlur() { document.body.classList.remove(HIDE_CLASS); }
 function onPointer(e: PointerEvent) { for (const b of bars) b.update(e); }
 
-/** Make `el` fade near the pointer and with H; adds a grip as its first child. Returns detach. */
+/** Make `el` fade while a drag passes near it, and with H. Returns detach. */
 export function attachPeek(el: HTMLElement): () => void {
     el.classList.add('aw-peek');
-    const grip = document.createElement('span');
-    grip.className = 'aw-peek__grip';
-    grip.title = 'Show bar (it fades when the pointer comes near; hold H to hide all overlays)';
-    grip.setAttribute('aria-hidden', 'true');
-    grip.textContent = '⋮⋮';
-    el.prepend(grip);
-    let state = { engaged: false };
+    let state = { faded: false, pressOnBar: false };
     const entry = {
         update(e: PointerEvent) {
             if (el.hidden) return;
-            const next = peekState(state, el.getBoundingClientRect(), grip.getBoundingClientRect(), e.clientX, e.clientY, e.buttons);
-            state = next;
-            el.classList.toggle('aw-peek--faded', next.faded);
+            state = peekState(state, el.getBoundingClientRect(), e.clientX, e.clientY, e.buttons, e.type);
+            el.classList.toggle('aw-peek--faded', state.faded);
         },
     };
     if (!bars.size) {
@@ -70,7 +61,6 @@ export function attachPeek(el: HTMLElement): () => void {
     bars.add(entry);
     return () => {
         bars.delete(entry);
-        grip.remove();
         el.classList.remove('aw-peek', 'aw-peek--faded');
         if (!bars.size) {
             window.removeEventListener('pointermove', onPointer, true);

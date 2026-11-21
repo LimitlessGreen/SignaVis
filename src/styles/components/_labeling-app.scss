@@ -1269,21 +1269,9 @@ html[data-theme="light"] { @include sponsor-light; }
   .help-pop, .tb-help-btn svg { transition-duration: 0.01s; }
 }
 
-/* ── Overlay peek (overlay-peek.ts): bars fade near the pointer and let clicks through; hold H to hide all ── */
+/* ── Overlay peek (overlay-peek.ts): bars fade while a drag passes near them; hold H to hide all ── */
 .aw-peek { transition: opacity 0.12s ease; }
-.aw-peek__grip {
-  cursor: pointer;
-  color: var(--color-text-secondary, #9ca3af);
-  font-size: 15px;
-  line-height: 1;
-  letter-spacing: -4px;
-  padding: 0 6px 0 0;
-  margin-left: -4px;
-  user-select: none;
-}
 .aw-peek--faded { opacity: 0.15; pointer-events: none; }
-// The grip stays visible and clickable: pointing at it brings the bar back
-.aw-peek--faded .aw-peek__grip { pointer-events: auto; opacity: 1; }
 body.aw-overlays-peek .aw-peek,
 body.aw-overlays-peek .spectrogram-label-text,
 body.aw-overlays-peek .spectrogram-label-meta,
