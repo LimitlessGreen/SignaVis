@@ -184,14 +184,25 @@ export function pcmWavBlob(channelData: Float32Array, sampleRate: number): Blob 
  * Decoded PCM as a sliceable float WAV: a disk-backed OPFS file when possible (no second copy
  * of the audio in memory), else pcmWavBlob().
  */
-export async function pcmWavSource(channelData: Float32Array, sampleRate: number): Promise<Blob> {
+export async function pcmWavSource(
+    channelData: Float32Array,
+    sampleRate: number,
+    write: typeof writePcmWavFile = writePcmWavFile,
+    maxMemoryBytes = PCM_MEMORY_SOURCE_MAX_BYTES,
+): Promise<Blob> {
     try {
-        return await writePcmWavFile(channelData, sampleRate);
+        return await write(channelData, sampleRate);
     } catch (err) {
+        // A second in-memory copy of hours of audio costs GBs and, where OPFS is full
+        // (private windows), Chromium cannot read such a Blob back either.
+        if (channelData.byteLength > maxMemoryBytes) throw err;
         console.warn('[WasmTileManager] OPFS PCM cache unavailable, keeping the samples in memory', err);
         return pcmWavBlob(channelData, sampleRate);
     }
 }
+
+/** Largest decoded audio copied into an in-memory Blob when the OPFS cache fails (~90 min at 48 kHz). */
+export const PCM_MEMORY_SOURCE_MAX_BYTES = 1 << 30;
 
 export class WasmTileManager extends EventTarget {
     readonly nMels: number;
