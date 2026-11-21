@@ -43,15 +43,27 @@ export function formatSecondsShort(seconds: number): string {
     return `${seconds.toFixed(2)}s`;
 }
 
-export function isTypingContext(target: EventTarget | null): boolean {
+const NON_TEXT_INPUTS = new Set(['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'image']);
+const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
+/**
+ * Does the focused element itself need this key, so app shortcuts must leave it alone?
+ * Text entry needs every key. A select only its arrows, a slider arrows + Home/End;
+ * buttons, checkboxes and other controls none — so the player keeps working after a
+ * dropdown or button was clicked. Without `key`, answers "is this a text-entry target".
+ */
+export function isTypingContext(target: EventTarget | null, key?: string): boolean {
     if (!target || !('tagName' in target)) return false;
     const el = target as HTMLElement;
-    return (
-        el.tagName === 'INPUT' ||
-        el.tagName === 'TEXTAREA' ||
-        el.tagName === 'SELECT' ||
-        el.isContentEditable
-    );
+    if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+    if (el.tagName === 'INPUT') {
+        const type = ((el as HTMLInputElement).type || 'text').toLowerCase();
+        if (!NON_TEXT_INPUTS.has(type)) return true;
+        if (type !== 'range' || key == null) return false;
+        return ARROWS.has(key) || key === 'Home' || key === 'End' || key === 'PageUp' || key === 'PageDown';
+    }
+    if (el.tagName === 'SELECT') return key != null && ARROWS.has(key);
+    return false;
 }
 
 export function getTimeGridSteps(pixelsPerSecond: number): { majorStep: number; minorStep: number } {

@@ -58,7 +58,7 @@ export class CanvasInteractionController implements UiController {
 
         on(this.d.canvasWrapper, 'keydown', (e: KeyboardEvent) => {
             if (!h.audioBuffer) return;
-            if (isTypingContext(e.target)) return;
+            if (isTypingContext(e.target, e.key)) return;
             switch (e.key) {
                 case 'ArrowLeft':  e.preventDefault(); h._seekByDelta(-SEEK_FINE_SEC); break;
                 case 'ArrowRight': e.preventDefault(); h._seekByDelta(SEEK_FINE_SEC); break;

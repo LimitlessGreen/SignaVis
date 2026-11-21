@@ -1843,7 +1843,7 @@ export class PlayerState {
             this._setCompactToolbarOpen(false);
             return;
         }
-        if (!this._keyboardEnabled || !this.audioBuffer || isTypingContext(event.target)) return;
+        if (!this._keyboardEnabled || !this.audioBuffer || isTypingContext(event.target, event.key)) return;
 
         switch (event.code) {
             case 'Space':
