@@ -28,6 +28,16 @@
     box-shadow: 0 0 6px var(--color-playhead);
 }
 
+// Invisible grab area: the line is only 2px wide, so a near miss would start a label in draw mode
+.playhead::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -5px;
+    width: 12px;
+}
+
 .playhead-secondary {
     top: 0;
     bottom: 0;

@@ -2,6 +2,7 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
+import { isPlayerTarget } from './pointer-priority.ts';
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
@@ -1913,6 +1914,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _bindDrawingInteractions(wrapper: any) {
         const onPointerDown = (e: PointerEvent) => {
+            if (isPlayerTarget(e.target)) return;   // playhead beats every tool mode
             if (this.zoomBoxMode && (e.button === 0 || e.button === 2)) {
                 if (!this.player?._state?.audioBuffer) return;
                 this.player?._state?._blockSeekClicks?.(400);
