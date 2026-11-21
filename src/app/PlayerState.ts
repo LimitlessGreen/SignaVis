@@ -270,6 +270,7 @@ export class PlayerState {
         this._spectro.addEventListener('computetime', (e: CustomEvent<any>) => this._emit('computeTime',  e.detail));
         this._spectro.addEventListener('ready',       (e: CustomEvent<any>) => this._emit('ready',        e.detail));
         this._spectro.addEventListener('error',       (e: CustomEvent<any>) => this._emit('error',        e.detail));
+        this._spectro.addEventListener('unavailable', (e: CustomEvent<any>) => this._spectrogramUnavailable(e.detail));
         this._spectro.addEventListener('scalechange', (e: CustomEvent<any>) => {
             this._emit('spectrogramscalechange', e.detail);
             this._updateCoords();
@@ -915,6 +916,22 @@ export class PlayerState {
         this._drawMainWaveform();
         this._drawOverviewWaveform();
         this._seekToTime(0, true);
+    }
+
+    /** Too long for an in-memory spectrogram and no tile storage: show the waveform and say why. */
+    _spectrogramUnavailable(detail: { reason: string }) {
+        if (this._viewMode !== 'waveform') this._setViewMode('waveform');
+        const info = this.d.fileInfo;
+        if (info && !info.querySelector('[data-aw="spectrogramUnavailable"]')) {
+            const note = document.createElement('span');
+            note.dataset.aw = 'spectrogramUnavailable';
+            note.textContent = '· Spectrogram unavailable';
+            note.title = 'This recording is too long to compute its spectrogram in memory, and the browser '
+                + 'has no storage space left for spectrogram tiles (e.g. in a private window). '
+                + 'Use a normal window or free up disk space, then reload the file.';
+            info.append(' ', note);
+        }
+        this._emit('spectrogramUnavailable', detail);
     }
 
     _spectroGeneration: Promise<void> | null = null;

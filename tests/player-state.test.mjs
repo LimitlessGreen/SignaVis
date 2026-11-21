@@ -352,3 +352,23 @@ test('PlayerState: loading ends the loading overlay while the spectrogram is hid
     assert.strictEqual(overlay.hidden, true);
     ps.dispose();
 });
+
+test('PlayerState: an unavailable spectrogram switches to the waveform and says why', () => {
+    const { ps, emitted } = headlessWithAudio('both');
+    const appended = [];
+    const note = { dataset: {} };
+    ps.d.fileInfo = { querySelector: () => (appended.length ? note : null), append: (...n) => appended.push(...n) };
+    const realCreate = globalThis.document.createElement;
+    globalThis.document.createElement = () => note;
+    try {
+        ps._spectro.dispatchEvent(new CustomEvent('unavailable', { detail: { reason: 'too-large' } }));
+        ps._spectro.dispatchEvent(new CustomEvent('unavailable', { detail: { reason: 'too-large' } }));
+    } finally { globalThis.document.createElement = realCreate; }
+    assert.strictEqual(ps._viewMode, 'waveform');
+    assert.strictEqual(ps._showSpectrogram, false);
+    assert.strictEqual(note.dataset.aw, 'spectrogramUnavailable');
+    assert.match(note.textContent, /Spectrogram unavailable/);
+    assert.strictEqual(appended.filter(x => x === note).length, 1, 'the note is added once');
+    assert.ok(emitted.some(e => e.name === 'spectrogramUnavailable'));
+    ps.dispose();
+});

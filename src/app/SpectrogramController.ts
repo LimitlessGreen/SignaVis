@@ -54,6 +54,19 @@ import { setOverlayContent } from '../ui/loadingOverlay.ts';
 import { channelData as cachedChannelData } from '../shared/utils.ts';
 
 /**
+ * Largest whole-file spectrogram computed in one piece. Above it (hours of audio when the tile
+ * pyramid is unavailable, e.g. no OPFS space in incognito windows) the result would not fit in
+ * one worker message and would take several GB, so the spectrogram is skipped instead.
+ */
+export const FULL_SPECTROGRAM_MAX_BYTES = 1 << 30;
+
+/** Float32 bytes of a whole-file v2 spectrogram (upper bound). */
+export function fullSpectrogramBytes(p: StftParamsV2, nSamples: number): number {
+    const bins = p.scale.kind === 'linear' ? (p.nFft >> 1) + 1 : p.scale.bands;
+    return (Math.ceil(nSamples / p.hop) + 1) * bins * 4;
+}
+
+/**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
  *
  * @param {Object} d  DOM element refs (same shape as PlayerState.d)
@@ -312,6 +325,15 @@ export class SpectrogramController extends EventTarget {
                 return false;
             });
             if (ok) return;
+        }
+
+        if (v2Params && fullSpectrogramBytes(v2Params, this._audioBuffer.length) > FULL_SPECTROGRAM_MAX_BYTES) {
+            this._data = null;
+            this._nFrames = 0;
+            if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
+            this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-unavailable' });
+            this._emit('unavailable', { reason: 'too-large' });
+            return;
         }
 
         const t0 = performance.now();
