@@ -18,7 +18,7 @@ import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
 import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
-import { selectedSamples, onChannelSelectionChange, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
+import { selectedSamples, onChannelSelectionChange, getChannelSelection, channelSelectionKey, parseChannelSelection, labelChannel } from '../../shared/channels.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
@@ -214,11 +214,13 @@ export class BirdBoxPanel {
     private emit(id: string | null, res: Result, running: boolean): number {
         const { raw } = res;
         const boxes = fuseBoxes(raw.data, raw.rows, this.conf, this.gap, res.cache, laterOf(raw));
-        this.o.onBoxes(id, boxes.map((b, i) => this.toLabel(id, b, i)), { running });
+        // The channel the run analysed, not the one shown now
+        const channel = labelChannel(this.o.getAudioBuffer(), parseChannelSelection(res.channels));
+        this.o.onBoxes(id, boxes.map((b, i) => this.toLabel(id, b, i, channel)), { running });
         return boxes.length;
     }
 
-    private toLabel(id: string | null, b: FusedBox, i: number) {
+    private toLabel(id: string | null, b: FusedBox, i: number, channel?: number) {
         const author = String(this.o.getAuthor?.() ?? '').trim();
         return {
             id: `bb_${key(id)}_${i}`,
@@ -232,6 +234,7 @@ export class BirdBoxPanel {
             origin: BIRDBOX_ORIGIN,
             author,
             aiSuggested: { model: 'BirdBox', version: MODEL_TAG, confidence: b.max, avgConfidence: b.avg, rawBoxes: b.n },
+            ...(channel !== undefined ? { channel } : {}),
         };
     }
 

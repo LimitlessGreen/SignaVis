@@ -28,7 +28,7 @@ import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
 import { filterBySpeciesList } from '../../domain/species-lists.ts';
-import { selectedSamples } from '../../shared/channels.ts';
+import { selectedSamples, getChannelSelection, labelChannel } from '../../shared/channels.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // Bundled models (Lite does not ship them: fetched on first use and cached, see onDemandUrl).
@@ -513,7 +513,8 @@ export class BirdNETPanel {
       this.statusEl.textContent = 'Analyzing…';
       this.progressBar.style.width = '0%';
 
-      const channelData = selectedSamples(audioBuffer);
+      const analysedChannels = getChannelSelection();
+      const channelData = selectedSamples(audioBuffer, analysedChannels);
       const allDetections = await this.birdnet.analyze(channelData, {
         sampleRate: audioBuffer.sampleRate,
         overlap,
@@ -527,6 +528,7 @@ export class BirdNETPanel {
       const author = String(this.getAuthor?.() ?? this.authorInput?.value ?? '').trim();
       const mergeOverlapping = this.mergeCheckbox.checked;
       const modelVersion = this._getModelVersion();
+      const channel = labelChannel(audioBuffer, analysedChannels);
       const newLabels = detections.map((det: any) => ({
         ...this.resolveLabel(det, audioBuffer),
         id: `bn_${Math.random().toString(36).slice(2, 10)}`,
@@ -540,6 +542,7 @@ export class BirdNETPanel {
         origin: 'BirdNET',
         author: author || '',
         aiSuggested: { model: 'BirdNET', version: modelVersion, confidence: det.confidence },
+        ...(channel !== undefined ? { channel } : {}),
       }));
 
       const labelsToAdd = mergeOverlapping ? mergeOverlappingLabels(newLabels) : newLabels;
