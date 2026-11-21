@@ -277,12 +277,17 @@ export class PlayerState {
             this._createFrequencyLabels();
             this._freqZoom?.refresh();
         });
+        // Tiles arrive one by one (several per task while a long file loads): one redraw per frame.
         this._spectro.addEventListener('needsredraw', () => {
-            this._updateCoords();
-            this._createFrequencyLabels();
-            this._drawSpectrogram();
-            this._syncOverviewWindowToViewport();
-            this._scheduleOverviewSpectrogram();
+            if (this._redrawFrame !== null) return;
+            this._redrawFrame = requestAnimationFrame(() => {
+                this._redrawFrame = null;
+                this._updateCoords();
+                this._createFrequencyLabels();
+                this._drawSpectrogram();
+                this._syncOverviewWindowToViewport();
+                this._scheduleOverviewSpectrogram();
+            });
         });
 
         // ── Audio / analysis state ──
@@ -773,6 +778,8 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     dispose() {
+        if (this._redrawFrame !== null) cancelAnimationFrame(this._redrawFrame);
+        this._redrawFrame = null;
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
         this._crosshair.dispose();
@@ -937,6 +944,7 @@ export class PlayerState {
         this._emit('spectrogramUnavailable', detail);
     }
 
+    _redrawFrame: number | null = null;
     _spectroGeneration: Promise<void> | null = null;
     _spectroGenerationFor: AudioBuffer | null = null;
     _spectroStale = false;
