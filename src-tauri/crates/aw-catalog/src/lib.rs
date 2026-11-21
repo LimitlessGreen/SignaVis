@@ -14,6 +14,7 @@ pub mod query;
 pub mod scan;
 pub mod stats;
 pub mod suggest;
+pub mod thumb;
 
 use chrono::{NaiveDateTime, Utc};
 use pattern::PatternSet;

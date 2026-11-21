@@ -139,6 +139,8 @@ pub fn run() {
             catalog::catalog_track_line,
             catalog::catalog_delete_track,
             catalog::catalog_map,
+            catalog::catalog_thumbs,
+            catalog::catalog_thumbs_clear,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,

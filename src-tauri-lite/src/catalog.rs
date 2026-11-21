@@ -470,3 +470,20 @@ pub async fn catalog_map(state: tauri::State<'_, CatalogState>, project_root: St
     let cat = state.get(&project_root)?;
     blocking(move || aw_catalog::geo::map_data(&*cat.lock().map_err(err)?, &filter, cell_deg).map_err(err)).await
 }
+
+// ── Spectrogram thumbnails (library grid) ────────────────────────────────
+
+/// Thumbnails for the given recordings, from the cache or rendered from the files.
+#[tauri::command]
+pub async fn catalog_thumbs(
+    state: tauri::State<'_, CatalogState>, project_root: String, ids: Vec<i64>, spec: aw_catalog::thumb::ThumbSpec,
+) -> Result<Vec<aw_catalog::thumb::ThumbResult>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || Ok(aw_catalog::thumb::thumbs(&cat, &ids, spec, &machine_name()))).await
+}
+
+#[tauri::command]
+pub async fn catalog_thumbs_clear(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::thumb::clear(&*cat.lock().map_err(err)?).map_err(err)).await
+}

@@ -219,3 +219,10 @@ CREATE TABLE IF NOT EXISTS track_point (
     t_ms INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, alt REAL
 );
 CREATE INDEX IF NOT EXISTS track_point_t ON track_point(track_id, t_ms);
+
+-- Spectrogram thumbnails for the library grid (cache; safe to delete). `data`: w*h bytes, row 0 = top
+-- (highest frequency), 0 = quiet .. 255 = loud.
+CREATE TABLE IF NOT EXISTS thumb (
+    recording_id INTEGER PRIMARY KEY REFERENCES recording(id) ON DELETE CASCADE,
+    w INTEGER NOT NULL, h INTEGER NOT NULL, max_hz REAL NOT NULL, data BLOB NOT NULL, created_ms INTEGER NOT NULL
+);

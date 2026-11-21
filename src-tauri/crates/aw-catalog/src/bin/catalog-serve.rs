@@ -60,6 +60,9 @@ struct Args {
     track_id: Option<i64>,
     max_gap_s: Option<f64>,
     cell_deg: Option<f64>,
+    #[serde(default)]
+    ids: Vec<i64>,
+    spec: Option<aw_catalog::thumb::ThumbSpec>,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -196,6 +199,16 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_meta_keys" => j(serde_json::to_value(ent::meta_keys(st.cat(&a.project_root)?).map_err(e)?)),
         "catalog_bulk_edit" => j(serde_json::to_value(ent::bulk_edit(st.cat(&a.project_root)?, &a.selection, &a.edit).map_err(e)?)),
         "catalog_recording_detail" => j(serde_json::to_value(ent::recording_detail(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
+        "catalog_thumbs" => {
+            st.cat(&a.project_root)?;
+            let root = a.project_root.clone().unwrap();
+            let m = std::sync::Mutex::new(st.cats.remove(&root).unwrap());
+            let spec = a.spec.ok_or("spec missing")?;
+            let out = aw_catalog::thumb::thumbs(&m, &a.ids, spec, &machine_name());
+            st.cats.insert(root, m.into_inner().map_err(|x| x.to_string())?);
+            j(serde_json::to_value(out))
+        }
+        "catalog_thumbs_clear" => j(serde_json::to_value(aw_catalog::thumb::clear(st.cat(&a.project_root)?).map_err(e)?)),
         "catalog_stats" => j(serde_json::to_value(aw_catalog::stats::stats(st.cat(&a.project_root)?, &a.filter, 25).map_err(e)?)),
         "catalog_import_track" => {
             let path = a.path.clone().ok_or("path missing")?;
