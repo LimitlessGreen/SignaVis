@@ -18,6 +18,10 @@ pub struct Filter {
     pub root_id: Option<i64>,
     pub site_ids: Vec<i64>,
     pub device_ids: Vec<i64>,
+    /// Recordings with any of these tags.
+    pub tag_ids: Vec<i64>,
+    /// Recordings without site or recorder (to find what still needs assigning).
+    pub unassigned: bool,
     /// UTC ms, inclusive / exclusive.
     pub from_ms: Option<i64>,
     pub to_ms: Option<i64>,
@@ -33,12 +37,12 @@ pub struct Filter {
 }
 
 const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
-const LOCAL_DAY: &str = "date((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 1000, 'unixepoch')";
+pub(crate) const LOCAL_DAY: &str = "date((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
-enum Skip { None, Site, Device }
+pub(crate) enum Skip { None, Site, Device, Tag }
 
-fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
+pub(crate) fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
     let mut w: Vec<String> = vec!["1".into()];
     let mut p: Vec<Box<dyn ToSql>> = Vec::new();
     let mut push = |cond: String, vals: Vec<Box<dyn ToSql>>, p: &mut Vec<Box<dyn ToSql>>| {
@@ -61,6 +65,12 @@ fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
         let q = vec!["?"; f.device_ids.len()].join(",");
         push(format!("r.device_id IN ({q})"), f.device_ids.iter().map(|v| Box::new(*v) as Box<dyn ToSql>).collect(), &mut p);
     }
+    if skip != Skip::Tag && !f.tag_ids.is_empty() {
+        let q = vec!["?"; f.tag_ids.len()].join(",");
+        push(format!("EXISTS (SELECT 1 FROM recording_tag x WHERE x.recording_id = r.id AND x.tag_id IN ({q}))"),
+            f.tag_ids.iter().map(|v| Box::new(*v) as Box<dyn ToSql>).collect(), &mut p);
+    }
+    if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
     if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
     if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
     if let (Some(a), Some(b)) = (f.hour_from, f.hour_to) {
@@ -89,7 +99,7 @@ fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
     (w.join(" AND "), p)
 }
 
-const FROM: &str = "FROM recording r LEFT JOIN asset a ON a.id = r.asset_id";
+pub(crate) const FROM: &str = "FROM recording r LEFT JOIN asset a ON a.id = r.asset_id";
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -183,6 +193,7 @@ pub struct Facets {
     /// Counts under the filter without its own site selection (so other sites stay pickable).
     pub sites: Vec<FacetValue>,
     pub devices: Vec<FacetValue>,
+    pub tags: Vec<FacetValue>,
 }
 
 fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Result<Vec<FacetValue>> {
@@ -202,11 +213,19 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
         r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get::<_, Option<i64>>(5)?.unwrap_or(0))))?;
     let mut sites = facet(cat, f, Skip::Site, "site", "site_id")?;
     let mut devices = facet(cat, f, Skip::Device, "device", "device_id")?;
+    let mut tags = {
+        let (w, p) = where_clause(f, Skip::Tag);
+        let sql = format!("SELECT t.id, t.name, COUNT(*) {FROM} JOIN recording_tag x ON x.recording_id = r.id JOIN tag t ON t.id = x.tag_id WHERE {w} GROUP BY t.id");
+        let mut st = cat.conn.prepare(&sql)?;
+        st.query_map(params_from_iter(p.iter()), |r| Ok(FacetValue { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? }))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    };
     // Natural order: "Standort 2" before "Standort 10".
     let nat = |a: &FacetValue, b: &FacetValue| natural_cmp(&a.name, &b.name);
     sites.sort_by(nat);
     devices.sort_by(nat);
-    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices })
+    tags.sort_by(nat);
+    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags })
 }
 
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -226,6 +245,14 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
         if o.is_ne() { return o; }
     }
     x.len().cmp(&y.len())
+}
+
+/// All recording ids matching the filter (for bulk edits).
+pub fn ids(cat: &Catalog, f: &Filter) -> Result<Vec<i64>> {
+    let (w, p) = where_clause(f, Skip::None);
+    let mut st = cat.conn.prepare(&format!("SELECT r.id {FROM} WHERE {w} ORDER BY r.id"))?;
+    let v = st.query_map(params_from_iter(p.iter()), |r| r.get(0))?.collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(v)
 }
 
 #[derive(Debug, Serialize)]

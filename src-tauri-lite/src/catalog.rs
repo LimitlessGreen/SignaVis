@@ -327,3 +327,94 @@ pub async fn catalog_set_device_clocks(
     let cat = state.get(&project_root)?;
     blocking(move || aw_catalog::clock::set_device_clocks(&mut *cat.lock().map_err(err)?, device_id, &periods).map_err(err)).await
 }
+
+// ── Phase 2: sites, recorders, deployments, bulk edit, statistics ─────────
+
+use aw_catalog::entities::{self as ent, BulkEdit, DeviceFields, Selection, SiteFields};
+
+#[tauri::command]
+pub async fn catalog_site_fields(state: tauri::State<'_, CatalogState>, project_root: String, site_id: i64) -> Result<SiteFields, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::site_fields(&*cat.lock().map_err(err)?, site_id).map_err(err)).await
+}
+
+/// Create (`site_id` null) or update a site; returns its id.
+#[tauri::command]
+pub async fn catalog_save_site(state: tauri::State<'_, CatalogState>, project_root: String, site_id: Option<i64>, fields: SiteFields) -> Result<i64, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::save_site(&*cat.lock().map_err(err)?, site_id, &fields).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_device_fields(state: tauri::State<'_, CatalogState>, project_root: String, device_id: i64) -> Result<DeviceFields, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::device_fields(&*cat.lock().map_err(err)?, device_id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_save_device(state: tauri::State<'_, CatalogState>, project_root: String, device_id: Option<i64>, fields: DeviceFields) -> Result<i64, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::save_device(&*cat.lock().map_err(err)?, device_id, &fields).map_err(err)).await
+}
+
+/// Delete an unused site or recorder (`table`: "site" | "device").
+#[tauri::command]
+pub async fn catalog_delete_entity(state: tauri::State<'_, CatalogState>, project_root: String, table: String, id: i64) -> Result<(), String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::delete_entity(&mut *cat.lock().map_err(err)?, &table, id).map_err(err)).await
+}
+
+/// Merge sites or recorders into `into`; returns the number of recordings moved.
+#[tauri::command]
+pub async fn catalog_merge(state: tauri::State<'_, CatalogState>, project_root: String, table: String, from: Vec<i64>, into: i64) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::merge(&mut *cat.lock().map_err(err)?, &table, &from, into).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_derive_deployments(state: tauri::State<'_, CatalogState>, project_root: String, gap_days: f64) -> Result<ent::DeriveReport, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::derive_deployments(&mut *cat.lock().map_err(err)?, gap_days).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_deployments(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<ent::DeploymentInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::deployments(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_set_deployment_notes(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, notes: Option<String>) -> Result<(), String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::set_deployment_notes(&*cat.lock().map_err(err)?, id, notes.as_deref()).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_tags(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<ent::TagInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::tags(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_meta_keys(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<(String, i64)>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::meta_keys(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_bulk_edit(state: tauri::State<'_, CatalogState>, project_root: String, selection: Selection, edit: BulkEdit) -> Result<ent::BulkReport, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::bulk_edit(&mut *cat.lock().map_err(err)?, &selection, &edit).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_recording_detail(state: tauri::State<'_, CatalogState>, project_root: String, recording_id: i64) -> Result<ent::RecordingDetail, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ent::recording_detail(&*cat.lock().map_err(err)?, recording_id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_stats(state: tauri::State<'_, CatalogState>, project_root: String, filter: Filter) -> Result<aw_catalog::stats::Stats, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::stats::stats(&*cat.lock().map_err(err)?, &filter, 25).map_err(err)).await
+}

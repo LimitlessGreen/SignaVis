@@ -3,6 +3,7 @@
 //! import, BirdNET selection tables as runs.
 
 pub mod clock;
+pub mod entities;
 pub mod hash;
 pub mod header;
 pub mod pattern;
@@ -10,6 +11,7 @@ pub mod preview;
 pub mod profile_spec;
 pub mod query;
 pub mod scan;
+pub mod stats;
 pub mod suggest;
 
 use chrono::{NaiveDateTime, Utc};
@@ -30,6 +32,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("site", "tz", "TEXT"),
     ("clock_period", "from_path", "TEXT"),
     ("recording", "header_offset_min", "INTEGER"),
+    ("site", "photo", "TEXT"),
 ];
 
 fn migrate(conn: &Connection) -> Result<()> {

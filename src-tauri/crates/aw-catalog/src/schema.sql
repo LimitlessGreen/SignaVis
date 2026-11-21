@@ -50,7 +50,8 @@ CREATE INDEX IF NOT EXISTS asset_full_hash ON asset(full_hash);
 CREATE TABLE IF NOT EXISTS site (
     id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE,
     lat REAL, lon REAL, elevation REAL, habitat TEXT, notes TEXT,
-    tz TEXT                                       -- recorder clock: IANA zone or 'UTC+01:00'
+    tz TEXT,                                      -- recorder clock: IANA zone or 'UTC+01:00'
+    photo TEXT                                    -- photo file (absolute or project-relative)
 );
 CREATE TABLE IF NOT EXISTS device (
     id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE,

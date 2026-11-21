@@ -7,6 +7,7 @@ use aw_catalog::{
     Catalog, import_scanned, import_selection_tables, machine_name, preview::preview, profile_spec::ProfileSpec,
     query::{Cursor, Filter, Sort}, scan::{ScanResult, scan},
 };
+use aw_catalog::entities as ent;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -41,6 +42,19 @@ struct Args {
     device_id: Option<i64>,
     #[serde(default)]
     periods: Vec<aw_catalog::clock::ClockPeriod>,
+    #[serde(default)]
+    fields: Value,
+    table: Option<String>,
+    id: Option<i64>,
+    #[serde(default)]
+    from: Vec<i64>,
+    into: Option<i64>,
+    gap_days: Option<f64>,
+    notes: Option<String>,
+    #[serde(default)]
+    selection: aw_catalog::entities::Selection,
+    #[serde(default)]
+    edit: aw_catalog::entities::BulkEdit,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -152,6 +166,32 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
                 "duplicateGroups": groups, "duplicates": dups, "hashing": false,
             }))
         }
+        "catalog_site_fields" => j(serde_json::to_value(ent::site_fields(st.cat(&a.project_root)?, a.site_id.ok_or("siteId missing")?).map_err(e)?)),
+        "catalog_save_site" => {
+            let f: ent::SiteFields = serde_json::from_value(a.fields.clone()).map_err(|x| x.to_string())?;
+            Ok(json!(ent::save_site(st.cat(&a.project_root)?, a.site_id, &f).map_err(e)?))
+        }
+        "catalog_device_fields" => j(serde_json::to_value(ent::device_fields(st.cat(&a.project_root)?, a.device_id.ok_or("deviceId missing")?).map_err(e)?)),
+        "catalog_save_device" => {
+            let f: ent::DeviceFields = serde_json::from_value(a.fields.clone()).map_err(|x| x.to_string())?;
+            Ok(json!(ent::save_device(st.cat(&a.project_root)?, a.device_id, &f).map_err(e)?))
+        }
+        "catalog_delete_entity" => {
+            ent::delete_entity(st.cat(&a.project_root)?, a.table.as_deref().unwrap_or(""), a.id.ok_or("id missing")?).map_err(e)?;
+            Ok(Value::Null)
+        }
+        "catalog_merge" => Ok(json!(ent::merge(st.cat(&a.project_root)?, a.table.as_deref().unwrap_or(""), &a.from, a.into.ok_or("into missing")?).map_err(e)?)),
+        "catalog_derive_deployments" => j(serde_json::to_value(ent::derive_deployments(st.cat(&a.project_root)?, a.gap_days.unwrap_or(3.0)).map_err(e)?)),
+        "catalog_deployments" => j(serde_json::to_value(ent::deployments(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_set_deployment_notes" => {
+            ent::set_deployment_notes(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, a.notes.as_deref()).map_err(e)?;
+            Ok(Value::Null)
+        }
+        "catalog_tags" => j(serde_json::to_value(ent::tags(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_meta_keys" => j(serde_json::to_value(ent::meta_keys(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_bulk_edit" => j(serde_json::to_value(ent::bulk_edit(st.cat(&a.project_root)?, &a.selection, &a.edit).map_err(e)?)),
+        "catalog_recording_detail" => j(serde_json::to_value(ent::recording_detail(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
+        "catalog_stats" => j(serde_json::to_value(aw_catalog::stats::stats(st.cat(&a.project_root)?, &a.filter, 25).map_err(e)?)),
         _ => Err(format!("unknown command {cmd}")),
     }
 }
