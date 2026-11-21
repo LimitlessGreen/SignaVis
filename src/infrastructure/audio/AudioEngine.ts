@@ -19,7 +19,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts';
-import { selectedSamples } from '../../shared/channels.ts';
+import { selectedSamples, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
@@ -594,7 +594,7 @@ export class AudioEngine extends AudioEngineBase {
       return Promise.reject(new Error('detector not ready'));
     }
     const cache: Map<string, Promise<DetectorChunk>> = playback.chunkCache;
-    const key = `${listenModeKey(mode)}|${atSec.toFixed(6)}|${endSec.toFixed(6)}`;
+    const key = `${listenModeKey(mode)}|${channelSelectionKey(getChannelSelection())}|${atSec.toFixed(6)}|${endSec.toFixed(6)}`;
     let chunk = cache.get(key);
     if (!chunk) {
       chunk = this._detector.render(this.audioBuffer, mode, atSec, endSec, this._heterodyneGain());

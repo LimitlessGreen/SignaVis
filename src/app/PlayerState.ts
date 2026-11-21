@@ -810,6 +810,8 @@ export class PlayerState {
         this._updateChannelSelect();
         if (!this._engine.audioBuffer) return;
         this._updateChannelAnalysis();
+        this._drawMainWaveform();
+        this._drawOverviewWaveform();
         this._spectro.generate();
         this._emit('channelselectionchange', getChannelSelection());
     }

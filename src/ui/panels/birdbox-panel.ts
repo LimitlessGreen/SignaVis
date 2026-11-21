@@ -18,7 +18,7 @@ import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
 import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
-import { selectedSamples } from '../../shared/channels.ts';
+import { selectedSamples, onChannelSelectionChange } from '../../shared/channels.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
 const MODEL_TAG = 'BirdBox Just-Bird FP16 (24632a5)';
@@ -57,6 +57,8 @@ export class BirdBoxPanel {
         prepare: buf => resampleTo(mono(buf), buf.sampleRate, SAMPLE_RATE),
         detect: (pcm, from, to) => this.detector.detect(pcm, { to }, from),
     });
+    /** Snap rows were detected on the previously selected channel(s). */
+    private readonly offChannel = onChannelSelectionChange(() => this.nearby.forgetAll());
 
     constructor(opts: BirdBoxPanelOptions) {
         this.o = opts;
@@ -199,7 +201,7 @@ export class BirdBoxPanel {
         this.stop();
     }
 
-    dispose(): void { this.forgetAll(); this.detector.dispose(); }
+    dispose(): void { this.offChannel(); this.forgetAll(); this.detector.dispose(); }
 
     // ── internals ─────────────────────────────────────────────────────
 

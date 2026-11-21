@@ -45,17 +45,18 @@ const PAD_SAMPLES = 4096;
 const NOISE_WINDOWS = 200;
 const NOISE_WINDOW_SAMPLES = 4096;
 
-const noiseLevels = new WeakMap<AudioBuffer, number>();
+// Keyed by the sample array, so each channel selection has its own level.
+const noiseLevels = new WeakMap<Float32Array, number>();
 
 export function listenModeKey(mode: ListenMode): string {
   return JSON.stringify(mode);
 }
 
-/** Recording-wide background level for the divider threshold, cached per buffer. */
+/** Recording-wide background level for the divider threshold, cached per buffer and channel selection. */
 export function divisionNoiseLevel(dsp: DetectorDsp, source: AudioBuffer): number {
-  const cached = noiseLevels.get(source);
-  if (cached != null) return cached;
   const ch = selectedSamples(source);
+  const cached = noiseLevels.get(ch);
+  if (cached != null) return cached;
   const windows = Math.min(NOISE_WINDOWS, Math.max(1, Math.floor(ch.length / NOISE_WINDOW_SAMPLES)));
   const len = Math.min(ch.length, NOISE_WINDOW_SAMPLES);
   const step = windows > 1 ? (ch.length - len) / (windows - 1) : 0;
@@ -65,7 +66,7 @@ export function divisionNoiseLevel(dsp: DetectorDsp, source: AudioBuffer): numbe
     sample.set(ch.subarray(at, at + len), w * len);
   }
   const level = dsp.divisionNoiseLevel(sample, source.sampleRate, DIVISION_HIGHPASS_HZ);
-  noiseLevels.set(source, level);
+  noiseLevels.set(ch, level);
   return level;
 }
 

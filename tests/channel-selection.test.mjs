@@ -62,3 +62,16 @@ test('global selection notifies listeners only on change', () => {
     setChannelSelection(before);
     assert.deepEqual(seen, ['ch:1', channelSelectionKey(before)]);
 });
+
+test('divisionNoiseLevel is cached per channel selection, not per buffer', async () => {
+    const { divisionNoiseLevel } = await import('../src/infrastructure/audio/detectorRender.ts');
+    const dsp = { divisionNoiseLevel: (s) => Math.max(...s.map(Math.abs)) };
+    const buf = buffer([0.1, -0.1, 0.1, -0.1], [0.4, -0.4, 0.4, -0.4]);
+    setChannelSelection({ mode: 'single', channel: 0 });
+    const left = divisionNoiseLevel(dsp, buf);
+    setChannelSelection({ mode: 'single', channel: 1 });
+    const right = divisionNoiseLevel(dsp, buf);
+    setChannelSelection({ mode: 'mix' });
+    assert.ok(Math.abs(left - 0.1) < 1e-6, `left ${left}`);
+    assert.ok(Math.abs(right - 0.4) < 1e-6, `right ${right}`);
+});
