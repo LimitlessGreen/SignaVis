@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from '../src/infrastructure/audio/wavDecode.ts';
+import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob, isMixedDown } from '../src/infrastructure/audio/wavDecode.ts';
 import { parseFlacStreamInfo, flacBlockStarts, isFrameHeader, nextFrame, nextFrameIn, blobSource, bufferSource, readFlacHead, decodeFlacChunked, frameFirstSample } from '../src/infrastructure/audio/chunkedFlacDecode.ts';
 
 /** Minimal AudioContext stand-in: createBuffer only. */
@@ -56,6 +56,15 @@ for (const [format, bps] of [['pcm', 1], ['pcm', 2], ['pcm', 3], ['pcm', 4], ['f
     for (let i = 0; i < 5000; i++) assert.ok(Math.abs(d[i] - (L[i] + R[i]) / 2) < tol, `sample ${i}: ${d[i]}`);
   });
 }
+
+test('WAV mixed down from stereo is marked (its file channel 0 differs), mono is not', async () => {
+  const L = ramp(3000), R = ramp(3000, -0.5);
+  const stereo = makeWav({ samples: [L, R] }), mono = makeWav({ samples: [L] });
+  assert.equal(isMixedDown(await decodeWavMono(stereo, fakeCtx)), true);
+  assert.equal(isMixedDown(await decodeWavMono(mono, fakeCtx)), false);
+  const layout = await readWavBlobLayout(new Blob([stereo]));
+  assert.equal(isMixedDown(await decodeWavMonoFromBlob(new Blob([stereo]), layout.info, fakeCtx)), true);
+});
 
 test('WAV extensible, RF64, odd chunk padding, unaligned data', async () => {
   const L = ramp(3000);

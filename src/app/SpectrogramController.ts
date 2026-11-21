@@ -51,6 +51,7 @@ import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
+import { isMixedDown } from '../infrastructure/audio/wavDecode.ts';
 import { selectedSamples, isChannelZero, channelSelectionKey, effectiveSelection, getChannelSelection, withChannelKey } from '../shared/channels.ts';
 
 /**
@@ -251,6 +252,8 @@ export class SpectrogramController extends EventTarget {
      */
     /** Incremented per generate(); an older call that finishes late must not overwrite a newer result. */
     private _generateSeq = 0;
+    /** Owner token for this player's PCM cache files (holds no reference to the player). */
+    private readonly _pcmOwner = {};
 
     async generate({ autoAdjust = false } = {}) {
         if (!this._audioBuffer) return;
@@ -319,12 +322,13 @@ export class SpectrogramController extends EventTarget {
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
-            const direct = isChannelZero(audioBuffer);
+            // A long stereo WAV was mixed down while loading: its file's channel 0 is not what is shown.
+            const direct = isChannelZero(audioBuffer) && !isMixedDown(audioBuffer);
             const ok = await this._startTileMode(options, autoAdjust, async () => WasmTileManager.create({
                 file,
                 // The direct WAV / native readers only see channel 0; other selections go via PCM.
                 nativePath:   direct ? this._sourcePath : null,
-                source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate, undefined, undefined, this),
+                source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate, undefined, undefined, this._pcmOwner, seq),
                 sourceTag:    audioBuffer.numberOfChannels > 1
                     ? channelSelectionKey(effectiveSelection(getChannelSelection(), audioBuffer.numberOfChannels)) : undefined,
                 wasmParams:   v2Params,
@@ -483,6 +487,8 @@ export class SpectrogramController extends EventTarget {
         superseded: () => boolean = () => false,
     ): Promise<void> {
         const d = this._d;
+        // A call superseded during its first yield (setAudio, newer generate) must not reshow it.
+        if (superseded()) return;
         if (d.recomputingOverlay) {
             setOverlayContent(d.recomputingOverlay, 'Computing spectrogram…', { progress: null });
             d.recomputingOverlay.hidden = false;

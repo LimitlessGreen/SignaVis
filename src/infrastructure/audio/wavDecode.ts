@@ -132,6 +132,13 @@ const BLOCK_FRAMES = 1 << 20;
 const yieldToEventLoop = () => new Promise<void>((r) => setTimeout(r, 0));
 
 /**
+ * Mono buffers mixed down from a multichannel file: their samples are not the file's channel 0,
+ * so readers that slice the original file (the tile pipeline) must not be used for them.
+ */
+const mixedDown = new WeakSet<object>();
+export function isMixedDown(buf: object): boolean { return mixedDown.has(buf); }
+
+/**
  * Read a WAV into one mono buffer at the file's sample rate.
  * `ctx` only allocates the buffer (no resampling happens).
  */
@@ -157,6 +164,7 @@ export async function decodeWavMono<B extends { getChannelData(ch: number): Floa
     onProgress?.(b / info.frames);
     if (b < info.frames) await yieldToEventLoop();
   }
+  if (info.channels > 1) mixedDown.add(out);
   return out;
 }
 
@@ -252,5 +260,6 @@ export async function decodeWavMonoFromBlob<B extends { getChannelData(ch: numbe
     convertBlock(bytes, info, 0, n, a, dst);
     onProgress?.((a + n) / info.frames);
   }
+  if (info.channels > 1) mixedDown.add(out);
   return out;
 }
