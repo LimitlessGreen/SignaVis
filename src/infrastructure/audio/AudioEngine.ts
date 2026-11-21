@@ -22,15 +22,17 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { selectedSamples, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
+import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from './wavDecode.ts';
+import { parseFlacStreamInfo, decodeFlacChunked, readFlacHead, blobSource } from './chunkedFlacDecode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
-import { computeAmplitudePeak } from '../../domain/spectrogram.ts';
+import { envelopePeakAbs, channelPeaksAsync, maxAbsPeaks } from '../../domain/waveformEnvelope.ts';
 
 /** Playback plays every channel, so its gains follow the loudest one. */
 function loudestChannelPeak(buf: AudioBuffer): number {
   let peak = 1e-6;
-  for (let c = 0; c < buf.numberOfChannels; c++) peak = Math.max(peak, computeAmplitudePeak(channelData(buf, c)));
+  for (let c = 0; c < buf.numberOfChannels; c++) peak = Math.max(peak, envelopePeakAbs(channelData(buf, c)));
   return peak;
 }
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
@@ -87,6 +89,17 @@ function normalizeListenMode(mode: ListenMode): ListenMode {
  * @property {number} currentTimeSec
  */
 
+/** Bytes at the start of a file that metadata readers look at (fileMetadata/recordingTime HEAD_BYTES). */
+const METADATA_HEAD_BYTES = 1 << 18;
+
+/** Block-wise decoder for formats that support it, or null. */
+function chunkedDecoder(buf: ArrayBuffer): ((buf: ArrayBuffer, ctx: BaseAudioContext) => Promise<AudioBuffer>) | null {
+  if (parseWav(buf)) return (b, ctx) => decodeWavMono(b, ctx);
+  if (parseFlacStreamInfo(buf)) return (b, ctx) => decodeFlacChunked(b, ctx);
+  if (isMp3(buf)) return (b, ctx) => decodeMp3Chunked(b, ctx);
+  return null;
+}
+
 /**
  * Decode an ArrayBuffer into an AudioBuffer, preserving the file's native
  * sample rate by pre-parsing the header before creating the AudioContext.
@@ -99,34 +112,21 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
   const nativeSr = parseNativeSampleRate(arrayBuffer);
   const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
   try {
-    const mp3 = isMp3(arrayBuffer);
-    // Long MP3s exceed what one decodeAudioData call can allocate: decode block by block to mono.
-    if (mp3 && arrayBuffer.byteLength >= CHUNKED_DECODE_MIN_BYTES) return await decodeMp3Chunked(arrayBuffer, ctx);
+    // Long recordings exceed what one decodeAudioData call can allocate: WAV is read directly,
+    // MP3 and FLAC are decoded block by block, all to mono.
+    const chunked = chunkedDecoder(arrayBuffer);
+    if (chunked && arrayBuffer.byteLength >= CHUNKED_DECODE_MIN_BYTES) return await chunked(arrayBuffer, ctx);
     try {
       // decodeAudioData detaches its input; keep a copy for the chunked fallback.
-      return await ctx.decodeAudioData(mp3 ? arrayBuffer.slice(0) : arrayBuffer);
+      return await ctx.decodeAudioData(chunked ? arrayBuffer.slice(0) : arrayBuffer);
     } catch (err) {
-      if (!mp3) throw err;
-      console.warn('[AudioEngine] decodeAudioData failed, retrying chunked MP3 decode', err);
-      return await decodeMp3Chunked(arrayBuffer, ctx);
+      if (!chunked) throw new Error(`The browser could not decode this audio format (${(err as any)?.message || err}).`);
+      console.warn('[AudioEngine] decodeAudioData failed, retrying block-wise decode', err);
+      return await chunked(arrayBuffer, ctx);
     }
   } finally {
     ctx.close?.().catch(() => {});
   }
-}
-
-/** Max-abs envelope with at most `n` points (WaveSurfer is invisible here; it only needs some peaks). */
-function coarsePeaks(data: Float32Array, n = 8192): Float32Array {
-  const len = Math.min(n, data.length) || 1;
-  const out = new Float32Array(len);
-  const step = data.length / len;
-  for (let i = 0; i < len; i++) {
-    const a = Math.floor(i * step), b = Math.min(data.length, Math.floor((i + 1) * step));
-    let m = 0;
-    for (let j = a; j < b; j += 16) { const v = Math.abs(data[j]); if (v > m) m = v; }
-    out[i] = m;
-  }
-  return out;
 }
 
 /**
@@ -167,6 +167,8 @@ export class AudioEngine extends AudioEngineBase {
   recordingStart: RecordingStart | null = null;
   /** Metadata chunks of the loaded file (GUANO, BWF, INFO, AudioMoth, iXML), for display. */
   fileMetadata: MetadataGroup[] = [];
+  /** The loaded file's bytes (File, or the downloaded body), for readers that slice it (tile pipeline). */
+  sourceBlob: Blob | null = null;
   ctx: any;
   bandpass: any;
   emitEnd: any;
@@ -248,8 +250,11 @@ export class AudioEngine extends AudioEngineBase {
     this.fileMetadata = readFileMetadata(arrayBuffer);
     const recordingStart = readRecordingStart(arrayBuffer, name || '');
     const audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
+    await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
+    this.sourceBlob = null; // no file bytes behind an ArrayBuffer load
 
     const displayName = name || 'audio';
     this._setupWaveSurfer(null, displayName);
@@ -267,18 +272,12 @@ export class AudioEngine extends AudioEngineBase {
   ) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const arrayBuffer = await readWithProgress(response, (loaded, total) => onProgress?.('download', loaded, total));
-    this.guano = parseGuano(arrayBuffer);
-    this.fileMetadata = readFileMetadata(arrayBuffer);
+    const blob = await downloadBlob(response, (loaded, total) => onProgress?.('download', loaded, total));
     const name = decodeURIComponent(
       new URL(url, location.href).pathname.split('/').pop() || 'audio',
     );
-    // Before decoding: decodeAudioData detaches the buffer.
-    const recordingStart = readRecordingStart(arrayBuffer, name);
     onProgress?.('decode');
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-    this.audioBuffer = audioBuffer;
-    this.recordingStart = recordingStart;
+    const audioBuffer = await this._decodeBlob(blob, name);
     await this._setupWaveSurfer(url, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
@@ -289,15 +288,62 @@ export class AudioEngine extends AudioEngineBase {
    * @returns {Promise<{duration: number, sampleRate: number}>}
    */
   async loadFromFile(file: File) {
-    const arrayBuffer = await file.arrayBuffer();
-    this.guano = parseGuano(arrayBuffer);
-    this.fileMetadata = readFileMetadata(arrayBuffer);
-    const recordingStart = readRecordingStart(arrayBuffer, file.name);
-    const audioBuffer = await decodeArrayBuffer(arrayBuffer);
-    this.audioBuffer = audioBuffer;
-    this.recordingStart = recordingStart;
+    const audioBuffer = await this._decodeBlob(file, file.name);
     await this._setupWaveSurfer(file, file.name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
+  }
+
+  /**
+   * Metadata + decoding from a Blob/File. Long WAVs are read slice by slice straight from the
+   * blob (the raw file is never in page memory as a whole); everything else goes through one
+   * ArrayBuffer. Sets guano, fileMetadata, recordingStart, sourceBlob and audioBuffer.
+   */
+  async _decodeBlob(blob: Blob, name: string): Promise<AudioBuffer> {
+    const large = blob.size >= CHUNKED_DECODE_MIN_BYTES;
+    const layout = large ? await readWavBlobLayout(blob) : null;
+    const flac = large && !layout ? await readFlacHead(blobSource(blob)) : null;
+    let audioBuffer: AudioBuffer;
+    let recordingStart: RecordingStart | null;
+    if (flac) {
+      // Like WAV: block by block from the blob. Metadata lives in the head (AudioMoth comment).
+      const head = await blob.slice(0, METADATA_HEAD_BYTES).arrayBuffer();
+      this.guano = parseGuano(head);
+      this.fileMetadata = readFileMetadata(head);
+      recordingStart = readRecordingStart(head, name);
+      const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
+      const ctx = new Ctor({ sampleRate: flac.info.sampleRate });
+      try {
+        audioBuffer = await decodeFlacChunked(blob, ctx);
+      } finally {
+        ctx.close?.().catch(() => {});
+      }
+    } else if (layout) {
+      this.guano = parseGuano(layout.skeleton);
+      this.fileMetadata = readFileMetadata(layout.skeleton);
+      recordingStart = readRecordingStart(layout.skeleton, name);
+      const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
+      const ctx = new Ctor({ sampleRate: layout.info.sampleRate });
+      try {
+        audioBuffer = await decodeWavMonoFromBlob(blob, layout.info, ctx);
+      } finally {
+        ctx.close?.().catch(() => {});
+      }
+    } else {
+      const arrayBuffer = await blob.arrayBuffer();
+      this.guano = parseGuano(arrayBuffer);
+      this.fileMetadata = readFileMetadata(arrayBuffer);
+      // Before decoding: decodeAudioData detaches the buffer.
+      recordingStart = readRecordingStart(arrayBuffer, name);
+      audioBuffer = await decodeArrayBuffer(arrayBuffer);
+    }
+    // Waveform/peak-level pyramid in slices: built synchronously later it blocks for seconds.
+    await channelPeaksAsync(channelData(audioBuffer));
+    this.audioBuffer = audioBuffer;
+    this.recordingStart = recordingStart;
+    this.sourceBlob = blob;
+    return audioBuffer;
   }
 
   /**
@@ -908,6 +954,7 @@ export class AudioEngine extends AudioEngineBase {
       this.wavesurfer = null;
     }
     this.audioBuffer = null;
+    this.sourceBlob = null;
   }
 
   // ── WaveSurfer Setup ─────────────────────────────────────────────────
@@ -941,7 +988,7 @@ export class AudioEngine extends AudioEngineBase {
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects.
     // Peaks + duration from our own decoded buffer stop WaveSurfer from decoding the file a
     // second time (that fails for long recordings, which only decode in chunks).
-    const peaks = this.audioBuffer ? [coarsePeaks(selectedSamples(this.audioBuffer))] : undefined;
+    const peaks = this.audioBuffer ? [maxAbsPeaks(selectedSamples(this.audioBuffer), Math.min(8192, this.audioBuffer.length))] : undefined;
     const duration = this.audioBuffer?.duration;
     if (typeof source === 'string') {
       ws.load(source, peaks, duration);
@@ -1203,26 +1250,41 @@ export class AudioEngine extends AudioEngineBase {
   }
 
 }
-/** The body of `response`, reporting the bytes read so far (total is 0 when unknown). */
-async function readWithProgress(
+/** Downloads at least this large (by Content-Length) go straight into a Blob, without byte progress. */
+const DIRECT_BLOB_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The body of `response` as a Blob, reporting progress.
+ *
+ * Large bodies use response.blob(): Chromium then keeps the bytes outside the page (on disk if
+ * needed) and slices of it read cheaply; progress is only reported at start and end. A Blob
+ * assembled from many part-blobs would avoid that gap but costs ~2/3 of its size again in the
+ * browser and renderer on every slice read (measured, 346 MB WAV). Smaller bodies are read with
+ * progress and turned into one flat Blob at the end.
+ */
+export async function downloadBlob(
   response: Response,
   onProgress: (loaded: number, total: number) => void,
-): Promise<ArrayBuffer> {
+): Promise<Blob> {
   const total = Number(response.headers.get('content-length')) || 0;
-  const reader = response.body?.getReader();
-  if (!reader) return response.arrayBuffer();
-  const chunks: Uint8Array[] = [];
+  const type = response.headers.get('content-type') || '';
+  // Unknown length (chunked) may be hours of audio: also straight into a Blob.
+  const reader = total > 0 && total < DIRECT_BLOB_BYTES ? response.body?.getReader() : undefined;
+  // Without a reader the progress is unknown until the end (0 total = indeterminate).
+  onProgress(0, reader ? total : 0);
+  if (!reader) {
+    const blob = await response.blob();
+    onProgress(blob.size, total || blob.size);
+    return blob;
+  }
+  const parts: Uint8Array[] = [];
   let loaded = 0;
-  onProgress(0, total);
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    parts.push(value);
     loaded += value.byteLength;
     onProgress(loaded, total);
   }
-  const out = new Uint8Array(loaded);
-  let offset = 0;
-  for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
-  return out.buffer;
+  return new Blob(parts as BlobPart[], { type });
 }

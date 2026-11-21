@@ -1,5 +1,5 @@
 // Per-frequency activity profile of a recording, straight from the samples.
-// Exports: computeBandProfile(channel, sampleRate), activeTopHz(profile), prominentPeakHz(profile, minHz, maxHz)
+// Exports: computeBandProfile(channel, sampleRate), computeBandProfileAsync(channel, sampleRate), activeTopHz(profile), prominentPeakHz(profile, minHz, maxHz)
 //
 // For every FFT bin: the noise floor (median dB over sampled frames) and the
 // level of the loudest events (high percentile). Their difference, the
@@ -37,6 +37,36 @@ export interface BandProfile {
 }
 
 export function computeBandProfile(channel: Float32Array, sampleRate: number): BandProfile | null {
+    const steps = bandProfileSteps(channel, sampleRate);
+    let r = steps.next();
+    while (!r.done) r = steps.next();
+    return r.value;
+}
+
+/** Blocks scanned / frames transformed between yields (each slice ~10–20 ms on a 3 h file). */
+const SCAN_SLICE = 4000;
+const FFT_SLICE = 500;
+
+/**
+ * computeBandProfile() in slices, yielding to the event loop in between: on long
+ * recordings the scan touches the whole buffer and took ~250 ms in one go.
+ * Same result as the synchronous version.
+ */
+export async function computeBandProfileAsync(
+    channel: Float32Array,
+    sampleRate: number,
+    yieldFn: () => Promise<void> = () => new Promise((r) => setTimeout(r, 0)),
+): Promise<BandProfile | null> {
+    const steps = bandProfileSteps(channel, sampleRate);
+    let r = steps.next();
+    while (!r.done) {
+        await yieldFn();
+        r = steps.next();
+    }
+    return r.value;
+}
+
+function* bandProfileSteps(channel: Float32Array, sampleRate: number): Generator<void, BandProfile | null, void> {
     const nBlocks = Math.floor(channel.length / FFT_SIZE);
     if (nBlocks < 8 || !(sampleRate > 0)) return null;
 
@@ -47,7 +77,8 @@ export function computeBandProfile(channel: Float32Array, sampleRate: number): B
     // First-difference energy rises with frequency: a cheap proxy for "has HF content".
     const stride = Math.max(1, Math.ceil(nBlocks / MAX_FRAMES_SCANNED));
     const scored: { block: number; score: number }[] = [];
-    for (let b = 0; b < nBlocks; b += stride) {
+    for (let b = 0, n = 0; b < nBlocks; b += stride) {
+        if (++n % SCAN_SLICE === 0) yield;
         const off = b * FFT_SIZE;
         let e = 0;
         for (let i = off + 1; i < off + FFT_SIZE; i++) {
@@ -68,6 +99,7 @@ export function computeBandProfile(channel: Float32Array, sampleRate: number): B
     const win = new Float32Array(FFT_SIZE);
     for (let i = 0; i < FFT_SIZE; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1));
     for (let f = 0; f < nF; f++) {
+        if (f > 0 && f % FFT_SLICE === 0) yield;
         const off = blocks[f] * FFT_SIZE;
         for (let i = 0; i < FFT_SIZE; i++) { re[i] = channel[off + i] * win[i]; im[i] = 0; }
         iterativeFFT(re, im);

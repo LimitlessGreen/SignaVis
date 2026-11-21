@@ -17,7 +17,7 @@ export const MAX_BASE_SPECTROGRAM_WIDTH = 24000;
 export const MIN_WINDOW_SECONDS = 0.05;
 
 // ─── Tile-based lazy rendering (for long audio files) ──────────────
-export const WASM_TILE_MIN_DURATION_SEC = 10 * 60; // long files use the spectrogram pyramid
+export const WASM_TILE_MIN_DURATION_SEC = 60; // long files use the spectrogram pyramid
 export const WASM_PYRAMID_BLOCK_FRAMES = 6000;
 export const PERCH_FRAME_RATE = 100;
 export const PERCH_N_MELS = 160;
@@ -70,6 +70,8 @@ export function fftSizeFromOversampling(windowSize: number, oversamplingLevel: n
 
 
 export interface DspProfile {
+    /** Dropdown label; defaults to the capitalised key. */
+    label?: string;
     scale: string;
     windowSize: number;
     overlapLevel: number;
@@ -100,6 +102,29 @@ export interface QualityLevel {
     oversamplingLevel: number;
     nMels?: number;
 }
+
+const CLASSIC_BASE: DspProfile = {
+    scale: 'linear',
+    colourScale: 'dbSquared',
+    // Was 2048 / 50 %: a 46 ms window with 23 ms hop smears fast song.
+    windowSize: 1024,
+    overlapLevel: 4,       // 87.5 %
+    oversamplingLevel: 1,  // 2× → fft 2048
+    nMels: CLASSIC_N_MELS,
+    frameRate: CLASSIC_FRAME_RATE,
+    usePcen: false,
+    pcenGain: 0,
+    pcenBias: 0,
+    pcenRoot: 1,
+    pcenTimeConstant: 0.4,
+    windowFunction: 'hann',
+    colorScheme: 'ember',
+    reassigned: false,
+    noiseReduction: false,
+    clahe: false,
+    gainMode: 'auto',
+    maxFreqMode: 'nyquist',
+};
 
 // Every built-in profile sets clahe / noiseReduction / gainMode explicitly:
 // applyDspSettings leaves absent fields untouched, so a profile that omits
@@ -147,27 +172,15 @@ export const DSP_PROFILES: Record<string, DspProfile> = {
         gainMode: 'auto',
         maxFreqMode: 'nyquist',
     },
-    classic: {
-        scale: 'linear',
-        colourScale: 'dbSquared',
-        // Was 2048 / 50 %: a 46 ms window with 23 ms hop smears fast song.
-        windowSize: 1024,
-        overlapLevel: 4,       // 87.5 %
-        oversamplingLevel: 1,  // 2× → fft 2048
-        nMels: CLASSIC_N_MELS,
-        frameRate: CLASSIC_FRAME_RATE,
-        usePcen: false,
-        pcenGain: 0,
-        pcenBias: 0,
-        pcenRoot: 1,
-        pcenTimeConstant: 0.4,
-        windowFunction: 'hann',
-        colorScheme: 'ember',
-        reassigned: false,
-        noiseReduction: false,
-        clahe: false,
-        gainMode: 'auto',
-        maxFreqMode: 'nyquist',
+    classic: CLASSIC_BASE,
+    // Classic look with a quarter of the cells: 75 % overlap (hop 256 → 187 frames/s
+    // at 48 kHz, still 2.7 px per frame at the default zoom) and no zero-padding
+    // (513 bins). ~23 MB of values per minute instead of ~92 MB.
+    classicSmall: {
+        ...CLASSIC_BASE,
+        label: 'Classic small',
+        overlapLevel: 3,       // 75 %
+        oversamplingLevel: 0,  // 1× → fft 1024
     },
     // spectrolipi default: FFT 1024, Hann, hop N/2 (50 %), no zero-padding, SpectroFlare.
     spectrolipi: {
@@ -252,3 +265,12 @@ export const COLOUR_SCALES = {
 };
 
 
+
+/**
+ * Frames per block when a whole spectrogram is computed in the WASM workers:
+ * enough blocks to keep every worker busy, but each at most 1024 frames, since
+ * a worker's WebAssembly memory grows to its largest block and never shrinks.
+ */
+export function wasmComputeBlockFrames(totalFrames: number, workers: number): number {
+    return Math.max(256, Math.min(1024, Math.ceil(totalFrames / (Math.max(1, workers) * 2))));
+}

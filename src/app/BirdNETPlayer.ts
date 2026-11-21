@@ -170,6 +170,7 @@ export class BirdNETPlayer {
      * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
      * @param {number}      [options.spectrogramHeight] - initial spectrogram height in px (default: 2× waveform height)
      * @param {boolean}     [options.keyboardShortcuts] - react to document-level keyboard shortcuts (default: true)
+     * @param {string}      [options.defaultPreset] - built-in DSP preset of a fresh player without favourite or saved settings, e.g. 'classicSmall' (default: classic)
      * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
      * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)
      * @param {'auto'|'on'|'off'} [options.compactToolbar] - responsive toolbar compaction mode (default: auto)
@@ -717,7 +718,7 @@ export class BirdNETPlayer {
         if (!this._state) return;
         this._state._spectro.clearExternalMode();
         this._state._spectro.setDspControlsEnabled(true);
-        if (this._state.audioBuffer) this._state._spectro.generate();
+        if (this._state.audioBuffer) this._state._regenerateSpectrogram();
     }
 
     /**
@@ -1096,6 +1097,9 @@ export class BirdNETPlayer {
     cancelRecording(): void { this._liveRecorder?.cancel(); }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
+    /** Show both analysis views, or only the waveform or the spectrogram. A hidden spectrogram is not computed. */
+    setViewMode(mode: 'both' | 'waveform' | 'spectrogram') { this._state?._setViewMode(mode); }
+    get viewMode(): 'both' | 'waveform' | 'spectrogram' { return this._state?._viewMode ?? 'both'; }
     setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }
 
     get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }

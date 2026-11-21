@@ -110,6 +110,26 @@ export function indexMp3Frames(buf: ArrayBuffer): Mp3FrameIndex {
   return { offsets: offsets.subarray(0, n), end, sampleRate, samplesPerFrame, startTrim };
 }
 
+/**
+ * Write the last `want` samples of a decoded block (mono, or the mean of two channels) to
+ * dst[written ...], left-padding with silence if the decoder returned fewer; positions outside
+ * dst (encoder-delay trim at the start, padding at the end) are skipped.
+ */
+export function placeBlock(dst: Float32Array, c0: Float32Array, c1: Float32Array | null, len: number, written: number, want: number): void {
+  const srcStart = Math.max(0, len - want);
+  const missing = Math.max(0, want - len);
+  const kLo = Math.max(0, -written);
+  const kHi = Math.min(want, dst.length - written);
+  if (kHi <= kLo) return;
+  const zeroEnd = Math.min(kHi, missing);
+  if (zeroEnd > kLo) dst.fill(0, written + kLo, written + zeroEnd);
+  const k0 = Math.max(kLo, missing);
+  if (k0 >= kHi) return;
+  const j0 = srcStart + k0 - missing, n = kHi - k0, p0 = written + k0;
+  if (!c1) { dst.set(c0.subarray(j0, j0 + n), p0); return; }
+  for (let i = 0; i < n; i++) dst[p0 + i] = (c0[j0 + i] + c1[j0 + i]) * 0.5;
+}
+
 export type ChunkProgress = (fraction: number) => void;
 
 /**
@@ -141,20 +161,8 @@ export async function decodeMp3Chunked(buf: ArrayBuffer, ctx: BaseAudioContext, 
     const decoded = await ctx.decodeAudioData(buf.slice(byteStart, byteEnd));
     const want = (b - a) * spf;
     const len = decoded.length;
-    // Keep the tail; if the decoder returned fewer samples than expected, left-pad with silence.
-    const srcStart = Math.max(0, len - want);
-    const missing = Math.max(0, want - len);
-    const chans = decoded.numberOfChannels;
-    const c0 = decoded.getChannelData(0);
-    const c1 = chans > 1 ? decoded.getChannelData(1) : null;
-    for (let k = 0; k < want; k++) {
-      const pos = written + k;
-      if (pos < 0 || pos >= totalSamples) continue;
-      const s = k - missing;
-      if (s < 0) { dst[pos] = 0; continue; }
-      const j = srcStart + s;
-      dst[pos] = c1 ? (c0[j] + c1[j]) * 0.5 : c0[j];
-    }
+    const c1 = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : null;
+    placeBlock(dst, decoded.getChannelData(0), c1, decoded.length, written, want);
     written += want;
     onProgress?.(b / nFrames);
   }

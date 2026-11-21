@@ -448,11 +448,11 @@ export function autoContrastStats(spectrogramData: NumArray, loPercentile = 2, h
 
     // Sub-sample for speed - max ~200k values
     const stride = Math.max(1, Math.floor(spectrogramData.length / 200000));
-    const mapped: number[] = [];
-    for (let i = 0; i < spectrogramData.length; i += stride) {
-        mapped.push((spectrogramData as any)[i] || 0);
+    const mapped = new Float64Array(Math.ceil(spectrogramData.length / stride));
+    for (let i = 0, j = 0; i < spectrogramData.length; i += stride) {
+        mapped[j++] = (spectrogramData as any)[i] || 0;
     }
-    mapped.sort((a, b) => a - b);
+    mapped.sort();
 
     const loIdx = Math.floor(mapped.length * loPercentile / 100);
     const hiIdx = Math.min(mapped.length - 1, Math.floor(mapped.length * hiPercentile / 100));

@@ -24,7 +24,7 @@ import {
     AUTO_CONTRAST,
 } from '../shared/constants.ts';
 
-import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavBlob, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
+import { WasmTileManager, isWasmTileSource, isWavFile, pcmWavSource, wasmV2ParamsFromDspOptions, v2BinFrequencies, type TileColorOptions } from './WasmTileManager.ts';
 // Type-only: the service pulls in Vite worker/wasm imports, so it is loaded lazily.
 import type { WasmSpectrogramService, StftParamsV2 } from '../infrastructure/wasm-dsp/WasmSpectrogramService.ts';
 
@@ -51,7 +51,21 @@ import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
+import { isMixedDown } from '../infrastructure/audio/wavDecode.ts';
 import { selectedSamples, isChannelZero, channelSelectionKey, effectiveSelection, getChannelSelection, withChannelKey } from '../shared/channels.ts';
+
+/**
+ * Largest whole-file spectrogram computed in one piece. Above it (hours of audio when the tile
+ * pyramid is unavailable, e.g. no OPFS space in incognito windows) the result would not fit in
+ * one worker message and would take several GB, so the spectrogram is skipped instead.
+ */
+export const FULL_SPECTROGRAM_MAX_BYTES = 1 << 30;
+
+/** Float32 bytes of a whole-file v2 spectrogram (upper bound). */
+export function fullSpectrogramBytes(p: StftParamsV2, nSamples: number): number {
+    const bins = p.scale.kind === 'linear' ? (p.nFft >> 1) + 1 : p.scale.bands;
+    return (Math.ceil(nSamples / p.hop) + 1) * bins * 4;
+}
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -200,6 +214,7 @@ export class SpectrogramController extends EventTarget {
      */
     setAudio(audioBuffer: AudioBuffer, sampleRateHz: number, sourceFile: File | null = null, sourcePath: string | null = null) {
         this._sourcePath = sourcePath;
+        this._generateSeq++; // a generation still running belongs to the previous audio
         this._tileManager?.dispose();
         this._tileManager    = null;
         this._spectralFeatures = null;
@@ -220,6 +235,9 @@ export class SpectrogramController extends EventTarget {
         this.updateMaxFreqOptions(sampleRateHz);
     }
 
+    /** The buffer generate() works on (set by setAudio). */
+    get currentAudio(): AudioBuffer | null { return this._audioBuffer ?? null; }
+
     /** Reset external mode without clearing audio (used on zoom / reload). */
     clearExternalMode() {
         this._externalMode = false;
@@ -234,6 +252,8 @@ export class SpectrogramController extends EventTarget {
      */
     /** Incremented per generate(); an older call that finishes late must not overwrite a newer result. */
     private _generateSeq = 0;
+    /** Owner token for this player's PCM cache files (holds no reference to the player). */
+    private readonly _pcmOwner = {};
 
     async generate({ autoAdjust = false } = {}) {
         if (!this._audioBuffer) return;
@@ -302,12 +322,13 @@ export class SpectrogramController extends EventTarget {
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
-            const direct = isChannelZero(audioBuffer);
-            const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
+            // A long stereo WAV was mixed down while loading: its file's channel 0 is not what is shown.
+            const direct = isChannelZero(audioBuffer) && !isMixedDown(audioBuffer);
+            const ok = await this._startTileMode(options, autoAdjust, async () => WasmTileManager.create({
                 file,
                 // The direct WAV / native readers only see channel 0; other selections go via PCM.
                 nativePath:   direct ? this._sourcePath : null,
-                source:       direct && isWavFile(file) ? undefined : pcmWavBlob(selectedSamples(audioBuffer), audioBuffer.sampleRate),
+                source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate, undefined, undefined, this._pcmOwner, seq),
                 sourceTag:    audioBuffer.numberOfChannels > 1
                     ? channelSelectionKey(effectiveSelection(getChannelSelection(), audioBuffer.numberOfChannels)) : undefined,
                 wasmParams:   v2Params,
@@ -322,6 +343,15 @@ export class SpectrogramController extends EventTarget {
                 return false;
             });
             if (ok || superseded()) return;
+        }
+
+        if (v2Params && fullSpectrogramBytes(v2Params, this._audioBuffer.length) > FULL_SPECTROGRAM_MAX_BYTES) {
+            this._data = null;
+            this._nFrames = 0;
+            if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
+            this._emit('transportstatechange', { state: 'ready', reason: 'spectrogram-unavailable' });
+            this._emit('unavailable', { reason: 'too-large' });
+            return;
         }
 
         const t0 = performance.now();
@@ -395,7 +425,7 @@ export class SpectrogramController extends EventTarget {
             this._bandFloor   = result.bandFloor ?? null;
 
             // Persist to cache (non-blocking).
-            spectrogramCache.set(cacheKey, {
+            if (spectrogramCache.accepts(this._data.byteLength)) spectrogramCache.set(cacheKey, {
                 dataBuffer: new Uint8Array(((this._data as Float32Array)).buffer).slice().buffer,
                 nFrames:    this._nFrames,
                 nMels:      this._nMels,
@@ -457,6 +487,8 @@ export class SpectrogramController extends EventTarget {
         superseded: () => boolean = () => false,
     ): Promise<void> {
         const d = this._d;
+        // A call superseded during its first yield (setAudio, newer generate) must not reshow it.
+        if (superseded()) return;
         if (d.recomputingOverlay) {
             setOverlayContent(d.recomputingOverlay, 'Computing spectrogram…', { progress: null });
             d.recomputingOverlay.hidden = false;

@@ -13,6 +13,7 @@
 //   'tileready'  — a tile finished loading (or the colour options changed)
 // ═══════════════════════════════════════════════════════════════════════
 
+import { floatWavHeader, writePcmWavFile } from '../infrastructure/storage/pcmCache.ts';
 import {
     buildOverviewImage,
     buildSpectrogramGrayscale,
@@ -44,6 +45,22 @@ const TILE_PRELOAD_AHEAD = 1;
 // While only the level-0 preview exists, a zoomed-out view would request the
 // whole file at full resolution; cap it to the tiles around the view centre.
 const PREVIEW_MAX_TILES = 8;
+
+/**
+ * Source and destination of a tile spanning [x0, x1) px of the viewport, drawn
+ * from a canvas `w` wide. Both edges round to whole pixels the same way for
+ * neighbours, so tiles meet without a gap; the source never leaves the tile
+ * (drawImage would clip it and shrink the destination). Null if not visible.
+ */
+export function tileDrawRect(x0: number, x1: number, viewportWidth: number, w: number) {
+    const X0 = Math.round(x0), X1 = Math.round(x1);
+    const dx = Math.max(0, X0), right = Math.min(viewportWidth, X1);
+    if (right <= dx || X1 <= X0) return null;
+    const srcX = ((dx - X0) / (X1 - X0)) * w;
+    const srcW = ((right - dx) / (X1 - X0)) * w;
+    return { srcX, srcW, dx, dw: right - dx };
+}
+
 
 /** Limit the combined size of the pyramid workers' in-flight output blocks. */
 export function pyramidWorkerCount(p: StftParamsV2, hardwareConcurrency: number): number {
@@ -144,7 +161,7 @@ export function v2BinFrequencies(p: StftParamsV2, sampleRate: number): Float64Ar
     return Float64Array.from({ length: s.bands }, (_, i) => inv(a + (b - a) * (i + 1) / (s.bands + 1)));
 }
 
-/** Any source qualifies: WAV files are read directly, everything else via pcmWavBlob(). */
+/** Any source qualifies: WAV files are read directly, everything else via pcmWavSource(). */
 export function isWasmTileSource(file: File | null): file is File {
     return !!file && typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
 }
@@ -160,20 +177,36 @@ export function isWavFile(file: File): boolean {
  * (~6 h at 48 kHz).
  */
 export function pcmWavBlob(channelData: Float32Array, sampleRate: number): Blob {
-    const dataBytes = channelData.byteLength;
-    const h = new DataView(new ArrayBuffer(44));
-    const tag = (at: number, s: string) => { for (let i = 0; i < 4; i++) h.setUint8(at + i, s.charCodeAt(i)); };
-    tag(0, 'RIFF'); h.setUint32(4, 36 + dataBytes, true); tag(8, 'WAVE');
-    tag(12, 'fmt '); h.setUint32(16, 16, true);
-    h.setUint16(20, 3, true);                 // WAVE_FORMAT_IEEE_FLOAT
-    h.setUint16(22, 1, true);                 // mono
-    h.setUint32(24, sampleRate, true);
-    h.setUint32(28, sampleRate * 4, true);    // byte rate
-    h.setUint16(32, 4, true);                 // block align
-    h.setUint16(34, 32, true);                // bits per sample
-    tag(36, 'data'); h.setUint32(40, dataBytes, true);
-    return new Blob([h.buffer, channelData as Float32Array<ArrayBuffer>]);
+    return new Blob([floatWavHeader(channelData.length, sampleRate), channelData as Float32Array<ArrayBuffer>]);
 }
+
+/**
+ * Decoded PCM as a sliceable float WAV: a disk-backed OPFS file when possible (no second copy
+ * of the audio in memory), else pcmWavBlob().
+ */
+export async function pcmWavSource(
+    channelData: Float32Array,
+    sampleRate: number,
+    write: typeof writePcmWavFile = writePcmWavFile,
+    maxMemoryBytes = PCM_MEMORY_SOURCE_MAX_BYTES,
+    /** Whose cache file this is (one per player): replaces only that owner's earlier file. */
+    owner?: object,
+    /** Increasing per owner; see writePcmWavFile. */
+    generation?: number,
+): Promise<Blob> {
+    try {
+        return await write(channelData, sampleRate, undefined, undefined, owner, generation);
+    } catch (err) {
+        // A second in-memory copy of hours of audio costs GBs and, where OPFS is full
+        // (private windows), Chromium cannot read such a Blob back either.
+        if (channelData.byteLength > maxMemoryBytes) throw err;
+        console.warn('[WasmTileManager] OPFS PCM cache unavailable, keeping the samples in memory', err);
+        return pcmWavBlob(channelData, sampleRate);
+    }
+}
+
+/** Largest decoded audio copied into an in-memory Blob when the OPFS cache fails (~90 min at 48 kHz). */
+export const PCM_MEMORY_SOURCE_MAX_BYTES = 1 << 30;
 
 export class WasmTileManager extends EventTarget {
     readonly nMels: number;
@@ -556,21 +589,16 @@ export class WasmTileManager extends EventTarget {
                 if (x1 <= 0 || x0 >= viewportWidth) continue;
                 tile.lastUsed = Date.now();
 
-                // Snap to integer pixels to prevent sub-pixel gaps between adjacent tiles.
-                const visLeft = Math.floor(Math.max(0, x0));
-                const visRight = Math.ceil(Math.min(viewportWidth, x1));
-                if (visRight <= visLeft) continue;
-
+                if (Math.round(Math.min(viewportWidth, x1)) <= Math.round(Math.max(0, x0))) continue;
                 if (!tile.canvas) this._colorize(tile);
                 if (!tile.canvas) continue;
-                const w = tile.canvas.width;
-                const srcX = ((visLeft - x0) / (x1 - x0)) * w;
-                const srcW = Math.max(1, ((visRight - visLeft) / (x1 - x0)) * w);
+                const r = tileDrawRect(x0, x1, viewportWidth, tile.canvas.width);
+                if (!r) continue;
                 const srcY = freqViewSrcCrop?.srcY ?? 0;
                 const srcH = freqViewSrcCrop?.srcH ?? tile.canvas.height;
 
-                ctx.imageSmoothingEnabled = x1 - x0 < w; // smooth only when shrinking
-                ctx.drawImage(tile.canvas, srcX, srcY, srcW, srcH, visLeft, 0, visRight - visLeft, canvasHeight);
+                ctx.imageSmoothingEnabled = x1 - x0 < tile.canvas.width; // smooth only when shrinking
+                ctx.drawImage(tile.canvas, r.srcX, srcY, r.srcW, srcH, r.dx, 0, r.dw, canvasHeight);
             }
         }
 

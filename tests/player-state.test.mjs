@@ -280,3 +280,143 @@ test('PlayerState: constructor options.followTargetRatio propagates to config', 
 
     ps.dispose();
 });
+
+// ─── View mode at runtime ─────────────────────────────────────────────
+
+function headlessWithAudio(viewMode) {
+    const emitted = [];
+    const container = createFakeContainer();
+    container.classList.add('daw-shell', `view-mode-${viewMode}`);
+    const ps = new PlayerState(container, null, (name, detail) => emitted.push({ name, detail }), {
+        engine: new MockAudioEngine(), storage: new InMemoryStorageAdapter(),
+        viewMode, enableTouchGestures: false, enablePerfOverlay: false,
+    });
+    const buffer = { duration: 600, sampleRate: 48000, numberOfChannels: 1, getChannelData: () => new Float32Array(0) };
+    Object.defineProperty(ps, 'audioBuffer', { get: () => buffer });
+    const generated = [];
+    ps._spectro.generate = async (opts) => { generated.push(opts); };
+    Object.defineProperty(ps._spectro, 'hasData', { get: () => generated.length > 0, configurable: true });
+    let held = buffer; // what the controller got from setAudio
+    Object.defineProperty(ps._spectro, 'currentAudio', { get: () => held, configurable: true });
+    const hold = (b) => { held = b; };
+    return { ps, generated, emitted, container, hold };
+}
+
+test('PlayerState: no spectrogram generation before the controller holds the loaded buffer', async () => {
+    const { ps, generated, hold } = headlessWithAudio('both');
+    hold({ duration: 1 }); // still the previous file
+    await ps._generateSpectrogram();
+    assert.strictEqual(generated.length, 0);
+    assert.strictEqual(ps._spectroGeneration, null);
+    ps.dispose();
+});
+
+test('PlayerState: the deferred generation waits while the spectrogram is hidden again', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    let finish;
+    ps._spectro.generate = (opts) => { generated.push(opts); return new Promise((r) => { finish = r; }); };
+    const first = ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+    ps._regenerateSpectrogram();
+    ps._setViewMode('both');                 // registers the continuation
+    const again = ps._generateSpectrogram();
+    ps._setViewMode('waveform');             // hidden again before the run ends
+    finish();
+    await first; await again;
+    assert.strictEqual(generated.length, 1, 'nothing computed while hidden');
+    assert.strictEqual(ps._spectroStale, true, 'still recomputed when shown');
+    ps.dispose();
+});
+
+test('PlayerState: a setting changed while hidden during a running generation is computed after it', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    let finish;
+    ps._spectro.generate = (opts) => { generated.push(opts); return new Promise((r) => { finish = r; }); };
+    const first = ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+    ps._regenerateSpectrogram();            // hidden: only marked stale
+    ps._setViewMode('both');                // reuses the running generation …
+    const again = ps._generateSpectrogram();
+    finish();
+    await first;
+    await new Promise((r) => setTimeout(r, 0));
+    finish?.();
+    await again;
+    assert.strictEqual(generated.length, 2, '… and computes again once it ends');
+    assert.strictEqual(ps._spectroStale, false);
+    ps.dispose();
+});
+
+test('PlayerState: a hidden spectrogram is computed only once it is shown', async () => {
+    const { ps, generated, emitted, container } = headlessWithAudio('waveform');
+
+    ps._regenerateSpectrogram();
+    assert.strictEqual(generated.length, 0, 'not computed while hidden');
+
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 1, 'computed when shown');
+    assert.strictEqual(ps._showSpectrogram, true);
+    assert.ok(container.classList.contains('view-mode-both'), 'the shell shows the new mode');
+    assert.ok(!container.classList.contains('view-mode-waveform'));
+    assert.deepStrictEqual(emitted.at(-1), { name: 'viewmodechange', detail: { mode: 'both' } });
+
+    ps._setViewMode('waveform');
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 1, 'not recomputed when shown again');
+    ps.dispose();
+});
+
+test('PlayerState: a setting changed while hidden recomputes when shown', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    await ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+
+    ps._regenerateSpectrogram({ autoAdjust: false });
+    assert.strictEqual(generated.length, 1);
+
+    ps._setViewMode('both');
+    await ps._spectroGeneration;
+    assert.strictEqual(generated.length, 2);
+    ps.dispose();
+});
+
+test('PlayerState: loading ends the loading overlay while the spectrogram is hidden', async () => {
+    const { ps, generated } = headlessWithAudio('waveform');
+    const overlay = { hidden: false };
+    ps.d.recomputingOverlay = overlay;
+    for (const key of ['fileInfo', 'sampleRateInfo', 'totalTimeDisplay', 'currentTimeDisplay']) {
+        ps.d[key] = { innerHTML: '', textContent: '', classList: makeClassList(), style: {} };
+    }
+    // Drawing needs canvases this headless state has none of.
+    for (const name of ['_drawMainWaveform', '_drawOverviewWaveform', '_syncTrackWidth', '_syncOverviewWindowToViewport', '_seekToTime', '_setPixelsPerSecond']) {
+        ps[name] = () => {};
+    }
+
+    await ps._onAudioLoaded({ duration: 600, sampleRate: 48000 }, 'long.wav');
+
+    assert.strictEqual(generated.length, 0, 'the hidden spectrogram is not computed');
+    assert.strictEqual(overlay.hidden, true);
+    ps.dispose();
+});
+
+test('PlayerState: an unavailable spectrogram switches to the waveform and says why', () => {
+    const { ps, emitted } = headlessWithAudio('both');
+    const appended = [];
+    const note = { dataset: {} };
+    ps.d.fileInfo = { querySelector: () => (appended.length ? note : null), append: (...n) => appended.push(...n) };
+    const realCreate = globalThis.document.createElement;
+    globalThis.document.createElement = () => note;
+    try {
+        ps._spectro.dispatchEvent(new CustomEvent('unavailable', { detail: { reason: 'too-large' } }));
+        ps._spectro.dispatchEvent(new CustomEvent('unavailable', { detail: { reason: 'too-large' } }));
+    } finally { globalThis.document.createElement = realCreate; }
+    assert.strictEqual(ps._viewMode, 'waveform');
+    assert.strictEqual(ps._showSpectrogram, false);
+    assert.strictEqual(note.dataset.aw, 'spectrogramUnavailable');
+    assert.match(note.textContent, /Spectrogram unavailable/);
+    assert.strictEqual(appended.filter(x => x === note).length, 1, 'the note is added once');
+    assert.ok(emitted.some(e => e.name === 'spectrogramUnavailable'));
+    ps.dispose();
+});

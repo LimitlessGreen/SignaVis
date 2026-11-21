@@ -12,7 +12,7 @@ import {
     PERCH_FRAME_RATE,
 } from '../shared/constants.ts';
 
-import { clamp, formatTime, isTypingContext, escapeHtml, clampNumber } from '../shared/utils.ts';
+import { clamp, formatTime, isTypingContext, escapeHtml, clampNumber, channelData } from '../shared/utils.ts';
 import { AudioEngine } from '../infrastructure/audio/AudioEngine.ts';
 import { AudioEngineBase } from '../infrastructure/audio/AudioEngineBase.ts';
 import { GestureRecognizer } from '../ui/components/gestures/gestures.ts';
@@ -20,7 +20,7 @@ import { TRANSPORT_STATE_LABELS, canTransitionTransportState } from '../domain/t
 import { InteractionState } from './interactionState.ts';
 import { CoordinateSystem } from '../domain/coordinateSystem.ts';
 
-import { computeAmplitudePeak } from '../domain/spectrogram.ts';
+import { envelopePeakAbs } from '../domain/waveformEnvelope.ts';
 import { PresetManager } from '../domain/PresetManager.ts';
 import { SpectrogramController } from './SpectrogramController.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
@@ -38,7 +38,7 @@ import { CarrierLineController } from './player/CarrierLineController.ts';
 import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, findCallExcerpt, type UltrasoundInfo } from '../domain/ultrasound.ts';
 import { UltrasoundDialog, loadUltrasoundDefault, saveUltrasoundDefault, type UltrasoundChoice } from '../ui/components/ultrasound-dialog/ultrasound-dialog.ts';
-import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
+import { computeBandProfileAsync, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
 import {
     selectedSamples, onChannelSelectionChange, getChannelSelection, setChannelSelection,
     parseChannelSelection, channelSelectionKey, channelLabel, effectiveSelection, type ChannelSelection,
@@ -199,7 +199,7 @@ export class PlayerState {
             setChannelSelection(parseChannelSelection((e.target as HTMLSelectElement).value));
         });
         this._presets = new PresetManager(this.d, {
-            onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._spectro.generate(opts); },
+            onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
                 if (this._spectro.hasData) {
                     this._spectro.buildGrayscale();
@@ -208,6 +208,7 @@ export class PlayerState {
                 }
             },
             storage: this._storage,
+            defaultPreset: options.defaultPreset,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
             // Called during construction, before _engine exists.
@@ -278,18 +279,24 @@ export class PlayerState {
         this._spectro.addEventListener('computetime', (e: CustomEvent<any>) => this._emit('computeTime',  e.detail));
         this._spectro.addEventListener('ready',       (e: CustomEvent<any>) => this._emit('ready',        e.detail));
         this._spectro.addEventListener('error',       (e: CustomEvent<any>) => this._emit('error',        e.detail));
+        this._spectro.addEventListener('unavailable', (e: CustomEvent<any>) => this._spectrogramUnavailable(e.detail));
         this._spectro.addEventListener('scalechange', (e: CustomEvent<any>) => {
             this._emit('spectrogramscalechange', e.detail);
             this._updateCoords();
             this._createFrequencyLabels();
             this._freqZoom?.refresh();
         });
+        // Tiles arrive one by one (several per task while a long file loads): one redraw per frame.
         this._spectro.addEventListener('needsredraw', () => {
-            this._updateCoords();
-            this._createFrequencyLabels();
-            this._drawSpectrogram();
-            this._syncOverviewWindowToViewport();
-            this._scheduleOverviewSpectrogram();
+            if (this._redrawFrame !== null) return;
+            this._redrawFrame = requestAnimationFrame(() => {
+                this._redrawFrame = null;
+                this._updateCoords();
+                this._createFrequencyLabels();
+                this._drawSpectrogram();
+                this._syncOverviewWindowToViewport();
+                this._scheduleOverviewSpectrogram();
+            });
         });
 
         // ── Audio / analysis state ──
@@ -781,15 +788,18 @@ export class PlayerState {
     // ═════════════════════════════════════════════════════════════════
 
     /** Band profile, ultrasound guess and amplitude peak of the selected channel(s). */
-    _updateChannelAnalysis() {
+    async _updateChannelAnalysis() {
         const buf = this._engine.audioBuffer;
         const samples = buf ? selectedSamples(buf) : null;
         const sr = this.sampleRateHz;
-        this.bandProfile = samples ? computeBandProfile(samples, sr) : null;
+        // Sliced: on hours of audio the scan would block the page for ~0.25 s.
+        const profile = samples ? await computeBandProfileAsync(samples, sr) : null;
+        if (this._engine.audioBuffer !== buf || (buf && selectedSamples(buf) !== samples)) return; // superseded
+        this.bandProfile = profile;
         this.ultrasoundInfo = samples ? analyzeUltrasound(samples, sr, this._engine.guano, this.bandProfile) : null;
         this._updateUltrasoundChip();
         this._emit('ultrasoundinfo', this.ultrasoundInfo);
-        this.amplitudePeakAbs = samples ? computeAmplitudePeak(samples) : 0;
+        this.amplitudePeakAbs = samples ? envelopePeakAbs(samples) : 0;
         this._updateNormalizeBtn();
         this._updateAmplitudeLabels();
     }
@@ -809,14 +819,23 @@ export class PlayerState {
     _onChannelSelectionChanged() {
         this._updateChannelSelect();
         if (!this._engine.audioBuffer) return;
-        this._updateChannelAnalysis();
+        const buffer = this._engine.audioBuffer;
         this._drawMainWaveform();
         this._drawOverviewWaveform();
-        this._spectro.generate();
+        // Hidden, the spectrogram is recomputed only when shown again.
+        this._regenerateSpectrogram();
         this._emit('channelselectionchange', getChannelSelection());
+        // The amplitude peak changes with the channel: draw again with it.
+        void this._updateChannelAnalysis().then(() => {
+            if (this._engine.audioBuffer !== buffer) return;
+            this._drawMainWaveform();
+            this._drawOverviewWaveform();
+        });
     }
 
     dispose() {
+        if (this._redrawFrame !== null) cancelAnimationFrame(this._redrawFrame);
+        this._redrawFrame = null;
         this._offChannelSelection?.();
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
@@ -897,8 +916,12 @@ export class PlayerState {
             const name = decodeURIComponent(
                 new URL(url, location.href).pathname.split('/').pop() || 'audio',
             );
-            // Empty placeholder File: identifies the URL for the WASM tile cache; samples come from the decoded buffer.
-            const sourceRef = new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
+            // The downloaded bytes, named by the URL (identifies it for the WASM tile cache). WAVs are
+            // then sliced straight from this blob; other formats use the decoded buffer.
+            const blob = this._engine.sourceBlob;
+            const sourceRef = blob
+                ? new File([blob], url, { type: blob.type, lastModified: 0 })
+                : new File([], url, { type: 'application/x-audio-url', lastModified: 0 });
             await this._onAudioLoaded(result, name, 'url-loaded', sourceRef, localPath);
         } catch (error) {
             this._onAudioLoadError(error, 'url');
@@ -912,7 +935,9 @@ export class PlayerState {
         this._setTimeExpansion(1);
         this.detectorSettings.carrierHz = 0;
         this._freqZoom.resetSilent();
-        this._updateChannelAnalysis();
+        const buffer = this._engine.audioBuffer;
+        await this._updateChannelAnalysis();
+        if (this._engine.audioBuffer !== buffer) return; // another file was loaded meanwhile
         this._updateChannelSelect();
         if (this._engine.audioBuffer) {
             this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile, sourcePath);
@@ -943,13 +968,89 @@ export class PlayerState {
         this._drawOverviewWaveform();
         this._syncOverviewWindowToViewport();
 
-        await this._spectro.generate({ autoAdjust: true });
-        if (this.autoFreqView) this.applyAutoFreqView();
+        // Hidden, the spectrogram is computed only once it is shown (setViewMode);
+        // until then nothing else ends the loading overlay.
+        if (this._showSpectrogram) await this._generateSpectrogram();
+        else if (this.d.recomputingOverlay) this.d.recomputingOverlay.hidden = true;
         this._offerUltrasoundListening();
         this._drawMainWaveform();
         this._drawOverviewWaveform();
-        this._createFrequencyLabels();
         this._seekToTime(0, true);
+    }
+
+    /** Too long for an in-memory spectrogram and no tile storage: show the waveform and say why. */
+    _spectrogramUnavailable(detail: { reason: string }) {
+        if (this._viewMode !== 'waveform') this._setViewMode('waveform');
+        const info = this.d.fileInfo;
+        if (info && !info.querySelector('[data-aw="spectrogramUnavailable"]')) {
+            const note = document.createElement('span');
+            note.dataset.aw = 'spectrogramUnavailable';
+            note.textContent = '· Spectrogram unavailable';
+            note.title = 'This recording is too long to compute its spectrogram in memory, and the browser '
+                + 'has no storage space left for spectrogram tiles (e.g. in a private window). '
+                + 'Use a normal window or free up disk space, then reload the file.';
+            info.append(' ', note);
+        }
+        this._emit('spectrogramUnavailable', detail);
+    }
+
+    _redrawFrame: number | null = null;
+    _spectroGeneration: Promise<void> | null = null;
+    _spectroGenerationFor: AudioBuffer | null = null;
+    _spectroStale = false;
+
+    /** Recompute after a setting changed; a hidden spectrogram waits until it is shown. */
+    _regenerateSpectrogram(opts?: unknown) {
+        if (!this._showSpectrogram) { this._spectroStale = true; return; }
+        void this._spectro.generate(opts as any);
+    }
+
+    _generateSpectrogram(): Promise<void> {
+        const buffer = this.audioBuffer;
+        // Until _onAudioLoaded hands the buffer to the controller it would compute the previous file.
+        if (!buffer || this._spectro.currentAudio !== buffer) return Promise.resolve();
+        if (this._spectroGeneration && this._spectroGenerationFor === buffer) {
+            // A setting changed while hidden after this run started: compute again once it ends.
+            if (!this._spectroStale) return this._spectroGeneration;
+            return this._spectroGeneration.then(() => (this._spectroStale && this._showSpectrogram ? this._generateSpectrogram() : undefined));
+        }
+        this._spectroStale = false;
+        this._spectroGenerationFor = buffer;
+        const generation: Promise<void> = (async () => {
+            await this._spectro.generate({ autoAdjust: true });
+            if (this.audioBuffer !== buffer) return;
+            if (this.autoFreqView) this.applyAutoFreqView();
+            this._createFrequencyLabels();
+            this._drawOverviewWaveform();
+        })().finally(() => {
+            if (this._spectroGeneration === generation) this._spectroGeneration = null;
+        });
+        this._spectroGeneration = generation;
+        return generation;
+    }
+
+    /** Which analysis views are visible: 'both', 'waveform' or 'spectrogram'. */
+    _setViewMode(mode: string) {
+        const next = mode === 'waveform' || mode === 'spectrogram' ? mode : 'both';
+        if (next === this._viewMode) return;
+        const shell = this.container.classList.contains('daw-shell')
+            ? this.container
+            : this.container.querySelector('.daw-shell');
+        shell?.classList.remove(`view-mode-${this._viewMode}`);
+        shell?.classList.add(`view-mode-${next}`);
+        this._viewMode = next;
+        this.options.viewMode = next;
+        this._showWaveform = next !== 'spectrogram';
+        this._showSpectrogram = next !== 'waveform';
+        this._viewport.updateLayout({ showSpectrogram: this._showSpectrogram, showWaveform: this._showWaveform });
+        this._invalidateSpectrogramHeightCache();
+        this._applyLocalViewHeights();
+        this._drawnViewport = '';
+        if (this._showSpectrogram && this.audioBuffer && (!this._spectro.hasData || this._spectroStale)) {
+            void this._generateSpectrogram().then(() => this._drawViewport(false));
+        }
+        this._drawViewport(false);
+        this._emit('viewmodechange', { mode: next });
     }
 
     /** Zoom the frequency axis to 0 … top of the activity (no-op when it spans the whole range). */

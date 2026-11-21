@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeBandProfile, activeTopHz, autoViewMaxHz, prominentPeakHz } from '../src/domain/bandProfile.ts';
+import { computeBandProfile, computeBandProfileAsync, activeTopHz, autoViewMaxHz, prominentPeakHz } from '../src/domain/bandProfile.ts';
 
 function rng(seed) { let s = seed; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 2 - 1; }
 
@@ -37,4 +37,14 @@ test('bat calls at 45 kHz in a 192 kHz file: prominent peak near 45 kHz', () => 
     assert.ok(Math.abs(peak.hz - 45000) < 1500, `peak ${peak.hz}`);
     const view = autoViewMaxHz(p);
     assert.ok(view >= 46000 && view <= 60000, `view ${view}`);
+});
+
+test('sliced computation yields in between and matches the synchronous one', async () => {
+    // 100 s at 48 kHz: ~4700 blocks, more than one scan slice; ~2000 frames, several FFT slices.
+    const x = signal(48000, 100, 5000);
+    let yields = 0;
+    const p = await computeBandProfileAsync(x, 48000, async () => { yields++; });
+    assert.ok(yields >= 4, `yields ${yields}`);
+    assert.deepEqual(p, computeBandProfile(x, 48000));
+    assert.equal(await computeBandProfileAsync(new Float32Array(100), 48000, async () => {}), null);
 });

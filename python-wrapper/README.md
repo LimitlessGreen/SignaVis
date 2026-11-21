@@ -202,3 +202,6 @@ Try the interactive notebook demo directly in your browser—no setup required!
 This Python package, including the bundled player assets, is available under
 your choice of the MIT License (`LICENSE-MIT`) or the GNU AGPL-3.0 (`LICENSE`).
 The bundled WaveSurfer.js is BSD-3-Clause (`signavis/assets/wavesurfer.LICENSE.txt`).
+The Rust crates compiled into the DSP WebAssembly module are under permissive
+licenses (MIT, Apache-2.0, BSD, Unicode-3.0, Unlicense); their texts are in
+`signavis/assets/aw_dsp_wasm.THIRD_PARTY_LICENSES.txt`.
