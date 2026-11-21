@@ -169,6 +169,10 @@ pub fn store_infos(cat: &mut Catalog, infos: &[(i64, std::result::Result<AudioIn
         }
     }
     tx.commit()?;
+    // GPS position written by the recorder (GUANO `Loc Position`).
+    if infos.iter().any(|(_, r)| r.as_ref().is_ok_and(|i| i.meta.iter().any(|(k, _)| k == "guano:Loc Position"))) {
+        crate::geo::positions_from_header(cat)?;
+    }
     Ok(())
 }
 

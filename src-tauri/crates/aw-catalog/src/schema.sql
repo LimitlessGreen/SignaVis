@@ -94,7 +94,11 @@ CREATE TABLE IF NOT EXISTS recording (
     tz            TEXT,                            -- IANA zone of the local clock
     site_id       INTEGER REFERENCES site(id),
     device_id     INTEGER REFERENCES device(id),
-    deployment_id INTEGER REFERENCES deployment(id)
+    deployment_id INTEGER REFERENCES deployment(id),
+    -- Own position (mobile recorder, GPS in the header, phone app); wins over the site's coordinates.
+    lat REAL, lon REAL, alt REAL, pos_accuracy_m REAL,
+    pos_origin TEXT,                               -- manual / header / track
+    track_id INTEGER                               -- track the position came from
 );
 CREATE INDEX IF NOT EXISTS recording_asset ON recording(asset_id);
 CREATE INDEX IF NOT EXISTS recording_site_time ON recording(site_id, start_ms);
@@ -203,3 +207,15 @@ CREATE TABLE IF NOT EXISTS import_profile (
     spec_json  TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- GPS tracks (GPX), matched to recordings by time.
+CREATE TABLE IF NOT EXISTS track (
+    id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL, source TEXT,
+    device_id INTEGER REFERENCES device(id) ON DELETE SET NULL,
+    start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, n_points INTEGER NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS track_point (
+    track_id INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
+    t_ms INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, alt REAL
+);
+CREATE INDEX IF NOT EXISTS track_point_t ON track_point(track_id, t_ms);

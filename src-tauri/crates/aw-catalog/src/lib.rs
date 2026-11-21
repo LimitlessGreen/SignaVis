@@ -4,6 +4,7 @@
 
 pub mod clock;
 pub mod entities;
+pub mod geo;
 pub mod hash;
 pub mod header;
 pub mod pattern;
@@ -33,6 +34,12 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("clock_period", "from_path", "TEXT"),
     ("recording", "header_offset_min", "INTEGER"),
     ("site", "photo", "TEXT"),
+    ("recording", "lat", "REAL"),
+    ("recording", "lon", "REAL"),
+    ("recording", "alt", "REAL"),
+    ("recording", "pos_accuracy_m", "REAL"),
+    ("recording", "pos_origin", "TEXT"),
+    ("recording", "track_id", "INTEGER"),
 ];
 
 fn migrate(conn: &Connection) -> Result<()> {

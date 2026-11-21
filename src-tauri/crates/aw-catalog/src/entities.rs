@@ -294,6 +294,13 @@ pub struct BulkEdit {
     pub remove_tags: Vec<String>,
     /// Metadata to set (value None = remove the key).
     pub meta: Vec<(String, Option<String>)>,
+    /// Own position [lat, lon] set by hand; null clears it (absent = keep).
+    #[serde(deserialize_with = "present_pos")]
+    pub position: Option<Option<[f64; 2]>>,
+}
+
+fn present_pos<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Option<[f64; 2]>>, D::Error> {
+    Ok(Some(Option::deserialize(d)?))
 }
 
 /// A field that is present (even as null) becomes Some(..).
@@ -310,6 +317,7 @@ pub struct BulkReport {
     pub tags_added: usize,
     pub tags_removed: usize,
     pub meta_set: usize,
+    pub positioned: usize,
     /// UTC starts recomputed because recordings moved to a recorder with its own clock.
     pub reclocked: usize,
 }
@@ -367,6 +375,9 @@ pub fn bulk_edit(cat: &mut Catalog, sel: &Selection, e: &BulkEdit) -> Result<Bul
     }
     tx.execute("DELETE FROM tag WHERE NOT EXISTS (SELECT 1 FROM recording_tag x WHERE x.tag_id = tag.id)", [])?;
     tx.commit()?;
+    if let Some(pos) = e.position {
+        rep.positioned = crate::geo::set_positions(cat, &Selection { ids: Some(ids.clone()), filter: None }, pos.map(|p| (p[0], p[1])))?;
+    }
     for d in devices_touched {
         let periods = clock::device_clocks(cat, d)?;
         if !periods.is_empty() { rep.reclocked += clock::set_device_clocks(cat, d, &periods)?.updated; }
@@ -388,16 +399,22 @@ pub struct RecordingDetail {
     pub tz: Option<String>,
     pub quick_hash: Option<String>,
     pub full_hash: Option<String>,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub alt: Option<f64>,
+    pub pos_origin: Option<String>,
     pub meta: Vec<(String, String, String)>,
     pub tags: Vec<String>,
 }
 
 pub fn recording_detail(cat: &Catalog, id: i64) -> Result<RecordingDetail> {
     let mut d = cat.conn.query_row(
-        "SELECT r.id, a.rel_path, r.site_id, r.device_id, r.deployment_id, r.sample_rate, r.channels, r.tz, a.quick_hash, a.full_hash
+        "SELECT r.id, a.rel_path, r.site_id, r.device_id, r.deployment_id, r.sample_rate, r.channels, r.tz, a.quick_hash, a.full_hash,
+                r.lat, r.lon, r.alt, r.pos_origin
          FROM recording r LEFT JOIN asset a ON a.id = r.asset_id WHERE r.id = ?1", [id], |r| Ok(RecordingDetail {
             id: r.get(0)?, path: r.get(1)?, site_id: r.get(2)?, device_id: r.get(3)?, deployment_id: r.get(4)?,
             sample_rate: r.get(5)?, channels: r.get(6)?, tz: r.get(7)?, quick_hash: r.get(8)?, full_hash: r.get(9)?,
+            lat: r.get(10)?, lon: r.get(11)?, alt: r.get(12)?, pos_origin: r.get(13)?,
             meta: vec![], tags: vec![],
         }))?;
     let mut st = cat.conn.prepare("SELECT key, value, origin FROM meta WHERE recording_id = ?1 ORDER BY key")?;
@@ -505,6 +522,11 @@ pub(crate) mod tests {
         let clear: BulkEdit = serde_json::from_str(r#"{"siteId":null,"deviceId":4,"meta":[["k",null],["j","v"]]}"#).unwrap();
         assert_eq!((clear.site_id, clear.device_id), (Some(None), Some(Some(4))));
         assert_eq!(clear.meta[1], ("j".to_string(), Some("v".to_string())));
+        assert_eq!(clear.position, None);
+        let pos: BulkEdit = serde_json::from_str(r#"{"position":[52.1,8.2]}"#).unwrap();
+        assert_eq!(pos.position, Some(Some([52.1, 8.2])));
+        let unpos: BulkEdit = serde_json::from_str(r#"{"position":null}"#).unwrap();
+        assert_eq!(unpos.position, Some(None));
     }
 
     #[test]
@@ -529,6 +551,10 @@ pub(crate) mod tests {
         let d = recording_detail(&cat, ids[0]).unwrap();
         assert_eq!((d.site_id, d.tags.len(), d.meta.iter().any(|m| m.0 == "habitat")), (Some(s2), 0, false));
         assert!(bulk_edit(&mut cat, &sel, &BulkEdit { site_id: Some(Some(999)), ..Default::default() }).is_err());
+        let r = bulk_edit(&mut cat, &Selection { ids: Some(vec![ids[0]]), filter: None }, &BulkEdit { position: Some(Some([52.1, 8.2])), ..Default::default() }).unwrap();
+        assert_eq!(r.positioned, 1);
+        let d = recording_detail(&cat, ids[0]).unwrap();
+        assert_eq!((d.lat, d.pos_origin.as_deref()), (Some(52.1), Some("manual")));
         assert!(bulk_edit(&mut cat, &sel, &BulkEdit { meta: vec![(" ".into(), None)], ..Default::default() }).is_err());
         // Unused tags disappear.
         bulk_edit(&mut cat, &Selection::default(), &BulkEdit { remove_tags: vec!["checked".into()], ..Default::default() }).unwrap();

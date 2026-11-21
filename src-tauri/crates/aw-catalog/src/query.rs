@@ -22,6 +22,10 @@ pub struct Filter {
     pub tag_ids: Vec<i64>,
     /// Recordings without site or recorder (to find what still needs assigning).
     pub unassigned: bool,
+    /// Area [south, west, north, east] on the recording's own position, else its site's.
+    pub bbox: Option<[f64; 4]>,
+    /// With (true) or without (false) any position (own or site).
+    pub has_position: Option<bool>,
     /// UTC ms, inclusive / exclusive.
     pub from_ms: Option<i64>,
     pub to_ms: Option<i64>,
@@ -37,6 +41,9 @@ pub struct Filter {
 }
 
 const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
+/// Effective position: own, else the site's.
+const POS_LAT: &str = "COALESCE(r.lat, (SELECT lat FROM site WHERE id = r.site_id))";
+const POS_LON: &str = "COALESCE(r.lon, (SELECT lon FROM site WHERE id = r.site_id))";
 pub(crate) const LOCAL_DAY: &str = "date((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -69,6 +76,16 @@ pub(crate) fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql
         let q = vec!["?"; f.tag_ids.len()].join(",");
         push(format!("EXISTS (SELECT 1 FROM recording_tag x WHERE x.recording_id = r.id AND x.tag_id IN ({q}))"),
             f.tag_ids.iter().map(|v| Box::new(*v) as Box<dyn ToSql>).collect(), &mut p);
+    }
+    if let Some([s, wst, n, e]) = f.bbox {
+        let lon_cond = if wst <= e { format!("{POS_LON} BETWEEN ? AND ?") } else { format!("({POS_LON} >= ? OR {POS_LON} <= ?)") };
+        push(format!("({POS_LAT} BETWEEN ? AND ? AND {lon_cond})"),
+            vec![Box::new(s), Box::new(n), Box::new(wst), Box::new(e)], &mut p);
+    }
+    match f.has_position {
+        Some(true) => push(format!("{POS_LAT} IS NOT NULL"), vec![], &mut p),
+        Some(false) => push(format!("{POS_LAT} IS NULL"), vec![], &mut p),
+        None => {}
     }
     if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
     if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }

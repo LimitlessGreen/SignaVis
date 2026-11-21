@@ -55,6 +55,11 @@ struct Args {
     selection: aw_catalog::entities::Selection,
     #[serde(default)]
     edit: aw_catalog::entities::BulkEdit,
+    path: Option<String>,
+    name: Option<String>,
+    track_id: Option<i64>,
+    max_gap_s: Option<f64>,
+    cell_deg: Option<f64>,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -192,6 +197,21 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_bulk_edit" => j(serde_json::to_value(ent::bulk_edit(st.cat(&a.project_root)?, &a.selection, &a.edit).map_err(e)?)),
         "catalog_recording_detail" => j(serde_json::to_value(ent::recording_detail(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
         "catalog_stats" => j(serde_json::to_value(aw_catalog::stats::stats(st.cat(&a.project_root)?, &a.filter, 25).map_err(e)?)),
+        "catalog_import_track" => {
+            let path = a.path.clone().ok_or("path missing")?;
+            let text = std::fs::read_to_string(&path).map_err(|x| x.to_string())?;
+            let (pts, untimed) = aw_catalog::geo::parse_gpx(&text).map_err(e)?;
+            let name = a.name.clone().unwrap_or_else(|| Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+            let cat = st.cat(&a.project_root)?;
+            let id = aw_catalog::geo::save_track(cat, &name, Some(&path), a.device_id, &pts).map_err(e)?;
+            let m = aw_catalog::geo::match_track(cat, id, &a.selection, a.max_gap_s.unwrap_or(120.0)).map_err(e)?;
+            Ok(json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "match": m }))
+        }
+        "catalog_match_track" => j(serde_json::to_value(aw_catalog::geo::match_track(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?, &a.selection, a.max_gap_s.unwrap_or(120.0)).map_err(e)?)),
+        "catalog_tracks" => j(serde_json::to_value(aw_catalog::geo::tracks(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_track_line" => j(serde_json::to_value(aw_catalog::geo::track_line(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?, 2000).map_err(e)?)),
+        "catalog_delete_track" => { aw_catalog::geo::delete_track(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?).map_err(e)?; Ok(Value::Null) }
+        "catalog_map" => j(serde_json::to_value(aw_catalog::geo::map_data(st.cat(&a.project_root)?, &a.filter, a.cell_deg.unwrap_or(0.001)).map_err(e)?)),
         _ => Err(format!("unknown command {cmd}")),
     }
 }
