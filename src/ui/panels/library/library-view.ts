@@ -13,6 +13,10 @@ import {
     type ClockPeriod, type ClockShift, type DeviceInfo,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
+import {
+    clockDuration, gridWindow, heatLut, moveIndex, scrollToShow, thumbPixels,
+    type Thumb, type ThumbSpec,
+} from '../../../domain/catalog/thumb-grid.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
 import { EntitiesDialog } from './entities-dialog.ts';
@@ -23,6 +27,12 @@ import { MapDialog } from './map-dialog.ts';
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
 const PAGE = 500;
+/** Tile grid: tile size incl. gap (px) and thumbnail resolution (drawn 1:1). */
+const TILE_W = 176;
+const TILE_H = 104;
+const THUMB: ThumbSpec = { w: 160, h: 48, maxHz: 12_000 };
+const THUMB_BATCH = 6;
+const VIEW_KEY = 'signavis.library.view';
 
 const TIME_PRESETS: { label: string; from: number | null; to: number | null }[] = [
     { label: 'All day', from: null, to: null },
@@ -65,6 +75,15 @@ export class LibraryView {
     #pickAll = false;
     #side: SelectionPanel;
     #mapDialog: MapDialog | null = null;
+    /** Table or tile grid (spectrogram thumbnails). */
+    #view: 'table' | 'grid' = localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'table';
+    #cols = 1;
+    /** Thumbnails by recording id; a string = the error why there is none. */
+    #thumbs = new Map<number, Thumb | string>();
+    /** Ids the visible tiles still need, in screen order; one batch is fetched at a time. */
+    #thumbWanted: number[] = [];
+    #thumbBusy = false;
+    #lut = heatLut();
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -77,6 +96,10 @@ export class LibraryView {
             <span class="lib-stats"></span>
             <span class="lib-spacer"></span>
             <span class="lib-integrity"></span>
+            <span class="lib-viewswitch" role="group" aria-label="View">
+              <button class="btn btn--sm btn--ghost" data-act="view-table" title="Table (one recording per line)">☰ Table</button>
+              <button class="btn btn--sm btn--ghost" data-act="view-grid" title="Tiles with a spectrogram of each whole recording">▦ Tiles</button>
+            </span>
             <button class="btn btn--sm btn--ghost" data-act="open-entities" title="Sites, recorders and deployments: names, coordinates, habitat, model, merge duplicates">Sites &amp; recorders…</button>
             <button class="btn btn--sm btn--ghost" data-act="open-map" title="Sites, recordings with their own position (mobile, GPS), GPS tracks; filter by area">Map…</button>
             <button class="btn btn--sm btn--ghost" data-act="open-stats" title="Coverage per site and week, recorder gaps, files, labels, detections">Statistics…</button>
@@ -114,8 +137,39 @@ export class LibraryView {
             this.#hash = p.finished ? null : p;
             if (p.finished) void this.#loadIntegrity(); else this.#renderIntegrity();
         }).then((u) => { this.#unlisten = u; }).catch(() => {});
+        this.#applyView();
         void this.reload();
         void this.#loadIntegrity();
+    }
+
+    #applyView() {
+        this.el.classList.toggle('lib--tiles', this.#view === 'grid');
+        this.el.querySelectorAll<HTMLElement>('.lib-viewswitch [data-act]').forEach((b) =>
+            b.setAttribute('aria-pressed', String(b.dataset.act === `view-${this.#view}`)));
+    }
+
+    #setView(v: 'table' | 'grid') {
+        if (v === this.#view) return;
+        this.#view = v;
+        localStorage.setItem(VIEW_KEY, v);
+        this.#applyView();
+        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        grid.scrollTop = 0;
+        this.#renderRows();
+        if (this.#selected >= 0) this.#reveal(this.#selected);
+    }
+
+    /** Top and height (px) of item i in the current view. */
+    #itemBox(i: number): [number, number] {
+        return this.#view === 'grid' ? [Math.floor(i / this.#cols) * TILE_H, TILE_H] : [i * ROW_H, ROW_H];
+    }
+
+    #reveal(i: number) {
+        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        const [y, h] = this.#itemBox(i);
+        const top = scrollToShow(y, h, grid.scrollTop, grid.clientHeight);
+        if (top != null) grid.scrollTop = top;
+        this.#renderRows();
     }
 
     dispose() { this.#unlisten?.(); }
@@ -344,6 +398,8 @@ export class LibraryView {
     }
 
     #renderRows() {
+        if (this.#view === 'grid') { this.#renderTiles(); return; }
+        this.#cols = 1;
         const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
         const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
         const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
@@ -418,6 +474,79 @@ export class LibraryView {
         if ([...this.#picked].join() !== before) this.#updateSide();
     }
 
+    #renderTiles() {
+        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
+        const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
+        const total = this.#facets?.total ?? this.#rows.length;
+        const win = gridWindow(grid.clientWidth - 16, total, grid.scrollTop, grid.clientHeight, TILE_W, TILE_H);
+        this.#cols = win.cols;
+        spacer.style.height = `${win.height}px`;
+        if (win.last > this.#rows.length && this.#next) void this.#loadMore();
+        host.style.transform = `translateY(${(win.first / win.cols) * TILE_H}px)`;
+        host.style.gridTemplateColumns = `repeat(${win.cols}, ${TILE_W}px)`;
+        let html = '';
+        const wanted: number[] = [];
+        for (let i = win.first; i < Math.min(win.last, this.#rows.length); i++) {
+            const r = this.#rows[i];
+            const gone = r.status === 'missing';
+            const th = this.#thumbs.get(r.id);
+            if (th === undefined && !gone) wanted.push(r.id);
+            const t = localTime(r);
+            html += `<div class="lib-r lib-tile${this.#picked.has(r.id) || this.#pickAll ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
+                title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof th === 'string' ? ` — no preview: ${esc(th)}` : ''}">
+              <canvas width="${THUMB.w}" height="${THUMB.h}" data-id="${r.id}"></canvas>
+              <span class="lib-tile-l1"><span class="c-time">${esc(t)}</span><span class="lib-tile-dur">${esc(clockDuration(r.durationS))}</span>${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">${r.labels}</span>` : ''}</span>
+              <span class="lib-tile-l2">${esc([r.site, r.device].filter(Boolean).join(' · ') || (r.path ?? '').split('/').pop())}</span></div>`;
+        }
+        host.innerHTML = html;
+        host.querySelectorAll<HTMLCanvasElement>('canvas[data-id]').forEach((c) => this.#drawThumb(c));
+        this.#thumbWanted = wanted;
+        void this.#pumpThumbs();
+    }
+
+    #drawThumb(c: HTMLCanvasElement) {
+        const th = this.#thumbs.get(Number(c.dataset.id));
+        const g = c.getContext('2d');
+        if (!g) return;
+        if (th && typeof th !== 'string') {
+            g.putImageData(new ImageData(thumbPixels(th, this.#lut), th.w, th.h), 0, 0);
+            c.classList.remove('is-empty');
+        } else {
+            c.classList.add('is-empty');
+            c.classList.toggle('is-failed', typeof th === 'string');
+        }
+    }
+
+    /** Fetch thumbnails for the visible tiles, one batch at a time (scrolling replaces the wish list). */
+    async #pumpThumbs() {
+        if (this.#thumbBusy) return;
+        this.#thumbBusy = true;
+        try {
+            for (;;) {
+                const batch = this.#thumbWanted.filter((id) => !this.#thumbs.has(id)).slice(0, THUMB_BATCH);
+                if (!batch.length) break;
+                let res;
+                try {
+                    res = await catalogApi.thumbs(this.#o.projectRoot, batch, THUMB);
+                } catch (err) {
+                    for (const id of batch) this.#thumbs.set(id, String(err));
+                    continue;
+                }
+                for (const r of res) {
+                    this.#thumbs.set(r.recordingId, r.thumb ?? r.error ?? 'no preview');
+                    const c = this.el.querySelector<HTMLCanvasElement>(`.lib-tile canvas[data-id="${r.recordingId}"]`);
+                    if (c) {
+                        this.#drawThumb(c);
+                        if (r.error) c.closest<HTMLElement>('.lib-tile')!.title += ` — no preview: ${r.error}`;
+                    }
+                }
+            }
+        } finally {
+            this.#thumbBusy = false;
+        }
+    }
+
     async #open(i: number) {
         const row = this.#rows[i];
         if (!row) return;
@@ -442,6 +571,7 @@ export class LibraryView {
         }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
+        else if (act === 'view-table' || act === 'view-grid') this.#setView(act === 'view-grid' ? 'grid' : 'table');
         else if (act === 'open-import') this.#showImport();
         else if (act === 'open-entities') this.#showEntities();
         else if (act === 'open-stats') this.#showStats();
@@ -517,14 +647,12 @@ export class LibraryView {
         if ((e.target as HTMLElement).closest('input, textarea, select')) return;
         if (e.key === 'Escape') {
             if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose();
-        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        } else if (e.key.startsWith('Arrow')) {
+            const j = moveIndex(this.#selected, e.key, this.#cols, this.#rows.length);
+            if (j < 0) return;
             e.preventDefault();
-            this.#selected = Math.max(0, Math.min(this.#rows.length - 1, this.#selected + (e.key === 'ArrowDown' ? 1 : -1)));
-            const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
-            const y = this.#selected * ROW_H;
-            if (y < grid.scrollTop) grid.scrollTop = y;
-            else if (y + ROW_H > grid.scrollTop + grid.clientHeight) grid.scrollTop = y + ROW_H - grid.clientHeight;
-            this.#renderRows();
+            this.#selected = j;
+            this.#reveal(j);
         } else if (e.key === 'Enter' && this.#selected >= 0) {
             void this.#open(this.#selected);
         }

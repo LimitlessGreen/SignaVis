@@ -5,6 +5,7 @@ import type {
     SiteFields, DeviceFields, DeploymentInfo, DeriveReport, TagInfo, Selection, BulkEdit, BulkReport, RecordingDetail, CatalogStats,
     MapData, TrackInfo, MatchReport, TrackImport,
 } from '../../domain/catalog/catalog-types.ts';
+import type { ThumbResult, ThumbSpec } from '../../domain/catalog/thumb-grid.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 let invokeP: Promise<Invoke> | null = null;
@@ -62,6 +63,8 @@ export const catalogApi = {
     trackLine: (projectRoot: string, trackId: number) => call<[number, number][]>('catalog_track_line', { projectRoot, trackId }),
     deleteTrack: (projectRoot: string, trackId: number) => call<void>('catalog_delete_track', { projectRoot, trackId }),
     map: (projectRoot: string, filter: CatalogFilter, cellDeg: number) => call<MapData>('catalog_map', { projectRoot, filter, cellDeg }),
+    thumbs: (projectRoot: string, ids: number[], spec: ThumbSpec) => call<ThumbResult[]>('catalog_thumbs', { projectRoot, ids, spec }),
+    clearThumbs: (projectRoot: string) => call<number>('catalog_thumbs_clear', { projectRoot }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
 };
