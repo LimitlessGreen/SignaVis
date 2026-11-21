@@ -311,6 +311,23 @@ test('PlayerState: no spectrogram generation before the controller holds the loa
     ps.dispose();
 });
 
+test('PlayerState: the deferred generation waits while the spectrogram is hidden again', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    let finish;
+    ps._spectro.generate = (opts) => { generated.push(opts); return new Promise((r) => { finish = r; }); };
+    const first = ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+    ps._regenerateSpectrogram();
+    ps._setViewMode('both');                 // registers the continuation
+    const again = ps._generateSpectrogram();
+    ps._setViewMode('waveform');             // hidden again before the run ends
+    finish();
+    await first; await again;
+    assert.strictEqual(generated.length, 1, 'nothing computed while hidden');
+    assert.strictEqual(ps._spectroStale, true, 'still recomputed when shown');
+    ps.dispose();
+});
+
 test('PlayerState: a setting changed while hidden during a running generation is computed after it', async () => {
     const { ps, generated } = headlessWithAudio('both');
     let finish;

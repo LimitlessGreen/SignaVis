@@ -1012,7 +1012,7 @@ export class PlayerState {
         if (this._spectroGeneration && this._spectroGenerationFor === buffer) {
             // A setting changed while hidden after this run started: compute again once it ends.
             if (!this._spectroStale) return this._spectroGeneration;
-            return this._spectroGeneration.then(() => (this._spectroStale ? this._generateSpectrogram() : undefined));
+            return this._spectroGeneration.then(() => (this._spectroStale && this._showSpectrogram ? this._generateSpectrogram() : undefined));
         }
         this._spectroStale = false;
         this._spectroGenerationFor = buffer;
