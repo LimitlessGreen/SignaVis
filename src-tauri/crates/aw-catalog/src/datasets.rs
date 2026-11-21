@@ -128,8 +128,8 @@ pub fn list(cat: &Catalog) -> Result<Vec<DatasetInfo>> {
     let mut out = Vec::new();
     for (id, uid, name, description, kind, fj, color, created_at, updated_at, ranges) in rows {
         let filter = fj.as_deref().map(serde_json::from_str::<Filter>).transpose()?;
-        let (recordings, seconds, error) = match query::facets(cat, &Filter { dataset_id: Some(id), ..Default::default() }) {
-            Ok(f) => (f.total, f.seconds, None),
+        let (recordings, seconds, error) = match query::count(cat, &Filter { dataset_id: Some(id), ..Default::default() }) {
+            Ok((n, s)) => (n, s, None),
             Err(e) => (0, None, Some(e.to_string())),
         };
         out.push(DatasetInfo { id, uid, name, description, kind, filter, color, recordings, ranges, seconds, created_at, updated_at, error });

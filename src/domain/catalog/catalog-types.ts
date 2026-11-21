@@ -70,6 +70,10 @@ export interface CatalogFilter {
     detection?: { runId?: number | null; class: string; minScore: number } | null;
     noStart?: boolean;
     status?: 'ok' | 'missing' | 'changed' | null;
+    /** Only recordings in this dataset (static: members; dynamic: its saved filter). */
+    datasetId?: number | null;
+    /** Start relative to the sun at the recording's (or its site's) position. */
+    sun?: SunWindow | null;
 }
 export type CatalogSort = 'start' | 'path';
 export interface CatalogCursor { key: number | string | null; id: number }
@@ -356,4 +360,82 @@ export function matchReportText(m: MatchReport): string {
         m.kept && `${m.kept.toLocaleString()} kept their position from the recorder or set by hand`,
         m.tooFar && `${m.tooFar.toLocaleString()} had no track point near enough in time`,
     ].filter(Boolean).join('; ') + '.';
+}
+
+// ── Sun windows ──────────────────────────────────────────────────────────
+
+export type SunEvent = 'sunrise' | 'sunset' | 'dawn' | 'dusk';
+export interface SunRef { event: SunEvent; offsetMin?: number }
+/** From one sun reference to the next occurrence of the other (wraps over midnight). */
+export interface SunWindow { from: SunRef; to: SunRef }
+
+export const SUN_EVENTS: { v: SunEvent; label: string }[] = [
+    { v: 'dawn', label: 'civil dawn' }, { v: 'sunrise', label: 'sunrise' },
+    { v: 'sunset', label: 'sunset' }, { v: 'dusk', label: 'civil dusk' },
+];
+export const SUN_PRESETS: { label: string; w: SunWindow }[] = [
+    { label: 'Night (sunset − 1 h → sunrise)', w: { from: { event: 'sunset', offsetMin: -60 }, to: { event: 'sunrise', offsetMin: 0 } } },
+    { label: 'Dark (civil dusk → civil dawn)', w: { from: { event: 'dusk', offsetMin: 0 }, to: { event: 'dawn', offsetMin: 0 } } },
+    { label: 'Evening (sunset − 1 h → + 3 h)', w: { from: { event: 'sunset', offsetMin: -60 }, to: { event: 'sunset', offsetMin: 180 } } },
+    { label: 'Dawn chorus (sunrise − 1 h → + 2 h)', w: { from: { event: 'sunrise', offsetMin: -60 }, to: { event: 'sunrise', offsetMin: 120 } } },
+    { label: 'Day (sunrise → sunset)', w: { from: { event: 'sunrise', offsetMin: 0 }, to: { event: 'sunset', offsetMin: 0 } } },
+];
+
+function sunRefLabel(r: SunRef): string {
+    const name = SUN_EVENTS.find((e) => e.v === r.event)?.label ?? r.event;
+    const m = r.offsetMin ?? 0;
+    if (!m) return name;
+    const a = Math.abs(m);
+    const amount = a % 60 === 0 ? `${a / 60} h` : a > 60 ? `${Math.floor(a / 60)} h ${a % 60} min` : `${a} min`;
+    return `${name} ${m < 0 ? '−' : '+'} ${amount}`;
+}
+export function sunWindowLabel(w: SunWindow): string { return `${sunRefLabel(w.from)} → ${sunRefLabel(w.to)}`; }
+export function sameSunWindow(a: SunWindow | null | undefined, b: SunWindow | null | undefined): boolean {
+    if (!a || !b) return !a && !b;
+    return a.from.event === b.from.event && (a.from.offsetMin ?? 0) === (b.from.offsetMin ?? 0)
+        && a.to.event === b.to.event && (a.to.offsetMin ?? 0) === (b.to.offsetMin ?? 0);
+}
+
+// ── Datasets ─────────────────────────────────────────────────────────────
+
+export interface DatasetInfo {
+    id: number; uid: string; name: string; description: string | null;
+    kind: 'static' | 'filter'; filter: CatalogFilter | null; color: string | null;
+    recordings: number; ranges: number; seconds: number | null;
+    createdAt: number; updatedAt: number; error: string | null;
+}
+export interface DatasetEdit { name?: string; description?: string | null; color?: string | null; filter?: CatalogFilter }
+export interface Membership { datasetId: number; name: string; kind: 'static' | 'filter'; color: string | null; ranges: [number, number][] }
+
+/** Filter without empty parts, keys sorted: two filters that select the same thing compare equal. */
+export function normalizeFilter(f: CatalogFilter): CatalogFilter {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(f).sort()) {
+        const v = (f as Record<string, unknown>)[k];
+        if (v == null || v === false || v === '' || (Array.isArray(v) && !v.length)) continue;
+        out[k] = Array.isArray(v) && k.endsWith('Ids') ? [...v].sort((a, b) => a - b) : v;
+    }
+    if (out.sun) {
+        const w = out.sun as SunWindow;
+        out.sun = { from: { event: w.from.event, offsetMin: w.from.offsetMin ?? 0 }, to: { event: w.to.event, offsetMin: w.to.offsetMin ?? 0 } };
+    }
+    return out as CatalogFilter;
+}
+export function sameFilter(a: CatalogFilter, b: CatalogFilter): boolean {
+    return JSON.stringify(normalizeFilter(a)) === JSON.stringify(normalizeFilter(b));
+}
+export function isEmptyFilter(f: CatalogFilter): boolean { return !Object.keys(normalizeFilter(f)).length; }
+
+/** One line for a dataset list entry: "1 234 recordings · 12 ranges". */
+export function datasetCountText(d: DatasetInfo): string {
+    if (d.error) return 'filter refers to a deleted dataset';
+    return `${d.recordings.toLocaleString()} recording${d.recordings === 1 ? '' : 's'}${d.ranges ? ` · ${d.ranges.toLocaleString()} range${d.ranges === 1 ? '' : 's'}` : ''}`;
+}
+
+/** Suggested name for a copy that does not clash ("Night (copy)", "Night (copy 2)"). */
+export function copyName(name: string, taken: string[], frozen = false): string {
+    const base = `${name} (${frozen ? 'snapshot' : 'copy'}`;
+    const low = new Set(taken.map((t) => t.toLowerCase()));
+    if (!low.has(`${base})`.toLowerCase())) return `${base})`;
+    for (let i = 2; ; i++) if (!low.has(`${base} ${i})`.toLowerCase())) return `${base} ${i})`;
 }

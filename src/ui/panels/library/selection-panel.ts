@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    bulkReportText, parseCoords, type BulkEdit, type FacetValue, type RecordingDetail, type Selection,
+    bulkReportText, parseCoords, type BulkEdit, type DatasetInfo, type Membership, type FacetValue, type RecordingDetail, type Selection,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { openMapModal } from '../../components/geo-map-modal/geo-map-modal.ts';
@@ -31,6 +31,12 @@ export class SelectionPanel {
     #tags: string[] = [];
     #keys: string[] = [];
     #detail: RecordingDetail | null = null;
+    /** Static datasets (targets for "add"), the open static one (for "remove"), memberships of a single recording. */
+    #datasets: DatasetInfo[] = [];
+    #activeStatic: number | null = null;
+    #members: Membership[] = [];
+    #dsResult: { text: string; bad: boolean } | null = null;
+    #lastTarget: number | null = null;
     #gen = 0;
 
     constructor(o: SelectionPanelOptions) {
@@ -42,24 +48,30 @@ export class SelectionPanel {
     }
 
     /** What is picked; `count` is how many recordings that is. Lists for the pickers come from the library. */
-    async show(sel: Selection, count: number, lists: { sites: FacetValue[]; devices: FacetValue[] }) {
+    async show(sel: Selection, count: number, lists: { sites: FacetValue[]; devices: FacetValue[]; datasets?: DatasetInfo[]; activeStatic?: number | null }) {
         const gen = ++this.#gen;
         this.#sel = sel;
         this.#count = count;
         this.#sites = lists.sites;
         this.#devices = lists.devices;
+        this.#datasets = lists.datasets ?? this.#datasets;
+        this.#activeStatic = lists.activeStatic === undefined ? this.#activeStatic : lists.activeStatic;
         this.#detail = null;
+        this.#members = [];
         this.#render();   // at once, with the lists the library already has
         try {
-            const [tags, keys, detail] = await Promise.all([
+            const one = sel.ids?.length === 1 ? sel.ids[0] : null;
+            const [tags, keys, detail, members] = await Promise.all([
                 catalogApi.tags(this.#o.projectRoot),
                 catalogApi.metaKeys(this.#o.projectRoot),
-                sel.ids?.length === 1 ? catalogApi.recordingDetail(this.#o.projectRoot, sel.ids[0]) : Promise.resolve(null),
+                one != null ? catalogApi.recordingDetail(this.#o.projectRoot, one) : Promise.resolve(null),
+                one != null ? catalogApi.recordingDatasets(this.#o.projectRoot, one).catch(() => []) : Promise.resolve([]),
             ]);
             if (gen !== this.#gen) return;
             this.#tags = tags.map((t) => t.name);
             this.#keys = keys.map(([k]) => k);
             this.#detail = detail;
+            this.#members = members;
         } catch { /* lists stay empty */ }
         this.#render();
     }
@@ -72,7 +84,7 @@ export class SelectionPanel {
 
     #render() {
         const keep = new Map<string, string>();
-        if (this.#renderedKey !== this.#key() && this.#renderedKey !== '') this.#result = null;
+        if (this.#renderedKey !== this.#key() && this.#renderedKey !== '') { this.#result = null; this.#dsResult = null; }
         if (this.#renderedKey === this.#key()) {
             this.el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.lib-field [data-k]').forEach((f) => keep.set(f.dataset.k!, f.value));
         }
@@ -108,7 +120,9 @@ export class SelectionPanel {
                 ${d.fullHash ? `<dt>SHA-256</dt><dd class="lib-break lib-hint">${esc(d.fullHash.replace('sha256:', '').slice(0, 16))}…</dd>` : ''}
               </dl>
               ${d.tags.length ? `<div class="lib-tags">${d.tags.map((t) => `<span class="lib-tag">${esc(t)}</span>`).join('')}</div>` : ''}
-            </div><h4>Edit</h4>` : ''}
+            </div>` : ''}
+          ${this.#datasetBlock(d ? 'this recording' : what)}
+          ${d ? '<h4>Edit</h4>' : ''}
           <label class="lib-field"><span>Site</span><select class="field-select" data-k="site">
             <option value="${KEEP}">unchanged</option>${opt(this.#sites)}<option value="${CLEAR}">— none —</option></select></label>
           <label class="lib-field"><span>Recorder</span><select class="field-select" data-k="device">
@@ -126,6 +140,42 @@ export class SelectionPanel {
           <datalist id="lib-key-list">${this.#keys.map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
           <div class="lib-row"><button class="btn btn--sm" data-act="apply">Apply to ${d ? 'this recording' : what}</button></div>
           <p class="lib-hint${this.#result?.bad ? ' lib-warn' : ''}" data-k="result">${esc(this.#result?.text ?? '')}</p>`;
+    }
+
+    #datasetBlock(what: string): string {
+        const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+        const active = this.#datasets.find((x) => x.id === this.#activeStatic);
+        const members = this.#members.length ? `<div class="lib-tags">${this.#members.map((m) => `<span class="lib-tag" style="--pill:${m.color ?? 'var(--color-text-secondary)'}"
+            title="${m.kind === 'filter' ? 'matches the filter of this dynamic dataset' : 'member of this static dataset'}">${m.kind === 'filter' ? '⚲' : '▤'} ${esc(m.name)}${m.ranges.length ? ` <span class="lib-hint">${m.ranges.map(([a, b]) => `${fmt(a)}–${fmt(b)}`).join(', ')}</span>` : ''}</span>`).join('')}</div>` : '';
+        const controls = this.#datasets.length ? `
+          <div class="lib-row"><select class="field-select" data-k="ds-target" aria-label="Static dataset">
+            ${this.#datasets.map((x) => `<option value="${x.id}"${x.id === this.#lastTarget ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+            <button class="btn btn--sm btn--ghost" data-act="ds-add" title="Add ${esc(what)} to the chosen static dataset">Add</button></div>
+          ${active ? `<div class="lib-row"><button class="btn btn--sm btn--ghost" data-act="ds-remove" title="Take ${esc(what)} out of “${esc(active.name)}” (recordings stay in the library)">Remove from “${esc(active.name)}”</button></div>` : ''}`
+            : '<p class="lib-hint">No static dataset yet: “+ New” on the left starts one.</p>';
+        return `<h4>Datasets</h4>${members}${controls}<p class="lib-hint${this.#dsResult?.bad ? ' lib-warn' : ''}" data-k="ds-result">${esc(this.#dsResult?.text ?? '')}</p>`;
+    }
+
+    async #datasetAction(act: 'ds-add' | 'ds-remove') {
+        const id = act === 'ds-add' ? Number(this.el.querySelector<HTMLSelectElement>('[data-k="ds-target"]')?.value) : this.#activeStatic;
+        const d = this.#datasets.find((x) => x.id === id);
+        if (!d) return;
+        if (act === 'ds-add') this.#lastTarget = d.id;
+        try {
+            const n = act === 'ds-add'
+                ? await catalogApi.datasetAdd(this.#o.projectRoot, d.id, this.#sel)
+                : await catalogApi.datasetRemove(this.#o.projectRoot, d.id, this.#sel);
+            this.#dsResult = {
+                text: act === 'ds-add' ? (n ? `${n.toLocaleString()} added to “${d.name}”.` : `Already in “${d.name}”.`) : `${n.toLocaleString()} removed from “${d.name}”.`,
+                bad: false,
+            };
+        } catch (e) {
+            this.#dsResult = { text: `Error: ${e instanceof Error ? e.message : e}`, bad: true };
+            this.#render();
+            return;
+        }
+        // Counts and memberships change: the library reloads and shows this panel again.
+        this.#o.onApplied();
     }
 
     #setResult(text: string, bad = false) {
@@ -169,6 +219,7 @@ export class SelectionPanel {
             } });
             return;
         }
+        if (act === 'ds-add' || act === 'ds-remove') { await this.#datasetAction(act); return; }
         if (act !== 'apply') return;
         let edit: BulkEdit;
         try { edit = this.#readEdit(); } catch (e) { this.#setResult(String(e instanceof Error ? e.message : e), true); return; }

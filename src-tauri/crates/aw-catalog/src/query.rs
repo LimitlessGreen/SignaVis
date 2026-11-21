@@ -296,6 +296,12 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     x.len().cmp(&y.len())
 }
 
+/// Number of recordings and their total duration (s) under the filter; cheaper than `facets`.
+pub fn count(cat: &Catalog, f: &Filter) -> Result<(i64, Option<f64>)> {
+    let (w, p) = where_clause(cat, f, Skip::None)?;
+    Ok(cat.conn.query_row(&format!("SELECT COUNT(*), SUM(r.duration_s) {FROM} WHERE {w}"), params_from_iter(p.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?)
+}
+
 /// All recording ids matching the filter (for bulk edits).
 pub fn ids(cat: &Catalog, f: &Filter) -> Result<Vec<i64>> {
     let (w, p) = where_clause(cat, f, Skip::None)?;

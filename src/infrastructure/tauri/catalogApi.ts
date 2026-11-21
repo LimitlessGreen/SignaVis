@@ -3,7 +3,7 @@
 import type {
     CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion, SiteInfo, ClockReport, ClockPeriod, ClockShift, DeviceInfo,
     SiteFields, DeviceFields, DeploymentInfo, DeriveReport, TagInfo, Selection, BulkEdit, BulkReport, RecordingDetail, CatalogStats,
-    MapData, TrackInfo, MatchReport, TrackImport,
+    MapData, TrackInfo, MatchReport, TrackImport, DatasetInfo, DatasetEdit, Membership,
 } from '../../domain/catalog/catalog-types.ts';
 import type { ThumbResult, ThumbSpec } from '../../domain/catalog/thumb-grid.ts';
 
@@ -67,6 +67,17 @@ export const catalogApi = {
     clearThumbs: (projectRoot: string) => call<number>('catalog_thumbs_clear', { projectRoot }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
+    datasets: (projectRoot: string) => call<DatasetInfo[]>('catalog_datasets', { projectRoot }),
+    createDataset: (projectRoot: string, kind: 'static' | 'filter', dataset: DatasetEdit) =>
+        call<number>('catalog_create_dataset', { projectRoot, kind, dataset }),
+    updateDataset: (projectRoot: string, id: number, dataset: DatasetEdit) => call<void>('catalog_update_dataset', { projectRoot, id, dataset }),
+    deleteDataset: (projectRoot: string, id: number) => call<void>('catalog_delete_dataset', { projectRoot, id }),
+    datasetAdd: (projectRoot: string, id: number, selection: Selection, range: [number, number] | null = null) =>
+        call<number>('catalog_dataset_add', { projectRoot, id, selection, range }),
+    datasetRemove: (projectRoot: string, id: number, selection: Selection) => call<number>('catalog_dataset_remove', { projectRoot, id, selection }),
+    duplicateDataset: (projectRoot: string, id: number, name: string, freeze: boolean) =>
+        call<number>('catalog_duplicate_dataset', { projectRoot, id, name, freeze }),
+    recordingDatasets: (projectRoot: string, recordingId: number) => call<Membership[]>('catalog_recording_datasets', { projectRoot, recordingId }),
 };
 
 export async function pickFile(title: string, extensions: string[]): Promise<string | null> {

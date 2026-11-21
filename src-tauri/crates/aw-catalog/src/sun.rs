@@ -5,7 +5,7 @@
 use rusqlite::{Connection, functions::FunctionFlags};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SunEvent { Sunrise, Sunset, Dawn, Dusk }
 
@@ -58,15 +58,28 @@ pub fn event_ms(day: i64, lat: f64, lon: f64, event: SunEvent) -> Option<i64> {
     Some(((jd - 2_440_587.5) * DAY_MS as f64).round() as i64)
 }
 
+thread_local! {
+    /// Many recordings share a site and day: the events are computed once per (day, position, event).
+    static CACHE: std::cell::RefCell<std::collections::HashMap<(i64, u64, u64, SunEvent), Option<i64>>> = Default::default();
+}
+
+fn cached_event_ms(day: i64, lat: f64, lon: f64, event: SunEvent) -> Option<i64> {
+    CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 200_000 { c.clear(); }
+        *c.entry((day, lat.to_bits(), lon.to_bits(), event)).or_insert_with(|| event_ms(day, lat, lon, event))
+    })
+}
+
 /// Is `t_ms` inside the window (from inclusive, to exclusive)? The window starts at `from` on some
 /// day and ends at the first `to` after that.
 pub fn in_window(t_ms: i64, lat: f64, lon: f64, w: &SunWindow) -> bool {
     let day = t_ms.div_euclid(DAY_MS);
     for d in day - 2..=day + 1 {
-        let Some(a) = event_ms(d, lat, lon, w.from.event).map(|e| e + w.from.offset_min * 60_000) else { continue };
+        let Some(a) = cached_event_ms(d, lat, lon, w.from.event).map(|e| e + w.from.offset_min * 60_000) else { continue };
         if t_ms < a { continue; }
         let b = (d..=d + 2)
-            .filter_map(|k| event_ms(k, lat, lon, w.to.event).map(|e| e + w.to.offset_min * 60_000))
+            .filter_map(|k| cached_event_ms(k, lat, lon, w.to.event).map(|e| e + w.to.offset_min * 60_000))
             .find(|&b| b > a);
         if let Some(b) = b && t_ms < b { return true; }
     }

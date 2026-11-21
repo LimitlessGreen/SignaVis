@@ -8,8 +8,9 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    bboxLabel, fixedClockLabel, formatBytes, localTime,
-    periodsWithShift, pickRows,
+    bboxLabel, copyName, datasetCountText, fixedClockLabel, formatBytes, isEmptyFilter, localTime, normalizeFilter,
+    periodsWithShift, pickRows, sameFilter, sameSunWindow, sunWindowLabel, SUN_EVENTS, SUN_PRESETS,
+    type DatasetInfo, type SunEvent,
     type ClockPeriod, type ClockShift, type DeviceInfo,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
@@ -24,6 +25,7 @@ import { SelectionPanel } from './selection-panel.ts';
 import { StatsDialog } from './stats-dialog.ts';
 import { MapDialog } from './map-dialog.ts';
 import { ExpandedView } from './expanded-view.ts';
+import { DatasetDialog } from './dataset-dialog.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
@@ -109,6 +111,12 @@ export class LibraryView {
         } catch { return d; }
     })();
     #expand: ExpandedView;
+    #datasets: DatasetInfo[] = [];
+    /** Open dataset: static → filter.datasetId; dynamic → its saved filter loaded into the controls. */
+    #activeDs: number | null = null;
+    #confirmDelete = false;
+    /** Dataset counts are reloaded only after changes (a dynamic dataset over a big catalog can take a second). */
+    #dsStale = true;
 
     get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.zoom], maxHz: this.#tile.maxHz }; }
     get #tileW() { return TILE_SIZES[this.#tile.zoom].w + TILE_GAP; }
@@ -342,6 +350,7 @@ export class LibraryView {
             } else if (act === 'device-clock-apply') {
                 const tr = t.closest<HTMLElement>('tr[data-device]')!;
                 tr.querySelector('[data-k="clock-result"]')!.textContent = await this.#applyPeriods(Number(tr.dataset.device), this.#readPeriods(tr));
+                this.#dsStale = true;
                 void this.reload();
             } else if (act === 'shift-apply' || act === 'shifts-apply-all') {
                 const list = act === 'shift-apply' ? [this.#shifts[Number(t.closest<HTMLElement>('[data-shift]')!.dataset.shift)]] : this.#shifts;
@@ -350,6 +359,7 @@ export class LibraryView {
                     await this.#applyPeriods(x.deviceId, periodsWithShift(d?.periods ?? [], x));
                 }
                 await this.#showClocks();
+                this.#dsStale = true;
                 void this.reload();
             }
         } catch (e) {
@@ -376,18 +386,29 @@ export class LibraryView {
 
     async reload(opts: { keepPicks?: boolean } = {}) {
         const gen = ++this.#gen;
+        this.el.dataset.loading = '1';   // tests and styles: a reload is under way
+        try { await this.#reload(gen, opts); } finally { if (gen === this.#gen) delete this.el.dataset.loading; }
+    }
+
+    async #reload(gen: number, opts: { keepPicks?: boolean }) {
         this.#rows = [];
         this.#next = null;
         this.#selected = -1;
         if (!opts.keepPicks) { this.#picked.clear(); this.#pickAll = false; this.#anchor = null; }
         try {
-            const [facets, heat] = await Promise.all([
+            const [facets, heat, datasets] = await Promise.all([
                 catalogApi.facets(this.#o.projectRoot, this.#filter),
                 catalogApi.heatmap(this.#o.projectRoot, this.#filter),
+                this.#dsStale || opts.keepPicks
+                    ? catalogApi.datasets(this.#o.projectRoot).catch(() => this.#datasets)
+                    : Promise.resolve(this.#datasets),
             ]);
             if (gen !== this.#gen) return;
             this.#facets = facets;
             this.#heat = heat;
+            this.#datasets = datasets;
+            this.#dsStale = false;
+            if (this.#activeDs != null && !datasets.some((d) => d.id === this.#activeDs)) this.#activeDs = null;
         } catch (e) {
             this.#facets = null;
             this.el.querySelector('.lib-stats')!.textContent = `Catalog error: ${e}`;
@@ -402,7 +423,12 @@ export class LibraryView {
 
     #updateSide() {
         const f = this.#facets;
-        const lists = { sites: f?.sites ?? [], devices: f?.devices ?? [] };
+        const active = this.#active;
+        const lists = {
+            sites: f?.sites ?? [], devices: f?.devices ?? [],
+            datasets: this.#datasets.filter((d) => d.kind === 'static'),
+            activeStatic: active?.kind === 'static' ? active.id : null,
+        };
         if (this.#pickAll) void this.#side.show({ filter: this.#filter }, f?.total ?? 0, lists);
         else void this.#side.show(this.#picked.size ? { ids: [...this.#picked] } : {}, this.#picked.size, lists);
     }
@@ -444,11 +470,13 @@ export class LibraryView {
         const tf = this.#filter;
         const preset = TIME_PRESETS.findIndex((p) => p.from === (tf.hourFrom ?? null) && p.to === (tf.hourTo ?? null));
         host.innerHTML = `
+          ${this.#datasetSection()}
           ${tf.status ? `<section><h4>Status: ${esc(tf.status)} <button class="btn btn--sm btn--ghost" data-act="clear-status">all</button></h4></section>` : ''}
           <section><h4>Search</h4><input class="input" data-k="path" placeholder="Path contains…" value="${esc(tf.pathContains ?? '')}"></section>
           <section><h4>Time of day (local)</h4>
             <select class="field-select" data-k="tod">${TIME_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
-              ${preset < 0 ? `<option selected>${tf.hourFrom}–${tf.hourTo}</option>` : ''}</select></section>
+              ${preset < 0 ? `<option selected>${tf.hourFrom}–${tf.hourTo}</option>` : ''}</select>
+            ${this.#sunControls()}</section>
           <section><h4>Period</h4>
             <label class="lib-row"><span>from</span><input class="input" type="date" data-k="from" value="${tf.fromMs != null ? new Date(tf.fromMs).toISOString().slice(0, 10) : ''}"></label>
             <label class="lib-row"><span>to</span><input class="input" type="date" data-k="to" value="${tf.toMs != null ? new Date(tf.toMs - 86_400_000).toISOString().slice(0, 10) : ''}"></label></section>
@@ -470,6 +498,113 @@ export class LibraryView {
         this.#renderViewbar();
     }
 
+    #chipText = '';
+    get #active(): DatasetInfo | null { return this.#datasets.find((d) => d.id === this.#activeDs) ?? null; }
+
+    /** Open dynamic dataset whose filter was changed in the controls (not saved yet). */
+    get #dirty(): boolean {
+        const a = this.#active;
+        return a?.kind === 'filter' && !sameFilter(this.#filter, a.filter ?? {});
+    }
+
+    #datasetSection(): string {
+        const a = this.#active;
+        const item = (d: DatasetInfo) => `
+          <button class="lib-ds${d.id === this.#activeDs ? ' is-on' : ''}${d.error ? ' is-bad' : ''}" data-act="ds-open" data-id="${d.id}" style="--pill:${d.color ?? 'var(--color-text-secondary)'}"
+            title="${esc(d.description ?? '')}${d.description ? '\n' : ''}${d.kind === 'filter' ? 'Dynamic: saved filter, follows the catalog' : 'Static: fixed list'}${d.error ? `\n${esc(d.error)}` : ''}">
+            <span class="lib-ds-icon" aria-hidden="true">${d.kind === 'filter' ? '⚲' : '▤'}</span><span class="lib-ds-name">${esc(d.name)}</span>
+            <span class="num">${d.error ? '!' : d.recordings.toLocaleString()}</span></button>`;
+        const actions = a ? `
+          <div class="lib-ds-actions">
+            ${this.#dirty ? `<button class="btn btn--sm" data-act="ds-save-filter" title="Store the current filters in “${esc(a.name)}”">Save filter</button>
+              <button class="btn btn--sm btn--ghost" data-act="ds-revert" title="Back to the saved filter">Revert</button>` : ''}
+            <button class="btn btn--sm btn--ghost" data-act="ds-edit" title="Name, description, colour">Edit…</button>
+            <button class="btn btn--sm btn--ghost" data-act="ds-dup" title="${a.kind === 'filter' ? 'Copy with the same filter' : 'Copy with the same members'}">Copy</button>
+            ${a.kind === 'filter' ? '<button class="btn btn--sm btn--ghost" data-act="ds-freeze" title="Static copy of the recordings it matches now. Later imports and edits do not change it — a fixed set to report on.">Freeze</button>' : ''}
+            <button class="btn btn--sm btn--ghost${this.#confirmDelete ? ' lib-warn' : ''}" data-act="ds-del" title="Deletes the dataset only, never recordings">${this.#confirmDelete ? 'Really delete?' : 'Delete'}</button>
+          </div>
+          <p class="lib-hint">${esc(datasetCountText(a))}${a.description ? ` · ${esc(a.description)}` : ''}</p>` : '';
+        return `<section class="lib-ds-section"><h4>Datasets <button class="btn btn--sm btn--ghost" data-act="ds-new" title="Save the current filter as a dataset, or start a fixed list">+ New</button></h4>
+          <button class="lib-ds${this.#activeDs == null && this.#filter.datasetId == null ? ' is-on' : ''}" data-act="ds-all"><span class="lib-ds-icon" aria-hidden="true">◇</span><span class="lib-ds-name">All recordings</span></button>
+          ${this.#datasets.map(item).join('')}
+          ${this.#datasets.length ? '' : '<p class="lib-hint">A dataset is a named selection: a saved filter (dynamic) or a fixed list (static). A recording can be in several.</p>'}
+          ${actions}</section>`;
+    }
+
+    #sunControls(): string {
+        const w = this.#filter.sun ?? null;
+        const preset = w ? SUN_PRESETS.findIndex((p) => sameSunWindow(p.w, w)) : -1;
+        const ref = (side: 'from' | 'to') => `
+          <span class="lib-row lib-sun-ref"><span>${side}</span>
+            <select class="field-select" data-k="sun-${side}-ev">${SUN_EVENTS.map((e) => `<option value="${e.v}"${w?.[side].event === e.v ? ' selected' : ''}>${e.label}</option>`).join('')}</select>
+            <input class="input" type="number" step="15" data-k="sun-${side}-off" value="${w?.[side].offsetMin ?? 0}" title="Minutes after (negative: before)"><span>min</span></span>`;
+        return `<h4 title="Start time relative to the sun at the recording's own position or its site's coordinates. Recordings without a position are left out.">Sun</h4>
+          <select class="field-select" data-k="sun">
+            <option value=""${!w ? ' selected' : ''}>any</option>
+            ${SUN_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
+            <option value="custom"${w && preset < 0 ? ' selected' : ''}>custom…</option></select>
+          ${w ? ref('from') + ref('to') : ''}`;
+    }
+
+    async #onDatasetAction(act: string, btn: HTMLElement) {
+        const root = this.#o.projectRoot;
+        const a = this.#active;
+        if (act !== 'ds-del') this.#confirmDelete = false;
+        const fail = (e: unknown) => { this.el.querySelector('.lib-stats')!.textContent = `Dataset: ${e}`; };
+        try {
+            if (act === 'ds-all') { this.#activeDs = null; this.#filter = {}; }
+            else if (act === 'ds-open') {
+                const d = this.#datasets.find((x) => x.id === Number(btn.dataset.id));
+                if (!d) return;
+                this.#activeDs = d.id;
+                this.#filter = d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id };
+            }
+            else if (act === 'ds-new') {
+                const static_ = this.#active?.kind === 'static' && isEmptyFilter({ ...this.#filter, datasetId: null });
+                this.#showHost('New dataset', new DatasetDialog({
+                    projectRoot: root, filter: { ...this.#filter }, filterText: this.#chipText, shown: this.#facets?.total ?? 0,
+                    kind: static_ || isEmptyFilter(this.#filter) ? 'static' : 'filter',
+                    onDone: (id) => { this.#hideImport(); void this.#openDataset(id); },
+                }).el);
+                return;
+            }
+            else if (act === 'ds-edit' && a) {
+                this.#showHost(`Dataset “${a.name}”`, new DatasetDialog({
+                    projectRoot: root, dataset: a, filter: this.#filter, filterText: this.#chipText, shown: this.#facets?.total ?? 0,
+                    onDone: () => { this.#hideImport(); this.#dsStale = true; void this.reload({ keepPicks: true }); },
+                }).el);
+                return;
+            }
+            else if (act === 'ds-save-filter' && a) await catalogApi.updateDataset(root, a.id, { filter: normalizeFilter(this.#filter) });
+            else if (act === 'ds-revert' && a) this.#filter = structuredClone(a.filter ?? {});
+            else if ((act === 'ds-dup' || act === 'ds-freeze') && a) {
+                const freeze = act === 'ds-freeze';
+                const id = await catalogApi.duplicateDataset(root, a.id, copyName(a.name, this.#datasets.map((d) => d.name), freeze), freeze);
+                await this.#openDataset(id);
+                return;
+            }
+            else if (act === 'ds-del' && a) {
+                if (!this.#confirmDelete) { this.#confirmDelete = true; this.#renderFacets(); return; }
+                this.#confirmDelete = false;
+                await catalogApi.deleteDataset(root, a.id);
+                this.#activeDs = null;
+                this.#filter = {};
+            }
+            else return;
+        } catch (e) { fail(e); return; }
+        if (act !== 'ds-open' && act !== 'ds-all' && act !== 'ds-revert') this.#dsStale = true;
+        await this.reload();
+    }
+
+    async #openDataset(id: number) {
+        this.#dsStale = true;
+        this.#datasets = await catalogApi.datasets(this.#o.projectRoot).catch(() => this.#datasets);
+        const d = this.#datasets.find((x) => x.id === id);
+        this.#activeDs = d ? id : null;
+        if (d) this.#filter = d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id };
+        await this.reload();
+    }
+
     /** Active filters as removable chips (above the grid). */
     #renderViewbar() {
         const tf = this.#filter, f = this.#facets;
@@ -477,6 +612,10 @@ export class LibraryView {
             (ids ?? []).map((id) => vals?.find((v) => v.id === id)?.name ?? `#${id}`);
         const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
         const chips: [string, string, string?][] = [];
+        if (tf.datasetId != null) {
+            const d = this.#datasets.find((x) => x.id === tf.datasetId);
+            chips.push(['dataset', `in ${d?.name ?? `dataset ${tf.datasetId}`}`, d?.color ?? undefined]);
+        }
         for (const n of names(tf.siteIds, f?.sites)) chips.push(['site', n, valueColor('site', n)]);
         for (const n of names(tf.deviceIds, f?.devices)) chips.push(['device', n, valueColor('device', n)]);
         for (const n of names(tf.tagIds, f?.tags)) chips.push(['tag', `#${n}`]);
@@ -488,6 +627,8 @@ export class LibraryView {
         if (tf.bbox) chips.push(['bbox', `area ${bboxLabel(tf.bbox)}`]);
         if (tf.status) chips.push(['status', tf.status]);
         if (tf.unassigned) chips.push(['unassigned', 'without site/recorder']);
+        if (tf.sun) chips.push(['sun', `☀ ${sunWindowLabel(tf.sun)}`]);
+        this.#chipText = chips.map((c) => c[1]).join(' · ');
         const host = this.el.querySelector<HTMLElement>('.lib-viewbar')!;
         host.innerHTML = chips.length
             ? chips.map(([k, label, color]) => `<span class="lib-chip" data-k="${k}" data-v="${esc(label)}"${color ? ` style="--pill:${color}"` : ''}>${esc(label)}<button data-act="chip-clear" title="Remove this filter">×</button></span>`).join('')
@@ -499,7 +640,9 @@ export class LibraryView {
         const tf = this.#filter;
         const drop = (ids: number[] | undefined, vals: Facets['sites'] | undefined, name: string | undefined) =>
             name == null ? [] : (ids ?? []).filter((id) => vals?.find((v) => v.id === id)?.name !== name.replace(/^#/, ''));
-        if (k === 'all') this.#filter = {};
+        if (k === 'all') { this.#filter = {}; this.#activeDs = null; }
+        else if (k === 'dataset') { tf.datasetId = null; if (this.#active?.kind === 'static') this.#activeDs = null; }
+        else if (k === 'sun') tf.sun = null;
         else if (k === 'site') tf.siteIds = drop(tf.siteIds, this.#facets?.sites, label);
         else if (k === 'device') tf.deviceIds = drop(tf.deviceIds, this.#facets?.devices, label);
         else if (k === 'tag') tf.tagIds = drop(tf.tagIds, this.#facets?.tags, label);
@@ -749,6 +892,7 @@ export class LibraryView {
         else if (act === 'clear-site') { this.#filter.siteIds = []; void this.reload(); }
         else if (act === 'clear-device') { this.#filter.deviceIds = []; void this.reload(); }
         else if (act === 'clear-tag') { this.#filter.tagIds = []; void this.reload(); }
+        else if (act?.startsWith('ds-')) void this.#onDatasetAction(act, t.closest<HTMLElement>('[data-act]')!);
     }
 
     #onChange(e: Event) {
@@ -774,6 +918,13 @@ export class LibraryView {
             f.fromMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) : null;
         } else if (t.dataset.k === 'to') {
             f.toMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) + 86_400_000 : null;
+        } else if (t.dataset.k === 'sun') {
+            f.sun = t.value === '' ? null : t.value === 'custom' ? (f.sun ?? SUN_PRESETS[0].w) : SUN_PRESETS[Number(t.value)]?.w ?? null;
+            if (f.sun) f.sun = structuredClone(f.sun);
+        } else if (t.dataset.k?.startsWith('sun-') && f.sun) {
+            const [, side, part] = t.dataset.k.split('-') as [string, 'from' | 'to', 'ev' | 'off'];
+            if (part === 'ev') f.sun[side].event = t.value as SunEvent;
+            else f.sun[side].offsetMin = Math.round(Number(t.value) || 0);
         } else if (t.dataset.k === 'labels') {
             f.hasLabels = t.value === '' ? null : t.value === '1';
         } else return;
@@ -814,6 +965,7 @@ export class LibraryView {
         this.#importDialog = new ImportDialog({
             projectRoot: this.#o.projectRoot,
             onImported: () => {
+                this.#dsStale = true;
                 void this.reload();
                 // Headers + fingerprints of new files in the background (renames are recognised on the next import).
                 void catalogApi.hashStart(this.#o.projectRoot).catch(() => {}).finally(() => void this.#loadIntegrity());
