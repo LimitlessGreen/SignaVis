@@ -27,10 +27,13 @@ import { MapDialog } from './map-dialog.ts';
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
 const PAGE = 500;
-/** Tile grid: tile size incl. gap (px) and thumbnail resolution (drawn 1:1). */
-const TILE_W = 176;
-const TILE_H = 104;
-const THUMB: ThumbSpec = { w: 160, h: 48, maxHz: 12_000 };
+/** Tile grid: thumbnail sizes (drawn 1:1, also the card width), gap and caption height (px). */
+const TILE_SIZES = { s: { w: 120, h: 40 }, m: { w: 168, h: 56 }, l: { w: 240, h: 80 } } as const;
+type TileSize = keyof typeof TILE_SIZES;
+const TILE_GAP = 10;
+const TILE_CAPTION = 38;
+const TILE_HZ = [4_000, 12_000, 24_000];
+const TILE_KEY = 'signavis.library.tiles';
 const THUMB_BATCH = 6;
 const VIEW_KEY = 'signavis.library.view';
 
@@ -84,6 +87,16 @@ export class LibraryView {
     #thumbWanted: number[] = [];
     #thumbBusy = false;
     #lut = heatLut();
+    #tile: { size: TileSize; maxHz: number } = (() => {
+        try {
+            const t = JSON.parse(localStorage.getItem(TILE_KEY) ?? '{}');
+            return { size: t.size in TILE_SIZES ? t.size : 'm', maxHz: TILE_HZ.includes(t.maxHz) ? t.maxHz : 12_000 };
+        } catch { return { size: 'm' as TileSize, maxHz: 12_000 }; }
+    })();
+
+    get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.size], maxHz: this.#tile.maxHz }; }
+    get #tileW() { return TILE_SIZES[this.#tile.size].w + TILE_GAP; }
+    get #tileH() { return TILE_SIZES[this.#tile.size].h + TILE_CAPTION + TILE_GAP; }
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -97,8 +110,8 @@ export class LibraryView {
             <span class="lib-spacer"></span>
             <span class="lib-integrity"></span>
             <span class="lib-viewswitch" role="group" aria-label="View">
-              <button class="btn btn--sm btn--ghost" data-act="view-table" title="Table (one recording per line)">☰ Table</button>
-              <button class="btn btn--sm btn--ghost" data-act="view-grid" title="Tiles with a spectrogram of each whole recording">▦ Tiles</button>
+              <button data-act="view-table" title="Table (one recording per line)">☰ Table</button>
+              <button data-act="view-grid" title="Tiles with a spectrogram of each whole recording">▦ Tiles</button>
             </span>
             <button class="btn btn--sm btn--ghost" data-act="open-entities" title="Sites, recorders and deployments: names, coordinates, habitat, model, merge duplicates">Sites &amp; recorders…</button>
             <button class="btn btn--sm btn--ghost" data-act="open-map" title="Sites, recordings with their own position (mobile, GPS), GPS tracks; filter by area">Map…</button>
@@ -110,6 +123,14 @@ export class LibraryView {
             <aside class="lib-facets"></aside>
             <main class="lib-main">
               <canvas class="lib-heat" height="110" title="Recordings per day (columns) and hour (rows, local time)"></canvas>
+              <div class="lib-tilebar">
+                <span class="lib-seg" role="group" aria-label="Frequency range" title="Frequency range of the previews">
+                  ${TILE_HZ.map((hz) => `<button data-act="tile-hz" data-v="${hz}">0–${hz / 1000} kHz</button>`).join('')}
+                </span>
+                <span class="lib-seg" role="group" aria-label="Tile size" title="Tile size">
+                  <button data-act="tile-size" data-v="s" title="Small">S</button><button data-act="tile-size" data-v="m" title="Medium">M</button><button data-act="tile-size" data-v="l" title="Large">L</button>
+                </span>
+              </div>
               <div class="lib-grid-head">
                 <span class="c-path" data-sort="path">Path</span><span class="c-time" data-sort="start">Start (local)</span>
                 <span class="c-site">Site</span><span class="c-dev">Recorder</span><span class="c-size">Size</span><span class="c-lab">Labels</span>
@@ -146,6 +167,18 @@ export class LibraryView {
         this.el.classList.toggle('lib--tiles', this.#view === 'grid');
         this.el.querySelectorAll<HTMLElement>('.lib-viewswitch [data-act]').forEach((b) =>
             b.setAttribute('aria-pressed', String(b.dataset.act === `view-${this.#view}`)));
+        this.el.querySelectorAll<HTMLElement>('.lib-tilebar [data-act]').forEach((b) =>
+            b.setAttribute('aria-pressed', String(b.dataset.act === 'tile-hz' ? Number(b.dataset.v) === this.#tile.maxHz : b.dataset.v === this.#tile.size)));
+    }
+
+    #setTile(change: Partial<{ size: TileSize; maxHz: number }>) {
+        const keep = this.#selected;
+        this.#tile = { ...this.#tile, ...change };
+        localStorage.setItem(TILE_KEY, JSON.stringify(this.#tile));
+        this.#thumbs.clear();
+        this.#applyView();
+        this.#renderRows();
+        if (keep >= 0) this.#reveal(keep);
     }
 
     #setView(v: 'table' | 'grid') {
@@ -161,7 +194,7 @@ export class LibraryView {
 
     /** Top and height (px) of item i in the current view. */
     #itemBox(i: number): [number, number] {
-        return this.#view === 'grid' ? [Math.floor(i / this.#cols) * TILE_H, TILE_H] : [i * ROW_H, ROW_H];
+        return this.#view === 'grid' ? [Math.floor(i / this.#cols) * this.#tileH, this.#tileH] : [i * ROW_H, ROW_H];
     }
 
     #reveal(i: number) {
@@ -479,25 +512,38 @@ export class LibraryView {
         const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
         const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
         const total = this.#facets?.total ?? this.#rows.length;
-        const win = gridWindow(grid.clientWidth - 16, total, grid.scrollTop, grid.clientHeight, TILE_W, TILE_H);
+        const { w, h } = TILE_SIZES[this.#tile.size];
+        const tw = this.#tileW, th = this.#tileH;
+        const win = gridWindow(grid.clientWidth - 2 * TILE_GAP, total, grid.scrollTop, grid.clientHeight, tw, th);
         this.#cols = win.cols;
-        spacer.style.height = `${win.height}px`;
+        spacer.style.height = `${win.height + TILE_GAP}px`;
         if (win.last > this.#rows.length && this.#next) void this.#loadMore();
-        host.style.transform = `translateY(${(win.first / win.cols) * TILE_H}px)`;
-        host.style.gridTemplateColumns = `repeat(${win.cols}, ${TILE_W}px)`;
+        host.style.transform = `translateY(${(win.first / win.cols) * th}px)`;
+        host.style.gridTemplateColumns = `repeat(${win.cols}, minmax(${w}px, 1fr))`;
+        host.style.setProperty('--thumb-h', `${h}px`);
+        host.style.gridAutoRows = `${th - TILE_GAP}px`;
+        host.style.gap = `${TILE_GAP}px`;
         let html = '';
         const wanted: number[] = [];
         for (let i = win.first; i < Math.min(win.last, this.#rows.length); i++) {
             const r = this.#rows[i];
             const gone = r.status === 'missing';
-            const th = this.#thumbs.get(r.id);
-            if (th === undefined && !gone) wanted.push(r.id);
-            const t = localTime(r);
-            html += `<div class="lib-r lib-tile${this.#picked.has(r.id) || this.#pickAll ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
-                title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof th === 'string' ? ` — no preview: ${esc(th)}` : ''}">
-              <canvas width="${THUMB.w}" height="${THUMB.h}" data-id="${r.id}"></canvas>
-              <span class="lib-tile-l1"><span class="c-time">${esc(t)}</span><span class="lib-tile-dur">${esc(clockDuration(r.durationS))}</span>${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">${r.labels}</span>` : ''}</span>
-              <span class="lib-tile-l2">${esc([r.site, r.device].filter(Boolean).join(' · ') || (r.path ?? '').split('/').pop())}</span></div>`;
+            const thumb = this.#thumbs.get(r.id);
+            if (thumb === undefined && !gone) wanted.push(r.id);
+            const [date, time] = localTime(r).split(' ');
+            const sel = this.#picked.has(r.id) || this.#pickAll;
+            const where = [r.site, r.device].filter(Boolean).join(' · ') || (r.path ?? '').split('/').pop();
+            html += `<div class="lib-r lib-tile${sel ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
+                title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof thumb === 'string' ? ` — no preview: ${esc(thumb)}` : ''}">
+              <div class="lib-tile-img">
+                <canvas width="${w}" height="${h}" data-id="${r.id}"></canvas>
+                <span class="lib-tile-check" aria-hidden="true"></span>
+                ${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">◆ ${r.labels}</span>` : ''}
+                ${r.durationS != null ? `<span class="lib-tile-dur">${esc(clockDuration(r.durationS))}</span>` : ''}
+                ${gone ? '<span class="lib-tile-gone">missing</span>' : ''}
+              </div>
+              <div class="lib-tile-cap"><b>${esc(time ?? '')}</b><span>${esc(date ?? '')}</span></div>
+              <div class="lib-tile-where">${esc(where)}</div></div>`;
         }
         host.innerHTML = html;
         host.querySelectorAll<HTMLCanvasElement>('canvas[data-id]').forEach((c) => this.#drawThumb(c));
@@ -528,7 +574,9 @@ export class LibraryView {
                 if (!batch.length) break;
                 let res;
                 try {
-                    res = await catalogApi.thumbs(this.#o.projectRoot, batch, THUMB);
+                    const spec = this.#spec;
+                    res = await catalogApi.thumbs(this.#o.projectRoot, batch, spec);
+                    if (spec.w !== this.#spec.w || spec.maxHz !== this.#spec.maxHz) continue;   // size/range changed meanwhile
                 } catch (err) {
                     for (const id of batch) this.#thumbs.set(id, String(err));
                     continue;
@@ -571,6 +619,8 @@ export class LibraryView {
         }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
+        else if (act === 'tile-hz') this.#setTile({ maxHz: Number(t.closest<HTMLElement>('[data-v]')!.dataset.v) });
+        else if (act === 'tile-size') this.#setTile({ size: t.closest<HTMLElement>('[data-v]')!.dataset.v as TileSize });
         else if (act === 'view-table' || act === 'view-grid') this.#setView(act === 'view-grid' ? 'grid' : 'table');
         else if (act === 'open-import') this.#showImport();
         else if (act === 'open-entities') this.#showEntities();

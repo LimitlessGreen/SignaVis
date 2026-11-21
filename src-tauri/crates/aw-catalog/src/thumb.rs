@@ -50,15 +50,16 @@ pub struct ThumbResult {
 pub fn cached(cat: &Catalog, recording_id: i64, spec: ThumbSpec) -> Result<Option<Thumb>> {
     let spec = spec.clamp();
     Ok(cat.conn.query_row(
-        "SELECT w, h, max_hz, data FROM thumb WHERE recording_id = ?1 AND w = ?2 AND h = ?3",
-        params![recording_id, spec.w, spec.h],
+        "SELECT w, h, max_hz, data FROM thumb WHERE recording_id = ?1 AND w = ?2 AND h = ?3 AND max_hz = ?4",
+        params![recording_id, spec.w, spec.h, spec.max_hz],
         |r| Ok(Thumb { recording_id, w: r.get(0)?, h: r.get(1)?, max_hz: r.get(2)?, data: r.get(3)? })).optional()?)
 }
 
-pub fn store(cat: &Catalog, t: &Thumb) -> Result<()> {
+/// `key_hz`: the requested top frequency (cache key); `t.max_hz` may be lower (Nyquist).
+pub fn store(cat: &Catalog, t: &Thumb, key_hz: f64) -> Result<()> {
     cat.conn.execute(
         "INSERT OR REPLACE INTO thumb(recording_id, w, h, max_hz, data, created_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![t.recording_id, t.w, t.h, t.max_hz, t.data, now_ms()])?;
+        params![t.recording_id, t.w, t.h, key_hz, t.data, now_ms()])?;
     Ok(())
 }
 
@@ -82,7 +83,7 @@ pub fn thumbs(cat: &std::sync::Mutex<Catalog>, ids: &[i64], spec: ThumbSpec, mac
         match render(&path, spec) {
             Ok((data, max_hz)) => {
                 let t = Thumb { recording_id: id, w: spec.w, h: spec.h, max_hz, data };
-                if let Ok(c) = cat.lock() { let _ = store(&c, &t); }
+                if let Ok(c) = cat.lock() { let _ = store(&c, &t, spec.max_hz); }
                 ThumbResult { recording_id: id, thumb: Some(t), error: None }
             }
             Err(e) => fail(id, e.to_string()),
@@ -352,10 +353,11 @@ mod tests {
         let cat = Catalog::open_in_memory().unwrap();
         cat.conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
         let t = Thumb { recording_id: 7, w: 16, h: 8, max_hz: 1000.0, data: vec![3; 128] };
-        store(&cat, &t).unwrap();
+        store(&cat, &t, 1000.0).unwrap();
         let spec = ThumbSpec { w: 16, h: 8, max_hz: 1000.0 };
         assert_eq!(cached(&cat, 7, spec).unwrap().unwrap().data, vec![3; 128]);
         assert!(cached(&cat, 7, ThumbSpec { w: 32, ..spec }).unwrap().is_none());
+        assert!(cached(&cat, 7, ThumbSpec { max_hz: 4000.0, ..spec }).unwrap().is_none());
         assert_eq!(clear(&cat).unwrap(), 1);
     }
 }

@@ -44,6 +44,13 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
 ];
 
 fn migrate(conn: &Connection) -> Result<()> {
+    // Thumbnail cache from the first draft was keyed by recording only: it is a cache, so recreate it.
+    let old_thumb: bool = conn.query_row(
+        "SELECT COUNT(*) = 1 FROM pragma_table_info('thumb') WHERE pk > 0", [], |r| r.get(0))?;
+    if old_thumb {
+        conn.execute_batch("DROP TABLE thumb")?;
+        conn.execute_batch(SCHEMA)?;
+    }
     for (table, col, decl) in ADDED_COLUMNS {
         let has: bool = conn.query_row(
             "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2", params![table, col], |r| r.get(0))?;
