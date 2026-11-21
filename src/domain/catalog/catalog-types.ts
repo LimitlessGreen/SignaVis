@@ -55,6 +55,9 @@ export interface CatalogFilter {
     rootId?: number | null;
     siteIds?: number[];
     deviceIds?: number[];
+    tagIds?: number[];
+    /** Only recordings without site or recorder. */
+    unassigned?: boolean;
     fromMs?: number | null;
     toMs?: number | null;
     hourFrom?: number | null;
@@ -76,7 +79,7 @@ export interface CatalogPage { rows: CatalogRow[]; next: CatalogCursor | null }
 export interface FacetValue { id: number; name: string; count: number }
 export interface Facets {
     total: number; bytes: number; seconds: number | null; firstMs: number | null; lastMs: number | null;
-    noStart: number; sites: FacetValue[]; devices: FacetValue[];
+    noStart: number; sites: FacetValue[]; devices: FacetValue[]; tags?: FacetValue[];
 }
 export interface HeatCell { day: string; hour: number; count: number }
 export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
@@ -187,4 +190,133 @@ export function profileFromFile(text: string): ProfileSpec {
         tz: typeof p.tz === 'string' && p.tz ? p.tz : null,
         derivedDirs: Array.isArray(p.derivedDirs) ? p.derivedDirs.filter((d: unknown) => typeof d === 'string') : [],
     };
+}
+
+// ── Phase 2: sites, recorders, deployments, bulk edit, statistics ──────────
+
+export interface SiteFields {
+    name: string; lat?: number | null; lon?: number | null; elevation?: number | null;
+    habitat?: string | null; notes?: string | null; photo?: string | null;
+}
+export interface DeviceFields { name: string; model?: string | null; serial?: string | null; notes?: string | null }
+export interface DeploymentInfo {
+    id: number; siteId: number | null; site: string | null; deviceId: number | null; device: string | null;
+    startMs: number | null; endMs: number | null; recordings: number; notes: string | null;
+}
+export interface DeriveReport { deployments: number; recordings: number; keptNotes: number }
+export interface TagInfo { id: number; name: string; recordings: number }
+export interface Selection { ids?: number[] | null; filter?: CatalogFilter | null }
+export interface BulkEdit {
+    /** Absent = keep, null = clear. */
+    siteId?: number | null; deviceId?: number | null;
+    addTags?: string[]; removeTags?: string[];
+    /** [key, value]; value null removes the key. */
+    meta?: [string, string | null][];
+}
+export interface BulkReport {
+    recordings: number; siteChanged: number; deviceChanged: number; tagsAdded: number; tagsRemoved: number; metaSet: number; reclocked: number;
+}
+export interface RecordingDetail {
+    id: number; path: string | null; siteId: number | null; deviceId: number | null; deploymentId: number | null;
+    sampleRate: number | null; channels: number | null; tz: string | null; quickHash: string | null; fullHash: string | null;
+    /** [key, value, origin] */
+    meta: [string, string, string][]; tags: string[];
+}
+export interface ClassCount { class: string; count: number; recordings: number }
+export interface WeekCell { siteId: number | null; week: string; recordings: number; seconds: number; days: number }
+export interface DeviceStat {
+    deviceId: number | null; device: string | null; recordings: number; seconds: number;
+    firstDay: string | null; lastDay: string | null; days: number; missingDays: string[];
+}
+export interface CatalogStats {
+    totals: {
+        recordings: number; bytes: number; seconds: number; withDuration: number; firstMs: number | null; lastMs: number | null;
+        sites: number; devices: number; noStart: number; unassigned: number;
+    };
+    integrity: { ok: number; missing: number; changed: number; hashed: number; fullHashed: number; headerRead: number };
+    sites: [number | null, string][];
+    weeks: WeekCell[];
+    devices: DeviceStat[];
+    labeledRecordings: number;
+    labels: ClassCount[];
+    runs: { runId: number; model: string; covered: number; detections: number; classes: ClassCount[] }[];
+}
+
+/**
+ * Row picking like a file manager: click = only this row, Ctrl/Cmd = toggle,
+ * Shift = range from the anchor (added to the picked rows when Ctrl is held too).
+ */
+export function pickRows(ids: number[], picked: Set<number>, anchor: number | null, index: number,
+    mods: { ctrl?: boolean; shift?: boolean }): { picked: Set<number>; anchor: number } {
+    const id = ids[index];
+    if (id == null) return { picked, anchor: anchor ?? index };
+    if (mods.shift && anchor != null) {
+        const out = mods.ctrl ? new Set(picked) : new Set<number>();
+        const [a, b] = anchor < index ? [anchor, index] : [index, anchor];
+        for (let i = a; i <= b; i++) if (ids[i] != null) out.add(ids[i]);
+        return { picked: out, anchor };
+    }
+    if (mods.ctrl) {
+        const out = new Set(picked);
+        if (out.has(id)) out.delete(id); else out.add(id);
+        return { picked: out, anchor: index };
+    }
+    return { picked: new Set([id]), anchor: index };
+}
+
+/** "52.1234, 8.5678" or "52.1234 8.5678" (as copied from a map) → coordinates. */
+export function parseCoords(text: string): { lat: number; lon: number } | null {
+    const m = text.trim().match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)$/);
+    if (!m) return null;
+    // A decimal comma only when the separator is something else.
+    const num = (s: string) => Number(s.replace(',', '.'));
+    const lat = num(m[1]), lon = num(m[2]);
+    if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) return null;
+    return { lat, lon };
+}
+
+/** Consecutive ISO days as ranges: ["2023-03-15", "2023-03-16", "2023-03-20"] → ["03-15–03-16", "03-20"]. */
+export function dayRanges(days: string[]): string[] {
+    const out: string[] = [];
+    let start: string | null = null, prev: string | null = null;
+    const next = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const flush = () => { if (start) out.push(start === prev ? start.slice(5) : `${start.slice(5)}–${prev!.slice(5)}`); };
+    for (const d of [...days].sort()) {
+        if (prev && next(prev) === d) { prev = d; continue; }
+        flush();
+        start = prev = d;
+    }
+    flush();
+    return out;
+}
+
+/** Site × week matrix with every week from the first to the last (empty weeks stay visible). */
+export function coverageMatrix(stats: Pick<CatalogStats, 'sites' | 'weeks'>): {
+    weeks: string[]; rows: { siteId: number | null; name: string; cells: (WeekCell | null)[] }[];
+} {
+    const all = [...new Set(stats.weeks.map((w) => w.week))].sort();
+    const weeks: string[] = [];
+    if (all.length) {
+        const end = Date.parse(`${all[all.length - 1]}T00:00:00Z`);
+        for (let t = Date.parse(`${all[0]}T00:00:00Z`); t <= end && weeks.length < 1000; t += 7 * 86_400_000) {
+            weeks.push(new Date(t).toISOString().slice(0, 10));
+        }
+    }
+    const rows = stats.sites.map(([siteId, name]) => ({
+        siteId, name: name || '(no site)',
+        cells: weeks.map((w) => stats.weeks.find((c) => c.siteId === siteId && c.week === w) ?? null),
+    })).filter((r) => r.siteId != null || r.cells.some(Boolean)); // recordings without site and time: nothing to show
+    return { weeks, rows };
+}
+
+export function bulkReportText(r: BulkReport): string {
+    const parts = [
+        r.siteChanged && `${r.siteChanged.toLocaleString()} moved to another site`,
+        r.deviceChanged && `${r.deviceChanged.toLocaleString()} to another recorder`,
+        r.reclocked && `${r.reclocked.toLocaleString()} times recomputed from the recorder clock`,
+        r.tagsAdded && `${r.tagsAdded.toLocaleString()} tags added`,
+        r.tagsRemoved && `${r.tagsRemoved.toLocaleString()} tags removed`,
+        r.metaSet && `${r.metaSet.toLocaleString()} metadata values changed`,
+    ].filter(Boolean);
+    return `${r.recordings.toLocaleString()} recordings: ${parts.length ? parts.join(', ') : 'nothing changed'}`;
 }

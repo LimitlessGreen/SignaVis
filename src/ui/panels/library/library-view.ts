@@ -9,12 +9,15 @@
 
 import {
     fixedClockLabel, formatBytes, localTime,
-    periodsWithShift,
+    periodsWithShift, pickRows,
     type ClockPeriod, type ClockShift, type DeviceInfo,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
+import { EntitiesDialog } from './entities-dialog.ts';
+import { SelectionPanel } from './selection-panel.ts';
+import { StatsDialog } from './stats-dialog.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
@@ -54,6 +57,12 @@ export class LibraryView {
     #shifts: ClockShift[] = [];
     #hash: HashProgress | null = null;
     #unlisten: (() => void) | null = null;
+    /** Picked recording ids (multi-select) and the anchor row for Shift+click. */
+    #picked = new Set<number>();
+    #anchor: number | null = null;
+    /** Bulk edit applies to everything the filter shows. */
+    #pickAll = false;
+    #side: SelectionPanel;
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -66,6 +75,8 @@ export class LibraryView {
             <span class="lib-stats"></span>
             <span class="lib-spacer"></span>
             <span class="lib-integrity"></span>
+            <button class="btn btn--sm btn--ghost" data-act="open-entities" title="Sites, recorders and deployments: names, coordinates, habitat, model, merge duplicates">Sites &amp; recorders…</button>
+            <button class="btn btn--sm btn--ghost" data-act="open-stats" title="Coverage per site and week, recorder gaps, files, labels, detections">Statistics…</button>
             <button class="btn btn--sm" data-act="open-import">Import folder…</button>
             <button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>
           </header>
@@ -81,6 +92,10 @@ export class LibraryView {
             </main>
           </div>
           <div class="lib-import-host" hidden></div>`;
+        this.#side = new SelectionPanel({ projectRoot: o.projectRoot, onApplied: () => void this.reload({ keepPicks: true }) });
+        this.el.querySelector('.lib-body')!.appendChild(this.#side.el);
+        this.el.addEventListener('lib-pick-all', () => { this.#picked.clear(); this.#pickAll = true; this.#renderRows(); this.#updateSide(); });
+        this.el.addEventListener('lib-pick-none', () => { this.#picked.clear(); this.#pickAll = false; this.#renderRows(); this.#updateSide(); });
         this.el.addEventListener('click', (e) => this.#onClick(e));
         this.el.addEventListener('change', (e) => this.#onChange(e));
         this.el.addEventListener('input', (e) => this.#onSearch(e));
@@ -232,11 +247,12 @@ export class LibraryView {
 
     focus() { this.el.focus(); }
 
-    async reload() {
+    async reload(opts: { keepPicks?: boolean } = {}) {
         const gen = ++this.#gen;
         this.#rows = [];
         this.#next = null;
         this.#selected = -1;
+        if (!opts.keepPicks) { this.#picked.clear(); this.#pickAll = false; this.#anchor = null; }
         try {
             const [facets, heat] = await Promise.all([
                 catalogApi.facets(this.#o.projectRoot, this.#filter),
@@ -253,7 +269,15 @@ export class LibraryView {
         this.#renderFacets();
         this.#renderStats();
         this.#drawHeat();
+        this.#updateSide();
         await this.#loadMore(gen);
+    }
+
+    #updateSide() {
+        const f = this.#facets;
+        const lists = { sites: f?.sites ?? [], devices: f?.devices ?? [] };
+        if (this.#pickAll) void this.#side.show({ filter: this.#filter }, f?.total ?? 0, lists);
+        else void this.#side.show(this.#picked.size ? { ids: [...this.#picked] } : {}, this.#picked.size, lists);
     }
 
     async #loadMore(gen = this.#gen) {
@@ -284,7 +308,7 @@ export class LibraryView {
         const f = this.#facets;
         const host = this.el.querySelector('.lib-facets')!;
         if (!f) { host.innerHTML = ''; return; }
-        const list = (kind: 'site' | 'device', title: string, vals: Facets['sites'], sel: number[] = []) => vals.length ? `
+        const list = (kind: 'site' | 'device' | 'tag', title: string, vals: Facets['sites'], sel: number[] = []) => vals.length ? `
           <section><h4>${title}${sel.length ? ` <button class="btn btn--sm btn--ghost" data-act="clear-${kind}">all</button>` : ''}</h4>
           ${vals.map((v) => `<label class="lib-facet"><input type="checkbox" data-facet="${kind}" value="${v.id}"${sel.includes(v.id) ? ' checked' : ''}>
             <span>${esc(v.name)}</span><span class="num">${v.count.toLocaleString()}</span></label>`).join('')}</section>` : '';
@@ -304,7 +328,10 @@ export class LibraryView {
             <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
             <option value="0"${tf.hasLabels === false ? ' selected' : ''}>without labels</option></select></section>
           ${list('site', 'Sites', f.sites, tf.siteIds)}
-          ${list('device', 'Recorders <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.devices, tf.deviceIds)}`;
+          ${list('device', 'Recorders <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.devices, tf.deviceIds)}
+          ${list('tag', 'Tags', f.tags ?? [], tf.tagIds)}
+          <section><label class="lib-facet" title="Recordings that have no site or no recorder (path pattern did not give one)">
+            <input type="checkbox" data-k="unassigned"${tf.unassigned ? ' checked' : ''}><span>Only without site or recorder</span></label></section>`;
     }
 
     #renderRows() {
@@ -321,7 +348,7 @@ export class LibraryView {
         for (let i = first; i < Math.min(last, this.#rows.length); i++) {
             const r = this.#rows[i];
             const gone = r.status === 'missing';
-            html += `<div class="lib-r${i === this.#selected ? ' is-sel' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
+            html += `<div class="lib-r${this.#picked.has(r.id) || this.#pickAll ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
               <span class="c-path">${esc(r.path ?? '')}</span><span class="c-time">${esc(localTime(r))}</span>
               <span class="c-site">${esc(r.site ?? '')}</span><span class="c-dev">${esc(r.device ?? '')}</span>
               <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
@@ -367,9 +394,19 @@ export class LibraryView {
     }
 
     /** Mark the selected row without re-rendering (a re-render between the clicks would break double-click). */
-    #select(i: number) {
+    #select(i: number, mods: { ctrl?: boolean; shift?: boolean } = {}) {
         this.#selected = i;
-        this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((r) => r.classList.toggle('is-sel', Number(r.dataset.i) === i));
+        const before = [...this.#picked].join();
+        const r = pickRows(this.#rows.map((x) => x.id), this.#picked, this.#anchor, i, mods);
+        this.#picked = r.picked;
+        this.#anchor = r.anchor;
+        this.#pickAll = false;
+        this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((el) => {
+            const k = Number(el.dataset.i);
+            el.classList.toggle('is-sel', this.#picked.has(this.#rows[k]?.id));
+            el.classList.toggle('is-cur', k === i);
+        });
+        if ([...this.#picked].join() !== before) this.#updateSide();
     }
 
     async #open(i: number) {
@@ -389,10 +426,16 @@ export class LibraryView {
         const sortBy = t.closest<HTMLElement>('[data-sort]')?.dataset.sort as CatalogSort | undefined;
         if (sortBy && sortBy !== this.#sort) { this.#sort = sortBy; void this.reload(); return; }
         const row = t.closest<HTMLElement>('.lib-r');
-        if (row) { this.#select(Number(row.dataset.i)); return; }
+        if (row) {
+            const me = e as MouseEvent;
+            this.#select(Number(row.dataset.i), { ctrl: me.ctrlKey || me.metaKey, shift: me.shiftKey });
+            return;
+        }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
         else if (act === 'open-import') this.#showImport();
+        else if (act === 'open-entities') this.#showEntities();
+        else if (act === 'open-stats') this.#showStats();
         else if (act === 'hash-start' || act === 'hash-full') {
             const full = act === 'hash-full';
             this.#hash = {
@@ -415,14 +458,17 @@ export class LibraryView {
         else if (act === 'clear-status') { this.#filter.status = null; void this.reload(); }
         else if (act === 'clear-site') { this.#filter.siteIds = []; void this.reload(); }
         else if (act === 'clear-device') { this.#filter.deviceIds = []; void this.reload(); }
+        else if (act === 'clear-tag') { this.#filter.tagIds = []; void this.reload(); }
     }
 
     #onChange(e: Event) {
         const t = e.target as HTMLInputElement;
         if (t.closest('.lib-import-host')) return;
         const f = this.#filter;
-        if (t.dataset.facet) {
-            const key = t.dataset.facet === 'site' ? 'siteIds' : 'deviceIds';
+        if (t.dataset.k === 'unassigned') {
+            f.unassigned = t.checked;
+        } else if (t.dataset.facet) {
+            const key = ({ site: 'siteIds', device: 'deviceIds', tag: 'tagIds' } as const)[t.dataset.facet as 'site' | 'device' | 'tag'];
             const set = new Set(f[key] ?? []);
             if (t.checked) set.add(Number(t.value)); else set.delete(Number(t.value));
             f[key] = [...set];
@@ -485,6 +531,33 @@ export class LibraryView {
           <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>`;
         host.appendChild(this.#importDialog.el);
         host.hidden = false;
+    }
+
+    #showHost(title: string, content: HTMLElement) {
+        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        this.#importDialog = null;
+        host.innerHTML = `<div class="lib-import-head"><h3>${esc(title)}</h3><span class="lib-spacer"></span>
+          <button class="btn btn--sm btn--ghost" data-act="import-close" title="Close (Esc)">✕</button></div>`;
+        host.appendChild(content);
+        host.hidden = false;
+    }
+
+    #showEntities() {
+        this.#showHost('Sites & recorders', new EntitiesDialog({ projectRoot: this.#o.projectRoot, onChanged: () => void this.reload({ keepPicks: true }) }).el);
+    }
+
+    #showStats() {
+        const tf = this.#filter;
+        const filtered = Object.values(tf).some((v) => v != null && v !== false && !(Array.isArray(v) && !v.length));
+        this.#showHost('Statistics', new StatsDialog({
+            projectRoot: this.#o.projectRoot, filter: { ...tf }, filtered,
+            onPickWeek: (siteId, week) => {
+                const from = Date.parse(`${week}T00:00:00Z`);
+                this.#filter = { ...this.#filter, siteIds: siteId == null ? [] : [siteId], fromMs: from, toMs: from + 7 * 86_400_000 };
+                this.#hideImport();
+                void this.reload();
+            },
+        }).el);
     }
 
     #hideImport() {

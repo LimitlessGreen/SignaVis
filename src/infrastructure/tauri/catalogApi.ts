@@ -2,6 +2,7 @@
 
 import type {
     CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion, SiteInfo, ClockReport, ClockPeriod, ClockShift, DeviceInfo,
+    SiteFields, DeviceFields, DeploymentInfo, DeriveReport, TagInfo, Selection, BulkEdit, BulkReport, RecordingDetail, CatalogStats,
 } from '../../domain/catalog/catalog-types.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -38,6 +39,20 @@ export const catalogApi = {
     clockShifts: (projectRoot: string) => call<ClockShift[]>('catalog_clock_shifts', { projectRoot }),
     setDeviceClocks: (projectRoot: string, deviceId: number, periods: ClockPeriod[]) =>
         call<ClockReport>('catalog_set_device_clocks', { projectRoot, deviceId, periods }),
+    siteFields: (projectRoot: string, siteId: number) => call<SiteFields>('catalog_site_fields', { projectRoot, siteId }),
+    saveSite: (projectRoot: string, siteId: number | null, fields: SiteFields) => call<number>('catalog_save_site', { projectRoot, siteId, fields }),
+    deviceFields: (projectRoot: string, deviceId: number) => call<DeviceFields>('catalog_device_fields', { projectRoot, deviceId }),
+    saveDevice: (projectRoot: string, deviceId: number | null, fields: DeviceFields) => call<number>('catalog_save_device', { projectRoot, deviceId, fields }),
+    deleteEntity: (projectRoot: string, table: 'site' | 'device', id: number) => call<void>('catalog_delete_entity', { projectRoot, table, id }),
+    merge: (projectRoot: string, table: 'site' | 'device', from: number[], into: number) => call<number>('catalog_merge', { projectRoot, table, from, into }),
+    deriveDeployments: (projectRoot: string, gapDays: number) => call<DeriveReport>('catalog_derive_deployments', { projectRoot, gapDays }),
+    deployments: (projectRoot: string) => call<DeploymentInfo[]>('catalog_deployments', { projectRoot }),
+    setDeploymentNotes: (projectRoot: string, id: number, notes: string | null) => call<void>('catalog_set_deployment_notes', { projectRoot, id, notes }),
+    tags: (projectRoot: string) => call<TagInfo[]>('catalog_tags', { projectRoot }),
+    metaKeys: (projectRoot: string) => call<[string, number][]>('catalog_meta_keys', { projectRoot }),
+    bulkEdit: (projectRoot: string, selection: Selection, edit: BulkEdit) => call<BulkReport>('catalog_bulk_edit', { projectRoot, selection, edit }),
+    recordingDetail: (projectRoot: string, recordingId: number) => call<RecordingDetail>('catalog_recording_detail', { projectRoot, recordingId }),
+    stats: (projectRoot: string, filter: CatalogFilter) => call<CatalogStats>('catalog_stats', { projectRoot, filter }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
 };

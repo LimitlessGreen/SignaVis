@@ -85,3 +85,58 @@ test('periodsWithShift adds the change after the existing clock', async () => {
     assert.deepEqual(periodsWithShift([{ from: null, clock: 'UTC+00:00' }], jump).map((p) => p.clock), ['UTC+00:00', 'UTC+02:00']);
     assert.deepEqual(periodsWithShift([], { ...jump, kind: 'like-others' }).map((p) => [p.from, p.clock]), [[null, 'UTC+02:00']]);
 });
+
+test('pickRows: click, ctrl toggle, shift range', async () => {
+    const { pickRows } = await import('../src/domain/catalog/catalog-types.ts');
+    const ids = [10, 11, 12, 13, 14];
+    let s = pickRows(ids, new Set(), null, 1, {});
+    assert.deepEqual([...s.picked], [11]);
+    s = pickRows(ids, s.picked, s.anchor, 3, { shift: true });
+    assert.deepEqual([...s.picked].sort(), [11, 12, 13]);
+    assert.equal(s.anchor, 1, 'shift keeps the anchor');
+    s = pickRows(ids, s.picked, s.anchor, 2, { ctrl: true });
+    assert.deepEqual([...s.picked].sort(), [11, 13]);
+    s = pickRows(ids, s.picked, s.anchor, 4, { ctrl: true, shift: true });
+    assert.deepEqual([...s.picked].sort(), [11, 12, 13, 14], 'ctrl+shift adds the range');
+    s = pickRows(ids, s.picked, s.anchor, 0, {});
+    assert.deepEqual([...s.picked], [10]);
+});
+
+test('parseCoords accepts map copies and rejects nonsense', async () => {
+    const { parseCoords } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.deepEqual(parseCoords('52.1234, 8.5678'), { lat: 52.1234, lon: 8.5678 });
+    assert.deepEqual(parseCoords('52,1234 8,5678'), { lat: 52.1234, lon: 8.5678 });
+    assert.deepEqual(parseCoords(' -33.9;18.4 '), { lat: -33.9, lon: 18.4 });
+    assert.equal(parseCoords('95, 8'), null);
+    assert.equal(parseCoords('Moor'), null);
+});
+
+test('dayRanges compresses consecutive days', async () => {
+    const { dayRanges } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.deepEqual(dayRanges(['2023-03-16', '2023-03-15', '2023-03-20', '2023-03-31', '2023-04-01']), ['03-15–03-16', '03-20', '03-31–04-01']);
+    assert.deepEqual(dayRanges([]), []);
+});
+
+test('coverageMatrix keeps empty weeks and sites in order', async () => {
+    const { coverageMatrix } = await import('../src/domain/catalog/catalog-types.ts');
+    const m = coverageMatrix({
+        sites: [[2, 'Site 2'], [null, '']],
+        weeks: [
+            { siteId: 2, week: '2023-03-13', recordings: 6, seconds: 0, days: 2 },
+            { siteId: null, week: '2023-03-27', recordings: 1, seconds: 0, days: 1 },
+        ],
+    });
+    assert.deepEqual(m.weeks, ['2023-03-13', '2023-03-20', '2023-03-27']);
+    assert.equal(m.rows[1].name, '(no site)');
+    assert.deepEqual(m.rows[0].cells.map((c) => c?.recordings ?? 0), [6, 0, 0]);
+    assert.deepEqual(m.rows[1].cells.map((c) => c?.recordings ?? 0), [0, 0, 1]);
+    const noTime = coverageMatrix({ sites: [[2, 'Site 2'], [null, '']], weeks: [{ siteId: 2, week: '2023-03-13', recordings: 1, seconds: 0, days: 1 }] });
+    assert.equal(noTime.rows.length, 1, 'no-site row without any week is dropped');
+});
+
+test('bulkReportText', async () => {
+    const { bulkReportText } = await import('../src/domain/catalog/catalog-types.ts');
+    const r = { recordings: 9, siteChanged: 0, deviceChanged: 0, tagsAdded: 9, tagsRemoved: 0, metaSet: 0, reclocked: 0 };
+    assert.equal(bulkReportText(r), '9 recordings: 9 tags added');
+    assert.equal(bulkReportText({ ...r, tagsAdded: 0 }), '9 recordings: nothing changed');
+});
