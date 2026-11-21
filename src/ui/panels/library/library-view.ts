@@ -117,6 +117,7 @@ export class LibraryView {
     #confirmDelete = false;
     /** Dataset counts are reloaded only after changes (a dynamic dataset over a big catalog can take a second). */
     #dsStale = true;
+    #reloadOnClose = false;
 
     get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.zoom], maxHz: this.#tile.maxHz }; }
     get #tileW() { return TILE_SIZES[this.#tile.zoom].w + TILE_GAP; }
@@ -176,12 +177,19 @@ export class LibraryView {
             total: () => this.#facets?.total ?? this.#rows.length,
             open: (i) => void this.#open(i),
             onIndex: (i) => {
-                if (i == null) { this.el.focus(); return; }
+                if (i == null) {
+                    this.el.focus();
+                    // Members changed while the large view was open: counts and the open dataset follow now.
+                    if (this.#reloadOnClose) { this.#reloadOnClose = false; void this.reload({ keepPicks: true }); }
+                    return;
+                }
                 this.#select(i, { keepPicks: true });
                 this.#reveal(i);
             },
             maxHz: () => this.#tile.maxHz,
             color: valueColor,
+            datasets: () => this.#datasets.filter((d) => d.kind === 'static'),
+            onDatasetsChanged: () => { this.#dsStale = true; this.#reloadOnClose = true; },
         });
         this.el.appendChild(this.#expand.el);
         this.el.addEventListener('lib-pick-all', () => { this.#picked.clear(); this.#pickAll = true; this.#renderRows(); this.#updateSide(); });
@@ -957,6 +965,9 @@ export class LibraryView {
             this.#reveal(j);
         } else if (e.key === 'Enter' && this.#selected >= 0) {
             void this.#open(this.#selected);
+        } else if (e.key === ' ' && this.#selected >= 0) {
+            e.preventDefault();
+            void this.#expand.show(this.#selected);   // large view also from the table
         }
     }
 

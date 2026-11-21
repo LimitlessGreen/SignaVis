@@ -34,3 +34,24 @@ test('datasetCountText', () => {
     assert.equal(datasetCountText({ ...d, recordings: 12, ranges: 2 }), '12 recordings · 2 ranges');
     assert.equal(datasetCountText({ ...d, error: 'x' }), 'filter refers to a deleted dataset');
 });
+
+import { fmtClock, parseClock, rangeFromDrag } from '../src/domain/catalog/catalog-types.ts';
+
+test('fmtClock / parseClock round trip', () => {
+    assert.equal(fmtClock(5), '0:05');
+    assert.equal(fmtClock(83.5), '1:23.5');
+    assert.equal(fmtClock(3725), '1:02:05');
+    assert.equal(parseClock('83'), 83);
+    assert.equal(parseClock('1:23,5'), 83.5);
+    assert.equal(parseClock('0:01:23'), 83);
+    assert.equal(parseClock('1:75'), null);
+    assert.equal(parseClock('abc'), null);
+    for (const s of [0, 9.9, 61.2, 3599]) assert.equal(parseClock(fmtClock(s)), s);
+});
+
+test('rangeFromDrag orders, clamps and rounds; rejects tiny drags', () => {
+    assert.deepEqual(rangeFromDrag(600, 300, 1200, 60), [15, 30]);
+    assert.deepEqual(rangeFromDrag(-50, 1300, 1200, 60), [0, 60]);
+    assert.deepEqual(rangeFromDrag(100, 101, 1200, 60), null);
+    assert.deepEqual(rangeFromDrag(0, 10, 0, 60), null);
+});

@@ -187,6 +187,17 @@ pub fn remove_members(cat: &mut Catalog, id: i64, sel: &Selection) -> Result<usi
     Ok(removed)
 }
 
+/// Remove one time range of a recording from a static dataset. Returns 1 if it was there.
+pub fn remove_range(cat: &Catalog, id: i64, recording_id: i64, t0: f64, t1: f64) -> Result<usize> {
+    if kind_of(cat, id)? != "static" { return Err("ranges only exist in static datasets".into()); }
+    // Ranges come back from JSON: compare with a small tolerance.
+    let n = cat.conn.execute(
+        "DELETE FROM dataset_member WHERE dataset_id = ?1 AND recording_id = ?2 AND abs(t0 - ?3) < 1e-6 AND abs(t1 - ?4) < 1e-6",
+        params![id, recording_id, t0, t1])?;
+    if n > 0 { cat.conn.execute("UPDATE dataset SET updated_at = ?1 WHERE id = ?2", params![now_ms(), id])?; }
+    Ok(n)
+}
+
 /// Copy a dataset under a new name. `freeze` turns a dynamic one into a static list of what it
 /// matches now (a fixed snapshot, e.g. for a thesis).
 pub fn duplicate(cat: &mut Catalog, id: i64, name: &str, freeze: bool) -> Result<i64> {
@@ -289,6 +300,10 @@ mod tests {
         assert_eq!((info.recordings, info.ranges), (5, 2), "a recording with two ranges counts once");
         let m = recording_datasets(&cat, all[10]).unwrap();
         assert_eq!(m[0].ranges, vec![(5.0, 8.0), (20.0, 30.0)]);
+        assert_eq!(remove_range(&cat, d, all[10], 20.0, 30.0).unwrap(), 1);
+        assert_eq!(remove_range(&cat, d, all[10], 20.0, 30.0).unwrap(), 0);
+        assert_eq!(recording_datasets(&cat, all[10]).unwrap()[0].ranges, vec![(5.0, 8.0)]);
+        add_members(&mut cat, d, &sel(&all[10..11]), Some((20.0, 30.0))).unwrap();
         // Adding the whole recording replaces its ranges.
         add_members(&mut cat, d, &sel(&all[10..11]), None).unwrap();
         assert_eq!(list(&cat).unwrap()[0].ranges, 0);

@@ -239,6 +239,10 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_dataset_add" => Ok(json!(ds::add_members(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, &a.selection, a.range.map(|r| (r[0], r[1]))).map_err(e)?)),
         "catalog_dataset_remove" => Ok(json!(ds::remove_members(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, &a.selection).map_err(e)?)),
         "catalog_duplicate_dataset" => Ok(json!(ds::duplicate(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, a.name.as_deref().unwrap_or(""), a.freeze).map_err(e)?)),
+        "catalog_dataset_remove_range" => {
+            let r = a.range.ok_or("range missing")?;
+            Ok(json!(ds::remove_range(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, a.recording_id.ok_or("recordingId missing")?, r[0], r[1]).map_err(e)?))
+        }
         "catalog_recording_datasets" => j(serde_json::to_value(ds::recording_datasets(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
         _ => Err(format!("unknown command {cmd}")),
     }

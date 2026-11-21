@@ -539,3 +539,9 @@ pub async fn catalog_recording_datasets(state: tauri::State<'_, CatalogState>, p
     let cat = state.get(&project_root)?;
     blocking(move || ds::recording_datasets(&*cat.lock().map_err(err)?, recording_id).map_err(err)).await
 }
+
+#[tauri::command]
+pub async fn catalog_dataset_remove_range(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, recording_id: i64, range: [f64; 2]) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::remove_range(&*cat.lock().map_err(err)?, id, recording_id, range[0], range[1]).map_err(err)).await
+}

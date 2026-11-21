@@ -77,6 +77,8 @@ export const catalogApi = {
     datasetRemove: (projectRoot: string, id: number, selection: Selection) => call<number>('catalog_dataset_remove', { projectRoot, id, selection }),
     duplicateDataset: (projectRoot: string, id: number, name: string, freeze: boolean) =>
         call<number>('catalog_duplicate_dataset', { projectRoot, id, name, freeze }),
+    datasetRemoveRange: (projectRoot: string, id: number, recordingId: number, range: [number, number]) =>
+        call<number>('catalog_dataset_remove_range', { projectRoot, id, recordingId, range }),
     recordingDatasets: (projectRoot: string, recordingId: number) => call<Membership[]>('catalog_recording_datasets', { projectRoot, recordingId }),
 };
 

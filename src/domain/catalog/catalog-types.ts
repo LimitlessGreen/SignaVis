@@ -439,3 +439,28 @@ export function copyName(name: string, taken: string[], frozen = false): string 
     if (!low.has(`${base})`.toLowerCase())) return `${base})`;
     for (let i = 2; ; i++) if (!low.has(`${base} ${i})`.toLowerCase())) return `${base} ${i})`;
 }
+
+// ── Time ranges in a recording ───────────────────────────────────────────
+
+/** "m:ss.s" (or "h:mm:ss") for range fields; tenths only when needed. */
+export function fmtClock(s: number): string {
+    const t = Math.round(s * 10) / 10;
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    const ss = (Number.isInteger(sec) ? String(sec) : sec.toFixed(1)).padStart(Number.isInteger(sec) ? 2 : 4, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+/** Seconds from "83", "83.5", "1:23", "1:23.5", "0:01:23" (comma as decimal mark too); null if not a time. */
+export function parseClock(v: string): number | null {
+    const t = v.trim().replace(',', '.');
+    if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(t)) return null;
+    const parts = t.split(':').map(Number);
+    if (parts.slice(1).some((p) => p >= 60)) return null;
+    return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+/** Range from a drag over a spectrogram of `width` px showing `duration` s: ordered, clamped, 0.1 s steps; null if too short. */
+export function rangeFromDrag(x0: number, x1: number, width: number, duration: number, minS = 0.2): [number, number] | null {
+    if (!(width > 0) || !(duration > 0)) return null;
+    const at = (x: number) => Math.round(Math.min(duration, Math.max(0, (x / width) * duration)) * 10) / 10;
+    const [a, b] = [at(Math.min(x0, x1)), at(Math.max(x0, x1))];
+    return b - a >= minS ? [a, b] : null;
+}

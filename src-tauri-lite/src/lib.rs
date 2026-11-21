@@ -149,6 +149,7 @@ pub fn run() {
             catalog::catalog_dataset_remove,
             catalog::catalog_duplicate_dataset,
             catalog::catalog_recording_datasets,
+            catalog::catalog_dataset_remove_range,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,
