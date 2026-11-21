@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Channel selection for multichannel recordings**: Mix, L, R (or channel n)
+  in the status bar and under Settings → Display. Spectrogram, waveform and all
+  analyses (BirdNET, BirdBox, Snap, similar calls, SNR) use the same channel(s);
+  playback keeps all channels. Player API: `channel` option, `setChannel()`,
+  `getChannel()` and the `channelselectionchange` event.
+
 ## [1.3.2] - 2026-11-19
 
 ### Fixed

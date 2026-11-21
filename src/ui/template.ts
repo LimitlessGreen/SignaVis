@@ -260,6 +260,10 @@ export function createPlayerHTML(opts = {}) {
 
         <div class="settings-section">
             <h3 class="settings-section-title">Display</h3>
+            <div class="settings-row" data-aw="channelSettingRow" hidden>
+                <label class="settings-label" title="Channels shown and analysed. Playback keeps all channels.">Channel</label>
+                <select data-aw="channelSettingSelect" class="settings-select" aria-label="Channel"></select>
+            </div>
             <div class="settings-row">
                 <label class="settings-label">Max Freq</label>
                 <select data-aw="maxFreqModeSelect" class="settings-select" title="Auto: detect from content. Nyquist: full bandwidth. Fixed: use selected value.">
