@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Channel selection**: also under Settings → Display. Player API: `channel`
+  option, `setChannel()`, `getChannel()` and the `channelselectionchange` event.
+
 ## [1.4.1] - 2026-11-23
 
 ### Changed
