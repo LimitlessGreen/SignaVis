@@ -41,8 +41,9 @@ export function floatWavHeader(samples: number, sampleRate: number): ArrayBuffer
  * Files this page wrote, by owner (one per player): a new write removes only the same owner's
  * earlier file, so players on one page do not delete what another still reads.
  */
-const ownFiles = new Map<string, object>();
+const ownFiles = new Map<string, { owner: object; generation: number }>();
 const PAGE_OWNER = {};
+let writes = 0;
 let counter = 0;
 
 /**
@@ -56,13 +57,18 @@ export async function writePcmWavFile(
     root?: FileSystemDirectoryHandle,
     useWorker = !root && typeof Worker !== 'undefined', // the worker writes to the real OPFS root
     owner: object = PAGE_OWNER,
+    /**
+     * Increasing per owner: a write removes only that owner's files of earlier generations, so a
+     * late (superseded) call cannot delete the file of a newer one.
+     */
+    generation = ++writes,
 ): Promise<File> {
     const base = root ?? await navigator.storage.getDirectory();
     const dir = await base.getDirectoryHandle(PCM_CACHE_DIR, { create: true });
-    await removeOldFiles(dir, owner);
+    await removeOldFiles(dir, owner, generation);
     const name = `pcm-${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 8)}.wav`;
     const handle = await dir.getFileHandle(name, { create: true });
-    ownFiles.set(name, owner);
+    ownFiles.set(name, { owner, generation });
     try {
         if (!useWorker || !(await writeInWorker(channelData, sampleRate, name))) {
             await writeWithWritable(handle, channelData, sampleRate);
@@ -131,13 +137,14 @@ async function writeInWorker(channelData: Float32Array, sampleRate: number, name
     }
 }
 
-async function removeOldFiles(dir: FileSystemDirectoryHandle, owner: object): Promise<void> {
+async function removeOldFiles(dir: FileSystemDirectoryHandle, owner: object, generation: number): Promise<void> {
     const now = Date.now();
     for await (const [name, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
         if (h.kind !== 'file') continue;
-        const fileOwner = ownFiles.get(name);
-        if (fileOwner && fileOwner !== owner) continue; // another player's current file
-        let stale = fileOwner === owner;
+        const own = ownFiles.get(name);
+        // Another player's file, or this player's newer (or same) generation: still in use.
+        if (own && (own.owner !== owner || own.generation >= generation)) continue;
+        let stale = !!own;
         if (!stale) {
             try { stale = now - (await (h as FileSystemFileHandle).getFile()).lastModified > STALE_MS; } catch { /* in use elsewhere */ }
         }

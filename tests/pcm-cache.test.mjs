@@ -75,3 +75,14 @@ test('floatWavHeader: refuses sizes the 32-bit RIFF fields cannot hold', async (
     assert.equal(new DataView(floatWavHeader(max, 48000)).getUint32(40, true), max * 4);
     assert.throws(() => floatWavHeader(max + 1, 48000), RangeError);
 });
+
+test('writePcmWavFile: a late write of an older generation keeps the newer file', async () => {
+    const root = new FakeDir();
+    const dir = await root.getDirectoryHandle(PCM_CACHE_DIR, { create: true });
+    const owner = {};
+    const newer = await writePcmWavFile(signal(100), 8000, root, false, owner, 2);
+    const older = await writePcmWavFile(signal(100), 8000, root, false, owner, 1);
+    assert.deepEqual([...dir.children.keys()].sort(), [newer.name, older.name].sort());
+    const next = await writePcmWavFile(signal(100), 8000, root, false, owner, 3);
+    assert.deepEqual([...dir.children.keys()], [next.name]);
+});
