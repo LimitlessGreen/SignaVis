@@ -67,7 +67,7 @@
     "dev": "node ./scripts/ensure-assets.js && vite",
     "demo:gifs": "uv run --with playwright python -I tools/demo-gifs/demo_gifs.py",
     "dev:analysis-mock": "node ./scripts/mock-analysis-server.mjs",
-    "build": "npm run build:css && vite build && node -e \"require('fs').copyFileSync('src/styles/tokens.css','dist/tokens.css')\" && node ./scripts/generate-types.js",
+    "build": "npm run build:css && vite build && node -e \"require('fs').copyFileSync('src/styles/tokens.css','dist/tokens.css'); require('fs').copyFileSync('src-tauri/crates/aw-dsp-wasm/THIRD_PARTY_LICENSES.txt','dist/aw_dsp_wasm.THIRD_PARTY_LICENSES.txt')\" && node ./scripts/generate-types.js",
     "build:desktop": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.demo.config.js",
     "dev:lite": "node ./scripts/ensure-assets.js && vite --config demo/vite.lite.config.js",
     "build:lite": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.lite.config.js",
