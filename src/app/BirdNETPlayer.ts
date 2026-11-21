@@ -84,6 +84,7 @@ import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
 import type { LiveRecorder, LiveRecorderOptions, LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 import type { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
 import { liveRecordingSupported } from '../infrastructure/audio/liveSupport.ts';
+import { setChannelSelection, getChannelSelection, effectiveSelection, toChannelSelection, toChannelOption, type ChannelOption } from '../shared/channels.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Load the recording into the player when it stops (default true). */
@@ -175,6 +176,9 @@ export class BirdNETPlayer {
      * @param {Array<{name: string, color?: string, shortcut?: string}>} [options.labelTaxonomy] - label taxonomy
      * @param {boolean}     [options.readOnly] - view/listen only: no drawing, editing or label hotkeys (default: false)
      * @param {boolean}     [options.normalize] - play normalized to -1 dBFS peak, max +40 dB (default: false)
+     * @param {'mix'|'left'|'right'|number} [options.channel] - channel(s) of multichannel recordings shown
+     *   and analysed: 'mix' (mean of all), 'left', 'right' or a 0-based index. Playback keeps all
+     *   channels. Applies to every player on the page and is remembered (default: the last choice, else 'mix')
      * @param {string[]}    [options.toolbar] - toolbar controls to keep, all others are hidden:
      *   'open', 'transport' (= 'play' + 'seek'), 'play' (play/pause, stop),
      *   'seek' (jump to start/end, ±5 s), 'time', 'volume', 'listen', 'follow', 'loop', 'crosshair', 'fit',
@@ -272,6 +276,9 @@ export class BirdNETPlayer {
         if (this.options.labelDisplay === 'lanes') this.root?.classList.add('label-display-lanes');
         this._installFeatures();
         if (this.options.normalize) this.setNormalize(true);
+        if (this.options.channel !== undefined) {
+            try { this.setChannel(this.options.channel); } catch (err) { console.warn(err); }
+        }
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
         // routing through the player event bus first).
@@ -1012,6 +1019,26 @@ export class BirdNETPlayer {
 
     /** Normalized playback (peak -> -1 dBFS, max +40 dB), per loaded file. Also toggled by the "Norm" button. */
     setNormalize(on: boolean) { this._state?._setNormalize(on); }
+
+    /**
+     * Channel(s) shown and analysed: 'mix', 'left', 'right' or a 0-based index. Applies to every
+     * player on the page. A channel the recording lacks falls back to the mix. Fires 'channelselectionchange'.
+     */
+    setChannel(channel: ChannelOption) {
+        const sel = toChannelSelection(channel);
+        if (!sel) throw new Error(`setChannel: expected 'mix', 'left', 'right' or a channel index, got ${JSON.stringify(channel)}`);
+        setChannelSelection(sel);
+    }
+
+    /**
+     * The chosen channel (`channel`: 'mix' or a 0-based index), the one applied to the loaded
+     * recording (`effective`) and its channel count (`channels`, 0 before a recording is loaded).
+     */
+    getChannel(): { channel: 'mix' | number; effective: 'mix' | number; channels: number } {
+        const sel = getChannelSelection();
+        const n = this._state?.channelCount ?? 0;
+        return { channel: toChannelOption(sel), effective: toChannelOption(effectiveSelection(sel, Math.max(1, n))), channels: n };
+    }
 
     get normalize() { return !!this._state?.normalize; }
 

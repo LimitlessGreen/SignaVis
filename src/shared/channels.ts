@@ -102,6 +102,23 @@ export function withChannelKey<T extends object>(params: T, nChannels: number, s
     return { ...params, channels: channelSelectionKey(effectiveSelection(sel, nChannels)) };
 }
 
+/** Public form of a selection: 'mix', 'left' (= 0), 'right' (= 1) or a 0-based channel index. */
+export type ChannelOption = 'mix' | 'left' | 'right' | number;
+
+/** ChannelOption → ChannelSelection; null for anything invalid. */
+export function toChannelSelection(v: unknown): ChannelSelection | null {
+    if (v === 'mix') return { mode: 'mix' };
+    if (v === 'left') return { mode: 'single', channel: 0 };
+    if (v === 'right') return { mode: 'single', channel: 1 };
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1000) return { mode: 'single', channel: v };
+    return null;
+}
+
+/** ChannelSelection → ChannelOption ('mix' or a 0-based index). */
+export function toChannelOption(sel: ChannelSelection): 'mix' | number {
+    return sel.mode === 'mix' ? 'mix' : sel.channel;
+}
+
 /** Short label for UI: "Mix", "L", "R", or "Ch 3". */
 export function channelLabel(sel: ChannelSelection, n: number): string {
     if (sel.mode === 'mix') return 'Mix';

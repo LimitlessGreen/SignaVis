@@ -41,7 +41,7 @@ import { UltrasoundDialog, loadUltrasoundDefault, saveUltrasoundDefault, type Ul
 import { computeBandProfileAsync, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
 import {
     selectedSamples, onChannelSelectionChange, getChannelSelection, setChannelSelection,
-    parseChannelSelection, channelSelectionKey, channelLabel, effectiveSelection, type ChannelSelection,
+    parseChannelSelection, channelSelectionKey, channelLabel, effectiveSelection, toChannelOption, type ChannelSelection,
 } from '../shared/channels.ts';
 
 /**
@@ -197,9 +197,9 @@ export class PlayerState {
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
         this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
-        this.d.channelSelect?.addEventListener('change', (e) => {
-            setChannelSelection(parseChannelSelection((e.target as HTMLSelectElement).value));
-        });
+        for (const sel of [this.d.channelSelect, this.d.channelSettingSelect]) {
+            sel?.addEventListener('change', () => setChannelSelection(parseChannelSelection(sel.value)));
+        }
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
@@ -708,6 +708,8 @@ export class PlayerState {
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
             channelSelect:          q('channelSelect'),
+            channelSettingRow:      q('channelSettingRow'),
+            channelSettingSelect:   q('channelSettingSelect'),
             scaleSelect:            q('scaleSelect'),
             colourScaleSelect:      q('colourScaleSelect'),
             presetSelect:           q('presetSelect'),
@@ -809,17 +811,22 @@ export class PlayerState {
         this._updateAmplitudeLabels();
     }
 
-    /** Channel picker in the status bar; only shown for multichannel recordings. */
+    /** Channel pickers (status bar, settings); only shown for multichannel recordings. */
     _updateChannelSelect() {
-        const sel = this.d.channelSelect;
-        if (!sel) return;
         const n = this._engine.audioBuffer?.numberOfChannels ?? 1;
-        sel.hidden = n <= 1;
-        if (n <= 1) return;
-        const opts: ChannelSelection[] = [{ mode: 'mix' }, ...Array.from({ length: n }, (_, c) => ({ mode: 'single' as const, channel: c }))];
-        sel.replaceChildren(...opts.map((o) => new Option(channelLabel(o, n), channelSelectionKey(o))));
-        sel.value = channelSelectionKey(effectiveSelection(getChannelSelection(), n));
+        if (this.d.channelSettingRow) this.d.channelSettingRow.hidden = n <= 1;
+        for (const sel of [this.d.channelSelect, this.d.channelSettingSelect]) {
+            if (!sel) continue;
+            if (sel === this.d.channelSelect) sel.hidden = n <= 1;
+            if (n <= 1) continue;
+            const opts: ChannelSelection[] = [{ mode: 'mix' }, ...Array.from({ length: n }, (_, c) => ({ mode: 'single' as const, channel: c }))];
+            sel.replaceChildren(...opts.map((o) => new Option(channelLabel(o, n), channelSelectionKey(o))));
+            sel.value = channelSelectionKey(effectiveSelection(getChannelSelection(), n));
+        }
     }
+
+    /** Number of channels of the loaded recording (0 before one is loaded). */
+    get channelCount(): number { return this._engine.audioBuffer?.numberOfChannels ?? 0; }
 
     _onChannelSelectionChanged() {
         this._updateChannelSelect();
@@ -829,7 +836,11 @@ export class PlayerState {
         this._drawOverviewWaveform();
         // Hidden, the spectrogram is recomputed only when shown again.
         this._regenerateSpectrogram();
-        this._emit('channelselectionchange', getChannelSelection());
+        // Same shape as BirdNETPlayer.getChannel().
+        const sel = getChannelSelection(), n = this.channelCount;
+        this._emit('channelselectionchange', {
+            channel: toChannelOption(sel), effective: toChannelOption(effectiveSelection(sel, Math.max(1, n))), channels: n,
+        });
         // The amplitude peak changes with the channel: draw again with it.
         void this._updateChannelAnalysis().then(() => {
             if (this._engine.audioBuffer !== buffer) return;
