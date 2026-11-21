@@ -18,7 +18,7 @@ import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
 import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
-import { selectedSamples, onChannelSelectionChange } from '../../shared/channels.ts';
+import { selectedSamples, onChannelSelectionChange, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
 const MODEL_TAG = 'BirdBox Just-Bird FP16 (24632a5)';
@@ -42,8 +42,11 @@ export interface BirdBoxPanelOptions {
     detector?: BirdBoxDetector;
 }
 
-/** `stopped`: Stop ended the run, its rows reach only raw.analyzedTo. */
-interface Result { raw: RawRows; cache: FusionCache; stopped?: boolean }
+/**
+ * `stopped`: Stop ended the run, its rows reach only raw.analyzedTo.
+ * `channels`: channel selection the run analysed; Snap ignores runs on another selection.
+ */
+interface Result { raw: RawRows; cache: FusionCache; stopped?: boolean; channels: string }
 
 export class BirdBoxPanel {
     private readonly o: BirdBoxPanelOptions;
@@ -107,7 +110,8 @@ export class BirdBoxPanel {
     /** The run's result if its rows reach the seconds around `time` (a stopped run may not). */
     private covering(recordingId: string | null, time: number): Result | null {
         const res = this.results.get(key(recordingId));
-        return res && runCovers(res.raw, !!res.stopped, time) ? res : null;
+        return res && res.channels === channelSelectionKey(getChannelSelection())
+            && runCovers(res.raw, !!res.stopped, time) ? res : null;
     }
 
     /** Fuse the active recording's rows again with the slider settings. */
@@ -132,10 +136,11 @@ export class BirdBoxPanel {
             this.status('Loading BirdBox model…');
             await this.detector.load();
             this.status('Preparing audio (32 kHz)…');
+            const channels = channelSelectionKey(getChannelSelection());
             const pcm = await resampleTo(mono(audioBuffer), audioBuffer.sampleRate, SAMPLE_RATE);
             if (abort.signal.aborted) return;
             const duration = pcm.length / SAMPLE_RATE;
-            const res: Result = { raw: { data: new Float32Array(0), rows: 0, next: 0, analyzedTo: 0, done: false }, cache: {} };
+            const res: Result = { raw: { data: new Float32Array(0), rows: 0, next: 0, analyzedTo: 0, done: false }, cache: {}, channels };
             this.results.set(key(id), res);
             const current = () => this.results.get(key(id)) === res;   // false once forgotten
             this.status('Detecting calls…');

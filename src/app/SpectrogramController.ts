@@ -330,10 +330,12 @@ export class SpectrogramController extends EventTarget {
             const channelData = selectedSamples(this._audioBuffer);
 
             // ── Cache lookup ─────────────────────────────────────────────
+            // The sample fingerprint alone may not tell channels apart.
+            const nCh = this._audioBuffer.numberOfChannels;
             const cacheKey = await spectrogramCache.computeKey(
                 channelData,
                 this._audioBuffer.sampleRate,
-                options,
+                nCh > 1 ? { ...options, channels: channelSelectionKey(effectiveSelection(getChannelSelection(), nCh)) } : options,
             );
                 const cached = await spectrogramCache.get(cacheKey) as any;
             if (superseded()) return;
