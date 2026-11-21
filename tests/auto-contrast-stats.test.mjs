@@ -22,7 +22,8 @@ test('autoContrastStats keeps its percentiles', () => {
 });
 
 test('autoContrastStats on 30 M values takes well under 100 ms', () => {
-    const v = new Float32Array(30_000_000).map((_, i) => Math.sin(i) * 50);
+    const v = new Float32Array(30_000_000);
+    for (let i = 0; i < v.length; i++) v[i] = Math.sin(i) * 50;
     const t = performance.now();
     autoContrastStats(v, 50, 99.9);
     assert.ok(performance.now() - t < 100, `${(performance.now() - t).toFixed(0)} ms`);
