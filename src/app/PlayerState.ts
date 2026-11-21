@@ -819,11 +819,18 @@ export class PlayerState {
     _onChannelSelectionChanged() {
         this._updateChannelSelect();
         if (!this._engine.audioBuffer) return;
-        void this._updateChannelAnalysis();
+        const buffer = this._engine.audioBuffer;
         this._drawMainWaveform();
         this._drawOverviewWaveform();
-        this._spectro.generate();
+        // Hidden, the spectrogram is recomputed only when shown again.
+        this._regenerateSpectrogram();
         this._emit('channelselectionchange', getChannelSelection());
+        // The amplitude peak changes with the channel: draw again with it.
+        void this._updateChannelAnalysis().then(() => {
+            if (this._engine.audioBuffer !== buffer) return;
+            this._drawMainWaveform();
+            this._drawOverviewWaveform();
+        });
     }
 
     dispose() {
@@ -1000,7 +1007,13 @@ export class PlayerState {
 
     _generateSpectrogram(): Promise<void> {
         const buffer = this.audioBuffer;
-        if (this._spectroGeneration && this._spectroGenerationFor === buffer) return this._spectroGeneration;
+        // Until _onAudioLoaded hands the buffer to the controller it would compute the previous file.
+        if (!buffer || this._spectro.currentAudio !== buffer) return Promise.resolve();
+        if (this._spectroGeneration && this._spectroGenerationFor === buffer) {
+            // A setting changed while hidden after this run started: compute again once it ends.
+            if (!this._spectroStale) return this._spectroGeneration;
+            return this._spectroGeneration.then(() => (this._spectroStale ? this._generateSpectrogram() : undefined));
+        }
         this._spectroStale = false;
         this._spectroGenerationFor = buffer;
         const generation: Promise<void> = (async () => {

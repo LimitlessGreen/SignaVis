@@ -296,8 +296,39 @@ function headlessWithAudio(viewMode) {
     const generated = [];
     ps._spectro.generate = async (opts) => { generated.push(opts); };
     Object.defineProperty(ps._spectro, 'hasData', { get: () => generated.length > 0, configurable: true });
-    return { ps, generated, emitted, container };
+    let held = buffer; // what the controller got from setAudio
+    Object.defineProperty(ps._spectro, 'currentAudio', { get: () => held, configurable: true });
+    const hold = (b) => { held = b; };
+    return { ps, generated, emitted, container, hold };
 }
+
+test('PlayerState: no spectrogram generation before the controller holds the loaded buffer', async () => {
+    const { ps, generated, hold } = headlessWithAudio('both');
+    hold({ duration: 1 }); // still the previous file
+    await ps._generateSpectrogram();
+    assert.strictEqual(generated.length, 0);
+    assert.strictEqual(ps._spectroGeneration, null);
+    ps.dispose();
+});
+
+test('PlayerState: a setting changed while hidden during a running generation is computed after it', async () => {
+    const { ps, generated } = headlessWithAudio('both');
+    let finish;
+    ps._spectro.generate = (opts) => { generated.push(opts); return new Promise((r) => { finish = r; }); };
+    const first = ps._generateSpectrogram();
+    ps._setViewMode('waveform');
+    ps._regenerateSpectrogram();            // hidden: only marked stale
+    ps._setViewMode('both');                // reuses the running generation …
+    const again = ps._generateSpectrogram();
+    finish();
+    await first;
+    await new Promise((r) => setTimeout(r, 0));
+    finish?.();
+    await again;
+    assert.strictEqual(generated.length, 2, '… and computes again once it ends');
+    assert.strictEqual(ps._spectroStale, false);
+    ps.dispose();
+});
 
 test('PlayerState: a hidden spectrogram is computed only once it is shown', async () => {
     const { ps, generated, emitted, container } = headlessWithAudio('waveform');

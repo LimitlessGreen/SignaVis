@@ -213,6 +213,7 @@ export class SpectrogramController extends EventTarget {
      */
     setAudio(audioBuffer: AudioBuffer, sampleRateHz: number, sourceFile: File | null = null, sourcePath: string | null = null) {
         this._sourcePath = sourcePath;
+        this._generateSeq++; // a generation still running belongs to the previous audio
         this._tileManager?.dispose();
         this._tileManager    = null;
         this._spectralFeatures = null;
@@ -232,6 +233,9 @@ export class SpectrogramController extends EventTarget {
         // new recording's sample rate before generate() / cache lookup runs.
         this.updateMaxFreqOptions(sampleRateHz);
     }
+
+    /** The buffer generate() works on (set by setAudio). */
+    get currentAudio(): AudioBuffer | null { return this._audioBuffer ?? null; }
 
     /** Reset external mode without clearing audio (used on zoom / reload). */
     clearExternalMode() {
@@ -320,7 +324,7 @@ export class SpectrogramController extends EventTarget {
                 file,
                 // The direct WAV / native readers only see channel 0; other selections go via PCM.
                 nativePath:   direct ? this._sourcePath : null,
-                source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate),
+                source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate, undefined, undefined, this),
                 sourceTag:    audioBuffer.numberOfChannels > 1
                     ? channelSelectionKey(effectiveSelection(getChannelSelection(), audioBuffer.numberOfChannels)) : undefined,
                 wasmParams:   v2Params,
