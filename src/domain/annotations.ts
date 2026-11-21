@@ -2,7 +2,7 @@
 // annotations.js — Region layer for detections/annotations
 // ═══════════════════════════════════════════════════════════════════════
 
-import { isPlayerTarget } from './pointer-priority.ts';
+import { classifyHit, resolvePress, type Tool } from './pointer-priority.ts';
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
@@ -1914,50 +1914,46 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _bindDrawingInteractions(wrapper: any) {
         const onPointerDown = (e: PointerEvent) => {
-            if (isPlayerTarget(e.target)) return;   // playhead beats every tool mode
-            if (this.zoomBoxMode && (e.button === 0 || e.button === 2)) {
-                if (!this.player?._state?.audioBuffer) return;
-                this.player?._state?._blockSeekClicks?.(400);
-                if (e.button === 2) {
+            const tool: Tool = this.zoomBoxMode ? 'zoom-box' : this.snapMode ? 'snap'
+                : this.stampMode ? 'stamp' : this.drawMode ? 'draw' : 'none';
+            const action = resolvePress({
+                hit: classifyHit(e.target, (id) => this._lockedIds.has(id)),
+                button: e.button,
+                shift: e.shiftKey,
+                tool,
+                hasAudio: !!this.player?._state?.audioBuffer,
+                readOnly: !!(this.player as any)?._readOnly,
+            });
+            if (action === 'pass') return;
+
+            switch (action) {
+                case 'zoom-box-back':
+                    this.player?._state?._blockSeekClicks?.(400);
                     this._suppressContextMenuUntil = performance.now() + 400;
                     this.dispatchEvent(new CustomEvent('zoomboxback'));
-                } else {
+                    break;
+                case 'zoom-box-start': {
+                    this.player?._state?._blockSeekClicks?.(400);
                     const t = this._clientXToTime(e.clientX);
                     const f = this._clientYToFreq(e.clientY);
                     this._zoomBox = { startTime: t, startFreq: f, endTime: t, endFreq: f, x0: e.clientX, y0: e.clientY };
                     this._updateZoomBox();
+                    break;
                 }
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            if (this.snapMode && e.button === 0) {
-                // Own labels keep their clicks; detections (locked: BirdBox / BirdNET boxes shown
-                // on the spectrogram) let the snap through, except on their ✓ / ✕ buttons
-                const overLabel = (e.target as Element)?.closest?.('.spectrogram-label-region') as HTMLElement | null;
-                if (overLabel) {
-                    if (!this._lockedIds.has(overLabel.dataset.id || '') || (e.target as Element)?.closest?.('button')) return;
+                case 'snap-through-locked':
                     this._suppressClickUntil = performance.now() + 400;
-                }
-                if (!this.player?._state?.audioBuffer) return;
-                this.player?._state?._blockSeekClicks?.(400);
-                if (this._snapContains(e.clientX, e.clientY)) this._commitSnap(e.altKey);
-                else this._runSnap(this._clientXToTime(e.clientX), this._clientYToFreq(e.clientY));
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            // Stamp mode: left-click places label, right-click exits mode
-            if (this.stampMode) {
-                if (e.button === 2) {
-                    e.preventDefault();
-                    e.stopPropagation();
+                    // falls through
+                case 'snap':
+                    this.player?._state?._blockSeekClicks?.(400);
+                    if (this._snapContains(e.clientX, e.clientY)) this._commitSnap(e.altKey);
+                    else this._runSnap(this._clientXToTime(e.clientX), this._clientYToFreq(e.clientY));
+                    break;
+                case 'stamp-exit':
                     this._suppressContextMenuUntil = performance.now() + 400;
                     this.exitStampMode();
-                    return;
-                }
-                if (e.button === 0) {
-                    if (!this.player?._state?.audioBuffer) return;
+                    break;
+                case 'stamp-place': {
+                    // Stamp mode: left-click places a copy of the reference label
                     const ref = this._getReferenceLabelForDefaults();
                     if (!ref) return;
                     const t = this._clientXToTime(e.clientX);
@@ -1978,21 +1974,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                         author: isXc ? '' : ref.author,
                         tags: isXc ? {} : (ref.tags ? { ...ref.tags } : {}),
                     });
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return;
+                    break;
+                }
+                case 'draw-start': {
+                    const start = this._clientXToTime(e.clientX);
+                    const freq = this._clientYToFreq(e.clientY);
+                    this._drawing = { startTime: start, startFreq: freq, endTime: start, endFreq: freq };
+                    this._ensureDraft();
+                    this._updateDraft();
+                    break;
                 }
             }
-
-            if ((e.target as Element)?.closest?.('.spectrogram-label-region')) return;
-            if ((!e.shiftKey && !this.drawMode) || e.button !== 0 || (this.player as any)?._readOnly) return;
-            if (!this.player?._state?.audioBuffer) return;
-
-            const start = this._clientXToTime(e.clientX);
-            const freq = this._clientYToFreq(e.clientY);
-            this._drawing = { startTime: start, startFreq: freq, endTime: start, endFreq: freq };
-            this._ensureDraft();
-            this._updateDraft();
             e.preventDefault();
             e.stopPropagation();
         };
