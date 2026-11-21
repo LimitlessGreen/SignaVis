@@ -8,6 +8,8 @@
  *  - SNR_dB = 20 * log10(signal_rms / noise_rms)
  */
 
+import { selectedSamples } from '../../../shared/channels.ts';
+
 // ── Inline worker source ────────────────────────────────────────────────────
 
 const WORKER_SOURCE = /* js */ `
@@ -178,8 +180,8 @@ export class SnrComputer {
       return;
     }
 
-    // Extract slices from channel 0 (mono mix is fine for SNR estimation)
-    const channelData = audioBuffer.getChannelData(0);
+    // Extract slices from the selected channel(s)
+    const channelData = selectedSamples(audioBuffer);
     const toIdx = (t: any) => Math.round(t * sampleRate);
 
     const signalSamples = channelData.slice(toIdx(start),      toIdx(end));

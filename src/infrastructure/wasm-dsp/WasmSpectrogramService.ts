@@ -63,6 +63,12 @@ export async function loadWasmMain(): Promise<void> {
     initWasmMain(await compileWasmModule());
 }
 
+/** Cache-key variant of the data actually read: '' for the file itself, else the PCM rendering. */
+export function sourceVariant(file: Blob, source: Blob, sourceTag = ''): string {
+    if (source === file) return '';
+    return sourceTag ? `pcm:${source.size}:${sourceTag}` : `pcm:${source.size}`;
+}
+
 export class WasmSpectrogramService {
     private coord: Worker;
     private computes: Worker[];
@@ -138,11 +144,14 @@ export class WasmSpectrogramService {
         });
     }
 
-    /** `source` (a WAV blob) is what gets read; `file` only identifies the cache entry. */
+    /**
+     * `source` (a WAV blob) is what gets read; `file` only identifies the cache entry.
+     * `sourceTag` tells apart different PCM renderings of one file (e.g. channel selections).
+     */
     async open(file: File, params: StftParamsV2, onProgress?: (fraction: number, elapsedMs: number) => void,
-               source: Blob = file) {
+               source: Blob = file, sourceTag = '') {
         this.onProgress = onProgress ?? null;
-        const key = await storeKey(file, params, source === file ? '' : `pcm:${source.size}`);
+        const key = await storeKey(file, params, sourceVariant(file, source, sourceTag));
         const r = await this.request<{ meta: PyramidMeta; fromCache: boolean; persistent: boolean }>(
             { type: 'open', file: source, params, key });
         this.onProgress = null;
@@ -150,8 +159,8 @@ export class WasmSpectrogramService {
     }
 
     /** Open a cached pyramid, or prepare a small, on-demand preview. */
-    async openPreview(file: File, params: StftParamsV2, source: Blob = file) {
-        const key = await storeKey(file, params, source === file ? '' : `pcm:${source.size}`);
+    async openPreview(file: File, params: StftParamsV2, source: Blob = file, sourceTag = '') {
+        const key = await storeKey(file, params, sourceVariant(file, source, sourceTag));
         return this.request<{ meta: PyramidMeta; fromCache: boolean }>(
             { type: 'previewOpen', file: source, params, key });
     }

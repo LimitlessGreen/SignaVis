@@ -19,6 +19,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts';
+import { selectedSamples, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from './wavDecode.ts';
@@ -27,6 +28,13 @@ import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
 import { envelopePeakAbs, channelPeaksAsync, maxAbsPeaks } from '../../domain/waveformEnvelope.ts';
+
+/** Playback plays every channel, so its gains follow the loudest one. */
+function loudestChannelPeak(buf: AudioBuffer): number {
+  let peak = 1e-6;
+  for (let c = 0; c < buf.numberOfChannels; c++) peak = Math.max(peak, envelopePeakAbs(channelData(buf, c)));
+  return peak;
+}
 import { listenModeKey, type ListenMode, type DetectorChunk } from './detectorRender.ts';
 import type { DetectorRenderer } from './detectorWorkerClient.ts';
 import { TIMEUPDATE_THROTTLE_MS } from '../../shared/constants.ts';
@@ -631,7 +639,7 @@ export class AudioEngine extends AudioEngineBase {
       return Promise.reject(new Error('detector not ready'));
     }
     const cache: Map<string, Promise<DetectorChunk>> = playback.chunkCache;
-    const key = `${listenModeKey(mode)}|${atSec.toFixed(6)}|${endSec.toFixed(6)}`;
+    const key = `${listenModeKey(mode)}|${channelSelectionKey(getChannelSelection())}|${atSec.toFixed(6)}|${endSec.toFixed(6)}`;
     let chunk = cache.get(key);
     if (!chunk) {
       chunk = this._detector.render(this.audioBuffer, mode, atSec, endSec, this._heterodyneGain());
@@ -699,14 +707,8 @@ export class AudioEngine extends AudioEngineBase {
   _heterodyneGain() {
     if (!this.audioBuffer) return 1;
     if (this._peakFor !== this.audioBuffer) {
-      const ch = channelData(this.audioBuffer);
-      let peak = 0;
-      for (let i = 0; i < ch.length; i++) {
-        const a = Math.abs(ch[i]);
-        if (a > peak) peak = a;
-      }
       this._peakFor = this.audioBuffer;
-      this._peak = peak;
+      this._peak = loudestChannelPeak(this.audioBuffer);
     }
     return clamp(0.8 / Math.max(this._peak, 1e-4), 1, 30);
   }
@@ -817,7 +819,7 @@ export class AudioEngine extends AudioEngineBase {
   }
 
   _updateNormGain() {
-    const peak = this.audioBuffer ? envelopePeakAbs(channelData(this.audioBuffer)) : 1;
+    const peak = this.audioBuffer ? loudestChannelPeak(this.audioBuffer) : 1;
     this.normGain = clamp(AudioEngine.NORM_TARGET / peak, 0.05, AudioEngine.NORM_MAX_GAIN);
   }
 
@@ -985,7 +987,7 @@ export class AudioEngine extends AudioEngineBase {
     // Accept both URL strings (data:, http:, blob:) and File/Blob objects.
     // Peaks + duration from our own decoded buffer stop WaveSurfer from decoding the file a
     // second time (that fails for long recordings, which only decode in chunks).
-    const peaks = this.audioBuffer ? [maxAbsPeaks(channelData(this.audioBuffer), Math.min(8192, this.audioBuffer.length))] : undefined;
+    const peaks = this.audioBuffer ? [maxAbsPeaks(selectedSamples(this.audioBuffer), Math.min(8192, this.audioBuffer.length))] : undefined;
     const duration = this.audioBuffer?.duration;
     if (typeof source === 'string') {
       ws.load(source, peaks, duration);

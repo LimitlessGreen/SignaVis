@@ -229,6 +229,8 @@ function makeAudioBuffer(duration = 5, sampleRate = 44100) {
   return {
     duration,
     sampleRate,
+    numberOfChannels: 1,
+    length: nSamples,
     getChannelData: () => data,
   };
 }

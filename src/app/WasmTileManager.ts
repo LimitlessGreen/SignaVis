@@ -233,6 +233,8 @@ export class WasmTileManager extends EventTarget {
         file: File;
         /** Data actually read by the workers; defaults to `file` (cache key stays `file`). */
         source?: Blob;
+        /** Distinguishes PCM renderings of the same file in the cache key (channel selection). */
+        sourceTag?: string;
         /** Local file path (desktop app). */
         nativePath?: string | null;
         wasmParams: StftParamsV2;
@@ -243,7 +245,7 @@ export class WasmTileManager extends EventTarget {
         const { WasmSpectrogramService } = await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts');
         const preview = await WasmSpectrogramService.create(1);
         try {
-            const initial = await preview.openPreview(params.file, params.wasmParams, params.source);
+            const initial = await preview.openPreview(params.file, params.wasmParams, params.source, params.sourceTag);
             const manager = new WasmTileManager(preview, initial.meta, initial.fromCache, params.duration, params.colorOptions);
             if (!initial.fromCache) {
                 manager.previewMode = true;
@@ -257,7 +259,7 @@ export class WasmTileManager extends EventTarget {
     }
 
     private async openFull(params: {
-        file: File; source?: Blob; nativePath?: string | null; wasmParams: StftParamsV2;
+        file: File; source?: Blob; sourceTag?: string; nativePath?: string | null; wasmParams: StftParamsV2;
         onProgress?: (fraction: number) => void;
     }, WasmService: typeof import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts').WasmSpectrogramService):
         Promise<{ svc: PyramidSource; meta: PyramidMeta; fromCache: boolean }> {
@@ -281,7 +283,7 @@ export class WasmTileManager extends EventTarget {
         this.buildingService = svc;
         try {
             const { meta, fromCache } = await svc.open(params.file, params.wasmParams,
-                (f) => params.onProgress?.(f), params.source);
+                (f) => params.onProgress?.(f), params.source, params.sourceTag);
             return { svc, meta, fromCache };
         } catch (err) {
             svc.dispose();
