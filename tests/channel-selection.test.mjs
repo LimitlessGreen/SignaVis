@@ -75,3 +75,17 @@ test('divisionNoiseLevel is cached per channel selection, not per buffer', async
     assert.ok(Math.abs(left - 0.1) < 1e-6, `left ${left}`);
     assert.ok(Math.abs(right - 0.4) < 1e-6, `right ${right}`);
 });
+
+test('spectrogram cache key differs per channel even when the sample fingerprint matches', async () => {
+    const { withChannelKey } = await import('../src/shared/channels.ts');
+    const { spectrogramCache } = await import('../src/infrastructure/SpectrogramCache.ts');
+    // Same start, middle and end (the fingerprinted parts), different elsewhere.
+    const n = 20000;
+    const l = new Float32Array(n), r = new Float32Array(n);
+    r[6000] = 1;
+    const opts = { fftSize: 1024 };
+    const keyOf = (data, sel) => spectrogramCache.computeKey(data, 48000, withChannelKey(opts, 2, sel));
+    assert.notEqual(await keyOf(l, { mode: 'single', channel: 0 }), await keyOf(r, { mode: 'single', channel: 1 }));
+    assert.equal(await keyOf(l, { mode: 'single', channel: 0 }), await keyOf(l, { mode: 'single', channel: 0 }));
+    assert.equal(withChannelKey(opts, 1), opts, 'mono keys stay as they were');
+});

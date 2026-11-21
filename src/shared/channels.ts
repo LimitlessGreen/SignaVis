@@ -92,6 +92,15 @@ export function isChannelZero(buf: AudioBuffer, sel: ChannelSelection = current)
     return eff.mode === 'single' && eff.channel === 0;
 }
 
+/**
+ * Cache-key parameters for data derived from the selected samples: a sample fingerprint
+ * alone may not tell channels apart, so multichannel files add the effective selection.
+ */
+export function withChannelKey<T extends object>(params: T, nChannels: number, sel: ChannelSelection = current): T | (T & { channels: string }) {
+    if (nChannels <= 1) return params;
+    return { ...params, channels: channelSelectionKey(effectiveSelection(sel, nChannels)) };
+}
+
 /** Short label for UI: "Mix", "L", "R", or "Ch 3". */
 export function channelLabel(sel: ChannelSelection, n: number): string {
     if (sel.mode === 'mix') return 'Mix';

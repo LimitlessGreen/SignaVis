@@ -34,7 +34,7 @@ export function runCovers(raw: { analyzedTo: number }, stopped: boolean, time: n
 
 export class NearbyRows<B> {
     private readonly stretches = new Map<string, Stretch[]>();
-    private pending: Promise<boolean> | null = null;
+    private pending: { epoch: number; done: Promise<boolean> } | null = null;
     /** Bumped by forget/forgetAll: a detection started before keeps nothing. */
     private epoch = 0;
     private pcm: { id: string; buf: B; pcm: Float32Array } | null = null;
@@ -48,9 +48,15 @@ export class NearbyRows<B> {
         return this.stretches.get(id)?.find(n => time >= n.t0 && time <= n.t1) ?? null;
     }
 
-    /** Detect the stretch around `time`; one at a time (a second call gets the running one). False if nothing was kept. */
+    /**
+     * Detect the stretch around `time`; one at a time (a second call gets the running one,
+     * or waits for it and detects anew if it was forgotten meanwhile). False if nothing was kept.
+     */
     detect(id: string, buf: B, time: number): Promise<boolean> {
-        if (this.pending) return this.pending;
+        if (this.pending) {
+            if (this.pending.epoch === this.epoch) return this.pending.done;
+            return this.pending.done.then(() => this.detect(id, buf, time));
+        }
         const epoch = this.epoch;
         const run = async (): Promise<boolean> => {
             if (this.pcm?.id !== id || this.pcm.buf !== buf) {
@@ -66,8 +72,9 @@ export class NearbyRows<B> {
             this.stretches.set(id, list.slice(-20));
             return true;
         };
-        this.pending = run().finally(() => { this.pending = null; });
-        return this.pending;
+        const done = run().finally(() => { if (this.pending?.done === done) this.pending = null; });
+        this.pending = { epoch, done };
+        return done;
     }
 
     forget(id: string): void {
