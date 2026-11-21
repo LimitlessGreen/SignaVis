@@ -22,7 +22,7 @@ import { clamp, channelData, parseNativeSampleRate } from '../../shared/utils.ts
 import { AudioEngineBase } from './AudioEngineBase.ts';
 import { isMp3, decodeMp3Chunked, CHUNKED_DECODE_MIN_BYTES } from './chunkedMp3Decode.ts';
 import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from './wavDecode.ts';
-import { parseFlacStreamInfo, decodeFlacChunked } from './chunkedFlacDecode.ts';
+import { parseFlacStreamInfo, decodeFlacChunked, readFlacHead, blobSource } from './chunkedFlacDecode.ts';
 import { parseGuano } from '../../domain/ultrasound.ts';
 import { readFileMetadata, type MetadataGroup } from '../../domain/fileMetadata.ts';
 import { readRecordingStart, type RecordingStart } from '../../domain/recordingTime.ts';
@@ -80,6 +80,9 @@ function normalizeListenMode(mode: ListenMode): ListenMode {
  * @property {number} rafId
  * @property {number} currentTimeSec
  */
+
+/** Bytes at the start of a file that metadata readers look at (fileMetadata/recordingTime HEAD_BYTES). */
+const METADATA_HEAD_BYTES = 1 << 18;
 
 /** Block-wise decoder for formats that support it, or null. */
 function chunkedDecoder(buf: ArrayBuffer): ((buf: ArrayBuffer, ctx: BaseAudioContext) => Promise<AudioBuffer>) | null {
@@ -287,10 +290,26 @@ export class AudioEngine extends AudioEngineBase {
    * ArrayBuffer. Sets guano, fileMetadata, recordingStart, sourceBlob and audioBuffer.
    */
   async _decodeBlob(blob: Blob, name: string): Promise<AudioBuffer> {
-    const layout = blob.size >= CHUNKED_DECODE_MIN_BYTES ? await readWavBlobLayout(blob) : null;
+    const large = blob.size >= CHUNKED_DECODE_MIN_BYTES;
+    const layout = large ? await readWavBlobLayout(blob) : null;
+    const flac = large && !layout ? await readFlacHead(blobSource(blob)) : null;
     let audioBuffer: AudioBuffer;
     let recordingStart: RecordingStart | null;
-    if (layout) {
+    if (flac) {
+      // Like WAV: block by block from the blob. Metadata lives in the head (AudioMoth comment).
+      const head = await blob.slice(0, METADATA_HEAD_BYTES).arrayBuffer();
+      this.guano = parseGuano(head);
+      this.fileMetadata = readFileMetadata(head);
+      recordingStart = readRecordingStart(head, name);
+      const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
+      const ctx = new Ctor({ sampleRate: flac.info.sampleRate });
+      try {
+        audioBuffer = await decodeFlacChunked(blob, ctx);
+      } finally {
+        ctx.close?.().catch(() => {});
+      }
+    } else if (layout) {
       this.guano = parseGuano(layout.skeleton);
       this.fileMetadata = readFileMetadata(layout.skeleton);
       recordingStart = readRecordingStart(layout.skeleton, name);

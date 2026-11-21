@@ -124,15 +124,80 @@ export function flacBlockStarts(b: Uint8Array, firstFrame: number, blockBytes: n
 }
 
 /** "fLaC" + STREAMINFO (marked last, total samples and MD5 cleared) + the given frames. */
-function blockFile(b: Uint8Array, info: FlacStreamInfo, from: number, to: number): ArrayBuffer {
+function blockFile(streamInfo: Uint8Array, frames: Uint8Array): ArrayBuffer {
   const head = 4 + 4 + 34;
-  const out = new Uint8Array(head + (to - from));
+  const out = new Uint8Array(head + frames.length);
   out.set([0x66, 0x4c, 0x61, 0x43, 0x80, 0, 0, 34], 0);
-  out.set(b.subarray(info.streamInfoOffset, info.streamInfoOffset + 34), 8);
+  out.set(streamInfo.subarray(0, 34), 8);
   out[8 + 13] &= 0xf0;                 // total samples: upper 4 bits ...
   out.fill(0, 8 + 14, 8 + 34);         // ... lower 32 bits and MD5
-  out.set(b.subarray(from, to), head);
+  out.set(frames, head);
   return out.buffer;
+}
+
+/** Random access to the file's bytes: an ArrayBuffer in memory or a Blob read slice by slice. */
+export interface ByteSource {
+  size: number;
+  read(from: number, to: number): Promise<Uint8Array>;
+}
+
+export function bufferSource(buf: ArrayBuffer): ByteSource {
+  const b = new Uint8Array(buf);
+  return { size: b.length, read: async (from, to) => b.subarray(from, to) };
+}
+
+export function blobSource(blob: Blob): ByteSource {
+  return { size: blob.size, read: async (from, to) => new Uint8Array(await blob.slice(from, to).arrayBuffer()) };
+}
+
+/** Bytes read per step when looking for a frame header near a block boundary. */
+const SCAN_BYTES = 1 << 16;
+/** Longest frame header (sync … CRC-8): a window must overlap the next one by this much. */
+const MAX_HEADER = 16;
+
+/** First frame header at or after `from` in the source, or src.size if there is none. */
+export async function nextFrameIn(src: ByteSource, from: number, scanBytes = SCAN_BYTES): Promise<number> {
+  for (let at = from; at < src.size;) {
+    const end = Math.min(src.size, at + Math.max(scanBytes, 2 * MAX_HEADER));
+    const w = await src.read(at, end);
+    const i = nextFrame(w, 0);
+    if (i < w.length) return at + i;
+    if (end >= src.size) break;
+    at = end - MAX_HEADER; // a header cut off at the window's end is checked again
+  }
+  return src.size;
+}
+
+/** STREAMINFO and the first frame offset, reading only the metadata block headers. */
+export async function readFlacHead(src: ByteSource): Promise<{ info: FlacStreamInfo; streamInfo: Uint8Array } | null> {
+  const lead = await src.read(0, Math.min(src.size, 10));
+  const s = flacStart(lead);
+  const magic = await src.read(s, s + 4);
+  if (!(magic[0] === 0x66 && magic[1] === 0x4c && magic[2] === 0x61 && magic[3] === 0x43)) return null;
+  let pos = s + 4;
+  let streamInfo: Uint8Array | null = null;
+  let info: FlacStreamInfo | null = null;
+  for (;;) {
+    if (pos + 4 > src.size) return null;
+    const h = await src.read(pos, pos + 4);
+    const last = (h[0] & 0x80) !== 0;
+    const type = h[0] & 0x7f;
+    const len = (h[1] << 16) | (h[2] << 8) | h[3];
+    const body = pos + 4;
+    if (type === 0 && len >= 34 && body + 34 <= src.size) {
+      streamInfo = await src.read(body, body + 34);
+      const b = streamInfo;
+      const sampleRate = (b[10] << 12) | (b[11] << 4) | (b[12] >> 4);
+      const channels = ((b[12] >> 1) & 7) + 1;
+      const totalSamples = (b[13] & 0x0f) * 2 ** 32 + ((b[14] << 24) >>> 0) + (b[15] << 16) + (b[16] << 8) + b[17];
+      info = { sampleRate, channels, totalSamples, streamInfoOffset: body, firstFrame: 0 };
+    }
+    pos = body + len;
+    if (last) break;
+  }
+  if (!info || !info.sampleRate || !streamInfo) return null;
+  info.firstFrame = pos;
+  return { info, streamInfo };
 }
 
 function mixDown(decoded: AudioBuffer, dst: Float32Array, at: number, n: number): void {
@@ -150,17 +215,19 @@ function mixDown(decoded: AudioBuffer, dst: Float32Array, at: number, n: number)
 /**
  * Decode a FLAC block by block into one mono AudioBuffer at the file's native sample rate.
  * `ctx` must run at that sample rate (decodeAudioData resamples to the context rate).
+ * A Blob is read slice by slice, so the compressed file is never in memory as a whole.
  */
-export async function decodeFlacChunked(buf: ArrayBuffer, ctx: BaseAudioContext, onProgress?: (fraction: number) => void, blockSec = BLOCK_SEC): Promise<AudioBuffer> {
-  const info = parseFlacStreamInfo(buf);
-  if (!info) throw new Error('Not a FLAC file.');
-  const b = new Uint8Array(buf);
-  const audioBytes = b.length - info.firstFrame;
+export async function decodeFlacChunked(input: ArrayBuffer | Blob, ctx: BaseAudioContext, onProgress?: (fraction: number) => void, blockSec = BLOCK_SEC): Promise<AudioBuffer> {
+  const src = input instanceof ArrayBuffer ? bufferSource(input) : blobSource(input);
+  const head = await readFlacHead(src);
+  if (!head) throw new Error('Not a FLAC file.');
+  const { info, streamInfo } = head;
+  const audioBytes = src.size - info.firstFrame;
   // Byte rate estimate: from the total sample count, else ~2 bytes per sample and channel.
   const bytesPerSec = info.totalSamples > 0
     ? audioBytes / (info.totalSamples / info.sampleRate)
     : info.sampleRate * info.channels * 2;
-  const starts = flacBlockStarts(b, info.firstFrame, Math.max(1 << 16, Math.round(bytesPerSec * blockSec)));
+  const blockBytes = Math.max(1 << 16, Math.round(bytesPerSec * blockSec));
 
   // Decode all blocks first only when the length is unknown; otherwise fill one buffer directly.
   const known = info.totalSamples > 0;
@@ -177,10 +244,10 @@ export async function decodeFlacChunked(buf: ArrayBuffer, ctx: BaseAudioContext,
   }
   const parts: Float32Array[] = [];
   let written = 0;
-  for (let k = 0; k < starts.length; k++) {
-    const from = starts[k];
-    const to = k + 1 < starts.length ? starts[k + 1] : b.length;
-    const decoded = await ctx.decodeAudioData(blockFile(b, info, from, to));
+  // Blocks end at the next frame after every blockBytes (see flacBlockStarts).
+  for (let from = info.firstFrame; from < src.size;) {
+    const to = from + blockBytes < src.size ? await nextFrameIn(src, from + blockBytes) : src.size;
+    const decoded = await ctx.decodeAudioData(blockFile(streamInfo, await src.read(from, to)));
     if (dst) {
       const n = Math.min(decoded.length, dst.length - written);
       mixDown(decoded, dst, written, n);
@@ -191,7 +258,8 @@ export async function decodeFlacChunked(buf: ArrayBuffer, ctx: BaseAudioContext,
       parts.push(part);
       written += decoded.length;
     }
-    onProgress?.(to / b.length);
+    onProgress?.(to / src.size);
+    from = to;
   }
   if (!out) {
     out = ctx.createBuffer(1, Math.max(1, written), info.sampleRate);
