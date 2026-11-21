@@ -77,7 +77,7 @@ export class PresetManager {
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
      */
     constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate, defaultPreset }: PresetManagerCallbacks) {
-        this.#defaultPreset = defaultPreset && DSP_PROFILES[defaultPreset] ? defaultPreset : 'classic';
+        this.#defaultPreset = defaultPreset && Object.prototype.hasOwnProperty.call(DSP_PROFILES, defaultPreset) ? defaultPreset : 'classic';
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
         this.#onStage1   = onStage1Rebuild;

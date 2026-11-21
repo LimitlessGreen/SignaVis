@@ -47,6 +47,10 @@ test('the reference preset falls back to defaultPreset, unknown names to classic
         DSP_PROFILES.classicSmall.oversamplingLevel);
     assert.equal(manager(makeDom(), storage, 'nope').getReferenceSettings().oversamplingLevel,
         DSP_PROFILES.classic.oversamplingLevel);
+    for (const inherited of ['constructor', 'toString', '__proto__']) {
+        assert.equal(manager(makeDom(), storage, inherited).getReferenceSettings().oversamplingLevel,
+            DSP_PROFILES.classic.oversamplingLevel, inherited);
+    }
 });
 
 test('a favourite still wins over defaultPreset', () => {
