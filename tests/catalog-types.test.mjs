@@ -140,3 +140,16 @@ test('bulkReportText', async () => {
     assert.equal(bulkReportText(r), '9 recordings: 9 tags added');
     assert.equal(bulkReportText({ ...r, tagsAdded: 0 }), '9 recordings: nothing changed');
 });
+
+test('cellDegForZoom halves per zoom level', async () => {
+    const { cellDegForZoom } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.equal(cellDegForZoom(0, 256), 360);
+    assert.equal(cellDegForZoom(10) * 2, cellDegForZoom(9));
+});
+
+test('matchReportText', async () => {
+    const { matchReportText } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.equal(matchReportText({ candidates: 0, positioned: 0, kept: 0, tooFar: 0 }), 'No recordings in the time span of the track.');
+    assert.equal(matchReportText({ candidates: 10, positioned: 7, kept: 2, tooFar: 1 }),
+        "7 of 10 recordings in the track's time span got a position; 2 kept their position from the recorder or set by hand; 1 had no track point near enough in time.");
+});

@@ -7,9 +7,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    bulkReportText, type BulkEdit, type FacetValue, type RecordingDetail, type Selection,
+    bulkReportText, parseCoords, type BulkEdit, type FacetValue, type RecordingDetail, type Selection,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
+import { openMapModal } from '../../components/geo-map-modal/geo-map-modal.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const KEEP = '__keep', CLEAR = '__clear';
@@ -66,9 +67,12 @@ export class SelectionPanel {
     /** Identity of the current selection: form input survives re-renders while it stays the same. */
     #key(): string { return `${this.#count}:${this.#sel.ids?.join(',') ?? 'filter'}`; }
     #renderedKey = '';
+    /** Outcome of the last apply; stays through refreshes of the same selection. */
+    #result: { text: string; bad: boolean } | null = null;
 
     #render() {
         const keep = new Map<string, string>();
+        if (this.#renderedKey !== this.#key() && this.#renderedKey !== '') this.#result = null;
         if (this.#renderedKey === this.#key()) {
             this.el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.lib-field [data-k]').forEach((f) => keep.set(f.dataset.k!, f.value));
         }
@@ -99,6 +103,7 @@ export class SelectionPanel {
               <div class="lib-hint lib-break">${esc(d.path ?? '')}</div>
               <dl>${d.sampleRate ? `<dt>Format</dt><dd>${d.sampleRate.toLocaleString()} Hz, ${d.channels ?? '?'} ch</dd>` : ''}
                 ${d.tz ? `<dt>Clock</dt><dd>${esc(d.tz)}</dd>` : ''}
+                ${d.lat != null && d.lon != null ? `<dt>Position</dt><dd>${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}${d.alt != null ? `, ${Math.round(d.alt)} m` : ''}<span class="lib-hint"> · ${esc({ manual: 'by hand', header: 'from the recorder', track: 'from a GPS track' }[d.posOrigin ?? 'manual'] ?? d.posOrigin)}</span></dd>` : ''}
                 ${d.meta.map(([k, v, origin]) => `<dt>${esc(k)}</dt><dd title="from ${esc(origin)}">${esc(v)}<span class="lib-hint"> · ${esc(origin)}</span></dd>`).join('')}
                 ${d.fullHash ? `<dt>SHA-256</dt><dd class="lib-break lib-hint">${esc(d.fullHash.replace('sha256:', '').slice(0, 16))}…</dd>` : ''}
               </dl>
@@ -112,12 +117,21 @@ export class SelectionPanel {
           ${this.#tags.length ? `<label class="lib-field"><span>Remove tag</span><select class="field-select" data-k="tag-remove">
             <option value="">—</option>${this.#tags.map((t) => `<option>${esc(t)}</option>`).join('')}</select></label>` : ''}
           <datalist id="lib-tag-list">${this.#tags.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
+          <div class="lib-field"><span>Position (own, overrides the site)</span><div class="lib-row">
+            <input class="input" data-k="position" placeholder="lat, lon — or “none”" title="Latitude, longitude in decimal degrees; “none” removes it">
+            <button class="btn btn--sm btn--ghost" data-act="pick-pos" title="Pick on a map">map</button></div></div>
           <div class="lib-field"><span>Metadata</span><div class="lib-row">
             <input class="input" data-k="meta-key" list="lib-key-list" placeholder="key">
             <input class="input" data-k="meta-value" placeholder="value (empty = remove)"></div></div>
           <datalist id="lib-key-list">${this.#keys.map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
           <div class="lib-row"><button class="btn btn--sm" data-act="apply">Apply to ${d ? 'this recording' : what}</button></div>
-          <p class="lib-hint" data-k="result"></p>`;
+          <p class="lib-hint${this.#result?.bad ? ' lib-warn' : ''}" data-k="result">${esc(this.#result?.text ?? '')}</p>`;
+    }
+
+    #setResult(text: string, bad = false) {
+        this.#result = { text, bad };
+        const out = this.el.querySelector<HTMLElement>('[data-k="result"]');
+        if (out) { out.textContent = text; out.classList.toggle('lib-warn', bad); }
     }
 
     #readEdit(): BulkEdit {
@@ -129,6 +143,15 @@ export class SelectionPanel {
         e.addTags = v('tag-add').split(',').map((s) => s.trim()).filter(Boolean);
         const rm = v('tag-remove');
         e.removeTags = rm ? [rm] : [];
+        const pos = v('position').trim();
+        if (pos) {
+            if (/^(none|-|—)$/i.test(pos)) e.position = null;
+            else {
+                const c = parseCoords(pos);
+                if (!c) throw new Error('Position: "latitude, longitude" in decimal degrees, or "none"');
+                e.position = [c.lat, c.lon];
+            }
+        }
         const key = v('meta-key').trim();
         if (key) e.meta = [[key, v('meta-value').trim() || null]];
         return e;
@@ -138,23 +161,30 @@ export class SelectionPanel {
         const act = (ev.target as HTMLElement | null)?.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'pick-all') { this.el.dispatchEvent(new CustomEvent('lib-pick-all', { bubbles: true })); return; }
         if (act === 'pick-none') { this.el.dispatchEvent(new CustomEvent('lib-pick-none', { bubbles: true })); return; }
+        if (act === 'pick-pos') {
+            const inp = this.el.querySelector<HTMLInputElement>('[data-k="position"]')!;
+            const cur = parseCoords(inp.value) ?? (this.#detail?.lat != null ? { lat: this.#detail.lat, lon: this.#detail.lon! } : null);
+            void openMapModal({ ...(cur ? { lat: cur.lat, lon: cur.lon, zoom: 13 } : {}), onConfirm: ({ lat, lon }: { lat: number; lon: number }) => {
+                inp.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+            } });
+            return;
+        }
         if (act !== 'apply') return;
-        const out = this.el.querySelector<HTMLElement>('[data-k="result"]')!;
-        const edit = this.#readEdit();
-        const empty = edit.siteId === undefined && edit.deviceId === undefined && !edit.addTags?.length && !edit.removeTags?.length && !edit.meta;
-        if (empty) { out.textContent = 'Nothing to change.'; return; }
+        let edit: BulkEdit;
+        try { edit = this.#readEdit(); } catch (e) { this.#setResult(String(e instanceof Error ? e.message : e), true); return; }
+        const empty = edit.siteId === undefined && edit.deviceId === undefined && !edit.addTags?.length && !edit.removeTags?.length && !edit.meta && edit.position === undefined;
+        if (empty) { this.#setResult('Nothing to change.'); return; }
         if (this.#count > 1 && !confirm(`Change ${this.#count.toLocaleString()} recordings?`)) return;
         try {
             const r = await catalogApi.bulkEdit(this.#o.projectRoot, this.#sel, edit);
             this.#o.onApplied();
             // The selection stays (by id); refresh lists and detail.
             const keep = this.#sel.ids ? this.#sel : {};
+            this.#result = { text: bulkReportText(r), bad: false };
             this.#renderedKey = '';   // start with an empty form
             await this.show(keep, this.#sel.ids ? this.#count : 0, { sites: this.#sites, devices: this.#devices });
-            this.el.querySelector<HTMLElement>('[data-k="result"]')!.textContent = bulkReportText(r);
         } catch (e) {
-            out.textContent = `Error: ${e instanceof Error ? e.message : e}`;
-            out.classList.add('lib-warn');
+            this.#setResult(`Error: ${e instanceof Error ? e.message : e}`, true);
         }
     }
 }

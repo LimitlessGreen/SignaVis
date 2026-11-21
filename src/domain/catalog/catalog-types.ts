@@ -58,6 +58,9 @@ export interface CatalogFilter {
     tagIds?: number[];
     /** Only recordings without site or recorder. */
     unassigned?: boolean;
+    /** Area [south, west, north, east] on the own position, else the site's. */
+    bbox?: [number, number, number, number] | null;
+    hasPosition?: boolean | null;
     fromMs?: number | null;
     toMs?: number | null;
     hourFrom?: number | null;
@@ -212,13 +215,17 @@ export interface BulkEdit {
     addTags?: string[]; removeTags?: string[];
     /** [key, value]; value null removes the key. */
     meta?: [string, string | null][];
+    /** Own position [lat, lon] by hand; null clears it. */
+    position?: [number, number] | null;
 }
 export interface BulkReport {
     recordings: number; siteChanged: number; deviceChanged: number; tagsAdded: number; tagsRemoved: number; metaSet: number; reclocked: number;
+    positioned?: number;
 }
 export interface RecordingDetail {
     id: number; path: string | null; siteId: number | null; deviceId: number | null; deploymentId: number | null;
     sampleRate: number | null; channels: number | null; tz: string | null; quickHash: string | null; fullHash: string | null;
+    lat: number | null; lon: number | null; alt: number | null; posOrigin: 'manual' | 'header' | 'track' | null;
     /** [key, value, origin] */
     meta: [string, string, string][]; tags: string[];
 }
@@ -317,6 +324,36 @@ export function bulkReportText(r: BulkReport): string {
         r.tagsAdded && `${r.tagsAdded.toLocaleString()} tags added`,
         r.tagsRemoved && `${r.tagsRemoved.toLocaleString()} tags removed`,
         r.metaSet && `${r.metaSet.toLocaleString()} metadata values changed`,
+        r.positioned && `${r.positioned.toLocaleString()} positions set`,
     ].filter(Boolean);
     return `${r.recordings.toLocaleString()} recordings: ${parts.length ? parts.join(', ') : 'nothing changed'}`;
+}
+
+// ── Positions, tracks, map ─────────────────────────────────────────────────
+
+export interface MapSite { id: number; name: string; lat: number; lon: number; recordings: number }
+export interface MapCell { lat: number; lon: number; recordings: number; firstMs: number | null; lastMs: number | null }
+export interface MapData { sites: MapSite[]; cells: MapCell[]; cellDeg: number; withoutPosition: number; withOwnPosition: number }
+export interface TrackInfo { id: number; name: string; device: string | null; startMs: number; endMs: number; nPoints: number; recordings: number }
+export interface MatchReport { candidates: number; positioned: number; kept: number; tooFar: number }
+export interface TrackImport { trackId: number; points: number; untimed: number; match: MatchReport }
+
+/** Grid cell in degrees for a map zoom level: about `px` screen pixels per cell. */
+export function cellDegForZoom(zoom: number, px = 12): number {
+    return (360 / (256 * 2 ** zoom)) * px;
+}
+
+/** Bounding box [south, west, north, east] as a short label. */
+export function bboxLabel(b: [number, number, number, number]): string {
+    const f = (v: number) => v.toFixed(3);
+    return `${f(b[0])}…${f(b[2])}° N, ${f(b[1])}…${f(b[3])}° E`;
+}
+
+export function matchReportText(m: MatchReport): string {
+    if (!m.candidates) return 'No recordings in the time span of the track.';
+    return [
+        `${m.positioned.toLocaleString()} of ${m.candidates.toLocaleString()} recordings in the track's time span got a position`,
+        m.kept && `${m.kept.toLocaleString()} kept their position from the recorder or set by hand`,
+        m.tooFar && `${m.tooFar.toLocaleString()} had no track point near enough in time`,
+    ].filter(Boolean).join('; ') + '.';
 }

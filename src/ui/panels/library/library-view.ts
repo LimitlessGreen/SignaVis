@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    fixedClockLabel, formatBytes, localTime,
+    bboxLabel, fixedClockLabel, formatBytes, localTime,
     periodsWithShift, pickRows,
     type ClockPeriod, type ClockShift, type DeviceInfo,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
@@ -18,6 +18,7 @@ import { ImportDialog, timeZones } from './import-dialog.ts';
 import { EntitiesDialog } from './entities-dialog.ts';
 import { SelectionPanel } from './selection-panel.ts';
 import { StatsDialog } from './stats-dialog.ts';
+import { MapDialog } from './map-dialog.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
@@ -63,6 +64,7 @@ export class LibraryView {
     /** Bulk edit applies to everything the filter shows. */
     #pickAll = false;
     #side: SelectionPanel;
+    #mapDialog: MapDialog | null = null;
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -76,6 +78,7 @@ export class LibraryView {
             <span class="lib-spacer"></span>
             <span class="lib-integrity"></span>
             <button class="btn btn--sm btn--ghost" data-act="open-entities" title="Sites, recorders and deployments: names, coordinates, habitat, model, merge duplicates">Sites &amp; recorders…</button>
+            <button class="btn btn--sm btn--ghost" data-act="open-map" title="Sites, recordings with their own position (mobile, GPS), GPS tracks; filter by area">Map…</button>
             <button class="btn btn--sm btn--ghost" data-act="open-stats" title="Coverage per site and week, recorder gaps, files, labels, detections">Statistics…</button>
             <button class="btn btn--sm" data-act="open-import">Import folder…</button>
             <button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>
@@ -330,6 +333,12 @@ export class LibraryView {
           ${list('site', 'Sites', f.sites, tf.siteIds)}
           ${list('device', 'Recorders <button class="btn btn--sm btn--ghost" data-act="clocks" title="Recorder clocks: offset, daylight saving, changes made by hand">clocks…</button>', f.devices, tf.deviceIds)}
           ${list('tag', 'Tags', f.tags ?? [], tf.tagIds)}
+          <section><h4>Position${tf.bbox ? ' <button class="btn btn--sm btn--ghost" data-act="clear-area">all</button>' : ''}</h4>
+            ${tf.bbox ? `<p class="lib-hint" title="Area drawn on the map">Area: ${esc(bboxLabel(tf.bbox))}</p>` : ''}
+            <select class="field-select" data-k="pos" title="Own position (mobile, GPS) or the site's coordinates">
+              <option value=""${tf.hasPosition == null ? ' selected' : ''}>any</option>
+              <option value="1"${tf.hasPosition === true ? ' selected' : ''}>with position</option>
+              <option value="0"${tf.hasPosition === false ? ' selected' : ''}>without position</option></select></section>
           <section><label class="lib-facet" title="Recordings that have no site or no recorder (path pattern did not give one)">
             <input type="checkbox" data-k="unassigned"${tf.unassigned ? ' checked' : ''}><span>Only without site or recorder</span></label></section>`;
     }
@@ -436,6 +445,8 @@ export class LibraryView {
         else if (act === 'open-import') this.#showImport();
         else if (act === 'open-entities') this.#showEntities();
         else if (act === 'open-stats') this.#showStats();
+        else if (act === 'open-map') this.#showMap();
+        else if (act === 'clear-area') { this.#filter.bbox = null; void this.reload(); }
         else if (act === 'hash-start' || act === 'hash-full') {
             const full = act === 'hash-full';
             this.#hash = {
@@ -467,6 +478,8 @@ export class LibraryView {
         const f = this.#filter;
         if (t.dataset.k === 'unassigned') {
             f.unassigned = t.checked;
+        } else if (t.dataset.k === 'pos') {
+            f.hasPosition = t.value === '' ? null : t.value === '1';
         } else if (t.dataset.facet) {
             const key = ({ site: 'siteIds', device: 'deviceIds', tag: 'tagIds' } as const)[t.dataset.facet as 'site' | 'device' | 'tag'];
             const set = new Set(f[key] ?? []);
@@ -546,6 +559,16 @@ export class LibraryView {
         this.#showHost('Sites & recorders', new EntitiesDialog({ projectRoot: this.#o.projectRoot, onChanged: () => void this.reload({ keepPicks: true }) }).el);
     }
 
+    #showMap() {
+        this.#showHost('Map', (this.#mapDialog = new MapDialog({
+            projectRoot: this.#o.projectRoot, filter: { ...this.#filter, bbox: null }, devices: this.#facets?.devices ?? [],
+            onArea: (bbox) => { this.#filter = { ...this.#filter, bbox }; this.#hideImport(); void this.reload(); },
+            onSite: (id) => { this.#filter = { ...this.#filter, siteIds: [id], bbox: null }; this.#hideImport(); void this.reload(); },
+            onWithoutPosition: () => { this.#filter = { ...this.#filter, hasPosition: false, bbox: null }; this.#hideImport(); void this.reload(); },
+            onChanged: () => void this.reload({ keepPicks: true }),
+        })).el);
+    }
+
     #showStats() {
         const tf = this.#filter;
         const filtered = Object.values(tf).some((v) => v != null && v !== false && !(Array.isArray(v) && !v.length));
@@ -561,6 +584,8 @@ export class LibraryView {
     }
 
     #hideImport() {
+        this.#mapDialog?.dispose();
+        this.#mapDialog = null;
         const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
         host.hidden = true;
         host.innerHTML = '';

@@ -3,6 +3,7 @@
 import type {
     CatalogCursor, CatalogFilter, CatalogPage, CatalogSort, Facets, HashProgress, HeatCell, ImportResult, Integrity, Preview, ProfileSpec, RootInfo, Suggestion, SiteInfo, ClockReport, ClockPeriod, ClockShift, DeviceInfo,
     SiteFields, DeviceFields, DeploymentInfo, DeriveReport, TagInfo, Selection, BulkEdit, BulkReport, RecordingDetail, CatalogStats,
+    MapData, TrackInfo, MatchReport, TrackImport,
 } from '../../domain/catalog/catalog-types.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -53,9 +54,23 @@ export const catalogApi = {
     bulkEdit: (projectRoot: string, selection: Selection, edit: BulkEdit) => call<BulkReport>('catalog_bulk_edit', { projectRoot, selection, edit }),
     recordingDetail: (projectRoot: string, recordingId: number) => call<RecordingDetail>('catalog_recording_detail', { projectRoot, recordingId }),
     stats: (projectRoot: string, filter: CatalogFilter) => call<CatalogStats>('catalog_stats', { projectRoot, filter }),
+    importTrack: (projectRoot: string, path: string, deviceId: number | null, selection: Selection, maxGapS: number) =>
+        call<TrackImport>('catalog_import_track', { projectRoot, path, name: null, deviceId, selection, maxGapS }),
+    matchTrack: (projectRoot: string, trackId: number, selection: Selection, maxGapS: number) =>
+        call<MatchReport>('catalog_match_track', { projectRoot, trackId, selection, maxGapS }),
+    tracks: (projectRoot: string) => call<TrackInfo[]>('catalog_tracks', { projectRoot }),
+    trackLine: (projectRoot: string, trackId: number) => call<[number, number][]>('catalog_track_line', { projectRoot, trackId }),
+    deleteTrack: (projectRoot: string, trackId: number) => call<void>('catalog_delete_track', { projectRoot, trackId }),
+    map: (projectRoot: string, filter: CatalogFilter, cellDeg: number) => call<MapData>('catalog_map', { projectRoot, filter, cellDeg }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
 };
+
+export async function pickFile(title: string, extensions: string[]): Promise<string | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const p = await open({ directory: false, multiple: false, title, filters: [{ name: extensions.join(', '), extensions }] });
+    return typeof p === 'string' && p ? p : null;
+}
 
 export async function pickFolder(title: string): Promise<string | null> {
     const { open } = await import('@tauri-apps/plugin-dialog');
