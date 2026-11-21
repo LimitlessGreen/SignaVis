@@ -418,3 +418,55 @@ pub async fn catalog_stats(state: tauri::State<'_, CatalogState>, project_root: 
     let cat = state.get(&project_root)?;
     blocking(move || aw_catalog::stats::stats(&*cat.lock().map_err(err)?, &filter, 25).map_err(err)).await
 }
+
+// ── Positions, GPS tracks, map ───────────────────────────────────────────
+
+/// Read a GPX file, store it as a track and give the selected recordings in its time span a position.
+#[tauri::command]
+pub async fn catalog_import_track(
+    state: tauri::State<'_, CatalogState>, project_root: String, path: String, name: Option<String>,
+    device_id: Option<i64>, selection: Selection, max_gap_s: f64,
+) -> Result<serde_json::Value, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || {
+        let text = std::fs::read_to_string(&path).map_err(err)?;
+        let (pts, untimed) = aw_catalog::geo::parse_gpx(&text).map_err(err)?;
+        let name = name.unwrap_or_else(|| Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+        let mut c = cat.lock().map_err(err)?;
+        let id = aw_catalog::geo::save_track(&mut c, &name, Some(&path), device_id, &pts).map_err(err)?;
+        let m = aw_catalog::geo::match_track(&mut c, id, &selection, max_gap_s).map_err(err)?;
+        Ok(serde_json::json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "match": m }))
+    }).await
+}
+
+#[tauri::command]
+pub async fn catalog_match_track(
+    state: tauri::State<'_, CatalogState>, project_root: String, track_id: i64, selection: Selection, max_gap_s: f64,
+) -> Result<aw_catalog::geo::MatchReport, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::geo::match_track(&mut *cat.lock().map_err(err)?, track_id, &selection, max_gap_s).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_tracks(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<aw_catalog::geo::TrackInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::geo::tracks(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_track_line(state: tauri::State<'_, CatalogState>, project_root: String, track_id: i64) -> Result<Vec<[f64; 2]>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::geo::track_line(&*cat.lock().map_err(err)?, track_id, 2000).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_delete_track(state: tauri::State<'_, CatalogState>, project_root: String, track_id: i64) -> Result<(), String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::geo::delete_track(&mut *cat.lock().map_err(err)?, track_id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_map(state: tauri::State<'_, CatalogState>, project_root: String, filter: Filter, cell_deg: f64) -> Result<aw_catalog::geo::MapData, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::geo::map_data(&*cat.lock().map_err(err)?, &filter, cell_deg).map_err(err)).await
+}
