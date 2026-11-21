@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { parseWav, decodeWavMono, readWavBlobLayout, decodeWavMonoFromBlob } from '../src/infrastructure/audio/wavDecode.ts';
-import { parseFlacStreamInfo, flacBlockStarts, isFrameHeader, nextFrame, nextFrameIn, blobSource, bufferSource, readFlacHead, decodeFlacChunked } from '../src/infrastructure/audio/chunkedFlacDecode.ts';
+import { parseFlacStreamInfo, flacBlockStarts, isFrameHeader, nextFrame, nextFrameIn, blobSource, bufferSource, readFlacHead, decodeFlacChunked, frameFirstSample } from '../src/infrastructure/audio/chunkedFlacDecode.ts';
 
 /** Minimal AudioContext stand-in: createBuffer only. */
 const fakeCtx = { createBuffer: (_c, len, sampleRate) => { const d = new Float32Array(len); return { length: len, sampleRate, getChannelData: () => d }; } };
@@ -133,14 +133,14 @@ test('FLAC decoded from a Blob: same head and same block files as from an ArrayB
   const ref = parseFlacStreamInfo(ab);
   assert.deepEqual(head.info, ref);
   assert.deepEqual(head, await readFlacHead(bufferSource(ab)));
-  const run = async (input) => {
+  const run = async (input, blockSec = 4) => {
     const blocks = [];
     const ctx = {
       createBuffer: (ch, n, sr) => { const d = new Float32Array(n); return { length: n, sampleRate: sr, getChannelData: () => d }; },
       decodeAudioData: async (buf) => { blocks.push(new Uint8Array(buf)); return { numberOfChannels: 1, length: 100, getChannelData: () => new Float32Array(100).fill(blocks.length) }; },
     };
-    // 0.1 s blocks → the 64 kB minimum: several blocks over the 138 kB fixture.
-    await decodeFlacChunked(input, ctx, undefined, 0.1);
+    // 4 s of average bytes → ~69 kB blocks: two blocks over the 8 s, 138 kB fixture.
+    await decodeFlacChunked(input, ctx, undefined, blockSec);
     return blocks;
   };
   const fromBlob = await run(new Blob([b]));
@@ -148,12 +148,54 @@ test('FLAC decoded from a Blob: same head and same block files as from an ArrayB
   assert.ok(fromBlob.length >= 2, `${fromBlob.length} blocks`);
   assert.deepEqual(fromBlob, fromBuf);
   // Block files hold the frames between flacBlockStarts boundaries.
-  const starts = flacBlockStarts(b, ref.firstFrame, 1 << 16);
+  const starts = flacBlockStarts(b, ref.firstFrame, Math.max(1 << 16, Math.round((b.length - ref.firstFrame) / 8 * 4)));
   assert.equal(fromBlob.length, starts.length);
   starts.forEach((s, k) => {
     const to = k + 1 < starts.length ? starts[k + 1] : b.length;
     assert.deepEqual(fromBlob[k].subarray(42), b.subarray(s, to), `block ${k}`);
   });
+});
+
+test('FLAC frame headers give their first sample', () => {
+  const b = new Uint8Array(fs.readFileSync(flacFile));
+  const blockSize = (b[8] << 8) | b[9];
+  flacFrames.forEach((pos, k) => assert.equal(frameFirstSample(b.subarray(pos, pos + 16), blockSize), k * blockSize, `frame ${k}`));
+  assert.equal(frameFirstSample(new Uint8Array([0, 1, 2, 3, 4]), 4096), null);
+});
+
+test('FLAC blocks are cut by duration where the audio compresses far better than average', async () => {
+  // 0.1 s blocks (at most 1600 samples) despite the 64 kB byte minimum (~3.7 s of this file).
+  const b = new Uint8Array(fs.readFileSync(flacFile));
+  const blocks = [];
+  const ctx = {
+    createBuffer: (ch, n, sr) => { const d = new Float32Array(n); return { length: n, sampleRate: sr, getChannelData: () => d }; },
+    decodeAudioData: async (buf) => { blocks.push(new Uint8Array(buf).subarray(42)); return { numberOfChannels: 1, length: 1, getChannelData: () => new Float32Array(1) }; },
+  };
+  await decodeFlacChunked(new Blob([b]), ctx, undefined, 0.1);
+  const blockSize = (b[8] << 8) | b[9];
+  const frameStarts = new Set(flacFrames);
+  let at = flacFrames[0];
+  for (const blk of blocks) {
+    assert.deepEqual(blk, b.subarray(at, at + blk.length));
+    const frames = flacFrames.filter((f) => f >= at && f < at + blk.length).length;
+    assert.ok(frames >= 1 && frames * blockSize <= Math.max(1600, blockSize), `${frames} frames of ${blockSize}`);
+    at += blk.length;
+    assert.ok(at === b.length || frameStarts.has(at));
+  }
+  assert.ok(blocks.length > 20, `${blocks.length} blocks`);
+  assert.equal(at, b.length);
+});
+
+test('FLAC behind an ID3v2 tag: the head is found from a Blob too', async () => {
+  const b = new Uint8Array(fs.readFileSync(flacFile));
+  const tag = new Uint8Array(10 + 20);
+  tag.set([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 20]);
+  const withTag = new Uint8Array(tag.length + b.length);
+  withTag.set(tag); withTag.set(b, tag.length);
+  const head = await readFlacHead(blobSource(new Blob([withTag])));
+  assert.ok(head, 'head found');
+  assert.equal(head.info.firstFrame, flacFrames[0] + tag.length);
+  assert.equal(head.info.sampleRate, 8000);
 });
 
 const { parseGuano } = await import('../src/domain/ultrasound.ts');

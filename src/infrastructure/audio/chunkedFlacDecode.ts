@@ -32,7 +32,7 @@ export function isFlac(buf: ArrayBuffer): boolean {
 
 /** Skip an ID3v2 tag some taggers put before "fLaC". */
 function flacStart(b: Uint8Array): number {
-  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33 && b.length > 10) {
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33 && b.length >= 10) {
     return 10 + (((b[6] & 0x7f) << 21) | ((b[7] & 0x7f) << 14) | ((b[8] & 0x7f) << 7) | (b[9] & 0x7f));
   }
   return 0;
@@ -101,6 +101,32 @@ export function isFrameHeader(b: Uint8Array, i: number): boolean {
   let crc = 0;
   for (let k = i; k < p; k++) crc = CRC8[crc ^ b[k]];
   return crc === b[p];
+}
+
+/**
+ * First sample of the frame whose header starts at b[0]: the coded number is a frame number
+ * (fixed block size, times `blockSize`) or a sample number (variable block size). null if unreadable.
+ */
+export function frameFirstSample(b: Uint8Array, blockSize: number): number | null {
+  if (b.length < 5 || b[0] !== 0xff || (b[1] & 0xfe) !== 0xf8) return null;
+  const variable = (b[1] & 1) === 1;
+  const lead = b[4];
+  let extra: number, v: number;
+  if (lead < 0x80) { extra = 0; v = lead; }
+  else if ((lead & 0xe0) === 0xc0) { extra = 1; v = lead & 0x1f; }
+  else if ((lead & 0xf0) === 0xe0) { extra = 2; v = lead & 0x0f; }
+  else if ((lead & 0xf8) === 0xf0) { extra = 3; v = lead & 0x07; }
+  else if ((lead & 0xfc) === 0xf8) { extra = 4; v = lead & 0x03; }
+  else if ((lead & 0xfe) === 0xfc) { extra = 5; v = lead & 0x01; }
+  else if (lead === 0xfe) { extra = 6; v = 0; }
+  else return null;
+  if (5 + extra > b.length) return null;
+  for (let k = 0; k < extra; k++) {
+    const c = b[5 + k];
+    if ((c & 0xc0) !== 0x80) return null;
+    v = v * 64 + (c & 0x3f);
+  }
+  return variable ? v : v * blockSize;
 }
 
 /** First frame header at or after `from`, or b.length if there is none. */
@@ -244,9 +270,25 @@ export async function decodeFlacChunked(input: ArrayBuffer | Blob, ctx: BaseAudi
   }
   const parts: Float32Array[] = [];
   let written = 0;
-  // Blocks end at the next frame after every blockBytes (see flacBlockStarts).
+  // Blocks end at the next frame after every blockBytes (see flacBlockStarts). A part that
+  // compresses far better than the average (digital silence) would make that block hours long:
+  // its end moves back, halving the bytes, until it holds at most 2 × blockSec of audio.
+  const fixedBlock = (streamInfo[0] << 8) | streamInfo[1];
+  const maxSamples = 2 * blockSec * info.sampleRate;
+  const sampleAt = async (pos: number): Promise<number | null> => pos >= src.size
+    ? (known ? info.totalSamples : null)
+    : frameFirstSample(await src.read(pos, Math.min(src.size, pos + MAX_HEADER)), fixedBlock);
+  let fromSample: number | null = 0;
   for (let from = info.firstFrame; from < src.size;) {
-    const to = from + blockBytes < src.size ? await nextFrameIn(src, from + blockBytes) : src.size;
+    let to = from + blockBytes < src.size ? await nextFrameIn(src, from + blockBytes) : src.size;
+    let toSample = await sampleAt(to);
+    while (fromSample != null && toSample != null && toSample - fromSample > maxSamples) {
+      const shorter = await nextFrameIn(src, from + 1 + ((to - from) >> 1));
+      if (shorter >= to) break; // a single frame
+      to = shorter;
+      toSample = await sampleAt(to);
+    }
+    fromSample = toSample;
     const decoded = await ctx.decodeAudioData(blockFile(streamInfo, await src.read(from, to)));
     if (dst) {
       const n = Math.min(decoded.length, dst.length - written);
