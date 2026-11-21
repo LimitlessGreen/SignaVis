@@ -87,6 +87,21 @@ test('NearbyRows: rows of a recording forgotten meanwhile are dropped', async ()
     assert.equal(near.at('rec', 30), null);
 });
 
+test('NearbyRows: a click during a forgotten detection (e.g. channel change) detects anew', async () => {
+    const { near, o, calls, release } = nearby();
+    o.hold = true;
+    const first = near.detect('rec', {}, 30);
+    await new Promise((r) => setTimeout(r, 0));
+    near.forgetAll();
+    o.hold = false;
+    const second = near.detect('rec', {}, 30);
+    release();
+    assert.equal(await first, false);
+    assert.equal(await second, true);
+    assert.equal(calls.length, 2);
+    assert.ok(near.at('rec', 30));
+});
+
 test('runCovers: a finished run holds every click, a stopped one only up to its analysed end', async () => {
     const { runCovers } = await import('../src/domain/detector/nearby.ts');
     assert.equal(runCovers({ analyzedTo: 20 }, false, 100), true);

@@ -3,7 +3,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { CQT_FMIN } from '../../../shared/constants.ts';
-import { clamp, channelData as cachedChannelData, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
+import { selectedSamples } from '../../../shared/channels.ts';
+import { clamp, getTimeGridSteps, formatGridTime, hexToRgb, colorWithAlpha } from '../../../shared/utils.ts';
 
 function getCssVar(name: string, fallback = '') {
     try {
@@ -74,7 +75,8 @@ function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond, s
 const PEAK_BLOCK_FINE = 32;
 const PEAK_BLOCK = 1024;
 type Peaks = { block: number; min: Float32Array; max: Float32Array };
-const peakCache = new WeakMap<AudioBuffer, { fine: Peaks; coarse: Peaks }>();
+// Keyed by the sample array, so each channel selection has its own peaks.
+const peakCache = new WeakMap<Float32Array, { fine: Peaks; coarse: Peaks }>();
 
 function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
     const n = Math.ceil(min.length / factor);
@@ -93,13 +95,13 @@ function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block
 }
 
 function getPeaks(audioBuffer: AudioBuffer) {
-    let peaks = peakCache.get(audioBuffer);
+    const data = selectedSamples(audioBuffer);
+    let peaks = peakCache.get(data);
     if (peaks) return peaks;
-    const data = cachedChannelData(audioBuffer);
     const fine = reducePeaks(data, data, PEAK_BLOCK_FINE, PEAK_BLOCK_FINE);
     const coarse = reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK);
     peaks = { fine, coarse };
-    peakCache.set(audioBuffer, peaks);
+    peakCache.set(data, peaks);
     return peaks;
 }
 
@@ -163,7 +165,7 @@ export function renderMainWaveform({
     setStyle(waveformTimelineCanvas, 'display', showTimeline ? 'block' : 'none');
     setStyle(waveformContent, 'width', `${totalWidth}px`);
 
-    const channelData = cachedChannelData(audioBuffer);
+    const channelData = selectedSamples(audioBuffer);
     const totalSamples = channelData.length;
     const midY = ampHeight / 2;
     const ampScale = 1 / Math.max(1e-6, amplitudePeakAbs);
@@ -290,7 +292,7 @@ export function renderOverviewWaveform({
     ctx.fillStyle = getCssVar('--color-bg-tertiary', '#0f3460');
     ctx.fillRect(0, 0, W, H);
 
-    const channelData = cachedChannelData(audioBuffer);
+    const channelData = selectedSamples(audioBuffer);
     const totalSamples = channelData.length;
     const s0 = Math.floor(clamp(startNorm, 0, 1) * totalSamples);
     const s1 = Math.max(s0 + 1, Math.ceil(clamp(endNorm, 0, 1) * totalSamples));

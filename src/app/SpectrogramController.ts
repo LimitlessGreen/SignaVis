@@ -51,7 +51,7 @@ import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
-import { channelData as cachedChannelData } from '../shared/utils.ts';
+import { selectedSamples, isChannelZero, channelSelectionKey, effectiveSelection, getChannelSelection, withChannelKey } from '../shared/channels.ts';
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -232,9 +232,14 @@ export class SpectrogramController extends EventTarget {
      * Full compute pipeline: DSP → store data → optional auto-adjust → Stage 1+2+3.
      * @param {{ autoAdjust?: boolean }} [opts]
      */
+    /** Incremented per generate(); an older call that finishes late must not overwrite a newer result. */
+    private _generateSeq = 0;
+
     async generate({ autoAdjust = false } = {}) {
         if (!this._audioBuffer) return;
         if (this._externalMode) return;
+        const seq = ++this._generateSeq;
+        const superseded = () => seq !== this._generateSeq;
 
         const d = this._d;
         if (d.recomputingOverlay) {
@@ -297,35 +302,41 @@ export class SpectrogramController extends EventTarget {
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
+            const direct = isChannelZero(audioBuffer);
             const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
                 file,
-                nativePath:   this._sourcePath,
-                source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
+                // The direct WAV / native readers only see channel 0; other selections go via PCM.
+                nativePath:   direct ? this._sourcePath : null,
+                source:       direct && isWavFile(file) ? undefined : pcmWavBlob(selectedSamples(audioBuffer), audioBuffer.sampleRate),
+                sourceTag:    audioBuffer.numberOfChannels > 1
+                    ? channelSelectionKey(effectiveSelection(getChannelSelection(), audioBuffer.numberOfChannels)) : undefined,
                 wasmParams:   v2Params,
                 duration:     this._audioBuffer!.duration,
                 colorOptions: this._getCurrentColorOptions(),
                 onProgress:   (f) => this._emit('progress', { chunk: 0, totalChunks: 0, percent: Math.round(f * 100) }),
-            })).then(() => true, (err) => {
+            }), superseded).then(() => true, (err) => {
+                if (superseded()) return false; // the newer call owns the tile manager
                 console.warn('Spectrogram pyramid failed, computing the whole file:', err);
                 this._tileManager?.dispose();
                 this._tileManager = null;
                 return false;
             });
-            if (ok) return;
+            if (ok || superseded()) return;
         }
 
         const t0 = performance.now();
 
         try {
-            const channelData = cachedChannelData(this._audioBuffer);
+            const channelData = selectedSamples(this._audioBuffer);
 
             // ── Cache lookup ─────────────────────────────────────────────
             const cacheKey = await spectrogramCache.computeKey(
                 channelData,
                 this._audioBuffer.sampleRate,
-                options,
+                withChannelKey(options, this._audioBuffer.numberOfChannels),
             );
                 const cached = await spectrogramCache.get(cacheKey) as any;
+            if (superseded()) return;
             if (cached) {
                 this._data        = new Float32Array(cached.dataBuffer);
                 this._nFrames     = cached.nFrames;
@@ -372,6 +383,7 @@ export class SpectrogramController extends EventTarget {
 
             if (!v2Params) throw new Error(`Unsupported spectrogram settings (scale ${scale}, window ${windowFunction})`);
             const result = await this._computeV2(channelData, v2Params, colourScale);
+            if (superseded()) return;
             this._engineV2 = true;
 
             this._data      = result.data;
@@ -428,6 +440,7 @@ export class SpectrogramController extends EventTarget {
                 nMels: this._nMels,
             });
         } catch (error) {
+            if (superseded()) return;
             if (d.recomputingOverlay) d.recomputingOverlay.hidden = true;
             this._emit('transportstatechange', { state: 'error', reason: 'spectrogram-error' });
             this._emit('error', { message: (error as any)?.message || String(error), source: 'spectrogram' });
@@ -441,6 +454,7 @@ export class SpectrogramController extends EventTarget {
         dspOptions: Record<string, any>,
         autoAdjust: boolean,
         createManager: () => Promise<WasmTileManager>,
+        superseded: () => boolean = () => false,
     ): Promise<void> {
         const d = this._d;
         if (d.recomputingOverlay) {
@@ -460,7 +474,8 @@ export class SpectrogramController extends EventTarget {
         const t0 = performance.now();
         const audioBuffer = this._audioBuffer!;
         const tm = await createManager();
-        if (this._audioBuffer !== audioBuffer) { tm.dispose(); return; } // another file was loaded meanwhile
+        // Another file was loaded, or a newer generate() started (e.g. channel change), meanwhile.
+        if (this._audioBuffer !== audioBuffer || superseded()) { tm.dispose(); return; }
 
         this._tileManager = tm;
         this._nMels = tm.nMels;

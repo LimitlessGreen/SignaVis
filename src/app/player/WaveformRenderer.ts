@@ -13,6 +13,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp } from '../../shared/utils.ts';
+import { selectedSamples } from '../../shared/channels.ts';
 import {
     renderMainWaveform,
     renderOverviewWaveform,
@@ -73,7 +74,7 @@ export class WaveformRenderer {
     /** True while the strip shows a spectrogram image (kept on redraws until a new one is ready). */
     #overviewHasImage = false;
     /** What the strip's waveform was drawn for; skips rescanning every sample when nothing changed. */
-    #overviewWaveKey: { audioBuffer: AudioBuffer; w: number; h: number; peak: number } | null = null;
+    #overviewWaveKey: { samples: Float32Array; w: number; h: number; peak: number } | null = null;
     #overviewImage: CanvasImageSource | null = null;
 
     constructor(deps: WaveformRendererDeps) {
@@ -149,9 +150,10 @@ export class WaveformRenderer {
         const token = ++this.#overviewToken;
         const drawWaveform = (force = true) => {
             const rect = overviewContainer.getBoundingClientRect();
-            const key = { audioBuffer, w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs() };
+            // The selected samples identify buffer and channel selection.
+            const key = { samples: selectedSamples(audioBuffer), w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs() };
             const k = this.#overviewWaveKey;
-            const same = !this.#overviewHasImage && k && k.audioBuffer === key.audioBuffer && k.w === key.w && k.h === key.h && k.peak === key.peak;
+            const same = !this.#overviewHasImage && k && k.samples === key.samples && k.w === key.w && k.h === key.h && k.peak === key.peak;
             this.#overviewHasImage = false;
             this.#overviewImage = null;
             if (same && !force) return;

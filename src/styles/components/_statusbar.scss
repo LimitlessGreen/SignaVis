@@ -55,3 +55,14 @@
 @media (prefers-reduced-motion: reduce) {
     .statusbar-label.is-busy::before { animation-duration: 2.4s; }
 }
+
+// Channel picker (multichannel recordings only)
+.statusbar-channel-select {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0 2px;
+    cursor: pointer;
+}
