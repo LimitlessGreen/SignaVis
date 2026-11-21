@@ -30,9 +30,10 @@ const ROW_H = 26;
 const PAGE = 500;
 /** Tile grid: thumbnail sizes (drawn 1:1, also the card width), gap and caption height (px). */
 /** Zoom steps of the grid (thumbnail = card width; each step has its own cached previews). */
-const TILE_SIZES = [{ w: 112, h: 36 }, { w: 144, h: 48 }, { w: 176, h: 58 }, { w: 224, h: 74 }, { w: 300, h: 100 }] as const;
+const TILE_SIZES = [{ w: 120, h: 64 }, { w: 152, h: 80 }, { w: 184, h: 96 }, { w: 232, h: 120 }, { w: 300, h: 156 }] as const;
 const TILE_GAP = 10;
-const TILE_CAPTION = 44;
+/** Everything is drawn over the spectrogram; no caption below. */
+const TILE_CAPTION = 0;
 /** Distinct, readable on dark and light backgrounds; a field value always gets the same colour. */
 const PALETTE = ['#ee8c3b', '#4cb5e8', '#9b7bf0', '#5cc98a', '#e8618c', '#d9c23f', '#3fc9c0', '#f07a5f', '#7f9cf5', '#b5d64a'];
 export function valueColor(field: string, value: string | null): string {
@@ -140,8 +141,10 @@ export class LibraryView {
               <canvas class="lib-heat" height="110" title="Recordings per day (columns) and hour (rows, local time)"></canvas>
               <div class="lib-tilebar">
                 <div class="lib-viewbar" title="Active filters — × removes one"></div>
-                <span class="lib-seg" role="group" aria-label="Frequency range" title="Frequency range of the previews">
-                  ${TILE_HZ.map((hz) => `<button data-act="tile-hz" data-v="${hz}">${hz / 1000} kHz</button>`).join('')}
+                <span class="lib-seg" role="group" aria-label="Frequency range of the spectrograms"
+                  title="Frequency range of the spectrograms (bottom to top). 0–4 kHz enlarges low calls such as owls; 0–24 kHz shows bats and insects.">
+                  <span class="lib-seg-label">Spectrogram</span>
+                  ${TILE_HZ.map((hz) => `<button data-act="tile-hz" data-v="${hz}">0–${hz / 1000} kHz</button>`).join('')}
                 </span>
                 <label class="lib-zoom" title="Tile size"><span aria-hidden="true">▪</span>
                   <input type="range" min="0" max="${TILE_SIZES.length - 1}" step="1" data-k="tile-zoom"><span aria-hidden="true">■</span></label>
@@ -620,18 +623,16 @@ export class LibraryView {
             const pills = [
                 this.#tile.show.site && r.site ? `<span class="lib-pill" style="--pill:${valueColor('site', r.site)}">${esc(r.site)}</span>` : '',
                 this.#tile.show.device && r.device ? `<span class="lib-pill" style="--pill:${valueColor('device', r.device)}">${esc(r.device)}</span>` : '',
-            ].join('') || `<span class="lib-muted">${esc((r.path ?? '').split('/').pop())}</span>`;
+            ].join('') || `<span class="lib-pill lib-pill--file">${esc((r.path ?? '').split('/').pop())}</span>`;
             html += `<div class="lib-r lib-tile${sel ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
                 title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof thumb === 'string' ? ` — no preview: ${esc(thumb)}` : ''}">
               <div class="lib-tile-img">
                 <canvas width="${w}" height="${h}" data-id="${r.id}"></canvas>
-                <span class="lib-tile-check" data-act="tile-check" title="Select (Ctrl+click, Shift+click for a range)"></span>
-                ${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">◆ ${r.labels}</span>` : ''}
-                ${r.durationS != null ? `<span class="lib-tile-dur">${esc(clockDuration(r.durationS))}</span>` : ''}
-                ${gone ? '<span class="lib-tile-gone">missing</span>' : ''}
-              </div>
-              <div class="lib-tile-cap"><b>${esc(time ?? '')}</b><span>${esc(date ?? '')}</span></div>
-              <div class="lib-tile-pills">${pills}</div></div>`;
+                <div class="lib-tile-top"><span class="lib-tile-check" data-act="tile-check" title="Select (Ctrl+click, Shift+click for a range)"></span>${pills}
+                  ${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">◆ ${r.labels}</span>` : ''}</div>
+                <div class="lib-tile-bottom"><b>${esc(time ?? '')}</b><span>${esc(date ?? '')}</span>
+                  ${gone ? '<em>missing</em>' : ''}<span class="lib-spacer"></span>${r.durationS != null ? `<span>${esc(clockDuration(r.durationS))}</span>` : ''}</div>
+              </div></div>`;
         }
         host.innerHTML = html;
         host.querySelectorAll<HTMLCanvasElement>('canvas[data-id]').forEach((c) => this.#drawThumb(c));

@@ -116,43 +116,51 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 }
 .lib-r.lib-tile {
     display: flex; flex-direction: column; height: auto; padding: 0; gap: 0; overflow: hidden; text-align: left; align-items: stretch;
-    border: 0; border-radius: 10px; background: var(--color-bg-secondary);
+    border: 0; border-radius: 8px; background: #08081a;
     box-shadow: 0 0 0 1px var(--color-border); cursor: pointer;
     transition: box-shadow .12s, transform .12s;
-    &:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent), 0 4px 14px rgba(0, 0, 0, .25); background: var(--color-bg-secondary); }
+    &:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent), 0 4px 14px rgba(0, 0, 0, .25); background: #08081a; }
     &.is-cur { outline: none; box-shadow: 0 0 0 1px var(--color-accent); }
-    &.is-sel { background: var(--color-bg-secondary); box-shadow: 0 0 0 2px var(--color-accent); }
+    &.is-sel { background: #08081a; box-shadow: 0 0 0 2px var(--color-accent); }
     &.is-missing { text-decoration: none; opacity: .55; }
 }
 .lib-tile-img {
-    position: relative; line-height: 0;
+    position: relative; line-height: 0; flex: 1;
     canvas {
-        display: block; width: 100%; height: var(--thumb-h, 56px); background: #08081a;
+        display: block; width: 100%; height: var(--thumb-h, 96px); background: #08081a;
         &.is-empty { background: linear-gradient(100deg, #0c0c22 30%, #17173a 50%, #0c0c22 70%) 0 0 / 300% 100%; animation: lib-shimmer 1.4s linear infinite; }
         &.is-failed { animation: none; background: repeating-linear-gradient(135deg, #14101e 0 6px, #1b1428 6px 12px); }
     }
-    > span {
-        position: absolute; line-height: 16px; font-size: 10px; padding: 0 5px; border-radius: 4px;
-        background: rgba(6, 6, 18, .72); color: #e8e8f0; backdrop-filter: blur(2px); font-variant-numeric: tabular-nums;
-    }
-    .lib-tile-dur { right: 4px; bottom: 4px; }
-    .lib-tile-lab { right: 4px; top: 4px; color: var(--color-accent); }
-    .lib-tile-gone { left: 4px; bottom: 4px; color: var(--color-detection); }
-    .lib-tile-check {
-        left: 5px; top: 5px; width: 16px; height: 16px; padding: 0; border-radius: 50%;
-        box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .7); opacity: 0; transition: opacity .12s;
-    }
 }
-.lib-r.lib-tile:hover .lib-tile-check { opacity: 1; }
+// Overlays on the spectrogram: pills on top, time and duration at the bottom (on a soft gradient).
+.lib-tile-top, .lib-tile-bottom {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 4px; padding: 5px 6px;
+    line-height: 16px; white-space: nowrap; overflow: hidden; pointer-events: none;
+    > * { pointer-events: auto; }
+}
+.lib-tile-top { top: 0; .lib-pill { flex: 0 1 auto; min-width: 0; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); } }
+.lib-tile-bottom {
+    bottom: 0; padding-top: 14px; font-size: 11px; color: #f2f2f8; font-variant-numeric: tabular-nums;
+    background: linear-gradient(to top, rgba(4, 4, 14, .85), rgba(4, 4, 14, 0));
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+    b { font-weight: 600; }
+    > span:not(.lib-spacer) { opacity: .8; font-size: 10px; }
+    em { font-style: normal; color: var(--color-detection); font-size: 10px; }
+}
+.lib-tile-lab { margin-left: auto; flex: none; padding: 0 5px; border-radius: 4px; font-size: 10px; background: rgba(6, 6, 18, .75); color: var(--color-accent); }
+.lib-tile-check {
+    flex: none; width: 16px; height: 16px; border-radius: 50%; position: relative; cursor: pointer;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .85), 0 1px 3px rgba(0, 0, 0, .5);
+    display: none;
+}
+.lib-r.lib-tile:hover .lib-tile-check, .lib-r.lib-tile.is-sel .lib-tile-check { display: block; }
 .lib-r.lib-tile.is-sel .lib-tile-check {
-    opacity: 1; background: var(--color-accent); box-shadow: none;
+    background: var(--color-accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
     &::after { content: '✓'; position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 16px; color: #06111c; font-weight: 700; }
 }
-.lib-tile-cap, .lib-tile-where {
-    padding: 0 8px; font-size: 11px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.lib-tile-cap { display: flex; align-items: baseline; gap: 6px; padding-top: 4px; b { font-weight: 600; font-variant-numeric: tabular-nums; } span { color: var(--color-text-secondary); font-size: 10px; } }
-.lib-tile-pills { display: flex; gap: 4px; padding: 3px 8px 0; overflow: hidden; white-space: nowrap; .lib-pill { flex: 0 1 auto; } }
+.lib-pill--file { --pill: rgba(230, 230, 240, .85); font-weight: 500; }
+.lib-seg-label { align-self: center; padding: 0 6px 0 4px; font-size: 11px; color: var(--color-text-secondary); }
+@keyframes lib-shimmer { to { background-position: -300% 0; } }
 
 // Expanded recording (click on a tile)
 .lib-expand {
