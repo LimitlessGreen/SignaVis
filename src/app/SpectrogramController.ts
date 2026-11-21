@@ -51,7 +51,7 @@ import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
-import { channelData as cachedChannelData } from '../shared/utils.ts';
+import { selectedSamples, isChannelZero } from '../shared/channels.ts';
 
 /**
  * SpectrogramController — owns spectrogram state and the compute/render pipeline.
@@ -297,10 +297,12 @@ export class SpectrogramController extends EventTarget {
             && this._audioBuffer.duration >= WASM_TILE_MIN_DURATION_SEC) {
             const file = this._sourceFile;
             const audioBuffer = this._audioBuffer;
+            const direct = isChannelZero(audioBuffer);
             const ok = await this._startTileMode(options, autoAdjust, () => WasmTileManager.create({
                 file,
-                nativePath:   this._sourcePath,
-                source:       isWavFile(file) ? undefined : pcmWavBlob(audioBuffer.getChannelData(0), audioBuffer.sampleRate),
+                // The direct WAV / native readers only see channel 0; other selections go via PCM.
+                nativePath:   direct ? this._sourcePath : null,
+                source:       direct && isWavFile(file) ? undefined : pcmWavBlob(selectedSamples(audioBuffer), audioBuffer.sampleRate),
                 wasmParams:   v2Params,
                 duration:     this._audioBuffer!.duration,
                 colorOptions: this._getCurrentColorOptions(),
@@ -317,7 +319,7 @@ export class SpectrogramController extends EventTarget {
         const t0 = performance.now();
 
         try {
-            const channelData = cachedChannelData(this._audioBuffer);
+            const channelData = selectedSamples(this._audioBuffer);
 
             // ── Cache lookup ─────────────────────────────────────────────
             const cacheKey = await spectrogramCache.computeKey(

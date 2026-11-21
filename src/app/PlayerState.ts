@@ -39,6 +39,10 @@ import type { DomRefs } from './domRefs.ts';
 import { analyzeUltrasound, findCallExcerpt, type UltrasoundInfo } from '../domain/ultrasound.ts';
 import { UltrasoundDialog, loadUltrasoundDefault, saveUltrasoundDefault, type UltrasoundChoice } from '../ui/components/ultrasound-dialog/ultrasound-dialog.ts';
 import { computeBandProfile, autoViewMaxHz, type BandProfile } from '../domain/bandProfile.ts';
+import {
+    selectedSamples, onChannelSelectionChange, getChannelSelection, setChannelSelection,
+    parseChannelSelection, channelSelectionKey, channelLabel, effectiveSelection, type ChannelSelection,
+} from '../shared/channels.ts';
 
 /**
  * @typedef {Object} PlayerOptions
@@ -121,6 +125,7 @@ export class PlayerState {
     container: any;
     _storage: any;
     _presets: any;
+    _offChannelSelection?: () => void;
     _spectro: any;
     WaveSurfer: any;
     _engine: any;
@@ -189,6 +194,10 @@ export class PlayerState {
         this.d = this._queryDom(container);
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
+        this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
+        this.d.channelSelect?.addEventListener('change', (e) => {
+            setChannelSelection(parseChannelSelection((e.target as HTMLSelectElement).value));
+        });
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._spectro.generate(opts); },
             onStage1Rebuild: () => {
@@ -687,6 +696,7 @@ export class PlayerState {
             overviewLabelTableResize: q('overviewLabelTableResize'),
             fileInfo:               q('fileInfo'),
             sampleRateInfo:         q('sampleRateInfo'),
+            channelSelect:          q('channelSelect'),
             scaleSelect:            q('scaleSelect'),
             colourScaleSelect:      q('colourScaleSelect'),
             presetSelect:           q('presetSelect'),
@@ -770,7 +780,42 @@ export class PlayerState {
     //  Disposal
     // ═════════════════════════════════════════════════════════════════
 
+    /** Band profile, ultrasound guess and amplitude peak of the selected channel(s). */
+    _updateChannelAnalysis() {
+        const buf = this._engine.audioBuffer;
+        const samples = buf ? selectedSamples(buf) : null;
+        const sr = this.sampleRateHz;
+        this.bandProfile = samples ? computeBandProfile(samples, sr) : null;
+        this.ultrasoundInfo = samples ? analyzeUltrasound(samples, sr, this._engine.guano, this.bandProfile) : null;
+        this._updateUltrasoundChip();
+        this._emit('ultrasoundinfo', this.ultrasoundInfo);
+        this.amplitudePeakAbs = samples ? computeAmplitudePeak(samples) : 0;
+        this._updateNormalizeBtn();
+        this._updateAmplitudeLabels();
+    }
+
+    /** Channel picker in the status bar; only shown for multichannel recordings. */
+    _updateChannelSelect() {
+        const sel = this.d.channelSelect;
+        if (!sel) return;
+        const n = this._engine.audioBuffer?.numberOfChannels ?? 1;
+        sel.hidden = n <= 1;
+        if (n <= 1) return;
+        const opts: ChannelSelection[] = [{ mode: 'mix' }, ...Array.from({ length: n }, (_, c) => ({ mode: 'single' as const, channel: c }))];
+        sel.replaceChildren(...opts.map((o) => new Option(channelLabel(o, n), channelSelectionKey(o))));
+        sel.value = channelSelectionKey(effectiveSelection(getChannelSelection(), n));
+    }
+
+    _onChannelSelectionChanged() {
+        this._updateChannelSelect();
+        if (!this._engine.audioBuffer) return;
+        this._updateChannelAnalysis();
+        this._spectro.generate();
+        this._emit('channelselectionchange', getChannelSelection());
+    }
+
     dispose() {
+        this._offChannelSelection?.();
         this._stopCustomSegmentPlayback('stopped', this._getCurrentTime());
         this._viewport.dispose();
         this._crosshair.dispose();
@@ -864,15 +909,9 @@ export class PlayerState {
         this._usDialog?.close(null);
         this._setTimeExpansion(1);
         this.detectorSettings.carrierHz = 0;
-        const ch0 = this._engine.audioBuffer?.getChannelData(0) ?? null;
-        this.bandProfile = ch0 ? computeBandProfile(ch0, sampleRate) : null;
-        this.ultrasoundInfo = ch0 ? analyzeUltrasound(ch0, sampleRate, this._engine.guano, this.bandProfile) : null;
         this._freqZoom.resetSilent();
-        this._updateUltrasoundChip();
-        this._emit('ultrasoundinfo', this.ultrasoundInfo);
-        this.amplitudePeakAbs = this._engine.audioBuffer ? computeAmplitudePeak(this._engine.audioBuffer.getChannelData(0)) : 0;
-        this._updateNormalizeBtn();
-        this._updateAmplitudeLabels();
+        this._updateChannelAnalysis();
+        this._updateChannelSelect();
         if (this._engine.audioBuffer) {
             this._spectro.setAudio(this._engine.audioBuffer, sampleRate, sourceFile, sourcePath);
             this._presets.syncQualitySlider();
@@ -1220,7 +1259,7 @@ export class PlayerState {
             expansion: info.suggestedExpansion > 1 ? info.suggestedExpansion : 10,
             divisor: this.detectorSettings.divisor,
             pitchFactor: this.detectorSettings.pitchFactor,
-            excerpt: findCallExcerpt(buf.getChannelData(0), buf.sampleRate),
+            excerpt: findCallExcerpt(selectedSamples(buf), buf.sampleRate),
             remembered: loadUltrasoundDefault() != null,
             initial: loadUltrasoundDefault() ?? (mode && mode !== 'none' ? mode : 'heterodyne') as UltrasoundChoice,
             apply: (c) => this._applyUltrasoundChoice(c),

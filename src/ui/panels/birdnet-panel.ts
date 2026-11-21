@@ -28,6 +28,7 @@ import ModalManager from '../components/modal/modal-manager.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
 import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
 import { filterBySpeciesList } from '../../domain/species-lists.ts';
+import { selectedSamples } from '../../shared/channels.ts';
 
 // Bundled models (Lite does not ship them: fetched on first use and cached, see onDemandUrl).
 export const BIRDNET_MODEL_PRESETS = {
@@ -517,7 +518,7 @@ export class BirdNETPanel {
       this.statusEl.textContent = 'Analyzing…';
       this.progressBar.style.width = '0%';
 
-      const channelData = audioBuffer.getChannelData(0);
+      const channelData = selectedSamples(audioBuffer);
       const allDetections = await this.birdnet.analyze(channelData, {
         sampleRate: audioBuffer.sampleRate,
         overlap,

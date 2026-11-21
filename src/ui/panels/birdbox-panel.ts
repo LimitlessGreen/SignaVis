@@ -18,6 +18,7 @@ import { SAMPLE_RATE } from '../../domain/detector/birdboxStream.ts';
 import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
+import { selectedSamples } from '../../shared/channels.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
 const MODEL_TAG = 'BirdBox Just-Bird FP16 (24632a5)';
@@ -260,14 +261,7 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     });
 }
 
-/** Mean of all channels. */
+/** Samples of the selected channel(s). */
 function mono(buf: AudioBuffer): Float32Array {
-    if (buf.numberOfChannels === 1) return buf.getChannelData(0);
-    const out = new Float32Array(buf.length);
-    for (let c = 0; c < buf.numberOfChannels; c++) {
-        const ch = buf.getChannelData(c);
-        for (let i = 0; i < out.length; i++) out[i] += ch[i];
-    }
-    for (let i = 0; i < out.length; i++) out[i] /= buf.numberOfChannels;
-    return out;
+    return selectedSamples(buf);
 }

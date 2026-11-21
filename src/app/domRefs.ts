@@ -77,6 +77,7 @@ export interface DomRefs {
     // ── File info ────────────────────────────────────────────────────────
     fileInfo:                HTMLElement       | null;
     sampleRateInfo:          HTMLElement       | null;
+    channelSelect:           HTMLSelectElement | null;
 
     // ── DSP / scale selects ─────────────────────────────────────────────
     scaleSelect:             HTMLSelectElement | null;

@@ -6,10 +6,10 @@
 // are kept; frames are computed in blocks so a long recording never needs the full matrix.
 
 import { wasmMain } from '../infrastructure/wasm-dsp/wasmMain.ts';
-import { channelData } from '../shared/utils.ts';
 import { bandSpectrogramOf, type BandOptions } from './similarBand.ts';
 import type { CallPatch } from '../domain/similar/cluster.ts';
 import { createSearch, type CallTemplate, type BandSpectrogram, type Box, type FindOptions, type SearchState, type SimilarHit } from '../domain/similar/ncc.ts';
+import { selectedSamples } from '../shared/channels.ts';
 
 const WINDOW_SECONDS = 0.016;
 export type { BandOptions } from './similarBand.ts';
@@ -18,7 +18,7 @@ export type { BandOptions } from './similarBand.ts';
 export async function bandSpectrogram(audio: AudioBuffer, loHz: number, hiHz: number, opts: BandOptions = {}): Promise<BandSpectrogram | null> {
     const wasm = wasmMain();
     if (!wasm) return null;
-    const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+    const channels = [selectedSamples(audio)];
     return bandSpectrogramOf(wasm, channels, audio.length, audio.sampleRate, loHz, hiHz, opts);
 }
 
@@ -77,7 +77,7 @@ export class SimilarSession {
         }
         this.start(Ctor);
         // Channels are copied (structured clone): the AudioBuffer keeps its own
-        const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+        const channels = [selectedSamples(audio)];
         const r = await this.call({ type: 'findAudio', module, channels, length: audio.length, sampleRate: audio.sampleRate, loHz, hiHz, exemplar, opts });
         return r.hits ?? null;
     }
@@ -129,7 +129,7 @@ export async function callPatches(audio: AudioBuffer, boxes: Box[], opts: BandOp
     const params = { winLen, hop, nFft: winLen, window: { kind: 'hann' }, scale: { kind: 'linear' },
         pcen: null, reassign: false, output: 'db', sampleRate: sr };
     const stft = new wasm.WasmStft(JSON.stringify(params));
-    const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => channelData(audio, c));
+    const channels = [selectedSamples(audio)];
     try {
         const total = stft.nFrames(audio.length), bins = stft.outBins(), freqs = stft.binFrequencies();
         const df = freqs.length > 1 ? freqs[1] - freqs[0] : sr / winLen, dt = hop / sr;

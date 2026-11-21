@@ -537,6 +537,8 @@ export function createPlayerHTML(opts = {}) {
         </div>
         <div class="statusbar-section">
             <span class="statusbar-label" data-aw="sampleRateInfo"></span>
+            <select class="statusbar-channel-select" data-aw="channelSelect" hidden
+                    title="Channels shown and analysed (playback keeps all channels)" aria-label="Channel"></select>
         </div>
         <div class="statusbar-spacer"></div>
         <div class="statusbar-section">
