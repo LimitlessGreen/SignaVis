@@ -9,6 +9,13 @@ import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.t
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
+import { labelChannel, validLabelChannel } from '../shared/channels.ts';
+
+/** `{ channel }` for a valid label channel, else nothing (spread into normalized labels). */
+function withChannel(v: unknown): { channel?: number } {
+    const ch = validLabelChannel(v);
+    return ch === undefined ? {} : { channel: ch };
+}
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
 const LANE_H = 18;
@@ -976,6 +983,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
             recordingId: annotation?.recordingId ?? null,
+            ...withChannel(annotation?.channel),
         };
     }
 }
@@ -1176,6 +1184,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             origin: src.origin,
             author: src.author,
             tags: src.tags ? { ...src.tags } : {},
+            channel: labelChannel(this.player?._state?.audioBuffer),
         });
         this.add(region);
         return region;
@@ -1975,6 +1984,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                         origin: 'manual',
                         author: isXc ? '' : ref.author,
                         tags: isXc ? {} : (ref.tags ? { ...ref.tags } : {}),
+                        channel: labelChannel(this.player?._state?.audioBuffer),
                     });
                     e.preventDefault();
                     e.stopPropagation();
@@ -2238,6 +2248,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      * `forcePicker` (Alt held), the dialog opens, pre-filled from the template.
      */
     _openNewLabelPicker(region: any, { forcePicker = false }: { forcePicker?: boolean } = {}) {
+        // Drawn / snapped on the channel(s) shown now
+        const ch = labelChannel(this.player?._state?.audioBuffer);
+        if (ch !== undefined) region.channel = ch; else delete region.channel;
         const tpl = this.player?.getSpeciesBarSelection?.();
         if (tpl?.name && !forcePicker) {
             region.label = tpl.name;
@@ -3157,6 +3170,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
+            ...withChannel(label?.channel),
             createdAt: label?.createdAt || new Date().toISOString(),
             ...(label?.updatedAt ? { updatedAt: label.updatedAt } : {}),
         };

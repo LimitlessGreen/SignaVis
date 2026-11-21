@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
   analyses (BirdNET, BirdBox, Snap, similar calls, SNR) use the same channel(s);
   playback keeps all channels. Player API: `channel` option, `setChannel()`,
   `getChannel()` and the `channelselectionchange` event.
+- Labels remember the **channel** they were made on (drawn, stamped, pasted,
+  BirdNET, BirdBox); labels on the mix or on mono recordings carry none. The
+  Raven export writes it to the Channel column (1-based), the JSON exports as
+  `channel` (0-based); the label table has an optional "Ch" column.
 
 ## [1.3.2] - 2026-11-19
 

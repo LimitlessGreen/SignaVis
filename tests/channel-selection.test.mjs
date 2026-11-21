@@ -100,3 +100,14 @@ test('public channel option: mix/left/right/index round-trip, junk rejected', as
     assert.equal(toChannelOption({ mode: 'mix' }), 'mix');
     assert.equal(toChannelOption({ mode: 'single', channel: 2 }), 2);
 });
+
+test('labelChannel: the selected channel of a multichannel buffer, else none', async () => {
+    const { labelChannel, validLabelChannel } = await import('../src/shared/channels.ts');
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'single', channel: 1 }), 1);
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'mix' }), undefined);
+    assert.equal(labelChannel({ numberOfChannels: 1 }, { mode: 'single', channel: 0 }), undefined);
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'single', channel: 4 }), undefined, 'falls back to mix');
+    assert.equal(labelChannel(null), undefined);
+    assert.equal(validLabelChannel('2'), 2);
+    assert.equal(validLabelChannel(1.5), undefined);
+});

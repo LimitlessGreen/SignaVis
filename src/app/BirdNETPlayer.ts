@@ -97,7 +97,7 @@ export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
 import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
 import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
-import { setChannelSelection, getChannelSelection, effectiveSelection, toChannelSelection, toChannelOption, type ChannelOption } from '../shared/channels.ts';
+import { setChannelSelection, getChannelSelection, effectiveSelection, toChannelSelection, toChannelOption, validLabelChannel, type ChannelOption } from '../shared/channels.ts';
 export { LiveRecorder, encodeWav, recordingFileName, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
@@ -1820,6 +1820,7 @@ export class BirdNETPlayer {
             origin: l.origin || '',
             author: l.author || '',
             tags: l.tags || {},
+            ...(validLabelChannel((l as any).channel) !== undefined ? { channel: validLabelChannel((l as any).channel) } : {}),
             ...((l as any).reviewing ? { reviewing: true } : {}),
         }));
     }
@@ -1856,6 +1857,7 @@ export class BirdNETPlayer {
             origin: meta.origin,
             author: meta.author,
             tags: meta.tags,
+            ...(validLabelChannel((label as any)?.channel) !== undefined ? { channel: validLabelChannel((label as any)?.channel) } : {}),
             // A similar-call suggestion under review (similar-review.ts): highlighted on the spectrogram
             ...(((label as any)?.similar ? (label as any).similar.active === true : (label as any)?.reviewing === true) ? { reviewing: true } : {}),
             createdAt: (label as any)?.createdAt || new Date().toISOString(),

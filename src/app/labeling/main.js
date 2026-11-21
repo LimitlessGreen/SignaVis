@@ -3758,6 +3758,7 @@ function toLabelExport() {
       origin: l.origin || '',
       author: l.author || '',
       tags: l.tags || {},
+      ...(Number.isInteger(l.channel) && l.channel >= 0 ? { channel: l.channel } : {}),
     })),
   };
   if (state.recordingMeta) out.recordingMeta = state.recordingMeta;
