@@ -102,6 +102,22 @@ export function withChannelKey<T extends object>(params: T, nChannels: number, s
     return { ...params, channels: channelSelectionKey(effectiveSelection(sel, nChannels)) };
 }
 
+/**
+ * Channel to store on a label made now from `buf`: the selected channel (0-based) of a
+ * multichannel recording, or undefined for mono recordings and the mix (= all channels).
+ */
+export function labelChannel(buf: { numberOfChannels: number } | null | undefined, sel: ChannelSelection = current): number | undefined {
+    if (!buf || buf.numberOfChannels <= 1) return undefined;
+    const eff = effectiveSelection(sel, buf.numberOfChannels);
+    return eff.mode === 'single' ? eff.channel : undefined;
+}
+
+/** A label's `channel` if it is a valid 0-based index, else undefined (= all channels). */
+export function validLabelChannel(v: unknown): number | undefined {
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 1000 ? n : undefined;
+}
+
 /** Public form of a selection: 'mix', 'left' (= 0), 'right' (= 1) or a 0-based channel index. */
 export type ChannelOption = 'mix' | 'left' | 'right' | number;
 

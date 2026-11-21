@@ -5,10 +5,12 @@
 //   <audio file name without extension>.Table.1.selections.txt
 // Raven opens it next to the audio file (File → Open Selection Table).
 // Frequencies are Hz. Labels without a frequency range span 0 … Nyquist.
+// Channel is 1-based; labels without a channel (mono, or the mix) get 1.
 // With a known recording start, Begin Date / Begin Clock Time / End Clock
 // Time carry the recorder's wall-clock time (as Raven measures them).
 // ═══════════════════════════════════════════════════════════════════════
 
+import { validLabelChannel } from '../../shared/channels.ts';
 import { RAVEN_CLOCK_COLUMNS, ravenClock, type RecordingStart } from '../../domain/recordingTime.ts';
 
 export const RAVEN_COLUMNS = [
@@ -45,7 +47,7 @@ export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {})
             const high = hasFreq ? num(l.freqMax, 1) : (nyquist != null ? num(nyquist, 1) : '');
             const tags = l.tags || {};
             return [
-                String(i + 1), 'Spectrogram 1', '1', num(l.start, 6), num(l.end, 6), low, high,
+                String(i + 1), 'Spectrogram 1', String((validLabelChannel(l.channel) ?? 0) + 1), num(l.start, 6), num(l.end, 6), low, high,
                 clean(l.scientificName || l.label), clean(l.commonName),
                 clean(tags.sound_type ?? tags.soundType ?? l.soundType),
                 l.confidence != null && l.confidence !== '' ? num(l.confidence, 4) : '',

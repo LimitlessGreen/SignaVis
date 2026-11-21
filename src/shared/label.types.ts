@@ -19,6 +19,8 @@ export interface LabelCore {
     origin?: string;
     author?: string;
     tags?: Record<string, string>;
+    /** 0-based channel the label was made on (multichannel recordings); absent = all channels / mix. */
+    channel?: number;
 }
 
 /** Full spectrogram label — adds frequency bounds and optional AI/provenance fields. */

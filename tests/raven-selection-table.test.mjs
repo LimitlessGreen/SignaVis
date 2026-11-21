@@ -34,3 +34,13 @@ test('ravenTablePath follows the Raven naming convention', () => {
     assert.equal(ravenTablePath('XC1.mp3'), 'XC1.Table.1.selections.txt');
     assert.equal(ravenTablePath('noext'), 'noext.Table.1.selections.txt');
 });
+
+test('raven table: Channel column is 1-based, labels without a channel get 1', () => {
+    const rows = buildRavenSelectionTable([
+        { id: 'l', start: 0, end: 1, channel: 0 },
+        { id: 'r', start: 1, end: 2, channel: 1 },
+        { id: 'mix', start: 2, end: 3 },
+    ]).trim().split('\n').slice(1).map((r) => r.split('\t'));
+    const ch = RAVEN_COLUMNS.indexOf('Channel');
+    assert.deepEqual(rows.map((r) => [r.at(-1), r[ch]]), [['l', '1'], ['r', '2'], ['mix', '1']]);
+});
