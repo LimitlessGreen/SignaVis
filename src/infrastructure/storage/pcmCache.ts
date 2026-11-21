@@ -21,6 +21,8 @@ const WORKER_WRITE_SAMPLES = 1 << 22;
 /** 44-byte header of a mono 32-bit float WAV with `samples` samples. */
 export function floatWavHeader(samples: number, sampleRate: number): ArrayBuffer {
     const dataBytes = samples * 4;
+    // RIFF sizes are 32 bit: ~6 h at 48 kHz. Above that the header would wrap and lie.
+    if (36 + dataBytes > 0xffffffff) throw new RangeError(`float WAV too large: ${samples} samples`);
     const h = new DataView(new ArrayBuffer(44));
     const tag = (at: number, s: string) => { for (let i = 0; i < 4; i++) h.setUint8(at + i, s.charCodeAt(i)); };
     tag(0, 'RIFF'); h.setUint32(4, 36 + dataBytes, true); tag(8, 'WAVE');
@@ -35,8 +37,12 @@ export function floatWavHeader(samples: number, sampleRate: number): ArrayBuffer
     return h.buffer;
 }
 
-/** Files this page wrote; the previous one is removed when a new one is written. */
-const ownFiles = new Set<string>();
+/**
+ * Files this page wrote, by owner (one per player): a new write removes only the same owner's
+ * earlier file, so players on one page do not delete what another still reads.
+ */
+const ownFiles = new Map<string, object>();
+const PAGE_OWNER = {};
 let counter = 0;
 
 /**
@@ -49,13 +55,14 @@ export async function writePcmWavFile(
     sampleRate: number,
     root?: FileSystemDirectoryHandle,
     useWorker = !root && typeof Worker !== 'undefined', // the worker writes to the real OPFS root
+    owner: object = PAGE_OWNER,
 ): Promise<File> {
     const base = root ?? await navigator.storage.getDirectory();
     const dir = await base.getDirectoryHandle(PCM_CACHE_DIR, { create: true });
-    await removeOldFiles(dir);
+    await removeOldFiles(dir, owner);
     const name = `pcm-${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 8)}.wav`;
     const handle = await dir.getFileHandle(name, { create: true });
-    ownFiles.add(name);
+    ownFiles.set(name, owner);
     try {
         if (!useWorker || !(await writeInWorker(channelData, sampleRate, name))) {
             await writeWithWritable(handle, channelData, sampleRate);
@@ -124,11 +131,13 @@ async function writeInWorker(channelData: Float32Array, sampleRate: number, name
     }
 }
 
-async function removeOldFiles(dir: FileSystemDirectoryHandle): Promise<void> {
+async function removeOldFiles(dir: FileSystemDirectoryHandle, owner: object): Promise<void> {
     const now = Date.now();
     for await (const [name, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
         if (h.kind !== 'file') continue;
-        let stale = ownFiles.has(name);
+        const fileOwner = ownFiles.get(name);
+        if (fileOwner && fileOwner !== owner) continue; // another player's current file
+        let stale = fileOwner === owner;
         if (!stale) {
             try { stale = now - (await (h as FileSystemFileHandle).getFile()).lastModified > STALE_MS; } catch { /* in use elsewhere */ }
         }

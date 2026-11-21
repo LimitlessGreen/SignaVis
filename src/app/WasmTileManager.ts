@@ -189,9 +189,11 @@ export async function pcmWavSource(
     sampleRate: number,
     write: typeof writePcmWavFile = writePcmWavFile,
     maxMemoryBytes = PCM_MEMORY_SOURCE_MAX_BYTES,
+    /** Whose cache file this is (one per player): replaces only that owner's earlier file. */
+    owner?: object,
 ): Promise<Blob> {
     try {
-        return await write(channelData, sampleRate);
+        return await write(channelData, sampleRate, undefined, undefined, owner);
     } catch (err) {
         // A second in-memory copy of hours of audio costs GBs and, where OPFS is full
         // (private windows), Chromium cannot read such a Blob back either.

@@ -57,3 +57,21 @@ test('writePcmWavFile: a failed write leaves no file and throws', async () => {
     await assert.rejects(writePcmWavFile(signal(5000), 8000, root), /disk full/);
     assert.equal(dir.children.size, 0);
 });
+
+test('writePcmWavFile: players on one page keep each other\'s current file', async () => {
+    const root = new FakeDir();
+    const dir = await root.getDirectoryHandle(PCM_CACHE_DIR, { create: true });
+    const a = {}, b = {};
+    const a1 = await writePcmWavFile(signal(100), 8000, root, false, a);
+    const b1 = await writePcmWavFile(signal(100), 8000, root, false, b);
+    const a2 = await writePcmWavFile(signal(100), 8000, root, false, a);
+    assert.deepEqual([...dir.children.keys()].sort(), [a2.name, b1.name].sort());
+    assert.ok(!dir.children.has(a1.name));
+});
+
+test('floatWavHeader: refuses sizes the 32-bit RIFF fields cannot hold', async () => {
+    const { floatWavHeader } = await import('../src/infrastructure/storage/pcmCache.ts');
+    const max = Math.floor((0xffffffff - 36) / 4);
+    assert.equal(new DataView(floatWavHeader(max, 48000)).getUint32(40, true), max * 4);
+    assert.throws(() => floatWavHeader(max + 1, 48000), RangeError);
+});
