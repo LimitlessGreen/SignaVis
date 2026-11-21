@@ -23,7 +23,7 @@ pub struct ThumbSpec { pub w: u32, pub h: u32, pub max_hz: f64 }
 
 impl ThumbSpec {
     fn clamp(self) -> Self {
-        Self { w: self.w.clamp(16, 512), h: self.h.clamp(8, 256), max_hz: if self.max_hz > 0.0 { self.max_hz } else { 12_000.0 } }
+        Self { w: self.w.clamp(16, 1600), h: self.h.clamp(8, 400), max_hz: if self.max_hz > 0.0 { self.max_hz } else { 12_000.0 } }
     }
 }
 

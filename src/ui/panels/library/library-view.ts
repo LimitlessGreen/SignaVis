@@ -23,15 +23,24 @@ import { EntitiesDialog } from './entities-dialog.ts';
 import { SelectionPanel } from './selection-panel.ts';
 import { StatsDialog } from './stats-dialog.ts';
 import { MapDialog } from './map-dialog.ts';
+import { ExpandedView } from './expanded-view.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
 const PAGE = 500;
 /** Tile grid: thumbnail sizes (drawn 1:1, also the card width), gap and caption height (px). */
-const TILE_SIZES = { s: { w: 120, h: 40 }, m: { w: 168, h: 56 }, l: { w: 240, h: 80 } } as const;
-type TileSize = keyof typeof TILE_SIZES;
+/** Zoom steps of the grid (thumbnail = card width; each step has its own cached previews). */
+const TILE_SIZES = [{ w: 112, h: 36 }, { w: 144, h: 48 }, { w: 176, h: 58 }, { w: 224, h: 74 }, { w: 300, h: 100 }] as const;
 const TILE_GAP = 10;
-const TILE_CAPTION = 38;
+const TILE_CAPTION = 44;
+/** Distinct, readable on dark and light backgrounds; a field value always gets the same colour. */
+const PALETTE = ['#ee8c3b', '#4cb5e8', '#9b7bf0', '#5cc98a', '#e8618c', '#d9c23f', '#3fc9c0', '#f07a5f', '#7f9cf5', '#b5d64a'];
+export function valueColor(field: string, value: string | null): string {
+    if (!value) return 'var(--color-text-secondary)';
+    let h = 2166136261;
+    for (const ch of `${field}:${value}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    return PALETTE[(h >>> 0) % PALETTE.length];
+}
 const TILE_HZ = [4_000, 12_000, 24_000];
 const TILE_KEY = 'signavis.library.tiles';
 const THUMB_BATCH = 6;
@@ -87,16 +96,22 @@ export class LibraryView {
     #thumbWanted: number[] = [];
     #thumbBusy = false;
     #lut = heatLut();
-    #tile: { size: TileSize; maxHz: number } = (() => {
+    #tile: { zoom: number; maxHz: number; show: { site: boolean; device: boolean } } = (() => {
+        const d = { zoom: 2, maxHz: 12_000, show: { site: true, device: true } };
         try {
             const t = JSON.parse(localStorage.getItem(TILE_KEY) ?? '{}');
-            return { size: t.size in TILE_SIZES ? t.size : 'm', maxHz: TILE_HZ.includes(t.maxHz) ? t.maxHz : 12_000 };
-        } catch { return { size: 'm' as TileSize, maxHz: 12_000 }; }
+            return {
+                zoom: Number.isInteger(t.zoom) && t.zoom >= 0 && t.zoom < TILE_SIZES.length ? t.zoom : d.zoom,
+                maxHz: TILE_HZ.includes(t.maxHz) ? t.maxHz : d.maxHz,
+                show: { ...d.show, ...(t.show ?? {}) },
+            };
+        } catch { return d; }
     })();
+    #expand: ExpandedView;
 
-    get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.size], maxHz: this.#tile.maxHz }; }
-    get #tileW() { return TILE_SIZES[this.#tile.size].w + TILE_GAP; }
-    get #tileH() { return TILE_SIZES[this.#tile.size].h + TILE_CAPTION + TILE_GAP; }
+    get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.zoom], maxHz: this.#tile.maxHz }; }
+    get #tileW() { return TILE_SIZES[this.#tile.zoom].w + TILE_GAP; }
+    get #tileH() { return TILE_SIZES[this.#tile.zoom].h + TILE_CAPTION + TILE_GAP; }
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
@@ -124,12 +139,12 @@ export class LibraryView {
             <main class="lib-main">
               <canvas class="lib-heat" height="110" title="Recordings per day (columns) and hour (rows, local time)"></canvas>
               <div class="lib-tilebar">
+                <div class="lib-viewbar" title="Active filters — × removes one"></div>
                 <span class="lib-seg" role="group" aria-label="Frequency range" title="Frequency range of the previews">
-                  ${TILE_HZ.map((hz) => `<button data-act="tile-hz" data-v="${hz}">0–${hz / 1000} kHz</button>`).join('')}
+                  ${TILE_HZ.map((hz) => `<button data-act="tile-hz" data-v="${hz}">${hz / 1000} kHz</button>`).join('')}
                 </span>
-                <span class="lib-seg" role="group" aria-label="Tile size" title="Tile size">
-                  <button data-act="tile-size" data-v="s" title="Small">S</button><button data-act="tile-size" data-v="m" title="Medium">M</button><button data-act="tile-size" data-v="l" title="Large">L</button>
-                </span>
+                <label class="lib-zoom" title="Tile size"><span aria-hidden="true">▪</span>
+                  <input type="range" min="0" max="${TILE_SIZES.length - 1}" step="1" data-k="tile-zoom"><span aria-hidden="true">■</span></label>
               </div>
               <div class="lib-grid-head">
                 <span class="c-path" data-sort="path">Path</span><span class="c-time" data-sort="start">Start (local)</span>
@@ -141,6 +156,23 @@ export class LibraryView {
           <div class="lib-import-host" hidden></div>`;
         this.#side = new SelectionPanel({ projectRoot: o.projectRoot, onApplied: () => void this.reload({ keepPicks: true }) });
         this.el.querySelector('.lib-body')!.appendChild(this.#side.el);
+        this.#expand = new ExpandedView({
+            projectRoot: o.projectRoot,
+            rowAt: async (i) => {
+                while (i >= this.#rows.length && this.#next) await this.#loadMore();
+                return this.#rows[i] ?? null;
+            },
+            total: () => this.#facets?.total ?? this.#rows.length,
+            open: (i) => void this.#open(i),
+            onIndex: (i) => {
+                if (i == null) { this.el.focus(); return; }
+                this.#select(i, { keepPicks: true });
+                this.#reveal(i);
+            },
+            maxHz: () => this.#tile.maxHz,
+            color: valueColor,
+        });
+        this.el.appendChild(this.#expand.el);
         this.el.addEventListener('lib-pick-all', () => { this.#picked.clear(); this.#pickAll = true; this.#renderRows(); this.#updateSide(); });
         this.el.addEventListener('lib-pick-none', () => { this.#picked.clear(); this.#pickAll = false; this.#renderRows(); this.#updateSide(); });
         this.el.addEventListener('click', (e) => this.#onClick(e));
@@ -167,16 +199,18 @@ export class LibraryView {
         this.el.classList.toggle('lib--tiles', this.#view === 'grid');
         this.el.querySelectorAll<HTMLElement>('.lib-viewswitch [data-act]').forEach((b) =>
             b.setAttribute('aria-pressed', String(b.dataset.act === `view-${this.#view}`)));
-        this.el.querySelectorAll<HTMLElement>('.lib-tilebar [data-act]').forEach((b) =>
-            b.setAttribute('aria-pressed', String(b.dataset.act === 'tile-hz' ? Number(b.dataset.v) === this.#tile.maxHz : b.dataset.v === this.#tile.size)));
+        this.el.querySelectorAll<HTMLElement>('.lib-tilebar [data-act="tile-hz"]').forEach((b) =>
+            b.setAttribute('aria-pressed', String(Number(b.dataset.v) === this.#tile.maxHz)));
+        this.el.querySelector<HTMLInputElement>('[data-k="tile-zoom"]')!.value = String(this.#tile.zoom);
     }
 
-    #setTile(change: Partial<{ size: TileSize; maxHz: number }>) {
+    #setTile(change: Partial<{ zoom: number; maxHz: number; show: { site: boolean; device: boolean } }>) {
         const keep = this.#selected;
         this.#tile = { ...this.#tile, ...change };
         localStorage.setItem(TILE_KEY, JSON.stringify(this.#tile));
-        this.#thumbs.clear();
+        if (change.zoom !== undefined || change.maxHz !== undefined) this.#thumbs.clear();
         this.#applyView();
+        this.#renderFacets();
         this.#renderRows();
         if (keep >= 0) this.#reveal(keep);
     }
@@ -398,9 +432,11 @@ export class LibraryView {
         const f = this.#facets;
         const host = this.el.querySelector('.lib-facets')!;
         if (!f) { host.innerHTML = ''; return; }
+        const max = (vals: Facets['sites']) => Math.max(1, ...vals.map((v) => v.count));
         const list = (kind: 'site' | 'device' | 'tag', title: string, vals: Facets['sites'], sel: number[] = []) => vals.length ? `
-          <section><h4>${title}${sel.length ? ` <button class="btn btn--sm btn--ghost" data-act="clear-${kind}">all</button>` : ''}</h4>
-          ${vals.map((v) => `<label class="lib-facet"><input type="checkbox" data-facet="${kind}" value="${v.id}"${sel.includes(v.id) ? ' checked' : ''}>
+          <section><h4>${kind !== 'tag' ? `<button class="lib-eye${this.#tile.show[kind] ? ' is-on' : ''}" data-act="field-show" data-f="${kind}"
+              title="${this.#tile.show[kind] ? 'Hide' : 'Show'} on the tiles"></button>` : ''}${title}${sel.length ? ` <button class="btn btn--sm btn--ghost" data-act="clear-${kind}">all</button>` : ''}</h4>
+          ${vals.map((v) => `<label class="lib-facet${sel.includes(v.id) ? ' is-on' : ''}" style="--pill:${valueColor(kind, v.name)};--share:${(v.count / max(vals)) * 100}%"><input type="checkbox" data-facet="${kind}" value="${v.id}"${sel.includes(v.id) ? ' checked' : ''}>
             <span>${esc(v.name)}</span><span class="num">${v.count.toLocaleString()}</span></label>`).join('')}</section>` : '';
         const tf = this.#filter;
         const preset = TIME_PRESETS.findIndex((p) => p.from === (tf.hourFrom ?? null) && p.to === (tf.hourTo ?? null));
@@ -428,6 +464,51 @@ export class LibraryView {
               <option value="0"${tf.hasPosition === false ? ' selected' : ''}>without position</option></select></section>
           <section><label class="lib-facet" title="Recordings that have no site or no recorder (path pattern did not give one)">
             <input type="checkbox" data-k="unassigned"${tf.unassigned ? ' checked' : ''}><span>Only without site or recorder</span></label></section>`;
+        this.#renderViewbar();
+    }
+
+    /** Active filters as removable chips (above the grid). */
+    #renderViewbar() {
+        const tf = this.#filter, f = this.#facets;
+        const names = (ids: number[] | undefined, vals: Facets['sites'] | undefined) =>
+            (ids ?? []).map((id) => vals?.find((v) => v.id === id)?.name ?? `#${id}`);
+        const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+        const chips: [string, string, string?][] = [];
+        for (const n of names(tf.siteIds, f?.sites)) chips.push(['site', n, valueColor('site', n)]);
+        for (const n of names(tf.deviceIds, f?.devices)) chips.push(['device', n, valueColor('device', n)]);
+        for (const n of names(tf.tagIds, f?.tags)) chips.push(['tag', `#${n}`]);
+        if (tf.pathContains) chips.push(['path', `“${tf.pathContains}”`]);
+        if (tf.hourFrom != null) chips.push(['tod', `${String(tf.hourFrom).padStart(2, '0')}–${String(tf.hourTo).padStart(2, '0')} h`]);
+        if (tf.fromMs != null || tf.toMs != null) chips.push(['period', `${tf.fromMs != null ? day(tf.fromMs) : '…'} – ${tf.toMs != null ? day(tf.toMs - 86_400_000) : '…'}`]);
+        if (tf.hasLabels != null) chips.push(['labels', tf.hasLabels ? 'with labels' : 'without labels']);
+        if (tf.hasPosition != null) chips.push(['pos', tf.hasPosition ? 'with position' : 'without position']);
+        if (tf.bbox) chips.push(['bbox', `area ${bboxLabel(tf.bbox)}`]);
+        if (tf.status) chips.push(['status', tf.status]);
+        if (tf.unassigned) chips.push(['unassigned', 'without site/recorder']);
+        const host = this.el.querySelector<HTMLElement>('.lib-viewbar')!;
+        host.innerHTML = chips.length
+            ? chips.map(([k, label, color]) => `<span class="lib-chip" data-k="${k}" data-v="${esc(label)}"${color ? ` style="--pill:${color}"` : ''}>${esc(label)}<button data-act="chip-clear" title="Remove this filter">×</button></span>`).join('')
+              + (chips.length > 1 ? '<button class="lib-chip lib-chip--reset" data-act="chip-clear" data-k="all">Reset</button>' : '')
+            : `<span class="lib-muted">${(f?.total ?? 0).toLocaleString()} recordings · no filter</span>`;
+    }
+
+    #clearChip(k: string, label: string | undefined) {
+        const tf = this.#filter;
+        const drop = (ids: number[] | undefined, vals: Facets['sites'] | undefined, name: string | undefined) =>
+            name == null ? [] : (ids ?? []).filter((id) => vals?.find((v) => v.id === id)?.name !== name.replace(/^#/, ''));
+        if (k === 'all') this.#filter = {};
+        else if (k === 'site') tf.siteIds = drop(tf.siteIds, this.#facets?.sites, label);
+        else if (k === 'device') tf.deviceIds = drop(tf.deviceIds, this.#facets?.devices, label);
+        else if (k === 'tag') tf.tagIds = drop(tf.tagIds, this.#facets?.tags, label);
+        else if (k === 'path') tf.pathContains = null;
+        else if (k === 'tod') { tf.hourFrom = null; tf.hourTo = null; }
+        else if (k === 'period') { tf.fromMs = null; tf.toMs = null; }
+        else if (k === 'labels') tf.hasLabels = null;
+        else if (k === 'pos') tf.hasPosition = null;
+        else if (k === 'bbox') tf.bbox = null;
+        else if (k === 'status') tf.status = null;
+        else if (k === 'unassigned') tf.unassigned = false;
+        void this.reload();
     }
 
     #renderRows() {
@@ -492,13 +573,17 @@ export class LibraryView {
     }
 
     /** Mark the selected row without re-rendering (a re-render between the clicks would break double-click). */
-    #select(i: number, mods: { ctrl?: boolean; shift?: boolean } = {}) {
+    #select(i: number, mods: { ctrl?: boolean; shift?: boolean; keepPicks?: boolean } = {}) {
         this.#selected = i;
         const before = [...this.#picked].join();
-        const r = pickRows(this.#rows.map((x) => x.id), this.#picked, this.#anchor, i, mods);
-        this.#picked = r.picked;
-        this.#anchor = r.anchor;
-        this.#pickAll = false;
+        if (mods.keepPicks) {
+            this.#anchor = i;
+        } else {
+            const r = pickRows(this.#rows.map((x) => x.id), this.#picked, this.#anchor, i, mods);
+            this.#picked = r.picked;
+            this.#anchor = r.anchor;
+            this.#pickAll = false;
+        }
         this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((el) => {
             const k = Number(el.dataset.i);
             el.classList.toggle('is-sel', this.#picked.has(this.#rows[k]?.id));
@@ -512,7 +597,7 @@ export class LibraryView {
         const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
         const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
         const total = this.#facets?.total ?? this.#rows.length;
-        const { w, h } = TILE_SIZES[this.#tile.size];
+        const { w, h } = TILE_SIZES[this.#tile.zoom];
         const tw = this.#tileW, th = this.#tileH;
         const win = gridWindow(grid.clientWidth - 2 * TILE_GAP, total, grid.scrollTop, grid.clientHeight, tw, th);
         this.#cols = win.cols;
@@ -532,18 +617,21 @@ export class LibraryView {
             if (thumb === undefined && !gone) wanted.push(r.id);
             const [date, time] = localTime(r).split(' ');
             const sel = this.#picked.has(r.id) || this.#pickAll;
-            const where = [r.site, r.device].filter(Boolean).join(' · ') || (r.path ?? '').split('/').pop();
+            const pills = [
+                this.#tile.show.site && r.site ? `<span class="lib-pill" style="--pill:${valueColor('site', r.site)}">${esc(r.site)}</span>` : '',
+                this.#tile.show.device && r.device ? `<span class="lib-pill" style="--pill:${valueColor('device', r.device)}">${esc(r.device)}</span>` : '',
+            ].join('') || `<span class="lib-muted">${esc((r.path ?? '').split('/').pop())}</span>`;
             html += `<div class="lib-r lib-tile${sel ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
                 title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof thumb === 'string' ? ` — no preview: ${esc(thumb)}` : ''}">
               <div class="lib-tile-img">
                 <canvas width="${w}" height="${h}" data-id="${r.id}"></canvas>
-                <span class="lib-tile-check" aria-hidden="true"></span>
+                <span class="lib-tile-check" data-act="tile-check" title="Select (Ctrl+click, Shift+click for a range)"></span>
                 ${r.labels ? `<span class="lib-tile-lab" title="${r.labels} labels">◆ ${r.labels}</span>` : ''}
                 ${r.durationS != null ? `<span class="lib-tile-dur">${esc(clockDuration(r.durationS))}</span>` : ''}
                 ${gone ? '<span class="lib-tile-gone">missing</span>' : ''}
               </div>
               <div class="lib-tile-cap"><b>${esc(time ?? '')}</b><span>${esc(date ?? '')}</span></div>
-              <div class="lib-tile-where">${esc(where)}</div></div>`;
+              <div class="lib-tile-pills">${pills}</div></div>`;
         }
         host.innerHTML = html;
         host.querySelectorAll<HTMLCanvasElement>('canvas[data-id]').forEach((c) => this.#drawThumb(c));
@@ -614,13 +702,23 @@ export class LibraryView {
         const row = t.closest<HTMLElement>('.lib-r');
         if (row) {
             const me = e as MouseEvent;
-            this.#select(Number(row.dataset.i), { ctrl: me.ctrlKey || me.metaKey, shift: me.shiftKey });
+            const i = Number(row.dataset.i);
+            if (this.#view === 'grid' && t.closest('[data-act="tile-check"]')) this.#select(i, { ctrl: !me.shiftKey, shift: me.shiftKey });
+            else if (this.#view === 'grid' && !me.ctrlKey && !me.metaKey && !me.shiftKey) { this.#select(i, { ctrl: false, shift: false, keepPicks: true }); void this.#expand.show(i); }
+            else this.#select(i, { ctrl: me.ctrlKey || me.metaKey, shift: me.shiftKey });
             return;
         }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'close') this.#o.onClose();
         else if (act === 'tile-hz') this.#setTile({ maxHz: Number(t.closest<HTMLElement>('[data-v]')!.dataset.v) });
-        else if (act === 'tile-size') this.#setTile({ size: t.closest<HTMLElement>('[data-v]')!.dataset.v as TileSize });
+        else if (act === 'field-show') {
+            const f = t.closest<HTMLElement>('[data-f]')!.dataset.f as 'site' | 'device';
+            this.#setTile({ show: { ...this.#tile.show, [f]: !this.#tile.show[f] } });
+        }
+        else if (act === 'chip-clear') {
+            const chip = t.closest<HTMLElement>('[data-k]')!;
+            this.#clearChip(chip.dataset.k!, chip.dataset.v);
+        }
         else if (act === 'view-table' || act === 'view-grid') this.#setView(act === 'view-grid' ? 'grid' : 'table');
         else if (act === 'open-import') this.#showImport();
         else if (act === 'open-entities') this.#showEntities();
@@ -655,6 +753,7 @@ export class LibraryView {
     #onChange(e: Event) {
         const t = e.target as HTMLInputElement;
         if (t.closest('.lib-import-host')) return;
+        if (t.dataset.k === 'tile-zoom') { this.#setTile({ zoom: Number(t.value) }); return; }
         const f = this.#filter;
         if (t.dataset.k === 'unassigned') {
             f.unassigned = t.checked;
@@ -695,6 +794,7 @@ export class LibraryView {
 
     #onKey(e: KeyboardEvent) {
         if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+        if (this.#expand.onKey(e)) return;
         if (e.key === 'Escape') {
             if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose();
         } else if (e.key.startsWith('Arrow')) {
