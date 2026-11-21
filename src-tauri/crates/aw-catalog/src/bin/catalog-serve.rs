@@ -63,6 +63,12 @@ struct Args {
     #[serde(default)]
     ids: Vec<i64>,
     spec: Option<aw_catalog::thumb::ThumbSpec>,
+    kind: Option<String>,
+    #[serde(default)]
+    dataset: aw_catalog::datasets::DatasetEdit,
+    range: Option<[f64; 2]>,
+    #[serde(default)]
+    freeze: bool,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -87,6 +93,7 @@ impl State {
 }
 
 fn handle(st: &mut State, cmd: &str, a: Args) -> R {
+    use aw_catalog::datasets as ds;
     let e = |x: Box<dyn std::error::Error + Send + Sync>| x.to_string();
     let j = |v: Result<Value, serde_json::Error>| v.map_err(|x| x.to_string());
     match cmd {
@@ -225,6 +232,14 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_track_line" => j(serde_json::to_value(aw_catalog::geo::track_line(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?, 2000).map_err(e)?)),
         "catalog_delete_track" => { aw_catalog::geo::delete_track(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?).map_err(e)?; Ok(Value::Null) }
         "catalog_map" => j(serde_json::to_value(aw_catalog::geo::map_data(st.cat(&a.project_root)?, &a.filter, a.cell_deg.unwrap_or(0.001)).map_err(e)?)),
+        "catalog_datasets" => j(serde_json::to_value(ds::list(st.cat(&a.project_root)?).map_err(e)?)),
+        "catalog_create_dataset" => Ok(json!(ds::create(st.cat(&a.project_root)?, a.kind.as_deref().unwrap_or("static"), &a.dataset).map_err(e)?)),
+        "catalog_update_dataset" => { ds::update(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, &a.dataset).map_err(e)?; Ok(Value::Null) }
+        "catalog_delete_dataset" => { ds::delete(st.cat(&a.project_root)?, a.id.ok_or("id missing")?).map_err(e)?; Ok(Value::Null) }
+        "catalog_dataset_add" => Ok(json!(ds::add_members(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, &a.selection, a.range.map(|r| (r[0], r[1]))).map_err(e)?)),
+        "catalog_dataset_remove" => Ok(json!(ds::remove_members(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, &a.selection).map_err(e)?)),
+        "catalog_duplicate_dataset" => Ok(json!(ds::duplicate(st.cat(&a.project_root)?, a.id.ok_or("id missing")?, a.name.as_deref().unwrap_or(""), a.freeze).map_err(e)?)),
+        "catalog_recording_datasets" => j(serde_json::to_value(ds::recording_datasets(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
         _ => Err(format!("unknown command {cmd}")),
     }
 }

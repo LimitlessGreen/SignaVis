@@ -38,7 +38,14 @@ pub struct Filter {
     pub no_start: bool,
     /// Asset status: ok / missing / changed.
     pub status: Option<String>,
+    /// Only recordings in this dataset (static: members; dynamic: its saved filter).
+    pub dataset_id: Option<i64>,
+    /// Start relative to the sun at the recording's position (own, else the site's).
+    pub sun: Option<crate::sun::SunWindow>,
 }
+
+/// Nesting limit for dynamic datasets that refer to other datasets (also stops cycles).
+const MAX_DATASET_DEPTH: usize = 4;
 
 const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
 /// Effective position: own, else the site's.
@@ -47,17 +54,23 @@ const POS_LON: &str = "COALESCE(r.lon, (SELECT lon FROM site WHERE id = r.site_i
 pub(crate) const LOCAL_DAY: &str = "date((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Skip { None, Site, Device, Tag }
+pub(crate) enum Skip { None, Site, Device, Tag, Dataset }
 
-pub(crate) fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql>>) {
+pub(crate) fn where_clause(cat: &Catalog, f: &Filter, skip: Skip) -> Result<(String, Vec<Box<dyn ToSql>>)> {
+    where_depth(cat, f, skip, 0)
+}
+
+fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(String, Vec<Box<dyn ToSql>>)> {
     let mut w: Vec<String> = vec!["1".into()];
     let mut p: Vec<Box<dyn ToSql>> = Vec::new();
     let mut push = |cond: String, vals: Vec<Box<dyn ToSql>>, p: &mut Vec<Box<dyn ToSql>>| {
         // Number the `?` placeholders in order (a replaced `?N` must not be matched again).
+        // Conditions from a nested filter arrive numbered already: drop their numbers first.
         let mut parts = cond.split('?');
         let mut out = parts.next().unwrap_or("").to_string();
         let mut vals = vals.into_iter();
         for part in parts {
+            let part = part.trim_start_matches(|c: char| c.is_ascii_digit());
             p.push(vals.next().expect("one value per placeholder"));
             out += &format!("?{}{part}", p.len());
         }
@@ -113,7 +126,26 @@ pub(crate) fn where_clause(f: &Filter, skip: Skip) -> (String, Vec<Box<dyn ToSql
     }
     if f.no_start { push("r.start_ms IS NULL".into(), vec![], &mut p); }
     if let Some(st) = &f.status { push("a.status = ?".into(), vec![Box::new(st.clone())], &mut p); }
-    (w.join(" AND "), p)
+    if let Some(sw) = &f.sun {
+        let (a, b) = (sw.from.event.as_str(), sw.to.event.as_str());
+        push(format!("sun_in(r.start_ms, {POS_LAT}, {POS_LON}, ?, ?, ?, ?) = 1"),
+            vec![Box::new(a), Box::new(sw.from.offset_min), Box::new(b), Box::new(sw.to.offset_min)], &mut p);
+    }
+    if let (Some(ds), true) = (f.dataset_id, skip != Skip::Dataset) {
+        if depth >= MAX_DATASET_DEPTH { return Err("datasets nested too deeply (or refer to each other)".into()); }
+        let (kind, fj): (String, Option<String>) = cat.conn.query_row(
+            "SELECT kind, filter_json FROM dataset WHERE id = ?1", [ds], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|_| format!("unknown dataset {ds}"))?;
+        if kind == "static" {
+            push("EXISTS (SELECT 1 FROM dataset_member m WHERE m.dataset_id = ? AND m.recording_id = r.id)".into(),
+                vec![Box::new(ds)], &mut p);
+        } else {
+            let inner: Filter = serde_json::from_str(fj.as_deref().unwrap_or("{}"))?;
+            let (iw, ip) = where_depth(cat, &inner, Skip::None, depth + 1)?;
+            push(format!("({iw})"), ip, &mut p);
+        }
+    }
+    Ok((w.join(" AND "), p))
 }
 
 pub(crate) const FROM: &str = "FROM recording r LEFT JOIN asset a ON a.id = r.asset_id";
@@ -148,7 +180,7 @@ pub struct Row {
 pub struct Page { pub rows: Vec<Row>, pub next: Option<Cursor> }
 
 pub fn list(cat: &Catalog, f: &Filter, sort: Sort, after: Option<&Cursor>, limit: usize) -> Result<Page> {
-    let (mut w, mut p) = where_clause(f, Skip::None);
+    let (mut w, mut p) = where_clause(cat, f, Skip::None)?;
     // Index-friendly keyset: SQLite sorts NULL first; NULL keys page by id alone.
     let (key, order) = match sort {
         Sort::Start => ("r.start_ms", "r.start_ms, r.id"),
@@ -214,7 +246,7 @@ pub struct Facets {
 }
 
 fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Result<Vec<FacetValue>> {
-    let (w, p) = where_clause(f, skip);
+    let (w, p) = where_clause(cat, f, skip)?;
     let sql = format!("SELECT t.id, t.name, COUNT(*) {FROM} JOIN {table} t ON t.id = r.{col} WHERE {w} GROUP BY t.id ORDER BY t.name");
     let mut st = cat.conn.prepare(&sql)?;
     let v = st.query_map(params_from_iter(p.iter()), |r| Ok(FacetValue { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? }))?
@@ -223,7 +255,7 @@ fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Resul
 }
 
 pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
-    let (w, p) = where_clause(f, Skip::None);
+    let (w, p) = where_clause(cat, f, Skip::None)?;
     let sql = format!("SELECT COUNT(*), COALESCE(SUM(a.size), 0), SUM(r.duration_s), MIN(r.start_ms), MAX(r.start_ms),
         SUM(r.start_ms IS NULL) {FROM} WHERE {w}");
     let (total, bytes, seconds, first_ms, last_ms, no_start) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((
@@ -231,7 +263,7 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     let mut sites = facet(cat, f, Skip::Site, "site", "site_id")?;
     let mut devices = facet(cat, f, Skip::Device, "device", "device_id")?;
     let mut tags = {
-        let (w, p) = where_clause(f, Skip::Tag);
+        let (w, p) = where_clause(cat, f, Skip::Tag)?;
         let sql = format!("SELECT t.id, t.name, COUNT(*) {FROM} JOIN recording_tag x ON x.recording_id = r.id JOIN tag t ON t.id = x.tag_id WHERE {w} GROUP BY t.id");
         let mut st = cat.conn.prepare(&sql)?;
         st.query_map(params_from_iter(p.iter()), |r| Ok(FacetValue { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? }))?
@@ -266,7 +298,7 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 
 /// All recording ids matching the filter (for bulk edits).
 pub fn ids(cat: &Catalog, f: &Filter) -> Result<Vec<i64>> {
-    let (w, p) = where_clause(f, Skip::None);
+    let (w, p) = where_clause(cat, f, Skip::None)?;
     let mut st = cat.conn.prepare(&format!("SELECT r.id {FROM} WHERE {w} ORDER BY r.id"))?;
     let v = st.query_map(params_from_iter(p.iter()), |r| r.get(0))?.collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(v)
@@ -278,7 +310,7 @@ pub struct HeatCell { pub day: String, pub hour: i64, pub count: i64 }
 
 /// Recordings per local day × hour (calendar heatmap).
 pub fn heatmap(cat: &Catalog, f: &Filter) -> Result<Vec<HeatCell>> {
-    let (w, p) = where_clause(f, Skip::None);
+    let (w, p) = where_clause(cat, f, Skip::None)?;
     let sql = format!("SELECT {LOCAL_DAY}, {LOCAL_HOUR}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2");
     let mut st = cat.conn.prepare(&sql)?;
     let v = st.query_map(params_from_iter(p.iter()), |r| Ok(HeatCell { day: r.get(0)?, hour: r.get(1)?, count: r.get(2)? }))?

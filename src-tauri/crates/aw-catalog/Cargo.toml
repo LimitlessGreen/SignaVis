@@ -5,7 +5,7 @@ edition = "2024"
 description = "SignaVis project catalog (SQLite): assets, metadata, datasets, labels, runs, jobs"
 
 [dependencies]
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.37", features = ["bundled", "functions"] }
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 uuid = { version = "1", features = ["v7"] }

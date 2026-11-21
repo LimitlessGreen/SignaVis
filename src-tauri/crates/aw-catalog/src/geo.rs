@@ -223,7 +223,7 @@ pub struct MapData {
 
 pub fn map_data(cat: &Catalog, f: &query::Filter, cell_deg: f64) -> Result<MapData> {
     let cell = if cell_deg > 0.0 { cell_deg } else { 0.001 };
-    let (w, p) = query::where_clause(f, query::Skip::None);
+    let (w, p) = query::where_clause(cat, f, query::Skip::None)?;
     let from = query::FROM;
     let mut st = cat.conn.prepare(&format!(
         "SELECT s.id, s.name, s.lat, s.lon, COUNT(*) {from} JOIN site s ON s.id = r.site_id

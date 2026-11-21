@@ -487,3 +487,55 @@ pub async fn catalog_thumbs_clear(state: tauri::State<'_, CatalogState>, project
     let cat = state.get(&project_root)?;
     blocking(move || aw_catalog::thumb::clear(&*cat.lock().map_err(err)?).map_err(err)).await
 }
+
+// ── Datasets ─────────────────────────────────────────────────────────────
+
+use aw_catalog::datasets as ds;
+
+#[tauri::command]
+pub async fn catalog_datasets(state: tauri::State<'_, CatalogState>, project_root: String) -> Result<Vec<ds::DatasetInfo>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::list(&*cat.lock().map_err(err)?).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_create_dataset(state: tauri::State<'_, CatalogState>, project_root: String, kind: String, dataset: ds::DatasetEdit) -> Result<i64, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::create(&*cat.lock().map_err(err)?, &kind, &dataset).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_update_dataset(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, dataset: ds::DatasetEdit) -> Result<(), String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::update(&*cat.lock().map_err(err)?, id, &dataset).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_delete_dataset(state: tauri::State<'_, CatalogState>, project_root: String, id: i64) -> Result<(), String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::delete(&*cat.lock().map_err(err)?, id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_dataset_add(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, selection: Selection, range: Option<[f64; 2]>) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::add_members(&mut *cat.lock().map_err(err)?, id, &selection, range.map(|r| (r[0], r[1]))).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_dataset_remove(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, selection: Selection) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::remove_members(&mut *cat.lock().map_err(err)?, id, &selection).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_duplicate_dataset(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, name: String, freeze: bool) -> Result<i64, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::duplicate(&mut *cat.lock().map_err(err)?, id, &name, freeze).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn catalog_recording_datasets(state: tauri::State<'_, CatalogState>, project_root: String, recording_id: i64) -> Result<Vec<ds::Membership>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || ds::recording_datasets(&*cat.lock().map_err(err)?, recording_id).map_err(err)).await
+}

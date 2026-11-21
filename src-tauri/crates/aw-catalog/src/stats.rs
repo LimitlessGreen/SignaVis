@@ -74,7 +74,7 @@ fn collect<T, F: FnMut(&rusqlite::Row) -> rusqlite::Result<T>>(cat: &Catalog, sq
 }
 
 pub fn stats(cat: &Catalog, f: &Filter, top_classes: usize) -> Result<Stats> {
-    let (w, p) = where_clause(f, Skip::None);
+    let (w, p) = where_clause(cat, f, Skip::None)?;
     let base = format!("{FROM} WHERE {w}");
     let totals = cat.conn.query_row(&format!(
         "SELECT COUNT(*), COALESCE(SUM(a.size), 0), COALESCE(SUM(r.duration_s), 0), COUNT(r.duration_s), MIN(r.start_ms), MAX(r.start_ms),
@@ -137,7 +137,7 @@ pub fn stats(cat: &Catalog, f: &Filter, top_classes: usize) -> Result<Stats> {
     let mut runs = Vec::new();
     for (run_id, model, covered) in run_rows {
         // The filter's placeholders keep their numbers; the run id comes after them.
-        let (w2, mut all) = where_clause(f, Skip::None);
+        let (w2, mut all) = where_clause(cat, f, Skip::None)?;
         all.push(Box::new(run_id));
         let rid = all.len();
         let classes = collect(cat, &format!(

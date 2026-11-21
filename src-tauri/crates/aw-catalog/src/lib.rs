@@ -3,6 +3,7 @@
 //! import, BirdNET selection tables as runs.
 
 pub mod clock;
+pub mod datasets;
 pub mod entities;
 pub mod geo;
 pub mod hash;
@@ -14,6 +15,7 @@ pub mod query;
 pub mod scan;
 pub mod stats;
 pub mod suggest;
+pub mod sun;
 pub mod thumb;
 
 use chrono::{NaiveDateTime, Utc};
@@ -76,6 +78,7 @@ impl Catalog {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
+        sun::register(&conn)?;
         conn.execute(
             "INSERT OR IGNORE INTO catalog_info(key, value) VALUES ('schema', ?1)", [SCHEMA_VERSION])?;
         Ok(Self { conn })
