@@ -92,9 +92,22 @@ export async function channelPeaksAsync(
         }
         fine = { block: PEAK_BLOCK_FINE, min, max };
     }
+    // The coarse level reads all fine blocks (16M on 3 h): also in slices.
+    const factor = PEAK_BLOCK / PEAK_BLOCK_FINE;
+    const nCoarse = Math.ceil(fine.min.length / factor);
+    const cMin = new Float32Array(nCoarse), cMax = new Float32Array(nCoarse);
+    const coarseSlice = Math.max(1, Math.floor(sliceBlocks / factor) * 32);
+    for (let b = 0; b < nCoarse; b += coarseSlice) {
+        if (b > 0) {
+            await new Promise<void>((r) => setTimeout(r, 0));
+            const done = cache.get(data);
+            if (done) return done;
+        }
+        reduceRange(fine.min, fine.max, factor, cMin, cMax, b, Math.min(nCoarse, b + coarseSlice));
+    }
     const done = cache.get(data);
     if (done) return done;
-    const peaks = { fine, coarse: reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK) };
+    const peaks = { fine, coarse: { block: PEAK_BLOCK, min: cMin, max: cMax } };
     cache.set(data, peaks);
     return peaks;
 }

@@ -52,6 +52,17 @@ test('channelPeaksAsync builds the same pyramid in slices and fills the cache', 
     }
 });
 
+test('channelPeaksAsync builds the coarse level in several slices too', async () => {
+    const { channelPeaks, channelPeaksAsync } = await import('../src/domain/waveformEnvelope.ts');
+    // 256 fine blocks per slice → 256 coarse blocks per slice: ~12 coarse slices.
+    const v = signal(3_000_017, 6), ref = signal(3_000_017, 6);
+    const p = await channelPeaksAsync(v, 256, null);
+    const sync = channelPeaks(ref);
+    assert.ok(sync.coarse.min.length > 256 * 10);
+    assert.deepEqual(p.coarse.min, sync.coarse.min);
+    assert.deepEqual(p.coarse.max, sync.coarse.max);
+});
+
 test('maxAbsPeaks: max |sample| per bin from the pyramid', async () => {
     const { maxAbsPeaks } = await import('../src/domain/waveformEnvelope.ts');
     const v = signal(1_000_000, 9);
