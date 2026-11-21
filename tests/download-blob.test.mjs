@@ -10,7 +10,7 @@ function response(parts, length, type = 'audio/wav') {
     return new Response(body, { headers });
 }
 
-for (const [name, length] of [['exact length', 6], ['no length', undefined], ['wrong length', 4]]) {
+for (const [name, length] of [['exact length', 6], ['wrong length', 4]]) {
     test(`downloadBlob: ${name}`, async () => {
         const seen = [];
         const blob = await downloadBlob(response([[1, 2], [3], [4, 5, 6]], length), (l) => seen.push(l));
@@ -19,6 +19,14 @@ for (const [name, length] of [['exact length', 6], ['no length', undefined], ['w
         assert.deepEqual(seen, [0, 2, 3, 6]);
     });
 }
+
+test('downloadBlob: unknown length goes straight into a Blob (could be hours of audio)', async () => {
+    const seen = [];
+    const blob = await downloadBlob(response([[1, 2], [3], [4, 5, 6]], undefined), (l, t) => seen.push([l, t]));
+    assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [1, 2, 3, 4, 5, 6]);
+    assert.equal(blob.type, 'audio/wav');
+    assert.deepEqual(seen, [[0, 0], [6, 6]]);
+});
 
 test('downloadBlob: large bodies go straight into a Blob (progress at start and end)', async () => {
     const chunk = (v) => new Uint8Array(8 * 1024 * 1024).fill(v);

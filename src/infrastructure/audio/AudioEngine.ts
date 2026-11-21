@@ -254,6 +254,7 @@ export class AudioEngine extends AudioEngineBase {
     await channelPeaksAsync(channelData(audioBuffer));
     this.audioBuffer = audioBuffer;
     this.recordingStart = recordingStart;
+    this.sourceBlob = null; // no file bytes behind an ArrayBuffer load
 
     const displayName = name || 'audio';
     this._setupWaveSurfer(null, displayName);
@@ -1267,7 +1268,8 @@ export async function downloadBlob(
 ): Promise<Blob> {
   const total = Number(response.headers.get('content-length')) || 0;
   const type = response.headers.get('content-type') || '';
-  const reader = total < DIRECT_BLOB_BYTES ? response.body?.getReader() : undefined;
+  // Unknown length (chunked) may be hours of audio: also straight into a Blob.
+  const reader = total > 0 && total < DIRECT_BLOB_BYTES ? response.body?.getReader() : undefined;
   // Without a reader the progress is unknown until the end (0 total = indeterminate).
   onProgress(0, reader ? total : 0);
   if (!reader) {
