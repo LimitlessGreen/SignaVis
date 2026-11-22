@@ -41,6 +41,8 @@ export interface PressInput {
     tool: Tool;              // the active tool mode (one at a time; 'draw' = draw mode on)
     hasAudio: boolean;
     readOnly: boolean;
+    /** The player is already dragging / panning / resizing (interactionState): no label tool starts. */
+    playerBusy?: boolean;
 }
 
 export type PressAction =
@@ -55,6 +57,7 @@ export type PressAction =
 
 /** The one decision for a press on the spectrogram. Pure: unit-tested in pointer-priority.test.mjs. */
 export function resolvePress(p: PressInput): PressAction {
+    if (p.playerBusy) return 'pass';
     if (p.hit === 'player' && p.button !== 2) return 'pass';
 
     if (p.tool === 'zoom-box' && (p.button === 0 || p.button === 2)) {

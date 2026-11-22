@@ -77,6 +77,22 @@ const INTERACTION_MACHINE = defineStateMachine<InteractionMode>({
     },
 });
 
+/**
+ * Interactions owned by the label layers (annotations.ts). They keep their own flags
+ * (_drawing, _editing, _grabbing, _zoomBox); the FSM asks them through `addExternal()`, so
+ * one rule covers player and labels: only one interaction at a time.
+ */
+export type LabelInteraction = 'label-draw' | 'label-edit' | 'label-grab' | 'zoom-box-drag';
+
+/** The label interaction a layer is in, from its flags (grab wins: it also sets _editing). */
+export function labelModeOf(f: { drawing?: unknown; editing?: unknown; grabbing?: unknown; zoomBox?: unknown }): LabelInteraction | null {
+    if (f.grabbing) return 'label-grab';
+    if (f.editing) return 'label-edit';
+    if (f.drawing) return 'label-draw';
+    if (f.zoomBox) return 'zoom-box-drag';
+    return null;
+}
+
 export function canTransitionInteraction(from: InteractionMode, to: InteractionMode): boolean {
     return canTransition(INTERACTION_MACHINE, from, to);
 }
@@ -139,6 +155,8 @@ export class InteractionState {
     ctx: InteractionContext;
     _blockSeekClickUntil: number;
     _overviewSuppressClickUntil: number;
+    _external = new Set<() => LabelInteraction | null>();
+
     constructor() {
         /** @type {InteractionMode} */
         this.mode = 'idle';
@@ -150,8 +168,26 @@ export class InteractionState {
         this._overviewSuppressClickUntil = 0;
     }
 
-    /** @returns {boolean} */
-    get isIdle() { return this.mode === 'idle'; }
+    /** No interaction at all: neither a player mode nor a label layer busy. */
+    get isIdle() { return this.mode === 'idle' && !this.externalMode; }
+
+    /** True while the player itself drags / pans / resizes (label layers must not start then). */
+    get isPlayerBusy() { return this.mode !== 'idle'; }
+
+    /** The label interaction in progress, if any (see addExternal). */
+    get externalMode(): LabelInteraction | null {
+        for (const fn of this._external) { const m = fn(); if (m) return m; }
+        return null;
+    }
+
+    /** What is going on right now: the player mode, else a label interaction, else 'idle'. */
+    get activeMode(): InteractionMode | LabelInteraction { return this.mode !== 'idle' ? this.mode : (this.externalMode ?? 'idle'); }
+
+    /** Let a label layer report its interaction; returns the unregister function. */
+    addExternal(fn: () => LabelInteraction | null): () => void {
+        this._external.add(fn);
+        return () => { this._external.delete(fn); };
+    }
 
     /** @returns {boolean} */
     get isDraggingPlayhead() { return this.mode === 'playhead-drag'; }
@@ -198,6 +234,8 @@ export class InteractionState {
      */
     enter(nextMode: InteractionMode) {
         if (!canTransitionInteraction(this.mode, nextMode)) return false;
+        // A label layer is drawing / moving / grabbing: the player waits until it is done
+        if (nextMode !== 'idle' && this.mode === 'idle' && this.externalMode) return false;
         this.mode = nextMode;
         if (nextMode === 'idle') this.ctx = defaultContext();
         return true;

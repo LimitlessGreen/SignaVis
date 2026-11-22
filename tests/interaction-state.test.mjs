@@ -172,3 +172,47 @@ test('blockSeekClicks survives release()', () => {
     // Timestamp-based block persists after release
     assert.equal(s.isSeekBlocked(), true);
 });
+
+// ── Label layers report their interaction (addExternal): one interaction at a time ──
+import { labelModeOf } from '../src/app/interactionState.ts';
+import { resolvePress } from '../src/domain/pointer-priority.ts';
+
+test('labelModeOf: grab wins over edit, then edit, draw, zoom box', () => {
+    assert.equal(labelModeOf({}), null);
+    assert.equal(labelModeOf({ grabbing: true, editing: {} }), 'label-grab');
+    assert.equal(labelModeOf({ editing: {}, drawing: {} }), 'label-edit');
+    assert.equal(labelModeOf({ drawing: {} }), 'label-draw');
+    assert.equal(labelModeOf({ zoomBox: {} }), 'zoom-box-drag');
+});
+
+test('while a label layer is busy the player cannot start a drag', () => {
+    const s = new InteractionState();
+    let flags = { drawing: { startTime: 1 } };
+    const off = s.addExternal(() => labelModeOf(flags));
+    assert.equal(s.isIdle, false);
+    assert.equal(s.activeMode, 'label-draw');
+    assert.equal(s.isPlayerBusy, false);
+    assert.equal(s.enter('playhead-drag'), false);
+    assert.equal(s.enter('viewport-pan'), false);
+    flags = {};                                   // drawing finished
+    assert.equal(s.isIdle, true);
+    assert.equal(s.enter('playhead-drag'), true);
+    assert.equal(s.activeMode, 'playhead-drag');
+    s.release();
+    off();
+    flags = { grabbing: true };
+    assert.equal(s.isIdle, true, 'unregistered layer no longer counts');
+});
+
+test('release() (player pointerup) leaves a label interaction alone', () => {
+    const s = new InteractionState();
+    s.addExternal(() => 'label-grab');
+    s.release();
+    assert.equal(s.activeMode, 'label-grab');
+});
+
+test('while the player drags, no label tool starts', () => {
+    const p = { hit: 'canvas', button: 0, shift: true, tool: 'draw', hasAudio: true, readOnly: false };
+    assert.equal(resolvePress({ ...p, playerBusy: true }), 'pass');
+    assert.equal(resolvePress({ ...p, playerBusy: false }), 'draw-start');
+});

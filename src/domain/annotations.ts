@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { classifyHit, resolvePress, type Tool } from './pointer-priority.ts';
+import { labelModeOf } from '../app/interactionState.ts';
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
@@ -349,6 +350,14 @@ class AnnotationLayerBase extends EventTarget {
         this.player = player;
         const root = this._getRoot();
         if (!root) return;
+        // Report drawing / editing / grabbing / zoom-box drags to the player's interaction FSM,
+        // so the player does not start its own drag meanwhile (one interaction at a time)
+        const fsm = (player as any)?._state?.interaction;
+        if (fsm?.addExternal) {
+            this._domCleanups.push(fsm.addExternal(() => labelModeOf({
+                drawing: (this as any)._drawing, editing: this._editing, grabbing: this._grabbing, zoomBox: (this as any)._zoomBox,
+            })));
+        }
         this.overlay = document.createElement('div');
         this.overlay.className = this._overlayClassName;
         root.appendChild(this.overlay);
@@ -366,6 +375,11 @@ class AnnotationLayerBase extends EventTarget {
         this.overlay = null;
         this.player = null;
         this._editing = null;
+    }
+
+    /** The player is dragging the playhead / panning / resizing: labels must not start an interaction. */
+    _playerBusy(): boolean {
+        return !!(this.player as any)?._state?.interaction?.isPlayerBusy;
     }
 
     // ── CRUD ─────────────────────────────────────────────────────────
@@ -821,6 +835,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
     _startEditInteraction(id: any, mode: any, clientX: number, element: any) {
         const region = this._items.find((a: any) => a.id === id);
         if (!region || region.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
+        if (this._playerBusy()) return;
         this._editing = {
             id,
             mode,
@@ -882,7 +897,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
      */
     startGrab(annotationId: any) {
         const region = this._items.find((a: any) => a.id === annotationId);
-        if (!region || this._grabbing) return; 
+        if (!region || this._grabbing || this._playerBusy()) return;
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
         if (!el) return;
 
@@ -1923,6 +1938,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 tool,
                 hasAudio: !!this.player?._state?.audioBuffer,
                 readOnly: !!(this.player as any)?._readOnly,
+                playerBusy: this._playerBusy(),
             });
             if (action === 'pass') return;
 
@@ -2292,7 +2308,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     _startEditInteraction(labelId: any, mode: any, clientX: number, clientY: number, element: any) {
         const label = this._items.find((l: any) => l.id === labelId);
-        if (!label) return;
+        if (!label || this._playerBusy()) return;
         this._editing = {
             id: labelId,
             mode,
@@ -2926,7 +2942,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
      */
     startGrab(labelId: unknown) {
         const label = this._items.find((l: any) => l.id === labelId) as any;
-        if (!label || this._grabbing) return;
+        if (!label || this._grabbing || this._playerBusy()) return;
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
         if (!el) return;
 
