@@ -21,6 +21,7 @@ import { getWaveformThumbnail } from '../services/WaveformThumbnailService.ts';
 import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { formatMinSec } from '../../shared/utils.ts';
 
 export interface RecordingGalleryOptions {
     container: HTMLElement;
@@ -848,9 +849,7 @@ function escapeHtml(s: string): string {
 
 function formatDuration(s: number): string {
     if (s < 60) return `${Math.round(s)}s`;
-    const m = Math.floor(s / 60);
-    const sec = Math.round(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
+    return formatMinSec(s);
 }
 
 // ── Species badge helpers ─────────────────────────────────────────────

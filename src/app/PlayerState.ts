@@ -167,6 +167,8 @@ export class PlayerState {
     amplitudePeakAbs: number;
     transportState: any;
     _lastTimeReadoutText: any;
+    _lastAriaKey = '';
+    _lastAriaSlider: HTMLElement | null = null;
     _uiFrameId: any;
     /** Zoom (pps) + scroll position _drawViewport last drew, and in which frame. */
     _drawnViewport = '';
@@ -1145,6 +1147,11 @@ export class PlayerState {
         if (!slider) return;
         const duration = this.audioBuffer?.duration || 0;
         const now = clamp(currentTimeSec || 0, 0, duration || currentTimeSec || 0);
+        // Runs every frame during playback; the announced value has tenth-second steps.
+        const key = `${formatTime(now)}|${duration}`;
+        if (key === this._lastAriaKey && slider === this._lastAriaSlider) return;
+        this._lastAriaKey = key;
+        this._lastAriaSlider = slider;
         slider.setAttribute('aria-valuemin', '0');
         slider.setAttribute('aria-valuemax', String(duration.toFixed(3)));
         slider.setAttribute('aria-valuenow', String(now.toFixed(3)));

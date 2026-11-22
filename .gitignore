@@ -5,7 +5,7 @@ Thumbs.db
 .vscode/
 
 # Node / packaging artifacts
-node_modules/
+node_modules
 *.tgz
 npm-debug.log*
 

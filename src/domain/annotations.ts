@@ -213,6 +213,31 @@ function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
     return true;
 }
 
+/**
+ * Stacking inside overlap clusters of time regions. `sorted` is ordered by start; a cluster
+ * is a run of regions that overlap directly or transitively. Each region of a cluster that
+ * spans two or more swimlane rows gets the cluster depth and its row index within it.
+ */
+export function overlapClusterLayout(sorted: Array<{ id: string; start: number; end: number }>, rowMap: Map<string, number>) {
+    const localLayout = new Map<string, { depth: number; localRow: number }>();
+    const flush = (members: Array<{ id: string; row: number }>) => {
+        if (members.length < 2) return;
+        const rowsSorted = [...new Set(members.map((m) => m.row))].sort((a, b) => a - b);
+        const depth = rowsSorted.length;
+        if (depth < 2) return;
+        for (const m of members) localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
+    };
+    let members: Array<{ id: string; row: number }> = [];
+    let maxEnd = -Infinity;
+    for (const r of sorted) {
+        if (members.length && r.start >= maxEnd) { flush(members); members = []; maxEnd = -Infinity; }
+        members.push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
+        maxEnd = Math.max(maxEnd, r.end);
+    }
+    flush(members);
+    return localLayout;
+}
+
 class AnnotationLayerBase extends EventTarget {
     declare player: any;
     declare overlay: HTMLElement | null;
@@ -264,8 +289,6 @@ class AnnotationLayerBase extends EventTarget {
     // ── Template-method hooks (override in subclass) ─────────────────
     /** CSS class name for the created overlay element. */
     get _overlayClassName() { return 'annotation-layer-base'; }
-    /** CSS selector matching all item elements within the overlay. */
-    get _itemElSelector() { return '.annotation-item'; }
     /** Return the DOM root element to mount the overlay into. */
     _getRoot(): HTMLElement | null { return null; }
     /** Subscribe player events. Called inside attach(), after overlay creation. */
@@ -326,13 +349,106 @@ class AnnotationLayerBase extends EventTarget {
         }
         this._elById = nextById;
         const keep = new Set<Element>(elements);
+        // A culling render can run mid-drag (scroll past the rendered window): keep the previews
+        for (const preview of [this._draftEl, (this as any)._zoomBoxEl]) if (preview) keep.add(preview);
         for (const child of [...overlay.children]) if (!keep.has(child)) child.remove();
         let ref = overlay.firstChild;
         for (const el of elements) {
             if (el === ref) ref = ref.nextSibling;
             else overlay.insertBefore(el, ref);
         }
+        // Elements built anew (scrolled back into the window) get the playhead state again
+        if (this._highlightTime !== null) this._highlightActive(this._highlightTime);
         return elements;
+    }
+
+    // ── Viewport culling ─────────────────────────────────────────────
+    /**
+     * Time window the overlay holds elements for, or null when every item has one. A label is
+     * some 26 DOM nodes; thousands of them (long recordings, detector runs) made every layout
+     * and style pass slow, so only items near the view get elements.
+     */
+    _renderedWindow: { start: number; end: number } | null = null;
+    _cullRaf = 0;
+
+    /** Scroll container whose viewport decides which items get elements (null: no culling). */
+    _scrollEl(): HTMLElement | null { return null; }
+
+    /** The visible time span widened by one view width on each side, or null when unknown. */
+    _cullWindow(): { start: number; end: number } | null {
+        const sc = this._scrollEl();
+        const coords = this.player?._state?.coords;
+        const vw = sc?.clientWidth || 0;
+        if (!sc || vw <= 0 || typeof coords?.scrollXToTime !== 'function') return null;
+        const left = sc.scrollLeft;
+        return { start: coords.scrollXToTime(Math.max(0, left - vw)), end: coords.scrollXToTime(left + 2 * vw) };
+    }
+
+    /** True when `id` is an item that the last render culled (it has no element). */
+    _needsElement(id: string | null): boolean {
+        return !!id && !this._elById.has(id) && this._items.some((i: any) => i.id === id);
+    }
+
+    /** Ids that keep their element off-screen too: edited, selected, focused, linked. */
+    _pinnedIds(): Set<string> {
+        const ids = new Set<string>(this._multiSelectedIds);
+        for (const id of [this._editing?.id, this._selectedLabelId, this._focusedLabelId, this._liveLinkedId]) if (id) ids.add(id);
+        return ids;
+    }
+
+    /** Items to build elements for in this render; also records the window for the scroll check. */
+    _itemsToRender<T extends { id: string; start: number; end: number }>(items: T[]): T[] {
+        const win = this._cullWindow();
+        this._renderedWindow = win;
+        if (!win) return items;
+        const pinned = this._pinnedIds();
+        return items.filter((i) => (Number(i.end) >= win.start && Number(i.start) <= win.end) || pinned.has(i.id));
+    }
+
+    /** Re-render once the view scrolls past the part of the timeline that has elements. */
+    _bindCullScroll() {
+        const sc = this._scrollEl();
+        if (!sc) return;
+        const onScroll = () => {
+            const win = this._renderedWindow;
+            if (!win || this._cullRaf) return;
+            const coords = this.player?._state?.coords;
+            if (typeof coords?.scrollXToTime !== 'function') return;
+            const viewStart = coords.scrollXToTime(sc.scrollLeft);
+            const viewEnd = coords.scrollXToTime(sc.scrollLeft + sc.clientWidth);
+            if (viewStart >= win.start && viewEnd <= win.end) return;
+            this._cullRaf = requestAnimationFrame(() => { this._cullRaf = 0; this.render(); });
+        };
+        sc.addEventListener('scroll', onScroll, { passive: true });
+        this._domCleanups.push(() => {
+            sc.removeEventListener('scroll', onScroll);
+            if (this._cullRaf) cancelAnimationFrame(this._cullRaf);
+            this._cullRaf = 0;
+        });
+    }
+
+    /** Elements currently marked `.active` (under the playhead). */
+    _activeEls = new Set<HTMLElement>();
+
+    /**
+     * Mark the items under the playhead. Runs on every timeupdate (~15/s), so it scans the
+     * item data and only touches elements whose state flips; toggling a class on every
+     * element restyled thousands of labels per update and halved the playback frame rate.
+     */
+    _highlightTime: number | null = null;
+    _highlightActive(currentTime: number) {
+        if (!this.overlay) return;
+        this._highlightTime = currentTime;
+        const next = new Set<HTMLElement>();
+        for (const item of this._items) {
+            if (currentTime >= Number(item.start) && currentTime <= Number(item.end)) {
+                const el = this._elById.get(item.id);
+                if (el) next.add(el);
+            }
+        }
+        for (const el of this._activeEls) if (!next.has(el)) el.classList.remove('active');
+        for (const el of next) if (!this._activeEls.has(el)) el.classList.add('active');
+        this._activeEls = next;
     }
 
     /** An element was changed outside render() (drag, resize): rebuild it on the next render. */
@@ -363,6 +479,7 @@ class AnnotationLayerBase extends EventTarget {
         root.appendChild(this.overlay);
         this._subscribePlayerEvents();
         this._bindInteractions(root);
+        this._bindCullScroll();
         this.render();
     }
 
@@ -393,6 +510,15 @@ class AnnotationLayerBase extends EventTarget {
 
     set(items: Record<string, unknown>[] = []): void {
         this._items = items.map((i) => this._normalize(i));
+        this.render();
+    }
+
+    /** Replace (or add) one item by id: a drag mirrored from the other layer moves one label. */
+    setItem(item: Record<string, unknown>): void {
+        const next = this._normalize(item);
+        const i = this._items.findIndex((x: any) => x.id === next.id);
+        if (i >= 0) this._items[i] = next;
+        else this._items.push(next);
         this.render();
     }
 
@@ -432,13 +558,19 @@ class AnnotationLayerBase extends EventTarget {
         this._updateMultiSelectedVisual();
     }
 
-    _updateMultiSelectedVisual() {
+    /** Classes for the hovered (transient) and the selected (sticky) item. */
+    get _focusedClass() { return 'focused'; }
+    get _selectedClass() { return 'selected'; }
+
+    /** Toggle `cls` on every rendered item element by its id. */
+    _markRendered(cls: string, on: (id: string) => boolean) {
         if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
-            const h = el as HTMLElement;
-            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
-        }
+        for (const [id, el] of this._elById) el.classList.toggle(cls, on(id));
     }
+
+    _updateMultiSelectedVisual() { this._markRendered('multi-selected', (id) => this._multiSelectedIds.has(id)); }
+    _updateFocusedVisual() { this._markRendered(this._focusedClass, (id) => !!this._focusedLabelId && id === this._focusedLabelId); }
+    _updateSelectedVisual() { this._markRendered(this._selectedClass, (id) => !!this._selectedLabelId && id === this._selectedLabelId); }
 
     // ── Edit interaction shared finish ───────────────────────────────
     /**
@@ -518,11 +650,11 @@ export class AnnotationLayer extends AnnotationLayerBase {
     name: any;
     // ── Template-method overrides ────────────────────────────────────
     get _overlayClassName() { return 'annotation-layer'; }
-    get _itemElSelector() { return '.annotation-region'; }
 
     _getRoot() {
         return this.player?._state?.d?.waveformContent || this.player?.root?.querySelector('.waveform-content');
     }
+    _scrollEl(): HTMLElement | null { return this.player?._state?.d?.waveformWrapper || null; }
 
     _subscribePlayerEvents() {
         this._unsubs.push(this.player.on('ready', () => this.render()));
@@ -533,31 +665,17 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('labelfocus', (e: any) => {
             const id = e?.detail?.id || null;
             const interaction = e?.detail?.interaction;
-            if (interaction === 'click') {
-                this._selectedLabelId = id;
-                this._updateSelectedVisual();
-            } else {
-                this._focusedLabelId = id;
-                this._updateFocusedVisual();
-            }
+            if (interaction === 'click') this._selectedLabelId = id;
+            else this._focusedLabelId = id;
+            // A culled label has no element: render builds it (it is pinned now) with its classes
+            if (this._needsElement(id)) this.render();
+            else if (interaction === 'click') this._updateSelectedVisual();
+            else this._updateFocusedVisual();
         }));
     }
 
-    _updateFocusedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('annotation-region--focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
-        }
-    }
-
-    _updateSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('annotation-region--selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
-        }
-    }
+    get _focusedClass() { return 'annotation-region--focused'; }
+    get _selectedClass() { return 'annotation-region--selected'; }
 
     _bindInteractions(root: HTMLElement) { this._bindEditingInteractions(root); }
 
@@ -568,15 +686,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
     /** Public alias for the internal items array (backward compat). */
     get annotations() { return this._items; }
 
-    highlightActiveRegion(currentTime: number) {
-        if (!this.overlay) return;
-            for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
-                const h = el as HTMLElement;
-            const start = parseFloat(h.dataset.start || '0');
-            const end = parseFloat(h.dataset.end || '0');
-            el.classList.toggle('active', currentTime >= start && currentTime <= end);
-        }
-    }
+    highlightActiveRegion(currentTime: number) { this._highlightActive(currentTime); }
 
     exportRavenFormat(regions = this._items) {
         return regions
@@ -615,50 +725,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
         }
         const totalRows = Math.max(1, rowEnds.length);
 
-        // Local overlap clusters via union-find: regions that overlap in time
-        // (directly or transitively) form a cluster and share a uniform depth
-        // so their top/height positioning never conflicts visually.
+        // Local overlap clusters: regions that overlap in time (directly or
+        // transitively) form a cluster and share a uniform depth so their
+        // top/height positioning never conflicts visually. Sorted by start, a
+        // cluster ends where a region starts at or after the running max end,
+        // so one sweep finds them (the former pairwise union-find was O(n·overlaps)).
         // Isolated regions or non-overlapping clusters keep independent sizing.
-        const localLayout = new Map<string, { depth: number; localRow: number }>();
-        if (totalRows > 1) {
-            const par = new Map<string, string>();
-            const find = (x: string) => {
-                while (par.get(x) !== x) {
-                    par.set(x, (par.get(par.get(x) || x) || x) as string);
-                    x = String(par.get(x));
-                }
-                return x;
-            };
-            for (const r of sorted) par.set(r.id, r.id);
-
-            // Union overlapping pairs (sorted by start → early break)
-            for (let i = 0; i < sorted.length; i++) {
-                for (let j = i + 1; j < sorted.length; j++) {
-                    if (sorted[j].start >= sorted[i].end) break;
-                    const ra = find(sorted[i].id), rb = find(sorted[j].id);
-                    if (ra !== rb) par.set(ra, rb);
-                }
-            }
-
-            // Group regions by cluster root
-            const clusters = new Map<string, Array<{ id: string; row: number }>>();
-            for (const r of sorted) {
-                const root = find(r.id);
-                if (!clusters.has(root)) clusters.set(root, []);
-                (clusters.get(root) as Array<{ id: string; row: number }>).push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
-            }
-
-            for (const [, members] of clusters) {
-                if (members.length < 2) continue;
-                const rowSet = new Set(members.map((m: any) => m.row));
-                const rowsSorted = [...rowSet].sort((a, b) => a - b);
-                const depth = rowsSorted.length;
-                if (depth < 2) continue;
-                for (const m of members) {
-                    localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
-                }
-            }
-        }
+        const localLayout = totalRows > 1 ? overlapClusterLayout(sorted, rowMap) : new Map<string, { depth: number; localRow: number }>();
 
         // Keyed update (see _reconcile): one changed region rebuilds one element.
         const p = this.player as any;
@@ -684,7 +757,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
                 el.style.bottom = '';
             }
         };
-        this._reconcile(this._items as any[], {
+        this._reconcile(this._itemsToRender(this._items as any[]), {
             signature: (region) => this._signature(region, this._lockedIds.has(region.id), this._liveLinkedId === region.id,
                 p?._readOnly === true),
             geometry: (region) => {
@@ -1083,11 +1156,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     // ── Template-method overrides ────────────────────────────────────
     get _overlayClassName() { return 'spectrogram-label-layer'; }
-    get _itemElSelector() { return '.spectrogram-label-region'; }
 
     _getRoot() {
         return this.player?._state?.d?.canvasWrapper || this.player?.root?.querySelector('.canvas-wrapper');
     }
+    _scrollEl(): HTMLElement | null { return this.player?._state?.d?.canvasWrapper || null; }
 
     _subscribePlayerEvents() {
         this._unsubs.push(this.player.on('ready', () => this.render()));
@@ -1098,14 +1171,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('labelfocus', (e: any) => {
             const id = e?.detail?.id || null;
             const interaction = e?.detail?.interaction;
-            if (interaction === 'click') {
-                this._selectedLabelId = id;
-                this._updateSelectedVisual();
-            } else {
-                // hover or unspecified — update transient focus highlight
-                this._focusedLabelId = id;
-                this._updateFocusedVisual();
-            }
+            if (interaction === 'click') this._selectedLabelId = id;
+            else this._focusedLabelId = id;   // hover or unspecified: transient focus
+            // A culled label has no element: render builds it (it is pinned now) with its classes
+            if (this._needsElement(id)) this.render();
+            else if (interaction === 'click') this._updateSelectedVisual();
+            else this._updateFocusedVisual();
         }));
     }
 
@@ -1217,33 +1288,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return null;
     }
 
-    highlightActiveLabel(currentTime: number) {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            const start = parseFloat(h.dataset.start || '0');
-            const end = parseFloat(h.dataset.end || '0');
-            el.classList.toggle('active', currentTime >= start && currentTime <= end);
-        }
-    }
+    highlightActiveLabel(currentTime: number) { this._highlightActive(currentTime); }
 
-    /** Set .focused class on the currently hovered label element (transient). */
-    _updateFocusedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
-        }
-    }
-
-    /** Set .selected class on the explicitly selected label element (sticky). */
-    _updateSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
-        }
-    }
 
     render() {
         if (!this.overlay || !this.player) return;
@@ -1262,9 +1308,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         // Stamp ghost, snap preview and draft are removed, as the old full wipe did.
         this._assignLanes(height);
         const p = this.player as any;
+        const shown = this._itemsToRender(this._items);
         const geoById = new Map<string, { left: number; top: number; width: number; height: number }>();
-        for (const label of this._items) geoById.set(label.id, this._toGeometry(label, width, height));
-        const elements = this._reconcile(this._items, {
+        for (const label of shown) geoById.set(label.id, this._toGeometry(label, width, height));
+        const elements = this._reconcile(shown, {
             signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
                 this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
             geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
@@ -1275,7 +1322,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - g.top - g.height)}px`);
             },
         });
-        const geometries = this._items.map((label) => geoById.get(label.id)!);
+        const geometries = shown.map((label) => geoById.get(label.id)!);
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
         this._pinAllLabelTexts();
@@ -1366,10 +1413,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const wrap = this._getRoot() as HTMLElement | null;
         if (!wrap || this._textPinScrollBound === wrap) return;
         this._textPinScrollBound = wrap;
-        wrap.addEventListener('scroll', () => {
+        const onScroll = () => {
             if (this._textPinRaf) return;
             this._textPinRaf = requestAnimationFrame(() => { this._textPinRaf = 0; this._pinAllLabelTexts(); });
-        }, { passive: true });
+        };
+        wrap.addEventListener('scroll', onScroll, { passive: true });
+        // detach() runs these: a re-attached layer must not keep the old wrapper's listener.
+        this._domCleanups.push(() => {
+            wrap.removeEventListener('scroll', onScroll);
+            if (this._textPinRaf) cancelAnimationFrame(this._textPinRaf);
+            this._textPinRaf = 0;
+            this._textPinScrollBound = null;
+        });
     }
 
     _resolveTextCollisions(elements: HTMLElement[], geometries: Array<{ left: number; top: number; width: number; height: number }>) {

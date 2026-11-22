@@ -88,8 +88,8 @@ export function createPlayerHTML(opts = {}) {
         </div>
 
         <!-- Time -->
-        <div class="time-display" data-aw="timeDisplay" role="status" aria-live="polite"${hide(o.showTime)}>
-            <span data-aw="currentTime">00:00.0</span><span class="time-sep">/</span><span data-aw="totalTime">00:00.0</span>
+        <div class="time-display" data-aw="timeDisplay"${hide(o.showTime)}>
+            <span data-aw="currentTime" data-fit-ignore>00:00.0</span><span class="time-sep">/</span><span data-aw="totalTime">00:00.0</span>
         </div>
         <button class="toolbar-btn compact-more-btn" data-aw="compactMoreBtn" aria-expanded="false" title="Show more controls">More</button>
       </div>

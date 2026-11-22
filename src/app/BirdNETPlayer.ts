@@ -133,6 +133,9 @@ export class BirdNETPlayer {
     _labelEditorSuggestionMode: 'merge' | 'custom-only';
     _labelTaxonomy: Array<{ name: string; color?: string; shortcut?: string }>;
     _activeLabelId: string | null;
+    _overviewTracksKey = '';
+    _overviewMultiIds: string[] = [];
+    _overviewEventsBound: HTMLElement | null = null;
     _globalKeyHandler: any;
     _onLabelFocus: ((e: Event) => void) | null;
     _backgroundSpecies: any;
@@ -1437,14 +1440,34 @@ export class BirdNETPlayer {
         const next = this._normalizeItemFromSource(source, { ...(item as any), id }, existing ?? undefined);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
+        // Runs on every pointer move of a drag: mirror only the moved label, not the whole list.
         if (source === 'annotation') {
             this.spectrogramLabels.setLiveLinkedId(id);
-            this.spectrogramLabels.set(this._toSpectrogramLabelList());
+            this.spectrogramLabels.setItem(this._toSpectrogramLabel(next));
         } else {
             this.annotations.setLiveLinkedId(id);
-            this.annotations.set(this._toAnnotationList());
+            this.annotations.setItem(this._toAnnotation(next));
         }
-        this._renderOverviewLabelTracks();
+        if (!this._moveOverviewSegment(next)) this._renderOverviewLabelTracks();
+    }
+
+    /** Re-place one label's segment in the overview tracks; false if it has none yet. */
+    _moveOverviewSegment(label: LinkedLabel): boolean {
+        const container = this._state?.d?.overviewLabelTracks;
+        const duration = this._state?.audioBuffer?.duration || 0;
+        if (!container || duration <= 0) return false;
+        const seg = ([...container.querySelectorAll('.overview-label-segment')] as HTMLElement[]).find((el) => el.dataset.id === label.id);
+        if (!seg) return false;
+        this._placeOverviewSegment(seg, label.start, label.end, duration);
+        this._overviewTracksKey = '';   // the DOM no longer matches the last full render
+        return true;
+    }
+
+    _placeOverviewSegment(el: HTMLElement, start: number, end: number, duration: number) {
+        el.dataset.start = String(start);
+        el.dataset.end = String(end);
+        el.style.left = `${(start / duration) * 100}%`;
+        el.style.width = `${Math.max(0.3, ((end - start) / duration) * 100)}%`;
     }
 
     /**
@@ -1604,30 +1627,26 @@ export class BirdNETPlayer {
      * @param {string[]} ids
      */
     setMultiSelectedOverview(ids: string[]) {
-        const container = this._state?.d?.overviewLabelTracks;
-        if (!container) return;
+        this._overviewMultiIds = ids;   // re-applied after a rebuild of the tracks
         const set = new Set(ids);
-        for (const el of container.querySelectorAll('.overview-label-segment')) {
-            const h = /** @type {HTMLElement} */ (el);
-            h.classList.toggle('multi-selected', set.has(h.dataset?.id || ''));
-        }
+        this._markOverviewSegments('multi-selected', (id) => set.has(id));
     }
 
     setFocusedOverviewSegment(id: string | null) {
-        const container = this._state?.d?.overviewLabelTracks;
-        if (!container) return;
-        for (const el of container.querySelectorAll('.overview-label-segment')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('focused', !!id && h.dataset?.id === id);
-        }
+        this._markOverviewSegments('focused', (segId) => !!id && segId === id);
     }
 
     setSelectedOverviewSegment(id: string | null) {
+        this._markOverviewSegments('selected', (segId) => !!id && segId === id);
+    }
+
+    /** Toggle `cls` on every overview segment by its label id. */
+    _markOverviewSegments(cls: string, on: (id: string) => boolean) {
         const container = this._state?.d?.overviewLabelTracks;
         if (!container) return;
         for (const el of container.querySelectorAll('.overview-label-segment')) {
             const h = el as HTMLElement;
-            h.classList.toggle('selected', !!id && h.dataset?.id === id);
+            h.classList.toggle(cls, on(h.dataset?.id || ''));
         }
     }
 
@@ -1640,7 +1659,16 @@ export class BirdNETPlayer {
         if (!container) return;
         const duration = this._state?.audioBuffer?.duration || 0;
         const prevRowCount = container.childElementCount;
-        if (duration <= 0) { container.innerHTML = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
+        if (duration <= 0) { container.innerHTML = ''; this._overviewTracksKey = ''; this._afterOverviewRowChange(prevRowCount, 0); return; }
+        this._bindOverviewSegmentEvents(container);
+
+        // Every label change lands here (a note, a tag); rebuild only when what the tracks show changed.
+        let key = `${duration}`;
+        for (const item of this._linkedLabels.values()) {
+            key += `\n${item?.origin}\u0001${item?.label || item?.species || ''}\u0001${item?.color || ''}\u0001${item?.id}\u0001${item?.start}\u0001${item?.end}`;
+        }
+        if (key === this._overviewTracksKey && container.isConnected) return;
+        this._overviewTracksKey = key;
 
         // Two-level grouping: origin → label name
         const originGroups: Map<string, Map<string, { color: string; segments: { id: string; start: number; end: number }[] }>> = new Map();
@@ -1696,29 +1724,8 @@ export class BirdNETPlayer {
                 for (const seg of segments) {
                     const s = document.createElement('span');
                     s.className = 'overview-label-segment';
-                    s.dataset.start = String(seg.start);
-                    s.dataset.end = String(seg.end);
                     s.dataset.id = seg.id || '';
-                    const leftPct = (seg.start / duration) * 100;
-                    const widthPct = ((seg.end - seg.start) / duration) * 100;
-                    s.style.left = `${leftPct}%`;
-                    s.style.width = `${Math.max(0.3, widthPct)}%`;
-                    s.addEventListener('pointerenter', () => {
-                        this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'hover' });
-                    });
-                    s.addEventListener('pointerleave', () => {
-                        this._emit?.('labelfocus', { id: null, source: 'overview', interaction: 'hover' });
-                    });
-                    s.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (e.ctrlKey || e.metaKey) {
-                            this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'ctrl-click' });
-                            return;
-                        }
-                        const midTime = (seg.start + seg.end) / 2;
-                        this._state?._seekToTime(midTime, true);
-                        this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'click' });
-                    });
+                    this._placeOverviewSegment(s, seg.start, seg.end, duration);
                     track.appendChild(s);
                 }
                 row.appendChild(track);
@@ -1729,6 +1736,33 @@ export class BirdNETPlayer {
         // Restore focus/selection state lost by DOM rebuild
         this.setFocusedOverviewSegment(this._activeLabelId);
         this.setSelectedOverviewSegment(this._activeLabelId);
+        if (this._overviewMultiIds.length) this.setMultiSelectedOverview(this._overviewMultiIds);
+    }
+
+    /** Hover / click on overview segments, delegated once per container (segments are rebuilt often). */
+    _bindOverviewSegmentEvents(container: HTMLElement) {
+        if (this._overviewEventsBound === container) return;
+        this._overviewEventsBound = container;
+        const segOf = (t: EventTarget | null) => ((t as Element | null)?.closest?.('.overview-label-segment') as HTMLElement | null) || null;
+        const focus = (id: string | null, interaction: string) => this._emit?.('labelfocus', { id, source: 'overview', interaction });
+        container.addEventListener('pointerover', (e) => {
+            const seg = segOf(e.target);
+            if (seg && seg !== segOf(e.relatedTarget)) focus(seg.dataset.id || null, 'hover');
+        });
+        container.addEventListener('pointerout', (e) => {
+            const seg = segOf(e.target);
+            if (seg && seg !== segOf(e.relatedTarget)) focus(null, 'hover');
+        });
+        container.addEventListener('click', (e) => {
+            const seg = segOf(e.target);
+            if (!seg) return;
+            e.stopPropagation();
+            const id = seg.dataset.id || null;
+            if (e.ctrlKey || e.metaKey) { focus(id, 'ctrl-click'); return; }
+            const start = Number(seg.dataset.start), end = Number(seg.dataset.end);
+            this._state?._seekToTime((start + end) / 2, true);
+            focus(id, 'click');
+        });
     }
 
     /**
@@ -1767,7 +1801,11 @@ export class BirdNETPlayer {
     }
 
     _toAnnotationList() {
-        return Array.from(this._linkedLabels.values()).map((l) => ({
+        return Array.from(this._linkedLabels.values(), (l) => this._toAnnotation(l));
+    }
+
+    _toAnnotation(l: LinkedLabel) {
+        return {
             id: l.id,
             start: l.start,
             end: l.end,
@@ -1779,11 +1817,15 @@ export class BirdNETPlayer {
             origin: l.origin || '',
             author: l.author || '',
             tags: l.tags || {},
-        }));
+        };
     }
 
     _toSpectrogramLabelList() {
-        return Array.from(this._linkedLabels.values()).map((l) => ({
+        return Array.from(this._linkedLabels.values(), (l) => this._toSpectrogramLabel(l));
+    }
+
+    _toSpectrogramLabel(l: LinkedLabel) {
+        return {
             id: l.id,
             start: l.start,
             end: l.end,
@@ -1799,7 +1841,7 @@ export class BirdNETPlayer {
             author: l.author || '',
             tags: l.tags || {},
             ...((l as any).reviewing ? { reviewing: true } : {}),
-        }));
+        };
     }
 
     _normalizeLinkedLabel(label: Partial<LinkedLabel>) {

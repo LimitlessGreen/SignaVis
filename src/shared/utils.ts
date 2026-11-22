@@ -33,10 +33,23 @@ export function getAxisWidth(fallback: number): number {
 }
 
 export function formatTime(seconds: number): string {
-    const s = Math.max(0, seconds);
-    const mins = Math.floor(s / 60);
-    const secs = (s % 60).toFixed(1);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(4, '0')}`;
+    // Round once to tenths, then split: rounding the seconds part alone turned 59.96 into "00:60.0".
+    const tenths = Math.round(Math.max(0, seconds || 0) * 10);
+    const mins = Math.floor(tenths / 600);
+    const secs = ((tenths % 600) / 10).toFixed(1);
+    return `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`;
+}
+
+/** "m:ss", rounded to whole seconds before splitting (59.6 s is "1:00", not "0:60"). */
+export function formatMinSec(seconds: number): string {
+    const total = Math.round(Math.max(0, seconds || 0));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** "m:ss.t", rounded to tenths before splitting (59.96 s is "1:00.0", not "0:60.0"). */
+export function formatMinSecTenths(seconds: number): string {
+    const tenths = Math.round(Math.max(0, Number(seconds) || 0) * 10);
+    return `${Math.floor(tenths / 600)}:${((tenths % 600) / 10).toFixed(1).padStart(4, '0')}`;
 }
 
 export function formatSecondsShort(seconds: number): string {

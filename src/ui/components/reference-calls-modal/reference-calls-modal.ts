@@ -42,6 +42,7 @@ import ModalManager from '../modal/modal-manager.ts';
 import { speciesImageUrl } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
 import { getXcAudioStore, xcAudioKey } from '../../../infrastructure/storage/audioBlobStore.ts';
+import { formatMinSec } from '../../../shared/utils.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
 // Species thumbnails: from the BirdNET taxonomy, cached for offline use in Lite (speciesImageUrl).
@@ -249,9 +250,7 @@ function parseXcLen(len: any) {
 }
 
 function fmtLen(len: any) {
-  const s = parseXcLen(len);
-  const m = Math.floor(s / 60), r = Math.round(s % 60);
-  return `${m}:${String(r).padStart(2, '0')}`;
+  return formatMinSec(parseXcLen(len));
 }
 
 function esc(s: any) {

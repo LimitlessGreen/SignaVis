@@ -24,6 +24,7 @@ import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
 import { appConfirm } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELD_KEYS } from '../../domain/annotaFields.ts';
+import { formatMinSecTenths } from '../../shared/utils.ts';
 
 // Species thumbnails: from the BirdNET taxonomy, cached for offline use in Lite (speciesImageUrl).
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
@@ -33,6 +34,7 @@ const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
 const HIDDEN_TAG_KEYS = new Set(['annotator', ...ANNOTA_FIELD_KEYS]);
 const VIEW_KEY = 'signavis.labels.view.v1';
+const TIME_LIST_CHUNK = 150;   // time view: rows built per scroll step
 
 export interface LayerOptions {
   get: () => { layers: { id: string; name: string; annotator?: string }[]; active: string; hidden: Set<string> };
@@ -58,11 +60,7 @@ const ICON = {
   stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/></svg>',
 };
 
-function fmtTime(sec: any) {
-  const s = Math.max(0, Number(sec) || 0);
-  const m = Math.floor(s / 60);
-  return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
-}
+const fmtTime = formatMinSecTenths;
 function fmtDur(sec: any) {
   const s = Math.max(0, Number(sec) || 0);
   return s >= 10 ? `${s.toFixed(0)}s` : `${s.toFixed(1)}s`;
@@ -122,6 +120,8 @@ export class LabelList {
     _cardMap: any;
     /** Closed group per label id whose rows are not built yet (see _buildGroup). */
     _lazyGroupOf = new Map<any, any>();
+    _timeObserver: IntersectionObserver | null = null;
+  _timeRenderToken = 0;
     /** Every label id in list order, built or not (range selection). */
     _rowOrder: any[] = [];
     /** Index of each label in this._labels at render time. */
@@ -356,6 +356,10 @@ export class LabelList {
     this._labels = labels;
     const idSet = new Set(labels.map((l: any) => l.id));
     for (const id of this._multiSelectedIds) if (!idSet.has(id)) this._multiSelectedIds.delete(id);
+    // A queued intersection entry of an older time view must not build into this render (any view)
+    this._timeObserver?.disconnect();
+    this._timeObserver = null;
+    this._timeRenderToken++;
     this._container.innerHTML = '';
     this._container.classList.toggle('lt-view-time', this._view === 'time');
     this._cardMap = new Map();
@@ -431,18 +435,49 @@ export class LabelList {
     }
   }
 
+  /**
+   * Flat list by time. Rows are built in chunks as the list scrolls (a sentinel after the last
+   * built row), or on demand up to a row that is needed (selection, hover: _rowFor). Building
+   * all of them took ~175 ms and 66k nodes for 3000 labels on every change.
+   */
   _renderTime(visible: any[]) {
+    const token = this._timeRenderToken;
     const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
     const list = el('div', 'lt-time-list');
-    for (const lbl of visible.slice().sort((a, b) => a.start - b.start)) {
-      const { key, info } = this._setKeyOf(lbl, setsRegistry);
-      const origin = info?.origin || lbl.origin || 'manual';
-      const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
-      if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
-      list.appendChild(row);
+    const sorted = visible.slice().sort((a, b) => a.start - b.start);
+    const sentinel = el('div', 'lt-time-more');
+    let built = 0;
+    const buildUpTo = (end: number) => {
+      if (token !== this._timeRenderToken) return;
+      end = Math.min(sorted.length, end);
+      for (; built < end; built++) {
+        const lbl = this._currentLabel(sorted[built]);
+        const { key, info } = this._setKeyOf(lbl, setsRegistry);
+        const origin = info?.origin || lbl.origin || 'manual';
+        const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
+        if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
+        this._decorateRow(lbl.id, row);
+        list.insertBefore(row, sentinel);
+        this._lazyGroupOf.delete(lbl.id);
+      }
+      if (built >= sorted.length) { sentinel.remove(); this._timeObserver?.disconnect(); }
+    };
+    list.appendChild(sentinel);
+    sorted.forEach((lbl, i) => {
       this._rowOrder.push(lbl.id);
-    }
+      this._lazyGroupOf.set(lbl.id, { __buildRows: () => buildUpTo(i + 1) });
+    });
+    buildUpTo(TIME_LIST_CHUNK);
     this._container.appendChild(list);
+    if (built < sorted.length) {
+      if (typeof IntersectionObserver === 'undefined') buildUpTo(sorted.length);
+      else {
+        this._timeObserver = new IntersectionObserver((entries) => {
+          if (entries.some((e) => e.isIntersecting)) buildUpTo(built + TIME_LIST_CHUNK);
+        }, { rootMargin: '400px 0px' });
+        this._timeObserver.observe(sentinel);
+      }
+    }
   }
 
   // ── Source block ──────────────────────────────────────────────────

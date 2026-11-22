@@ -331,6 +331,9 @@
     flex-direction: column;
     background: var(--color-bg-secondary);
     overflow: hidden;
+    /* Own compositing layer: otherwise its segments (one per label, thousands
+       on long recordings) were repainted on every playback frame. */
+    will-change: transform;
 }
 
 .overview-label-tracks:empty {
