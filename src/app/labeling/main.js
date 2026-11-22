@@ -2857,6 +2857,8 @@ const mobileApp = new MobileApp({
     if (phone) player?.setDrawMode(false);
   },
 });
+// Desktop or mobile shell is in place now: reveal the page (guard in labeling-app.html).
+document.documentElement.classList.remove('sv-booting');
 {
   // Every label change ends in labelList.render — keep the phone UI in step.
   const render = labelList.render.bind(labelList);
