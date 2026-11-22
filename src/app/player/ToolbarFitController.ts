@@ -11,6 +11,11 @@
 // Each resize starts again from level 0, so wide players get the zoom back.
 // ═══════════════════════════════════════════════════════════════════════
 
+export function ignoredForFit(node: Node): boolean {
+    const el = node.nodeType === 1 ? node as Element : node.parentElement;
+    return !!el?.closest('[data-fit-ignore]');
+}
+
 export class ToolbarFitController {
     #toolbar: HTMLElement | null;
     #widget: HTMLElement | null;
@@ -43,7 +48,11 @@ export class ToolbarFitController {
         this.#ro.observe(this.#toolbar);
         // Buttons added later (label tools) or shown/hidden (ultrasound chip) change the fit too.
         if (typeof MutationObserver !== 'undefined') {
-            this.#mo = new MutationObserver(() => this.#schedule());
+            // Live readouts ([data-fit-ignore], e.g. the playback time) change every frame
+            // and keep their width; re-fitting on them forced several layouts per frame.
+            this.#mo = new MutationObserver((records) => {
+                if (records.some((r) => !ignoredForFit(r.target))) this.#schedule();
+            });
             this.#mo.observe(this.#toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'], characterData: true });
         }
         this.#schedule();
