@@ -38,6 +38,7 @@ import { serializeProject, deserializeProject, filesNotInProject, folderFileEntr
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
+import { fitToCall } from '../../domain/snapToCall.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, hitMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
 import { callFeature, groupCalls, DEFAULT_CUT } from '../../domain/similar/cluster.ts';
@@ -1959,9 +1960,40 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   // The detection is gone from view (converted); undo brings it back
   showUndoToast(mode === 'all' || n > 1 ? `Converted into ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
     : plan.candidates > 1 ? `Converted 1 of ${plan.candidates} call boxes as ${lbl.label}` : `Converted ${lbl.label} into my label`,
-    undo, more ? { action: more } : undefined);
+    undo, more ? { action: more }
+      // a window without call box: offer to put the label over the call
+      : (n === 1 && isFullBandOwn(copies[0])) ? { action: { label: 'Fit to call', run: () => fitLabelToCall(copies[0].id, { undo }) } }
+      : undefined);
   // A call box nobody could name: ask right away
   if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
+}
+
+/** A label of my own without frequency bounds (e.g. a converted BirdNET window). */
+function isFullBandOwn(lbl) {
+  // converted BirdNET windows saved before 'fullBand' existed have no flag (see _playerLabels)
+  return !!lbl && lbl.setId === OWN_SOURCE_ID
+    && (lbl.fullBand === true || (lbl.fullBand === undefined && lbl.adoptedFrom?.origin === 'BirdNET' && !lbl.adoptedFrom.box));
+}
+
+/**
+ * Fit a full-band label to the strongest call in its time window (signal, snapToCall.ts fitToCall).
+ * One undo step; without a clear call the label stays as it is.
+ */
+function fitLabelToCall(id, { undo = snapshotLabels(), toast = true } = {}) {
+  const lbl = state.labels.find((l) => l.id === id);
+  if (!isFullBandOwn(lbl)) return false;
+  const mid = (lbl.start + lbl.end) / 2, half = (lbl.end - lbl.start) / 2 + 0.25;
+  const patch = player.computeSnapPatch?.(mid, half) ?? null;
+  if (!patch) { selectionMeta.textContent = 'Fit to call: audio analysis not ready yet'; return false; }
+  const r = fitToCall(patch, { start: lbl.start, end: lbl.end });
+  if (!r.ok) { selectionMeta.textContent = 'Fit to call: no clear call in this label'; return false; }
+  labelStore.patch(id, { start: r.box.start, end: r.box.end, freqMin: r.box.freqMin, freqMax: r.box.freqMax, fullBand: false });
+  touchOwnSet(OWN_SOURCE_ID);
+  // the call can lie anywhere in a long window: show and select the label where it is now
+  selectLabel(id);
+  selectionMeta.textContent = `Fitted ${lbl.label} to the call`;
+  if (toast) showUndoToast(`Fitted ${lbl.label} to the call`, undo);
+  return true;
 }
 
 function adoptSetLabels(setId) {
@@ -3727,7 +3759,7 @@ function _visibleLabels() {
 
 // BirdNET detections cover the whole band; labels saved before 'fullBand' existed get it here
 function _playerLabels() {
-  return _visibleLabels().map((l) => (l.origin === 'BirdNET' && l.fullBand === undefined ? { ...l, fullBand: true } : l));
+  return _visibleLabels().map((l) => ((l.origin === 'BirdNET' || isFullBandOwn(l)) && l.fullBand === undefined ? { ...l, fullBand: true } : l));
 }
 
 /** Something besides the labels changed (sets, visibility, locks): save, redraw every view. */
@@ -4734,6 +4766,16 @@ function showLabelContextMenu(e, id) {
       ...(canFindSimilar(lbl) && similarPanel && recordingManager.getActive()?.path ? [{ label: 'Find similar in project (Perch)', icon: ICON_REFS,
         action: () => carrySimilarExemplar(lbl, { perch: true }) }] : []),
       ...(_carried ? [{ label: `Stop looking for ${_carried.exemplar.label}`, icon: ICON_REFS, action: () => stopCarrying() }] : []),
+      ...(isFullBandOwn(lbl) ? [{ label: 'Fit to call', icon: ICON_TEMPLATE, action: () => fitLabelToCall(id) }] : []),
+      ...(lbl.setId === OWN_SOURCE_ID && lbl.fullBand === false && lbl.adoptedFrom?.origin === 'BirdNET' && !lbl.adoptedFrom.box ? [{ label: 'Full band again', icon: ICON_TEMPLATE,
+        action: () => {
+          const undo = snapshotLabels();
+          // back to the detection's window (still there, hidden while converted)
+          const src = state.labels.find((l) => l.id === lbl.adoptedFrom.id);
+          labelStore.patch(id, { fullBand: true, start: src?.start ?? lbl.start, end: src?.end ?? lbl.end });
+          touchOwnSet(OWN_SOURCE_ID);
+          showUndoToast(`${lbl.label}: full band again`, undo);
+        } }] : []),
       { separator: true },
       { label: 'Delete', icon: ICON_DELETE, danger: true,
         action: () => {

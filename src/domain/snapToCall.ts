@@ -122,3 +122,70 @@ export function snapToCall(p: SnapPatch, time: number, freq: number,
     const touchesEdge = (fMin === 0 && !p.atStart) || (fMax === frames - 1 && !p.atEnd);
     return { ok: true, box, peakDb: peak, thresholdDb: thr, touchesEdge };
 }
+
+/** Lowest frequency a full-band fit seeds at: below it wind and handling noise win. */
+export const FIT_MIN_FREQ = 300;
+/** Noise floor for a fit: a low percentile per band (calls may fill more than half of a window). */
+export const FIT_FLOOR_PERCENTILE = 0.2;
+/** Dynamic range of a fit: cells further below the patch maximum count as floor (lossy codecs leave bands near digital silence). */
+export const FIT_RANGE_DB = 70;
+/** Seed neighbourhood (± frames, ± bins): a call is an area, a click or spike one cell. */
+const FIT_NEIGH_FRAMES = 4, FIT_NEIGH_BINS = 2;
+
+/** Per-band percentile of the patch values. */
+export function bandPercentile(p: SnapPatch, q: number): Float32Array {
+    const out = new Float32Array(p.bins), col = new Float32Array(p.frames);
+    const k = Math.min(p.frames - 1, Math.max(0, Math.round(q * (p.frames - 1))));
+    for (let b = 0; b < p.bins; b++) {
+        for (let f = 0; f < p.frames; f++) col[f] = p.values[f * p.bins + b];
+        col.sort();
+        out[b] = col[k];
+    }
+    return out;
+}
+
+/**
+ * Box the strongest call inside a time window (a label without frequency bounds, e.g. BirdNET's
+ * 3 s): seed where the energy above the noise floor, summed over a small neighbourhood, is
+ * largest in the window; grow as snapToCall does; keep the box inside the window.
+ */
+export function fitToCall(src: SnapPatch, window: { start: number; end: number },
+    sensitivity = SNAP_DEFAULT_SENSITIVITY): SnapResult {
+    // Clip to FIT_RANGE_DB below the maximum: near-silent bands (MP3 above ~16 kHz) would make
+    // any residue look far above their floor
+    let max = -Infinity;
+    for (let i = 0; i < src.values.length; i++) if (src.values[i] > max) max = src.values[i];
+    const lo = max - FIT_RANGE_DB, clipped = new Float32Array(src.values.length);
+    for (let i = 0; i < clipped.length; i++) clipped[i] = Math.max(lo, src.values[i]);
+    const p: SnapPatch = { ...src, values: clipped };
+    const floor = bandPercentile(p, FIT_FLOOR_PERCENTILE);
+    const { frames, bins, values } = p;
+    const fFrom = Math.max(0, Math.ceil((window.start - p.t0) / p.dt));
+    const fTo = Math.min(frames - 1, Math.floor((window.end - p.t0) / p.dt));
+    const bFrom = Math.max(0, Math.ceil((FIT_MIN_FREQ - p.f0) / p.df));
+    if (fTo < fFrom || bFrom >= bins) return { ok: false, reason: 'noise' };
+    // Summed-area table of the positive SNR (frames + 1) × (bins + 1)
+    const W = bins + 1, sat = new Float64Array((frames + 1) * W);
+    for (let f = 0; f < frames; f++) {
+        let row = 0;
+        for (let b = 0; b < bins; b++) {
+            row += Math.max(0, values[f * bins + b] - floor[b]);
+            sat[(f + 1) * W + b + 1] = sat[f * W + b + 1] + row;
+        }
+    }
+    const area = (f0: number, f1: number, b0: number, b1: number) =>
+        sat[(f1 + 1) * W + b1 + 1] - sat[f0 * W + b1 + 1] - sat[(f1 + 1) * W + b0] + sat[f0 * W + b0];
+    let best = -1, sf = -1, sb = -1;
+    for (let f = fFrom; f <= fTo; f++) {
+        const f0 = Math.max(0, f - FIT_NEIGH_FRAMES), f1 = Math.min(frames - 1, f + FIT_NEIGH_FRAMES);
+        for (let b = bFrom; b < bins; b++) {
+            const v = area(f0, f1, Math.max(0, b - FIT_NEIGH_BINS), Math.min(bins - 1, b + FIT_NEIGH_BINS));
+            if (v > best) { best = v; sf = f; sb = b; }
+        }
+    }
+    if (sf < 0 || !(values[sf * bins + sb] - floor[sb] >= MIN_PEAK_DB)) return { ok: false, reason: 'noise' };
+    const r = snapToCall(p, p.t0 + sf * p.dt, p.f0 + sb * p.df, sensitivity, floor);
+    if (!r.ok) return r;
+    const start = Math.max(r.box.start, window.start), end = Math.min(r.box.end, window.end);
+    return { ...r, box: { ...r.box, start, end: Math.max(end, start + p.dt) } };
+}
