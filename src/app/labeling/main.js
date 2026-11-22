@@ -37,7 +37,7 @@ import { ProjectAutosaver, acquireTabLock } from '../../app/project-autosave.ts'
 import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../../domain/project/workspaceProject.ts';
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
-import { adoptionPlan, withoutKnownBoxes } from '../../app/adopt-detection.ts';
+import { adoptionPlan, withoutKnownBoxes, boxSetsBoundsOf } from '../../app/adopt-detection.ts';
 import { fitToCall } from '../../domain/snapToCall.ts';
 import { buildSuggestions, suggestionKey, searchBand, SIMILAR_ORIGIN, correctionOf, hitMove, meanCorrection, applyCorrection } from '../../app/suggest-similar.ts';
 import { bandSpectrogram, callPatches, SimilarSession } from '../../app/similarSpectrogram.ts';
@@ -2642,6 +2642,11 @@ const labelList = new LabelList({
   // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
   onAdoptSet: (setId) => adoptSetLabels(setId),
   onAdoptLabel: (labelId) => adoptOneLabel(labelId),
+  // converted detections are hidden; the set menu can show them again
+  adoptedToggle: {
+    get: () => _showAdopted,
+    set: (on) => { _showAdopted = !!on; writeFlag(SHOW_ADOPTED_KEY, _showAdopted); syncToPlayer(); },
+  },
   onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
   onOpenRefCalls: (lbl) => openRefCalls(lbl),
   onToggleLockSet: (setId, lock) => {
@@ -3738,8 +3743,10 @@ function _pushLockedIds(lockedIds) {
 }
 
 /** state.labels without detections already adopted (✓ converts them into own labels). */
+const SHOW_ADOPTED_KEY = 'signavis-show-adopted';
+let _showAdopted = readFlag(SHOW_ADOPTED_KEY, false);
 function _shownLabels() {
-  return OWN_SOURCE_ID ? withoutAdopted(state.labels, OWN_SOURCE_ID) : state.labels;
+  return OWN_SOURCE_ID && !_showAdopted ? withoutAdopted(state.labels, OWN_SOURCE_ID) : state.labels;
 }
 
 function _visibleLabels() {
@@ -4628,6 +4635,32 @@ propsPanel.onChange = (id, updates) => {
     if (_ab) snrComputer.request(state.labels[idx], _ab, _ab.sampleRate);
   }
 };
+
+// Shift-drag inside a selected label without frequency bounds: the box becomes its bounds
+// (no new label, no species picker). Selection read at the press, before the layer changes it.
+let _pressBoundsTarget = null;
+document.addEventListener('pointerdown', (e) => {
+  _pressBoundsTarget = null;
+  if (!e.shiftKey || e.button !== 0) return;
+  const layer = player.spectrogramLabels;
+  if (!layer?.overlay || !layer._getRoot?.()?.contains?.(e.target)) return;
+  const sel = state.labels.find((l) => l.id === layer._selectedLabelId);
+  if (isFullBandOwn(sel)) _pressBoundsTarget = sel.id;
+}, true);
+
+player.on('spectrogramlabeldrawn', (e) => {
+  const d = e.detail || {};
+  const target = d.shift && _pressBoundsTarget ? state.labels.find((l) => l.id === _pressBoundsTarget) : null;
+  _pressBoundsTarget = null;
+  if (!target || !boxSetsBoundsOf({ ...target, fullBand: true }, d.box)) return;
+  d.handled = true;
+  const undo = snapshotLabels();
+  const b = d.box;
+  labelStore.patch(target.id, { start: b.start, end: b.end, freqMin: b.freqMin, freqMax: b.freqMax, fullBand: false });
+  touchOwnSet(OWN_SOURCE_ID);
+  selectLabel(target.id, { seekMode: 'none' });
+  showUndoToast(`${target.label}: bounds set`, undo);
+});
 
 player.on('spectrogramlabelcreate', (e) => { upsertLabel(e.detail?.label); requestMissingSnr(); });
 player.on('spectrogramlabelupdate', (e) => {

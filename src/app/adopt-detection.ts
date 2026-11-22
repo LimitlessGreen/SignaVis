@@ -101,3 +101,12 @@ export function withoutKnownBoxes(sources: any[], existing: any[], targetSetId: 
         return true;
     });
 }
+
+/**
+ * Shift-drag inside a selected label without frequency bounds sets that label's bounds instead of
+ * drawing a new one: true when `target` is full band and at least half of `box` lies in its span.
+ */
+export function boxSetsBoundsOf(target: any, box: any): boolean {
+    if (!target || target.fullBand !== true) return false;
+    return inside(box, target);
+}

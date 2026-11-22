@@ -2159,7 +2159,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 case 'draw-start': {
                     const start = this._clientXToTime(e.clientX);
                     const freq = this._clientYToFreq(e.clientY);
-                    this._drawing = { startTime: start, startFreq: freq, endTime: start, endFreq: freq };
+                    this._drawing = { startTime: start, startFreq: freq, endTime: start, endFreq: freq, shift: e.shiftKey };
                     this._ensureDraft();
                     this._updateDraft();
                     break;
@@ -2231,10 +2231,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             }
             if (this._drawing) {
                 this._hideLoupeCanvas();
+                const shift = !!(this._drawing as any).shift;
                 const region = this._finalizeDraft();
                 this._clearDraft();
                 if (region) {
-                    this._openNewLabelPicker(region, { forcePicker: e.altKey });
+                    // The host may use the box otherwise (Shift-drag in a full-band label sets its bounds)
+                    const detail: any = { box: { ...region }, shift, handled: false };
+                    this.dispatchEvent(new CustomEvent('spectrogramlabeldrawn', { detail }));
+                    if (!detail.handled) this._openNewLabelPicker(region, { forcePicker: e.altKey });
                 }
                 e.preventDefault();
                 e.stopPropagation();

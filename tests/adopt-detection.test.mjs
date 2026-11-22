@@ -90,3 +90,12 @@ test('boxes with the same time but other frequencies are different calls', () =>
     assert.deepEqual(own.map((l) => l.freqMin), [1000, 5000]);
     assert.equal(open(sources, [...labels, ...own]).length, 0);
 });
+
+import { boxSetsBoundsOf } from '../src/app/adopt-detection.ts';
+test('boxSetsBoundsOf: a box inside a full-band label sets its bounds, others do not', () => {
+    const win = { start: 10, end: 13, fullBand: true };
+    assert.equal(boxSetsBoundsOf(win, { start: 11, end: 11.5 }), true);
+    assert.equal(boxSetsBoundsOf(win, { start: 12.8, end: 14 }), false);     // mostly outside
+    assert.equal(boxSetsBoundsOf({ ...win, fullBand: false }, { start: 11, end: 11.5 }), false);
+    assert.equal(boxSetsBoundsOf(null, { start: 11, end: 11.5 }), false);
+});

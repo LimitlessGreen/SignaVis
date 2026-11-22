@@ -49,7 +49,7 @@ export type PlayerEventName =
     | 'ready' | 'transportstatechange' | 'play' | 'pause' | 'finish' | 'seek'
     | 'labelfocus' | 'labelsync' | 'labelrestore' | 'undochange' | 'labeltaxonomyapply'
     | 'annotationcreate' | 'annotationupdate' | 'annotationremove' | 'annotationpreview'
-    | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview' | 'spectrogramlabeladopt'
+    | 'spectrogramlabelcreate' | 'spectrogramlabelupdate' | 'spectrogramlabelremove' | 'spectrogramlabelpreview' | 'spectrogramlabeladopt' | 'spectrogramlabeldrawn'
     | 'stampmodechange' | 'snapmodechange' | 'speciesbarchange' | 'viewresize' | 'viewportchange'
     | string;
 
@@ -844,6 +844,7 @@ export class BirdNETPlayer {
         fwd(this.spectrogramLabels, 'spectrogramlabelupdate', (ce: CustomEvent) => this._upsertFromLayer('spectrogram', (ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelremove', (ce: CustomEvent) => this._removeFromLinkedLabels((ce.detail as any).label));
         fwd(this.spectrogramLabels, 'spectrogramlabelrefcalls', (ce: CustomEvent) => this._emit('spectrogramlabelrefcalls', ce.detail));
+        fwd(this.spectrogramLabels, 'spectrogramlabeldrawn', () => { /* a host may take the box (handled) */ });
         fwd(this.spectrogramLabels, 'spectrogramlabeladopt', () => { /* handled by the app (copy into My labels) */ });
 
         // stampmodechange comes from SpectrogramLabelLayer
