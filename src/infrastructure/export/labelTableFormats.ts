@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { buildRavenSelectionTable, ravenTablePath } from './ravenSelectionTable.ts';
-import { validLabelChannel } from '../../shared/channels.ts';
+import { labelProps } from '../../domain/labelFields.ts';
 
 export type LabelExportFormat = 'csv' | 'raven' | 'audacity' | 'sonicvis' | 'json';
 
@@ -84,7 +84,7 @@ export function buildLabelsJson(labels: any[]): string {
             start: l.start, end: l.end, freqMin: l.freqMin, freqMax: l.freqMax, color: l.color || '',
             confidence: l.confidence != null ? l.confidence : '', origin: l.origin || '', author: l.author || '',
             tags: l.tags || {},
-            ...(validLabelChannel(l.channel) !== undefined ? { channel: validLabelChannel(l.channel) } : {}),
+            ...labelProps(l),   // channel, … (domain/labelFields.ts)
         })),
     }, null, 2);
 }

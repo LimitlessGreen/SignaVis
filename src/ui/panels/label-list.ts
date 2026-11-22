@@ -23,7 +23,7 @@ import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
 import { appConfirm } from '../components/modal/dialogs.ts';
-import { ANNOTA_FIELD_KEYS } from '../../domain/annotaFields.ts';
+import { ANNOTA_FIELD_KEYS } from '../../domain/labelFields.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 

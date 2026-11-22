@@ -17,7 +17,7 @@
  */
 
 import { TAG_PRESETS } from './label-table.ts';
-import { ANNOTA_FIELDS, cycleYN, formatAnnotaValue, isoDay, toYN, type AnnotaField } from '../../domain/annotaFields.ts';
+import { ANNOTA_FIELDS, PROP_FIELDS, cycleYN, formatAnnotaValue, isoDay, toYN, type AnnotaField, type PropField } from '../../domain/labelFields.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { LABEL_EXPORT_FORMATS, type LabelExportColumn, type LabelExportFormat } from '../../infrastructure/export/labelTableFormats.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
@@ -111,6 +111,17 @@ function tagCol(key: string, title: string, width: number): Column {
   };
 }
 
+/** Column of a property field (domain/labelFields.ts): read-only, set by the app. */
+function propCol(f: PropField): Column {
+  return {
+    key: f.key, title: f.short, width: f.width, align: f.align, edit: null,
+    tip: f.hint, hiddenByDefault: !f.visibleByDefault,
+    text: (l) => f.display(l[f.key]),
+    sort: (l) => f.sortValue(l[f.key]),
+    csv: () => [{ title: f.csvTitle, value: (l) => f.display(l[f.key]) }],
+  };
+}
+
 function annotaCol(f: AnnotaField): Column {
   const width = f.kind === 'yn' ? 64 : f.kind === 'date' ? 92 : f.key === 'remarks' ? 200 : 100;
   return {
@@ -149,11 +160,7 @@ const COLUMNS: Column[] = [
   { key: 'freqMax', title: 'f max kHz', width: 70, align: 'right', edit: 'freq',
     csv: () => [{ title: 'High freq (Hz)', value: (l) => round(l.freqMax, 1) }],
     text: (l) => fmtKHz(l.freqMax), sort: (l) => num(l.freqMax) },
-  { key: 'channel', title: 'Ch', width: 40, align: 'right', edit: null, hiddenByDefault: true,
-    tip: 'Channel the label was made on (1 = left, 2 = right; empty = all channels / mix)',
-    text: (l) => (Number.isInteger(l.channel) && l.channel >= 0 ? String(l.channel + 1) : ''),
-    sort: (l) => (Number.isInteger(l.channel) && l.channel >= 0 ? l.channel : -1),
-    csv: () => [{ title: 'Channel', value: (l) => (Number.isInteger(l.channel) && l.channel >= 0 ? l.channel + 1 : '') }] },
+  ...PROP_FIELDS.map(propCol),
   tagCol('soundType', 'Type', 96),
   tagCol('sex', 'Sex', 64),
   tagCol('lifeStage', 'Age', 72),
@@ -189,6 +196,9 @@ function loadPrefs(key = STORE_KEY): any {
 function savePrefs(p: any, key = STORE_KEY) {
   prefs.setJson(key, p);
 }
+
+/** Keys of the table's columns (tests check every label field has one). */
+export const LABEL_GRID_COLUMN_KEYS = COLUMNS.map((c) => c.key);
 
 export class LabelGrid {
   opts: LabelGridOptions;
