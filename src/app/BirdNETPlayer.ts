@@ -1866,6 +1866,7 @@ export class BirdNETPlayer {
             tags: l.tags || {},
             // Time-only detections (BirdNET) keep their species colour in the waveform too
             fullBand: (l as any).fullBand === true,
+            ...labelProps(l),   // channel, … (domain/labelFields.ts)
         };
     }
 

@@ -42,6 +42,7 @@ test('property fields survive the label layers and the player', () => {
         assert.equal(wave._normalize(src)[f.key], want, `${f.key}: AnnotationLayer._normalize`);
         assert.equal(linked[f.key], want, `${f.key}: player _normalizeLinkedLabel`);
         assert.equal(p._toSpectrogramLabel(linked)[f.key], want, `${f.key}: player → spectrogram layer`);
+        assert.equal(p._toAnnotation(linked)[f.key], want, `${f.key}: player → waveform layer`);
     }
 });
 
