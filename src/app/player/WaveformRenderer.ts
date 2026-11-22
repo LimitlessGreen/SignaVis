@@ -201,9 +201,20 @@ export class WaveformRenderer {
         this.#overviewToken++;
     }
 
+    #freqLabelsRO: ResizeObserver | null = null;
+    #freqLabelsH = -1;
+
     createFrequencyLabels(): void {
-        if (this.#d.freqLabels) {
-            renderFrequencyLabels({ labelsElement: this.#d.freqLabels, coords: this.#getCoords() });
+        const el = this.#d.freqLabels;
+        if (!el) return;
+        renderFrequencyLabels({ labelsElement: el, coords: this.#getCoords() });
+        this.#freqLabelsH = el.clientHeight;
+        // Label density follows the axis height: lay out again when it changes.
+        if (!this.#freqLabelsRO && typeof ResizeObserver !== 'undefined') {
+            this.#freqLabelsRO = new ResizeObserver(() => {
+                if (el.clientHeight !== this.#freqLabelsH) this.createFrequencyLabels();
+            });
+            this.#freqLabelsRO.observe(el);
         }
     }
 

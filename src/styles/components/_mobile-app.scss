@@ -193,12 +193,14 @@ html.is-mobile {
     pointer-events: none;
   }
   .m-player .spectrogram-container .time-aligned-row { position: relative; }
-  .m-player .frequency-labels span {
-    left: 5px; right: auto; text-align: left;
+  .m-player .freq-tick { left: 0; right: auto; background: rgba(255, 255, 255, 0.6); }
+  .m-player .freq-tick > span {
+    left: 9px; right: auto; text-align: left;
     color: rgba(255, 255, 255, 0.78); font-size: 9.5px;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   }
-  .m-player .frequency-labels span::after { display: none; }
+  .m-player .freq-tick--major > span { color: #fff; }
+  .m-player .freq-unit { display: none; }
   // The detection bars sit at the top: no scale numbers under them.
   .m-player .frequency-labels { mask-image: linear-gradient(transparent 34px, #000 46px); }
   .m-player .freq-scrollbar { width: 3px; opacity: 0.5; }
