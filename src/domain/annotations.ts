@@ -335,6 +335,88 @@ class AnnotationLayerBase extends EventTarget {
         return elements;
     }
 
+    // ── Viewport culling ─────────────────────────────────────────────
+    /**
+     * Time window the overlay holds elements for, or null when every item has one. A label is
+     * some 26 DOM nodes; thousands of them (long recordings, detector runs) made every layout
+     * and style pass slow, so only items near the view get elements.
+     */
+    _renderedWindow: { start: number; end: number } | null = null;
+    _cullRaf = 0;
+
+    /** Scroll container whose viewport decides which items get elements (null: no culling). */
+    _scrollEl(): HTMLElement | null { return null; }
+
+    /** The visible time span widened by one view width on each side, or null when unknown. */
+    _cullWindow(): { start: number; end: number } | null {
+        const sc = this._scrollEl();
+        const coords = this.player?._state?.coords;
+        const vw = sc?.clientWidth || 0;
+        if (!sc || vw <= 0 || typeof coords?.scrollXToTime !== 'function') return null;
+        const left = sc.scrollLeft;
+        return { start: coords.scrollXToTime(Math.max(0, left - vw)), end: coords.scrollXToTime(left + 2 * vw) };
+    }
+
+    /** Ids that keep their element off-screen too: edited, selected, focused, linked. */
+    _pinnedIds(): Set<string> {
+        const ids = new Set<string>(this._multiSelectedIds);
+        for (const id of [this._editing?.id, this._selectedLabelId, this._focusedLabelId, this._liveLinkedId]) if (id) ids.add(id);
+        return ids;
+    }
+
+    /** Items to build elements for in this render; also records the window for the scroll check. */
+    _itemsToRender<T extends { id: string; start: number; end: number }>(items: T[]): T[] {
+        const win = this._cullWindow();
+        this._renderedWindow = win;
+        if (!win) return items;
+        const pinned = this._pinnedIds();
+        return items.filter((i) => (Number(i.end) >= win.start && Number(i.start) <= win.end) || pinned.has(i.id));
+    }
+
+    /** Re-render once the view scrolls past the part of the timeline that has elements. */
+    _bindCullScroll() {
+        const sc = this._scrollEl();
+        if (!sc) return;
+        const onScroll = () => {
+            const win = this._renderedWindow;
+            if (!win || this._cullRaf) return;
+            const coords = this.player?._state?.coords;
+            if (typeof coords?.scrollXToTime !== 'function') return;
+            const viewStart = coords.scrollXToTime(sc.scrollLeft);
+            const viewEnd = coords.scrollXToTime(sc.scrollLeft + sc.clientWidth);
+            if (viewStart >= win.start && viewEnd <= win.end) return;
+            this._cullRaf = requestAnimationFrame(() => { this._cullRaf = 0; this.render(); });
+        };
+        sc.addEventListener('scroll', onScroll, { passive: true });
+        this._domCleanups.push(() => {
+            sc.removeEventListener('scroll', onScroll);
+            if (this._cullRaf) cancelAnimationFrame(this._cullRaf);
+            this._cullRaf = 0;
+        });
+    }
+
+    /** Elements currently marked `.active` (under the playhead). */
+    _activeEls = new Set<HTMLElement>();
+
+    /**
+     * Mark the items under the playhead. Runs on every timeupdate (~15/s), so it scans the
+     * item data and only touches elements whose state flips; toggling a class on every
+     * element restyled thousands of labels per update and halved the playback frame rate.
+     */
+    _highlightActive(currentTime: number) {
+        if (!this.overlay) return;
+        const next = new Set<HTMLElement>();
+        for (const item of this._items) {
+            if (currentTime >= Number(item.start) && currentTime <= Number(item.end)) {
+                const el = this._elById.get(item.id);
+                if (el) next.add(el);
+            }
+        }
+        for (const el of this._activeEls) if (!next.has(el)) el.classList.remove('active');
+        for (const el of next) if (!this._activeEls.has(el)) el.classList.add('active');
+        this._activeEls = next;
+    }
+
     /** An element was changed outside render() (drag, resize): rebuild it on the next render. */
     _forgetElement(el: HTMLElement | null | undefined): void {
         if (el) this._elState.delete(el);
@@ -363,6 +445,7 @@ class AnnotationLayerBase extends EventTarget {
         root.appendChild(this.overlay);
         this._subscribePlayerEvents();
         this._bindInteractions(root);
+        this._bindCullScroll();
         this.render();
     }
 
@@ -523,6 +606,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
     _getRoot() {
         return this.player?._state?.d?.waveformContent || this.player?.root?.querySelector('.waveform-content');
     }
+    _scrollEl(): HTMLElement | null { return this.player?._state?.d?.waveformWrapper || null; }
 
     _subscribePlayerEvents() {
         this._unsubs.push(this.player.on('ready', () => this.render()));
@@ -568,15 +652,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
     /** Public alias for the internal items array (backward compat). */
     get annotations() { return this._items; }
 
-    highlightActiveRegion(currentTime: number) {
-        if (!this.overlay) return;
-            for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
-                const h = el as HTMLElement;
-            const start = parseFloat(h.dataset.start || '0');
-            const end = parseFloat(h.dataset.end || '0');
-            el.classList.toggle('active', currentTime >= start && currentTime <= end);
-        }
-    }
+    highlightActiveRegion(currentTime: number) { this._highlightActive(currentTime); }
 
     exportRavenFormat(regions = this._items) {
         return regions
@@ -684,7 +760,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
                 el.style.bottom = '';
             }
         };
-        this._reconcile(this._items as any[], {
+        this._reconcile(this._itemsToRender(this._items as any[]), {
             signature: (region) => this._signature(region, this._lockedIds.has(region.id), this._liveLinkedId === region.id,
                 p?._readOnly === true),
             geometry: (region) => {
@@ -1088,6 +1164,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _getRoot() {
         return this.player?._state?.d?.canvasWrapper || this.player?.root?.querySelector('.canvas-wrapper');
     }
+    _scrollEl(): HTMLElement | null { return this.player?._state?.d?.canvasWrapper || null; }
 
     _subscribePlayerEvents() {
         this._unsubs.push(this.player.on('ready', () => this.render()));
@@ -1217,15 +1294,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return null;
     }
 
-    highlightActiveLabel(currentTime: number) {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            const start = parseFloat(h.dataset.start || '0');
-            const end = parseFloat(h.dataset.end || '0');
-            el.classList.toggle('active', currentTime >= start && currentTime <= end);
-        }
-    }
+    highlightActiveLabel(currentTime: number) { this._highlightActive(currentTime); }
 
     /** Set .focused class on the currently hovered label element (transient). */
     _updateFocusedVisual() {
@@ -1262,9 +1331,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         // Stamp ghost, snap preview and draft are removed, as the old full wipe did.
         this._assignLanes(height);
         const p = this.player as any;
+        const shown = this._itemsToRender(this._items);
         const geoById = new Map<string, { left: number; top: number; width: number; height: number }>();
-        for (const label of this._items) geoById.set(label.id, this._toGeometry(label, width, height));
-        const elements = this._reconcile(this._items, {
+        for (const label of shown) geoById.set(label.id, this._toGeometry(label, width, height));
+        const elements = this._reconcile(shown, {
             signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
                 this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
             geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
@@ -1275,7 +1345,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - g.top - g.height)}px`);
             },
         });
-        const geometries = this._items.map((label) => geoById.get(label.id)!);
+        const geometries = shown.map((label) => geoById.get(label.id)!);
         // Resolve overlapping text badges
         this._resolveTextCollisions(elements, geometries);
         this._pinAllLabelTexts();
