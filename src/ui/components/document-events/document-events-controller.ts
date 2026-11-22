@@ -1,4 +1,5 @@
 import type { OnFn, UiController } from '../shared/controller.types.ts';
+import { keyScope } from '../../../shared/keymap.ts';
 
 export interface DocumentEventsHost {
     _compactToolbarOpen: boolean;
@@ -52,7 +53,7 @@ export class DocumentEventsController implements UiController {
         on(document, 'pointerup', releaseAll);
         on(document, 'pointercancel', releaseAll);
 
-        on(document, 'keydown', (e: KeyboardEvent) => h._handleKeyboardShortcuts(e));
+        on(keyScope('player'), 'keydown', (e: KeyboardEvent) => h._handleKeyboardShortcuts(e));
         on(document, 'pointerdown', (e: PointerEvent) => {
             if (!h._compactToolbarOpen) return;
             if (h.d.toolbarRoot?.contains(e.target as Node)) return;

@@ -10,6 +10,7 @@
 // Keys are taken in the capture phase on window while the bar is open, ahead of the player's
 // own shortcuts on document (X would delete the selected label: the one under review is unlocked).
 
+import { keyScope } from '../../../shared/keymap.ts';
 import { attachPeek } from './overlay-peek';
 
 export interface ReviewItem { id: string; score: number }
@@ -55,7 +56,7 @@ export class SimilarReview {
             document.body.appendChild(this.el);
             this.detachPeek = attachPeek(this.el);
             document.body.classList.add('similar-reviewing');
-            window.addEventListener('keydown', this.onKey, true);
+            keyScope('review').addEventListener('keydown', this.onKey);
             window.addEventListener('resize', this.onResize);
         }
         this.render();
@@ -66,7 +67,7 @@ export class SimilarReview {
 
     close() {
         if (!this.el) return;
-        window.removeEventListener('keydown', this.onKey, true);
+        keyScope('review').removeEventListener('keydown', this.onKey);
         window.removeEventListener('resize', this.onResize);
         this.detachPeek?.();
         this.detachPeek = null;
@@ -175,22 +176,10 @@ export class SimilarReview {
 
     private handleKey(e: KeyboardEvent) {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        // A modal dialog (e.g. Replace / Keep) or the host's own interaction (resizing) keeps its keys
+        // The host's own interaction (resizing) keeps its keys
         if (this.h.busy?.()) return;
-        // (closed app modals stay in the DOM, hidden: only a visible one counts)
-        const shown = (m: Element) => !this.el?.contains(m) && ((m as any).checkVisibility ? (m as any).checkVisibility() : (m as HTMLElement).offsetParent !== null);
-        if ([...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(shown)) return;
-        const t = e.target;
-        if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
-            && !this.el?.contains(t)) return;
         const k = e.key;
-        if (t instanceof HTMLElement) {
-            // Focused controls keep their own keys: buttons and links anywhere take Enter / Space,
-            // the threshold slider its arrows. (Label boxes are role="button" divs: shortcuts stay on.)
-            const ctl = t.closest('button, a[href], summary');
-            if (ctl && (k === 'Enter' || k === ' ')) return;
-            if (t instanceof HTMLInputElement && t.type === 'range' && this.el?.contains(t) && k.startsWith('Arrow')) return;
-        }
+        // Typing, Enter on buttons, slider arrows and open modals never get here (shared/keymap.ts)
         let done = true;
         if (k === 'Enter') { if (e.shiftKey) this.acceptAbove(); else this.decide(true); }
         else if (k === 'x' || k === 'X' || k === 'Delete' || k === 'Backspace') this.decide(false);
@@ -199,7 +188,7 @@ export class SimilarReview {
         else if (k === ' ') { const it = this.current; if (it) this.h.onPlay(it.id); }
         else if (k === 'Escape') this.close();
         else done = false;
-        if (done) { e.preventDefault(); e.stopPropagation(); }
+        if (done) e.preventDefault();
     }
 
     private build(): HTMLElement {

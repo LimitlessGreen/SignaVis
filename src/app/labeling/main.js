@@ -45,6 +45,7 @@ import { timeIoU, templateFrom } from '../../domain/similar/ncc.ts';
 import { GroupReview } from '../../ui/components/similar-review/group-review.ts';
 import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
+import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
 import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
@@ -732,10 +733,8 @@ function applyTagVocabulary() {
 }
 
 // Keys 1–9 set the selected label's sound type to the n-th value of the current list
-document.addEventListener('keydown', (e) => {
+keyScope('app').addEventListener('keydown', (e) => {
   if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
-  const t = e.target;
-  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const editable = (l) => l && !l.readonly && !state.labelSets.get(l.setId)?.locked;
   // A multi-selection gets the value on every label, otherwise the one shown in Properties
   const selected = [...(labelList?.multiSelectedIds || [])].map((id) => state.labels.find((l) => l.id === id));
@@ -749,10 +748,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 // N / P next / previous recording, B BirdNET on the current one, U upload assistant, F similar calls to the selected label
-document.addEventListener('keydown', (e) => {
+keyScope('app').addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const t = e.target;
-  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const k = e.key.toLowerCase();
   if (k === 'n' || k === 'p') {
     const all = recordingManager.getAll();

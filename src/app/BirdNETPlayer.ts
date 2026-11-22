@@ -9,6 +9,7 @@
 //   player.play();
 // ═══════════════════════════════════════════════════════════════════════
 
+import { keyScope } from '../shared/keymap.ts';
 import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
 import { labelPlaybackBand } from '../domain/labelBand.ts';
 import { createPlayerHTML, DEFAULT_OPTIONS } from '../ui/template.ts';
@@ -761,7 +762,7 @@ export class BirdNETPlayer {
         this._labelGrid?.destroy();
         this._labelGrid = null;
         if (this._globalKeyHandler) {
-            document.removeEventListener('keydown', this._globalKeyHandler, true);
+            keyScope('label').removeEventListener('keydown', this._globalKeyHandler);
             this._globalKeyHandler = null;
         }
         if (this._onLabelFocus) {
@@ -984,7 +985,7 @@ export class BirdNETPlayer {
             if (isLockedActive) return;
             this.applyTaxonomyToLabel(activeId, idx);
         };
-        document.addEventListener('keydown', this._globalKeyHandler, true);
+        keyScope('label').addEventListener('keydown', this._globalKeyHandler);
     }
 
     // ── Read-only mode ──────────────────────────────────────────────

@@ -6,6 +6,7 @@
 //   slider     coarser ↔ finer grouping (re-groups)
 // While the member review (similar-review.ts) is open this bar is suspended (hidden, no keys).
 
+import { keyScope } from '../../../shared/keymap.ts';
 import { attachPeek } from './overlay-peek';
 
 export interface GroupItem { size: number }
@@ -47,7 +48,7 @@ export class GroupReview {
             window.addEventListener('resize', this.onResize);
         }
         this.suspended = false;
-        document.addEventListener('keydown', this.onKey, true);
+        keyScope('review').addEventListener('keydown', this.onKey);
         this.el.hidden = false;
         this.render();
         this.show();
@@ -56,7 +57,7 @@ export class GroupReview {
 
     close() {
         if (!this.el) return;
-        document.removeEventListener('keydown', this.onKey, true);
+        keyScope('review').removeEventListener('keydown', this.onKey);
         window.removeEventListener('resize', this.onResize);
         this.detachPeek?.();
         this.detachPeek = null;
@@ -69,7 +70,7 @@ export class GroupReview {
     suspend() {
         if (!this.el || this.suspended) return;
         this.suspended = true;
-        document.removeEventListener('keydown', this.onKey, true);
+        keyScope('review').removeEventListener('keydown', this.onKey);
         this.el.hidden = true;
     }
 
@@ -77,7 +78,7 @@ export class GroupReview {
     resume(named: boolean) {
         if (!this.el || !this.suspended) return;
         this.suspended = false;
-        document.addEventListener('keydown', this.onKey, true);
+        keyScope('review').addEventListener('keydown', this.onKey);
         this.el.hidden = false;
         if (named) { this.done.add(this.pos); this.step(1, true); } else { this.render(); this.show(); }
     }
@@ -103,17 +104,8 @@ export class GroupReview {
 
     private handleKey(e: KeyboardEvent) {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const t = e.target;
-        if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
-            && !this.el?.contains(t)) return;
         const k = e.key;
-        if (t instanceof HTMLElement) {
-            // Focused controls keep their own keys: buttons and links anywhere take Enter / Space,
-            // the threshold slider its arrows. (Label boxes are role="button" divs: shortcuts stay on.)
-            const ctl = t.closest('button, a[href], summary');
-            if (ctl && (k === 'Enter' || k === ' ')) return;
-            if (t instanceof HTMLInputElement && t.type === 'range' && this.el?.contains(t) && k.startsWith('Arrow')) return;
-        }
+        // Typing, Enter on buttons, slider arrows and open modals never get here (shared/keymap.ts)
         let handled = true;
         if (k === 'Enter') this.h.onName(this.pos);
         else if (k === 'x' || k === 'X' || k === 'Delete' || k === 'Backspace') { this.done.add(this.pos); this.step(1, true); }
@@ -122,7 +114,7 @@ export class GroupReview {
         else if (k === ' ') this.h.onPlay(this.pos);
         else if (k === 'Escape') this.close();
         else handled = false;
-        if (handled) { e.preventDefault(); e.stopPropagation(); }
+        if (handled) e.preventDefault();
     }
 
     private build(): HTMLElement {
