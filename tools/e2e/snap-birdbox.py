@@ -24,11 +24,20 @@ with sync_playwright() as p:
 
     click(1.0, 6000)
     print('first click (no rows yet):', page.evaluate(CHIP))
-    page.wait_for_function("() => /Done|Error|Stopped/.test(document.getElementById('birdboxStatus').textContent)", timeout=180000)
-    print('BirdBox:', page.inner_text('#birdboxStatus'))
-    boxes = page.evaluate(BOXES); print(len(boxes), 'BirdBox boxes at the panel settings')
+    # Snap runs BirdBox only on the seconds around the click and shows no boxes (0ca0e39):
+    # wait for its rows, then look for the best box near the click through the panel
+    ROWS = "() => { const sv = window.__signavis; return !!sv.birdboxPanel.boxAt(sv.activeRecordingId(), 1.0, 6000, 0.99); }"
+    page.wait_for_function(ROWS, timeout=180000)
+    print('after the nearby BirdBox run:', page.evaluate(CHIP))
+    boxes = page.evaluate("""() => { const sv = window.__signavis, id = sv.activeRecordingId(), out = [];
+      for (let t = 0; t <= 6; t += 0.1) for (let f = 500; f <= 10000; f += 250) for (const c of [0.8, 0.5, 0.3]) {
+        const r = sv.birdboxPanel.boxAt(id, t, f, c);
+        if (r?.box) { out.push({ ...r.box, confidence: c }); break; } }
+      return out; }""")
+    print(len(boxes), 'BirdBox boxes found near the click')
     if not boxes: print('page errors:', errs); sys.exit(1)
-    best = max(boxes, key=lambda x: x['confidence'])
+    best = max(boxes, key=lambda x: (x['confidence'], x['end'] - x['start']))
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)   # drop the preview the run refreshed at the first click
     t, f = (best['start'] + best['end']) / 2, (best['freqMin'] + best['freqMax']) / 2
     pt = click(t, f)
     print(f"click in box conf {best['confidence']:.2f}:", page.evaluate(CHIP))
