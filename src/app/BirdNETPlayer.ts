@@ -82,8 +82,9 @@ const DEFAULT_LABEL_TAXONOMY = [
 
 export { DEFAULT_OPTIONS };
 import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
-import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
-import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
+import type { LiveRecorder, LiveRecorderOptions, LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+import type { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
+import { liveRecordingSupported } from '../infrastructure/audio/liveSupport.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Load the recording into the player when it stops (default true). */
@@ -1030,9 +1031,10 @@ export class BirdNETPlayer {
 
     _liveRecorder: LiveRecorder | null = null;
     _liveView: LiveSpectrogramView | null = null;
+    _liveLoading = false;
 
     /** True when this browser can record from a microphone. */
-    static get recordingSupported(): boolean { return LiveRecorder.supported; }
+    static get recordingSupported(): boolean { return liveRecordingSupported(); }
 
     get isRecording(): boolean { return !!this._liveRecorder?.recording; }
 
@@ -1044,10 +1046,22 @@ export class BirdNETPlayer {
      * The WAV carries the start time, so `recordingStart` knows it after loading.
      */
     async startRecording(opts: StartRecordingOptions = {}): Promise<void> {
-        if (this._liveRecorder) throw new Error('Already recording');
+        if (this._liveRecorder || this._liveLoading) throw new Error('Already recording');
         const s = this._state;
         if (!s) throw new Error('Player not ready');
         this.pause();
+        // Loaded on first use: hosts that never record don't download the recorder.
+        this._liveLoading = true;
+        let LiveRecorder: typeof import('../infrastructure/audio/LiveRecorder.ts').LiveRecorder;
+        let LiveSpectrogramView: typeof import('../ui/components/live-view/live-spectrogram-view.ts').LiveSpectrogramView;
+        try {
+            [{ LiveRecorder }, { LiveSpectrogramView }] = await Promise.all([
+                import('../infrastructure/audio/LiveRecorder.ts'),
+                import('../ui/components/live-view/live-spectrogram-view.ts'),
+            ]);
+        } finally {
+            this._liveLoading = false;
+        }
         const rec = new LiveRecorder(opts);
         this._liveRecorder = rec;
         const host = (s.d.spectrogramContainer && s._showSpectrogram ? s.d.spectrogramContainer : this.container) as HTMLElement;
