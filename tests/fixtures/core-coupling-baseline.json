@@ -23,9 +23,6 @@
     "app/suggest-similar.ts"
   ],
   "stillCoupled": [
-    "domain/annotations.ts",
-    "ui/components/label-editor/LabelEditorModal.ts",
-    "ui/components/taxonomy-ui/species-ranking.ts",
-    "ui/components/taxonomy-ui/taxonomy-ui.ts"
+    "domain/annotations.ts"
   ]
 }

@@ -6,7 +6,6 @@ import { classifyHit, resolvePress, type Tool } from './pointer-priority.ts';
 import { labelModeOf } from '../app/interactionState.ts';
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
-import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
@@ -176,7 +175,26 @@ function _hslToHex(h: number, s: number, l: number) {
  * instead of calling player._emit() directly — eliminating the circular dependency.
  * @param {any} opts
  */
-function openLabelNameEditor(opts: any) {
+// The editor (with the species search) loads on first use, so the player core
+// does not carry it; preloadLabelEditor() fetches it while the browser is idle.
+type LabelEditorModule = typeof import('../ui/components/label-editor/LabelEditorModal.ts');
+let _editorModule: Promise<LabelEditorModule> | null = null;
+function loadLabelEditor(): Promise<LabelEditorModule> {
+    _editorModule ??= import('../ui/components/label-editor/LabelEditorModal.ts')
+        .catch((e) => { _editorModule = null; throw e; });
+    return _editorModule;
+}
+
+/** Fetch the label editor in the background so the first open is instant. */
+export function preloadLabelEditor(): void {
+    if (_editorModule) return;
+    const idle = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
+    const run = () => { loadLabelEditor().catch(() => { /* retried on first open */ }); };
+    if (idle) idle(run, { timeout: 3000 }); else setTimeout(run, 0);
+}
+
+async function openLabelNameEditor(opts: any) {
+    const { LabelEditorModal } = await loadLabelEditor();
     const layer = opts?.layer;
     const rest  = { ...opts };
     delete rest.layer;
@@ -443,6 +461,7 @@ class AnnotationLayerBase extends EventTarget {
         this.player = player;
         const root = this._getRoot();
         if (!root) return;
+        if (!(player as any)?.options?.readOnly) preloadLabelEditor();
         // Report drawing / editing / grabbing / zoom-box drags to the player's interaction FSM,
         // so the player does not start its own drag meanwhile (one interaction at a time)
         const fsm = (player as any)?._state?.interaction;
@@ -1077,7 +1096,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         if (!region || region.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl: el || this.overlay,
@@ -2450,7 +2469,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const initialValue = tpl?.name || ref?.label || '';
         const initialColor = (tpl?.name ? tpl.color : ref?.color) || _autoAssignColor(this._items);
         const refName = initialValue.trim().toLowerCase();
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             initialValue,
@@ -3184,7 +3203,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!label || label.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl: el || this.overlay,
@@ -3226,7 +3245,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (labels.length === 0) return;
         const first = labels[0];
         const anchorEl = this.overlay || null;
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl,

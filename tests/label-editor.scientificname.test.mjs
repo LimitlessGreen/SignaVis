@@ -185,7 +185,7 @@ test('label editor preserves initial scientificName when saving without selectin
     const { openLabelNameEditor } = await import('../src/domain/annotations.ts');
 
     let received = null;
-    openLabelNameEditor({
+    await openLabelNameEditor({
       player,
       initialValue: 'My bird',
       initialColor: '#112233',
