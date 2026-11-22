@@ -1627,31 +1627,26 @@ export class BirdNETPlayer {
      * @param {string[]} ids
      */
     setMultiSelectedOverview(ids: string[]) {
-        const container = this._state?.d?.overviewLabelTracks;
         this._overviewMultiIds = ids;   // re-applied after a rebuild of the tracks
-        if (!container) return;
         const set = new Set(ids);
-        for (const el of container.querySelectorAll('.overview-label-segment')) {
-            const h = /** @type {HTMLElement} */ (el);
-            h.classList.toggle('multi-selected', set.has(h.dataset?.id || ''));
-        }
+        this._markOverviewSegments('multi-selected', (id) => set.has(id));
     }
 
     setFocusedOverviewSegment(id: string | null) {
-        const container = this._state?.d?.overviewLabelTracks;
-        if (!container) return;
-        for (const el of container.querySelectorAll('.overview-label-segment')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('focused', !!id && h.dataset?.id === id);
-        }
+        this._markOverviewSegments('focused', (segId) => !!id && segId === id);
     }
 
     setSelectedOverviewSegment(id: string | null) {
+        this._markOverviewSegments('selected', (segId) => !!id && segId === id);
+    }
+
+    /** Toggle `cls` on every overview segment by its label id. */
+    _markOverviewSegments(cls: string, on: (id: string) => boolean) {
         const container = this._state?.d?.overviewLabelTracks;
         if (!container) return;
         for (const el of container.querySelectorAll('.overview-label-segment')) {
             const h = el as HTMLElement;
-            h.classList.toggle('selected', !!id && h.dataset?.id === id);
+            h.classList.toggle(cls, on(h.dataset?.id || ''));
         }
     }
 
