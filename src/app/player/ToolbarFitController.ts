@@ -24,6 +24,11 @@ export function readoutLengthChanged(seen: WeakMap<object, number>, node: Node):
     return prev !== undefined && prev !== len;
 }
 
+/** Record the current text length of every ignored readout under `root`. */
+export function seedReadoutLengths(seen: WeakMap<object, number>, root: ParentNode): void {
+    for (const el of root.querySelectorAll('[data-fit-ignore]')) seen.set(el, el.textContent?.length ?? 0);
+}
+
 export function ignoredForFit(node: Node): boolean {
     const el = node.nodeType === 1 ? node as Element : node.parentElement;
     return !!el?.closest('[data-fit-ignore]');
@@ -107,6 +112,8 @@ export class ToolbarFitController {
 
     #fit() {
         if (!this.#toolbar) return;
+        // The lengths the fit was made for: the first readout change after it compares against them
+        seedReadoutLengths(this.#readoutLength, this.#toolbar);
         let level = 0;
         this.#apply(level);
         while (level < 4 && this.#overflows()) {
