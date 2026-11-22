@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - Unreleased
+
+### Added
+- **Channel selection** for multichannel recordings: a picker in the status
+  bar (Mix / L / R / Ch n), shown only for multichannel files. Spectrogram,
+  waveform and the analyses (BirdNET, BirdBox, SNR, snap, similar calls) use
+  the selected channel or the mix; playback keeps all channels. Default: mix,
+  remembered between sessions.
+- Properties: **Light** section for recordings with location and date — sun
+  altitude over the day with twilight phases and day length over the year,
+  as charts or as dials.
+- Phone UI: **Details** screen with the recording's properties; BirdNET model
+  and BirdBox settings in Analyse; Xeno-canto API key in Settings.
+- Player: `defaultPreset` option and a *Classic small* preset; the view mode
+  can be switched at runtime (a hidden spectrogram is not computed).
+
+### Changed
+- **Long recordings (1–3 h)**: audio is decoded in slices, spectrogram and
+  waveform peaks are computed in blocks and off the main thread. 180 min
+  recordings: peak memory about 7 GB → 2.7 GB, longest main-thread task up
+  to 7.8 s → about 0.3 s; 120 and 180 min recordings now load at all.
+- Many labels: only labels near the view are drawn (3000 labels: 99k → 9k
+  DOM nodes); faster drag preview and label list.
+- Keyboard: player shortcuts also work while a dropdown, button or slider has
+  focus; all shortcuts go through one dispatcher (review, label, player, app).
+- The playhead wins over the label tools (wider grab area); the player and the
+  label layers run one interaction at a time.
+
+### Fixed
+- `npm i signavis` failed: the package ran a postinstall script it does not
+  ship.
+- Times just below a full minute showed as `00:60.0`.
+- Bandpass and detector playback did not move the label highlight and table.
+- 180 min MP3/FLAC files failed to load in incognito windows (no storage
+  quota); whole-file spectrograms over 1 GiB are now skipped with a note.
+- The labeling app no longer flashes unstyled markup while it starts.
+- Analyzer embedding: labels are kept when a value carries no detections; the
+  loading overlay ends when the spectrogram is hidden.
+
 ## [1.3.2] - 2026-11-19
 
 ### Fixed
