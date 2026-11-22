@@ -573,7 +573,13 @@
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 10px color-mix(in srgb, var(--label-c) 50%, transparent);
     }
     &.suggestion.selected, &.suggestion.focused { border-bottom-style: dashed; }
-    .label-handle, .label-actions { display: none; }
+    .label-handle { display: none; }
+    // Buttons in a row right of the strip: a column would cover the lanes below
+    .label-actions,
+    .label-actions.label-actions--suggestion {
+        flex-direction: row;
+        top: -1px;
+    }
 }
 
 /* Dense mode (from N stacked lanes, player option labelDenseLanes, default 5): unselected strips
