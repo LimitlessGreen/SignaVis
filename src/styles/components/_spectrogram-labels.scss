@@ -173,6 +173,8 @@
     position: absolute;
     left: calc(100% + 4px);
     top: calc(-1 * var(--label-frame));
+    // past the visible right edge: moved left into view (annotations.ts _measurePin)
+    transform: translateX(var(--label-actions-dx, 0px));
     display: flex;
     flex-direction: column;
     gap: 2px;

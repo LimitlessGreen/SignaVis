@@ -1462,9 +1462,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         let dy = 0;
         if (atBottom) dy = -clamp(top + h + TEXT_H + 4 - viewH, 0, Math.max(0, h + TEXT_H + 4));
         else if (inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
-        return { dx: Math.round(dx), dy: Math.round(dy), inside };
+        // Buttons sit right of the box: past the visible right edge they move left into view
+        const actions = el.querySelectorAll('.label-actions');
+        let actW = 0;
+        actions.forEach((a) => { actW = Math.max(actW, (a as HTMLElement).offsetWidth || 0); });
+        const ax = actW ? clamp(left + w + 4 + actW - viewR, 0, w + 4 + actW) : 0;
+        return { dx: Math.round(dx), dy: Math.round(dy), inside, ax: Math.round(ax) };
     }
-    _applyPin(el: HTMLElement, { dx, dy, inside }: { dx: number; dy: number; inside: boolean }) {
+    _applyPin(el: HTMLElement, { dx, dy, inside, ax = 0 }: { dx: number; dy: number; inside: boolean; ax?: number }) {
+        const sa = `${-ax}px`;
+        if ((el.style.getPropertyValue('--label-actions-dx') || '0px') !== sa) el.style.setProperty('--label-actions-dx', sa);
         el.classList.toggle('label-text-inside', inside);
         // Unchanged values are not written: a style write invalidates the element even when equal.
         const sx = `${dx}px`, sy = `${dy}px`;
