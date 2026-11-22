@@ -432,6 +432,13 @@ html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region
 
   &.suggestion { --m-box: var(--m-c, var(--color-detection, #f59e0b)); }
 
+  // The solid !important frame above must not erase the origin, as on the desktop:
+  // imported / locked own labels dashed + muted, similar-call suggestions dotted.
+  // Machine detections (.suggestion) are locked too but keep their solid frame.
+  &.spectrogram-label-region--readonly,
+  &.spectrogram-label-region--locked:not(.suggestion) { border-style: dashed !important; opacity: 0.72; }
+  &.suggestion.spectrogram-label-region--similar { border-style: dotted !important; opacity: 0.75; }
+
   .spectrogram-label-text {
     position: absolute; left: -2px; top: -20px; bottom: auto;
     display: inline-flex; align-items: center; gap: 4px;
