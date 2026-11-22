@@ -185,7 +185,8 @@
     // invisible bridge to the box keeps the hover alive
     &::before { content: ''; position: absolute; left: -5px; top: 0; bottom: 0; width: 5px; }
 }
-.spectrogram-label-region:hover .label-actions {
+.spectrogram-label-region:hover .label-actions,
+.spectrogram-label-region:focus-within .label-actions {
     opacity: 1;
     visibility: visible;
     transition: opacity 0.12s, visibility 0s;

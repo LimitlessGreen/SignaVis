@@ -132,10 +132,15 @@
 
 /* Dense (from labelDenseRows rows): unselected heads become thin strokes */
 .annotation-dense .annotation-region:not(:hover):not(.annotation-region--selected):not(.annotation-region--focused):not(.multi-selected):not(.editing):not(.linked-live) {
-    height: 4px;
+    // a thin stroke that keeps the origin pattern: solid own, dashed suggestion, dotted similar
+    height: 0;
     border: 0;
-    border-radius: 1px;
-    background: color-mix(in srgb, var(--label-c) 80%, transparent);
+    border-top: 3px solid var(--label-c);
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    &.suggestion { border-top-style: dashed; }
+    &.annotation-region--similar { border-top-style: dotted; }
     .annotation-tag, .annotation-handle { display: none; }
 }
 

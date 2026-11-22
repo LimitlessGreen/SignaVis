@@ -536,14 +536,16 @@ class AnnotationLayerBase extends EventTarget {
             sel.dataset.awBound = '1';
             let stored: string | null = null;
             try { stored = localStorage.getItem('aw-label-dense'); } catch { /* storage blocked */ }
-            sel.value = stored ?? String(fromOption);
-            if (!sel.value) sel.value = '5';
+            // Only a remembered or user-made choice overrides each view's own default
+            if (stored && [...sel.options].some((o) => o.value === stored)) { sel.value = stored; sel.dataset.awUser = '1'; }
             sel.addEventListener('change', () => {
+                sel.dataset.awUser = '1';
                 try { localStorage.setItem('aw-label-dense', sel.value); } catch { /* storage blocked */ }
                 p?.spectrogramLabels?.render?.();
                 p?.annotations?.render?.();
             });
         }
+        if (sel.dataset.awUser !== '1') return fromOption;
         return Math.max(1, Number(sel.value) || fromOption);
     }
 
@@ -1145,6 +1147,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     _stampRefLabelId: any = null;
     /** Snap to call: click a call → preview box, Shift+wheel = sensitivity, click/Enter = commit. */
     snapMode: boolean = false;
+    _reviewCount: Map<string, string> = new Map();
     _snapSensitivity: number = SNAP_DEFAULT_SENSITIVITY;
     /**
      * Detector boxes for Snap (BirdBox): asked first; without a box under the click the
@@ -1359,11 +1362,16 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._assignLanes(height);
         const p = this.player as any;
         const shown = this._itemsToRender(this._items);
+        // Position of the similar call under review ("3 / 12"): part of its signature, so the
+        // count follows when other suggestions come or go
+        const similar = (this._items as any[]).filter((l) => l.origin === 'Similar').sort((x, y) => x.start - y.start);
+        this._reviewCount = new Map(similar.map((l, i) => [l.id, `${i + 1} / ${similar.length}`]));
         const geoById = new Map<string, { left: number; top: number; width: number; height: number }>();
         for (const label of shown) geoById.set(label.id, this._toGeometry(label, width, height));
         const elements = this._reconcile(shown, {
             signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
-                this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
+                this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true,
+                (label as any).reviewing ? this._reviewCount.get(label.id) : ''),
             geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
             create: (label) => {
                 const el = this._createLabelElement(label, width, height);
@@ -1441,10 +1449,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
     /** Layout reads only (no writes), so measuring many labels in a row costs a single reflow. */
     _measurePin(el: HTMLElement, { viewL, viewR, viewH }: { viewL: number; viewR: number; viewH: number }) {
         const left = el.offsetLeft, top = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
-        const TEXT_W = 60, TEXT_H = 16;
+        const textEl = el.querySelector('.spectrogram-label-text') as HTMLElement | null;
+        // The rendered tag height (taller on the phone); 16 px when not laid out
+        const TEXT_W = 60, TEXT_H = textEl?.offsetHeight || 16;
         // Horizontal: start at the left edge of the visible part
         const dx = clamp(viewL - left, 0, Math.max(0, Math.min(w, viewR - left) - TEXT_W));
-        const textEl = el.querySelector('.spectrogram-label-text') as HTMLElement | null;
         const atBottom = !!textEl?.classList.contains('label-text-bottom');
         const lane = el.classList.contains('spectrogram-label-region--lane');
         // Names sit outside, above the box (below it after a collision). If the space above is
@@ -1583,11 +1592,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (showLock) el.classList.add('label-has-lock');
         // The similar call under review: "3 / 12" in front of the name (position among all suggestions)
         let reviewHtml = '';
-        if (label.origin === 'Similar' && (label as any).reviewing) {
-            const similar = (this._items as any[]).filter((l) => l.origin === 'Similar').sort((x, y) => x.start - y.start);
-            const i = similar.findIndex((l) => l.id === label.id);
-            if (i >= 0) reviewHtml = `<span class="spectrogram-label-count">${i + 1} / ${similar.length}</span>`;
-        }
+        const count = label.origin === 'Similar' && (label as any).reviewing ? this._reviewCount.get(label.id) : null;
+        if (count) reviewHtml = `<span class="spectrogram-label-count">${count}</span>`;
         // Name tag outside the box (snap-chip style): lock · name · AI · confidence.
         // The centre lock only shows on hover (see _spectrogram-labels.scss).
         el.innerHTML = `
