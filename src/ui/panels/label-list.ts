@@ -146,7 +146,7 @@ export class LabelList {
     _onSync: any;
     _onToggleLockSet: any;
     _onAdoptSet: any;
-    _adoptedToggle: { get(): boolean; set(on: boolean): void } | null = null;
+    _adoptedToggle: { get(): boolean; set(on: boolean): void; hiddenIn?(setId: string): number } | null = null;
     _onAdoptLabel: any;
     _onPlaySegment: any;
     _onToggleSetVisibility: any;
@@ -188,7 +188,7 @@ export class LabelList {
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
    * @param {(setId: string) => void}   [opts.onAdoptSet]   copy an imported set's labels into the own set
-   * @param {{get(): boolean, set(on: boolean): void}} [opts.adoptedToggle] show detections already converted into my labels
+   * @param {{get(): boolean, set(on: boolean): void, hiddenIn?(setId: string): number}} [opts.adoptedToggle] show detections already converted into my labels
    * @param {(labelId: string) => void} [opts.onAdoptLabel] copy one imported label into the own set
    * @param {(lbl: any) => void}        [opts.onPlaySegment] play start–end of a label (toggle)
    * @param {(setId: string) => boolean} [opts.canDeleteSet]
@@ -432,7 +432,8 @@ export class LabelList {
       const g = groups.get(key)!;
       if (key === '' && g.total === 0) continue;
       // Imported sets without labels in this recording are noise
-      if (g.total === 0 && g.origin !== 'manual') continue;
+      // An imported set whose detections are all converted keeps its header (menu: show them again)
+      if (g.total === 0 && g.origin !== 'manual' && !(this._adoptedToggle?.hiddenIn?.(key) ?? 0)) continue;
       if (this._filter && g.labels.length === 0) continue;
       this._container.appendChild(this._buildSource(key, g));
     }

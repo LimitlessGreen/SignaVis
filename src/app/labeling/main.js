@@ -2646,6 +2646,11 @@ const labelList = new LabelList({
   adoptedToggle: {
     get: () => _showAdopted,
     set: (on) => { _showAdopted = !!on; writeFlag(SHOW_ADOPTED_KEY, _showAdopted); syncToPlayer(); },
+    hiddenIn: (setId) => {
+      if (_showAdopted || !OWN_SOURCE_ID) return 0;
+      const shown = new Set(_shownLabels().map((l) => l.id));
+      return state.labels.filter((l) => l.setId === setId && !shown.has(l.id)).length;
+    },
   },
   onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
   onOpenRefCalls: (lbl) => openRefCalls(lbl),
