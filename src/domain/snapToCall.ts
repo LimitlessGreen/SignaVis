@@ -159,11 +159,15 @@ export function fitToCall(src: SnapPatch, window: { start: number; end: number }
     for (let i = 0; i < clipped.length; i++) clipped[i] = Math.max(lo, src.values[i]);
     const p: SnapPatch = { ...src, values: clipped };
     const floor = bandPercentile(p, FIT_FLOOR_PERCENTILE);
-    const { frames, bins, values } = p;
+    // Only the window's frames: seed search and growth cannot leave it
     const fFrom = Math.max(0, Math.ceil((window.start - p.t0) / p.dt));
-    const fTo = Math.min(frames - 1, Math.floor((window.end - p.t0) / p.dt));
+    const fTo = Math.min(p.frames - 1, Math.floor((window.end - p.t0) / p.dt));
+    if (fTo - fFrom < 2) return { ok: false, reason: 'noise' };
+    const { bins } = p, frames = fTo - fFrom + 1;
+    const values = p.values.subarray(fFrom * bins, (fTo + 1) * bins);
+    const win: SnapPatch = { ...p, values, frames, t0: p.t0 + fFrom * p.dt, atStart: true, atEnd: true };
     const bFrom = Math.max(0, Math.ceil((FIT_MIN_FREQ - p.f0) / p.df));
-    if (fTo < fFrom || bFrom >= bins) return { ok: false, reason: 'noise' };
+    if (bFrom >= bins) return { ok: false, reason: 'noise' };
     // Summed-area table of the positive SNR (frames + 1) × (bins + 1)
     const W = bins + 1, sat = new Float64Array((frames + 1) * W);
     for (let f = 0; f < frames; f++) {
@@ -175,17 +179,21 @@ export function fitToCall(src: SnapPatch, window: { start: number; end: number }
     }
     const area = (f0: number, f1: number, b0: number, b1: number) =>
         sat[(f1 + 1) * W + b1 + 1] - sat[f0 * W + b1 + 1] - sat[(f1 + 1) * W + b0] + sat[f0 * W + b0];
+    // Seed: the largest neighbourhood energy among cells that are themselves a clear peak
     let best = -1, sf = -1, sb = -1;
-    for (let f = fFrom; f <= fTo; f++) {
+    for (let f = 0; f < frames; f++) {
         const f0 = Math.max(0, f - FIT_NEIGH_FRAMES), f1 = Math.min(frames - 1, f + FIT_NEIGH_FRAMES);
         for (let b = bFrom; b < bins; b++) {
+            if (!(values[f * bins + b] - floor[b] >= MIN_PEAK_DB)) continue;
             const v = area(f0, f1, Math.max(0, b - FIT_NEIGH_BINS), Math.min(bins - 1, b + FIT_NEIGH_BINS));
             if (v > best) { best = v; sf = f; sb = b; }
         }
     }
-    if (sf < 0 || !(values[sf * bins + sb] - floor[sb] >= MIN_PEAK_DB)) return { ok: false, reason: 'noise' };
-    const r = snapToCall(p, p.t0 + sf * p.dt, p.f0 + sb * p.df, sensitivity, floor);
+    if (sf < 0) return { ok: false, reason: 'noise' };
+    const r = snapToCall(win, win.t0 + sf * p.dt, p.f0 + sb * p.df, sensitivity, floor);
     if (!r.ok) return r;
+    // Box edges lie half a cell beyond the outer cells: trim to the window, never extend
     const start = Math.max(r.box.start, window.start), end = Math.min(r.box.end, window.end);
-    return { ...r, box: { ...r.box, start, end: Math.max(end, start + p.dt) } };
+    if (!(end > start)) return { ok: false, reason: 'noise' };
+    return { ...r, box: { ...r.box, start, end } };
 }
