@@ -6,9 +6,9 @@ function classes(init = []) {
     const set = new Set(init);
     return { contains: (c) => set.has(c), toggle: (c, on) => (on ? set.add(c) : set.delete(c)), add: (c) => set.add(c), has: (c) => set.has(c) };
 }
-function setup({ scrollLeft = 0, clientWidth = 500, viewH = 300, box, compact = false, bottom = false }) {
+function setup({ scrollLeft = 0, clientWidth = 500, viewH = 300, box, compact = false, bottom = false, tagH }) {
     const vars = {};
-    const textEl = { classList: classes(bottom ? ['label-text-bottom'] : []) };
+    const textEl = { classList: classes(bottom ? ['label-text-bottom'] : []), offsetHeight: tagH };
     const el = {
         offsetLeft: box.left, offsetTop: box.top, offsetWidth: box.width, offsetHeight: box.height,
         classList: classes(compact ? ['label-compact'] : []),
@@ -45,6 +45,13 @@ test('compact box at the top edge shows its name inside', () => {
 });
 
 test('bottom name moves up when the box bottom is below the view', () => {
+    // The tag sits 4 px below the box (label design): bottom 400 + 4 + 16 → visible bottom 300
     const { vars } = setup({ bottom: true, viewH: 300, box: { left: 10, top: 200, width: 200, height: 200 } });
-    assert.equal(vars['--label-text-dy'], '-100px');
+    assert.equal(vars['--label-text-dy'], '-120px');
+});
+
+test('bottom name uses the rendered tag height (taller tag on the phone)', () => {
+    // 19 px tag: bottom 400 + 4 + 19 → visible bottom 300
+    const { vars } = setup({ bottom: true, viewH: 300, tagH: 19, box: { left: 10, top: 200, width: 200, height: 200 } });
+    assert.equal(vars['--label-text-dy'], '-123px');
 });

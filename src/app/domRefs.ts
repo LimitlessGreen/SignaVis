@@ -130,6 +130,7 @@ export interface DomRefs {
     maxFreqSelect:           HTMLSelectElement | null;
     colorSchemeSelect:       HTMLSelectElement | null;
     loupeModeSelect:         HTMLSelectElement | null;
+    labelDenseSelect:        HTMLSelectElement | null;
     loupeDetailCheck:        HTMLInputElement  | null;
     freqLabels:              HTMLElement       | null;
     freqZoomResetBtn:        HTMLButtonElement | null;

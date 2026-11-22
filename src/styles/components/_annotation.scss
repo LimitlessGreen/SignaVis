@@ -1,4 +1,6 @@
-/* Annotation component migrated incrementally from src/player.css */
+/* Waveform annotations: the same label language as the spectrogram (_label-tokens.scss),
+   time only — two edges + top border, name tag at the top, no fill. */
+@use "label-tokens" as *;
 
 .annotation-layer {
     position: absolute;
@@ -10,181 +12,194 @@
 }
 
 .annotation-region {
-    --annotation-color-fill: rgba(56, 189, 248, 0.18);
-    --annotation-color-edge: rgba(56, 189, 248, 0.9);
-    --annotation-color-soft: rgba(56, 189, 248, 0.45);
+    // Set per region from its set/species colour (annotations.ts)
+    --annotation-color-fill: transparent;
+    --annotation-color-edge: var(--label-default);
+    --annotation-color-soft: color-mix(in srgb, var(--label-c) 45%, transparent);
+    --label-c: var(--annotation-color-edge);
     appearance: none;
     -webkit-appearance: none;
-    -moz-appearance: none;
+    // The head is a time bar: its length is the time span (top/left/width from render()).
     position: absolute;
-    top: 0;
-    bottom: 0;
-    border: 1px solid var(--annotation-color-edge);
-    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.04)), var(--annotation-color-fill);
-    color: var(--color-text-primary);
-    border-radius: 2px;
+    height: 16px;
+    box-sizing: border-box;
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 4px;
-    padding: 2px 4px;
+    align-items: center;
+    padding: 0;
+    border: 1px solid var(--label-c);
+    border-bottom-width: 1px;
+    border-radius: 2px 2px 0 0;
+    background: color-mix(in srgb, var(--label-c) 30%, rgba(255, 255, 255, 0.88));
+    color: #0f172a;
     font-size: 10px;
-    line-height: 1.1;
+    line-height: 1;
     cursor: pointer;
     pointer-events: auto;
-    overflow: hidden;
+    overflow: visible;
     white-space: nowrap;
+    z-index: 1;
 }
 
-.annotation-region.active {
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-    background: rgba(239, 68, 68, 0.25);
-}
-
-.annotation-region.multi-selected {
-    outline: 2px dashed rgba(56,189,248,0.9);
-    outline-offset: 1px;
-    box-shadow: 0 0 0 3px rgba(56,189,248,0.35);
-}
-
-.annotation-region.editing {
-    outline: 2px solid rgba(255,255,255,0.95);
-    outline-offset: -2px;
-}
-
-.annotation-region.linked-live {
-    outline: 2px solid var(--annotation-color-edge);
-    outline-offset: -2px;
-    box-shadow:
-        0 0 0 1px rgba(2, 6, 23, 0.85),
-        0 0 12px var(--annotation-color-soft),
-        inset 0 0 0 1px rgba(255,255,255,0.75);
-    background: var(--annotation-color-fill);
-    animation: linkedPulse 0.9s ease-in-out infinite;
-}
-
-.annotation-label {
+/* Content of the head: dot · lock · name · AI · confidence */
+.annotation-tag {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    width: 100%;
+    padding: 0 5px;
     overflow: hidden;
-    text-overflow: ellipsis;
+    font-weight: 600;
+    pointer-events: none;
+    &::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        flex: none;
+        border-radius: 1px;
+        background: var(--label-c);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    }
 }
-
+.annotation-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .annotation-confidence {
-    color: var(--color-text-secondary);
+    margin-left: auto;
+    padding-left: 5px;
+    border-left: 1px solid rgba(15, 23, 42, 0.35);
+    font-variant-numeric: tabular-nums;
+    flex: none;
 }
+.annotation-ai-badge { font-size: 8.5px; font-weight: 700; padding: 1px 3px; border-radius: 3px; border: 1px solid rgba(15, 23, 42, 0.3); color: #4338ca; flex: none; }
+.annotation-lock { display: inline-flex; flex: none; svg { width: 9px; height: 11px; } }
+.annotation-lock-center { display: none; }
 
-.annotation-handle {
+/* The span below the head: only for the hovered / selected / edited / mirrored region, and in
+   front of every other head (the region itself is raised). */
+.annotation-region::after {
+    content: '';
     position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 10px;
-    background: none;
-    border: none;
+    left: -1px;
+    right: -1px;
+    top: 100%;
+    height: calc(var(--track-h, 120px) - var(--col-top, 0px) - 16px);
+    box-sizing: border-box;
+    border-left: 2px solid var(--label-c);
+    border-right: 2px solid var(--label-c);
+    background: color-mix(in srgb, var(--label-c) 8%, transparent);
+    pointer-events: none;
+    display: none;
+}
+.annotation-region:hover,
+.annotation-region--focused,
+.annotation-region--selected,
+.annotation-region.multi-selected,
+.annotation-region.editing,
+.annotation-region.linked-live { z-index: 20; &::after { display: block; } }
+.annotation-region--selected, .annotation-region.editing, .annotation-region.linked-live { z-index: 21; }
+
+/* Weight = state */
+.annotation-region--selected,
+.annotation-region.multi-selected {
+    background: var(--label-c);
+    color: #0b0b10;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-c) 45%, transparent);
+    .annotation-tag::before { box-shadow: 0 0 0 1.5px #fff; }
+}
+.annotation-region.active .annotation-tag::before {
+    width: 0;
+    height: 0;
     border-radius: 0;
+    background: none;
     box-shadow: none;
-    opacity: 1;
-    cursor: ew-resize;
-    transform: none;
+    border-left: 6px solid #0f172a;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
 }
 
-/* Hover focus (transient, from labelfocus interaction:'hover') */
-.annotation-region--focused {
-    outline: 1px solid rgba(255, 255, 255, 0.6);
-    outline-offset: -1px;
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
-    z-index: 3;
-}
-
-/* Click focus (sticky, from labelfocus interaction:'click') */
-.annotation-region--selected {
-    outline: 2px solid rgba(255, 255, 255, 0.9);
-    outline-offset: -2px;
-    box-shadow:
-        inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-        0 0 0 2px rgba(56, 189, 248, 0.7);
-    z-index: 4;
-}
-
-/* Subtle visual indicator on hover */
-.annotation-region:hover {
-    z-index: 2;
-}
-
-.annotation-region:hover .annotation-handle {
-    background: linear-gradient(180deg, transparent 5%, rgba(255,255,255,0.5) 25%, rgba(255,255,255,0.5) 75%, transparent 95%);
-}
-
-.annotation-handle.handle-l {
-    left: -5px;
-    cursor: ew-resize;
-}
-
-.annotation-handle.handle-r {
-    right: -5px;
-    cursor: ew-resize;
-}
-
-.annotation-handle.handle-t {
-    top: -5px;
-    left: 10px;
-    right: 10px;
-    height: 10px;
-    cursor: ns-resize;
-    transform: none;
-}
-
-.annotation-handle.handle-b {
-    bottom: -5px;
-    left: 10px;
-    right: 10px;
-    height: 10px;
-    cursor: ns-resize;
-    transform: none;
-}
-
-/* ── Readonly annotations (XC-imported, not editable) ── */
+/* Stroke = origin */
+.annotation-region.suggestion { border-bottom: 2px dashed var(--label-c); }
+.annotation-region.suggestion:not(.time-only) { --label-c: var(--label-suggestion); }
+.annotation-region.suggestion.annotation-region--similar { border-bottom-style: dotted; }
 .annotation-region--readonly {
     cursor: default;
     border-style: dashed;
-    opacity: 0.75;
+    background: rgba(255, 255, 255, 0.72);
+    color: #475569;
 }
-.annotation-region--readonly:hover {
-    opacity: 0.9;
-}
-.annotation-region--readonly .annotation-handle {
-    display: none !important;
+.annotation-region--locked { cursor: not-allowed; }
+.annotation-region--readonly .annotation-handle,
+.annotation-region--locked .annotation-handle { display: none !important; }
+
+/* Dense (from labelDenseRows rows): unselected heads become thin strokes */
+.annotation-dense .annotation-region:not(:hover):not(.annotation-region--selected):not(.annotation-region--focused):not(.multi-selected):not(.editing):not(.linked-live) {
+    // a thin stroke that keeps the origin pattern: solid own, dashed suggestion, dotted similar
+    height: 0;
+    border: 0;
+    border-top: 3px solid var(--label-c);
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    &.suggestion { border-top-style: dashed; }
+    &.annotation-region--similar { border-top-style: dotted; }
+    .annotation-tag, .annotation-handle { display: none; }
 }
 
-/* ── Locked annotations (set-level lock) ── */
-.annotation-region--locked {
-    cursor: not-allowed;
-    opacity: 0.75;
+/* Handles: left/right edge bars (time only), hover / focus / editing */
+.annotation-handle {
+    position: absolute;
+    top: 0;
+    height: calc(var(--track-h, 120px) - var(--col-top, 0px));
+    width: 10px;
+    z-index: 2;
+    cursor: ew-resize;
+    @include label-handle-edge(x);
+    &::after { opacity: 0; transition: opacity 0.15s; height: min(18px, 50%); }
 }
-.annotation-region--locked:hover {
-    opacity: 0.9;
-}
-.annotation-region--locked .annotation-handle {
-    display: none !important;
-}
+.annotation-handle.handle-l { left: -6px; }
+.annotation-handle.handle-r { right: -6px; }
+.annotation-region:hover .annotation-handle::after,
+.annotation-region--focused .annotation-handle::after,
+.annotation-region.editing .annotation-handle::after { opacity: 1; }
 
-.annotation-lock {
-    font-size: 9px;
-    line-height: 1;
-    opacity: 0.85;
-    margin-left: 2px;
+/* Guide line at the moving time edge (the spectrogram mirrors it) */
+.annotation-region.editing[data-edge="l"]::before,
+.annotation-region.editing[data-edge="r"]::before {
+    content: '';
+    position: absolute;
+    top: -4000px;
+    bottom: -4000px;
+    width: 0;
+    border-left: 1px dashed rgba(255, 255, 255, 0.55);
     pointer-events: none;
 }
+.annotation-region.editing[data-edge="l"]::before { left: -1px; }
+.annotation-region.editing[data-edge="r"]::before { right: -1px; }
 
-.annotation-ai-badge {
-    display: inline-block;
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1;
-    padding: 1px 3px;
-    border-radius: 2px;
-    background: rgba(99, 102, 241, 0.75);
-    color: #e0e7ff;
-    border: 1px solid rgba(165, 180, 252, 0.5);
-    vertical-align: middle;
+/* linked-live: mirror of a drag in the spectrogram */
+.annotation-region .linked-old {
+    position: absolute;
+    left: var(--old-x, 0px);
+    width: var(--old-w, 0px);
+    top: 0;
+    height: calc(var(--track-h, 120px) - var(--col-top, 0px));
+    margin-left: calc(-1 * var(--label-frame-strong));
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-bottom: 0;
     pointer-events: none;
-    margin-left: 2px;
 }
+.annotation-region .linked-guide { display: none; }
+.annotation-region.linked-live[data-edge="l"] .linked-guide,
+.annotation-region.linked-live[data-edge="r"] .linked-guide {
+    display: block;
+    position: absolute;
+    top: -4000px;
+    bottom: -4000px;
+    width: 0;
+    border-left: 1px dashed rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+}
+.annotation-region.linked-live[data-edge="l"] .linked-guide { left: -2px; }
+.annotation-region.linked-live[data-edge="r"] .linked-guide { right: -1px; }
+.annotation-region.linked-edge-l::after { border-left-color: #fff; box-shadow: -3px 0 8px -2px var(--label-c); }
+.annotation-region.linked-edge-r::after { border-right-color: #fff; box-shadow: 3px 0 8px -2px var(--label-c); }

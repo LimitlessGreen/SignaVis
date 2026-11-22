@@ -116,13 +116,7 @@ html[data-theme="light"] { @include light-tokens; }
 }
 .rec-set-adopted { font-size: 11px; white-space: nowrap; flex-shrink: 0; color: var(--color-success, var(--color-text-secondary)); }
 
-// Read-only (imported / locked) labels: dashed + muted, own labels stay solid.
-// Machine detections (BirdNET / BirdBox, .suggestion) are locked too but keep their solid frame.
-.spectrogram-label-region--locked:not(.suggestion),
-.annotation-region--locked:not(.suggestion) {
-  border-style: dashed !important;
-  opacity: 0.72;
-}
+// Read-only / locked labels: see _label-tokens.scss (thin frame + dashed tag, lock icon).
 
 // Labels tab header: "Labels   3"
 .lbl-section-header { display: flex; align-items: center; gap: 6px; }
@@ -252,11 +246,7 @@ html[data-theme="light"] { @include light-tokens; }
 .rec-set-rename { width: 100%; font-size: 11px; padding: 0 3px; }
 .rec-set--editing .rec-set-actions { display: none !important; }
 
-// Similar-call suggestions (app/suggest-similar.ts): dotted in the waveform track too
-.annotation-region.suggestion.annotation-region--similar {
-  border-style: dotted;
-  opacity: 0.75;
-}
+
 
 /* ── Selects: own look instead of the native one ───────────────────
    WebKitGTK (SignaVis Lite on Linux) draws native selects with the GTK

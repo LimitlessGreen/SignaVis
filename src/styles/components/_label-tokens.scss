@@ -1,0 +1,160 @@
+/* Shared label design (spectrogram, waveform, mobile). See SignaVis-lab plans/label-design-plan.md.
+   Runtime values (species/set colour, confidence) are CSS custom properties; the repeated shapes
+   (name tag, handles, frame) are mixins so all three views draw them the same way.
+
+   Rules: nothing hides the signal (no fill, name/buttons outside) · colour = species/set ·
+   stroke = origin (solid own, dashed suggestion, dotted similar call) · weight = state. */
+
+:root {
+    --label-frame: 1.5px;
+    --label-frame-strong: 2px;
+    --label-halo: 0 0 0 1px rgba(0, 0, 0, 0.55);
+    --label-tag-bg: rgba(2, 6, 23, 0.86);
+    --label-tag-border: rgba(255, 255, 255, 0.14);
+    --label-tag-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+    --label-tag-sep: rgba(255, 255, 255, 0.18);
+    --label-tag-text: #e2e8f0;
+    --label-default: #e2e8f0;
+    --label-suggestion: var(--color-detection, #f59e0b);
+    --label-dimmed: 0.35;
+}
+
+/* Name tag in the snap-chip style: dark, 3 px corners, thin light border, shadow,
+   species colour as a small square dot in front. */
+@mixin label-tag($dot: true) {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 17px;
+    padding: 0 7px 0 6px;
+    box-sizing: border-box;
+    border-radius: 3px;
+    border: 1px solid var(--label-tag-border);
+    background: var(--label-tag-bg);
+    box-shadow: var(--label-tag-shadow);
+    color: var(--label-tag-text);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    text-shadow: none;
+    -webkit-text-stroke: 0;
+
+    @if $dot { &::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        flex: none;
+        border-radius: 1px;
+        background: var(--label-c);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+    } }
+}
+
+/* Selected: tag border in the species colour with a soft glow */
+@mixin label-tag-selected {
+    border: 1.5px solid var(--label-c);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 10px color-mix(in srgb, var(--label-c) 50%, transparent);
+    color: #fff;
+}
+
+/* Separator in front of trailing tag parts (confidence) */
+@mixin label-tag-sep {
+    padding-left: 5px;
+    border-left: 1px solid var(--label-tag-sep);
+}
+
+/* Small markers inside the tag (AI) */
+@mixin label-tag-badge {
+    font-size: 8.5px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 3px;
+    border: 1px solid var(--label-tag-sep);
+    background: none;
+    color: #c7d2fe;
+}
+
+/* Corner handle: white circle with a species-colour ring */
+@mixin label-handle-corner {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--label-c);
+    box-sizing: border-box;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+    outline: none;
+}
+
+/* Edge handle: the element is the full-length hit strip; the visible part is a short bar
+   in the middle of the edge (::after). $axis: x = left/right edge, y = top/bottom edge. */
+@mixin label-handle-edge($axis) {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    outline: none;
+
+    &::after {
+        content: '';
+        position: absolute;
+        box-sizing: border-box;
+        border-radius: 3px;
+        background: #fff;
+        border: 1.5px solid var(--label-c);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+        @if $axis == x {
+            left: 50%;
+            top: 50%;
+            width: 6px;
+            height: min(18px, 60%);
+            transform: translate(-50%, -50%);
+        } @else {
+            left: 50%;
+            top: 50%;
+            height: 6px;
+            width: min(18px, 60%);
+            transform: translate(-50%, -50%);
+        }
+    }
+}
+
+/* Round action button next to the box (♪ ✎ 🗑, ✓ ✗) */
+@mixin label-action-btn {
+    position: static;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 19px;
+    height: 17px;
+    padding: 0;
+    margin: 0;
+    border-radius: 3px;
+    border: 1px solid var(--label-tag-border);
+    background: var(--label-tag-bg);
+    box-shadow: var(--label-tag-shadow);
+    color: #e2e8f0;
+    cursor: pointer;
+}
+
+/* Lock shown in the box centre on hover (locked / read-only) */
+@mixin label-lock-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    transform: translate(-50%, -50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(2, 6, 23, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e2e8f0;
+    pointer-events: none;
+
+    svg { width: 10px; height: 12px; }
+}
