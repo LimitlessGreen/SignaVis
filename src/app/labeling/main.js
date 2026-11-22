@@ -48,7 +48,7 @@ import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
-import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, migrateSessionState } from '../../app/annotation-sets.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, applyPlayerRestore, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
@@ -4725,17 +4725,12 @@ player.on('spectrogramlabelremove', (e) => {
 player.on('labelrestore', (e) => {
   const before = e.detail?.before || [];
   const after = e.detail?.after || [];
-  const afterIds = new Set(after.map((l) => l.id));
-  const removed = new Set(before.filter((l) => !afterIds.has(l.id)).map((l) => l.id));
-  for (const id of removed) snrComputer.invalidate(id);
+  // Detections hidden by a conversion are not deleted (annotation-sets.ts applyPlayerRestore)
+  const next = applyPlayerRestore(state.labels, before, after, OWN_SOURCE_ID,
+    (l) => ({ ...l, origin: l.origin || 'manual', setId: l.setId ?? (state.activeSetId || OWN_SOURCE_ID) }));
+  const nextIds = new Set(next.map((l) => l.id));
+  for (const l of before) if (!nextIds.has(l.id)) snrComputer.invalidate(l.id);
   // One change (one save); the player shows the restored state already
-  const next = state.labels.filter((l) => !removed.has(l.id));
-  const at = new Map(next.map((l, i) => [l.id, i]));
-  for (const lbl of after) {
-    const i = at.get(lbl.id);
-    if (i != null) next[i] = { ...next[i], ...lbl };
-    else next.push({ ...lbl, origin: lbl.origin || 'manual', setId: lbl.setId ?? (state.activeSetId || OWN_SOURCE_ID) });
-  }
   labelStore.replaceAll(next, { views: ['list', 'badge'] });
 });
 

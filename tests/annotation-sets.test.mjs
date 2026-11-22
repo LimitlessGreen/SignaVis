@@ -105,3 +105,19 @@ test('withoutAdopted: one of several call boxes adopted hides the detection, the
     // the second box is still offered ("Also the other 1")
     assert.equal(labelsToAdopt([{ ...det, adoptBox: { ...b2, label: 'x' } }], all, 'own').length, 1);
 });
+
+import { applyPlayerRestore } from '../src/app/annotation-sets.ts';
+test('applyPlayerRestore: redoing a conversion hides the detection, it does not delete it', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const [copy] = adoptLabels([det], 'own');
+    // after undo the app holds only the detection; the player redoes: before = [det], after = [copy]
+    const next = applyPlayerRestore([det], [det], [copy], 'own');
+    assert.deepEqual(next.map((l) => l.id).sort(), ['d1', copy.id].sort());
+    // deleting the copy later brings it back
+    assert.deepEqual(withoutAdopted(next.filter((l) => l.id !== copy.id), 'own').map((l) => l.id), ['d1']);
+});
+
+test('applyPlayerRestore: a label really removed by undo is deleted', () => {
+    const a = { id: 'a', setId: 'own', start: 0, end: 1 };
+    assert.deepEqual(applyPlayerRestore([a], [a], [], 'own'), []);
+});

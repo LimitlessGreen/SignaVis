@@ -101,6 +101,27 @@ export function withoutAdopted(labels: any[], targetSetId: string): any[] {
     return labels.filter((l) => l?.setId === targetSetId || !ids.has(String(l?.id)));
 }
 
+/**
+ * State after the player's undo/redo (its snapshots hold only the labels it shows): labels in
+ * `before` but not in `after` are deleted, except detections that `after` hides because a copy
+ * in `ownSetId` converts them (a redone conversion hides its detection, it does not delete it).
+ * `fill` completes labels new to the app (origin, set).
+ */
+export function applyPlayerRestore(labels: any[], before: any[], after: any[], ownSetId: string,
+    fill: (l: any) => any = (l) => l): any[] {
+    const afterIds = new Set(after.map((l) => l.id));
+    const kept = labels.slice();
+    const at = new Map(kept.map((l, i) => [l.id, i]));
+    for (const lbl of after) {
+        const i = at.get(lbl.id);
+        if (i != null) kept[i] = { ...kept[i], ...lbl };
+        else { at.set(lbl.id, kept.length); kept.push(fill({ ...lbl })); }
+    }
+    const converted = adoptedSourceIds(kept.filter((l) => afterIds.has(l.id)), ownSetId);
+    const removed = new Set(before.filter((l) => !afterIds.has(l.id) && !converted.has(String(l.id))).map((l) => l.id));
+    return kept.filter((l) => !removed.has(l.id));
+}
+
 export function labelsToAdopt(src: any[], existing: any[], targetSetId: string) {
     const done = new Set((existing || [])
         .filter((l) => l?.setId === targetSetId && l.adoptedFrom?.id != null)
