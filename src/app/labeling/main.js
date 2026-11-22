@@ -47,7 +47,7 @@ import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
-import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, migrateSessionState } from '../../app/annotation-sets.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
@@ -1158,7 +1158,7 @@ const labelViews = new RenderScheduler([
     player.setSpectrogramLabels(_playerLabels());
     _pushLockedIds(_computeLockedIds());
   }],
-  ['list', () => labelList.render(state.labels)],      // also redraws the table (see labelTable below)
+  ['list', () => labelList.render(_shownLabels())],      // also redraws the table (see labelTable below)
   ['table', (pending) => {
     if (pending.has('list')) return;                   // already drawn with the list
     try { labelTable?.render(state.labels); } catch (e) { /* table not ready */ }
@@ -1939,7 +1939,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   const todo = mode === 'all' ? open : open.slice(0, 1);
   if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
   const more = mode === 'best' && open.length > 1
-    ? { label: open.length === plan.candidates ? `All ${open.length}` : `Other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
+    ? { label: `Also the other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
   const undo = snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.add(copies);
@@ -1955,11 +1955,11 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   }
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
-  selectionMeta.textContent = `Copied ${n} label${n === 1 ? '' : 's'} into my labels`;
-  if (plan.candidates > 1) {
-    showUndoToast(mode === 'all' || n > 1 ? `Copied ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
-      : `Copied 1 of ${plan.candidates} call boxes as ${lbl.label}`, undo, { action: more });
-  }
+  selectionMeta.textContent = `Converted into ${n === 1 ? 'my label' : `${n} of my labels`}`;
+  // The detection is gone from view (converted); undo brings it back
+  showUndoToast(mode === 'all' || n > 1 ? `Converted into ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
+    : plan.candidates > 1 ? `Converted 1 of ${plan.candidates} call boxes as ${lbl.label}` : `Converted ${lbl.label} into my label`,
+    undo, more ? { action: more } : undefined);
   // A call box nobody could name: ask right away
   if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
 }
@@ -2769,7 +2769,7 @@ const mobileApp = new MobileApp({
     const entry = recordingManager.getById(id);
     if (entry) await activateRecordingEntry(entry);
   },
-  getLabels: () => state.labels,
+  getLabels: () => _shownLabels(),   // adopted detections are converted, not shown twice
   resolveName,
   altNames: (sci) => Object.values(taxonomy.resolve(sci)?.n || {}),
   isOwn: (l) => l.setId === OWN_SOURCE_ID,
@@ -3705,12 +3705,18 @@ function _pushLockedIds(lockedIds) {
   labelList.setLockedIds?.(lockedIds);
 }
 
+/** state.labels without detections already adopted (✓ converts them into own labels). */
+function _shownLabels() {
+  return OWN_SOURCE_ID ? withoutAdopted(state.labels, OWN_SOURCE_ID) : state.labels;
+}
+
 function _visibleLabels() {
   const hSets = state.hiddenSetIds;
   const hSpecies = state.hiddenSpeciesKeys;
   const hLayers = state.hiddenLayers;
-  if (!hSets.size && !hSpecies.size && !hLayers.size) return state.labels;
-  return state.labels.filter((l) => {
+  const shown = _shownLabels();
+  if (!hSets.size && !hSpecies.size && !hLayers.size) return shown;
+  return shown.filter((l) => {
     const setKey = l.setId || '';
     if (setKey && hSets.has(setKey)) return false;
     if (setKey === OWN_SOURCE_ID && hLayers.has(l.layer || DEFAULT_LAYER_ID)) return false;
@@ -4643,8 +4649,10 @@ player.on('spectrogramlabelremove', (e) => {
   // ✗ on a similar-call suggestion = reject it (not proposed again)
   if (e.detail?.label?.origin === SIMILAR_ORIGIN) { rejectSimilar([id]); return; }
   snrComputer.invalidate(id);
-  touchOwnSet(state.labels.find((l) => l.id === id)?.setId);
-  labelStore.remove(id, { views: ['list', 'badge'] });   // the player removed it already
+  const removed = state.labels.find((l) => l.id === id);
+  touchOwnSet(removed?.setId);
+  // the player removed it already; a deleted copy brings its detection back, so redraw the player then
+  labelStore.remove(id, { views: removed?.adoptedFrom?.id != null ? ['player', 'list', 'badge'] : ['list', 'badge'] });
 });
 
 // Undo/redo inside the player: mirror the restored state into state.labels

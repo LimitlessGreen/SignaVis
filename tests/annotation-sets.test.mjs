@@ -77,3 +77,31 @@ test('labelsToAdopt: a detection copied as one call box can still give its other
     assert.equal('adoptBox' in copy, false);
     assert.deepEqual(labelsToAdopt([boxA, boxB], [copy], 'own'), [boxB]);
 });
+
+// ── Adopting converts: the detection is hidden while a copy exists ──
+import { withoutAdopted, adoptedSourceIds } from '../src/app/annotation-sets.ts';
+
+test('withoutAdopted hides a detection once it is in my labels', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const other = { id: 'd2', setId: 'birdnet', origin: 'BirdNET', start: 3, end: 6 };
+    const [copy] = adoptLabels([det], 'own');
+    const all = [det, other, copy];
+    assert.deepEqual(withoutAdopted(all, 'own').map((l) => l.id), ['d2', copy.id]);
+    assert.deepEqual([...adoptedSourceIds(all, 'own')], ['d1']);
+});
+
+test('withoutAdopted: deleting the copy brings the detection back', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    assert.deepEqual(withoutAdopted([det], 'own').map((l) => l.id), ['d1']);
+});
+
+test('withoutAdopted: one of several call boxes adopted hides the detection, the rest stay adoptable', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const b1 = { start: 0.5, end: 1, freqMin: 2000, freqMax: 4000 };
+    const b2 = { start: 2, end: 2.5, freqMin: 2000, freqMax: 4000 };
+    const [copy] = adoptLabels([{ ...det, adoptBox: { ...b1, label: 'x' } }], 'own');
+    const all = [det, copy];
+    assert.deepEqual(withoutAdopted(all, 'own').map((l) => l.id), [copy.id]);
+    // the second box is still offered ("Also the other 1")
+    assert.equal(labelsToAdopt([{ ...det, adoptBox: { ...b2, label: 'x' } }], all, 'own').length, 1);
+});

@@ -81,6 +81,26 @@ function adoptKey(id: any, box: any) {
  * Makes "copy into my labels" idempotent: pressing it twice adds nothing.
  * A copy the user deleted again counts as not adopted, so it can be copied once more.
  */
+/**
+ * Ids of detections that were copied into `targetSetId` (its labels' `adoptedFrom.id`).
+ * Adopting converts a detection into an own label, so these are not shown again;
+ * deleting the copy (or undo) brings the detection back.
+ */
+export function adoptedSourceIds(existing: any[], targetSetId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const l of existing || []) {
+        if (l?.setId === targetSetId && l.adoptedFrom?.id != null) ids.add(String(l.adoptedFrom.id));
+    }
+    return ids;
+}
+
+/** `labels` without the detections already adopted into `targetSetId`. */
+export function withoutAdopted(labels: any[], targetSetId: string): any[] {
+    const ids = adoptedSourceIds(labels, targetSetId);
+    if (!ids.size) return labels;
+    return labels.filter((l) => l?.setId === targetSetId || !ids.has(String(l?.id)));
+}
+
 export function labelsToAdopt(src: any[], existing: any[], targetSetId: string) {
     const done = new Set((existing || [])
         .filter((l) => l?.setId === targetSetId && l.adoptedFrom?.id != null)
