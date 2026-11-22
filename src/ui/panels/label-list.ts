@@ -121,6 +121,7 @@ export class LabelList {
     /** Closed group per label id whose rows are not built yet (see _buildGroup). */
     _lazyGroupOf = new Map<any, any>();
     _timeObserver: IntersectionObserver | null = null;
+  _timeRenderToken = 0;
     /** Every label id in list order, built or not (range selection). */
     _rowOrder: any[] = [];
     /** Index of each label in this._labels at render time. */
@@ -438,12 +439,15 @@ export class LabelList {
   _renderTime(visible: any[]) {
     this._timeObserver?.disconnect();
     this._timeObserver = null;
+    // A queued intersection entry of an older render must not build into this one
+    const token = ++this._timeRenderToken;
     const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
     const list = el('div', 'lt-time-list');
     const sorted = visible.slice().sort((a, b) => a.start - b.start);
     const sentinel = el('div', 'lt-time-more');
     let built = 0;
     const buildUpTo = (end: number) => {
+      if (token !== this._timeRenderToken) return;
       end = Math.min(sorted.length, end);
       for (; built < end; built++) {
         const lbl = this._currentLabel(sorted[built]);
