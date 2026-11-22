@@ -12,24 +12,6 @@
 .tag-mini.conf { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .tag-mini.origin { border-style: dashed; }
 
-tag-badge {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 10px;
-	padding: 2px 6px;
-	border-radius: 6px;
-	background: var(--color-bg-surface);
-	color: var(--color-accent);
-	border: 1px solid var(--color-accent);
-	margin: 1px 4px;
-	white-space: nowrap;
-	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	font-weight: 600;
-}
-.tag-badge .tag-key { color: var(--color-accent); opacity: 0.95; }
-.tag-badge .tag-del { border: none; background: transparent; color: var(--color-text-secondary); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
-.tag-badge .tag-del:hover { color: var(--color-danger); }
 .tag-add-btn { display: inline-block; border: 1px dashed var(--color-border); border-radius: 3px; background: transparent; color: var(--color-text-secondary); font-size: 10px; padding: 1px 5px; cursor: pointer; vertical-align: middle; }
 .tag-add-btn:hover { border-color: var(--color-accent); color: var(--color-text-secondary); }
 
