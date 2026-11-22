@@ -2,13 +2,14 @@
 
 import { normalizeSet } from './annotation-sets.ts';
 import { OWN_SOURCE_ID, migrateToOwnSource } from './label-sources.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 const SESSION_SETS_KEY = 'signavis.session-sets.v1';
 
-/** Persist session sets from `state` into localStorage. */
+/** Persist session sets from `state` into prefs. */
 export function saveSessionSets(state: any) {
   try {
-    localStorage.setItem(SESSION_SETS_KEY, JSON.stringify({
+    prefs.set(SESSION_SETS_KEY, JSON.stringify({
       sets: [...(state.labelSets || new Map()).entries()],
       activeSetId: state.activeSetId,
     }));
@@ -18,14 +19,14 @@ export function saveSessionSets(state: any) {
 }
 
 /**
- * Restore session sets into `state` from localStorage.
+ * Restore session sets into `state` from prefs.
  * Sets are normalized to the set model; the own (editable) set moves to OWN_SOURCE_ID
  * (labels are migrated later, together with the recordings — see migrateToOwnSource).
  * Returns true when restoration occurred, false otherwise.
  */
 export function restoreSessionSets(state: any, { rebuild = null as ((() => void) | null) } = {}) {
   try {
-    const raw = localStorage.getItem(SESSION_SETS_KEY);
+    const raw = prefs.get(SESSION_SETS_KEY);
     if (!raw) return false;
     const { sets, activeSetId } = JSON.parse(raw);
     if (!Array.isArray(sets) || !sets.length) return false;

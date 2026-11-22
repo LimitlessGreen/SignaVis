@@ -19,6 +19,7 @@ import { NearbyRows, runCovers } from '../../domain/detector/nearby.ts';
 import { BirdBoxDetector, BIRDBOX_RAW_CONF, laterOf, type RawRows } from '../../infrastructure/detector/birdboxDetector.ts';
 import { resampleTo } from '../../infrastructure/birdnetInference.ts';
 import { selectedSamples, onChannelSelectionChange, getChannelSelection, channelSelectionKey } from '../../shared/channels.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 export const BIRDBOX_ORIGIN = 'BirdBox';
 const MODEL_TAG = 'BirdBox Just-Bird FP16 (24632a5)';
@@ -243,15 +244,13 @@ export class BirdBoxPanel {
     private progress(pct: number): void { this.o.progressBar.style.width = `${pct}%`; }
 
     private restorePrefs(): void {
-        try {
-            const p = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
-            if (Number.isFinite(p?.conf)) this.o.confInput.value = String(p.conf);
-            if (Number.isFinite(p?.gap)) this.o.gapInput.value = String(p.gap);
-        } catch { /* defaults */ }
+        const p = prefs.json<any>(PREFS_KEY, null);
+        if (Number.isFinite(p?.conf)) this.o.confInput.value = String(p.conf);
+        if (Number.isFinite(p?.gap)) this.o.gapInput.value = String(p.gap);
     }
 
     private savePrefs(): void {
-        try { localStorage.setItem(PREFS_KEY, JSON.stringify({ conf: this.conf, gap: this.gap })); } catch { /* not persisted */ }
+        prefs.setJson(PREFS_KEY, { conf: this.conf, gap: this.gap });
     }
 }
 

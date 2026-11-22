@@ -23,6 +23,7 @@ import { SpectrogramGestures } from './gestures.ts';
 import { getSpectrogramColor } from '../../domain/spectrogram.ts';
 import { MobileDetailsView, type MobileDetails } from './details.ts';
 import type { ContextField, ContextValues } from '../../app/recording-context.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 export const PHONE_QUERY = '(max-width: 600px), (pointer: coarse) and (max-height: 500px)';
 
@@ -174,7 +175,7 @@ interface PhoneSettings { freq: 'auto' | 'full' | number; minConf: number; autoA
 const SETTINGS_KEY = 'signavis.mobile.settings.v1';
 function loadSettings(): PhoneSettings {
   try {
-    const v = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    const v = prefs.json<any>(SETTINGS_KEY, {});
     return { freq: v.freq ?? 'auto', minConf: Number(v.minConf) || 0, autoAnalyse: v.autoAnalyse === true };
   } catch { return { freq: 'auto', minConf: 0, autoAnalyse: false }; }
 }
@@ -1313,7 +1314,7 @@ export class MobileApp {
   }
 
   private saveCfg() {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.cfg)); } catch { /* ignore */ }
+    prefs.setJson(SETTINGS_KEY, this.cfg);
   }
 
   /** The player's own control (settings panel); changing it there keeps one implementation + storage. */

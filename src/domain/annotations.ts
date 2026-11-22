@@ -11,6 +11,7 @@ import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.t
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
 const LANE_H = 18;
@@ -2642,9 +2643,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!sel) return 'pointer';
         if (!sel.dataset.awBound) {
             sel.dataset.awBound = '1';
-            try { const v = localStorage.getItem('aw-loupe-mode'); if (v) sel.value = v; } catch { /* storage blocked */ }
+            const saved = prefs.get('aw-loupe-mode'); if (saved) sel.value = saved;
             sel.addEventListener('change', () => {
-                try { localStorage.setItem('aw-loupe-mode', sel.value); } catch { /* storage blocked */ }
+                prefs.set('aw-loupe-mode', sel.value);
             });
         }
         const v = sel.value;
@@ -2662,19 +2663,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ?? null;
     }
 
-    /** Settings checkbox, default on, choice remembered in localStorage. */
+    /** Settings checkbox, default on, choice remembered in prefs. */
     _loupeOption(dataAw: string, storageKey: string, fallback = true): boolean {
         const box = this._settingEl(dataAw) as HTMLInputElement | null;
         if (!box) return fallback;
         if (!box.dataset.awBound) {
             box.dataset.awBound = '1';
-            try {
-                const v = localStorage.getItem(storageKey);
-                if (v === '0') box.checked = false;
-                else if (v === '1') box.checked = true;
-            } catch { /* storage blocked */ }
+            const v = prefs.get(storageKey);
+            if (v === '0') box.checked = false;
+            else if (v === '1') box.checked = true;
             box.addEventListener('change', () => {
-                try { localStorage.setItem(storageKey, box.checked ? '1' : '0'); } catch { /* storage blocked */ }
+                prefs.setFlag(storageKey, box.checked);
             });
         }
         return box.checked;
@@ -2879,10 +2878,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
         cv.style.width = `${W}px`; cv.style.height = `${H}px`;
         el.appendChild(cv);
-        let pos = { x: window.innerWidth - W - 40, y: 120 };
-        try { const p = JSON.parse(localStorage.getItem('aw-loupe-window-pos') || 'null'); if (p) pos = p; } catch { /* ignore */ }
-        let zoom = 4;
-        try { zoom = Number(localStorage.getItem('aw-loupe-window-zoom')) || 4; } catch { /* ignore */ }
+        let pos = prefs.json('aw-loupe-window-pos', { x: window.innerWidth - W - 40, y: 120 });
+        let zoom = Number(prefs.get('aw-loupe-window-zoom')) || 4;
         const place = (x: number, y: number) => {
             pos = { x: Math.max(0, Math.min(window.innerWidth - 80, x)), y: Math.max(0, Math.min(window.innerHeight - 40, y)) };
             el.style.left = `${pos.x}px`; el.style.top = `${pos.y}px`;
@@ -2902,7 +2899,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const move = (m: PointerEvent) => place(m.clientX - ox, m.clientY - oy);
             const up = () => {
                 bar.removeEventListener('pointermove', move);
-                try { localStorage.setItem('aw-loupe-window-pos', JSON.stringify(pos)); } catch { /* ignore */ }
+                prefs.setJson('aw-loupe-window-pos', pos);
             };
             bar.addEventListener('pointermove', move);
             bar.addEventListener('pointerup', up, { once: true });
@@ -2920,7 +2917,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const i = Math.max(0, steps.indexOf(this._loupeWin.zoom));
             this._loupeWin.zoom = steps[Math.max(0, Math.min(steps.length - 1, i + Number(btn.dataset.z)))];
             this._loupeWin.zoomEl.textContent = `${this._loupeWin.zoom}×`;
-            try { localStorage.setItem('aw-loupe-window-zoom', String(this._loupeWin.zoom)); } catch { /* ignore */ }
+            prefs.set('aw-loupe-window-zoom', String(this._loupeWin.zoom));
         });
     }
 

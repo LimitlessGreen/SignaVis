@@ -30,6 +30,7 @@ import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcD
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { appAlert, appPrompt } from '../components/modal/dialogs.ts';
 import { labelsToAdopt } from '../../app/annotation-sets.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
 const OPEN_FOLDERS_KEY = 'signavis.explorer-open-folders.v1';
@@ -113,8 +114,8 @@ export class RecordingExplorer {
         // (entry) => string[] of missing context fields, e.g. ['location', 'date']
         this._getMissingContext = opts.getMissingContext || null;
         this._onOpenContext    = opts.onOpenContext || null;
-        try { this._openFolders = new Set(JSON.parse(localStorage.getItem(OPEN_FOLDERS_KEY) || '[]')); } catch { this._openFolders = new Set(); }
-        try { this._multiMode = localStorage.getItem(MULTI_MODE_KEY) === '1'; } catch { this._multiMode = false; }
+        try { this._openFolders = new Set(prefs.json(OPEN_FOLDERS_KEY, [])); } catch { this._openFolders = new Set(); }
+        this._multiMode = prefs.flag(MULTI_MODE_KEY);
 
         this._manager.addEventListener('change',       () => this.render());
         this._manager.addEventListener('activechange', () => this.render());
@@ -151,7 +152,7 @@ export class RecordingExplorer {
     /** Multi-recording labeling: the tree and its controls show only once this is on. */
     setMultiMode(on: boolean) {
         this._multiMode = on;
-        try { localStorage.setItem(MULTI_MODE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+        prefs.setFlag(MULTI_MODE_KEY, on);
         this.render();
     }
 
@@ -503,7 +504,7 @@ export class RecordingExplorer {
     }
 
     _saveOpenFolders() {
-        try { localStorage.setItem(OPEN_FOLDERS_KEY, JSON.stringify([...this._openFolders])); } catch { /* ignore */ }
+        prefs.setJson(OPEN_FOLDERS_KEY, [...this._openFolders]);
     }
 
 

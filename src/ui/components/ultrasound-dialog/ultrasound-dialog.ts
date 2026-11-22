@@ -7,23 +7,20 @@
 // bat recordings switch without asking.
 
 import { formatMinSecTenths } from '../../../shared/utils.ts';
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 
 export type UltrasoundChoice = 'heterodyne' | 'expansion' | 'division' | 'pitch' | 'none';
 
 export const ULTRASOUND_DEFAULT_KEY = 'aw.ultrasound.listenDefault';
 
 export function loadUltrasoundDefault(): UltrasoundChoice | null {
-    try {
-        const v = localStorage.getItem(ULTRASOUND_DEFAULT_KEY);
-        return v === 'heterodyne' || v === 'expansion' || v === 'division' || v === 'pitch' || v === 'none' ? v : null;
-    } catch { return null; }
+    const v = prefs.get(ULTRASOUND_DEFAULT_KEY);
+    return v === 'heterodyne' || v === 'expansion' || v === 'division' || v === 'pitch' || v === 'none' ? v : null;
 }
 
 export function saveUltrasoundDefault(choice: UltrasoundChoice | null): void {
-    try {
-        if (choice) localStorage.setItem(ULTRASOUND_DEFAULT_KEY, choice);
-        else localStorage.removeItem(ULTRASOUND_DEFAULT_KEY);
-    } catch { /* storage blocked: the choice just is not remembered */ }
+    if (choice) prefs.set(ULTRASOUND_DEFAULT_KEY, choice);
+    else prefs.remove(ULTRASOUND_DEFAULT_KEY);
 }
 
 export interface UltrasoundDialogOptions {

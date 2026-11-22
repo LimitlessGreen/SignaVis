@@ -29,6 +29,7 @@ import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-mod
 import { onDemandUrl } from '../../infrastructure/tauri/runtime.ts';
 import { filterBySpeciesList } from '../../domain/species-lists.ts';
 import { selectedSamples } from '../../shared/channels.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // Bundled models (Lite does not ship them: fetched on first use and cached, see onDemandUrl).
 export const BIRDNET_MODEL_PRESETS = {
@@ -195,12 +196,7 @@ export class BirdNETPanel {
   }
 
   _restoreModelUrl() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      this.modelUrlInput.value = stored || DEFAULT_MODEL_URL;
-    } catch {
-      this.modelUrlInput.value = DEFAULT_MODEL_URL;
-    }
+    this.modelUrlInput.value = prefs.get(STORAGE_KEY) || DEFAULT_MODEL_URL;
     this._syncPreset();
   }
 
@@ -215,16 +211,15 @@ export class BirdNETPanel {
 
   _restoreGeoCoords() {
     try {
-      const raw = localStorage.getItem(STORAGE_GEO_KEY);
-      if (!raw) return;
-      const { lat, lon } = JSON.parse(raw);
+      const { lat, lon } = prefs.json<any>(STORAGE_GEO_KEY, null) ?? {};
+      if (lat == null && lon == null) return;
       if (this.latInput && isFinite(lat)) this.latInput.value = lat;
       if (this.lonInput && isFinite(lon)) this.lonInput.value = lon;
     } catch { /* ignore */ }
   }
 
   _saveGeoCoords(lat: any, lon: any) {
-    try { localStorage.setItem(STORAGE_GEO_KEY, JSON.stringify({ lat, lon })); } catch { /* ignore */ }
+    prefs.setJson(STORAGE_GEO_KEY, { lat, lon });
   }
 
   _getCoords() {
@@ -262,7 +257,7 @@ export class BirdNETPanel {
     if (this.lonInput) this.lonInput.value = '';
     this._recordingDate = null;
     this._geoStatus('');
-    try { localStorage.removeItem(STORAGE_GEO_KEY); } catch { /* ignore */ }
+    prefs.remove(STORAGE_GEO_KEY);
   }
 
   /** Return current {lat, lon} or null if not set / invalid. */
@@ -343,7 +338,7 @@ export class BirdNETPanel {
       const preset = (BIRDNET_MODEL_PRESETS as any)[this.modelPresetSelect.value];
       if (preset) this.modelUrlInput.value = preset.url;
       else this.modelUrlInput.focus();
-      try { localStorage.setItem(STORAGE_KEY, String(this.modelUrlInput.value || '').trim()); } catch { /* ignore */ }
+      prefs.set(STORAGE_KEY, String(this.modelUrlInput.value || '').trim());
     });
     this.modelUrlInput?.addEventListener('input', () => this._syncPreset());
     this.openBtn?.addEventListener('click', () => this.open());
@@ -472,7 +467,7 @@ export class BirdNETPanel {
       return false;
     }
 
-    try { localStorage.setItem(STORAGE_KEY, modelUrl); } catch { /* ignore */ }
+    prefs.set(STORAGE_KEY, modelUrl);
 
     const confidence    = parseFloat(this.confidenceInput.value) || 0.25;
     const overlap       = parseFloat(this.overlapSelect.value) || 0;

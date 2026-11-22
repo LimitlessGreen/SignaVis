@@ -1,7 +1,7 @@
 /**
  * AnnotatorProfile — persistent annotator identity for XC upload.
  *
- * Stored in localStorage under 'aw:annotator-profile.v1'.
+ * Stored in prefs under 'aw:annotator-profile.v1'.
  * Fires a 'change' CustomEvent on the instance whenever fields update.
  *
  * Fields:
@@ -11,6 +11,7 @@
  *   owner       — organisation / person (for set_owner)
  *   onboardingDone — true once the user has filled in name + xcUsername
  */
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 const STORAGE_KEY = 'aw:annotator-profile.v1';
 
@@ -91,16 +92,13 @@ export class AnnotatorProfile extends EventTarget {
     }
 
     _save() {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(this._data));
-        } catch { /* storage unavailable */ }
+        prefs.setJson(STORAGE_KEY, this._data);
     }
 
     _load() {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw);
+            const parsed = prefs.json<any>(STORAGE_KEY, null);
+            if (parsed) {
                 for (const k of Object.keys(DEFAULTS)) {
                     if (k in parsed) this._data[k] = parsed[k];
                 }
@@ -116,7 +114,7 @@ export class AnnotatorProfile extends EventTarget {
 /** True while the first-run onboarding has neither been finished/skipped nor made moot by a filled-in name. */
 export function onboardingPending(): boolean {
     try {
-        const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        const p = prefs.json<any>(STORAGE_KEY, {});
         return !p.onboardingDone && !String(p.name || '').trim();
     } catch { return true; }
 }

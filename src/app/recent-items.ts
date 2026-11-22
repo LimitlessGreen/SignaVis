@@ -2,9 +2,10 @@
 // app/recent-items.ts — "Open Recent" list of SignaVis Lite
 //
 // Local audio files (absolute path) and project folders, newest first,
-// kept in localStorage. The Lite shell only renders the list as a menu
+// kept in prefs. The Lite shell only renders the list as a menu
 // (set_recent_items in src-tauri-lite/src/menu.rs).
 // ═══════════════════════════════════════════════════════════════════════
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 export type RecentItem =
     | { kind: 'file'; path: string }

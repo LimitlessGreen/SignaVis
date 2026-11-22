@@ -1,3 +1,4 @@
+import { prefs } from '../infrastructure/storage/prefs.ts';
 const MODE_KEY = 'audio-workbench.analysis.mode.v1';
 const ENDPOINT_KEY = 'audio-workbench.analysis.endpoint.v1';
 const PLATFORM_LOCAL_KEY = 'audio-workbench.platform.local.v1';
@@ -49,21 +50,12 @@ function readUrlPlatformLocalFlag() {
 }
 
 export function loadPlatformLocalFlag() {
-  let value = false;
-  try {
-    value = parseBooleanFlag(localStorage.getItem(PLATFORM_LOCAL_KEY)) ?? false;
-  } catch {
-    value = false;
-  }
+  let value = parseBooleanFlag(prefs.get(PLATFORM_LOCAL_KEY)) ?? false;
 
   const fromUrl = readUrlPlatformLocalFlag();
   if (fromUrl !== null) {
     value = fromUrl;
-    try {
-      localStorage.setItem(PLATFORM_LOCAL_KEY, String(fromUrl));
-    } catch {
-      // Ignore storage errors in demo.
-    }
+    prefs.set(PLATFORM_LOCAL_KEY, String(fromUrl));
   }
 
   return value;
@@ -76,8 +68,8 @@ export function loadAnalysisBackendConfig() {
   let endpoint = '';
 
   try {
-    const storedMode = localStorage.getItem(MODE_KEY);
-    const storedEndpoint = localStorage.getItem(ENDPOINT_KEY);
+    const storedMode = prefs.get(MODE_KEY);
+    const storedEndpoint = prefs.get(ENDPOINT_KEY);
     if (storedMode) mode = normalizeMode(storedMode);
     if (storedEndpoint !== null) endpoint = normalizeEndpoint(storedEndpoint);
   } catch {
@@ -97,11 +89,11 @@ export function saveAnalysisBackendConfig({ mode, endpoint }: any) {
   try {
     const normalizedMode = normalizeMode(mode);
     const normalizedEndpoint = normalizeEndpoint(endpoint);
-    localStorage.setItem(MODE_KEY, normalizedMode);
+    prefs.set(MODE_KEY, normalizedMode);
     if (normalizedEndpoint) {
-      localStorage.setItem(ENDPOINT_KEY, normalizedEndpoint);
+      prefs.set(ENDPOINT_KEY, normalizedEndpoint);
     } else {
-      localStorage.removeItem(ENDPOINT_KEY);
+      prefs.remove(ENDPOINT_KEY);
     }
   } catch {
     // Ignore storage errors in demo.

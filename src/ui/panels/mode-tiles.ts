@@ -4,6 +4,7 @@
  * Markup: `.mode-tiles[role=tablist] > button.mode-tile[role=tab][aria-controls=<pane id>]`,
  * panes are any elements with those ids. The choice is remembered per `storageKey`.
  */
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 export function initModeTiles(root: HTMLElement | null, storageKey?: string): (id: string) => void {
   const tiles = root ? [...root.querySelectorAll<HTMLButtonElement>('.mode-tile')] : [];
   const select = (paneId: string, focus = false) => {
@@ -16,7 +17,7 @@ export function initModeTiles(root: HTMLElement | null, storageKey?: string): (i
       if (pane) pane.hidden = !on;
       if (on && focus) t.focus();
     }
-    if (storageKey) { try { localStorage.setItem(storageKey, paneId); } catch { /* private mode */ } }
+    if (storageKey) prefs.set(storageKey, paneId);
   };
   tiles.forEach((t, i) => {
     t.addEventListener('click', () => select(t.getAttribute('aria-controls') || ''));
@@ -27,6 +28,6 @@ export function initModeTiles(root: HTMLElement | null, storageKey?: string): (i
       select(tiles[(i + step + tiles.length) % tiles.length].getAttribute('aria-controls') || '', true);
     });
   });
-  if (storageKey) { try { const s = localStorage.getItem(storageKey); if (s) select(s); } catch { /* private mode */ } }
+  if (storageKey) { const s = prefs.get(storageKey); if (s) select(s); }
   return (id) => select(id);
 }

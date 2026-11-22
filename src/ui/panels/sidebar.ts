@@ -16,6 +16,7 @@
  *   sidebar.setActive('labels');
  *   sidebar.setBadge('labels', '5');
  */
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 const CSS_PROP_LEFT = '--sidebar-width';
 const CSS_PROP_RIGHT = '--sidebar-right-width';
@@ -56,7 +57,7 @@ export class Sidebar {
    * @param {HTMLElement} workspace   The .workspace flex container
    * @param {object}      [options]
    * @param {'left'|'right'} [options.side]         Side placement (default: 'left')
-   * @param {string}      [options.storageKey]    localStorage key
+   * @param {string}      [options.storageKey]    prefs key
    * @param {number}      [options.defaultWidth]  Default sidebar width (px)
    * @param {number}      [options.minWidth]      Min sidebar width (px)
    * @param {number}      [options.maxWidth]      Max sidebar width (px)
@@ -314,7 +315,7 @@ export class Sidebar {
 
   _restoreWidth() {
     try {
-      const data = JSON.parse(localStorage.getItem(this._storageKey) || '{}');
+      const data = prefs.json<any>(this._storageKey, {});
       if (data.width) {
         const w = Math.max(this._minWidth, Math.min(this._maxWidth, data.width));
         document.documentElement.style.setProperty(this._cssProp, w + 'px');
@@ -330,11 +331,11 @@ export class Sidebar {
       const w = parseInt(
         getComputedStyle(document.documentElement).getPropertyValue(this._cssProp), 10,
       );
-      localStorage.setItem(this._storageKey, JSON.stringify({
+      prefs.setJson(this._storageKey, {
         width: w || this._defaultWidth,
         activePanel: this._activeId,
         collapsed: this._collapsed,
-      }));
+      });
     } catch { /* ignore */ }
   }
 }

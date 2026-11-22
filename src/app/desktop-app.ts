@@ -23,6 +23,7 @@ import { ClusterBrowserPanel } from '../ui/panels/ClusterBrowserPanel.ts';
 import { XcImportPanel } from '../ui/panels/XcImportPanel.ts';
 import { JobMonitorPanel } from '../ui/panels/JobMonitorPanel.ts';
 import { ExportPanel } from '../ui/panels/ExportPanel.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ function openDataset(dataset: Dataset): void {
     currentDataset = dataset;
     currentRecording = null;
 
-    try { localStorage.setItem('signavis:lastDatasetId', dataset.id); } catch { /* ignore */ }
+    prefs.set('signavis:lastDatasetId', dataset.id);
 
     updateTabState();
     refreshSidebar();
@@ -728,14 +729,14 @@ async function initConnectionUI(): Promise<void> {
 // ── Theme ─────────────────────────────────────────────────────────────
 
 function currentTheme(): 'dark' | 'light' {
-    const saved = localStorage.getItem('aw:theme');
+    const saved = prefs.get('aw:theme');
     if (saved === 'light' || saved === 'dark') return saved;
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
 function applyTheme(theme: 'dark' | 'light'): void {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('aw:theme', theme);
+    prefs.set('aw:theme', theme);
 }
 
 // ── Native menu ───────────────────────────────────────────────────────
@@ -886,7 +887,7 @@ async function boot(): Promise<void> {
 
     // Boot the datasets pane: load sidebar, then restore last dataset or show list
     const { datasetGet, datasetList } = await import('../infrastructure/tauri/TauriCorpusAdapter.ts');
-    const lastId = (() => { try { return localStorage.getItem('signavis:lastDatasetId'); } catch { return null; } })();
+    const lastId = prefs.get('signavis:lastDatasetId');
     const allDatasets = await datasetList().catch(() => []);
     await refreshSidebar(allDatasets);
 

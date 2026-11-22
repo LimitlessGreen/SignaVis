@@ -14,6 +14,7 @@ import {
 } from '../../domain/sun.ts';
 import type { Coords } from '../../app/recording-context.ts';
 import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 export type LightView = 'chart' | 'dial';
 const VIEW_KEY = 'aw.props.lightView';
@@ -384,7 +385,7 @@ export class SunCharts {
         sel.addEventListener('change', () => { this._offset = Number(sel.value); this.render(...this._last); });
         // View switch: charts (default) or dials, remembered
         let view: LightView = 'chart';
-        try { if (localStorage.getItem(VIEW_KEY) === 'dial') view = 'dial'; } catch {}
+        if (prefs.get(VIEW_KEY) === 'dial') view = 'dial';
         const seg = document.createElement('div');
         seg.className = 'sun-view-switch';
         seg.setAttribute('role', 'group');
@@ -396,7 +397,7 @@ export class SunCharts {
             b.title = tip;
             b.setAttribute('aria-pressed', String(v === view));
             b.addEventListener('click', () => {
-                try { localStorage.setItem(VIEW_KEY, v); } catch {}
+                prefs.set(VIEW_KEY, v);
                 this.render(...this._last);
             });
             seg.appendChild(b);

@@ -2,6 +2,7 @@
 // small reward animation and remembers a self-reported "I sponsored" so the
 // heart stays golden. GitHub does not tell us who sponsors, so we ask once
 // after the user comes back from the sponsor page.
+import { prefsStorage } from '../../infrastructure/storage/prefs.ts';
 
 export const SPONSOR_STORAGE_KEY = 'signavis.sponsor';
 
@@ -45,7 +46,7 @@ export function initSponsorCard(doc: Document = document): SponsorCardHandle | n
   const heart = doc.querySelector<HTMLElement>('.heart-link');
   if (!brand || !card || !heart) return null;
   const win = doc.defaultView ?? window;
-  const storage = (() => { try { return win.localStorage; } catch { return null; } })();
+  const storage = prefsStorage;
   const reducedMotion = () => win.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
   let state = readSponsorState(storage);

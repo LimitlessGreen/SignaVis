@@ -1,5 +1,5 @@
 /**
- * Persists user-defined tag options per preset key in localStorage.
+ * Persists user-defined tag options per preset key (prefs store).
  *
  * Usage:
  *   import { CustomTagStore } from './custom-tag-store.js';
@@ -7,6 +7,7 @@
  *   store.add('soundType', 'whistle');
  *   store.getMerged('soundType', ['song', 'call']); // [{value:'song',custom:false}, ..., {value:'whistle',custom:true}]
  */
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 const STORAGE_KEY = 'aw-custom-tag-options';
 
@@ -20,9 +21,7 @@ export class CustomTagStore {
 
   _load() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
+      const parsed = prefs.json<any>(STORAGE_KEY, {});
       if (typeof parsed !== 'object' || parsed === null) return {};
       // Validate: each key must map to an array of strings
       const clean: any = {};
@@ -36,9 +35,7 @@ export class CustomTagStore {
   }
 
   _save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this._data));
-    } catch { /* quota exceeded — silently ignore */ }
+    prefs.setJson(STORAGE_KEY, this._data);
   }
 
   _emitChange(action: any, key: any, info = {}) {
