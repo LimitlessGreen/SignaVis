@@ -51,27 +51,54 @@
     overflow: visible;
 }
 
-.frequency-labels span {
+/* Audacity-style ruler: ticks on the right edge, labels in kHz (unit once at the top). */
+.freq-tick {
     position: absolute;
-    right: 6px;
-    width: auto;
-    text-align: right;
-    --tick-pos: 50%;
+    right: 0;
+    width: 3px;
+    height: 1px;
+    background: var(--color-text-secondary);
+    opacity: 0.45;
+}
+
+.freq-tick--label {
+    width: 5px;
+    opacity: 1;
+}
+
+.freq-tick > span {
+    position: absolute;
+    right: 8px;
+    top: 0;
+    transform: translateY(-50%);
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-size: 0.62rem;
     line-height: 1;
     white-space: nowrap;
+    color: var(--color-text-secondary);
 }
 
-.frequency-labels span::after {
-    content: '';
+.freq-tick > span.freq-tick__text--bottom {
+    transform: translateY(-100%);
+}
+
+.freq-tick--major {
+    width: 7px;
+}
+
+.freq-tick--major > span {
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.freq-unit {
     position: absolute;
-    right: -6px;
-    top: var(--tick-pos);
-    width: 5px;
-    height: 1px;
-    background: var(--color-text-secondary);
-    opacity: 0.6;
+    top: 0;
+    right: 8px;
+    font-size: 0.55rem;
+    line-height: 1;
+    color: var(--color-text-secondary);
+    opacity: 0.8;
 }
 
 /* Vertical zoom reset button */
