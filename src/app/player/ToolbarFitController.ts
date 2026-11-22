@@ -11,6 +11,19 @@
 // Each resize starts again from level 0, so wide players get the zoom back.
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * An ignored readout whose text got longer or shorter since the last call (`seen` keeps the
+ * lengths). The readouts are monospace, so this is a width change without reading layout.
+ */
+export function readoutLengthChanged(seen: WeakMap<object, number>, node: Node): boolean {
+    const el = (node.nodeType === 1 ? node as Element : node.parentElement)?.closest('[data-fit-ignore]');
+    if (!el) return false;
+    const len = el.textContent?.length ?? 0;
+    const prev = seen.get(el);
+    seen.set(el, len);
+    return prev !== undefined && prev !== len;
+}
+
 export function ignoredForFit(node: Node): boolean {
     const el = node.nodeType === 1 ? node as Element : node.parentElement;
     return !!el?.closest('[data-fit-ignore]');
@@ -50,13 +63,16 @@ export class ToolbarFitController {
         if (typeof MutationObserver !== 'undefined') {
             // Live readouts ([data-fit-ignore], e.g. the playback time) change every frame
             // and keep their width; re-fitting on them forced several layouts per frame.
+            // They are monospace, so a change in text length (99:59.9 → 100:00.0) is a width change.
             this.#mo = new MutationObserver((records) => {
-                if (records.some((r) => !ignoredForFit(r.target))) this.#schedule();
+                if (records.some((r) => !ignoredForFit(r.target) || readoutLengthChanged(this.#readoutLength, r.target))) this.#schedule();
             });
             this.#mo.observe(this.#toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'], characterData: true });
         }
         this.#schedule();
     }
+
+    #readoutLength = new WeakMap<Element, number>();
 
     /** Re-check the fit (e.g. after the host added toolbar buttons). */
     refresh() { this.#schedule(); }
