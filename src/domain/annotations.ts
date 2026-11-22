@@ -289,8 +289,6 @@ class AnnotationLayerBase extends EventTarget {
     // ── Template-method hooks (override in subclass) ─────────────────
     /** CSS class name for the created overlay element. */
     get _overlayClassName() { return 'annotation-layer-base'; }
-    /** CSS selector matching all item elements within the overlay. */
-    get _itemElSelector() { return '.annotation-item'; }
     /** Return the DOM root element to mount the overlay into. */
     _getRoot(): HTMLElement | null { return null; }
     /** Subscribe player events. Called inside attach(), after overlay creation. */
@@ -549,13 +547,19 @@ class AnnotationLayerBase extends EventTarget {
         this._updateMultiSelectedVisual();
     }
 
-    _updateMultiSelectedVisual() {
+    /** Classes for the hovered (transient) and the selected (sticky) item. */
+    get _focusedClass() { return 'focused'; }
+    get _selectedClass() { return 'selected'; }
+
+    /** Toggle `cls` on every rendered item element by its id. */
+    _markRendered(cls: string, on: (id: string) => boolean) {
         if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll(this._itemElSelector)) {
-            const h = el as HTMLElement;
-            h.classList.toggle('multi-selected', this._multiSelectedIds.has(h.dataset?.id || ''));
-        }
+        for (const [id, el] of this._elById) el.classList.toggle(cls, on(id));
     }
+
+    _updateMultiSelectedVisual() { this._markRendered('multi-selected', (id) => this._multiSelectedIds.has(id)); }
+    _updateFocusedVisual() { this._markRendered(this._focusedClass, (id) => !!this._focusedLabelId && id === this._focusedLabelId); }
+    _updateSelectedVisual() { this._markRendered(this._selectedClass, (id) => !!this._selectedLabelId && id === this._selectedLabelId); }
 
     // ── Edit interaction shared finish ───────────────────────────────
     /**
@@ -635,7 +639,6 @@ export class AnnotationLayer extends AnnotationLayerBase {
     name: any;
     // ── Template-method overrides ────────────────────────────────────
     get _overlayClassName() { return 'annotation-layer'; }
-    get _itemElSelector() { return '.annotation-region'; }
 
     _getRoot() {
         return this.player?._state?.d?.waveformContent || this.player?.root?.querySelector('.waveform-content');
@@ -661,21 +664,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
         }));
     }
 
-    _updateFocusedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('annotation-region--focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
-        }
-    }
-
-    _updateSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.annotation-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('annotation-region--selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
-        }
-    }
+    get _focusedClass() { return 'annotation-region--focused'; }
+    get _selectedClass() { return 'annotation-region--selected'; }
 
     _bindInteractions(root: HTMLElement) { this._bindEditingInteractions(root); }
 
@@ -1156,7 +1146,6 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     // ── Template-method overrides ────────────────────────────────────
     get _overlayClassName() { return 'spectrogram-label-layer'; }
-    get _itemElSelector() { return '.spectrogram-label-region'; }
 
     _getRoot() {
         return this.player?._state?.d?.canvasWrapper || this.player?.root?.querySelector('.canvas-wrapper');
@@ -1293,23 +1282,6 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
 
     highlightActiveLabel(currentTime: number) { this._highlightActive(currentTime); }
 
-    /** Set .focused class on the currently hovered label element (transient). */
-    _updateFocusedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('focused', !!this._focusedLabelId && h.dataset?.id === this._focusedLabelId);
-        }
-    }
-
-    /** Set .selected class on the explicitly selected label element (sticky). */
-    _updateSelectedVisual() {
-        if (!this.overlay) return;
-        for (const el of this.overlay.querySelectorAll('.spectrogram-label-region')) {
-            const h = el as HTMLElement;
-            h.classList.toggle('selected', !!this._selectedLabelId && h.dataset?.id === this._selectedLabelId);
-        }
-    }
 
     render() {
         if (!this.overlay || !this.player) return;

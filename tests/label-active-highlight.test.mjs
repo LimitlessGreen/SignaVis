@@ -88,3 +88,19 @@ for (const Layer of [SpectrogramLabelLayer, AnnotationLayer]) {
         assert.equal(layer._renderedWindow, null);
     });
 }
+
+// ── Focus / selection visuals: one shared implementation, own class names per layer ──
+
+for (const [Layer, focused, selected] of [[SpectrogramLabelLayer, 'focused', 'selected'], [AnnotationLayer, 'annotation-region--focused', 'annotation-region--selected']]) {
+    test(`${Layer.name}: focus, selection and multi-selection mark the rendered elements`, () => {
+        const items = [{ id: 'a', start: 0, end: 1 }, { id: 'b', start: 2, end: 3 }, { id: 'c', start: 4, end: 5 }];
+        const layer = layerWith(Layer, items);
+        const has = (cls) => items.filter((i) => layer._elById.get(i.id).classList.contains(cls)).map((i) => i.id);
+        layer._focusedLabelId = 'a'; layer._updateFocusedVisual();
+        layer._selectedLabelId = 'b'; layer._updateSelectedVisual();
+        layer.setMultiSelected(['b', 'c']);
+        assert.deepEqual([has(focused), has(selected), has('multi-selected')], [['a'], ['b'], ['b', 'c']]);
+        layer._focusedLabelId = null; layer._updateFocusedVisual();
+        assert.deepEqual(has(focused), []);
+    });
+}
