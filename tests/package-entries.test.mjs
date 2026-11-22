@@ -35,3 +35,24 @@ test('signavis/core does not export the optional modules', () => {
     const leaked = OPTIONAL_VALUES.filter((k) => k in core);
     assert.deepEqual(leaked, []);
 });
+
+test('package.json exports follow scripts/package-entries.mjs', async () => {
+    const fs = await import('node:fs');
+    const { PACKAGE_ENTRIES } = await import('../scripts/package-entries.mjs');
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    for (const [name, e] of Object.entries(PACKAGE_ENTRIES)) {
+        const exp = pkg.exports[e.subpath];
+        assert.ok(exp, `package.json exports is missing ${e.subpath}`);
+        assert.equal(exp.import, `./dist/${name}.esm.js`, e.subpath);
+        assert.equal(exp.types, `./types/${e.types}.d.ts`, e.subpath);
+    }
+});
+
+test('signavis/label-table exports the feature; the full player knows it as an option', async () => {
+    const lt = await import('../src/label-table.ts');
+    assert.equal(typeof lt.labelTable, 'function');
+    assert.equal(lt.labelTable().name, 'labelTable');
+    assert.equal(typeof full.BirdNETPlayer.optionFeatures.labelTable, 'function');
+    assert.deepEqual(Object.keys(core.BirdNETPlayer.optionFeatures), []);
+    assert.ok(Object.getPrototypeOf(full.BirdNETPlayer) === core.BirdNETPlayer);
+});

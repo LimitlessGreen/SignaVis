@@ -27,6 +27,10 @@
       "import": "./dist/core.esm.js",
       "types": "./types/core.d.ts"
     },
+    "./label-table": {
+      "import": "./dist/label-table.esm.js",
+      "types": "./types/label-table.d.ts"
+    },
     "./iife": "./dist/birdnet-player.iife.js",
     "./style": {
       "types": "./types/style.d.ts",

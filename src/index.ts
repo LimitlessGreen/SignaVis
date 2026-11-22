@@ -5,6 +5,24 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 export * from './core.ts';
+export * from './label-table.ts';
+
+// The full entry's player knows every feature, so boolean options such as
+// { labelTable: true } work without passing features. A subclass, not a
+// registration at import time: bundlers may drop side effects of this file
+// (package.json sideEffects), a class they keep when it is used.
+import { BirdNETPlayer as CorePlayer } from './app/BirdNETPlayer.ts';
+import { labelTable } from './features/label-table.ts';
+
+const FULL_OPTION_FEATURES = {
+    labelTable: (player: CorePlayer) => labelTable({ columns: player.options.labelTableColumns }),
+};
+
+export class BirdNETPlayer extends CorePlayer {
+    // A getter, not a static field: nothing runs when the class is defined, so a
+    // host that imports only e.g. XenoCantoApiClient from 'signavis' drops the player.
+    static get optionFeatures() { return FULL_OPTION_FEATURES; }
+}
 
 // Xeno-canto
 export {

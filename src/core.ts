@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 export * from './app/BirdNETPlayer.ts';
+export type { PlayerFeature, OptionFeatureFactory } from './app/playerFeature.ts';
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from './domain/recordingTime.ts';
 
 // Events

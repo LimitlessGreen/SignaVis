@@ -29,7 +29,7 @@ import { EventBus } from '../shared/EventBus.ts';
 import type { LinkedLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
-import { LabelGrid } from '../ui/panels/label-grid.ts';
+import type { PlayerFeature, OptionFeatureFactory } from './playerFeature.ts';
 
 export type { LinkedLabel };
 
@@ -192,7 +192,10 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
-     *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set)
+     *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set).
+     *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
+     * @param {PlayerFeature[]} [options.features] - optional building blocks to install, e.g.
+     *   [labelTable()] from 'signavis/label-table' (see playerFeature.ts)
      */
     constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
@@ -268,7 +271,7 @@ export class BirdNETPlayer {
         if (Array.isArray(this.options.toolbar)) this._applyToolbarAllowList(this.options.toolbar);
         if (this.options.labelDisplay === 'focus') this.root?.classList.add('label-display-focus');
         if (this.options.labelDisplay === 'lanes') this.root?.classList.add('label-display-lanes');
-        if (this.options.labelTable) this._initBuiltinLabelTable();
+        this._installFeatures();
         if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
@@ -751,8 +754,10 @@ export class BirdNETPlayer {
     destroy() {
         this._liveRecorder?.cancel();
         this._liveView?.detach();
-        this._labelGrid?.destroy();
-        this._labelGrid = null;
+        for (const teardown of this._featureTeardowns.splice(0).reverse()) {
+            try { teardown(); } catch (e) { console.error('[signavis] feature teardown failed', e); }
+        }
+        this._features.clear();
         if (this._globalKeyHandler) {
             keyScope('label').removeEventListener('keydown', this._globalKeyHandler);
             this._globalKeyHandler = null;
@@ -1111,53 +1116,65 @@ export class BirdNETPlayer {
 
     get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }
 
-    // ── Built-in label table ────────────────────────────────────────
+    // ── Features (optional building blocks, see playerFeature.ts) ───
 
-    _labelGrid: LabelGrid | null = null;
+    /**
+     * Features a boolean option turns on, e.g. { labelTable: true }. Empty in
+     * 'signavis/core'; the full 'signavis' entry fills it with every feature.
+     */
+    static optionFeatures: Record<string, OptionFeatureFactory> = {};
 
-    _initBuiltinLabelTable() {
-        const host = this.enableLabelTable();
-        if (!host) return;
-        const grid = new LabelGrid({
-            host,
-            tools: this.getLabelTableTools(),
-            resolveName: (l: any) => ({
-                display: l.commonName || l.label || l.species || '',
-                scientific: l.scientificName && l.scientificName !== (l.commonName || l.label) ? l.scientificName : '',
-            }),
-            isLocked: (l: any) => this._readOnly || !!l.readonly,
-            getViewRange: () => this.getVisibleTimeRange(),
-            getDuration: () => this.duration,
-            getMaxFreq: () => (this._state?.audioBuffer?.sampleRate || 0) / 2,
-            onChange: () => {},
-            onFocus: (id: string) => {
-                const l = this._linkedLabels.get(id);
-                this._emit('labelfocus', { id, source: 'table', interaction: 'click' });
-                if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
-            },
-            onHover: (id: string | null) => this._emit('labelfocus', { id, source: 'table', interaction: 'hover' }),
-            onTogglePlay: () => this.togglePlayPause(),
-            columns: Array.isArray(this.options.labelTableColumns) ? this.options.labelTableColumns : undefined,
-            storageKey: 'signavis.labelgrid.embed.v1',
-        });
-        this._labelGrid = grid;
-        const refresh = () => grid.render([...this._linkedLabels.values()]);
-        this.on('labelsync', refresh);
-        this.on('timeupdate', (e: any) => grid.setPlayhead(e.detail?.currentTime ?? this.currentTime));
-        this.on('labelfocus', (e: any) => {
-            const d = e.detail || {};
-            if (d.source === 'table') return;
-            if (d.interaction === 'click') grid.highlightRow(d.id ?? null);
-            else grid.setHover(d.id ?? null);
-        });
-        refresh();
-        this.setLabelView('table');
+    _features = new Set<string>();
+    _featureTeardowns: Array<() => void> = [];
+
+    /** Install a feature now (after ready). Installing the same name again does nothing. */
+    use(feature: PlayerFeature): this {
+        if (this._features.has(feature.name)) return this;
+        this._features.add(feature.name);
+        const teardown = feature.install(this);
+        if (typeof teardown === 'function') this._featureTeardowns.push(teardown);
+        return this;
     }
+
+    /** True when a feature of that name is installed. */
+    hasFeature(name: string): boolean { return this._features.has(name); }
+
+    _installFeatures() {
+        for (const f of Array.isArray(this.options.features) ? this.options.features : []) this.use(f);
+        const byOption = (this.constructor as typeof BirdNETPlayer).optionFeatures;
+        for (const option of ['labelTable']) {
+            if (!this.options[option] || this._features.has(option)) continue;
+            const make = byOption[option];
+            if (make) this.use(make(this));
+            else console.warn(`[signavis] option ${option} needs its feature with 'signavis/core': `
+                + `import { ${option} } from 'signavis/${option.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}' `
+                + `and pass { features: [${option}()] }`);
+        }
+    }
+
+    // ── Read access for features and hosts ──────────────────────────
+
+    /** All labels (copies of the entries, in insertion order). */
+    getLabels(): LinkedLabel[] { return [...this._linkedLabels.values()].map((l) => ({ ...l })); }
+
+    /** One label by id (a copy), or null. */
+    getLabel(id: string): LinkedLabel | null {
+        const l = this._linkedLabels.get(id);
+        return l ? { ...l } : null;
+    }
+
+    /** Sample rate of the loaded audio (0 before loading). */
+    get sampleRate(): number { return this._state?.audioBuffer?.sampleRate || 0; }
+
+    /** Seek to a time in seconds, as a user seek (follow mode recentres). */
+    seekTo(seconds: number) { this._state?._seekToTime(seconds, true, { userInitiated: true }); }
+
+    /** Emit a player event (for features), e.g. emit('labelfocus', { id, source, interaction }). */
+    emit(event: PlayerEventName | string, detail: unknown = {}): void { this._emit(event, detail); }
 
     /** Select a label as if it was clicked: highlights it everywhere and scrolls it into view. */
     selectLabel(id: string | null) {
         this._emit('labelfocus', { id, source: 'api', interaction: 'click' });
-        this._labelGrid?.highlightRow(id);
         const l = id ? this._linkedLabels.get(id) : null;
         if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
     }

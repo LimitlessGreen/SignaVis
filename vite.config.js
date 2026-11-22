@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { versionDefines } from './scripts/build-version.mjs';
 import { resolve, dirname } from 'path';
 import { readFileSync } from 'fs';
+import { PACKAGE_ENTRIES } from './scripts/package-entries.mjs';
 
 // Library build only: Vite inlines every asset as base64 in lib mode, which
 // put the 510 kB aw-dsp WASM into the bundle three times (?url import plus
@@ -72,10 +73,9 @@ function dropWbgDefaultUrl() {
 // Two passes (npm run build): ESM with one file per package entry and shared
 // chunks, so hosts that import 'signavis/core' get only the core; then the IIFE
 // (a single script, so a single entry) from the full index.
-const ESM_ENTRIES = {
-    'birdnet-player': resolve(__dirname, 'src/index.ts'),
-    core: resolve(__dirname, 'src/core.ts'),
-};
+const ESM_ENTRIES = Object.fromEntries(
+    Object.entries(PACKAGE_ENTRIES).map(([name, e]) => [name, resolve(__dirname, e.src)]),
+);
 
 export default defineConfig(({ mode }) => {
   const IIFE = mode === 'iife';

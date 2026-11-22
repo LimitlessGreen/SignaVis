@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PACKAGE_ENTRIES } from './package-entries.mjs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -10,7 +11,6 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'signavis-types-'));
 const generatedDir = path.join(rootDir, 'types', 'generated');
-const indexFile = path.join(rootDir, 'types', 'index.d.ts');
 
 function collectDtsFiles(dir, out = []) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -61,9 +61,10 @@ try {
         '// Do not edit manually; regenerate with: npm run types:generate',
         '',
     ];
-    fs.writeFileSync(indexFile, [...header, "export * from './generated/index';", ''].join('\n'));
-    fs.writeFileSync(path.join(rootDir, 'types', 'core.d.ts'), [...header, "export * from './generated/core';", ''].join('\n'));
-
+    for (const { src, types } of Object.values(PACKAGE_ENTRIES)) {
+        const generated = src.replace(/^src\//, '').replace(/\.ts$/, '');
+        fs.writeFileSync(path.join(rootDir, 'types', `${types}.d.ts`), [...header, `export * from './generated/${generated}';`, ''].join('\n'));
+    }
     console.log('✅ types/index.d.ts generiert');
     console.log('✅ types/generated/*.d.ts aktualisiert');
 } finally {

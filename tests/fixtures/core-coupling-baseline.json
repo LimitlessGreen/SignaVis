@@ -23,16 +23,9 @@
     "app/suggest-similar.ts"
   ],
   "stillCoupled": [
-    "app/annotation-sets.ts",
-    "app/label-sources.ts",
-    "domain/annotaFields.ts",
     "domain/annotations.ts",
-    "infrastructure/export/labelTableFormats.ts",
-    "infrastructure/export/ravenSelectionTable.ts",
     "ui/components/label-editor/LabelEditorModal.ts",
     "ui/components/taxonomy-ui/species-ranking.ts",
-    "ui/components/taxonomy-ui/taxonomy-ui.ts",
-    "ui/panels/label-grid.ts",
-    "ui/panels/label-table.ts"
+    "ui/components/taxonomy-ui/taxonomy-ui.ts"
   ]
 }
