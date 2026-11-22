@@ -149,20 +149,20 @@ export class WasmSpectrogramService {
      * `sourceTag` tells apart different PCM renderings of one file (e.g. channel selections).
      */
     async open(file: File, params: StftParamsV2, onProgress?: (fraction: number, elapsedMs: number) => void,
-               source: Blob = file, sourceTag = '') {
+               source: Blob = file, sourceTag = '', cacheMaxBytes?: number) {
         this.onProgress = onProgress ?? null;
         const key = await storeKey(file, params, sourceVariant(file, source, sourceTag));
         const r = await this.request<{ meta: PyramidMeta; fromCache: boolean; persistent: boolean }>(
-            { type: 'open', file: source, params, key });
+            { type: 'open', file: source, params, key, cacheMaxBytes });
         this.onProgress = null;
         return { meta: r.meta, fromCache: r.fromCache, persistent: r.persistent, key };
     }
 
     /** Open a cached pyramid, or prepare a small, on-demand preview. */
-    async openPreview(file: File, params: StftParamsV2, source: Blob = file, sourceTag = '') {
+    async openPreview(file: File, params: StftParamsV2, source: Blob = file, sourceTag = '', cacheMaxBytes?: number) {
         const key = await storeKey(file, params, sourceVariant(file, source, sourceTag));
         return this.request<{ meta: PyramidMeta; fromCache: boolean }>(
-            { type: 'previewOpen', file: source, params, key });
+            { type: 'previewOpen', file: source, params, key, cacheMaxBytes });
     }
 
     /**

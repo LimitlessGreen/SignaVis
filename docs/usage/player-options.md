@@ -22,6 +22,7 @@
 | `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
 | `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
 | `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |
+| `spectrogramCacheMaxBytes` | number | `1073741824` | Cap for the on-disk (OPFS) spectrogram cache of long recordings, all recordings together; least recently used ones are removed first. `0` keeps the spectrogram in memory only |
 | ... | ... | ... | ... |
 
 See [Integration examples](integration.md) for usage in different frameworks.
