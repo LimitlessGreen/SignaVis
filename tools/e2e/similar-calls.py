@@ -57,7 +57,7 @@ with sync_playwright() as p:
     check('aw-peek--faded' not in bar.get_attribute('class'), 'hovering near the bar keeps it')
     page.mouse.move(cx, bb['y'] - 80); page.mouse.down(); page.mouse.move(cx, bb['y'] - 10, steps=4)
     check('aw-peek--faded' in bar.get_attribute('class') and bar.evaluate("e => getComputedStyle(e).pointerEvents") == 'none', 'a drag near the bar fades it')
-    page.mouse.move(cx, bb['y'] - 80, steps=4); page.mouse.up(); page.wait_for_timeout(150)
+    page.mouse.up(); page.wait_for_timeout(150)   # release while faded, next to the bar
     check('aw-peek--faded' not in bar.get_attribute('class'), 'bar back after the drag')
     page.mouse.move(bb['x'] + bb['width'] / 2, 20)
     page.keyboard.down('h'); page.wait_for_timeout(200)
