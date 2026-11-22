@@ -19,7 +19,7 @@ for (const [name, axis] of Object.entries(AXES)) {
             const ys = labels(ticks).map((f) => axis.toFrac(f) * height).sort((a, b) => a - b);
             assert.ok(ys.length >= 3, `only ${ys.length} labels`);
             for (let i = 1; i < ys.length; i++) assert.ok(ys[i] - ys[i - 1] >= 16 - 1e-6);
-            assert.ok(ys[0] >= 10 - 1e-6 && ys.at(-1) <= height + 1e-6);
+            assert.ok(ys[0] >= 16 - 1e-6 && ys.at(-1) <= height + 1e-6);
             const all = ticks.map((t) => axis.toFrac(t.hz) * height).sort((a, b) => a - b);
             for (let i = 1; i < all.length; i++) assert.ok(all[i] - all[i - 1] >= 6 - 1e-6);
         });

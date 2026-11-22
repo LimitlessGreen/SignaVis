@@ -26,7 +26,7 @@ export interface FreqTickParams {
     labelGap?: number;
     /** Minimum distance between minor ticks (and to labels) in px. */
     tickGap?: number;
-    /** Keep labels this far from the top edge (room for the unit). */
+    /** Keep labels this far from the top edge: the unit (~9px) plus half a label. */
     topReserve?: number;
 }
 
@@ -147,7 +147,7 @@ function layer(minHz: number, maxHz: number, y: (hz: number) => number, gap: num
 }
 
 export function computeFreqTicks({
-    height, minHz, maxHz, toFrac, labelGap = 16, tickGap = 6, topReserve = 10,
+    height, minHz, maxHz, toFrac, labelGap = 16, tickGap = 6, topReserve = 16,
 }: FreqTickParams): FreqTick[] {
     if (!(height > 0) || !(maxHz > minHz)) return [];
     const y = (hz: number) => toFrac(hz) * height;
