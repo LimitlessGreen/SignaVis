@@ -1,4 +1,6 @@
-/* Annotation component migrated incrementally from src/player.css */
+/* Waveform annotations: the same label language as the spectrogram (_label-tokens.scss),
+   time only — two edges + top border, name tag at the top, no fill. */
+@use "label-tokens" as *;
 
 .annotation-layer {
     position: absolute;
@@ -10,181 +12,144 @@
 }
 
 .annotation-region {
-    --annotation-color-fill: rgba(56, 189, 248, 0.18);
-    --annotation-color-edge: rgba(56, 189, 248, 0.9);
-    --annotation-color-soft: rgba(56, 189, 248, 0.45);
+    // Set per region from its set/species colour (annotations.ts)
+    --annotation-color-fill: transparent;
+    --annotation-color-edge: var(--label-default);
+    --annotation-color-soft: color-mix(in srgb, var(--label-c) 45%, transparent);
+    --label-c: var(--annotation-color-edge);
     appearance: none;
     -webkit-appearance: none;
-    -moz-appearance: none;
     position: absolute;
     top: 0;
     bottom: 0;
-    border: 1px solid var(--annotation-color-edge);
-    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.04)), var(--annotation-color-fill);
-    color: var(--color-text-primary);
-    border-radius: 2px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 4px;
-    padding: 2px 4px;
+    box-sizing: border-box;
+    border: var(--label-frame) solid var(--label-c);
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
+    background: none;
+    box-shadow: -1px 0 0 rgba(0, 0, 0, 0.55), 1px 0 0 rgba(0, 0, 0, 0.55);
+    color: var(--label-tag-text);
+    padding: 0;
     font-size: 10px;
     line-height: 1.1;
     cursor: pointer;
     pointer-events: auto;
-    overflow: hidden;
+    overflow: visible;
     white-space: nowrap;
 }
 
-.annotation-region.active {
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-    background: rgba(239, 68, 68, 0.25);
-}
-
-.annotation-region.multi-selected {
-    outline: 2px dashed rgba(56,189,248,0.9);
-    outline-offset: 1px;
-    box-shadow: 0 0 0 3px rgba(56,189,248,0.35);
-}
-
-.annotation-region.editing {
-    outline: 2px solid rgba(255,255,255,0.95);
-    outline-offset: -2px;
-}
-
-.annotation-region.linked-live {
-    outline: 2px solid var(--annotation-color-edge);
-    outline-offset: -2px;
-    box-shadow:
-        0 0 0 1px rgba(2, 6, 23, 0.85),
-        0 0 12px var(--annotation-color-soft),
-        inset 0 0 0 1px rgba(255,255,255,0.75);
-    background: var(--annotation-color-fill);
-    animation: linkedPulse 0.9s ease-in-out infinite;
-}
-
-.annotation-label {
+/* Name tag: inside at the top (the track has no room above), same chip as the spectrogram */
+.annotation-tag {
+    @include label-tag;
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    max-width: calc(100% - 4px);
     overflow: hidden;
-    text-overflow: ellipsis;
+    pointer-events: none;
+}
+.annotation-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.annotation-confidence { @include label-tag-sep; font-variant-numeric: tabular-nums; color: inherit; flex: none; }
+.annotation-ai-badge { @include label-tag-badge; pointer-events: none; }
+.annotation-lock { display: inline-flex; flex: none; svg { width: 9px; height: 11px; } }
+.annotation-lock-center { @include label-lock-center; }
+.annotation-region:hover .annotation-lock-center { display: flex; }
+
+/* Weight = state (no red "active", no fill) */
+.annotation-region:hover,
+.annotation-region--focused,
+.annotation-region.active,
+.annotation-region.editing { border-width: var(--label-frame-strong); border-bottom: 0; z-index: 3; }
+.annotation-region.active .annotation-tag::before {
+    width: 0;
+    height: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    border-left: 6px solid var(--label-c);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+.annotation-region--selected,
+.annotation-region.multi-selected {
+    border-width: var(--label-frame-strong);
+    border-bottom: 0;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 0 3px color-mix(in srgb, var(--label-c) 45%, transparent);
+    z-index: 4;
+    .annotation-tag { @include label-tag-selected; }
 }
 
-.annotation-confidence {
-    color: var(--color-text-secondary);
+/* Stroke = origin */
+// Detector boxes (BirdBox …) amber as in the spectrogram; time-only detections (BirdNET) keep
+// their species colour, like the lanes
+.annotation-region.suggestion { border-style: dashed; }
+.annotation-region.suggestion:not(.time-only) { --label-c: var(--label-suggestion); }
+.annotation-region.suggestion.annotation-region--similar { border-style: dotted; border-width: 2px; border-bottom: 0; }
+.annotation-region--readonly {
+    cursor: default;
+    border-width: 1px;
+    .annotation-tag { border: 1px dashed rgba(255, 255, 255, 0.5); background: rgba(2, 6, 23, 0.6); color: #cbd5e1; }
 }
+.annotation-region--locked { cursor: not-allowed; }
+.annotation-region--readonly .annotation-handle,
+.annotation-region--locked .annotation-handle { display: none !important; }
 
+/* Handles: left/right edge bars (time only), hover / focus / editing */
 .annotation-handle {
     position: absolute;
     top: 0;
     bottom: 0;
     width: 10px;
-    background: none;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    opacity: 1;
     cursor: ew-resize;
-    transform: none;
+    @include label-handle-edge(x);
+    &::after { opacity: 0; transition: opacity 0.15s; height: min(18px, 50%); }
 }
+.annotation-handle.handle-l { left: -6px; }
+.annotation-handle.handle-r { right: -6px; }
+.annotation-region:hover .annotation-handle::after,
+.annotation-region--focused .annotation-handle::after,
+.annotation-region.editing .annotation-handle::after { opacity: 1; }
 
-/* Hover focus (transient, from labelfocus interaction:'hover') */
-.annotation-region--focused {
-    outline: 1px solid rgba(255, 255, 255, 0.6);
-    outline-offset: -1px;
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
-    z-index: 3;
-}
-
-/* Click focus (sticky, from labelfocus interaction:'click') */
-.annotation-region--selected {
-    outline: 2px solid rgba(255, 255, 255, 0.9);
-    outline-offset: -2px;
-    box-shadow:
-        inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-        0 0 0 2px rgba(56, 189, 248, 0.7);
-    z-index: 4;
-}
-
-/* Subtle visual indicator on hover */
-.annotation-region:hover {
-    z-index: 2;
-}
-
-.annotation-region:hover .annotation-handle {
-    background: linear-gradient(180deg, transparent 5%, rgba(255,255,255,0.5) 25%, rgba(255,255,255,0.5) 75%, transparent 95%);
-}
-
-.annotation-handle.handle-l {
-    left: -5px;
-    cursor: ew-resize;
-}
-
-.annotation-handle.handle-r {
-    right: -5px;
-    cursor: ew-resize;
-}
-
-.annotation-handle.handle-t {
-    top: -5px;
-    left: 10px;
-    right: 10px;
-    height: 10px;
-    cursor: ns-resize;
-    transform: none;
-}
-
-.annotation-handle.handle-b {
-    bottom: -5px;
-    left: 10px;
-    right: 10px;
-    height: 10px;
-    cursor: ns-resize;
-    transform: none;
-}
-
-/* ── Readonly annotations (XC-imported, not editable) ── */
-.annotation-region--readonly {
-    cursor: default;
-    border-style: dashed;
-    opacity: 0.75;
-}
-.annotation-region--readonly:hover {
-    opacity: 0.9;
-}
-.annotation-region--readonly .annotation-handle {
-    display: none !important;
-}
-
-/* ── Locked annotations (set-level lock) ── */
-.annotation-region--locked {
-    cursor: not-allowed;
-    opacity: 0.75;
-}
-.annotation-region--locked:hover {
-    opacity: 0.9;
-}
-.annotation-region--locked .annotation-handle {
-    display: none !important;
-}
-
-.annotation-lock {
-    font-size: 9px;
-    line-height: 1;
-    opacity: 0.85;
-    margin-left: 2px;
+/* Guide line at the moving time edge (the spectrogram mirrors it) */
+.annotation-region.editing[data-edge="l"]::before,
+.annotation-region.editing[data-edge="r"]::before {
+    content: '';
+    position: absolute;
+    top: -4000px;
+    bottom: -4000px;
+    width: 0;
+    border-left: 1px dashed rgba(255, 255, 255, 0.55);
     pointer-events: none;
 }
+.annotation-region.editing[data-edge="l"]::before { left: -1px; }
+.annotation-region.editing[data-edge="r"]::before { right: -1px; }
 
-.annotation-ai-badge {
-    display: inline-block;
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1;
-    padding: 1px 3px;
-    border-radius: 2px;
-    background: rgba(99, 102, 241, 0.75);
-    color: #e0e7ff;
-    border: 1px solid rgba(165, 180, 252, 0.5);
-    vertical-align: middle;
+/* linked-live: mirror of a drag in the spectrogram */
+.annotation-region.linked-live { border-width: var(--label-frame-strong); border-bottom: 0; z-index: 5; }
+.annotation-region .linked-old {
+    position: absolute;
+    left: var(--old-x, 0px);
+    width: var(--old-w, 0px);
+    top: 0;
+    bottom: 0;
+    margin-left: calc(-1 * var(--label-frame-strong));
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-bottom: 0;
     pointer-events: none;
-    margin-left: 2px;
 }
+.annotation-region .linked-guide { display: none; }
+.annotation-region.linked-live[data-edge="l"] .linked-guide,
+.annotation-region.linked-live[data-edge="r"] .linked-guide {
+    display: block;
+    position: absolute;
+    top: -4000px;
+    bottom: -4000px;
+    width: 0;
+    border-left: 1px dashed rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+}
+.annotation-region.linked-live[data-edge="l"] .linked-guide { left: -2px; }
+.annotation-region.linked-live[data-edge="r"] .linked-guide { right: -1px; }
+.annotation-region.linked-edge-l { border-left-color: #fff; }
+.annotation-region.linked-edge-r { border-right-color: #fff; }

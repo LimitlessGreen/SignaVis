@@ -327,54 +327,17 @@ html.is-mobile {
   .m-q-go svg { width: 18px; height: 18px; }
 }
 
-/* BirdNET detections (time only, "lanes"; desktop _assignLanes stacks overlapping windows).
-   Phone viewer: each window is a thin bar in its species colour (--m-c, set by mobile-app.ts),
-   the name sits on the bar; the current window (under the playhead / tapped) shades its column.
-   Tripled class to win over the desktop lane rules. */
-html.is-mobile .m-player .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
-  --m-band: var(--m-c, var(--color-detection, #f59e0b));
-  overflow: visible;
-  border: none; border-image: none; outline: none;
-  border-width: 0 !important;    // _ui-clarity forces a dashed frame on locked labels
-  opacity: 1;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--m-band) 30%, rgba(0, 0, 0, 0.55));
-  box-shadow: inset 2px 0 0 var(--m-band), inset 0 -2px 0 var(--m-band);
-  transition: opacity 0.15s;
-
-  &::after {
-    left: 0; right: 0;
-    background: color-mix(in srgb, var(--m-band) 12%, transparent);
-    border-left: 1.5px solid var(--m-band);
-    border-right: 1.5px solid var(--m-band);
-  }
-  &::before { display: none; }   // confidence edge — the tag shows the number
-
-  .spectrogram-label-text {
-    display: inline-flex; align-items: center; gap: 4px;
-    width: max-content; max-width: 100%;
-    overflow: hidden; white-space: nowrap;
-    padding: 0 5px 0 6px; height: 100%;
-    background: transparent;
-    color: #fff;
-    font-size: 10.5px; font-weight: 700; line-height: 1;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-  }
-  .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .spectrogram-label-conf { flex: none; margin-left: 0; opacity: 0.85; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  .spectrogram-label-conf-meter { display: none; }
-
-  &.active, &.selected, &.focused {
-    z-index: 12;
-    background: var(--m-band);
-    .spectrogram-label-text { color: #0b0b10; text-shadow: none; }
-    &::after { opacity: 1; }
-  }
-  &.active:not(.selected):not(.focused)::after { background: transparent; }
+/* Labels on the phone use the shared label design (_label-tokens.scss, _spectrogram-labels.scss):
+   frame only, tag outside, stroke = origin. The phone only feeds the species colour (--m-c, set by
+   mobile-app.ts), makes the tag a little larger and drops hover-only parts (handles, buttons). */
+html.is-mobile .m-player .spectrogram-label-region {
+  --label-c: var(--m-c, var(--spectrogram-label-edge));
+  &.suggestion:not(.spectrogram-label-region--lane) { --label-c: var(--label-suggestion); }
+  .spectrogram-label-text { height: 19px; font-size: 11px; }
+  .label-handle, .label-actions { display: none !important; }
 }
-
-/* A species picked in the strip: the other species fade. */
-html.is-mobile .m-player .spectrogram-label-region.m-dim { opacity: 0.18 !important; }
+/* A species picked in the strip: the other species recede, but stay recognisable. */
+html.is-mobile .m-player .spectrogram-label-region.m-dim { opacity: var(--label-dimmed) !important; }
 
 
 /* ── Analyse screen ── */
@@ -415,47 +378,6 @@ html.is-mobile {
   .m-an-foot { padding: 10px 14px; border-top: 1px solid var(--m-line); flex-shrink: 0; }
   .m-cta { width: 100%; height: 48px; border: none; border-radius: 8px; background: var(--m-accent); color: var(--m-accent-ink); font-weight: 700; font-size: 14.5px; }
   .m-cta:disabled { opacity: 0.5; }
-}
-
-/* Boxes (BirdBox calls, own labels) as in the mockup: solid frame, light fill,
-   name tag above the box. Detections amber, own labels in their colour, selected blue. */
-html.is-mobile .m-player .spectrogram-label-region:not(.spectrogram-label-region--lane) {
-  --m-box: var(--m-c, var(--spectrogram-label-edge, var(--color-detection, #f59e0b)));
-  border: 2px solid var(--m-box) !important;
-  border-image: none !important;
-  border-radius: 4px;
-  outline: none;
-  opacity: 1;
-  background: color-mix(in srgb, var(--m-box) 8%, transparent);
-  box-shadow: none;
-  overflow: visible;
-
-  &.suggestion { --m-box: var(--m-c, var(--color-detection, #f59e0b)); }
-
-  // The solid !important frame above must not erase the origin, as on the desktop:
-  // imported / locked own labels dashed + muted, similar-call suggestions dotted.
-  // Machine detections (.suggestion) are locked too but keep their solid frame.
-  &.spectrogram-label-region--readonly,
-  &.spectrogram-label-region--locked:not(.suggestion) { border-style: dashed !important; opacity: 0.72; }
-  &.suggestion.spectrogram-label-region--similar { border-style: dotted !important; opacity: 0.75; }
-
-  .spectrogram-label-text {
-    position: absolute; left: -2px; top: -20px; bottom: auto;
-    display: inline-flex; align-items: center; gap: 4px;
-    height: 17px; padding: 0 6px;
-    width: max-content; max-width: none;
-    border-radius: 4px;
-    background: var(--m-box); color: #0b0b10;
-    font-size: 11px; font-weight: 700; line-height: 1;
-    text-shadow: none; border: 0;
-  }
-  .spectrogram-label-text.label-text-bottom { top: auto; bottom: -20px; }
-  .spectrogram-label-conf { margin-left: 0; opacity: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  .spectrogram-label-conf-meter, .spectrogram-label-meta, .label-handle,
-  .label-edit-btn, .label-delete-btn, .label-refcalls-btn, .label-accept-btn, .label-discard-btn { display: none !important; }
-
-  &.selected, &.focused { --m-box: var(--color-accent); background: color-mix(in srgb, var(--m-box) 10%, transparent); z-index: 12; }
-  &.selected .spectrogram-label-text, &.focused .spectrogram-label-text { color: #04111b; }
 }
 
 /* ── Species screen ── */

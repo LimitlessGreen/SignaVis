@@ -200,6 +200,8 @@ export class BirdNETPlayer {
      *   bounds as stacked strips along the top edge (the selected one also shades its time span);
      *   'focus' draws only the hovered or selected
      *   label on the spectrogram; the label tracks below show them all (default: boxes)
+     * @param {number}      [options.labelDenseLanes] - with 'lanes': from this many stacked lanes, the
+     *   unselected strips shrink to thin strokes and show their name only on hover (default: 5)
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
@@ -1817,6 +1819,8 @@ export class BirdNETPlayer {
             origin: l.origin || '',
             author: l.author || '',
             tags: l.tags || {},
+            // Time-only detections (BirdNET) keep their species colour in the waveform too
+            fullBand: (l as any).fullBand === true,
         };
     }
 

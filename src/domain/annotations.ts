@@ -243,6 +243,7 @@ class AnnotationLayerBase extends EventTarget {
     declare overlay: HTMLElement | null;
     declare _items: any[];
     declare _liveLinkedId: string | null;
+    _liveOrigin: any = null;
     declare _unsubs: Array<() => void>;
     declare _domCleanups: Array<() => void>;
     declare _editing: any | null;
@@ -538,7 +539,25 @@ class AnnotationLayerBase extends EventTarget {
 
     // ── Linked / Selection ───────────────────────────────────────────
     setLiveLinkedId(id: string | null = null): void {
+        // Remember where the mirrored label started: its old position stays visible as a thin
+        // line and the edge that moves glows (linked-live, see the label design plan).
+        if (id && id !== this._liveLinkedId) {
+            const item = (this._items as any[]).find((x) => x.id === id);
+            this._liveOrigin = item ? { ...item } : null;
+        } else if (!id) this._liveOrigin = null;
         this._liveLinkedId = id || null;
+    }
+
+    /** Time edges of the mirrored label that differ from where it started ('l', 'r'). */
+    _liveEdges(item: any): string[] {
+        const o = this._liveOrigin;
+        if (!o || !item) return [];
+        const out: string[] = [];
+        const moved = Math.abs(item.start - o.start) > 1e-6 && Math.abs((item.end - item.start) - (o.end - o.start)) < 1e-6;
+        if (moved) return out;   // a plain move: no single edge to highlight
+        if (Math.abs(item.start - o.start) > 1e-6) out.push('l');
+        if (Math.abs(item.end - o.end) > 1e-6) out.push('r');
+        return out;
     }
 
     setMultiSelected(ids: string[]): void {
@@ -611,6 +630,17 @@ class AnnotationLayerBase extends EventTarget {
             this.render();
         }
     }
+}
+
+/** Outline lock (no emoji): read-only / locked labels, in the name tag and on hover in the box. */
+const LOCK_SVG = '<svg viewBox="0 0 9 11" width="9" height="11" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1" y="4.8" width="7" height="5.4" rx="1"/><path d="M2.6 4.8V3.2a1.9 1.9 0 0 1 3.8 0v1.6"/></svg>';
+
+/** Dimensions chip while drawing / editing: "1.24 s · 2.1–4.8 kHz" (time only without a band). */
+export function formatLabelDims(l: { start: number; end: number; freqMin?: number; freqMax?: number; fullBand?: boolean }): string {
+    const dur = `${Math.abs((l.end ?? 0) - (l.start ?? 0)).toFixed(2)} s`;
+    if (l.fullBand || l.freqMin == null || l.freqMax == null) return dur;
+    const k = (hz: number) => (hz / 1000).toFixed(1);
+    return `${dur} · ${k(l.freqMin)}–${k(l.freqMax)} kHz`;
 }
 
 export class AnnotationLayer extends AnnotationLayerBase {
@@ -746,6 +776,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             const g = geometry(region);
             el.style.left = `${g.left}px`;
             el.style.width = `${g.width}px`;
+            if (region.id === this._liveLinkedId) this._placeLinkedLiveRegion(el, region, coords, pps);
             if (g.stacked) {
                 const pct = 100 / g.stacked.depth;
                 el.style.top = `${g.stacked.localRow * pct}%`;
@@ -784,6 +815,18 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._updateSelectedVisual();
     }
 
+    /** linked-live in the waveform: moving edge, old position, guide line (time only). */
+    _placeLinkedLiveRegion(el: HTMLElement, region: any, coords: any, pps: number) {
+        const edges = this._liveEdges(region);
+        el.classList.toggle('linked-edge-l', edges.includes('l'));
+        el.classList.toggle('linked-edge-r', edges.includes('r'));
+        el.dataset.edge = edges.includes('l') ? 'l' : edges.includes('r') ? 'r' : '';
+        const x = (t: number) => (coords ? coords.timeToScrollX(t) : t * pps);
+        const o = this._liveOrigin;
+        el.style.setProperty('--old-x', o ? `${x(o.start) - x(region.start)}px` : '0px');
+        el.style.setProperty('--old-w', o ? `${x(o.end) - x(o.start)}px` : '0px');
+    }
+
     _createRegionElement(region: any, pixelsPerSecond: number): HTMLElement {
         const coords = this.player?._state?.coords;
         const el = document.createElement('div');
@@ -803,6 +846,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.style.left = `${Math.max(0, left)}px`;
         el.style.width = `${Math.max(1, right - left)}px`;
         const colorStyle = getOverlayColorStyle(region.color);
+        if (region.fullBand) el.classList.add('time-only');
         if (colorStyle) {
             el.style.setProperty('--annotation-color-fill', colorStyle.fill);
             el.style.setProperty('--annotation-color-edge', colorStyle.edge);
@@ -817,16 +861,21 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
         const aiTag = region.aiSuggested ? `<span class="annotation-ai-badge" title="AI: ${escapeHtml(region.aiSuggested.model || '')} ${escapeHtml(region.aiSuggested.version || '')}">AI</span>` : '';
-        const lockIcon = (isLocked || region.readonly === true) ? `<span class="annotation-lock" title="${region.readonly ? 'Read-only (imported from XC)' : 'Locked'}">🔒</span>` : '';
+        const isMachine = el.classList.contains('suggestion');
+        const showLock = (region.readonly === true || (isLocked && !isMachine)) && (this.player as any)?._readOnly !== true;
+        const lockIcon = showLock ? `<span class="annotation-lock" title="${region.readonly ? 'Read-only (imported)' : 'Set locked – unlock to edit'}">${LOCK_SVG}</span>` : '';
+        const isLive = !!this._liveLinkedId && region.id === this._liveLinkedId;
+        // Same language as the spectrogram: name tag (lock · name · AI · confidence), no fill.
         el.innerHTML = `
-            <span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>
-            <span class="annotation-confidence">${confidenceStr}</span>
-            ${aiTag}${lockIcon}
+            <span class="annotation-tag">${lockIcon}<span class="annotation-label">${escapeHtml(region.species || 'Annotation')}</span>${aiTag}${confidenceStr ? `<span class="annotation-confidence">${confidenceStr}</span>` : ''}</span>
+            ${showLock ? `<span class="annotation-lock-center" aria-hidden="true">${LOCK_SVG}</span>` : ''}
+            ${isLive ? '<span class="linked-old" aria-hidden="true"></span><span class="linked-guide" aria-hidden="true"></span>' : ''}
             ${isBlocked ? '' : `
             <span class="annotation-handle handle-l" data-mode="resize-l"></span>
             <span class="annotation-handle handle-r" data-mode="resize-r"></span>
             `}
         `;
+        if (isLive) this._placeLinkedLiveRegion(el, region, coords, pixelsPerSecond);
 
         el.addEventListener('click', (event) => {
             if (performance.now() < this._suppressClickUntil) return;
@@ -919,6 +968,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
         };
+        // Which time edge moves: drives the guide line through both views
+        if (element?.dataset) element.dataset.edge = mode === 'resize-l' ? 'l' : mode === 'resize-r' ? 'r' : '';
         if (mode !== 'move') element.classList.add('editing');
     }
 
@@ -1065,6 +1116,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
             origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
             recordingId: annotation?.recordingId ?? null,
+            // Time-only detection (BirdNET): keeps its species colour (label design)
+            fullBand: annotation?.fullBand === true,
         };
     }
 }
@@ -1315,10 +1368,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             signature: (label) => this._signature(label, this._lockedIds.has(label.id), this._liveLinkedId === label.id,
                 this._lanes.has(label.id), p?.options?.labelConfidence === true, p?._readOnly === true),
             geometry: (label) => { const g = geoById.get(label.id)!; return `${g.left},${g.top},${g.width},${g.height},${height}`; },
-            create: (label) => this._createLabelElement(label, width, height),
+            create: (label) => {
+                const el = this._createLabelElement(label, width, height);
+                if (label.id === this._liveLinkedId) this._placeLinkedLive(el, label, geoById.get(label.id)!, width, height);
+                return el;
+            },
             place: (el, label) => {
                 const g = geoById.get(label.id)!;
                 this._setGeometry(el, g);
+                if (label.id === this._liveLinkedId) this._placeLinkedLive(el, label, g, width, height);
                 if (this._lanes.has(label.id)) el.style.setProperty('--lane-column', `${Math.max(0, height - g.top - g.height)}px`);
             },
         });
@@ -1391,12 +1449,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const dx = clamp(viewL - left, 0, Math.max(0, Math.min(w, viewR - left) - TEXT_W));
         const textEl = el.querySelector('.spectrogram-label-text') as HTMLElement | null;
         const atBottom = !!textEl?.classList.contains('label-text-bottom');
-        const compact = el.classList.contains('label-compact');
-        // Compact names sit above the box; if that is off-screen, put them inside.
-        const inside = compact && top < TEXT_H;
+        const lane = el.classList.contains('spectrogram-label-region--lane');
+        // Names sit outside, above the box (below it after a collision). If the space above is
+        // off-screen, the name goes inside at the top of the visible part.
+        const inside = !lane && !atBottom && top < TEXT_H + 4;
         let dy = 0;
-        if (atBottom && !compact) dy = -clamp(top + h - viewH, 0, Math.max(0, h - TEXT_H));
-        else if (!compact || inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
+        if (atBottom) dy = -clamp(top + h + TEXT_H + 4 - viewH, 0, Math.max(0, h + TEXT_H + 4));
+        else if (inside) dy = clamp(-top, 0, Math.max(0, h - TEXT_H));
         return { dx: Math.round(dx), dy: Math.round(dy), inside };
     }
     _applyPin(el: HTMLElement, { dx, dy, inside }: { dx: number; dy: number; inside: boolean }) {
@@ -1440,9 +1499,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const textWidth = clamp(geo.width * 0.7, 100, 200);
             let rect = {
                 left: geo.left,
-                top: geo.top,
+                top: geo.top - TEXT_H - 4,
                 right: geo.left + textWidth,
-                bottom: geo.top + TEXT_H,
+                bottom: geo.top - 4,
             };
 
             const collides = occupiedRects.some((r) =>
@@ -1454,9 +1513,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             if (collides) {
                 rect = {
                     left: geo.left,
-                    top: geo.top + geo.height - TEXT_H,
+                    top: geo.top + geo.height + 4,
                     right: geo.left + textWidth,
-                    bottom: geo.top + geo.height,
+                    bottom: geo.top + geo.height + TEXT_H + 4,
                 };
             }
 
@@ -1478,7 +1537,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
         // The one under review (similar-review.ts): stands out, and resizable for fine corrections
         if (label.origin === 'Similar' && (label as any).reviewing) el.classList.add('spectrogram-label-region--reviewing');
-        if (this._liveLinkedId && label.id === this._liveLinkedId) el.classList.add('linked-live');
+        const isLive = !!this._liveLinkedId && label.id === this._liveLinkedId;
+        if (isLive) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
 
@@ -1515,16 +1575,23 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             el.style.setProperty('--label-conf-color', `hsl(${Math.round(Math.max(0, Math.min(1, conf)) * 125)} 75% 52%)`);
         }
         const confHtml = showConf
-            ? ` <span class="spectrogram-label-conf"><span class="spectrogram-label-conf-meter" aria-hidden="true"></span>${Math.round(conf * 100)}<small>%</small></span>`
+            ? `<span class="spectrogram-label-conf"><span class="spectrogram-label-conf-meter" aria-hidden="true"></span>${Math.round(conf * 100)}<small>%</small></span>`
             : '';
         const aiTagHtml = label.aiSuggested ? `<span class="spectrogram-label-ai-badge" title="AI: ${escapeHtml(label.aiSuggested.model || '')} ${escapeHtml(label.aiSuggested.version || '')}">AI</span>` : '';
         // A read-only player has nothing to edit: a lock on every label would only be noise.
-        const lockIconHtml = isReadonly && (this.player as any)?._readOnly !== true ? `<span class="spectrogram-label-lock" title="Read-only (imported from XC)">🔒</span>` : '';
+        // Machine detections are locked too, but their dashed frame already says so.
+        const showLock = (isReadonly || (isLocked && !isSuggestion)) && (this.player as any)?._readOnly !== true;
+        const lockTitle = isReadonly ? 'Read-only (imported)' : 'Set locked – unlock to edit';
+        const lockIconHtml = showLock ? `<span class="spectrogram-label-lock" title="${lockTitle}">${LOCK_SVG}</span>` : '';
+        if (showLock) el.classList.add('label-has-lock');
+        // Name tag outside the box (snap-chip style): lock · name · AI · confidence.
+        // The centre lock only shows on hover (see _spectrogram-labels.scss).
         el.innerHTML = `
-            <span class="spectrogram-label-text"><span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${confHtml}</span>
-            ${label.fullBand ? '' : `<span class="spectrogram-label-meta">${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz</span>`}
-            ${aiTagHtml}${lockIconHtml}
+            <span class="spectrogram-label-text">${lockIconHtml}<span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${aiTagHtml}${confHtml}</span>
+            ${showLock ? `<span class="spectrogram-label-lock-center" aria-hidden="true">${LOCK_SVG}</span>` : ''}
+            ${isLive ? '<span class="linked-old" aria-hidden="true"></span><span class="linked-guide" aria-hidden="true"></span>' : ''}
             ${!isBlocked ? `
+            <span class="label-actions">
             <button class="label-refcalls-btn" type="button" title="Reference calls">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
@@ -1540,6 +1607,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                     <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                 </svg>
             </button>
+            </span>
             <span class="label-handle handle-tl" data-mode="resize-tl"></span>
             <span class="label-handle handle-tr" data-mode="resize-tr"></span>
             <span class="label-handle handle-bl" data-mode="resize-bl"></span>
@@ -1550,6 +1618,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             <span class="label-handle handle-b" data-mode="resize-b"></span>
             ` : ''}
             ${isSuggestion && !isReadonly && (this.player as any)?._readOnly !== true ? `
+            <span class="label-actions label-actions--suggestion">
             <button class="label-accept-btn" type="button" title="Accept label">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
@@ -1560,6 +1629,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
             </button>
+            </span>
             ` : ''}
         `;
 
@@ -1698,6 +1768,20 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         return el;
     }
 
+    /** linked-live: glowing moving edge, old position as a thin line, guide at the moving edge. */
+    _placeLinkedLive(el: HTMLElement, label: any, g: { left: number; top: number; width: number; height: number }, width: number, height: number) {
+        const edges = this._liveEdges(label);
+        el.classList.toggle('linked-edge-l', edges.includes('l'));
+        el.classList.toggle('linked-edge-r', edges.includes('r'));
+        el.dataset.edge = edges.includes('l') ? 'l' : edges.includes('r') ? 'r' : '';
+        el.dataset.dims = formatLabelDims(label);
+        const o = this._liveOrigin ? this._toGeometry(this._liveOrigin, width, height) : null;
+        el.style.setProperty('--old-x', o ? `${o.left - g.left}px` : '0px');
+        el.style.setProperty('--old-y', o ? `${o.top - g.top}px` : '0px');
+        el.style.setProperty('--old-w', o ? `${o.width}px` : `${g.width}px`);
+        el.style.setProperty('--old-h', o ? `${o.height}px` : `${g.height}px`);
+    }
+
     _applyGeometryToElement(el: HTMLElement, geometry: { left: number; top: number; width: number; height: number }) {
         this._setGeometry(el, geometry);
         if (el.isConnected) {
@@ -1711,11 +1795,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.style.top = `${geometry.top}px`;
         el.style.width = `${geometry.width}px`;
         el.style.height = `${geometry.height}px`;
-        // Small boxes: name + buttons go outside
+        // Small boxes: fewer handles. Tiny boxes show only a colour mark; the name appears on
+        // hover / selection (the tag would dwarf the box).
         const lane = el.classList.contains('spectrogram-label-region--lane');
         el.classList.toggle('label-compact', !lane && (geometry.width < 70 || geometry.height < 44));
-        // Only really tiny boxes drop the corner dots (12 px dots + edge strips need room)
-        el.classList.toggle('label-tiny', geometry.width < 40 || geometry.height < 30);
+        el.classList.toggle('label-tiny', !lane && (geometry.width < 40 || geometry.height < 30));
     }
 
 
@@ -1739,6 +1823,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             laneEnds[lane] = Math.max(laneEnds[lane] ?? 0, l.end);
             this._lanes.set(l.id, lane);
         }
+        // Dense mode: from this many stacked lanes, unselected strips shrink to thin strokes
+        const dense = Math.max(1, Number((this.player as any)?.options?.labelDenseLanes) || 5);
+        this.overlay?.classList?.toggle('label-lanes-dense', laneEnds.length >= dense);
     }
 
     _toGeometry(label: SpectrogramLabel | any, canvasWidth: number, canvasHeight: number) {
@@ -1810,7 +1897,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             el.style.setProperty('--ghost-color', colorStyle.edge);
             el.style.setProperty('--ghost-fill', colorStyle.fill);
         }
-        el.textContent = ref.label || 'Label';
+        // The label itself at half strength: same name tag as a real label
+        const name = ref.label || 'Label';
+        if (el.dataset.name !== name) {
+            el.dataset.name = name;
+            el.innerHTML = `<span class="spectrogram-label-text"><span class="spectrogram-label-name">${escapeHtml(name)}</span></span>`;
+        }
         el.classList.toggle('axis-locked', this._stampAxisLock);
     }
 
@@ -2274,6 +2366,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._draftEl.style.top = `${g.top}px`;
         this._draftEl.style.width = `${g.width}px`;
         this._draftEl.style.height = `${g.height}px`;
+        this._draftEl.dataset.dims = formatLabelDims(preview);
     }
 
     _finalizeDraft() {
@@ -2378,6 +2471,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             moved: mode !== 'move',
             forceSuppressClick: mode !== 'move',
         };
+        if (element?.dataset) {
+            element.dataset.dims = formatLabelDims(label);
+            // Which time edge moves: drives the guide line through both views
+            const m = String(mode).replace('resize-', '');
+            element.dataset.edge = mode === 'move' ? '' : (m.includes('l') ? 'l' : m.includes('r') ? 'r' : '');
+        }
         if (mode !== 'move') element.classList.add('editing');
     }
 
@@ -2505,8 +2604,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             editing.element.title = `${label.label || 'Label'} ${label.start.toFixed(2)}s–${label.end.toFixed(2)}s / ${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
             const geometry = this._toGeometry(label, width, height);
             this._applyGeometryToElement(editing.element, geometry);
-            const meta = editing.element.querySelector('.spectrogram-label-meta');
-            if (meta) meta.textContent = `${Math.round(label.freqMin ?? 0)}-${Math.round(label.freqMax ?? 0)} Hz`;
+            editing.element.dataset.dims = formatLabelDims(label);
         }
     }
 

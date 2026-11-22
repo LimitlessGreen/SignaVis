@@ -1274,7 +1274,8 @@ html[data-theme="light"] { @include sponsor-light; }
 .aw-peek--faded { opacity: 0.15; pointer-events: none; }
 body.aw-overlays-peek .aw-peek,
 body.aw-overlays-peek .spectrogram-label-text,
-body.aw-overlays-peek .spectrogram-label-meta,
+body.aw-overlays-peek .label-actions,
+body.aw-overlays-peek .annotation-tag,
 body.aw-overlays-peek .label-accept-btn,
 body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events: none !important; }
 

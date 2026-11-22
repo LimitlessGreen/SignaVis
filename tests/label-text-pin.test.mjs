@@ -45,6 +45,7 @@ test('compact box at the top edge shows its name inside', () => {
 });
 
 test('bottom name moves up when the box bottom is below the view', () => {
+    // The tag sits 4 px below the box (label design): bottom 400 + 4 + 16 → visible bottom 300
     const { vars } = setup({ bottom: true, viewH: 300, box: { left: 10, top: 200, width: 200, height: 200 } });
-    assert.equal(vars['--label-text-dy'], '-100px');
+    assert.equal(vars['--label-text-dy'], '-120px');
 });
