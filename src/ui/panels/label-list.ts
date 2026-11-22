@@ -34,6 +34,7 @@ const PRESET_KEYS = new Set(TAG_PRESETS.map((p) => p.key));
 const SET_TAG_KEYS = new Set(['setName', 'setLicense', 'setCreator']);
 const HIDDEN_TAG_KEYS = new Set(['annotator', ...ANNOTA_FIELD_KEYS]);
 const VIEW_KEY = 'signavis.labels.view.v1';
+const TIME_LIST_CHUNK = 150;   // time view: rows built per scroll step
 
 export interface LayerOptions {
   get: () => { layers: { id: string; name: string; annotator?: string }[]; active: string; hidden: Set<string> };
@@ -119,6 +120,7 @@ export class LabelList {
     _cardMap: any;
     /** Closed group per label id whose rows are not built yet (see _buildGroup). */
     _lazyGroupOf = new Map<any, any>();
+    _timeObserver: IntersectionObserver | null = null;
     /** Every label id in list order, built or not (range selection). */
     _rowOrder: any[] = [];
     /** Index of each label in this._labels at render time. */
@@ -428,18 +430,49 @@ export class LabelList {
     }
   }
 
+  /**
+   * Flat list by time. Rows are built in chunks as the list scrolls (a sentinel after the last
+   * built row), or on demand up to a row that is needed (selection, hover: _rowFor). Building
+   * all of them took ~175 ms and 66k nodes for 3000 labels on every change.
+   */
   _renderTime(visible: any[]) {
+    this._timeObserver?.disconnect();
+    this._timeObserver = null;
     const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
     const list = el('div', 'lt-time-list');
-    for (const lbl of visible.slice().sort((a, b) => a.start - b.start)) {
-      const { key, info } = this._setKeyOf(lbl, setsRegistry);
-      const origin = info?.origin || lbl.origin || 'manual';
-      const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
-      if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
-      list.appendChild(row);
+    const sorted = visible.slice().sort((a, b) => a.start - b.start);
+    const sentinel = el('div', 'lt-time-more');
+    let built = 0;
+    const buildUpTo = (end: number) => {
+      end = Math.min(sorted.length, end);
+      for (; built < end; built++) {
+        const lbl = this._currentLabel(sorted[built]);
+        const { key, info } = this._setKeyOf(lbl, setsRegistry);
+        const origin = info?.origin || lbl.origin || 'manual';
+        const row = this._buildRow(lbl, this._isLocked(info), { flat: true, origin, external: origin !== 'manual' });
+        if (this._hiddenSetIds.has(key)) row.classList.add('lt-row--hidden');
+        this._decorateRow(lbl.id, row);
+        list.insertBefore(row, sentinel);
+        this._lazyGroupOf.delete(lbl.id);
+      }
+      if (built >= sorted.length) { sentinel.remove(); this._timeObserver?.disconnect(); }
+    };
+    list.appendChild(sentinel);
+    sorted.forEach((lbl, i) => {
       this._rowOrder.push(lbl.id);
-    }
+      this._lazyGroupOf.set(lbl.id, { __buildRows: () => buildUpTo(i + 1) });
+    });
+    buildUpTo(TIME_LIST_CHUNK);
     this._container.appendChild(list);
+    if (built < sorted.length) {
+      if (typeof IntersectionObserver === 'undefined') buildUpTo(sorted.length);
+      else {
+        this._timeObserver = new IntersectionObserver((entries) => {
+          if (entries.some((e) => e.isIntersecting)) buildUpTo(built + TIME_LIST_CHUNK);
+        }, { rootMargin: '400px 0px' });
+        this._timeObserver.observe(sentinel);
+      }
+    }
   }
 
   // ── Source block ──────────────────────────────────────────────────
