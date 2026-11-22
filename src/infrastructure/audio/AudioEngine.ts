@@ -605,8 +605,6 @@ export class AudioEngine extends AudioEngineBase {
           playback.rafId = requestAnimationFrame(onFrame);
           return;
         }
-        // The throttle may have dropped the last frame: the end position always reaches listeners
-        this._emit('timeupdate', { currentTime: playback.endSec, duration: this.audioBuffer?.duration || 0 });
         this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
         return;
       }
@@ -1211,6 +1209,11 @@ export class AudioEngine extends AudioEngineBase {
       // Detector playback of the whole file resumes from here.
       if (active.full) this.wavesurfer?.setTime(targetTimeSec as number);
       this._emit('uiupdate', { time: targetTimeSec as number, fromPlayback: false, immediate: true });
+    }
+    // Reaching the end (frame handler or source onended): the throttle may have dropped the last
+    // frame, so the end position always reaches label highlight, table and grid
+    if (options?.emitEnd && Number.isFinite(targetTimeSec as number)) {
+      this._emit('timeupdate', { currentTime: targetTimeSec as number, duration: this.audioBuffer?.duration || 0 });
     }
     this._emit('pause', {});
     const paused = reason === 'paused';

@@ -249,3 +249,24 @@ test('AudioEngine: _emitPlaybackTimeupdate emits throttled timeupdate (used by b
     assert.deepEqual(seen.at(-1), { currentTime: 2, duration: 10 });
     assert.equal(seen.length, 2);
 });
+
+test('AudioEngine: segment end through source onended still emits the end position', () => {
+    const engine = new AudioEngine(MOCK_WS_CTOR);
+    engine.audioBuffer = fakeAudioBuffer(10);
+    const seen = [];
+    engine.addEventListener('timeupdate', (e) => seen.push(e.detail));
+    // As when onended runs before the next frame: no frame emitted the end
+    engine._customSegmentPlayback = { full: false, rafId: 0, source: null, gain: { disconnect() {} }, ctx: { close() {} } };
+    engine._stopCustomSegmentPlayback('stopped', 4.2, { emitEnd: true });
+    assert.deepEqual(seen.at(-1), { currentTime: 4.2, duration: 10 });
+});
+
+test('AudioEngine: pausing a segment emits no extra timeupdate', () => {
+    const engine = new AudioEngine(MOCK_WS_CTOR);
+    engine.audioBuffer = fakeAudioBuffer(10);
+    const seen = [];
+    engine.addEventListener('timeupdate', (e) => seen.push(e.detail));
+    engine._customSegmentPlayback = { full: false, rafId: 0, source: null, gain: { disconnect() {} }, ctx: { close() {} } };
+    engine._stopCustomSegmentPlayback('paused', 3);
+    assert.equal(seen.length, 0);
+});
