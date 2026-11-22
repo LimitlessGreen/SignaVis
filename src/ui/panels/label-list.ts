@@ -356,6 +356,10 @@ export class LabelList {
     this._labels = labels;
     const idSet = new Set(labels.map((l: any) => l.id));
     for (const id of this._multiSelectedIds) if (!idSet.has(id)) this._multiSelectedIds.delete(id);
+    // A queued intersection entry of an older time view must not build into this render (any view)
+    this._timeObserver?.disconnect();
+    this._timeObserver = null;
+    this._timeRenderToken++;
     this._container.innerHTML = '';
     this._container.classList.toggle('lt-view-time', this._view === 'time');
     this._cardMap = new Map();
@@ -437,10 +441,7 @@ export class LabelList {
    * all of them took ~175 ms and 66k nodes for 3000 labels on every change.
    */
   _renderTime(visible: any[]) {
-    this._timeObserver?.disconnect();
-    this._timeObserver = null;
-    // A queued intersection entry of an older render must not build into this one
-    const token = ++this._timeRenderToken;
+    const token = this._timeRenderToken;
     const setsRegistry: Map<string, any> = this._getSets ? this._getSets() : new Map();
     const list = el('div', 'lt-time-list');
     const sorted = visible.slice().sort((a, b) => a.start - b.start);

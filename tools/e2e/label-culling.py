@@ -80,8 +80,15 @@ with sync_playwright() as p:
       stale();
       const row = L._cardMap.get(id);
       const out = { lazyKept: L._lazyGroupOf.has(id), rowOk: !row || row.isConnected };
+      // time → sources: a stale build must not touch the sources view either
+      L._view = 'time'; L.render(L._labels);
+      const lazy2 = [...L._lazyGroupOf.keys()], id2 = lazy2[lazy2.length - 1], stale2 = L._lazyGroupOf.get(id2).__buildRows;
+      L._view = 'sources'; L.render(L._labels);
+      const before = new Map(L._cardMap), lazyBefore = L._lazyGroupOf.size;
+      stale2();
+      out.sourcesUntouched = L._lazyGroupOf.size === lazyBefore && [...L._cardMap].every(([k, v]) => before.get(k) === v) && L._cardMap.size === before.size;
       L._view = 'sources'; L.render(L._labels); return out; }""")
-    check('label list time view: a superseded render builds nothing into the current one', r['lazyKept'] and r['rowOk'], str(r))
+    check('label list time view: a superseded render builds nothing into the current one', r['lazyKept'] and r['rowOk'] and r['sourcesUntouched'], str(r))
     r = page.evaluate("""async () => { const sv = window.__signavis; const seg = () => document.querySelector('.overview-label-segment[data-id="c3"]');
       const before = seg(); sv.propsPanel.onChange('c3', { note: 'x' }); await new Promise(r => setTimeout(r, 300)); return before && before === seg(); }""")
     check('overview: note edit keeps the segments', r)
