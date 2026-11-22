@@ -24,3 +24,9 @@ test('lane strips do not hide their action buttons', () => {
 test('lane actions sit in a row next to the strip, not a column over the lanes below', () => {
     assert.ok(laneActionRules().some((d) => /flex-direction:\s*row/.test(d)));
 });
+
+test('on a suggestion strip the other buttons sit after ✓ ✗, not under them', () => {
+    const m = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, sel]) =>
+        /region--lane[^,]*\.suggestion \.label-actions:not\(\.label-actions--suggestion\)/.test(sel));
+    assert.ok(m && /left:\s*calc\(100% \+ 48px\)/.test(m[2]), m?.[0]);
+});

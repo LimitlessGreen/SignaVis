@@ -582,6 +582,8 @@
         flex-direction: row;
         top: -1px;
     }
+    // Suggestion: ✓ ✗ first, the other buttons (♪) after them in the same row
+    &.suggestion .label-actions:not(.label-actions--suggestion) { left: calc(100% + 48px); }
 }
 
 /* Dense mode (from N stacked lanes, player option labelDenseLanes, default 5): unselected strips

@@ -72,5 +72,6 @@ test('buttons right of a box past the visible right edge move left into view', (
     layer.overlay = { offsetHeight: 300 };
     layer._pinLabelText(el);
     // right edge 2100 + 4 + 42 must end at the view's right edge 500
-    assert.equal(vars['--label-actions-dx'], '-1646px');
+    // lane: right edge 2100 + 4 + (42 + 4 gap) must end at the view's right edge 500
+    assert.equal(vars['--label-actions-dx'], '-1650px');
 });

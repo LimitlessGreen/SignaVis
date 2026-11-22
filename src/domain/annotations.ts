@@ -1465,7 +1465,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         // Buttons sit right of the box: past the visible right edge they move left into view
         const actions = el.querySelectorAll('.label-actions');
         let actW = 0;
-        actions.forEach((a) => { actW = Math.max(actW, (a as HTMLElement).offsetWidth || 0); });
+        // stacked in boxes (widest counts), side by side on lane strips (all count)
+        actions.forEach((a) => { const aw = (a as HTMLElement).offsetWidth || 0; actW = lane ? actW + aw + 4 : Math.max(actW, aw); });
         const ax = actW ? clamp(left + w + 4 + actW - viewR, 0, w + 4 + actW) : 0;
         return { dx: Math.round(dx), dy: Math.round(dy), inside, ax: Math.round(ax) };
     }
