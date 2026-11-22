@@ -1,8 +1,9 @@
 {
-  "_comment": "gzip bytes per published file; checked in CI after the build (scripts/check-bundle-size.mjs)",
+  "_comment": "gzip bytes per published entry (ESM: entry + statically imported chunks); checked in CI after the build (scripts/check-bundle-size.mjs)",
   "gzip": {
-    "birdnet-player.esm.js": 165122,
-    "birdnet-player.iife.js": 163891,
+    "birdnet-player.esm.js": 171875,
+    "core.esm.js": 159366,
+    "birdnet-player.iife.js": 165029,
     "birdnet-player.css": 52178
   }
 }

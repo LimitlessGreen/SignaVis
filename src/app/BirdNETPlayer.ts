@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // BirdNETPlayer.ts - Public API for the BirdNET Audio Player module
 //
+// Package entries: src/index.ts (everything) and src/core.ts (player only).
+//
 // Usage:
-//   import { BirdNETPlayer } from './BirdNETPlayer.ts';
+//   import { BirdNETPlayer } from 'signavis';
 //   const player = new BirdNETPlayer(document.getElementById('root'));
 //   await player.ready;
 //   await player.loadUrl('https://example.com/audio.wav');
@@ -79,26 +81,9 @@ const DEFAULT_LABEL_TAXONOMY = [
 ];
 
 export { DEFAULT_OPTIONS };
-export {
-    DEFAULT_XC_ENDPOINT,
-    XenoCantoApiClient,
-    XenoCantoApiError,
-    buildXenoCantoAnnotationSet,
-} from '../infrastructure/xeno-canto/xenoCantoApi.ts';
-export {
-    DEFAULT_XC_RECORDINGS_ENDPOINT,
-    normalizeXcId,
-    getRecordingScientificName,
-    fetchXenoCantoRecording,
-    extractXenoCantoRawLabels,
-    mapXenoCantoLabelsToSpectrogram,
-    importXenoCantoSpectrogramLabels,
-} from '../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
-export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
 import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
 import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
-export { LiveRecorder, encodeWav, recordingFileName, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Load the recording into the player when it stops (default true). */
@@ -106,8 +91,6 @@ export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Seconds across the live view (default 20). */
     spanSeconds?: number;
 }
-export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
-export { BirdNETInference, BIRDNET_MODEL_URL, BIRDNET_V24_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 /** Copy of `tags` without empty values. */
 function cleanTags(tags: Record<string, string> | null | undefined): Record<string, string> {

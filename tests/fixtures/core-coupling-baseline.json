@@ -1,6 +1,6 @@
 {
   "_comment": "Optional modules the player core still pulls in statically. Shrinks as they become plugins (plans/modular-architecture-plan.md in SignaVis-lab). Never add to this list: load the module lazily or through a plugin instead.",
-  "entry": "src/app/BirdNETPlayer.ts",
+  "entry": "src/core.ts",
   "optional": [
     "domain/annotations",
     "domain/annotaFields.ts",
@@ -28,14 +28,8 @@
     "domain/annotaFields.ts",
     "domain/annotations.ts",
     "infrastructure/audio/LiveRecorder.ts",
-    "infrastructure/birdnetInference.ts",
     "infrastructure/export/labelTableFormats.ts",
     "infrastructure/export/ravenSelectionTable.ts",
-    "infrastructure/taxonomyResolver.ts",
-    "infrastructure/xeno-canto/annotaPayload.ts",
-    "infrastructure/xeno-canto/xcHelpers.ts",
-    "infrastructure/xeno-canto/xenoCantoApi.ts",
-    "infrastructure/xeno-canto/xenoCantoRecordingsApi.ts",
     "ui/components/label-editor/LabelEditorModal.ts",
     "ui/components/live-view/live-spectrogram-view.ts",
     "ui/components/taxonomy-ui/species-ranking.ts",
