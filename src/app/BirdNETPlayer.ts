@@ -202,6 +202,8 @@ export class BirdNETPlayer {
      *   label on the spectrogram; the label tracks below show them all (default: boxes)
      * @param {number}      [options.labelDenseLanes] - with 'lanes': from this many stacked lanes, the
      *   unselected strips shrink to thin strokes and show their name only on hover (default: 5)
+     * @param {number}      [options.labelDenseRows] - waveform: from this many stacked rows of label
+     *   heads, the unselected ones shrink to thin strokes (default: 5)
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.

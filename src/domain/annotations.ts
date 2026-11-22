@@ -213,31 +213,6 @@ function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
     return true;
 }
 
-/**
- * Stacking inside overlap clusters of time regions. `sorted` is ordered by start; a cluster
- * is a run of regions that overlap directly or transitively. Each region of a cluster that
- * spans two or more swimlane rows gets the cluster depth and its row index within it.
- */
-export function overlapClusterLayout(sorted: Array<{ id: string; start: number; end: number }>, rowMap: Map<string, number>) {
-    const localLayout = new Map<string, { depth: number; localRow: number }>();
-    const flush = (members: Array<{ id: string; row: number }>) => {
-        if (members.length < 2) return;
-        const rowsSorted = [...new Set(members.map((m) => m.row))].sort((a, b) => a - b);
-        const depth = rowsSorted.length;
-        if (depth < 2) return;
-        for (const m of members) localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
-    };
-    let members: Array<{ id: string; row: number }> = [];
-    let maxEnd = -Infinity;
-    for (const r of sorted) {
-        if (members.length && r.start >= maxEnd) { flush(members); members = []; maxEnd = -Infinity; }
-        members.push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
-        maxEnd = Math.max(maxEnd, r.end);
-    }
-    flush(members);
-    return localLayout;
-}
-
 class AnnotationLayerBase extends EventTarget {
     declare player: any;
     declare overlay: HTMLElement | null;
@@ -761,39 +736,37 @@ export class AnnotationLayer extends AnnotationLayerBase {
         // cluster ends where a region starts at or after the running max end,
         // so one sweep finds them (the former pairwise union-find was O(n·overlaps)).
         // Isolated regions or non-overlapping clusters keep independent sizing.
-        const localLayout = totalRows > 1 ? overlapClusterLayout(sorted, rowMap) : new Map<string, { depth: number; localRow: number }>();
-
-        // Keyed update (see _reconcile): one changed region rebuilds one element.
+        // Heads as time bars stacked in rows at the top (label design): the bar length is the time
+        // span, the waveform below stays free. The selected / hovered region shows its span below
+        // (CSS column, --col-h). From labelDenseRows rows on (default 5), unselected heads shrink
+        // to thin strokes, as the spectrogram lanes do.
         const p = this.player as any;
+        const denseFrom = Math.max(1, Number(p?.options?.labelDenseRows) || 5);
+        const dense = totalRows >= denseFrom;
+        this.overlay.classList.toggle('annotation-dense', dense);
+        const ROW_H = dense ? 5 : 17;
+        const trackH = this.overlay.clientHeight || 0;
         const geometry = (region: any) => {
             const left = coords ? coords.timeToScrollX(region.start) : region.start * pps;
             const right = coords ? coords.timeToScrollX(region.end) : region.end * pps;
-            const layout = localLayout.get(region.id);
-            const stacked = layout && layout.depth > 1 ? layout : null;
-            return { left: Math.max(0, left), width: Math.max(1, right - left), stacked };
+            const row = rowMap.get(region.id) ?? 0;
+            return { left: Math.max(0, left), width: Math.max(1, right - left), top: row * ROW_H };
         };
         const place = (el: HTMLElement, region: any) => {
             const g = geometry(region);
             el.style.left = `${g.left}px`;
             el.style.width = `${g.width}px`;
+            el.style.top = `${g.top}px`;
+            el.style.setProperty('--col-top', `${g.top}px`);
+            el.style.setProperty('--track-h', `${trackH}px`);
             if (region.id === this._liveLinkedId) this._placeLinkedLiveRegion(el, region, coords, pps);
-            if (g.stacked) {
-                const pct = 100 / g.stacked.depth;
-                el.style.top = `${g.stacked.localRow * pct}%`;
-                el.style.height = `${pct}%`;
-                el.style.bottom = 'auto';
-            } else {
-                el.style.top = '';
-                el.style.height = '';
-                el.style.bottom = '';
-            }
         };
         this._reconcile(this._itemsToRender(this._items as any[]), {
             signature: (region) => this._signature(region, this._lockedIds.has(region.id), this._liveLinkedId === region.id,
                 p?._readOnly === true),
             geometry: (region) => {
                 const g = geometry(region);
-                return `${g.left},${g.width},${g.stacked ? `${g.stacked.depth}/${g.stacked.localRow}` : ''}`;
+                return `${g.left},${g.width},${g.top},${trackH}`;
             },
             create: (region) => { const el = this._createRegionElement(region, pps); place(el, region); return el; },
             place,
