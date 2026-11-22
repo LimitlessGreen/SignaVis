@@ -523,6 +523,30 @@ class AnnotationLayerBase extends EventTarget {
         this._liveLinkedId = id || null;
     }
 
+    /**
+     * Dense labels: from this many stacked rows (spectrogram lanes, waveform heads), unselected
+     * labels shrink to thin strokes. Settings select (remembered) > player option > 5.
+     */
+    _denseFrom(optionKey: string): number {
+        const p = this.player as any;
+        const sel = ((p?._state?.d?.labelDenseSelect) ?? p?.root?.querySelector?.('[data-aw="labelDenseSelect"]')) as HTMLSelectElement | null;
+        const fromOption = Math.max(1, Number(p?.options?.[optionKey]) || 5);
+        if (!sel) return fromOption;
+        if (!sel.dataset.awBound) {
+            sel.dataset.awBound = '1';
+            let stored: string | null = null;
+            try { stored = localStorage.getItem('aw-label-dense'); } catch { /* storage blocked */ }
+            sel.value = stored ?? String(fromOption);
+            if (!sel.value) sel.value = '5';
+            sel.addEventListener('change', () => {
+                try { localStorage.setItem('aw-label-dense', sel.value); } catch { /* storage blocked */ }
+                p?.spectrogramLabels?.render?.();
+                p?.annotations?.render?.();
+            });
+        }
+        return Math.max(1, Number(sel.value) || fromOption);
+    }
+
     /** Time edges of the mirrored label that differ from where it started ('l', 'r'). */
     _liveEdges(item: any): string[] {
         const o = this._liveOrigin;
@@ -741,7 +765,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         // (CSS column, --col-h). From labelDenseRows rows on (default 5), unselected heads shrink
         // to thin strokes, as the spectrogram lanes do.
         const p = this.player as any;
-        const denseFrom = Math.max(1, Number(p?.options?.labelDenseRows) || 5);
+        const denseFrom = this._denseFrom('labelDenseRows');
         const dense = totalRows >= denseFrom;
         this.overlay.classList.toggle('annotation-dense', dense);
         const ROW_H = dense ? 5 : 17;
@@ -1557,10 +1581,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const lockTitle = isReadonly ? 'Read-only (imported)' : 'Set locked – unlock to edit';
         const lockIconHtml = showLock ? `<span class="spectrogram-label-lock" title="${lockTitle}">${LOCK_SVG}</span>` : '';
         if (showLock) el.classList.add('label-has-lock');
+        // The similar call under review: "3 / 12" in front of the name (position among all suggestions)
+        let reviewHtml = '';
+        if (label.origin === 'Similar' && (label as any).reviewing) {
+            const similar = (this._items as any[]).filter((l) => l.origin === 'Similar').sort((x, y) => x.start - y.start);
+            const i = similar.findIndex((l) => l.id === label.id);
+            if (i >= 0) reviewHtml = `<span class="spectrogram-label-count">${i + 1} / ${similar.length}</span>`;
+        }
         // Name tag outside the box (snap-chip style): lock · name · AI · confidence.
         // The centre lock only shows on hover (see _spectrogram-labels.scss).
         el.innerHTML = `
-            <span class="spectrogram-label-text">${lockIconHtml}<span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${aiTagHtml}${confHtml}</span>
+            <span class="spectrogram-label-text">${lockIconHtml}${reviewHtml}<span class="spectrogram-label-name">${escapeHtml(label.label || 'Label')}</span>${aiTagHtml}${confHtml}</span>
             ${showLock ? `<span class="spectrogram-label-lock-center" aria-hidden="true">${LOCK_SVG}</span>` : ''}
             ${isLive ? '<span class="linked-old" aria-hidden="true"></span><span class="linked-guide" aria-hidden="true"></span>' : ''}
             ${!isBlocked ? `
@@ -1797,7 +1828,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             this._lanes.set(l.id, lane);
         }
         // Dense mode: from this many stacked lanes, unselected strips shrink to thin strokes
-        const dense = Math.max(1, Number((this.player as any)?.options?.labelDenseLanes) || 5);
+        const dense = this._denseFrom('labelDenseLanes');
         this.overlay?.classList?.toggle('label-lanes-dense', laneEnds.length >= dense);
     }
 

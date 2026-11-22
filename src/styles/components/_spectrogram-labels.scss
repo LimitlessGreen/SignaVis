@@ -123,6 +123,7 @@
 /* No room above (box top off-screen): inside at the top of the visible part */
 .spectrogram-label-region.label-text-inside .spectrogram-label-text:not(.label-text-bottom) { bottom: auto; top: 2px; left: 2px; }
 
+.spectrogram-label-count { font-variant-numeric: tabular-nums; padding-right: 5px; border-right: 1px solid var(--label-tag-sep); flex: none; }
 .spectrogram-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .spectrogram-label-ai-badge { @include label-tag-badge; pointer-events: none; }
 
@@ -299,6 +300,13 @@
     background: rgba(125, 211, 252, 0.06);
     z-index: 30;
     &::after { display: none; }
+    &::before {
+        content: 'Zoom';
+        position: absolute;
+        left: -1.5px;
+        bottom: calc(100% + 4px);
+        @include label-tag(false);
+    }
 }
 
 /* ── linked-live: mirror of a drag in the other view ── */
@@ -362,13 +370,16 @@
 /* ── Snap to call preview: viewfinder box + chip ── */
 .snap-box {
     --snap: var(--color-accent, #38bdf8);
+    --label-c: var(--snap);
     position: absolute;
     z-index: 30;
     pointer-events: none;
-    border: 1.5px solid var(--snap);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--snap) 18%, transparent);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 14px color-mix(in srgb, var(--snap) 35%, transparent);
+    box-sizing: border-box;
+    // Like a label being placed: frame only, corner circles as handles (label design)
+    border: var(--label-frame-strong) solid var(--snap);
+    border-radius: 2px;
+    background: none;
+    box-shadow: var(--label-halo), 0 0 12px color-mix(in srgb, var(--snap) 30%, transparent);
     transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s;
 }
 .snap-box--in { animation: snap-in 0.16s ease-out; }
@@ -378,15 +389,12 @@
 }
 .snap-corner {
     position: absolute;
-    width: 14px;
-    height: 14px;
-    border: 0 solid var(--snap);
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+    @include label-handle-corner;
 }
-.snap-corner.tl { left: -3px;  top: -3px;    border-left-width: 3px;  border-top-width: 3px;    border-top-left-radius: 3px; }
-.snap-corner.tr { right: -3px; top: -3px;    border-right-width: 3px; border-top-width: 3px;    border-top-right-radius: 3px; }
-.snap-corner.bl { left: -3px;  bottom: -3px; border-left-width: 3px;  border-bottom-width: 3px; border-bottom-left-radius: 3px; }
-.snap-corner.br { right: -3px; bottom: -3px; border-right-width: 3px; border-bottom-width: 3px; border-bottom-right-radius: 3px; }
+.snap-corner.tl { left: -5.5px; top: -5.5px; }
+.snap-corner.tr { right: -5.5px; top: -5.5px; }
+.snap-corner.bl { left: -5.5px; bottom: -5.5px; }
+.snap-corner.br { right: -5.5px; bottom: -5.5px; }
 
 .snap-chip,
 .snap-miss {

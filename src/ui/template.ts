@@ -304,6 +304,17 @@ export function createPlayerHTML(opts = {}) {
                     <input type="checkbox" data-aw="loupeDetailCheck"> Loupe Detail
                 </label>
             </div>
+            <div class="settings-row">
+                <label class="settings-label" title="With many overlapping labels (e.g. BirdNET's 3 s windows), unselected ones shrink to thin strokes from this many stacked rows; hover or select one to see its name">Compact labels from</label>
+                <select data-aw="labelDenseSelect" class="settings-select">
+                    <option value="3">3 rows</option>
+                    <option value="4">4 rows</option>
+                    <option value="5" selected>5 rows</option>
+                    <option value="6">6 rows</option>
+                    <option value="8">8 rows</option>
+                    <option value="999">Never</option>
+                </select>
+            </div>
             <div class="settings-row" data-expert>
                 <label class="settings-label" title="Contrast Limited Adaptive Histogram Equalization — enhances local detail">
                     <input type="checkbox" data-aw="claheCheck"> Adaptive Contrast
