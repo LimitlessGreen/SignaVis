@@ -98,6 +98,7 @@ import { createXcUpload } from './features/xc-upload.ts';
 import { dedupeLabels } from './dedupe-labels.ts';
 import { initSponsorCard } from './sponsor-card.ts';
 import { initHelpMenu, HELP_ICONS } from './help-menu.ts';
+import { formatMinSec } from '../../shared/utils.ts';
 
 // Xeno-canto export/upload (features/xc-upload.ts), installed further down. Declared here, before
 // anything that may call the forwarders during startup (e.g. the sidebar restoring the Upload tab);
@@ -265,6 +266,14 @@ const longRecordingManager   = new ModalManager({
 });
 longRecordingCloseBtn?.addEventListener('click', () => longRecordingManager.close());
 
+function showLongRecordingWarning(durationSec) {
+  const limit = MAX_SUPPORTED_DURATION_SEC / 60;
+  if (longRecordingMsg) longRecordingMsg.textContent =
+    `This recording is ${formatMinSec(durationSec)} long. ` +
+    `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
+  longRecordingManager.open();
+}
+
 // ── XC not-found modal ────────────────────────────────────────────
 const xcNotFoundModal      = document.getElementById('xcNotFoundModal');
 const xcNotFoundMsg        = document.getElementById('xcNotFoundMsg');
@@ -395,13 +404,7 @@ async function checkXcDuration(xcId) {
   const durationSec = await xcPanel.fetchRecordingDurationSec(xcId).catch(() => null);
   if (durationSec !== null && durationSec > MAX_SUPPORTED_DURATION_SEC) {
     player.hideLoadingOverlay();
-    const mins  = Math.floor(durationSec / 60);
-    const secs  = Math.round(durationSec % 60);
-    const limit = MAX_SUPPORTED_DURATION_SEC / 60;
-    if (longRecordingMsg) longRecordingMsg.textContent =
-      `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
-      `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
-    longRecordingManager.open();
+    showLongRecordingWarning(durationSec);
     return false;
   }
   // API check ran (even if within limit) — suppress the fallback ready-event check.
@@ -4472,13 +4475,7 @@ player.on('ready', (e) => {
   // Not needed when the WASM tile pipeline handles the file.
   const duration = player.duration || 0;
   if (duration > MAX_SUPPORTED_DURATION_SEC && !state._longRecordingChecked && !e.detail?.wasmTiles) {
-    const mins = Math.floor(duration / 60);
-    const secs = Math.round(duration % 60);
-    const limit = MAX_SUPPORTED_DURATION_SEC / 60;
-    if (longRecordingMsg) longRecordingMsg.textContent =
-      `This recording is ${mins}:${String(secs).padStart(2, '0')} long. ` +
-      `Recordings over ${limit} minute${limit !== 1 ? 's' : ''} are not fully supported yet and may be slow or incomplete.`;
-    longRecordingManager.open();
+    showLongRecordingWarning(duration);
   }
   state._longRecordingChecked = false; // reset for next load
 });

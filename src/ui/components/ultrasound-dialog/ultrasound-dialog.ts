@@ -46,7 +46,7 @@ export interface UltrasoundDialogOptions {
 }
 
 const kHz = (hz: number) => `${(hz / 1000).toFixed(hz < 20000 ? 1 : 0)} kHz`;
-const fmtT = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+const fmtT = (s: number) => { const t = Math.round(s * 10); return `${Math.floor(t / 600)}:${((t % 600) / 10).toFixed(1).padStart(4, '0')}`; };
 
 export class UltrasoundDialog {
     readonly el: HTMLElement;

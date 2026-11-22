@@ -499,7 +499,6 @@ export function speciesCardMenuItems(
 
 function _fmtDur(seconds: any) {
   if (seconds < 60) return `${seconds.toFixed(1)} s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return `${m} m ${s} s`;
+  const total = Math.round(seconds);   // round before splitting: 119.6 s is "2 m 0 s", not "1 m 60 s"
+  return `${Math.floor(total / 60)} m ${total % 60} s`;
 }

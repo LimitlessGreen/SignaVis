@@ -14,6 +14,7 @@ import {
     type BirdnetRunArgs,
 } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
 import { tauriListen as listen } from '../../infrastructure/tauri/TauriCorpusAdapter.ts';
+import { formatMinSec } from '../../shared/utils.ts';
 
 export interface RecordingDetailPanelOptions {
     /** Container element — typically the right column of the desktop app */
@@ -545,9 +546,7 @@ function isValidSoundEventsField(value: unknown): boolean {
 function formatDuration(s: number): string {
     if (!s || s <= 0) return '—';
     if (s < 60) return `${s.toFixed(1)}s`;
-    const m = Math.floor(s / 60);
-    const sec = Math.round(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
+    return formatMinSec(s);
 }
 
 function formatBytes(b: number): string {

@@ -14,3 +14,12 @@ test('formatTime keeps the usual mm:ss.t format', () => {
     assert.equal(formatTime(-3), '00:00.0');
     assert.equal(formatTime(NaN), '00:00.0');
 });
+
+test('formatMinSec rounds before splitting into minutes and seconds', async () => {
+    const { formatMinSec } = await import('../src/shared/utils.ts');
+    assert.equal(formatMinSec(59.6), '1:00');
+    assert.equal(formatMinSec(119.5), '2:00');
+    assert.equal(formatMinSec(61.2), '1:01');
+    assert.equal(formatMinSec(0), '0:00');
+    assert.equal(formatMinSec(NaN), '0:00');
+});

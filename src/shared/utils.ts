@@ -40,6 +40,12 @@ export function formatTime(seconds: number): string {
     return `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`;
 }
 
+/** "m:ss", rounded to whole seconds before splitting (59.6 s is "1:00", not "0:60"). */
+export function formatMinSec(seconds: number): string {
+    const total = Math.round(Math.max(0, seconds || 0));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 export function formatSecondsShort(seconds: number): string {
     return `${seconds.toFixed(2)}s`;
 }
