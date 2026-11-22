@@ -23,3 +23,11 @@ test('formatMinSec rounds before splitting into minutes and seconds', async () =
     assert.equal(formatMinSec(0), '0:00');
     assert.equal(formatMinSec(NaN), '0:00');
 });
+
+test('formatMinSecTenths rounds before splitting (label list, similar panel, ultrasound dialog)', async () => {
+    const { formatMinSecTenths } = await import('../src/shared/utils.ts');
+    assert.equal(formatMinSecTenths(59.96), '1:00.0');
+    assert.equal(formatMinSecTenths(65.25), '1:05.3');
+    assert.equal(formatMinSecTenths(3.04), '0:03.0');
+    assert.equal(formatMinSecTenths(-1), '0:00.0');
+});

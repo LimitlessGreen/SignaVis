@@ -16,6 +16,7 @@
 
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { formatMinSecTenths } from '../../shared/utils.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -49,10 +50,7 @@ export interface SimilarPanelOptions {
 const WINDOW_S = 5;
 const LABEL_ICON: Record<Label, string> = { pos: '✓', neg: '✗', unsure: '?' };
 const LABEL_TITLE: Record<Label, string> = { pos: 'Positive', neg: 'Negative', unsure: 'Unsure (ignored in training)' };
-const fmtTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
-};
+const fmtTime = formatMinSecTenths;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 /** Right-click menu for a result row. `current` is the hit's label in the selected class (null: none / no class). */

@@ -6,6 +6,8 @@
 // found stretch of calls. "Remember" makes the choice the default, so later
 // bat recordings switch without asking.
 
+import { formatMinSecTenths } from '../../../shared/utils.ts';
+
 export type UltrasoundChoice = 'heterodyne' | 'expansion' | 'division' | 'pitch' | 'none';
 
 export const ULTRASOUND_DEFAULT_KEY = 'aw.ultrasound.listenDefault';
@@ -46,7 +48,7 @@ export interface UltrasoundDialogOptions {
 }
 
 const kHz = (hz: number) => `${(hz / 1000).toFixed(hz < 20000 ? 1 : 0)} kHz`;
-const fmtT = (s: number) => { const t = Math.round(s * 10); return `${Math.floor(t / 600)}:${((t % 600) / 10).toFixed(1).padStart(4, '0')}`; };
+const fmtT = formatMinSecTenths;
 
 export class UltrasoundDialog {
     readonly el: HTMLElement;

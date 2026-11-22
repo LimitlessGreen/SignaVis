@@ -46,6 +46,12 @@ export function formatMinSec(seconds: number): string {
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
+/** "m:ss.t", rounded to tenths before splitting (59.96 s is "1:00.0", not "0:60.0"). */
+export function formatMinSecTenths(seconds: number): string {
+    const tenths = Math.round(Math.max(0, Number(seconds) || 0) * 10);
+    return `${Math.floor(tenths / 600)}:${((tenths % 600) / 10).toFixed(1).padStart(4, '0')}`;
+}
+
 export function formatSecondsShort(seconds: number): string {
     return `${seconds.toFixed(2)}s`;
 }
