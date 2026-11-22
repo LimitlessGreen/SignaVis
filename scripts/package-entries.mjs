@@ -4,6 +4,7 @@
 //   name → { src, subpath } ; dist file: `${name}.esm.js`, types: `types/${typesName}.d.ts`
 export const PACKAGE_ENTRIES = {
     'birdnet-player': { src: 'src/index.ts', subpath: '.', types: 'index' },
-    core: { src: 'src/core.ts', subpath: './core', types: 'core' },
-    'label-table': { src: 'src/label-table.ts', subpath: './label-table', types: 'label-table' },
+    core: { src: 'src/core.ts', subpath: './core', types: 'core', scss: 'src/styles/player.scss', cssSubpath: './core.css' },
+    'label-table': { src: 'src/label-table.ts', subpath: './label-table', types: 'label-table', scss: 'src/styles/label-table.scss', cssSubpath: './label-table.css' },
 };
+// birdnet-player.css ('signavis/style') is core + every feature: Vite extracts it from src/index.ts.

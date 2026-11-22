@@ -7,6 +7,8 @@
 // tests/core-coupling.test.mjs keeps this entry from growing them back in.
 // ═══════════════════════════════════════════════════════════════════════
 
+import './styles/player.scss';   // → dist/core.css (and part of birdnet-player.css)
+
 export * from './app/BirdNETPlayer.ts';
 export type { PlayerFeature, OptionFeatureFactory } from './app/playerFeature.ts';
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from './domain/recordingTime.ts';

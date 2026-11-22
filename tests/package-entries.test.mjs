@@ -45,7 +45,9 @@ test('package.json exports follow scripts/package-entries.mjs', async () => {
         assert.ok(exp, `package.json exports is missing ${e.subpath}`);
         assert.equal(exp.import, `./dist/${name}.esm.js`, e.subpath);
         assert.equal(exp.types, `./types/${e.types}.d.ts`, e.subpath);
+        if (e.cssSubpath) assert.equal(pkg.exports[e.cssSubpath], `./dist/${name}.css`, e.cssSubpath);
     }
+    assert.equal(pkg.exports['./style'].default, './dist/birdnet-player.css');
 });
 
 test('signavis/label-table exports the feature; the full player knows it as an option', async () => {

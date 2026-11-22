@@ -1,0 +1,46 @@
+// Player rules of the UI clarity layer (see _ui-clarity.scss for the app's).
+
+// Read-only (imported / locked) labels: dashed + muted, own labels stay solid.
+// Machine detections (BirdNET / BirdBox, .suggestion) are locked too but keep their solid frame.
+.spectrogram-label-region--locked:not(.suggestion),
+.annotation-region--locked:not(.suggestion) {
+  border-style: dashed !important;
+  opacity: 0.72;
+}
+// Player toolbar: related buttons sit in one visible group.
+.toolbar-group {
+  gap: 1px;
+  padding: 1px;
+  border-radius: 5px;
+  background: var(--input-bg);
+  border: 1px solid var(--color-border);
+  .toolbar-btn { border-color: transparent; }
+}
+.toolbar-sep, .tb-sep { background: var(--color-border-strong); margin: 0 4px; }
+// Similar-call suggestions (app/suggest-similar.ts): dotted in the waveform track too
+.annotation-region.suggestion.annotation-region--similar {
+  border-style: dotted;
+  opacity: 0.75;
+}
+
+/* ── Selects: own look instead of the native one ───────────────────
+   WebKitGTK (SignaVis Lite on Linux) draws native selects with the GTK
+   theme and ignores our background — with a dark GTK theme they turned
+   black with dark text. appearance:none + a chevron in currentColor
+   keeps every select on our tokens. */
+// $global-scope: prefix for rules that would otherwise style the whole page.
+// '' in the app (main.scss); player.scss sets ':where(.daw-shell) ' so the
+// library leaves the host page alone (:where adds no specificity).
+$global-scope: '' !default;
+#{$global-scope}select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 20px !important;
+}
+#{$global-scope}select option { background-color: var(--color-bg-surface); color: var(--color-text-primary); }

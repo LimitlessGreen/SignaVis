@@ -10,6 +10,7 @@
   "types": "./types/index.d.ts",
   "sideEffects": [
     "*.css",
+    "*.scss",
     "**/*.worker*.js"
   ],
   "files": [
@@ -31,6 +32,8 @@
       "import": "./dist/label-table.esm.js",
       "types": "./types/label-table.d.ts"
     },
+    "./core.css": "./dist/core.css",
+    "./label-table.css": "./dist/label-table.css",
     "./iife": "./dist/birdnet-player.iife.js",
     "./style": {
       "types": "./types/style.d.ts",
@@ -75,12 +78,12 @@
     "dev": "node ./scripts/ensure-assets.js && vite",
     "demo:gifs": "uv run --with playwright python -I tools/demo-gifs/demo_gifs.py",
     "dev:analysis-mock": "node ./scripts/mock-analysis-server.mjs",
-    "build": "npm run build:css && vite build && vite build --mode iife && node -e \"require('fs').copyFileSync('src/styles/tokens.css','dist/tokens.css'); require('fs').copyFileSync('src-tauri/crates/aw-dsp-wasm/THIRD_PARTY_LICENSES.txt','dist/aw_dsp_wasm.THIRD_PARTY_LICENSES.txt')\" && node ./scripts/generate-types.js",
+    "build": "vite build && vite build --mode iife && npm run build:css && node -e \"require('fs').copyFileSync('src/styles/tokens.css','dist/tokens.css'); require('fs').copyFileSync('src-tauri/crates/aw-dsp-wasm/THIRD_PARTY_LICENSES.txt','dist/aw_dsp_wasm.THIRD_PARTY_LICENSES.txt')\" && node ./scripts/generate-types.js",
     "build:desktop": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.demo.config.js",
     "dev:lite": "node ./scripts/ensure-assets.js && vite --config demo/vite.lite.config.js",
     "build:lite": "node ./scripts/ensure-assets.js && npm run build:css && vite build --config demo/vite.lite.config.js",
     "build:wasm": "wasm-pack build src-tauri/crates/aw-dsp-wasm --release --target web --out-dir ../../../src/infrastructure/wasm-dsp/pkg --no-pack && node -e \"require('fs').rmSync('src/infrastructure/wasm-dsp/pkg/.gitignore',{force:true})\"",
-    "build:css": "sass src/styles/main.scss dist/birdnet-player.css --no-source-map --style=compressed",
+    "build:css": "node ./scripts/build-css.mjs",
     "watch:css": "sass --watch src/styles/main.scss:dist/birdnet-player.css --no-source-map",
     "typecheck": "tsc --noEmit --checkers 4",
     "types:generate": "node ./scripts/generate-types.js",

@@ -1,0 +1,6 @@
+// label-table.scss — CSS of 'signavis/label-table' (dist/label-table.css), on top of player.scss.
+// Same partials, same order as main.scss (the app), so the cascade is the same;
+// tests/styles-entries.test.mjs checks that. Nothing here may style the host
+// page outside the player (no bare html/body/element rules).
+@use "components/label-grid";
+@use "components/context-menu";

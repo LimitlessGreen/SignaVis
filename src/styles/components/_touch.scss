@@ -1,3 +1,8 @@
+// $global-scope: prefix for rules that would otherwise style the whole page.
+// '' in the app (main.scss); player.scss sets ':where(.daw-shell) ' so the
+// library leaves the host page alone (:where adds no specificity).
+$global-scope: '' !default;
+
 /* Touch devices (pointer: coarse): finger-sized hit targets.
    Loaded last so it overrides the compact desktop sizes. See mobile ui plan. */
 @media (pointer: coarse) {
@@ -27,8 +32,8 @@
   /* Range thumbs: easier to grab. */
   .toolbar-range { height: 28px; }
 
-  input[type="checkbox"],
-  input[type="radio"] { width: 22px; height: 22px; }
+  #{$global-scope}input[type="checkbox"],
+  #{$global-scope}input[type="radio"] { width: 22px; height: 22px; }
 }
 
 /* Phones: keep the header on one row; the search field gives way. */

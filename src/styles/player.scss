@@ -1,0 +1,32 @@
+// player.scss — CSS of 'signavis/core' (dist/core.css): the player and its label layers and editor.
+// Same partials, same order as main.scss (the app), so the cascade is the same;
+// tests/styles-entries.test.mjs checks that. Nothing here may style the host
+// page outside the player (no bare html/body/element rules).
+$scope: ':where(.daw-shell) ';   // see $global-scope in the configured partials
+
+@use "utils";
+@use "components/player-base";
+@use "components/shell";
+@use "components/views";
+@use "components/axes";
+@use "../ui/components/overview/overview";
+@use "components/statusbar";
+@use "components/buttons";
+@use "components/toolbar";
+@use "components/ultrasound-dialog";
+@use "../ui/components/transport/transport";
+@use "../ui/components/playhead/playhead";
+@use "../ui/components/settings-panel/settings-panel";
+@use "components/annotation";
+@use "components/spectrogram-labels";
+@use "components/label-editor";
+@use "components/species-search";
+@use "components/tags";
+@use "components/overlays";
+@use "components/forms";
+@use "components/spectrogram-settings";
+@use "components/preset-manager";
+@use "components/utilities" with ($global-scope: $scope);
+@use "components/theme-tokens";
+@use "components/player-clarity" with ($global-scope: $scope);
+@use "components/touch" with ($global-scope: $scope);

@@ -1,13 +1,14 @@
 // Static import graph of src/ from an entry file: what a bundler must include
 // when a host imports that entry. Follows `import … from`, `export … from` and
-// side-effect imports; skips `import type` / `export type` and dynamic import()
-// (lazy chunks are fine, they load only when used).
+// side-effect imports; skips `import type` / `export type`, and dynamic import()
+// unless { dynamic: true } (lazy chunks load only when used).
 //
 //   node scripts/module-graph.mjs src/app/BirdNETPlayer.ts [--sizes]
 import fs from 'node:fs';
 import path from 'node:path';
 
 const STATIC_RE = /(?:^|[\n;])\s*(import|export)\s+(type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"]+)['"]/g;
+const DYNAMIC_RE = /\bimport\(\s*(?:\/\*[^*]*\*\/\s*)?['"]([^'"]+)['"]\s*\)/g;
 
 function stripComments(src) {
     return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -23,8 +24,11 @@ function resolveSpec(from, spec) {
     return null;
 }
 
-/** Map of absolute file → set of absolute files it statically imports. */
-export function moduleGraph(entry) {
+/**
+ * Map of absolute file → set of absolute files it imports statically
+ * (with { dynamic: true } also through import('…'): everything a host may load).
+ */
+export function moduleGraph(entry, { dynamic = false } = {}) {
     const graph = new Map();
     const todo = [path.resolve(entry)];
     while (todo.length) {
@@ -39,13 +43,19 @@ export function moduleGraph(entry) {
             const dep = resolveSpec(file, m[3]);
             if (dep) { deps.add(dep); todo.push(dep); }
         }
+        if (dynamic) {
+            for (const m of src.matchAll(DYNAMIC_RE)) {
+                const dep = resolveSpec(file, m[1]);
+                if (dep) { deps.add(dep); todo.push(dep); }
+            }
+        }
     }
     return graph;
 }
 
 /** Files reachable from entry, relative to src/ with forward slashes. */
-export function reachable(entry, srcRoot = path.resolve('src')) {
-    return [...moduleGraph(entry).keys()]
+export function reachable(entry, srcRoot = path.resolve('src'), opts = {}) {
+    return [...moduleGraph(entry, opts).keys()]
         .map((f) => path.relative(srcRoot, f).split(path.sep).join('/'))
         .sort();
 }

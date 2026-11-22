@@ -2,7 +2,7 @@
 // app.js — Application entry point
 // ═══════════════════════════════════════════════════════════════════════
 
-import { BirdNETPlayer } from './app/BirdNETPlayer.ts';
+import { BirdNETPlayer } from './index.ts';
 
 const container = document.getElementById('player-root');
 if (container) {

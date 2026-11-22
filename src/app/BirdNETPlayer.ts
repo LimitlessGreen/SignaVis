@@ -22,7 +22,6 @@ import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb }
 import { UndoStack } from '../domain/undoStack.ts';
 import { computeSnapPatch } from './snapPatch.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
-import '../styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
 import { EventBus } from '../shared/EventBus.ts';

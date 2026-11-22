@@ -4,6 +4,12 @@
 // The IIFE bundle (window.BirdNETPlayerModule) is built from this file.
 // ═══════════════════════════════════════════════════════════════════════
 
+// Stylesheets imported here too: as a re-exported module core.ts counts as
+// side-effect free (package.json sideEffects), so the IIFE build (one entry,
+// this file) would drop its CSS import.
+import './styles/player.scss';
+import './styles/label-table.scss';
+
 export * from './core.ts';
 export * from './label-table.ts';
 
