@@ -1,6 +1,7 @@
 // Size budget for the published library (run after `npm run build`).
 // An ESM entry is measured with every chunk it imports statically (what a host
-// downloads when it imports that entry; lazy import() chunks are not counted).
+// downloads when it imports that entry; lazy import() chunks are not counted);
+// a feature entry with a base (package-entries.mjs) without the base's files.
 // Fails when an entry grows past its budget; says so when it shrank enough to
 // lower the budget, so savings are locked in.
 //
@@ -8,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { PACKAGE_ENTRIES } from './package-entries.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
@@ -34,7 +36,13 @@ export function staticClosure(file, dist = DIST) {
 }
 
 function measure(file) {
-    const files = file.endsWith('.esm.js') ? staticClosure(file) : [file];
+    let files = file.endsWith('.esm.js') ? staticClosure(file) : [file];
+    // A feature entry runs on top of its base (e.g. core): count only what it adds.
+    const base = PACKAGE_ENTRIES[file.replace(/\.esm\.js$/, '')]?.base;
+    if (base) {
+        const shared = new Set(staticClosure(`${base}.esm.js`));
+        files = files.filter((f) => !shared.has(f));
+    }
     let raw = 0;
     let gz = 0;
     for (const f of files) {
@@ -55,7 +63,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         if (!fs.existsSync(path.join(DIST, file))) { console.error(`✗ ${file}: missing (run npm run build)`); failed = true; continue; }
         const { raw, gz, files } = measure(file);
         if (update) { budget.gzip[file] = Math.ceil(gz * HEADROOM); continue; }
-        const parts = files.length > 1 ? `, ${files.length} files` : '';
+        const base = PACKAGE_ENTRIES[file.replace(/\.esm\.js$/, '')]?.base;
+        const parts = (files.length > 1 ? `, ${files.length} files` : '') + (base ? `, on top of ${base}` : '');
         const line = `${file}: ${kb(gz)} gzip (${kb(raw)} raw${parts}), budget ${kb(limit)}`;
         if (gz > limit) { console.error(`✗ ${line} — over budget`); failed = true; }
         else if (gz < limit * LOWER_HINT) console.log(`✓ ${line} — well under budget, lower it: node scripts/check-bundle-size.mjs --update`);
