@@ -597,6 +597,8 @@ export class AudioEngine extends AudioEngineBase {
       const t = Math.min(playback.endSec, playback.runStartSec + elapsed);
       playback.currentTimeSec = t;
       this._emit('uiupdate', { time: t, fromPlayback: true });
+      // Label highlight, table and grid follow 'timeupdate', as in normal playback.
+      this._emitPlaybackTimeupdate(t);
       if (t >= playback.endSec - 0.002) {
         if (this.loopPlayback) {
           this._loopCustomSegmentPlayback(playback);
@@ -610,6 +612,14 @@ export class AudioEngine extends AudioEngineBase {
     };
 
     playback.rafId = requestAnimationFrame(onFrame);
+  }
+
+  /** Throttled 'timeupdate' (~15/s) for every playback path. */
+  _emitPlaybackTimeupdate(t: number) {
+    const now = performance.now();
+    if (now - this._lastTimeupdateEmitAt < TIMEUPDATE_THROTTLE_MS) return;
+    this._lastTimeupdateEmitAt = now;
+    this._emit('timeupdate', { currentTime: t, duration: this.audioBuffer?.duration || 0 });
   }
 
   /** Detector-mode playback of the whole file from `fromSec`. */
@@ -1017,14 +1027,7 @@ export class AudioEngine extends AudioEngineBase {
     ws.on('timeupdate', (t: number) => {
       // Drive the UI on every frame during normal WaveSurfer playback
       this._emit('uiupdate', { time: t, fromPlayback: true });
-      const now = performance.now();
-      if (now - this._lastTimeupdateEmitAt >= TIMEUPDATE_THROTTLE_MS) {
-        this._lastTimeupdateEmitAt = now;
-        this._emit('timeupdate', {
-          currentTime: t,
-          duration: this.audioBuffer?.duration || 0,
-        });
-      }
+      this._emitPlaybackTimeupdate(t);
     });
 
     ws.on('play', () => {

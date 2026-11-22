@@ -228,3 +228,19 @@ test('AudioEngine: _emit fires CustomEvent with detail payload', () => {
     assert.equal(detail?.time, 3.5);
     assert.equal(detail?.fromPlayback, false);
 });
+
+// ─── timeupdate for every playback path ─────────────────────────────
+
+test('AudioEngine: _emitPlaybackTimeupdate emits throttled timeupdate (used by bandpass/detector playback too)', () => {
+    const engine = new AudioEngine(MOCK_WS_CTOR);
+    engine.audioBuffer = fakeAudioBuffer(10);
+    const seen = [];
+    engine.addEventListener('timeupdate', (e) => seen.push(e.detail));
+    engine._lastTimeupdateEmitAt = 0;
+    engine._emitPlaybackTimeupdate(1.5);
+    engine._emitPlaybackTimeupdate(1.51);   // same throttle window: dropped
+    assert.deepEqual(seen, [{ currentTime: 1.5, duration: 10 }]);
+    engine._lastTimeupdateEmitAt = 0;
+    engine._emitPlaybackTimeupdate(2);
+    assert.equal(seen.length, 2);
+});
