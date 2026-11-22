@@ -29,6 +29,7 @@ import type { LinkedLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
 import type { PlayerFeature, OptionFeatureFactory } from './playerFeature.ts';
+import { labelProps } from '../domain/labelFields.ts';
 
 export type { LinkedLabel };
 
@@ -84,7 +85,7 @@ import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
 import type { LiveRecorder, LiveRecorderOptions, LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
 import type { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
 import { liveRecordingSupported } from '../infrastructure/audio/liveSupport.ts';
-import { setChannelSelection, getChannelSelection, effectiveSelection, toChannelSelection, toChannelOption, validLabelChannel, type ChannelOption } from '../shared/channels.ts';
+import { setChannelSelection, getChannelSelection, effectiveSelection, toChannelSelection, toChannelOption, type ChannelOption } from '../shared/channels.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Load the recording into the player when it stops (default true). */
@@ -1888,7 +1889,7 @@ export class BirdNETPlayer {
             origin: l.origin || '',
             author: l.author || '',
             tags: l.tags || {},
-            ...(validLabelChannel((l as any).channel) !== undefined ? { channel: validLabelChannel((l as any).channel) } : {}),
+            ...labelProps(l),
             ...((l as any).reviewing ? { reviewing: true } : {}),
         };
     }
@@ -1925,7 +1926,7 @@ export class BirdNETPlayer {
             origin: meta.origin,
             author: meta.author,
             tags: meta.tags,
-            ...(validLabelChannel((label as any)?.channel) !== undefined ? { channel: validLabelChannel((label as any)?.channel) } : {}),
+            ...labelProps(label),   // channel, … (domain/labelFields.ts)
             // A similar-call suggestion under review (similar-review.ts): highlighted on the spectrogram
             ...(((label as any)?.similar ? (label as any).similar.active === true : (label as any)?.reviewing === true) ? { reviewing: true } : {}),
             createdAt: (label as any)?.createdAt || new Date().toISOString(),

@@ -11,13 +11,8 @@ import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
 import { prefs } from '../infrastructure/storage/prefs.ts';
-import { labelChannel, validLabelChannel } from '../shared/channels.ts';
-
-/** `{ channel }` for a valid label channel, else nothing (spread into normalized labels). */
-function withChannel(v: unknown): { channel?: number } {
-    const ch = validLabelChannel(v);
-    return ch === undefined ? {} : { channel: ch };
-}
+import { labelChannel } from '../shared/channels.ts';
+import { labelProps } from './labelFields.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
 const LANE_H = 18;
@@ -1144,7 +1139,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             recordingId: annotation?.recordingId ?? null,
             // Time-only detection (BirdNET): keeps its species colour (label design)
             fullBand: annotation?.fullBand === true,
-            ...withChannel(annotation?.channel),
+            ...labelProps(annotation),   // channel, … (domain/labelFields.ts)
         };
     }
 }
@@ -3371,7 +3366,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
-            ...withChannel(label?.channel),
+            ...labelProps(label),   // channel, … (domain/labelFields.ts)
             createdAt: label?.createdAt || new Date().toISOString(),
             ...(label?.updatedAt ? { updatedAt: label.updatedAt } : {}),
         };

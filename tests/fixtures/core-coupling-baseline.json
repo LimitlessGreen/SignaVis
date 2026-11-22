@@ -3,7 +3,6 @@
   "entry": "src/core.ts",
   "optional": [
     "domain/annotations",
-    "domain/annotaFields.ts",
     "ui/components/label-editor/",
     "ui/panels/label-grid.ts",
     "ui/panels/label-table.ts",

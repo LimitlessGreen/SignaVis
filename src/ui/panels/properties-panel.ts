@@ -19,7 +19,7 @@ import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-mod
 import { formatCoords } from '../../app/recording-context.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
-import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, formatAnnotaValue, toYN } from '../../domain/annotaFields.ts';
+import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, formatAnnotaValue, toYN } from '../../domain/labelFields.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
