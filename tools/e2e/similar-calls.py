@@ -49,14 +49,16 @@ with sync_playwright() as p:
     check(good >= 6, f'{good}/8 best suggestions are Wood Thrush songs')
     check(page.locator('.similar-review__title').inner_text() == 'Similar to Wood Thrush', 'review bar title')
     if shots: page.screenshot(path=f'{shots}/similar-review.png')
-    # The bar steps aside near the pointer (clicks go through), the grip brings it back, H hides all overlays
+    # Hovering keeps the bar (its buttons stay usable); a drag that passes near it fades it
+    # and lets the drag through (ffc9ac6); H hides all overlays
     bar = page.locator('.similar-review'); bb = bar.bounding_box()
-    page.mouse.move(bb['x'] + bb['width'] / 2, bb['y'] - 10)
-    check('aw-peek--faded' in bar.get_attribute('class') and bar.evaluate("e => getComputedStyle(e).pointerEvents") == 'none', 'bar fades near the pointer')
-    gb = page.locator('.similar-review .aw-peek__grip').bounding_box()
-    page.mouse.move(gb['x'] + gb['width'] / 2, gb['y'] + gb['height'] / 2)
-    page.mouse.move(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2)
-    check('aw-peek--faded' not in bar.get_attribute('class'), 'grip brings the bar back')
+    cx = bb['x'] + bb['width'] / 2
+    page.mouse.move(cx, bb['y'] - 10)
+    check('aw-peek--faded' not in bar.get_attribute('class'), 'hovering near the bar keeps it')
+    page.mouse.move(cx, bb['y'] - 80); page.mouse.down(); page.mouse.move(cx, bb['y'] - 10, steps=4)
+    check('aw-peek--faded' in bar.get_attribute('class') and bar.evaluate("e => getComputedStyle(e).pointerEvents") == 'none', 'a drag near the bar fades it')
+    page.mouse.move(cx, bb['y'] - 80, steps=4); page.mouse.up(); page.wait_for_timeout(150)
+    check('aw-peek--faded' not in bar.get_attribute('class'), 'bar back after the drag')
     page.mouse.move(bb['x'] + bb['width'] / 2, 20)
     page.keyboard.down('h'); page.wait_for_timeout(200)
     check(bar.evaluate("e => getComputedStyle(e).opacity") == '0', 'holding H hides the bar')
