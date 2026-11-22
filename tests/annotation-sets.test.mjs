@@ -77,3 +77,47 @@ test('labelsToAdopt: a detection copied as one call box can still give its other
     assert.equal('adoptBox' in copy, false);
     assert.deepEqual(labelsToAdopt([boxA, boxB], [copy], 'own'), [boxB]);
 });
+
+// ── Adopting converts: the detection is hidden while a copy exists ──
+import { withoutAdopted, adoptedSourceIds } from '../src/app/annotation-sets.ts';
+
+test('withoutAdopted hides a detection once it is in my labels', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const other = { id: 'd2', setId: 'birdnet', origin: 'BirdNET', start: 3, end: 6 };
+    const [copy] = adoptLabels([det], 'own');
+    const all = [det, other, copy];
+    assert.deepEqual(withoutAdopted(all, 'own').map((l) => l.id), ['d2', copy.id]);
+    assert.deepEqual([...adoptedSourceIds(all, 'own')], ['d1']);
+});
+
+test('withoutAdopted: deleting the copy brings the detection back', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    assert.deepEqual(withoutAdopted([det], 'own').map((l) => l.id), ['d1']);
+});
+
+test('withoutAdopted: one of several call boxes adopted hides the detection, the rest stay adoptable', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const b1 = { start: 0.5, end: 1, freqMin: 2000, freqMax: 4000 };
+    const b2 = { start: 2, end: 2.5, freqMin: 2000, freqMax: 4000 };
+    const [copy] = adoptLabels([{ ...det, adoptBox: { ...b1, label: 'x' } }], 'own');
+    const all = [det, copy];
+    assert.deepEqual(withoutAdopted(all, 'own').map((l) => l.id), [copy.id]);
+    // the second box is still offered ("Also the other 1")
+    assert.equal(labelsToAdopt([{ ...det, adoptBox: { ...b2, label: 'x' } }], all, 'own').length, 1);
+});
+
+import { applyPlayerRestore } from '../src/app/annotation-sets.ts';
+test('applyPlayerRestore: redoing a conversion hides the detection, it does not delete it', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const [copy] = adoptLabels([det], 'own');
+    // after undo the app holds only the detection; the player redoes: before = [det], after = [copy]
+    const next = applyPlayerRestore([det], [det], [copy], 'own');
+    assert.deepEqual(next.map((l) => l.id).sort(), ['d1', copy.id].sort());
+    // deleting the copy later brings it back
+    assert.deepEqual(withoutAdopted(next.filter((l) => l.id !== copy.id), 'own').map((l) => l.id), ['d1']);
+});
+
+test('applyPlayerRestore: a label really removed by undo is deleted', () => {
+    const a = { id: 'a', setId: 'own', start: 0, end: 1 };
+    assert.deepEqual(applyPlayerRestore([a], [a], [], 'own'), []);
+});

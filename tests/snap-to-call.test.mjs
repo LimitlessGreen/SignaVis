@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { snapToCall, bandMedians } from '../src/domain/snapToCall.ts';
+import { snapToCall, bandMedians, fitToCall } from '../src/domain/snapToCall.ts';
 import { computeSnapPatch } from '../src/app/snapPatch.ts';
 import { initWasmMain } from '../src/infrastructure/wasm-dsp/wasmMain.ts';
 
@@ -87,4 +87,64 @@ test('WASM patch: tone burst in noise gets a tight box', () => {
     // Lower sensitivity → threshold closer to the peak → tighter band
     const tight = snapToCall(p, 1.6, 4000, 0.4);
     assert.ok(tight.ok && tight.box.freqMax - tight.box.freqMin < res.box.freqMax - res.box.freqMin, JSON.stringify(tight));
+});
+
+// ── fitToCall: box the call inside a full-band label's time window ──
+test('fitToCall boxes the strongest call inside the window, without a click', () => {
+    // call at 0.5–0.8 s, 2–3 kHz; window 0–1.5 s
+    const p = patch(200, 100, (f, b) => f >= 50 && f <= 80 && b >= 20 && b <= 30);
+    const r = fitToCall(p, { start: 0, end: 1.5 });
+    assert.ok(r.ok);
+    assert.equal(r.box.freqMin, 1950);
+    assert.equal(r.box.freqMax, 3050);
+    assert.ok(r.box.start < 0.5 && r.box.end > 0.8);
+});
+
+test('fitToCall ignores a call outside the window and keeps the box inside it', () => {
+    // loud call at 1.5–1.8 s (outside), quieter one crossing the window end at 0.9–1.1 s
+    const p = patch(200, 100, (f, b) => (f >= 150 && f <= 180 && b >= 40 && b <= 50) || (f >= 90 && f <= 110 && b >= 20 && b <= 30));
+    const r = fitToCall(p, { start: 0.2, end: 1.0 });
+    assert.ok(r.ok);
+    assert.ok(r.box.freqMax < 3500, JSON.stringify(r.box));
+    assert.ok(r.box.end <= 1.0 && r.box.start >= 0.2);
+});
+
+test('fitToCall: noise only → no box', () => {
+    const p = patch(200, 100, () => false);
+    assert.equal(fitToCall(p, { start: 0, end: 2 }).ok, false);
+});
+
+test('fitToCall prefers a call over a louder single-cell spike', () => {
+    const p = patch(200, 100, (f, b) => f >= 50 && f <= 80 && b >= 20 && b <= 30);
+    p.values[120 * 100 + 90] = -20;   // one hot cell at 9 kHz, 10 dB louder than the call
+    const r = fitToCall(p, { start: 0, end: 2 });
+    assert.ok(r.ok && r.box.freqMax < 3500, JSON.stringify(r.ok && r.box));
+});
+
+test('fitToCall finds calls that fill most of the window (low-percentile floor)', () => {
+    // calls in 70 % of the frames: a median floor would sit on the calls
+    const p = patch(200, 100, (f, b) => (f % 10) < 7 && b >= 20 && b <= 30);
+    const r = fitToCall(p, { start: 0, end: 2 });
+    assert.ok(r.ok && r.box.freqMin > 1500 && r.box.freqMax < 3500, JSON.stringify(r.ok && r.box));
+});
+
+test('fitToCall ignores near-silent bands (lossy codec cut-off)', () => {
+    const p = patch(200, 100, (f, b) => f >= 50 && f <= 80 && b >= 20 && b <= 30);
+    // bins 80+ almost digital silence with faint residue (−200 dB floor, residue at −150)
+    for (let f = 0; f < 200; f++) for (let b = 80; b < 100; b++) p.values[f * 100 + b] = (f >= 120 && f <= 140) ? -150 : -200;
+    const r = fitToCall(p, { start: 0, end: 2 });
+    assert.ok(r.ok && r.box.freqMax < 3500, JSON.stringify(r.ok && r.box));
+});
+
+test('fitToCall seeds on a thin call (ties of the neighbourhood sum)', () => {
+    const p = patch(200, 100, (f, b) => f >= 50 && f <= 80 && b === 25);
+    const r = fitToCall(p, { start: 0, end: 2 });
+    assert.ok(r.ok && r.box.freqMin > 2000 && r.box.freqMax < 3000, JSON.stringify(r));
+});
+
+test('fitToCall never returns a box outside the window', () => {
+    // a call inside ending at the window edge, a louder one just after it
+    const p = patch(200, 100, (f, b) => (f >= 98 && f <= 100 && b >= 20 && b <= 30) || (f >= 104 && f <= 110 && b >= 20 && b <= 30));
+    const r = fitToCall(p, { start: 0, end: 1.0 });
+    if (r.ok) assert.ok(r.box.start >= 0 && r.box.end <= 1.0 + 1e-9 && r.box.start < r.box.end, JSON.stringify(r.box));
 });

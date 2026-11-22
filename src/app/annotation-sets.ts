@@ -81,6 +81,47 @@ function adoptKey(id: any, box: any) {
  * Makes "copy into my labels" idempotent: pressing it twice adds nothing.
  * A copy the user deleted again counts as not adopted, so it can be copied once more.
  */
+/**
+ * Ids of detections that were copied into `targetSetId` (its labels' `adoptedFrom.id`).
+ * Adopting converts a detection into an own label, so these are not shown again;
+ * deleting the copy (or undo) brings the detection back.
+ */
+export function adoptedSourceIds(existing: any[], targetSetId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const l of existing || []) {
+        if (l?.setId === targetSetId && l.adoptedFrom?.id != null) ids.add(String(l.adoptedFrom.id));
+    }
+    return ids;
+}
+
+/** `labels` without the detections already adopted into `targetSetId`. */
+export function withoutAdopted(labels: any[], targetSetId: string): any[] {
+    const ids = adoptedSourceIds(labels, targetSetId);
+    if (!ids.size) return labels;
+    return labels.filter((l) => l?.setId === targetSetId || !ids.has(String(l?.id)));
+}
+
+/**
+ * State after the player's undo/redo (its snapshots hold only the labels it shows): labels in
+ * `before` but not in `after` are deleted, except detections that `after` hides because a copy
+ * in `ownSetId` converts them (a redone conversion hides its detection, it does not delete it).
+ * `fill` completes labels new to the app (origin, set).
+ */
+export function applyPlayerRestore(labels: any[], before: any[], after: any[], ownSetId: string,
+    fill: (l: any) => any = (l) => l): any[] {
+    const afterIds = new Set(after.map((l) => l.id));
+    const kept = labels.slice();
+    const at = new Map(kept.map((l, i) => [l.id, i]));
+    for (const lbl of after) {
+        const i = at.get(lbl.id);
+        if (i != null) kept[i] = { ...kept[i], ...lbl };
+        else { at.set(lbl.id, kept.length); kept.push(fill({ ...lbl })); }
+    }
+    const converted = adoptedSourceIds(kept.filter((l) => afterIds.has(l.id)), ownSetId);
+    const removed = new Set(before.filter((l) => !afterIds.has(l.id) && !converted.has(String(l.id))).map((l) => l.id));
+    return kept.filter((l) => !removed.has(l.id));
+}
+
 export function labelsToAdopt(src: any[], existing: any[], targetSetId: string) {
     const done = new Set((existing || [])
         .filter((l) => l?.setId === targetSetId && l.adoptedFrom?.id != null)

@@ -146,6 +146,7 @@ export class LabelList {
     _onSync: any;
     _onToggleLockSet: any;
     _onAdoptSet: any;
+    _adoptedToggle: { get(): boolean; set(on: boolean): void; hiddenIn?(setId: string): number } | null = null;
     _onAdoptLabel: any;
     _onPlaySegment: any;
     _onToggleSetVisibility: any;
@@ -187,6 +188,7 @@ export class LabelList {
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
    * @param {(setId: string) => void}   [opts.onAdoptSet]   copy an imported set's labels into the own set
+   * @param {{get(): boolean, set(on: boolean): void, hiddenIn?(setId: string): number}} [opts.adoptedToggle] show detections already converted into my labels
    * @param {(labelId: string) => void} [opts.onAdoptLabel] copy one imported label into the own set
    * @param {(lbl: any) => void}        [opts.onPlaySegment] play start–end of a label (toggle)
    * @param {(setId: string) => boolean} [opts.canDeleteSet]
@@ -218,6 +220,7 @@ export class LabelList {
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
     this._onToggleLockSet = opts.onToggleLockSet || null;
     this._onAdoptSet = opts.onAdoptSet || null;
+    this._adoptedToggle = opts.adoptedToggle || null;
     this._onAdoptLabel = opts.onAdoptLabel || null;
     this._onPlaySegment = opts.onPlaySegment || null;
     this._canDeleteSet = opts.canDeleteSet || null;
@@ -429,7 +432,8 @@ export class LabelList {
       const g = groups.get(key)!;
       if (key === '' && g.total === 0) continue;
       // Imported sets without labels in this recording are noise
-      if (g.total === 0 && g.origin !== 'manual') continue;
+      // An imported set whose detections are all converted keeps its header (menu: show them again)
+      if (g.total === 0 && g.origin !== 'manual' && !(this._adoptedToggle?.hiddenIn?.(key) ?? 0)) continue;
       if (this._filter && g.labels.length === 0) continue;
       this._container.appendChild(this._buildSource(key, g));
     }
@@ -674,6 +678,10 @@ export class LabelList {
     }
     if (this._onRenameSet && !locked) items.push({ label: 'Rename set', action: () => this._startSetRename(nameEl, setKey, setInfo) });
     if (this._onAdoptSet && external && total > 0) items.push({ label: 'Copy all labels into my labels', action: () => this._onAdoptSet(setKey) });
+    if (this._adoptedToggle && external) {
+      const on = this._adoptedToggle.get();
+      items.push({ label: on ? 'Hide labels already in my labels' : 'Show labels already in my labels', action: () => this._adoptedToggle!.set(!on) });
+    }
     if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') items.push({ label: 'Convert to manual set', action: () => this._onConvertSetToManual(setKey) });
     if (this._onToggleLockSet && setInfo?.origin !== 'xeno-canto') {
       items.push({ label: locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)', action: () => this._onToggleLockSet(setKey, !locked) });
