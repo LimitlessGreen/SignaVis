@@ -1405,10 +1405,18 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const wrap = this._getRoot() as HTMLElement | null;
         if (!wrap || this._textPinScrollBound === wrap) return;
         this._textPinScrollBound = wrap;
-        wrap.addEventListener('scroll', () => {
+        const onScroll = () => {
             if (this._textPinRaf) return;
             this._textPinRaf = requestAnimationFrame(() => { this._textPinRaf = 0; this._pinAllLabelTexts(); });
-        }, { passive: true });
+        };
+        wrap.addEventListener('scroll', onScroll, { passive: true });
+        // detach() runs these: a re-attached layer must not keep the old wrapper's listener.
+        this._domCleanups.push(() => {
+            wrap.removeEventListener('scroll', onScroll);
+            if (this._textPinRaf) cancelAnimationFrame(this._textPinRaf);
+            this._textPinRaf = 0;
+            this._textPinScrollBound = null;
+        });
     }
 
     _resolveTextCollisions(elements: HTMLElement[], geometries: Array<{ left: number; top: number; width: number; height: number }>) {
