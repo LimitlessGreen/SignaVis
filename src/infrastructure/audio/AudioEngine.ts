@@ -605,6 +605,8 @@ export class AudioEngine extends AudioEngineBase {
           playback.rafId = requestAnimationFrame(onFrame);
           return;
         }
+        // The throttle may have dropped the last frame: the end position always reaches listeners
+        this._emit('timeupdate', { currentTime: playback.endSec, duration: this.audioBuffer?.duration || 0 });
         this._stopCustomSegmentPlayback('stopped', playback.endSec, { emitEnd: true });
         return;
       }

@@ -17,6 +17,7 @@
 // and a MockAudioEngine is available for integration-style tests (Phase 1).
 // ═══════════════════════════════════════════════════════════════════════
 
+import { TIMEUPDATE_THROTTLE_MS } from '../src/shared/constants.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioEngine } from '../src/infrastructure/audio/AudioEngine.ts';
@@ -231,16 +232,20 @@ test('AudioEngine: _emit fires CustomEvent with detail payload', () => {
 
 // ─── timeupdate for every playback path ─────────────────────────────
 
-test('AudioEngine: _emitPlaybackTimeupdate emits throttled timeupdate (used by bandpass/detector playback too)', () => {
+test('AudioEngine: _emitPlaybackTimeupdate emits throttled timeupdate (used by bandpass/detector playback too)', (t) => {
+    let now = 1000;
+    t.mock.method(performance, 'now', () => now);
     const engine = new AudioEngine(MOCK_WS_CTOR);
     engine.audioBuffer = fakeAudioBuffer(10);
     const seen = [];
     engine.addEventListener('timeupdate', (e) => seen.push(e.detail));
     engine._lastTimeupdateEmitAt = 0;
     engine._emitPlaybackTimeupdate(1.5);
+    now += TIMEUPDATE_THROTTLE_MS - 1;
     engine._emitPlaybackTimeupdate(1.51);   // same throttle window: dropped
     assert.deepEqual(seen, [{ currentTime: 1.5, duration: 10 }]);
-    engine._lastTimeupdateEmitAt = 0;
+    now += 1;                               // window over exactly at the boundary
     engine._emitPlaybackTimeupdate(2);
+    assert.deepEqual(seen.at(-1), { currentTime: 2, duration: 10 });
     assert.equal(seen.length, 2);
 });
