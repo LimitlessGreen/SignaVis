@@ -10,6 +10,7 @@ import { buildRavenSelectionTable, RAVEN_COLUMNS } from '../src/infrastructure/e
 import { ANNOTA_ANNOTATION_FIELDS, buildAnnotaAnnotation } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { LABEL_GRID_COLUMN_KEYS } from '../src/ui/panels/label-grid.ts';
+import { PROPERTIES_LABEL_KEYS } from '../src/ui/panels/properties-panel.ts';
 
 const BASE = { id: 'x1', start: 1, end: 2, freqMin: 1000, freqMax: 3000, label: 'Blackbird', scientificName: 'Turdus merula' };
 const withProps = () => Object.fromEntries(PROP_FIELDS.map((f) => [f.key, f.example]));
@@ -52,6 +53,7 @@ test('property fields: JSON export, Raven export, table column', () => {
     for (const f of PROP_FIELDS) {
         assert.equal(json[f.key], f.normalize(f.example), `${f.key}: JSON export`);
         assert.ok(LABEL_GRID_COLUMN_KEYS.includes(f.key), `${f.key}: label table column`);
+        assert.ok(PROPERTIES_LABEL_KEYS.includes(f.key), `${f.key}: properties panel row`);
         if (f.raven) {
             assert.ok(RAVEN_COLUMNS.includes(f.raven.column), `${f.key}: Raven column ${f.raven.column}`);
             const [head, row] = buildRavenSelectionTable([l]).trim().split('\n').map((r) => r.split('\t'));
