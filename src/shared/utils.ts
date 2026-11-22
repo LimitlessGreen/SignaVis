@@ -33,10 +33,11 @@ export function getAxisWidth(fallback: number): number {
 }
 
 export function formatTime(seconds: number): string {
-    const s = Math.max(0, seconds);
-    const mins = Math.floor(s / 60);
-    const secs = (s % 60).toFixed(1);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(4, '0')}`;
+    // Round once to tenths, then split: rounding the seconds part alone turned 59.96 into "00:60.0".
+    const tenths = Math.round(Math.max(0, seconds || 0) * 10);
+    const mins = Math.floor(tenths / 600);
+    const secs = ((tenths % 600) / 10).toFixed(1);
+    return `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`;
 }
 
 export function formatSecondsShort(seconds: number): string {
