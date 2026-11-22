@@ -1,0 +1,8 @@
+{
+  "_comment": "gzip bytes per published file; checked in CI after the build (scripts/check-bundle-size.mjs)",
+  "gzip": {
+    "birdnet-player.esm.js": 165122,
+    "birdnet-player.iife.js": 163891,
+    "birdnet-player.css": 52178
+  }
+}

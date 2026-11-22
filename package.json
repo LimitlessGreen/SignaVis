@@ -78,6 +78,8 @@
     "types:generate": "node ./scripts/generate-types.js",
     "taxonomy:build": "node ./scripts/build-birdnet-taxonomy.js --output ./demo/data/birdnet-taxonomy.json --v24-labels ./_birdnet_upstream/birdnet_analyzer/labels/V2.4",
     "pack:check": "npm pack",
+    "size:check": "node ./scripts/check-bundle-size.mjs",
+    "deps:core": "node ./scripts/module-graph.mjs src/app/BirdNETPlayer.ts --sizes",
     "test": "node ./scripts/run-tests.mjs",
     "models:birdbox": "node scripts/birdbox/fetch-model.mjs",
     "models:anurapam": "bash scripts/fetch-anurapam.sh",
