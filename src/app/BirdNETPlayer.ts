@@ -1437,14 +1437,33 @@ export class BirdNETPlayer {
         const next = this._normalizeItemFromSource(source, { ...(item as any), id }, existing ?? undefined);
         this._linkedLabels.set(id, next);
         this._state?.updateActiveSegmentFromLabel?.(next);
+        // Runs on every pointer move of a drag: mirror only the moved label, not the whole list.
         if (source === 'annotation') {
             this.spectrogramLabels.setLiveLinkedId(id);
-            this.spectrogramLabels.set(this._toSpectrogramLabelList());
+            this.spectrogramLabels.setItem(this._toSpectrogramLabel(next));
         } else {
             this.annotations.setLiveLinkedId(id);
-            this.annotations.set(this._toAnnotationList());
+            this.annotations.setItem(this._toAnnotation(next));
         }
-        this._renderOverviewLabelTracks();
+        if (!this._moveOverviewSegment(next)) this._renderOverviewLabelTracks();
+    }
+
+    /** Re-place one label's segment in the overview tracks; false if it has none yet. */
+    _moveOverviewSegment(label: LinkedLabel): boolean {
+        const container = this._state?.d?.overviewLabelTracks;
+        const duration = this._state?.audioBuffer?.duration || 0;
+        if (!container || duration <= 0) return false;
+        const seg = ([...container.querySelectorAll('.overview-label-segment')] as HTMLElement[]).find((el) => el.dataset.id === label.id);
+        if (!seg) return false;
+        this._placeOverviewSegment(seg, label.start, label.end, duration);
+        return true;
+    }
+
+    _placeOverviewSegment(el: HTMLElement, start: number, end: number, duration: number) {
+        el.dataset.start = String(start);
+        el.dataset.end = String(end);
+        el.style.left = `${(start / duration) * 100}%`;
+        el.style.width = `${Math.max(0.3, ((end - start) / duration) * 100)}%`;
     }
 
     /**
@@ -1696,13 +1715,8 @@ export class BirdNETPlayer {
                 for (const seg of segments) {
                     const s = document.createElement('span');
                     s.className = 'overview-label-segment';
-                    s.dataset.start = String(seg.start);
-                    s.dataset.end = String(seg.end);
                     s.dataset.id = seg.id || '';
-                    const leftPct = (seg.start / duration) * 100;
-                    const widthPct = ((seg.end - seg.start) / duration) * 100;
-                    s.style.left = `${leftPct}%`;
-                    s.style.width = `${Math.max(0.3, widthPct)}%`;
+                    this._placeOverviewSegment(s, seg.start, seg.end, duration);
                     s.addEventListener('pointerenter', () => {
                         this._emit?.('labelfocus', { id: seg.id || null, source: 'overview', interaction: 'hover' });
                     });
@@ -1767,7 +1781,11 @@ export class BirdNETPlayer {
     }
 
     _toAnnotationList() {
-        return Array.from(this._linkedLabels.values()).map((l) => ({
+        return Array.from(this._linkedLabels.values(), (l) => this._toAnnotation(l));
+    }
+
+    _toAnnotation(l: LinkedLabel) {
+        return {
             id: l.id,
             start: l.start,
             end: l.end,
@@ -1779,11 +1797,15 @@ export class BirdNETPlayer {
             origin: l.origin || '',
             author: l.author || '',
             tags: l.tags || {},
-        }));
+        };
     }
 
     _toSpectrogramLabelList() {
-        return Array.from(this._linkedLabels.values()).map((l) => ({
+        return Array.from(this._linkedLabels.values(), (l) => this._toSpectrogramLabel(l));
+    }
+
+    _toSpectrogramLabel(l: LinkedLabel) {
+        return {
             id: l.id,
             start: l.start,
             end: l.end,
@@ -1799,7 +1821,7 @@ export class BirdNETPlayer {
             author: l.author || '',
             tags: l.tags || {},
             ...((l as any).reviewing ? { reviewing: true } : {}),
-        }));
+        };
     }
 
     _normalizeLinkedLabel(label: Partial<LinkedLabel>) {

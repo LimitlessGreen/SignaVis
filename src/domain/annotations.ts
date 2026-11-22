@@ -213,6 +213,31 @@ function sameIdSet(set: Set<string>, ids: Iterable<string>): boolean {
     return true;
 }
 
+/**
+ * Stacking inside overlap clusters of time regions. `sorted` is ordered by start; a cluster
+ * is a run of regions that overlap directly or transitively. Each region of a cluster that
+ * spans two or more swimlane rows gets the cluster depth and its row index within it.
+ */
+export function overlapClusterLayout(sorted: Array<{ id: string; start: number; end: number }>, rowMap: Map<string, number>) {
+    const localLayout = new Map<string, { depth: number; localRow: number }>();
+    const flush = (members: Array<{ id: string; row: number }>) => {
+        if (members.length < 2) return;
+        const rowsSorted = [...new Set(members.map((m) => m.row))].sort((a, b) => a - b);
+        const depth = rowsSorted.length;
+        if (depth < 2) return;
+        for (const m of members) localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
+    };
+    let members: Array<{ id: string; row: number }> = [];
+    let maxEnd = -Infinity;
+    for (const r of sorted) {
+        if (members.length && r.start >= maxEnd) { flush(members); members = []; maxEnd = -Infinity; }
+        members.push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
+        maxEnd = Math.max(maxEnd, r.end);
+    }
+    flush(members);
+    return localLayout;
+}
+
 class AnnotationLayerBase extends EventTarget {
     declare player: any;
     declare overlay: HTMLElement | null;
@@ -479,6 +504,15 @@ class AnnotationLayerBase extends EventTarget {
         this.render();
     }
 
+    /** Replace (or add) one item by id: a drag mirrored from the other layer moves one label. */
+    setItem(item: Record<string, unknown>): void {
+        const next = this._normalize(item);
+        const i = this._items.findIndex((x: any) => x.id === next.id);
+        if (i >= 0) this._items[i] = next;
+        else this._items.push(next);
+        this.render();
+    }
+
     clear() {
         this._items = [];
         this.render();
@@ -691,50 +725,13 @@ export class AnnotationLayer extends AnnotationLayerBase {
         }
         const totalRows = Math.max(1, rowEnds.length);
 
-        // Local overlap clusters via union-find: regions that overlap in time
-        // (directly or transitively) form a cluster and share a uniform depth
-        // so their top/height positioning never conflicts visually.
+        // Local overlap clusters: regions that overlap in time (directly or
+        // transitively) form a cluster and share a uniform depth so their
+        // top/height positioning never conflicts visually. Sorted by start, a
+        // cluster ends where a region starts at or after the running max end,
+        // so one sweep finds them (the former pairwise union-find was O(n·overlaps)).
         // Isolated regions or non-overlapping clusters keep independent sizing.
-        const localLayout = new Map<string, { depth: number; localRow: number }>();
-        if (totalRows > 1) {
-            const par = new Map<string, string>();
-            const find = (x: string) => {
-                while (par.get(x) !== x) {
-                    par.set(x, (par.get(par.get(x) || x) || x) as string);
-                    x = String(par.get(x));
-                }
-                return x;
-            };
-            for (const r of sorted) par.set(r.id, r.id);
-
-            // Union overlapping pairs (sorted by start → early break)
-            for (let i = 0; i < sorted.length; i++) {
-                for (let j = i + 1; j < sorted.length; j++) {
-                    if (sorted[j].start >= sorted[i].end) break;
-                    const ra = find(sorted[i].id), rb = find(sorted[j].id);
-                    if (ra !== rb) par.set(ra, rb);
-                }
-            }
-
-            // Group regions by cluster root
-            const clusters = new Map<string, Array<{ id: string; row: number }>>();
-            for (const r of sorted) {
-                const root = find(r.id);
-                if (!clusters.has(root)) clusters.set(root, []);
-                (clusters.get(root) as Array<{ id: string; row: number }>).push({ id: r.id, row: rowMap.get(r.id) ?? 0 });
-            }
-
-            for (const [, members] of clusters) {
-                if (members.length < 2) continue;
-                const rowSet = new Set(members.map((m: any) => m.row));
-                const rowsSorted = [...rowSet].sort((a, b) => a - b);
-                const depth = rowsSorted.length;
-                if (depth < 2) continue;
-                for (const m of members) {
-                    localLayout.set(m.id, { depth, localRow: rowsSorted.indexOf(m.row) });
-                }
-            }
-        }
+        const localLayout = totalRows > 1 ? overlapClusterLayout(sorted, rowMap) : new Map<string, { depth: number; localRow: number }>();
 
         // Keyed update (see _reconcile): one changed region rebuilds one element.
         const p = this.player as any;
