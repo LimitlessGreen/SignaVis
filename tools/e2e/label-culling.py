@@ -40,6 +40,27 @@ with sync_playwright() as p:
       return { kept, active: document.querySelectorAll('.spectrogram-label-region.active').length }; }""")
     check('culling: selected label kept off-screen', r['kept'])
     check('highlight follows playback', r['active'] >= 1, str(r['active']))
+    # Culling renders must keep: the paused playhead highlight, focus on an off-screen label, drag previews
+    r = page.evaluate("""async () => { const sv = window.__signavis, st = sv.player._state, w = st.d.canvasWrapper, L = sv.player.spectrogramLabels;
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      w.scrollLeft = 0; await wait(300);
+      L.highlightActiveLabel(10 * 0.028 + 0.02);
+      w.scrollLeft = st.coords.timeToScrollX(8); await wait(300);
+      w.scrollLeft = 0; await wait(300);
+      const out = { activeBack: !!document.querySelector('.spectrogram-label-region.active[data-id="c10"]') };
+      sv.player._emit('labelfocus', { id: 'c380', source: 'overview', interaction: 'hover' }); await wait(100);
+      out.focusSpec = !!document.querySelector('.spectrogram-label-region[data-id="c380"]');
+      out.focusWave = !!document.querySelector('.annotation-region[data-id="c380"]');
+      sv.player._emit('labelfocus', { id: null, source: 'overview', interaction: 'hover' });
+      const draft = document.createElement('div'); draft.className = 'spectrogram-label-draft'; L.overlay.appendChild(draft); L._draftEl = draft;
+      const zoom = document.createElement('div'); zoom.className = 'spectrogram-label-draft zoom-box'; L.overlay.appendChild(zoom); L._zoomBoxEl = zoom;
+      w.scrollLeft = st.coords.timeToScrollX(8); await wait(300);
+      out.draftKept = draft.isConnected; out.zoomKept = zoom.isConnected;
+      draft.remove(); zoom.remove(); L._draftEl = null; L._zoomBoxEl = null; w.scrollLeft = 0; await wait(300);
+      return out; }""")
+    check('culling: paused highlight back after scrolling away and back', r['activeBack'], str(r))
+    check('culling: focusing an off-screen label builds its elements', r['focusSpec'] and r['focusWave'], str(r))
+    check('culling: draw / zoom-box previews survive a scroll render', r['draftKept'] and r['zoomKept'], str(r))
     page.evaluate("() => { const b = [...document.querySelectorAll('button')].find(x => (x.getAttribute('aria-label') || x.title || x.textContent).trim().startsWith('Labels')); b?.click(); }")
     page.wait_for_timeout(400)
     r = page.evaluate("""async () => { const L = window.__signavis.labelList; L._view = 'time'; L.render(L._labels);
@@ -52,6 +73,15 @@ with sync_playwright() as p:
     check('label list time view: first chunk only', r['initial'] < 400, str(r['initial']))
     check('label list time view: far selection built and marked', r['far'])
     check('label list time view: scrolling builds all rows in order', r['all'] == 400 and r['sorted'], str(r))
+    r = page.evaluate("""async () => { const L = window.__signavis.labelList; L._view = 'time'; L.render(L._labels);
+      const lazy = [...L._lazyGroupOf.keys()]; if (!lazy.length) return { lazyKept: false, rowOk: false, lazy: 0, rows: L._container.querySelectorAll('.lt-row').length, n: L._labels.length };
+      const id = lazy[lazy.length - 1], stale = L._lazyGroupOf.get(id).__buildRows;   // as a queued observer entry of this render
+      L.render(L._labels);
+      stale();
+      const row = L._cardMap.get(id);
+      const out = { lazyKept: L._lazyGroupOf.has(id), rowOk: !row || row.isConnected };
+      L._view = 'sources'; L.render(L._labels); return out; }""")
+    check('label list time view: a superseded render builds nothing into the current one', r['lazyKept'] and r['rowOk'], str(r))
     r = page.evaluate("""async () => { const sv = window.__signavis; const seg = () => document.querySelector('.overview-label-segment[data-id="c3"]');
       const before = seg(); sv.propsPanel.onChange('c3', { note: 'x' }); await new Promise(r => setTimeout(r, 300)); return before && before === seg(); }""")
     check('overview: note edit keeps the segments', r)

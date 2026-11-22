@@ -349,12 +349,16 @@ class AnnotationLayerBase extends EventTarget {
         }
         this._elById = nextById;
         const keep = new Set<Element>(elements);
+        // A culling render can run mid-drag (scroll past the rendered window): keep the previews
+        for (const preview of [this._draftEl, (this as any)._zoomBoxEl]) if (preview) keep.add(preview);
         for (const child of [...overlay.children]) if (!keep.has(child)) child.remove();
         let ref = overlay.firstChild;
         for (const el of elements) {
             if (el === ref) ref = ref.nextSibling;
             else overlay.insertBefore(el, ref);
         }
+        // Elements built anew (scrolled back into the window) get the playhead state again
+        if (this._highlightTime !== null) this._highlightActive(this._highlightTime);
         return elements;
     }
 
@@ -378,6 +382,11 @@ class AnnotationLayerBase extends EventTarget {
         if (!sc || vw <= 0 || typeof coords?.scrollXToTime !== 'function') return null;
         const left = sc.scrollLeft;
         return { start: coords.scrollXToTime(Math.max(0, left - vw)), end: coords.scrollXToTime(left + 2 * vw) };
+    }
+
+    /** True when `id` is an item that the last render culled (it has no element). */
+    _needsElement(id: string | null): boolean {
+        return !!id && !this._elById.has(id) && this._items.some((i: any) => i.id === id);
     }
 
     /** Ids that keep their element off-screen too: edited, selected, focused, linked. */
@@ -426,8 +435,10 @@ class AnnotationLayerBase extends EventTarget {
      * item data and only touches elements whose state flips; toggling a class on every
      * element restyled thousands of labels per update and halved the playback frame rate.
      */
+    _highlightTime: number | null = null;
     _highlightActive(currentTime: number) {
         if (!this.overlay) return;
+        this._highlightTime = currentTime;
         const next = new Set<HTMLElement>();
         for (const item of this._items) {
             if (currentTime >= Number(item.start) && currentTime <= Number(item.end)) {
@@ -654,13 +665,12 @@ export class AnnotationLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('labelfocus', (e: any) => {
             const id = e?.detail?.id || null;
             const interaction = e?.detail?.interaction;
-            if (interaction === 'click') {
-                this._selectedLabelId = id;
-                this._updateSelectedVisual();
-            } else {
-                this._focusedLabelId = id;
-                this._updateFocusedVisual();
-            }
+            if (interaction === 'click') this._selectedLabelId = id;
+            else this._focusedLabelId = id;
+            // A culled label has no element: render builds it (it is pinned now) with its classes
+            if (this._needsElement(id)) this.render();
+            else if (interaction === 'click') this._updateSelectedVisual();
+            else this._updateFocusedVisual();
         }));
     }
 
@@ -1161,14 +1171,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._unsubs.push(this.player.on('labelfocus', (e: any) => {
             const id = e?.detail?.id || null;
             const interaction = e?.detail?.interaction;
-            if (interaction === 'click') {
-                this._selectedLabelId = id;
-                this._updateSelectedVisual();
-            } else {
-                // hover or unspecified — update transient focus highlight
-                this._focusedLabelId = id;
-                this._updateFocusedVisual();
-            }
+            if (interaction === 'click') this._selectedLabelId = id;
+            else this._focusedLabelId = id;   // hover or unspecified: transient focus
+            // A culled label has no element: render builds it (it is pinned now) with its classes
+            if (this._needsElement(id)) this.render();
+            else if (interaction === 'click') this._updateSelectedVisual();
+            else this._updateFocusedVisual();
         }));
     }
 
