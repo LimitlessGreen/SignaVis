@@ -772,13 +772,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Eigener Projektordner pro Realtest (Store wird geschrieben): Audio aus
+    /// EMBED_TEST_DIR als Hardlink (sonst Kopie), damit sich Tests nicht stoeren.
+    fn fixture(name: &str) -> String {
+        let src = PathBuf::from(std::env::var("EMBED_TEST_DIR").unwrap());
+        let dir = src.join(".signavis-test").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for e in std::fs::read_dir(&src).unwrap().flatten() {
+            if e.file_type().is_ok_and(|t| t.is_file()) {
+                let to = dir.join(e.file_name());
+                if std::fs::hard_link(e.path(), &to).is_err() {
+                    std::fs::copy(e.path(), &to).unwrap();
+                }
+            }
+        }
+        dir.to_string_lossy().into_owned()
+    }
+
     /// Realtest mit Modell: SIGNAVIS_PERCH_MODEL und EMBED_TEST_DIR (Ordner mit Audio) setzen,
     /// optional EMBED_TEST_HOP (Sekunden, Standard 5).
     #[test]
     #[ignore]
     fn job_end_to_end() {
         let model = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL").unwrap());
-        let root = std::env::var("EMBED_TEST_DIR").unwrap();
+        let root = fixture("end-to-end");
         let hop: f64 = std::env::var("EMBED_TEST_HOP").ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
         let _ = std::fs::remove_dir_all(store_dir(&root));
         let cancel = AtomicBool::new(false);
@@ -811,8 +829,7 @@ mod tests {
     fn upgrade_adds_scores() {
         let old = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL_OLD").unwrap());
         let new = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL").unwrap());
-        let root = std::env::var("EMBED_TEST_DIR").unwrap();
-        let _ = std::fs::remove_dir_all(store_dir(&root));
+        let root = fixture("upgrade");
         let cancel = AtomicBool::new(false);
         let rows = |root: &str| {
             let idx = read_index(root).unwrap();
@@ -834,6 +851,7 @@ mod tests {
         assert!(scores.values().flatten().all(|s| s.is_finite()));
         let after = rows(&root);
         for (k, v) in &before {
+            assert_eq!(v.len(), after[k].len(), "{k}: andere Fensterzahl");
             let d = v.iter().zip(&after[k]).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
             assert!(d < 1e-3, "{k}: Embedding weicht ab ({d})");
         }
