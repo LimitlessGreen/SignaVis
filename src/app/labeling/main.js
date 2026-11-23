@@ -3722,7 +3722,7 @@ if (isLite()) {
         const file = await readAudioPath(path);
         if (!file) { showLoadError(`File not found: ${path}`, 'Cannot open'); return; }
         closeLibrary();
-        await loadLocalAudioFile(file, { filePath: path });
+        await loadLocalAudioFile(file, { filePath: path }, { copyIntoProject: false });
       },
     });
     document.body.appendChild(libView.el);
@@ -4465,8 +4465,10 @@ fileInput.addEventListener('change', async () => {
 /**
  * Load a local audio file (file picker or drag & drop).
  * `extra.filePath` (Lite): absolute path, stored on the recording so it reopens after a restart.
+ * `copyIntoProject: false`: leave the file where it is (library recordings: the catalog already
+ * knows them; copying would duplicate a whole collection into audio/).
  */
-async function loadLocalAudioFile(file, extra = {}) {
+async function loadLocalAudioFile(file, extra = {}, { copyIntoProject = true } = {}) {
   if (extra.filePath) liteRecentAdd({ kind: 'file', path: extra.filePath });
   // Re-picked session-only file from a restored project: reattach audio, keep its labels.
   const _orphan = recordingManager.getAll().find((e) =>
@@ -4476,7 +4478,7 @@ async function loadLocalAudioFile(file, extra = {}) {
     recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true, ...extra });
     fileInput.value = '';
     await activateRecordingEntry(_orphan);
-    await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
+    if (copyIntoProject) await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
     return;
   }
   const _prep = await prepareRecordingLoad();
@@ -4518,7 +4520,7 @@ async function loadLocalAudioFile(file, extra = {}) {
   labelStore.claim(_fileEntry.id);  // empty labels now belong to the new entry
   fileInput.value = '';
   finishRecordingLoad(_prep);
-  await keepFileInProjectFolder(_fileEntry, file);
+  if (copyIntoProject) await keepFileInProjectFolder(_fileEntry, file);
 }
 
 // ── Drag & drop of audio files anywhere on the page ──────────────
