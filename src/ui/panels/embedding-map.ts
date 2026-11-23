@@ -8,7 +8,7 @@
 // score / time of day / date; cluster cards (size, make-up, typical windows),
 // optional assignment of unclustered windows to their nearest cluster, and a
 // label check (embed_clusters, agile_scores, agile_suspects). Filters: hours,
-// dates (from AudioMoth-style file names) and quiet windows (RMS level).
+// dates (from AudioMoth-style file names) and a minimum RMS level.
 // See plans/lite-embedding-map-plan.md.
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -387,7 +387,7 @@ export class EmbeddingMap {
         if (d.level?.length === d.x.length && this.#levelRange[1] > this.#levelRange[0]) {
             const [l0, l1] = this.#levelRange;
             const v = Number.isFinite(this.#filter.minLevel) ? this.#filter.minLevel : l0;
-            parts.push(`<label title="Hide windows whose level (RMS) is below this value: mostly silence and faint background">Hide quiet
+            parts.push(`<label title="Hide windows whose overall level (RMS) is below this value. It does not tell calls from wind, rain or insects: in dense soundscapes quiet windows hold calls as often as loud ones.">Min. level
                 <input type="range" class="emap-level" min="${l0}" max="${l1}" step="1" value="${v}"><span class="emap-level-val">${v} dBFS</span></label>`);
         }
         if (!parts.length) {
