@@ -29,8 +29,8 @@ const CATALOG_FILE: &str = ".signavis/catalog.sqlite";
 #[derive(Default)]
 pub struct CatalogState {
     open: Mutex<HashMap<String, Arc<Mutex<Catalog>>>>,
-    /// Last scan per source folder (preview → import without scanning twice).
-    scans: Mutex<HashMap<String, Arc<ScanResult>>>,
+    /// Last scan per source folder and scan options (preview → import without scanning twice).
+    scans: Arc<Mutex<HashMap<String, Arc<ScanResult>>>>,
     hash_cancel: Arc<AtomicBool>,
     hash_running: Arc<AtomicBool>,
 }
@@ -47,15 +47,22 @@ impl CatalogState {
         Ok(c)
     }
 
-    fn scan(&self, source: &str, spec: &ProfileSpec, refresh: bool) -> Result<Arc<ScanResult>, String> {
+    /// Scan of `source` with the profile's scan options: cached per (folder, options), the walk
+    /// itself on the blocking pool (a slow network folder must not hold an async worker).
+    async fn scan(&self, source: &str, spec: &ProfileSpec, refresh: bool) -> Result<Arc<ScanResult>, String> {
+        let opts = spec.scan_options().map_err(err)?;   // invalid exclusions fail even on a cache hit
+        let key = format!("{source}\n{}", spec.derived_dirs.join("\n"));
         if !refresh {
-            if let Some(s) = self.scans.lock().map_err(err)?.get(source) { return Ok(s.clone()); }
+            if let Some(s) = self.scans.lock().map_err(err)?.get(&key) { return Ok(s.clone()); }
         }
-        let dir = PathBuf::from(source);
-        if !dir.is_dir() { return Err(format!("not a folder: {source}")); }
-        let s = Arc::new(scan(&dir, &spec.scan_options().map_err(err)?));
-        self.scans.lock().map_err(err)?.insert(source.to_string(), s.clone());
-        Ok(s)
+        let (scans, source) = (self.scans.clone(), source.to_string());
+        blocking(move || {
+            let dir = PathBuf::from(&source);
+            if !dir.is_dir() { return Err(format!("not a folder: {source}")); }
+            let s = Arc::new(scan(&dir, &opts));
+            scans.lock().map_err(err)?.insert(key, s.clone());
+            Ok(s)
+        }).await
     }
 }
 
@@ -69,7 +76,7 @@ pub async fn catalog_preview(
     state: tauri::State<'_, CatalogState>, source: String, profile: ProfileSpec, refresh: bool,
 ) -> Result<Preview, String> {
     let built = profile.build().map_err(err)?;
-    let scanned = state.scan(&source, &profile, refresh)?;
+    let scanned = state.scan(&source, &profile, refresh).await?;
     blocking(move || Ok(preview(&scanned, &built, 200))).await
 }
 
@@ -78,7 +85,7 @@ pub async fn catalog_preview(
 pub async fn catalog_suggest(
     state: tauri::State<'_, CatalogState>, source: String, refresh: bool,
 ) -> Result<Vec<aw_catalog::suggest::Suggestion>, String> {
-    let scanned = state.scan(&source, &ProfileSpec::default(), refresh)?;
+    let scanned = state.scan(&source, &ProfileSpec::default(), refresh).await?;
     blocking(move || Ok(aw_catalog::suggest::suggest_for_scan(&scanned, 6))).await
 }
 
@@ -106,7 +113,7 @@ pub async fn catalog_import(
     profile: ProfileSpec, import_tables: bool,
 ) -> Result<ImportResult, String> {
     let built = profile.build().map_err(err)?;
-    let scanned = state.scan(&source, &profile, false)?;
+    let scanned = state.scan(&source, &profile, false).await?;
     let cat = state.get(&project_root)?;
     blocking(move || {
         let mut cat = cat.lock().map_err(err)?;
@@ -186,16 +193,22 @@ impl From<HashKind> for JobKind {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct HashProgress { project_root: String, kind: JobKind, done: usize, total: usize, finished: bool, failed: usize }
+struct HashProgress {
+    project_root: String, kind: JobKind, done: usize, total: usize, finished: bool, failed: usize,
+    /// Set on the final event when the job stopped because of an error (resume by starting again).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
 
 /// Background job over all roots located on this machine: audio headers, quick hashes (fingerprints), and with
 /// `full` afterwards SHA-256 checksums of the whole files. Progress as HASH_EVENT; resumable
 /// (commits in batches); one job at a time.
 #[tauri::command]
 pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, CatalogState>, project_root: String, full: bool) -> Result<(), String> {
+    let cat = state.get(&project_root)?;   // before taking the reservation: a failed open leaves none behind
     if state.hash_running.swap(true, Ordering::SeqCst) { return Err("hashing is already running".into()); }
     state.hash_cancel.store(false, Ordering::SeqCst);
-    let (cat, cancel, running) = (state.get(&project_root)?, state.hash_cancel.clone(), state.hash_running.clone());
+    let (cancel, running) = (state.hash_cancel.clone(), state.hash_running.clone());
     tauri::async_runtime::spawn_blocking(move || {
         let result = (|| -> Result<(), String> {
             let roots = aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)?;
@@ -204,18 +217,20 @@ pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, C
             'headers: for r in &roots {
                 let Some(base) = r.path.clone() else { continue };
                 let todo = aw_catalog::header::header_todo(&*cat.lock().map_err(err)?, r.id).map_err(err)?;
-                for (i, chunk) in todo.chunks(500).enumerate() {
+                let mut done = 0;
+                for chunk in todo.chunks(500) {
                     let (infos, cancelled) = aw_catalog::header::read_batch(Path::new(&base), chunk, &cancel);
                     failed += infos.iter().filter(|(_, r)| r.is_err()).count();
                     aw_catalog::header::store_infos(&mut *cat.lock().map_err(err)?, &infos).map_err(err)?;
+                    done += infos.len();
                     let _ = app.emit(HASH_EVENT, HashProgress {
-                        project_root: project_root.clone(), kind: JobKind::Header, done: i * 500 + chunk.len(), total: todo.len(), finished: false, failed,
+                        project_root: project_root.clone(), kind: JobKind::Header, done, total: todo.len(), finished: false, failed, error: None,
                     });
                     if cancelled { break 'headers; }
                 }
             }
             if cancel.load(Ordering::SeqCst) {
-                let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Header, done: 0, total: 0, finished: true, failed });
+                let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Header, done: 0, total: 0, finished: true, failed, error: None });
                 return Ok(());
             }
             // 2. Fingerprints, 3. (optional) SHA-256.
@@ -226,23 +241,29 @@ pub async fn catalog_hash_start(app: tauri::AppHandle, state: tauri::State<'_, C
                     let todo = aw_catalog::hash::hash_todo(&*cat.lock().map_err(err)?, r.id, kind).map_err(err)?;
                     let batch = if kind == HashKind::Full { 20 } else { aw_catalog::hash::HASH_BATCH };
                     // Read the files without holding the catalog; lock only to store each batch.
-                    for (i, chunk) in todo.chunks(batch).enumerate() {
+                    let mut attempted = 0;
+                    for chunk in todo.chunks(batch) {
                         let mut rep = aw_catalog::hash::HashReport::default();
                         let done = aw_catalog::hash::hash_batch(Path::new(&base), kind, chunk, &cancel, &mut rep);
-                        aw_catalog::hash::store_hashes(&mut *cat.lock().map_err(err)?, kind, &done).map_err(err)?;
+                        aw_catalog::hash::store_checked(&mut *cat.lock().map_err(err)?, kind, &done).map_err(err)?;
                         failed += rep.failed.len();
+                        attempted += done.len() + rep.failed.len();
                         let _ = app.emit(HASH_EVENT, HashProgress {
-                            project_root: project_root.clone(), kind: kind.into(), done: i * batch + chunk.len(), total: todo.len(), finished: false, failed,
+                            project_root: project_root.clone(), kind: kind.into(), done: attempted, total: todo.len(), finished: false, failed, error: None,
                         });
                         if rep.cancelled { break 'all; }
                     }
                 }
             }
-            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Quick, done: 0, total: 0, finished: true, failed });
+            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Quick, done: 0, total: 0, finished: true, failed, error: None });
             Ok(())
         })();
         running.store(false, Ordering::SeqCst);
-        if let Err(e) = result { eprintln!("[catalog] hashing failed: {e}"); }
+        if let Err(e) = result {
+            eprintln!("[catalog] hashing failed: {e}");
+            // Every exit ends the progress: the UI stops waiting and can offer to start again.
+            let _ = app.emit(HASH_EVENT, HashProgress { project_root: project_root.clone(), kind: JobKind::Quick, done: 0, total: 0, finished: true, failed: 0, error: Some(e) });
+        }
     });
     Ok(())
 }

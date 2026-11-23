@@ -90,18 +90,48 @@ pub fn store_hashes(cat: &mut Catalog, kind: HashKind, hashes: &[(i64, String)])
     Ok(())
 }
 
+/// A hash and the file state (size, mtime) it was computed from.
+#[derive(Debug, Clone)]
+pub struct Hashed { pub id: i64, pub hash: String, pub size: i64, pub mtime_ms: i64 }
+
+fn file_state(p: &Path) -> std::io::Result<(i64, i64)> {
+    let md = std::fs::metadata(p)?;
+    let mtime = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as i64);
+    Ok((md.len() as i64, mtime))
+}
+
 /// Hash one batch from disk (no catalog access, so callers can hold no lock meanwhile).
-pub fn hash_batch(base: &Path, kind: HashKind, batch: &[(i64, String)], cancel: &AtomicBool, rep: &mut HashReport) -> Vec<(i64, String)> {
+/// A file that changes while it is read is reported as failed, not hashed.
+pub fn hash_batch(base: &Path, kind: HashKind, batch: &[(i64, String)], cancel: &AtomicBool, rep: &mut HashReport) -> Vec<Hashed> {
     let mut done = Vec::with_capacity(batch.len());
     for (id, rel) in batch {
         if cancel.load(Ordering::Relaxed) { rep.cancelled = true; break; }
-        match kind.compute(&base.join(rel)) {
-            Ok(h) => done.push((*id, h)),
+        let p = base.join(rel);
+        let r = file_state(&p).and_then(|before| {
+            let h = kind.compute(&p)?;
+            if file_state(&p)? != before { return Err(std::io::Error::other("changed while reading")); }
+            Ok((h, before))
+        });
+        match r {
+            Ok((hash, (size, mtime_ms))) => done.push(Hashed { id: *id, hash, size, mtime_ms }),
             Err(e) => rep.failed.push(format!("{rel}: {e}")),
         }
     }
     rep.hashed += done.len();
     done
+}
+
+/// Store hashes only where the catalog still has the file state they were computed from: an asset
+/// that a rescan marked changed meanwhile keeps no hash and is hashed again next time.
+pub fn store_checked(cat: &mut Catalog, kind: HashKind, hashes: &[Hashed]) -> Result<usize> {
+    let tx = cat.conn.transaction()?;
+    let mut n = 0;
+    {
+        let mut up = tx.prepare(&format!("UPDATE asset SET {} = ?2 WHERE id = ?1 AND size = ?3 AND mtime = ?4", kind.column()))?;
+        for h in hashes { n += up.execute(params![h.id, h.hash, h.size, h.mtime_ms])?; }
+    }
+    tx.commit()?;
+    Ok(n)
 }
 
 pub const HASH_BATCH: usize = 500;
@@ -116,7 +146,7 @@ pub fn hash_missing(cat: &mut Catalog, root_id: i64, base: &Path, kind: HashKind
     for chunk in todo.chunks(batch) {
         let failed_before = rep.failed.len();
         let done = hash_batch(base, kind, chunk, cancel, &mut rep);
-        store_hashes(cat, kind, &done)?;
+        store_checked(cat, kind, &done)?;
         // Files actually tried (a cancelled batch stops early), failures included.
         attempted += done.len() + rep.failed.len() - failed_before;
         progress(attempted, todo.len());
@@ -620,6 +650,24 @@ mod tests {
         let mut last = (usize::MAX, 0);
         hash_missing(&mut cat, root, &dir, HashKind::Quick, &AtomicBool::new(true), &mut |d, t| last = (d, t)).unwrap();
         assert_eq!(last, (0, 3));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hash_of_an_older_file_state_is_not_stored() {
+        let dir = tmp("k");
+        write(&dir, "a.wav", &noise(1, 1000));
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &plain()).unwrap();
+        let todo = hash_todo(&cat, root, HashKind::Quick).unwrap();
+        let mut rep = HashReport::default();
+        let done = hash_batch(&dir, HashKind::Quick, &todo, &AtomicBool::new(false), &mut rep);
+        // Meanwhile a rescan saw new content (other size): the old hash must not be stored.
+        cat.conn.execute("UPDATE asset SET size = size + 1, quick_hash = NULL, status = 'changed'", []).unwrap();
+        assert_eq!(store_checked(&mut cat, HashKind::Quick, &done).unwrap(), 0);
+        let h: Option<String> = cat.conn.query_row("SELECT quick_hash FROM asset", [], |r| r.get(0)).unwrap();
+        assert_eq!(h, None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

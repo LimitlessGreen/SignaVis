@@ -220,6 +220,7 @@ export class LibraryView {
         void catalogApi.onHashProgress((p) => {
             if (p.projectRoot !== this.#o.projectRoot) return;
             this.#hash = p.finished ? null : p;
+            if (p.error) this.el.querySelector('.lib-stats')!.textContent = `Analysing files stopped: ${p.error} (start it again to continue)`;
             if (p.finished) void this.#loadIntegrity(); else this.#renderIntegrity();
         }).then((u) => { if (this.#disposed) u(); else this.#unlisten = u; }).catch(() => {});
         this.#applyView();

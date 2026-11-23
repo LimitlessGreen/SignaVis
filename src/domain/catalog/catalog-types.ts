@@ -95,7 +95,7 @@ export interface Integrity {
     missing: number; changed: number;
     duplicateGroups: number; duplicates: DuplicateGroup[]; hashing: boolean;
 }
-export interface HashProgress { projectRoot: string; kind: 'header' | 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number }
+export interface HashProgress { projectRoot: string; kind: 'header' | 'quick' | 'full'; done: number; total: number; finished: boolean; failed: number; error?: string }
 export interface SiteInfo { id: number; name: string; tz: string | null; recordings: number; clocks: string[] }
 export interface ClockPeriod { from: string | null; fromPath?: string | null; clock: string; note?: string | null }
 export interface DeviceInfo { id: number; name: string; recordings: number; sites: string[]; periods: ClockPeriod[] }
