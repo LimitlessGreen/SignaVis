@@ -323,12 +323,13 @@ jobs:
           name: lite-data-${{ github.run_id }}
           path: demo/data
 
-      - name: Rust tests (Lite shell)
+      - name: Rust tests (Lite shell + catalog crate)
         # No platform-specific test code; Linux is enough (saves ~3 min on Windows).
+        # aw-catalog is a path dependency, not a workspace member: name it, or its tests never run.
         if: runner.os == 'Linux'
         working-directory: src-tauri-lite
         shell: bash
-        run: cargo test
+        run: cargo test -p signavis-lite -p aw-catalog
 
       - name: Fetch DirectML.dll for the Lite bundle (Windows)
         # ort links ONNX Runtime statically but DirectML dynamically. Without
