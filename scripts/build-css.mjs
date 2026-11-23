@@ -8,6 +8,7 @@ import path from 'node:path';
 import * as sass from 'sass';
 import { PACKAGE_ENTRIES } from './package-entries.mjs';
 import { reachable } from './module-graph.mjs';
+import { isMain } from './is-main.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SRC = path.join(ROOT, 'src');
@@ -42,7 +43,7 @@ export function buildEntryCss() {
     return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
     fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
     for (const [name, { css, extra }] of Object.entries(buildEntryCss())) {
         fs.writeFileSync(path.join(ROOT, 'dist', `${name}.css`), css);

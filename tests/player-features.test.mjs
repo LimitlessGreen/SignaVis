@@ -49,3 +49,15 @@ test('an explicit labelTable feature wins over the option', () => {
     p._installFeatures();
     assert.equal(host, 0);
 });
+
+test('a feature whose install throws is not reserved: use() can retry', () => {
+    const p = bare(CorePlayer);
+    let fail = true, installs = 0;
+    const f = { name: 'flaky', install: () => { installs++; if (fail) throw new Error('boom'); } };
+    assert.throws(() => p.use(f), /boom/);
+    assert.equal(p.hasFeature('flaky'), false);
+    fail = false;
+    p.use(f);
+    assert.equal(p.hasFeature('flaky'), true);
+    assert.equal(installs, 2);
+});

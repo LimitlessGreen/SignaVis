@@ -196,10 +196,20 @@ export function preloadLabelEditor(): void {
 }
 
 async function openLabelNameEditor(opts: any) {
+    // The editor may still be loading when another recording is opened: then don't
+    // open it, and never let its submit/delete act on the new recording's labels.
+    const state = opts?.player?._state;
+    const generation = state?.loadGeneration;
+    const sameRecording = () => state?.loadGeneration === generation;
     const { LabelEditorModal } = await loadLabelEditor();
+    if (!sameRecording()) return null;
     const layer = opts?.layer;
     const rest  = { ...opts };
     delete rest.layer;
+    for (const key of ['onSubmit', 'onDelete']) {
+        const fn = rest[key];
+        if (typeof fn === 'function') rest[key] = (...args: any[]) => (sameRecording() ? fn(...args) : undefined);
+    }
     // Wire onLayerEmit: dispatch tag events on the layer (which BirdNETPlayer
     // already listens to), or fall back to player._emit for legacy callers.
     const onLayerEmit = layer

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { PACKAGE_ENTRIES } from './package-entries.mjs';
+import { isMain } from './is-main.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
@@ -53,7 +54,7 @@ function measure(file) {
     return { raw, gz, files };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
     const budget = JSON.parse(fs.readFileSync(BUDGET, 'utf8'));
     const update = process.argv.includes('--update');
     const kb = (n) => `${(n / 1024).toFixed(1)} kB`;
