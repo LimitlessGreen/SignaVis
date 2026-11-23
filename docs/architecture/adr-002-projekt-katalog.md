@@ -44,7 +44,9 @@ BirdNET-Selection-Tables.
 - Größe: ~1 KB pro Aufnahme, davon ~40 % `uid`-Texte mit eindeutigen Indizes und ~30 %
   `meta`. Rollenfelder stehen nicht mehr zusätzlich in `meta` (98 → 72 MB). Offen: `uid` als
   16-Byte-BLOB.
-- Tabellenseiten per Keyset (`WHERE start_ms > ?`) statt `OFFSET`.
+- Tabellenseiten per Keyset statt `OFFSET`, mit `id` als Gleichstand-Brecher:
+  `start_ms > ? OR (start_ms = ? AND id > ?)`. Aufnahmen ohne Startzeit sortieren zuerst (NULL) und
+  haben einen eigenen Zweig: `(start_ms IS NULL AND id > ?) OR start_ms IS NOT NULL` (so macht es `query::list`).
 - Import-Vorschau: Unmatched-Liste und Zählung pro Muster sind schon da.
 - Musterfelder sind lazy: `Woche_{week:int}*` erkennt auch `Woche_3_Rest`.
 - Zeitzone: im Spike fester Offset; Phase 1 braucht IANA-Zone (Sommerzeit!) pro Standort.

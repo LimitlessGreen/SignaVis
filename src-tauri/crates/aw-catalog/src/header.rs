@@ -131,6 +131,10 @@ fn wav_chunks(path: &Path) -> std::io::Result<Vec<(String, String)>> {
 }
 
 /// Recordings of a root whose header has not been read yet: (recording id, relative path).
+/// Recordings whose header is still to be read (present files, no earlier read error).
+pub const PENDING_HEADERS_SQL: &str = "SELECT COUNT(*) FROM recording r JOIN asset a ON a.id = r.asset_id WHERE r.sample_rate IS NULL AND a.status != 'missing'
+    AND NOT EXISTS (SELECT 1 FROM meta m WHERE m.recording_id = r.id AND m.key = 'header:error')";
+
 pub fn header_todo(cat: &Catalog, root_id: i64) -> Result<Vec<(i64, String)>> {
     let mut st = cat.conn.prepare(
         "SELECT r.id, a.rel_path FROM recording r JOIN asset a ON a.id = r.asset_id

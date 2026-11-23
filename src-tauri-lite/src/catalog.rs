@@ -299,8 +299,7 @@ pub async fn catalog_integrity(state: tauri::State<'_, CatalogState>, project_ro
         Ok(Integrity {
             hashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
             unhashed: n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NULL AND status != 'missing'")?,
-            no_header: n("SELECT COUNT(*) FROM recording r JOIN asset a ON a.id = r.asset_id WHERE r.sample_rate IS NULL AND a.status != 'missing'
-                AND NOT EXISTS (SELECT 1 FROM meta m WHERE m.recording_id = r.id AND m.key = 'header:error')")?,
+            no_header: n(aw_catalog::header::PENDING_HEADERS_SQL)?,
             full_hashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NOT NULL")?,
             full_unhashed: n("SELECT COUNT(*) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
             bytes_without_checksum: n("SELECT COALESCE(SUM(size), 0) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,

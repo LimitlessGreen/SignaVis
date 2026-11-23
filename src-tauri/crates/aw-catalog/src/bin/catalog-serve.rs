@@ -84,11 +84,13 @@ impl State {
     }
     fn scan(&mut self, a: &Args, refresh: bool) -> Result<&ScanResult, String> {
         let src = a.source.clone().ok_or("source missing")?;
-        if refresh || !self.scans.contains_key(&src) {
-            let opts = a.profile.as_ref().map(|p| p.scan_options()).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
-            self.scans.insert(src.clone(), scan(Path::new(&src), &opts));
+        // Same rule as Lite: options validated first, cache per (folder, options).
+        let opts = a.profile.as_ref().map(|p| p.scan_options()).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
+        let key = format!("{src}\n{}", a.profile.as_ref().map(|p| p.derived_dirs.join("\n")).unwrap_or_default());
+        if refresh || !self.scans.contains_key(&key) {
+            self.scans.insert(key.clone(), scan(Path::new(&src), &opts));
         }
-        Ok(&self.scans[&src])
+        Ok(&self.scans[&key])
     }
 }
 
@@ -126,7 +128,9 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let src = a.source.clone().unwrap();
             let cat = st.cat(&a.project_root)?;
             cat.save_profile(&spec).map_err(e)?;
-            let root_id = cat.add_root(a.root_name.as_deref().unwrap_or("source"), "referenced", &machine_name(), &src).map_err(e)?;
+            // Default name: the folder's own name (add_root refuses a name that points elsewhere).
+            let fallback = Path::new(&src).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "source".into());
+            let root_id = cat.add_root(a.root_name.as_deref().unwrap_or(&fallback), "referenced", &machine_name(), &src).map_err(e)?;
             let rec = aw_catalog::hash::reconcile(cat, root_id, Path::new(&src), &s.audio, Some(&p)).map_err(e)?;
             let r = import_scanned(cat, root_id, &rec.new_files, &p).map_err(e)?;
             let (mut tables, mut detections) = (0, 0);
@@ -171,7 +175,7 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
             let (groups, dups) = aw_catalog::hash::duplicates(cat, 50).map_err(e)?;
             Ok(json!({
                 "hashed": n("SELECT COUNT(*) FROM asset WHERE quick_hash IS NOT NULL")?,
-                "noHeader": n("SELECT COUNT(*) FROM recording WHERE sample_rate IS NULL")?,
+                "noHeader": n(aw_catalog::header::PENDING_HEADERS_SQL)?,
                 "fullHashed": n("SELECT COUNT(*) FROM asset WHERE full_hash IS NOT NULL")?,
                 "fullUnhashed": n("SELECT COUNT(*) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
                 "bytesWithoutChecksum": n("SELECT COALESCE(SUM(size), 0) FROM asset WHERE full_hash IS NULL AND status != 'missing'")?,
@@ -220,12 +224,12 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_import_track" => {
             let path = a.path.clone().ok_or("path missing")?;
             let text = std::fs::read_to_string(&path).map_err(|x| x.to_string())?;
-            let (pts, untimed) = aw_catalog::geo::parse_gpx(&text).map_err(e)?;
+            let (pts, untimed, invalid) = aw_catalog::geo::parse_gpx(&text).map_err(e)?;
             let name = a.name.clone().unwrap_or_else(|| Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
             let cat = st.cat(&a.project_root)?;
             let id = aw_catalog::geo::save_track(cat, &name, Some(&path), a.device_id, &pts).map_err(e)?;
             let m = aw_catalog::geo::match_track(cat, id, &a.selection, a.max_gap_s.unwrap_or(120.0)).map_err(e)?;
-            Ok(json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "match": m }))
+            Ok(json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "invalid": invalid, "match": m }))
         }
         "catalog_match_track" => j(serde_json::to_value(aw_catalog::geo::match_track(st.cat(&a.project_root)?, a.track_id.ok_or("trackId missing")?, &a.selection, a.max_gap_s.unwrap_or(120.0)).map_err(e)?)),
         "catalog_tracks" => j(serde_json::to_value(aw_catalog::geo::tracks(st.cat(&a.project_root)?).map_err(e)?)),
@@ -248,27 +252,44 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
     }
 }
 
+/// Largest request body accepted (the biggest real one, an import profile, is a few kB).
+const MAX_BODY: usize = 16 << 20;
+
 fn main() {
     let port: u16 = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(5199);
+    // Only the test page may call: a token per run (env CATALOG_SERVE_TOKEN or random, printed), sent
+    // as header x-catalog-token; CORS only for the harness origin (env CATALOG_SERVE_ORIGIN).
+    let token = std::env::var("CATALOG_SERVE_TOKEN").unwrap_or_else(|_| aw_catalog::new_uid());
+    let origin = std::env::var("CATALOG_SERVE_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5187".into());
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
-    eprintln!("catalog-serve on http://127.0.0.1:{port}");
+    eprintln!("catalog-serve on http://127.0.0.1:{port} for {origin}, token {token}");
     let mut st = State { cats: HashMap::new(), scans: HashMap::new() };
     for stream in listener.incoming().flatten() {
         let mut stream = stream;
+        // A client that stops halfway does not block the next one.
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() { continue; }
         let mut parts = line.split_whitespace();
         let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or("/").to_string());
-        let mut len = 0;
+        let (mut len, mut sent_token) = (0usize, String::new());
+        let mut bad_len = false;
         loop {
             let mut h = String::new();
             if reader.read_line(&mut h).is_err() || h == "\r\n" || h.is_empty() { break; }
-            if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") { len = v.trim().parse().unwrap_or(0); }
+            let lower = h.to_ascii_lowercase();
+            if let Some(v) = lower.strip_prefix("content-length:") {
+                match v.trim().parse::<usize>() { Ok(n) if n <= MAX_BODY => len = n, _ => bad_len = true }
+            }
+            if lower.starts_with("x-catalog-token:") { sent_token = h["x-catalog-token:".len()..].trim().to_string(); }
         }
-        let mut body = vec![0; len];
-        let _ = reader.read_exact(&mut body);
-        let (status, out) = if method == "OPTIONS" { ("204 No Content", String::new()) } else {
+        let mut body = vec![0; if bad_len { 0 } else { len }];
+        let complete = !bad_len && reader.read_exact(&mut body).is_ok();
+        let (status, out) = if method == "OPTIONS" { ("204 No Content", String::new()) }
+        else if !complete { ("400 Bad Request", json!("incomplete or too large request").to_string()) }
+        else if sent_token != token { ("403 Forbidden", json!("missing or wrong x-catalog-token").to_string()) }
+        else {
             let res = serde_json::from_slice::<Args>(&body).map_err(|x| x.to_string())
                 .and_then(|a| handle(&mut st, path.trim_start_matches('/'), a));
             match res {
@@ -276,6 +297,6 @@ fn main() {
                 Err(m) => ("500 Error", json!(m).to_string()),
             }
         };
-        let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{out}", out.len());
+        let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Headers: content-type, x-catalog-token\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{out}", out.len());
     }
 }

@@ -47,7 +47,8 @@ fn main() -> Result<()> {
     if templates.is_empty() { return Err("at least one --pattern".into()); }
     let refs: Vec<&str> = templates.iter().map(|s| s.as_str()).collect();
     let opts = ImportProfile { name: "bench".into(), patterns: PatternSet::parse(&refs)?, mappings, utc_offset_min: offset, tz: None };
-    let _ = std::fs::remove_file(&db);
+    // Never overwrite a catalog: the benchmark writes a new file only.
+    if db.exists() { return Err(format!("{} exists already: give a new file for the benchmark catalog", db.display()).into()); }
 
     let res = timed("scan (cold or warm cache, see note)", || scan::scan(&root, &scan::ScanOptions::default()));
     println!("           audio {}, selection tables {}, skipped dirs {}, errors {}",
@@ -84,7 +85,8 @@ fn main() -> Result<()> {
         let tx = cat.conn.transaction()?;
         tx.execute("INSERT INTO label_set(uid, name, created_at, updated_at) VALUES (?1, 'bench', 0, 0)", [new_uid()])?;
         let set = tx.last_insert_rowid();
-        let n_rec: i64 = tx.query_row("SELECT MAX(id) FROM recording", [], |r| r.get(0))?;
+        let n_rec: i64 = tx.query_row("SELECT COALESCE(MAX(id), 0) FROM recording", [], |r| r.get(0))?;
+        if n_labels == 0 || n_rec == 0 { return Ok(()); }   // nothing to label
         {
             let mut ins = tx.prepare("INSERT INTO label(uid, label_set_id, recording_id, t0, t1, class, polarity, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 0)")?;
             let classes = ["eurpyo1", "tawowl1", "boreowl", "noise"];
@@ -108,7 +110,7 @@ fn main() -> Result<()> {
         println!("{:>9.2} ms  {label} → {n} rows", t.elapsed().as_secs_f64() * 1e3);
         Ok(())
     };
-    q("stats per site × week (files, hours)",
+    q("stats per site × week (files, bytes)",
       "SELECT s.name, r.start_ms / 604800000, COUNT(*), SUM(a.size) FROM recording r JOIN site s ON s.id = r.site_id
        JOIN asset a ON a.id = r.asset_id GROUP BY 1, 2")?;
     q("calendar heatmap day × hour, all",
