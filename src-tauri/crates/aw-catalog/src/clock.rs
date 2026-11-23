@@ -10,6 +10,9 @@ use chrono_tz::Tz;
 use rusqlite::params;
 use serde::Serialize;
 
+/// Largest fixed offset accepted (UTC±14:00 covers every zone in use).
+pub const MAX_OFFSET_MIN: i32 = 14 * 60;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Clock {
     /// Minutes ahead of UTC, no DST.
@@ -27,20 +30,24 @@ impl Clock {
         if let Ok(tz) = s.parse::<Tz>() { return Some(Clock::Zone(tz)); }
         let t = s.strip_prefix("fixed:").or_else(|| s.strip_prefix("UTC")).unwrap_or(s);
         if t.is_empty() { return Some(Clock::Fixed(0)); }
-        if let Some((h, m)) = t.split_once(':') {
+        let minutes = if let Some((h, m)) = t.split_once(':') {
             let sign = if h.starts_with('-') { -1 } else { 1 };
             let h: i32 = h.trim_start_matches(['+', '-']).parse().ok()?;
             let m: i32 = m.parse().ok()?;
-            return Some(Clock::Fixed(sign * (h * 60 + m)));
-        }
-        t.parse::<i32>().ok().map(Clock::Fixed)
+            if !(0..60).contains(&m) { return None; }
+            sign * h.checked_mul(60)?.checked_add(m)?
+        } else {
+            t.parse::<i32>().ok()?
+        };
+        // Real offsets lie within ±14 h; anything else is a typo (and would overflow later).
+        (minutes.unsigned_abs() <= MAX_OFFSET_MIN as u32).then_some(Clock::Fixed(minutes))
     }
 
     /// Text stored in `recording.tz` / `site.tz`.
     pub fn label(&self) -> String {
         match self {
             Clock::Zone(tz) => tz.name().to_string(),
-            Clock::Fixed(m) => format!("UTC{}{:02}:{:02}", if *m < 0 { '-' } else { '+' }, m.abs() / 60, m.abs() % 60),
+            Clock::Fixed(m) => { let a = m.unsigned_abs(); format!("UTC{}{:02}:{:02}", if *m < 0 { '-' } else { '+' }, a / 60, a % 60) }
         }
     }
 
@@ -85,23 +92,36 @@ pub fn set_site_clock(cat: &mut Catalog, site_id: i64, clock: Clock) -> Result<C
     let tx = cat.conn.transaction()?;
     tx.execute("UPDATE site SET tz = ?2 WHERE id = ?1", params![site_id, clock.label()])?;
     let rows: Vec<(i64, i64, i64)> = {
-        let mut st = tx.prepare("SELECT id, start_ms, COALESCE(local_offset_min, 0) FROM recording WHERE site_id = ?1 AND start_ms IS NOT NULL")?;
+        let mut st = tx.prepare(&format!("SELECT r.id, r.start_ms, {} FROM recording r WHERE r.site_id = ?1 AND r.start_ms IS NOT NULL", crate::WALL))?;
         st.query_map([site_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<std::result::Result<_, _>>()?
     };
     let mut rep = ClockReport::default();
     {
-        let mut up = tx.prepare("UPDATE recording SET start_ms = ?2, local_offset_min = ?3, tz = ?4 WHERE id = ?1")?;
+        let mut up = tx.prepare("UPDATE recording SET start_ms = ?2, local_offset_min = ?3, tz = ?4, wall_ms = ?5 WHERE id = ?1")?;
         let label = clock.label();
-        for (id, start, off) in rows {
-            let local = chrono::DateTime::from_timestamp_millis(start + off * 60_000).unwrap_or_default().naive_utc();
-            let (utc, new_off, fold) = clock.to_utc(local);
+        for (id, start, wall) in rows {
+            let local = chrono::DateTime::from_timestamp_millis(wall).unwrap_or_default().naive_utc();
+            // In a repeated hour keep the pass the recording already has (an earlier decision by file order).
+            let (utc, new_off, fold) = match clock.to_utc_fold(local, true) {
+                later @ (u, _, Fold::Ambiguous) if u == start => later,
+                _ => clock.to_utc(local),
+            };
             match fold { Fold::Ambiguous => rep.ambiguous += 1, Fold::Gap => rep.gap += 1, Fold::Ok => {} }
-            up.execute(params![id, utc, new_off, label])?;
+            up.execute(params![id, utc, new_off, label, wall])?;
             rep.updated += 1;
         }
     }
     tx.commit()?;
     Ok(rep)
+}
+
+/// Apply the saved clock periods of these recorders again (after new recordings were added).
+pub fn reapply_device_clocks(cat: &mut Catalog, device_ids: &[i64]) -> Result<()> {
+    for &d in device_ids {
+        let periods = device_clocks(cat, d)?;
+        if !periods.is_empty() { set_device_clocks(cat, d, &periods)?; }
+    }
+    Ok(())
 }
 
 /// One clock period of a recorder; `from` is recorder wall time (None = from the first recording).
@@ -226,19 +246,20 @@ pub fn set_device_clocks(cat: &mut Catalog, device_id: i64, periods: &[ClockPeri
             params![device_id, f, p.from_path.as_deref().filter(|x| !x.is_empty()), c.label(), p.note])?;
     }
     let recs: Vec<ClockInput> = {
-        let mut st = tx.prepare(
-            "SELECT r.id, r.start_ms + COALESCE(r.local_offset_min, 0) * 60000, COALESCE(a.rel_path, ''), r.header_offset_min
-             FROM recording r LEFT JOIN asset a ON a.id = r.asset_id WHERE r.device_id = ?1 AND r.start_ms IS NOT NULL")?;
+        let mut st = tx.prepare(&format!(
+            "SELECT r.id, {}, COALESCE(a.rel_path, ''), r.header_offset_min
+             FROM recording r LEFT JOIN asset a ON a.id = r.asset_id WHERE r.device_id = ?1 AND r.start_ms IS NOT NULL", crate::WALL))?;
         st.query_map([device_id], |r| Ok(ClockInput { id: r.get(0)?, wall_ms: r.get(1)?, path: r.get(2)?, header_offset_min: r.get(3)? }))?
             .collect::<std::result::Result<_, _>>()?
     };
     let mut rep = ClockReport::default();
     if !periods.is_empty() {
-        let mut up = tx.prepare("UPDATE recording SET start_ms = ?2, local_offset_min = ?3, tz = ?4 WHERE id = ?1")?;
+        let mut up = tx.prepare("UPDATE recording SET start_ms = ?2, local_offset_min = ?3, tz = ?4, wall_ms = ?5 WHERE id = ?1")?;
+        let wall: std::collections::HashMap<i64, i64> = recs.iter().map(|r| (r.id, r.wall_ms)).collect();
         for o in assign_clocks(periods, &recs)? {
             match o.fold { Fold::Ambiguous => rep.ambiguous += 1, Fold::Gap => rep.gap += 1, Fold::Ok => {} }
             if o.from_header { rep.from_header += 1; }
-            up.execute(params![o.id, o.utc_ms, o.offset_min, o.label])?;
+            up.execute(params![o.id, o.utc_ms, o.offset_min, o.label, wall[&o.id]])?;
             rep.updated += 1;
         }
     }
@@ -274,8 +295,8 @@ pub struct ClockShift {
 pub fn detect_clock_shifts(cat: &Catalog) -> Result<Vec<ClockShift>> {
     // Nights: wall time shifted by 12 h so one night has one date.
     let mut st = cat.conn.prepare(
-        "SELECT d.id, d.name, (r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) AS w, COALESCE(r.local_offset_min, 0)
-         FROM recording r JOIN device d ON d.id = r.device_id WHERE r.start_ms IS NOT NULL ORDER BY d.id, w")?;
+        &format!("SELECT d.id, d.name, {} AS w, COALESCE(r.local_offset_min, 0)
+         FROM recording r JOIN device d ON d.id = r.device_id WHERE r.start_ms IS NOT NULL ORDER BY d.id, w", crate::WALL))?;
     let rows: Vec<(i64, String, i64, i64)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<std::result::Result<_, _>>()?;
     const DAY: i64 = 86_400_000;
@@ -334,7 +355,7 @@ pub fn detect_clock_shifts(cat: &Catalog) -> Result<Vec<ClockShift>> {
         });
         if let Some(j) = like {
             let first = cat.conn.query_row(
-                "SELECT MIN(start_ms + COALESCE(local_offset_min, 0) * 60000) FROM recording WHERE device_id = ?1", [dev], |r| r.get::<_, i64>(0))?;
+                &format!("SELECT MIN({}) FROM recording r WHERE r.device_id = ?1", crate::WALL), [dev], |r| r.get::<_, i64>(0))?;
             out.push(ClockShift {
                 device_id: dev, device: name,
                 from: chrono::DateTime::from_timestamp_millis(first).unwrap_or_default().naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string(),
@@ -349,12 +370,12 @@ pub fn detect_clock_shifts(cat: &Catalog) -> Result<Vec<ClockShift>> {
 /// Clock set back while recording: the same wall start occurs twice for one recorder, with different
 /// content (identical fingerprints are plain copies and ignored). The duplicated span gives the size.
 fn detect_set_backs(cat: &Catalog) -> Result<Vec<ClockShift>> {
-    let mut st = cat.conn.prepare(
-        "SELECT r.device_id, d.name, r.start_ms + COALESCE(r.local_offset_min, 0) * 60000 AS w, COALESCE(r.local_offset_min, 0),
+    let mut st = cat.conn.prepare(&format!(
+        "SELECT r.device_id, d.name, {} AS w, COALESCE(r.local_offset_min, 0),
                 COUNT(*) AS n, COUNT(DISTINCT a.quick_hash) AS h, SUM(a.quick_hash IS NULL) AS un
          FROM recording r JOIN device d ON d.id = r.device_id JOIN asset a ON a.id = r.asset_id
          WHERE r.start_ms IS NOT NULL AND a.status != 'missing'
-         GROUP BY r.device_id, w HAVING n > 1 ORDER BY r.device_id, w")?;
+         GROUP BY r.device_id, w HAVING n > 1 ORDER BY r.device_id, w", crate::WALL))?;
     let rows: Vec<(i64, String, i64, i64, i64, i64, i64)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?
         .collect::<std::result::Result<_, _>>()?;
     let mut out = Vec::new();
@@ -404,6 +425,76 @@ mod tests {
         assert_eq!(Clock::parse("Europe/Berlin").unwrap().label(), "Europe/Berlin");
         assert_eq!(Clock::Fixed(-330).label(), "UTC-05:30");
         assert_eq!(Clock::parse("Mars/Olympus"), None);
+    }
+
+    #[test]
+    fn out_of_range_offsets_are_rejected() {
+        assert_eq!(Clock::parse("UTC+40000000:00"), None);
+        assert_eq!(Clock::parse("fixed:-2147483648"), None);
+        assert_eq!(Clock::parse("UTC+01:75"), None);
+        assert_eq!(Clock::parse("UTC+14:00"), Some(Clock::Fixed(840)));
+        assert_eq!(Clock::Fixed(i32::MIN).label().len() > 3, true, "label does not overflow");
+    }
+
+    fn one_file_catalog(name: &str, offset_min: i32) -> (Catalog, i64) {
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", "/x").unwrap();
+        let spec = ProfileSpec {
+            name: "t".into(), patterns: vec!["S{s}/{t:%Y%m%d_%H%M%S}.wav".into()],
+            mappings: vec![
+                MappingSpec { field: "s".into(), role: "site".into(), ..Default::default() },
+                MappingSpec { field: "t".into(), role: "start".into(), ..Default::default() },
+            ],
+            utc_offset_min: offset_min, ..Default::default()
+        };
+        import_scanned(&mut cat, root, &[ScannedFile { rel_path: name.into(), size: 1, mtime_ms: 0 }], &spec.build().unwrap()).unwrap();
+        let site: i64 = cat.conn.query_row("SELECT id FROM site", [], |r| r.get(0)).unwrap();
+        (cat, site)
+    }
+    fn start(cat: &Catalog) -> i64 { cat.conn.query_row("SELECT start_ms FROM recording", [], |r| r.get(0)).unwrap() }
+
+    #[test]
+    fn wall_time_in_the_spring_gap_survives_a_round_trip() {
+        // 02:30 does not exist in Berlin on 2023-03-26.
+        let (mut cat, site) = one_file_catalog("S1/20230326_023000.wav", 60);
+        let before = start(&cat);
+        set_site_clock(&mut cat, site, Clock::parse("Europe/Berlin").unwrap()).unwrap();
+        set_site_clock(&mut cat, site, Clock::Fixed(60)).unwrap();
+        assert_eq!(start(&cat), before, "back to UTC+01:00 gives the original instant");
+    }
+
+    #[test]
+    fn reapplying_a_zone_keeps_the_later_pass_of_a_repeated_hour() {
+        let (mut cat, site) = one_file_catalog("S1/20231029_023000.wav", 60);   // 02:30 CET = second pass in Berlin
+        let z = Clock::parse("Europe/Berlin").unwrap();
+        let later = z.to_utc_fold(t("2023-10-29 02:30:00"), true).0;
+        cat.conn.execute("UPDATE recording SET start_ms = ?1, local_offset_min = 60", [later]).unwrap();
+        set_site_clock(&mut cat, site, z).unwrap();
+        assert_eq!(start(&cat), later);
+    }
+
+    #[test]
+    fn new_recordings_follow_saved_clock_periods() {
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", "/x").unwrap();
+        let spec = ProfileSpec {
+            name: "t".into(), patterns: vec!["R{d}/{t:%Y%m%d_%H%M%S}.wav".into()],
+            mappings: vec![
+                MappingSpec { field: "d".into(), role: "device".into(), ..Default::default() },
+                MappingSpec { field: "t".into(), role: "start".into(), ..Default::default() },
+            ],
+            utc_offset_min: 60, ..Default::default()
+        };
+        let p = spec.build().unwrap();
+        let f = |n: &str| ScannedFile { rel_path: n.into(), size: 1, mtime_ms: 0 };
+        import_scanned(&mut cat, root, &[f("R1/20230601_200000.wav")], &p).unwrap();
+        let dev: i64 = cat.conn.query_row("SELECT id FROM device", [], |r| r.get(0)).unwrap();
+        set_device_clocks(&mut cat, dev, &[ClockPeriod { from: None, clock: "UTC+02:00".into(), ..Default::default() }]).unwrap();
+        import_scanned(&mut cat, root, &[f("R1/20230602_200000.wav")], &p).unwrap();
+        let (utc, label): (i64, String) = cat.conn.query_row(
+            "SELECT r.start_ms, r.tz FROM recording r JOIN asset a ON a.id = r.asset_id WHERE a.rel_path LIKE '%0602%'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(utc, Utc.with_ymd_and_hms(2023, 6, 2, 18, 0, 0).unwrap().timestamp_millis());
+        assert_eq!(label, "UTC+02:00");
     }
 
     #[test]

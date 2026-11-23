@@ -47,7 +47,9 @@ pub fn parse_role(role: &str) -> Result<FieldRole, PatternError> {
 
 impl ProfileSpec {
     pub fn build(&self) -> Result<ImportProfile, PatternError> {
-        if let Some(tz) = self.tz.as_deref().filter(|t| !t.is_empty()) {
+        // Empty or blank = no zone: the fixed offset applies (Clock::parse("") would read as UTC+0).
+        let tz = self.tz.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned);
+        if let Some(tz) = tz.as_deref() {
             if crate::clock::Clock::parse(tz).is_none() { return Err(PatternError(format!("unknown time zone '{tz}'"))); }
         }
         let refs: Vec<&str> = self.patterns.iter().map(|s| s.as_str()).collect();
@@ -62,7 +64,7 @@ impl ProfileSpec {
             patterns: PatternSet::parse(&refs)?,
             mappings,
             utc_offset_min: self.utc_offset_min,
-            tz: self.tz.clone(),
+            tz,
         })
     }
 
@@ -90,6 +92,14 @@ mod tests {
         let back: ProfileSpec = serde_json::from_str(&serde_json::to_string(&spec).unwrap()).unwrap();
         assert_eq!(back, spec);
         assert!(ProfileSpec { mappings: role_bad(), ..Default::default() }.build().is_err());
+    }
+
+    #[test]
+    fn blank_time_zone_means_none() {
+        for tz in ["", "   "] {
+            let spec = ProfileSpec { patterns: vec!["{f}.wav".into()], tz: Some(tz.into()), utc_offset_min: 60, ..Default::default() };
+            assert_eq!(spec.build().unwrap().tz, None, "{tz:?}");
+        }
     }
 
     fn role_bad() -> Vec<MappingSpec> { vec![MappingSpec { field: "x".into(), role: "nope".into(), ..Default::default() }] }

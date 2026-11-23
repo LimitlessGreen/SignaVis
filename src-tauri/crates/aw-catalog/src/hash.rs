@@ -233,8 +233,8 @@ fn relink_fields(tx: &rusqlite::Transaction, asset_id: i64, r: &crate::Resolved,
     let (site, device) = (named("site", &r.site)?, named("device", &r.device)?);
     let clk = p.clock();
     let utc = r.start.map(|t| clk.to_utc(t));
-    tx.execute("UPDATE recording SET site_id = ?2, device_id = ?3, start_ms = ?4, local_offset_min = ?5, tz = ?6 WHERE id = ?1",
-        params![rec, site, device, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label())])?;
+    tx.execute("UPDATE recording SET site_id = ?2, device_id = ?3, start_ms = ?4, local_offset_min = ?5, tz = ?6, wall_ms = ?7 WHERE id = ?1",
+        params![rec, site, device, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label()), r.start.map(|t| t.and_utc().timestamp_millis())])?;
     tx.execute("DELETE FROM meta WHERE recording_id = ?1 AND origin = 'pattern'", [rec])?;
     for (k, v) in &r.meta {
         tx.execute("INSERT OR REPLACE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'pattern')", params![rec, k, v])?;

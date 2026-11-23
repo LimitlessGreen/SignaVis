@@ -151,7 +151,8 @@ pub fn store_infos(cat: &mut Catalog, infos: &[(i64, std::result::Result<AudioIn
         let mut up = tx.prepare("UPDATE recording SET duration_s = ?2, sample_rate = ?3, channels = ?4, header_offset_min = ?5 WHERE id = ?1")?;
         // The recorder's own offset fixes UTC for this file (wall time from the name stays).
         let mut fix = tx.prepare(
-            "UPDATE recording SET start_ms = start_ms + (COALESCE(local_offset_min, 0) - ?2) * 60000, local_offset_min = ?2, tz = ?3
+            "UPDATE recording SET start_ms = COALESCE(wall_ms, start_ms + COALESCE(local_offset_min, 0) * 60000) - ?2 * 60000,
+               local_offset_min = ?2, tz = ?3
              WHERE id = ?1 AND start_ms IS NOT NULL AND COALESCE(local_offset_min, 0) != ?2")?;
         // Header metadata never replaces values from the path pattern or manual edits.
         let mut meta = tx.prepare("INSERT OR IGNORE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'header')")?;

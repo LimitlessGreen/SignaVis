@@ -43,7 +43,12 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("recording", "pos_accuracy_m", "REAL"),
     ("recording", "pos_origin", "TEXT"),
     ("recording", "track_id", "INTEGER"),
+    ("recording", "wall_ms", "INTEGER"),
 ];
+
+/// Recorder wall time of a recording (ms, as if UTC): stored since `wall_ms` exists; for older rows
+/// recomputed from UTC and offset (not exact for times in a spring-forward gap).
+pub(crate) const WALL: &str = "COALESCE(r.wall_ms, r.start_ms + COALESCE(r.local_offset_min, 0) * 60000)";
 
 fn migrate(conn: &Connection) -> Result<()> {
     // Thumbnail cache from the first draft was keyed by recording only: it is a cache, so recreate it.
@@ -84,7 +89,17 @@ impl Catalog {
         Ok(Self { conn })
     }
 
+    /// Root `name` at `abs_path` on `machine`. A name that already points to another folder on this
+    /// machine is refused: re-pointing it would make the first folder's recordings resolve elsewhere.
     pub fn add_root(&self, name: &str, kind: &str, machine: &str, abs_path: &str) -> Result<i64> {
+        let existing: Option<String> = self.conn.query_row(
+            "SELECT l.path FROM root r JOIN root_location l ON l.root_id = r.id WHERE r.name = ?1 AND l.machine = ?2",
+            params![name, machine], |r| r.get(0)).optional()?;
+        if let Some(path) = existing {
+            if path != abs_path {
+                return Err(format!("The source name “{name}” is already used for {path}. Choose another name for {abs_path}.").into());
+            }
+        }
         self.conn.execute("INSERT OR IGNORE INTO root(uid, name, kind) VALUES (?1, ?2, ?3)",
             params![new_uid(), name, kind])?;
         let id: i64 = self.conn.query_row("SELECT id FROM root WHERE name = ?1", [name], |r| r.get(0))?;
@@ -229,7 +244,7 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
         let mut ins_asset = tx.prepare(
             "INSERT OR IGNORE INTO asset(uid, root_id, rel_path, size, mtime, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
         let mut ins_rec = tx.prepare(
-            "INSERT INTO recording(uid, asset_id, source, start_ms, local_offset_min, tz, site_id, device_id) VALUES (?1, ?2, 'file', ?3, ?4, ?5, ?6, ?7)")?;
+            "INSERT INTO recording(uid, asset_id, source, start_ms, local_offset_min, tz, site_id, device_id, wall_ms) VALUES (?1, ?2, 'file', ?3, ?4, ?5, ?6, ?7, ?8)")?;
         let mut ins_meta = tx.prepare(
             "INSERT OR REPLACE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'pattern')")?;
         for f in files {
@@ -248,7 +263,8 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
             let device_id = res.device.as_deref().map(|s| upsert_named(&tx, "device", s, &mut devices)).transpose()?;
             let clk = profile.clock();
             let utc = res.start.map(|t| clk.to_utc(t));
-            ins_rec.execute(params![new_uid(), asset_id, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label()), site_id, device_id])?;
+            ins_rec.execute(params![new_uid(), asset_id, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label()), site_id, device_id,
+                res.start.map(|t| t.and_utc().timestamp_millis())])?;
             let rec_id = tx.last_insert_rowid();
             for (k, v) in &res.meta { ins_meta.execute(params![rec_id, k, v])?; }
             rep.inserted += 1;
@@ -256,6 +272,12 @@ pub fn import_scanned(cat: &mut Catalog, root_id: i64, files: &[scan::ScannedFil
     }
     tx.execute("UPDATE import_batch SET n_assets = ?1 WHERE id = ?2", params![rep.inserted as i64, import_id])?;
     tx.commit()?;
+    // New recordings of a recorder with saved clock periods follow those periods, like the others.
+    if rep.inserted > 0 {
+        let mut ids: Vec<i64> = devices.values().copied().collect();
+        ids.sort_unstable();
+        clock::reapply_device_clocks(cat, &ids)?;
+    }
     Ok(rep)
 }
 
@@ -265,6 +287,17 @@ pub struct TableImportReport {
     pub tables: usize,
     pub detections: usize,
     pub unmatched_tables: Vec<String>,
+}
+
+/// Recording stems a selection table file name may belong to, best first:
+/// `station.1.BirdNET.selection.table.txt` → `station.1` (model tag dropped), then `station.1.BirdNET`.
+fn table_stems(file: &str) -> Vec<String> {
+    const SUFFIX: &str = ".selection.table.txt";
+    let base = if file.to_ascii_lowercase().ends_with(SUFFIX) { &file[..file.len() - SUFFIX.len()] } else { file };
+    let mut out = Vec::new();
+    if let Some((stem, _model)) = base.rsplit_once('.') { out.push(stem.to_string()); }
+    out.push(base.to_string());
+    out
 }
 
 /// Import BirdNET/Raven selection tables as one `imported` run. A table is matched to a recording
@@ -293,11 +326,13 @@ pub fn import_selection_tables(cat: &mut Catalog, root: &Path, root_id: i64, tab
         let mut cov = tx.prepare("INSERT OR IGNORE INTO run_coverage(run_id, recording_id) VALUES (?1, ?2)")?;
         for t in tables {
             let (dir, file) = t.rel_path.rsplit_once('/').unwrap_or(("", &t.rel_path));
-            let stem = file.split('.').next().unwrap_or(file);
-            let Some(cands) = by_stem.get(stem) else { rep.unmatched_tables.push(t.rel_path.clone()); continue };
-            // Prefer the recording whose folder is the table folder's parent or the same folder.
+            let Some(cands) = table_stems(file).into_iter().find_map(|s| by_stem.get(&s))
+                else { rep.unmatched_tables.push(t.rel_path.clone()); continue };
+            // Prefer a recording in the table's own folder, then in its parent folder.
             let parent = dir.rsplit_once('/').map_or("", |(p, _)| p);
-            let rec_id = cands.iter().find(|(d, _)| d == parent || d == dir).unwrap_or(&cands[0]).1;
+            let rec_id = cands.iter().find(|(d, _)| d == dir)
+                .or_else(|| cands.iter().find(|(d, _)| d == parent))
+                .unwrap_or(&cands[0]).1;
             let text = match std::fs::read_to_string(root.join(&t.rel_path)) {
                 Ok(s) => s,
                 Err(_) => { rep.unmatched_tables.push(t.rel_path.clone()); continue }
@@ -376,6 +411,24 @@ mod tests {
         assert_eq!(start, Utc.with_ymd_and_hms(2023, 3, 13, 16, 0, 1).unwrap().timestamp_millis());
         assert_eq!(count(&cat, "SELECT COUNT(*) FROM meta WHERE key = 'week' AND value = '1'").unwrap(), 1);
         assert_eq!(count(&cat, "SELECT COUNT(*) FROM meta WHERE key IN ('loc', 'rec', 't')").unwrap(), 0, "mapped fields not duplicated");
+    }
+
+    #[test]
+    fn a_root_name_is_not_repointed_to_another_folder() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = cat.add_root("Woche_1", "referenced", "m", "/disk/A/Woche_1").unwrap();
+        assert_eq!(cat.add_root("Woche_1", "referenced", "m", "/disk/A/Woche_1").unwrap(), a, "same folder again: fine");
+        assert!(cat.add_root("Woche_1", "referenced", "m", "/disk/B/Woche_1").is_err());
+        let path: String = cat.conn.query_row("SELECT path FROM root_location WHERE root_id = ?1", [a], |r| r.get(0)).unwrap();
+        assert_eq!(path, "/disk/A/Woche_1");
+        assert_eq!(cat.add_root("Woche_1", "referenced", "other-machine", "/mnt/A").unwrap(), a, "another machine has its own location");
+    }
+
+    #[test]
+    fn table_stems_keep_dots_in_recording_names() {
+        assert_eq!(table_stems("station.1.BirdNET.selection.table.txt"), ["station.1", "station.1.BirdNET"]);
+        assert_eq!(table_stems("SK11_2023.BirdNET.selection.table.txt")[0], "SK11_2023");
+        assert_eq!(table_stems("X.selection.table.txt"), ["X"]);
     }
 
     #[test]
