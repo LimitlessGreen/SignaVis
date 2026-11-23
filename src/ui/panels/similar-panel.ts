@@ -308,6 +308,7 @@ export class SimilarPanel {
         this.#train = null;
         this.#rank = null;
         if (this.#listKind === 'rank') this.#hits = [];
+        this.#map?.refresh();   // at once: the map drops results of the old class before anything async
         this.refresh();
     }
 

@@ -349,10 +349,7 @@ export class EmbeddingMap {
     /** Labels or class changed elsewhere (panel) → repaint. */
     refresh() {
         if (!this.el.isConnected) return;
-        if (this.#suspects && this.#suspectsClass !== this.#opts.getClass()) {
-            this.#suspects = null;
-            this.#suspectPts.clear();
-        }
+        if (this.#dropStaleSuspects()) this.#renderSide();
         if (this.#colorBy === 'score' && this.#scoresClass !== this.#opts.getClass()) {
             this.#setColor('score');
             return;
@@ -1000,6 +997,12 @@ export class EmbeddingMap {
             case 'suspects': this.#checkLabels(); break;
             case 'show': {
                 const i = Number(btn.dataset.i);
+                if (this.#dropStaleSuspects()) {   // class changed since the check: rows are stale
+                    this.#renderSide();
+                    this.#draw();
+                    this.#setStatus('The class changed: run the label check again.');
+                    break;
+                }
                 if (this.#hidden[i]) {
                     this.#setStatus('This window is hidden by the filters.');
                     break;
@@ -1056,7 +1059,16 @@ export class EmbeddingMap {
         return f < 0 ? -1 : this.#indexOf.get(`${f}@${start.toFixed(3)}`) ?? -1;
     }
 
+    /** Label-check results of another class than the current one → drop them. True if dropped. */
+    #dropStaleSuspects(): boolean {
+        if (!this.#suspects || this.#suspectsClass === this.#opts.getClass()) return false;
+        this.#suspects = null;
+        this.#suspectPts.clear();
+        return true;
+    }
+
     #renderSide() {
+        this.#dropStaleSuspects();
         const side = this.el.querySelector<HTMLElement>('.emap-side')!;
         const parts: string[] = [];
         if (this.#suspects) parts.push(this.#renderSuspects());
