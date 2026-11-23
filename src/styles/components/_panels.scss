@@ -506,3 +506,63 @@ select::-ms-expand { display: none; }
 .similar-panel .sim-lbl.pos.on, .similar-panel .sim-lbl.pos:hover { background: #2e7d32; border-color: #2e7d32; color: #fff; }
 .similar-panel .sim-lbl.neg.on, .similar-panel .sim-lbl.neg:hover { background: #c62828; border-color: #c62828; color: #fff; }
 .similar-panel .sim-lbl.unsure.on, .similar-panel .sim-lbl.unsure:hover { background: #b28704; border-color: #b28704; color: #fff; }
+
+// ── Embedding map (Lite, ui/panels/embedding-map.ts) ──────────────────
+.emap-overlay {
+  position: fixed; inset: 0; z-index: 900; display: flex; flex-direction: column;
+  background: var(--color-bg, #111418); color: var(--color-text, #e6e8eb);
+  // The global sidebar button is full-width; here it sits in a row.
+  .sidebar-action-btn { width: auto; max-width: none; flex: none; }
+}
+.emap-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border, #2a2f36);
+  label { display: flex; align-items: center; gap: 6px; }
+  .field-select { width: auto; }
+  .emap-sel { display: flex; align-items: center; gap: 4px; }
+  .emap-spacer { flex: 1; }
+}
+.emap-filter {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 12px; font-size: 12px;
+  border-bottom: 1px solid var(--color-border, #2a2f36);
+  label { display: flex; align-items: center; gap: 5px; }
+  .field-select, .field-input { width: auto; padding: 1px 4px; }
+  .emap-level { width: 140px; }
+  .emap-level-val { min-width: 64px; font-variant-numeric: tabular-nums; }
+  .emap-spacer { flex: 1; }
+}
+.emap-assign-row { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px; cursor: pointer; }
+.emap-body { display: flex; flex: 1; min-height: 0; }
+.emap-stage { position: relative; flex: 1; min-width: 0;
+  canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+}
+.emap-tip {
+  position: absolute; pointer-events: none; max-width: 420px; padding: 4px 8px; border-radius: 4px;
+  font-size: 12px; background: rgba(0, 0, 0, 0.85); color: #fff; word-break: break-all;
+}
+.emap-legend {
+  position: absolute; top: 10px; right: 10px; max-width: 240px; padding: 6px 10px; border-radius: 6px;
+  font-size: 12px; background: var(--color-surface, #1a1e24); border: 1px solid var(--color-border, #2a2f36);
+  div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+}
+.emap-help { position: absolute; left: 12px; bottom: 6px; margin: 0; font-size: 11px; opacity: 0.6; pointer-events: none; }
+.emap-side {
+  flex: none; width: 320px; overflow: auto; padding: 8px 10px; font-size: 12px;
+  border-right: 1px solid var(--color-border, #2a2f36);
+  .emap-side-sec + .emap-side-sec { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--color-border, #2a2f36); }
+  .emap-card { padding: 6px 0; border-top: 1px solid var(--color-border, #2a2f36); }
+  .emap-card-head { display: flex; align-items: center; gap: 6px;
+    i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+    .emap-spacer { flex: 1; }
+    .field-select { width: auto; padding: 0 4px; }
+  }
+  .emap-ex { display: flex; gap: 3px; margin-top: 3px; }
+  .sim-list { list-style: none; margin: 0; padding: 0; }
+  .sim-hit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 0; }
+  .sim-open { flex: 1; min-width: 0; display: flex; gap: 6px; background: none; border: 0; color: inherit; cursor: pointer; text-align: left; }
+  .sim-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .emap-why { flex-basis: 100%; margin: 0 0 0 26px; }
+}
+.emap-grad { width: 160px; height: 8px; border-radius: 4px; margin-top: 4px; }
+.emap-grad-scale { display: flex; justify-content: space-between; width: 160px; opacity: 0.7; }

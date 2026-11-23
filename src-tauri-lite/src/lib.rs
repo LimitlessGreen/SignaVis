@@ -11,7 +11,10 @@
 
 mod agile;
 mod data_cache;
+mod embed_map;
+mod hdbscan;
 mod embeddings;
+mod guano;
 mod launch;
 mod menu;
 mod project_fs;
@@ -93,6 +96,11 @@ pub fn run() {
             embeddings::embed_start,
             embeddings::embed_cancel,
             embeddings::embed_similar,
+            embed_map::embed_map,
+            embed_map::embed_clusters,
+            agile::agile_scores,
+            agile::agile_suspects,
+            agile::agile_label_set_many,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,

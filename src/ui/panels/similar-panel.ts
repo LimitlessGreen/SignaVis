@@ -7,9 +7,11 @@
 //   embed_model_status / embed_model_download   (event lite-embed-model)
 //   embed_info / embed_start / embed_cancel     (event lite-embed-progress)
 //   embed_similar                               (top-k windows)
+//   embed_map / embed_clusters                  (2-D map + HDBSCAN, event lite-map-progress)
 // and src-tauri-lite/src/agile.rs:
-//   agile_labels / agile_class_add / agile_class_remove / agile_label_set
+//   agile_labels / agile_class_add / agile_class_remove / agile_label_set(_many)
 //   agile_train / agile_classifier_info / agile_rank / agile_export
+//   agile_scores / agile_suspects               (map colouring, label check)
 // The host page supplies the project root, the query (selection/playhead)
 // and how to open + play a hit.
 // ═══════════════════════════════════════════════════════════════════════
@@ -17,6 +19,7 @@
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
+import { EmbeddingMap, type Clusters, type MapData, type Suspect } from './embedding-map.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -45,6 +48,8 @@ export interface SimilarPanelOptions {
     getQuery: () => SimilarQuery | null;
     /** Open the hit's recording (if needed) and play / show the window. */
     openHit: (hit: SimilarHit, play: boolean) => Promise<void> | void;
+    /** Project-side context of a recording (manual place, XC metadata) for the map's site colouring. */
+    contextOf?: (path: string) => { manual?: unknown; xc?: unknown } | null;
 }
 
 const WINDOW_S = 5;
@@ -99,6 +104,7 @@ export class SimilarPanel {
     #rankMode = 'top';
     #threshold = 0.5;
     #k = 50;
+    #map: EmbeddingMap | null = null;
 
     constructor(opts: SimilarPanelOptions) {
         this.#opts = opts;
@@ -131,6 +137,9 @@ export class SimilarPanel {
             this.#job = e.payload;
             if (['done', 'cancelled', 'error'].includes(e.payload.phase)) this.refresh();
             else this.#render();
+        });
+        await listen<{ root: string; phase: string; frac: number }>('lite-map-progress', (e) => {
+            if (e.payload.root === this.#opts.getRoot()) this.#map?.progress(e.payload.phase, e.payload.frac);
         });
     }
 
@@ -232,6 +241,31 @@ export class SimilarPanel {
         });
     }
 
+    // ── Map ───────────────────────────────────────────────────────────
+
+    #openMap() {
+        const root = this.#opts.getRoot();
+        if (!root) return;
+        this.#map ??= new EmbeddingMap({
+            load: (force) => this.#call<MapData>('embed_map', { root: this.#opts.getRoot(), force }),
+            getClass: () => this.#cls,
+            labelOf: (path, start) => this.#labelOf(path, start),
+            setLabels: async (items, label) => {
+                if (!this.#cls) return;
+                this.#labels = await this.#call<LabelsFile>('agile_label_set_many', {
+                    root: this.#opts.getRoot(), class: this.#cls, items, label,
+                });
+                this.#render();
+            },
+            openHit: (hit, play) => this.#opts.openHit(hit, play),
+            loadClusters: (minSize) => this.#call<Clusters>('embed_clusters', { root: this.#opts.getRoot(), minClusterSize: minSize }),
+            loadScores: () => this.#call<{ stamp: number; scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls }),
+            loadSuspects: () => this.#call<Suspect[]>('agile_suspects', { root: this.#opts.getRoot(), class: this.#cls }),
+            contextOf: (path) => this.#opts.contextOf?.(path) ?? null,
+        });
+        this.#map.open();
+    }
+
     // ── Agile modelling ───────────────────────────────────────────────
 
     #labelOf(path: string, start: number): Label | null {
@@ -274,6 +308,7 @@ export class SimilarPanel {
         this.#train = null;
         this.#rank = null;
         if (this.#listKind === 'rank') this.#hits = [];
+        this.#map?.refresh();   // at once: the map drops results of the old class before anything async
         this.refresh();
     }
 
@@ -344,6 +379,7 @@ export class SimilarPanel {
             case 'start': this.#start(); break;
             case 'cancel': this.#call('embed_cancel').catch(fail); break;
             case 'search': this.#search(); break;
+            case 'map': this.#openMap(); break;
             case 'class-add': this.#addClass().catch(fail); break;
             case 'class-del': this.#removeClass().catch(fail); break;
             case 'qlabel': this.#labelQuery(btn.dataset.l as Label).catch(fail); break;
@@ -403,6 +439,7 @@ export class SimilarPanel {
                 + 'search for similar sounds and train classifiers.</p></div>';
             return;
         }
+        this.#map?.refresh();
         const parts = [this.#renderModel(), this.#renderEmbeddings(), this.#renderSearch(), this.#renderClassifier(), this.#renderHits()];
         const scroll = this.el.scrollTop;
         this.el.innerHTML = parts.join('');
@@ -452,6 +489,7 @@ export class SimilarPanel {
             <div class="panel-actions" style="margin-top:8px">
                 ${running ? '<button class="sidebar-action-btn secondary" data-act="cancel" type="button">Cancel</button>'
                     : `<button class="sidebar-action-btn" data-act="start" type="button"${m?.present ? '' : ' disabled'}>${info?.exists ? 'Update embeddings' : 'Compute embeddings'}</button>`}
+                ${info?.windows && !running ? '<button class="sidebar-action-btn secondary" data-act="map" type="button" title="2-D map of all windows: explore, listen, label in bulk">Open map</button>' : ''}
             </div>
             ${jobHtml}
             ${failed.length ? `<details class="field-hint"><summary>${failed.length} file${failed.length === 1 ? '' : 's'} could not be read</summary>${failed.map(([p, r]) => `<div title="${esc(r)}">${esc(p)}</div>`).join('')}</details>` : ''}
