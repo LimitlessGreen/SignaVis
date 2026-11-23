@@ -144,8 +144,10 @@ fn parse_wall(s: &str) -> Option<NaiveDateTime> {
 
 fn wall_ms(t: NaiveDateTime) -> i64 { t.and_utc().timestamp_millis() }
 
-pub fn device_clocks(cat: &Catalog, device_id: i64) -> Result<Vec<ClockPeriod>> {
-    let mut st = cat.conn.prepare("SELECT from_wall_ms, clock, note, from_path FROM clock_period WHERE device_id = ?1 ORDER BY from_wall_ms IS NOT NULL, from_wall_ms")?;
+pub fn device_clocks(cat: &Catalog, device_id: i64) -> Result<Vec<ClockPeriod>> { device_clocks_in(&cat.conn, device_id) }
+
+pub(crate) fn device_clocks_in(conn: &rusqlite::Connection, device_id: i64) -> Result<Vec<ClockPeriod>> {
+    let mut st = conn.prepare("SELECT from_wall_ms, clock, note, from_path FROM clock_period WHERE device_id = ?1 ORDER BY from_wall_ms IS NOT NULL, from_wall_ms")?;
     let v = st.query_map([device_id], |r| Ok(ClockPeriod {
         from: r.get::<_, Option<i64>>(0)?.and_then(chrono::DateTime::from_timestamp_millis).map(|d| d.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string()),
         clock: r.get(1)?, note: r.get(2)?, from_path: r.get(3)?,
@@ -235,9 +237,16 @@ pub fn assign_clocks(periods: &[ClockPeriod], recs: &[ClockInput]) -> std::resul
 
 /// Replace a recorder's clock periods and recompute UTC of its recordings from their wall time.
 pub fn set_device_clocks(cat: &mut Catalog, device_id: i64, periods: &[ClockPeriod]) -> Result<ClockReport> {
+    let tx = cat.conn.transaction()?;
+    let rep = set_device_clocks_in(&tx, device_id, periods)?;
+    tx.commit()?;
+    Ok(rep)
+}
+
+/// `set_device_clocks` inside the caller's transaction.
+pub(crate) fn set_device_clocks_in(tx: &rusqlite::Connection, device_id: i64, periods: &[ClockPeriod]) -> Result<ClockReport> {
     // Validate before writing anything.
     assign_clocks(periods, &[])?;
-    let tx = cat.conn.transaction()?;
     tx.execute("DELETE FROM clock_period WHERE device_id = ?1", [device_id])?;
     for p in periods {
         let c = Clock::parse(&p.clock).unwrap();
@@ -263,7 +272,6 @@ pub fn set_device_clocks(cat: &mut Catalog, device_id: i64, periods: &[ClockPeri
             rep.updated += 1;
         }
     }
-    tx.commit()?;
     Ok(rep)
 }
 

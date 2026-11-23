@@ -150,15 +150,13 @@ pub fn merge(cat: &mut Catalog, table: &str, from: &[i64], into: i64) -> Result<
         }
         tx.execute(&format!("DELETE FROM {table} WHERE id = ?1"), [f])?;
     }
+    // Recomputed in the same transaction: if this fails, the merge did not happen either.
+    if table == "device" {
+        let periods = clock::device_clocks_in(&tx, into)?;
+        if !periods.is_empty() { clock::set_device_clocks_in(&tx, into, &periods)?; }
+    }
     tx.commit()?;
-    if table == "device" { recompute_device_clock(cat, into)?; }
     Ok(moved)
-}
-
-fn recompute_device_clock(cat: &mut Catalog, device_id: i64) -> Result<()> {
-    let periods = clock::device_clocks(cat, device_id)?;
-    if !periods.is_empty() { clock::set_device_clocks(cat, device_id, &periods)?; }
-    Ok(())
 }
 
 // ── Deployments ──────────────────────────────────────────────────────────
@@ -332,8 +330,12 @@ pub fn bulk_edit(cat: &mut Catalog, sel: &Selection, e: &BulkEdit) -> Result<Bul
     let ids = selected_ids(cat, sel)?;
     let mut rep = BulkReport { recordings: ids.len(), ..Default::default() };
     let mut devices_touched: Vec<i64> = Vec::new();
-    let tx = cat.conn.transaction()?;
+    // Everything is checked before anything is written; all changes commit together.
     if e.meta.iter().any(|(k, _)| k.trim().is_empty()) { return Err("metadata key must not be empty".into()); }
+    if let Some(Some([lat, lon])) = e.position {
+        if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) { return Err("coordinates out of range".into()); }
+    }
+    let tx = cat.conn.transaction()?;
     if let Some(Some(s)) = e.site_id {
         if tx.query_row("SELECT id FROM site WHERE id = ?1", [s], |r| r.get::<_, i64>(0)).optional()?.is_none() { return Err("unknown site".into()); }
     }
@@ -349,8 +351,9 @@ pub fn bulk_edit(cat: &mut Catalog, sel: &Selection, e: &BulkEdit) -> Result<Bul
         v
     };
     {
-        let mut site = tx.prepare("UPDATE recording SET site_id = ?2 WHERE id = ?1 AND site_id IS NOT ?2")?;
-        let mut dev = tx.prepare("UPDATE recording SET device_id = ?2 WHERE id = ?1 AND device_id IS NOT ?2")?;
+        // Another site or recorder: the old deployment no longer describes the recording.
+        let mut site = tx.prepare("UPDATE recording SET site_id = ?2, deployment_id = NULL WHERE id = ?1 AND site_id IS NOT ?2")?;
+        let mut dev = tx.prepare("UPDATE recording SET device_id = ?2, deployment_id = NULL WHERE id = ?1 AND device_id IS NOT ?2")?;
         let mut add_t = tx.prepare("INSERT OR IGNORE INTO recording_tag(recording_id, tag_id) VALUES (?1, ?2)")?;
         let mut rm_t = tx.prepare("DELETE FROM recording_tag WHERE recording_id = ?1 AND tag_id = ?2")?;
         let mut set_m = tx.prepare("INSERT OR REPLACE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'manual')")?;
@@ -374,14 +377,14 @@ pub fn bulk_edit(cat: &mut Catalog, sel: &Selection, e: &BulkEdit) -> Result<Bul
         }
     }
     tx.execute("DELETE FROM tag WHERE NOT EXISTS (SELECT 1 FROM recording_tag x WHERE x.tag_id = tag.id)", [])?;
-    tx.commit()?;
     if let Some(pos) = e.position {
-        rep.positioned = crate::geo::set_positions(cat, &Selection { ids: Some(ids.clone()), filter: None }, pos.map(|p| (p[0], p[1])))?;
+        rep.positioned = crate::geo::set_positions_in(&tx, &ids, pos.map(|p| (p[0], p[1])))?;
     }
     for d in devices_touched {
-        let periods = clock::device_clocks(cat, d)?;
-        if !periods.is_empty() { rep.reclocked += clock::set_device_clocks(cat, d, &periods)?.updated; }
+        let periods = clock::device_clocks_in(&tx, d)?;
+        if !periods.is_empty() { rep.reclocked += clock::set_device_clocks_in(&tx, d, &periods)?.updated; }
     }
+    tx.commit()?;
     Ok(rep)
 }
 
@@ -438,6 +441,49 @@ pub(crate) mod tests {
     use crate::{import_scanned, profile_spec::{MappingSpec, ProfileSpec}, query::{Filter, facets}, scan::ScannedFile};
 
     /// Two recorders at two sites, hourly files on 13, 14 and 20 March 2023 (gap of 5 days).
+    fn ids_of(cat: &Catalog, sql: &str) -> Vec<i64> {
+        cat.conn.prepare(sql).unwrap().query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn a_rejected_position_leaves_the_bulk_edit_undone() {
+        let mut cat = fixture();
+        let rec = ids_of(&cat, "SELECT id FROM recording ORDER BY id LIMIT 1")[0];
+        let devs = ids_of(&cat, "SELECT id FROM device ORDER BY id");
+        let before: i64 = cat.conn.query_row("SELECT device_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
+        let other = *devs.iter().find(|&&d| d != before).unwrap();
+        let e = BulkEdit { device_id: Some(Some(other)), position: Some(Some([95.0, 8.0])), ..Default::default() };
+        assert!(bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None }, &e).is_err());
+        let after: i64 = cat.conn.query_row("SELECT device_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn moving_a_recording_drops_its_deployment() {
+        let mut cat = fixture();
+        derive_deployments(&mut cat, 3.0).unwrap();
+        let rec = ids_of(&cat, "SELECT id FROM recording WHERE deployment_id IS NOT NULL ORDER BY id LIMIT 1")[0];
+        let site: i64 = cat.conn.query_row("SELECT site_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
+        let other = ids_of(&cat, "SELECT id FROM site").into_iter().find(|&s| s != site).unwrap();
+        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None }, &BulkEdit { site_id: Some(Some(other)), ..Default::default() }).unwrap();
+        let dep: Option<i64> = cat.conn.query_row("SELECT deployment_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
+        assert_eq!(dep, None);
+        // An edit that does not move it keeps the deployment.
+        let rec2 = ids_of(&cat, "SELECT id FROM recording WHERE deployment_id IS NOT NULL ORDER BY id LIMIT 1")[0];
+        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec2]), filter: None }, &BulkEdit { add_tags: vec!["x".into()], ..Default::default() }).unwrap();
+        let dep2: Option<i64> = cat.conn.query_row("SELECT deployment_id FROM recording WHERE id = ?1", [rec2], |r| r.get(0)).unwrap();
+        assert!(dep2.is_some());
+    }
+
+    #[test]
+    fn a_merge_whose_reclocking_fails_is_not_committed() {
+        let mut cat = fixture();
+        let devs = ids_of(&cat, "SELECT id FROM device ORDER BY id");
+        cat.conn.execute("INSERT INTO clock_period(device_id, from_wall_ms, clock) VALUES (?1, NULL, 'not a clock')", [devs[0]]).unwrap();
+        assert!(merge(&mut cat, "device", &[devs[1]], devs[0]).is_err());
+        assert_eq!(ids_of(&cat, "SELECT id FROM device ORDER BY id"), devs, "the merged recorder still exists");
+    }
+
     pub(crate) fn fixture() -> Catalog {
         let mut cat = Catalog::open_in_memory().unwrap();
         let root = cat.add_root("r", "referenced", "m", "/x").unwrap();

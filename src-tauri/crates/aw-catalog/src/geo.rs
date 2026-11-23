@@ -206,12 +206,16 @@ pub fn set_positions(cat: &mut Catalog, sel: &Selection, pos: Option<(f64, f64)>
     }
     let ids = crate::entities::selected_ids(cat, sel)?;
     let tx = cat.conn.transaction()?;
-    let mut n = 0;
-    {
-        let mut up = tx.prepare("UPDATE recording SET lat = ?2, lon = ?3, alt = NULL, pos_accuracy_m = NULL, pos_origin = ?4, track_id = NULL WHERE id = ?1")?;
-        for id in ids { n += up.execute(params![id, pos.map(|p| p.0), pos.map(|p| p.1), pos.map(|_| "manual")])?; }
-    }
+    let n = set_positions_in(&tx, &ids, pos)?;
     tx.commit()?;
+    Ok(n)
+}
+
+/// Positions of these recordings inside the caller's transaction (`pos` already validated).
+pub(crate) fn set_positions_in(conn: &rusqlite::Connection, ids: &[i64], pos: Option<(f64, f64)>) -> Result<usize> {
+    let mut n = 0;
+    let mut up = conn.prepare("UPDATE recording SET lat = ?2, lon = ?3, alt = NULL, pos_accuracy_m = NULL, pos_origin = ?4, track_id = NULL WHERE id = ?1")?;
+    for &id in ids { n += up.execute(params![id, pos.map(|p| p.0), pos.map(|p| p.1), pos.map(|_| "manual")])?; }
     Ok(n)
 }
 
