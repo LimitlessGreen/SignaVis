@@ -15,6 +15,8 @@ tauri-build = { version = "2", features = [] }
 [features]
 # Microsoft Store build (MSIX): the Store updates the app, so no self-updater.
 store = []
+# Local/dev builds only: try CUDA for Perch embeddings first (needs CUDA 12 + cuDNN 9).
+cuda = ["aw-embed/cuda"]
 
 [dependencies]
 tauri      = { version = "2", features = [] }

@@ -243,9 +243,14 @@ pub async fn embed_model_download(app: tauri::AppHandle) -> Result<ModelStatus, 
     embed_model_status(app)
 }
 
-/// DirectML (Windows) versuchen, sonst CPU.
+/// CUDA (nur mit Feature `cuda`) bzw. DirectML (Windows) versuchen, sonst CPU.
 fn open_embedder(model: &Path) -> Result<(aw_embed::Embedder, &'static str), String> {
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    #[cfg(feature = "cuda")]
+    match aw_embed::Embedder::new(model, threads, "cuda") {
+        Ok(e) => return Ok((e, "cuda")),
+        Err(e) => eprintln!("[embed] CUDA nicht verfuegbar, nutze CPU: {e}"),
+    }
     #[cfg(windows)]
     match aw_embed::Embedder::new(model, threads, "directml") {
         Ok(e) => return Ok((e, "directml")),
@@ -597,24 +602,26 @@ pub(crate) fn top_k(scores: impl Iterator<Item = f32>, k: usize, skip: Option<us
 mod tests {
     use super::*;
 
-    /// Realtest mit Modell: SIGNAVIS_PERCH_MODEL und EMBED_TEST_DIR (Ordner mit Audio) setzen.
+    /// Realtest mit Modell: SIGNAVIS_PERCH_MODEL und EMBED_TEST_DIR (Ordner mit Audio) setzen,
+    /// optional EMBED_TEST_HOP (Sekunden, Standard 5).
     #[test]
     #[ignore]
     fn job_end_to_end() {
         let model = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL").unwrap());
         let root = std::env::var("EMBED_TEST_DIR").unwrap();
+        let hop: f64 = std::env::var("EMBED_TEST_HOP").ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
         let _ = std::fs::remove_dir_all(store_dir(&root));
         let cancel = AtomicBool::new(false);
         let mut p = JobProgress::default();
         let t = std::time::Instant::now();
-        run_job(&|p| eprintln!("{} {}/{} {:?}", p.phase, p.done, p.total, p.current), &root, 5.0, &model, &cancel, &mut p)
+        run_job(&|p| eprintln!("{} {}/{} {:?}", p.phase, p.done, p.total, p.current), &root, hop, &model, &cancel, &mut p)
             .unwrap();
         let secs = t.elapsed().as_secs_f64();
         eprintln!("{} Fenster, {:.0} s Audio in {secs:.1} s ({:.0}x, {})", p.windows, p.audio_seconds, p.audio_seconds / secs, p.device);
         assert!(p.windows > 0);
         // zweiter Lauf: nichts zu tun
         let mut p2 = JobProgress::default();
-        run_job(&|_| {}, &root, 5.0, &model, &cancel, &mut p2).unwrap();
+        run_job(&|_| {}, &root, hop, &model, &cancel, &mut p2).unwrap();
         assert_eq!(p2.total, 0);
         let state = EmbedState::default();
         let first = read_index(&root).unwrap().files.keys().next().unwrap().clone();
