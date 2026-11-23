@@ -63,6 +63,12 @@ pub struct MapData {
     /// Pegel pro Punkt (dBFS) aus dem Index; nicht im Cache, leer ohne Pegel.
     #[serde(default, skip_deserializing)]
     level: Vec<f32>,
+    /// Score pro Punkt (max. Perch-Logit); nicht im Cache, leer ohne Score.
+    #[serde(default, skip_deserializing)]
+    score: Vec<f32>,
+    /// Ort pro Datei (GUANO), parallel zu `files`; nicht im Cache.
+    #[serde(default, skip_deserializing)]
+    places: Vec<Option<crate::guano::GuanoPlace>>,
 }
 
 pub(crate) struct Projection {
@@ -556,7 +562,9 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
 pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>) -> Result<MapData, String> {
     let mut data = tauri::async_runtime::spawn_blocking(move || {
         let mut d = compute_map(&app, &root, force.unwrap_or(false))?;
-        d.level = point_levels(&root, &d);
+        d.level = point_values(crate::embeddings::levels_by_row(&root), &d);
+        d.score = point_values(crate::embeddings::scores_by_row(&root), &d);
+        d.places = d.files.iter().map(|f| crate::guano::read_place(&std::path::Path::new(&root).join(f))).collect();
         Ok::<_, String>(d)
     })
     .await
@@ -567,9 +575,9 @@ pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>)
     Ok(data)
 }
 
-/// Pegel jedes Kartenpunkts; leer, wenn auch nur einer Datei der Pegel fehlt.
-fn point_levels(root: &str, d: &MapData) -> Vec<f32> {
-    let Some(by_file) = crate::embeddings::levels_by_row(root) else { return vec![] };
+/// Wert (Pegel, Score) jedes Kartenpunkts; leer, wenn er auch nur einer Datei fehlt.
+fn point_values(by_file: Option<std::collections::BTreeMap<String, Vec<f32>>>, d: &MapData) -> Vec<f32> {
+    let Some(by_file) = by_file else { return vec![] };
     let mut out = Vec::with_capacity(d.x.len());
     // Punkte einer Datei liegen hintereinander, in Zeilenreihenfolge.
     let (mut prev, mut row) = (u32::MAX, 0usize);
@@ -650,6 +658,8 @@ fn assemble(l: &Loaded, proj: Projection) -> MapData {
             mst_w: mst.iter().map(|e| e.2).collect(),
             placed_new: 0,
             level: vec![],
+            score: vec![],
+            places: vec![],
         }
     }
 }
@@ -723,6 +733,8 @@ pub(crate) fn update_map(old: &MapData, l: &Loaded) -> Option<MapData> {
         mst_w: old.mst_w.clone(),
         placed_new: old.placed_new + added,
         level: vec![],
+        score: vec![],
+        places: vec![],
     })
 }
 

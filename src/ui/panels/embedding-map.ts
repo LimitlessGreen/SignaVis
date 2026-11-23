@@ -5,14 +5,15 @@
 // Wheel: zoom · drag: pan · hover: tooltip · click: play · double-click: open
 // Shift+drag: lasso → label the selection for the current agile class.
 // Colour by folder / recording / HDBSCAN cluster / class labels / classifier
-// score / time of day / date; cluster cards (size, make-up, typical windows),
+// score / call score / time of day / date / site; cluster cards (size, make-up, typical windows),
 // optional assignment of unclustered windows to their nearest cluster, and a
 // label check (embed_clusters, agile_scores, agile_suspects). Filters: hours,
-// dates (from AudioMoth-style file names) and a minimum RMS level.
+// dates (from AudioMoth-style file names), a minimum RMS level and a minimum
+// call score (max. Perch-2 class logit per window; hides empty windows).
 // See plans/lite-embedding-map-plan.md.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { contextFromFilename } from '../../app/recording-context.ts';
+import { contextFromFilename, resolveRecordingContext } from '../../app/recording-context.ts';
 
 export interface MapData {
     stamp: number; window: number; layoutPoints: number;
@@ -21,10 +22,15 @@ export interface MapData {
     level?: number[];
     /** New windows placed onto the existing layout since it was computed (0 = fresh layout). */
     placedNew?: number;
+    /** Call score per window (max. Perch-2 class logit; only meaningful as a ranking). Empty without. */
+    score?: number[];
+    /** Per file (parallel to `files`): place from the file's GUANO block, null without. */
+    places?: (GuanoPlace | null)[];
 }
+export interface GuanoPlace { position?: string; site?: string }
 export interface MapWindow { path: string; start: number; end: number; score: number }
 type Label = 'pos' | 'neg' | 'unsure';
-type ColorBy = 'folder' | 'file' | 'cluster' | 'label' | 'score' | 'time' | 'date';
+type ColorBy = 'folder' | 'file' | 'cluster' | 'label' | 'score' | 'call' | 'time' | 'date' | 'site';
 export interface ClusterInfo { id: number; size: number; exemplars: number[] }
 export interface Clusters {
     stamp: number; minClusterSize: number; labels: number[]; strength: number[]; clusters: ClusterInfo[]; noise: number;
@@ -46,6 +52,8 @@ export interface EmbeddingMapOptions {
     loadScores: () => Promise<number[]>;
     /** Labelled windows of the current class that look mislabelled. */
     loadSuspects: () => Promise<Suspect[]>;
+    /** Project-side context of a recording (manual entries, XC metadata); wins over GUANO. */
+    contextOf?: (path: string) => { manual?: unknown; xc?: unknown } | null;
 }
 
 // Categorical palette (readable on light and dark backgrounds), cycled for many groups.
@@ -140,6 +148,33 @@ const dirOf = (p: string) => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : 
 /** Short name of a folder key from dirOf ('.' = files directly in the project folder). */
 const folderLabel = (k: string) => (k === '.' ? '(project folder)' : k.split('/').pop() || k);
 
+/**
+ * Site of a recording: the place name (manual > XC > GUANO “Site Name”), else its coordinates
+ * rounded to 0.01° (~1 km), else '' (unknown).
+ */
+export function siteKey(guano: GuanoPlace | null | undefined, project?: { manual?: unknown; xc?: unknown } | null): string {
+    const g: Record<string, string> = {};
+    if (guano?.position) g['Loc Position'] = guano.position;
+    if (guano?.site) g['Site Name'] = guano.site;
+    const ctx = resolveRecordingContext({ manual: project?.manual as any, xc: project?.xc, guano: g });
+    const name = String(ctx.locality.value || '').trim();
+    if (name) return name;
+    const c = ctx.coords.value;
+    return c ? `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` : '';
+}
+
+/** Rank of every value as a fraction 0..1 (ties share the lower rank); NaN stays NaN. */
+export function rankFractions(v: ArrayLike<number>): Float64Array {
+    const idx = Array.from({ length: v.length }, (_, i) => i).filter((i) => Number.isFinite(v[i])).sort((a, b) => v[a] - v[b]);
+    const out = new Float64Array(v.length).fill(NaN);
+    const m = Math.max(1, idx.length - 1);
+    for (let k = 0; k < idx.length; k++) {
+        const r = k > 0 && v[idx[k]] === v[idx[k - 1]] ? out[idx[k - 1]] : k / m;
+        out[idx[k]] = r;
+    }
+    return out;
+}
+
 /** Point-in-polygon (even-odd rule). */
 export function inPolygon(px: number, py: number, poly: [number, number][]): boolean {
     let inside = false;
@@ -183,7 +218,11 @@ export class EmbeddingMap {
     #times: { minute: Float64Array; day: Float64Array; known: number } | null = null;
     #dayRange: [number, number] = [0, 0];
     #levelRange: [number, number] = [0, 0];
-    #filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+    #filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity, hideCall: 0 };
+    /** Call score of every window as rank fraction 0..1 (null: store without scores). */
+    #callRank: Float64Array | null = null;
+    /** Colour group of unknown sites (grey), −1 when there is none. */
+    #unknownGroup = -1;
     /** 1 = filtered out (not drawn, not pickable, not selectable). */
     #hidden = new Uint8Array(0);
 
@@ -197,7 +236,8 @@ export class EmbeddingMap {
                 <label>Colour <select class="field-select emap-color">
                     <option value="folder">Folder</option><option value="file">Recording</option><option value="cluster">Cluster</option>
                     <option value="label">Class labels</option><option value="score">Classifier score</option>
-                    <option value="time">Time of day</option><option value="date">Date</option>
+                    <option value="call">Call score</option>
+                    <option value="time">Time of day</option><option value="date">Date</option><option value="site">Site</option>
                 </select></label>
                 <button class="sidebar-action-btn secondary" data-act="suspects" type="button" title="Find labels of the current class that disagree with their neighbours or the classifier">Check labels</button>
                 <span class="emap-sel"></span>
@@ -236,7 +276,8 @@ export class EmbeddingMap {
             }
         });
         this.el.addEventListener('input', (e) => {
-            if ((e.target as HTMLElement).classList.contains('emap-level')) this.#readFilter();
+            const c = (e.target as HTMLElement).classList;
+            if (c.contains('emap-level') || c.contains('emap-call')) this.#readFilter();
         });
         this.el.addEventListener('click', (e) => this.#onButton(e));
         this.#bindPointer();
@@ -321,6 +362,12 @@ export class EmbeddingMap {
         if ((c === 'time' || c === 'date') && !this.#times?.known) {
             throw new Error('No recording times: file names carry no date and time (e.g. 20240512_053000).');
         }
+        if (c === 'call' && !this.#callRank) {
+            throw new Error('No call scores yet: run “Embed” again in the Similar panel (adds them to existing embeddings).');
+        }
+        if (c === 'site' && !this.#data.files.some((f, i) => siteKey(this.#data!.places?.[i], this.#opts.contextOf?.(f)))) {
+            throw new Error('No sites: the recordings carry no GUANO position or site name, and the project has no place for them.');
+        }
         if (c === 'cluster' && !this.#clusters) {
             this.#setStatus('Clustering…');
             this.#clusters = await this.#opts.loadClusters(this.#minSize);
@@ -364,7 +411,9 @@ export class EmbeddingMap {
         let [l0, l1] = [Infinity, -Infinity];
         if (lv) for (const v of lv) if (v > -120) { l0 = Math.min(l0, v); l1 = Math.max(l1, v); }
         this.#levelRange = [Math.floor(l0), Math.ceil(l1)];
-        this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+        this.#callRank = d.score?.length === d.x.length && d.x.length ? rankFractions(d.score) : null;
+        if (!this.#callRank && this.#colorBy === 'call') this.#colorBy = 'folder';
+        this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity, hideCall: 0 };
         if (!this.#times.known && (this.#colorBy === 'time' || this.#colorBy === 'date')) this.#colorBy = 'folder';
         this.#renderFilter();
         this.#recomputeHidden();
@@ -390,6 +439,11 @@ export class EmbeddingMap {
             parts.push(`<label title="Hide windows whose overall level (RMS) is below this value. It does not tell calls from wind, rain or insects: in dense soundscapes quiet windows hold calls as often as loud ones.">Min. level
                 <input type="range" class="emap-level" min="${l0}" max="${l1}" step="1" value="${v}"><span class="emap-level-val">${v} dBFS</span></label>`);
         }
+        if (this.#callRank) {
+            const v = this.#filter.hideCall;
+            parts.push(`<label title="Hide the windows that sound least like any animal: the lowest-ranked share by call score (highest Perch-2 class score of the window). Wind, rain and silence rank low; on an annotated Hawaii set, the lowest 10 % were 84 % call-free.">Call score: hide lowest
+                <input type="range" class="emap-call" min="0" max="90" step="5" value="${v}"><span class="emap-call-val">${v} %</span></label>`);
+        }
         if (!parts.length) {
             box.hidden = true;
             box.innerHTML = '';
@@ -412,6 +466,10 @@ export class EmbeddingMap {
         f.minLevel = lv && Number(lv.value) > this.#levelRange[0] ? Number(lv.value) : -Infinity;
         const val = q<HTMLElement>('emap-level-val');
         if (val && lv) val.textContent = `${lv.value} dBFS`;
+        const cs = q<HTMLInputElement>('emap-call');
+        f.hideCall = cs ? Number(cs.value) : 0;
+        const cv = q<HTMLElement>('emap-call-val');
+        if (cv && cs) cv.textContent = `${cs.value} %`;
         this.#recomputeHidden();
         this.#renderSide();
         this.#draw();
@@ -425,6 +483,8 @@ export class EmbeddingMap {
         const [lo, hi] = [isoToDay(f.d0), isoToDay(f.d1)];
         const byDate = t?.known && ((Number.isFinite(lo) && lo > this.#dayRange[0]) || (Number.isFinite(hi) && hi < this.#dayRange[1]));
         const lv = d.level?.length === n && Number.isFinite(f.minLevel) ? d.level : null;
+        const cr = f.hideCall > 0 ? this.#callRank : null;
+        const minRank = f.hideCall / 100;
         let shown = 0;
         for (let i = 0; i < n; i++) {
             let h = 0;
@@ -435,6 +495,7 @@ export class EmbeddingMap {
                 else if (byDate && ((Number.isFinite(lo) && day < lo) || (Number.isFinite(hi) && day > hi))) h = 1;
             }
             if (!h && lv && lv[i] < f.minLevel) h = 1;
+            if (!h && cr && cr[i] < minRank) h = 1;
             hidden[i] = h;
             if (!h) shown++;
         }
@@ -455,9 +516,20 @@ export class EmbeddingMap {
     #regroup() {
         const d = this.#data;
         if (!d) return;
+        this.#unknownGroup = -1;
         if (this.#colorBy === 'file') {
             this.#groupNames = d.files;
             this.#groupOf = d.files.map((_, i) => i);
+        } else if (this.#colorBy === 'site') {
+            const sites = new Map<string, number>();
+            const keys = d.files.map((f, i) => siteKey(d.places?.[i], this.#opts.contextOf?.(f)));
+            // known sites first, by size; unknown last (grey)
+            const cnt = new Map<string, number>();
+            d.file.forEach((fi) => cnt.set(keys[fi], (cnt.get(keys[fi]) || 0) + 1));
+            [...cnt.keys()].filter(Boolean).sort((a, b) => cnt.get(b)! - cnt.get(a)!).forEach((k) => sites.set(k, sites.size));
+            if (cnt.has('')) { this.#unknownGroup = sites.size; sites.set('', sites.size); }
+            this.#groupOf = keys.map((k) => sites.get(k)!);
+            this.#groupNames = [...sites.keys()].map((k) => k || '(unknown site)');
         } else {
             const dirs = new Map<string, number>();
             this.#groupOf = d.files.map((f) => {
@@ -484,6 +556,8 @@ export class EmbeddingMap {
                 case 'cluster': return (this.#clusters?.labels[i] ?? -1) >= 0 ? 2 : this.#clusterOf(i) >= 0 ? 1 : 0;
                 case 'label': return cls && this.#opts.labelOf(d.files[d.file[i]], d.start[i]) ? 1 : 0;
                 case 'score': return Math.round((this.#scores?.[i] ?? 0) * 32);
+                case 'call': return Math.round((this.#callRank?.[i] || 0) * 32);
+                case 'site': return this.#groupOf[d.file[i]] === this.#unknownGroup ? 0 : 1;
                 default: return 0;
             }
         };
@@ -523,7 +597,14 @@ export class EmbeddingMap {
                 return l ? LABEL_COLOR[l] : UNLABELED;
             }
             case 'score': return this.#scores ? scoreColor(Math.round(this.#scores[i] * 32) / 32) : UNLABELED;
-            default: return PALETTE[this.#groupOf[d.file[i]] % PALETTE.length];
+            case 'call': {
+                const r = this.#callRank?.[i] ?? NaN;
+                return Number.isFinite(r) ? seqColor(Math.round(r * 32) / 32) : NOISE;
+            }
+            default: {
+                const gi = this.#groupOf[d.file[i]];
+                return gi === this.#unknownGroup ? NOISE : PALETTE[gi % PALETTE.length];
+            }
         }
     }
 
@@ -546,6 +627,12 @@ export class EmbeddingMap {
                 + '<div class="emap-grad-scale"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 h</span></div>';
             return;
         }
+        if (this.#colorBy === 'call') {
+            const g = Array.from({ length: 5 }, (_, k) => seqColor(k / 4)).join(',');
+            leg.innerHTML = `<b>Call score</b> (rank)<div class="emap-grad" style="background:linear-gradient(90deg,${g})"></div>`
+                + '<div class="emap-grad-scale"><span>lowest</span><span>median</span><span>highest</span></div>';
+            return;
+        }
         if (this.#colorBy === 'date') {
             const g = Array.from({ length: 5 }, (_, k) => seqColor(k / 4)).join(',');
             leg.innerHTML = `<b>Date</b><div class="emap-grad" style="background:linear-gradient(90deg,${g})"></div>`
@@ -560,8 +647,9 @@ export class EmbeddingMap {
             return;
         }
         const names = this.#groupNames;
+        const label = (nm: string) => this.#colorBy === 'folder' ? folderLabel(nm) : this.#colorBy === 'site' ? nm : nm.split('/').pop() || nm;
         const shown = names.slice(0, 12).map((nm, i) =>
-            `<div title="${esc(nm)}"><i style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(this.#colorBy === 'folder' ? folderLabel(nm) : nm.split('/').pop() || nm)}</div>`).join('');
+            `<div title="${esc(nm)}"><i style="background:${i === this.#unknownGroup ? NOISE : PALETTE[i % PALETTE.length]}"></i>${esc(label(nm))}</div>`).join('');
         leg.innerHTML = shown + (names.length > 12 ? `<div class="field-hint">+${names.length - 12} more (colours repeat)</div>` : '');
     }
 
@@ -848,7 +936,7 @@ export class EmbeddingMap {
             case 'recompute': this.open(true); break;
             case 'sel-clear': this.#sel.clear(); this.#renderSel(); this.#draw(); break;
             case 'filter-reset':
-                this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+                this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity, hideCall: 0 };
                 this.#renderFilter();
                 this.#recomputeHidden();
                 this.#renderSide();

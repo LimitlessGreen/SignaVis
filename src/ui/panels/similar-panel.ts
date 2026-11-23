@@ -48,6 +48,8 @@ export interface SimilarPanelOptions {
     getQuery: () => SimilarQuery | null;
     /** Open the hit's recording (if needed) and play / show the window. */
     openHit: (hit: SimilarHit, play: boolean) => Promise<void> | void;
+    /** Project-side context of a recording (manual place, XC metadata) for the map's site colouring. */
+    contextOf?: (path: string) => { manual?: unknown; xc?: unknown } | null;
 }
 
 const WINDOW_S = 5;
@@ -259,6 +261,7 @@ export class SimilarPanel {
             loadClusters: (minSize) => this.#call<Clusters>('embed_clusters', { root: this.#opts.getRoot(), minClusterSize: minSize }),
             loadScores: async () => (await this.#call<{ scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls })).scores,
             loadSuspects: () => this.#call<Suspect[]>('agile_suspects', { root: this.#opts.getRoot(), class: this.#cls }),
+            contextOf: (path) => this.#opts.contextOf?.(path) ?? null,
         });
         this.#map.open();
     }

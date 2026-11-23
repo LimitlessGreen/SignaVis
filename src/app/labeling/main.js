@@ -3672,6 +3672,10 @@ let similarPanel = null;   // Lite + folder project: Perch search over the proje
 if (isLite()) {
   similarPanel = new SimilarPanel({
     getRoot: () => (projectKind === 'folder' && projectStore?.rootPath) || null,
+    contextOf: (path) => {
+      const e = recordingManager.getAll().find((x) => x.path === path);
+      return e ? { manual: e.context, xc: e.xcRecordingMeta } : null;
+    },
     getQuery: () => {
       const entry = recordingManager.getActive();
       if (!entry?.path) return null;

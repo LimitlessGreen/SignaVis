@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inHours, inPolygon, scoreColor, seqColor, timeColor, topShares, windowTimes } from '../src/ui/panels/embedding-map.ts';
+import { inHours, inPolygon, rankFractions, scoreColor, seqColor, siteKey, timeColor, topShares, windowTimes } from '../src/ui/panels/embedding-map.ts';
 
 test('inPolygon: square and concave lasso', () => {
     const sq: [number, number][] = [[0, 0], [10, 0], [10, 10], [0, 10]];
@@ -55,4 +55,22 @@ test('timeColor is cyclic, seqColor clamps', () => {
     assert.equal(timeColor(-6), timeColor(18));
     assert.equal(seqColor(-1), 'rgb(68,1,84)');
     assert.equal(seqColor(2), 'rgb(253,231,37)');
+});
+
+test('siteKey: place name beats coordinates, project beats GUANO, rounded to ~1 km', () => {
+    assert.equal(siteKey({ position: '19.4312 -155.2541' }), '19.43, -155.25');
+    assert.equal(siteKey({ position: '19.4312 -155.2541', site: 'Kilauea' }), 'Kilauea');
+    assert.equal(siteKey({ site: 'Kilauea' }, { manual: { locality: 'Hakalau' } }), 'Hakalau');
+    assert.equal(siteKey(null, { xc: { lat: '52.51', lon: '13.42' } }), '52.51, 13.42');
+    assert.equal(siteKey({ position: '0 0' }), '', '0,0 means unset');
+    assert.equal(siteKey(null), '');
+});
+
+test('rankFractions: ranks as 0..1, ties share a rank, NaN kept', () => {
+    assert.deepEqual([...rankFractions([5, 1, 3])], [1, 0, 0.5]);
+    assert.deepEqual([...rankFractions([2, 2, 4])], [0, 0, 1]);
+    const r = rankFractions([NaN, 7, 9]);
+    assert.ok(Number.isNaN(r[0]));
+    assert.deepEqual([r[1], r[2]], [0, 1]);
+    assert.deepEqual([...rankFractions([])], []);
 });

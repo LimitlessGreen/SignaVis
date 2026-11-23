@@ -14,6 +14,7 @@ mod data_cache;
 mod embed_map;
 mod hdbscan;
 mod embeddings;
+mod guano;
 mod launch;
 mod menu;
 mod project_fs;
