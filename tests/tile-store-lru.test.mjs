@@ -4,8 +4,12 @@ import { pruneTileStores, markStoreUsed, TILE_CACHE_DEFAULT_MAX_BYTES } from '..
 
 /** Minimal in-memory OPFS directory tree; `locked` names cannot be removed (open sync handles). */
 class FakeFile {
-    constructor(name, size = 0, lastModified = 0) { this.kind = 'file'; this.name = name; this.bytes = new Uint8Array(size); this.lastModified = lastModified; }
-    async getFile() { return new File([this.bytes], this.name, { lastModified: this.lastModified }); }
+    // Data files only need a size (no payload); files written by markStoreUsed keep real bytes.
+    constructor(name, size = 0, lastModified = 0) { this.kind = 'file'; this.name = name; this.size = size; this.bytes = null; this.lastModified = lastModified; }
+    async getFile() {
+        if (this.bytes) return new File([this.bytes], this.name, { lastModified: this.lastModified });
+        return { size: this.size, lastModified: this.lastModified, text: async () => '' };
+    }
     async createWritable() {
         const self = this; const parts = [];
         return { async write(d) { parts.push(typeof d === 'string' ? new TextEncoder().encode(d) : d); }, async close() { self.bytes = new Uint8Array(await new Blob(parts).arrayBuffer()); }, async abort() {} };

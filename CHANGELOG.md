@@ -6,8 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - The on-disk spectrogram cache of long recordings (OPFS, about 60 MB per
-  minute of audio) no longer grows without bound: all recordings together
-  are capped at 1 GiB, least recently used first. New player option
+  minute of audio) no longer grows without bound: whenever a recording is
+  opened, the least recently used stores are removed until all together fit
+  1 GiB. The open recording's store stays even if it alone is larger, and
+  stores still open in another page are skipped. New player option
   `spectrogramCacheMaxBytes` (`0` = no disk cache).
 
 ## [1.4.0] - 2026-11-22

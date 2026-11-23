@@ -22,7 +22,7 @@
 | `showWaveformTimeline` | boolean | `true` | Show bottom timeline in waveform view |
 | `compactToolbar` | string | `'auto'` | `'auto'`, `'on'`, `'off'` — responsive toolbar compaction |
 | `labelTaxonomy` | array | see docs | Custom label presets (name, color, shortcut) |
-| `spectrogramCacheMaxBytes` | number | `1073741824` | Cap for the on-disk (OPFS) spectrogram cache of long recordings, all recordings together; least recently used ones are removed first. `0` keeps the spectrogram in memory only |
+| `spectrogramCacheMaxBytes` | number | `1073741824` | Target size for the on-disk (OPFS) spectrogram cache of long recordings, all recordings together. Checked whenever a recording is opened: least recently used stores are removed first. Not a hard cap: the store of the open recording stays even if it alone is larger, and stores another page has open cannot be removed. `0` keeps the spectrogram in memory only and removes existing stores |
 | ... | ... | ... | ... |
 
 See [Integration examples](integration.md) for usage in different frameworks.

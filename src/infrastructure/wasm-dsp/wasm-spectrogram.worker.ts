@@ -144,6 +144,7 @@ function startCoordinator(ports: MessagePort[]) {
         try {
             if (msg.type === 'previewOpen') {
                 closeStore();
+                if (cacheLimit(msg) <= 0) await afterOpen(null, 0); // cache off: drop existing stores too
                 const cached = cacheLimit(msg) > 0 ? await tryOpenCached(msg.key, FORMAT_VERSION) : null;
                 if (cached) {
                     await afterOpen(msg.key, cacheLimit(msg));
