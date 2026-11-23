@@ -112,10 +112,14 @@ pub fn hash_missing(cat: &mut Catalog, root_id: i64, base: &Path, kind: HashKind
     let todo = hash_todo(cat, root_id, kind)?;
     let mut rep = HashReport::default();
     let batch = if kind == HashKind::Full { 50 } else { HASH_BATCH };
-    for (i, chunk) in todo.chunks(batch).enumerate() {
+    let mut attempted = 0;
+    for chunk in todo.chunks(batch) {
+        let failed_before = rep.failed.len();
         let done = hash_batch(base, kind, chunk, cancel, &mut rep);
         store_hashes(cat, kind, &done)?;
-        progress(i * batch + chunk.len(), todo.len());
+        // Files actually tried (a cancelled batch stops early), failures included.
+        attempted += done.len() + rep.failed.len() - failed_before;
+        progress(attempted, todo.len());
         if rep.cancelled { break; }
     }
     Ok(rep)
@@ -143,6 +147,80 @@ pub struct ReconcileReport {
 
 struct Known { id: i64, size: i64, mtime: i64, hash: Option<String>, full: Option<String>, status: String }
 
+/// Assets of one size that are gone from their path, indexed by what can identify them again.
+#[derive(Default)]
+struct Bucket {
+    items: Vec<Option<(String, Known)>>,
+    by_quick: HashMap<String, Vec<usize>>,
+    by_full: HashMap<String, Vec<usize>>,
+    /// Neither digest: only size + mtime can match.
+    by_mtime: HashMap<i64, Vec<usize>>,
+    /// Live assets with a SHA-256 but no quick hash (any file of this size may be one of them).
+    full_only: usize,
+}
+
+impl Bucket {
+    fn add(&mut self, p: String, k: Known) {
+        let i = self.items.len();
+        if let Some(h) = &k.hash { self.by_quick.entry(h.clone()).or_default().push(i); }
+        if let Some(h) = &k.full { self.by_full.entry(h.clone()).or_default().push(i); }
+        if k.hash.is_none() && k.full.is_none() { self.by_mtime.entry(k.mtime).or_default().push(i); }
+        if k.hash.is_none() && k.full.is_some() { self.full_only += 1; }
+        self.items.push(Some((p, k)));
+    }
+
+    fn live<'a>(&'a self, v: Option<&'a Vec<usize>>) -> impl Iterator<Item = usize> + 'a {
+        v.into_iter().flatten().copied().filter(|&i| self.items[i].is_some())
+    }
+
+    /// The gone asset this file is, hashing the file at most once per digest kind:
+    /// SHA-256 first (verified), then a quick hash of an asset without SHA-256, then a unique
+    /// size + mtime among assets with no digest at all.
+    fn find(&self, file: &Path, mtime: i64) -> Option<(usize, &'static str)> {
+        let quick = if self.by_quick.is_empty() { None } else { quick_hash(file).ok() };
+        let quick_hits: Vec<usize> = quick.as_ref().map(|q| self.live(self.by_quick.get(q)).collect()).unwrap_or_default();
+        // Assets that have a SHA-256 and could be this file (same quick hash, or no quick hash).
+        let needs_full = quick_hits.iter().any(|&i| self.items[i].as_ref().unwrap().1.full.is_some())
+            || self.full_only > 0;
+        if needs_full {
+            if let Ok(full) = full_hash(file) {
+                let q = quick.as_deref();
+                if let Some(i) = self.live(self.by_full.get(&full))
+                    .find(|&i| { let k = &self.items[i].as_ref().unwrap().1; k.hash.is_none() || k.hash.as_deref() == q }) {
+                    return Some((i, "sha256"));
+                }
+            }
+        }
+        if let Some(&i) = quick_hits.iter().find(|&&i| self.items[i].as_ref().unwrap().1.full.is_none()) {
+            return Some((i, "hash"));
+        }
+        let same: Vec<usize> = self.live(self.by_mtime.get(&mtime)).collect();
+        (same.len() == 1).then(|| (same[0], "size+mtime"))
+    }
+
+    fn take(&mut self, i: usize) -> (String, Known) {
+        let (p, k) = self.items[i].take().unwrap();
+        if k.hash.is_none() && k.full.is_some() { self.full_only -= 1; }
+        (p, k)
+    }
+}
+
+/// The file of `asset_id` changed: forget the clock offset its old header gave. Its time goes back
+/// to the import clock (or, after the commit, the recorder's clock periods: returns the device).
+fn drop_header_clock(tx: &rusqlite::Transaction, asset_id: i64, profile: Option<&ImportProfile>) -> Result<Option<i64>> {
+    let row: Option<(i64, Option<i64>, Option<i64>, Option<i64>)> = tx.query_row(&format!(
+        "SELECT r.id, r.device_id, r.header_offset_min, {} FROM recording r WHERE r.asset_id = ?1", crate::WALL),
+        [asset_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional()?;
+    let Some((rec, device, Some(_), wall)) = row else { return Ok(None) };
+    tx.execute("UPDATE recording SET header_offset_min = NULL WHERE id = ?1", [rec])?;
+    if let (Some(p), Some(w)) = (profile, wall) {
+        let clk = p.clock();
+        let (utc, off, _) = clk.to_utc(chrono::DateTime::from_timestamp_millis(w).unwrap_or_default().naive_utc());
+        tx.execute("UPDATE recording SET start_ms = ?2, local_offset_min = ?3, tz = ?4 WHERE id = ?1", params![rec, utc, off, clk.label()])?;
+    }
+    Ok(device)
+}
+
 /// Compare a fresh scan of a root with the catalog. Renamed or moved files are matched by quick
 /// hash (or, for assets not hashed yet, by unique size + mtime) and re-linked instead of being
 /// imported again. With `profile`, the fields of a moved file are re-derived from its new path.
@@ -157,6 +235,7 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
     let mut rep = ReconcileReport::default();
     let tx = cat.conn.transaction()?;
     let mut candidates = Vec::new();
+    let mut reclock: Vec<i64> = Vec::new();
     for f in scanned {
         match known.remove(&f.rel_path) {
             Some(k) if k.size == f.size as i64 && k.mtime == f.mtime_ms => {
@@ -169,39 +248,22 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
                 // Content changed: read the header again.
                 tx.execute("UPDATE recording SET sample_rate = NULL, channels = NULL, duration_s = NULL WHERE asset_id = ?1", [k.id])?;
                 tx.execute("DELETE FROM meta WHERE origin = 'header' AND recording_id IN (SELECT id FROM recording WHERE asset_id = ?1)", [k.id])?;
+                // What the old header gave is gone too: its position, and its clock offset.
+                tx.execute("UPDATE recording SET lat = NULL, lon = NULL, alt = NULL, pos_accuracy_m = NULL, pos_origin = NULL
+                            WHERE asset_id = ?1 AND pos_origin = 'header'", [k.id])?;
+                if let Some(dev) = drop_header_clock(&tx, k.id, profile)? { reclock.push(dev); }
                 rep.changed.push(f.rel_path.clone());
             }
             None => candidates.push(f.clone()),
         }
     }
     // What is left in `known` is gone from its old path.
-    let mut gone_by_size: HashMap<i64, Vec<(String, Known)>> = HashMap::new();
-    for (p, k) in known.drain() { gone_by_size.entry(k.size).or_default().push((p, k)); }
+    let mut gone_by_size: HashMap<i64, Bucket> = HashMap::new();
+    for (p, k) in known.drain() { gone_by_size.entry(k.size).or_default().add(p, k); }
     for f in candidates {
         let Some(gone) = gone_by_size.get_mut(&(f.size as i64)) else { rep.new_files.push(f); continue };
-        let mut hit = None;
-        if gone.iter().any(|(_, k)| k.hash.is_some()) {
-            if let Ok(h) = quick_hash(&base.join(&f.rel_path)) {
-                hit = gone.iter().position(|(_, k)| k.hash.as_deref() == Some(h.as_str())).map(|i| (i, "hash"));
-                // Confirm with SHA-256 when the old file had one (reads the candidate once).
-                if let Some((i, _)) = hit {
-                    if let Some(old) = gone[i].1.full.clone() {
-                        match full_hash(&base.join(&f.rel_path)) {
-                            Ok(new) if new == old => hit = Some((i, "sha256")),
-                            _ => hit = None,
-                        }
-                    }
-                }
-            }
-        }
-        if hit.is_none() {
-            // Not hashed yet: a rename keeps size and mtime; accept only a unique match.
-            let same: Vec<usize> = gone.iter().enumerate()
-                .filter(|(_, (_, k))| k.hash.is_none() && k.mtime == f.mtime_ms).map(|(i, _)| i).collect();
-            if same.len() == 1 { hit = Some((same[0], "size+mtime")); }
-        }
-        let Some((i, by)) = hit else { rep.new_files.push(f); continue };
-        let (old, k) = gone.swap_remove(i);
+        let Some((i, by)) = gone.find(&base.join(&f.rel_path), f.mtime_ms) else { rep.new_files.push(f); continue };
+        let (old, k) = gone.take(i);
         tx.execute("UPDATE asset SET rel_path = ?2, mtime = ?3, status = 'ok' WHERE id = ?1", params![k.id, f.rel_path, f.mtime_ms])?;
         if let Some(p) = profile {
             if let Some((_, m)) = p.patterns.matches(&f.rel_path) {
@@ -210,11 +272,14 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
         }
         rep.moved.push(Moved { from: old, to: f.rel_path.clone(), by });
     }
-    for (p, k) in gone_by_size.into_values().flatten() {
+    for (p, k) in gone_by_size.into_values().flat_map(|b| b.items.into_iter().flatten()) {
         tx.execute("UPDATE asset SET status = 'missing' WHERE id = ?1", [k.id])?;
         rep.missing.push(p);
     }
     tx.commit()?;
+    reclock.sort_unstable();
+    reclock.dedup();
+    crate::clock::reapply_device_clocks(cat, &reclock)?;
     rep.new_count = rep.new_files.len();
     rep.missing.sort();
     rep.changed.sort();
@@ -236,8 +301,11 @@ fn relink_fields(tx: &rusqlite::Transaction, asset_id: i64, r: &crate::Resolved,
     tx.execute("UPDATE recording SET site_id = ?2, device_id = ?3, start_ms = ?4, local_offset_min = ?5, tz = ?6, wall_ms = ?7 WHERE id = ?1",
         params![rec, site, device, utc.map(|u| u.0), utc.map(|u| u.1), utc.map(|_| clk.label()), r.start.map(|t| t.and_utc().timestamp_millis())])?;
     tx.execute("DELETE FROM meta WHERE recording_id = ?1 AND origin = 'pattern'", [rec])?;
+    // A value set by hand stays; the path wins over the header (as at import).
     for (k, v) in &r.meta {
-        tx.execute("INSERT OR REPLACE INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'pattern')", params![rec, k, v])?;
+        tx.execute("INSERT INTO meta(recording_id, key, value, origin) VALUES (?1, ?2, ?3, 'pattern')
+                    ON CONFLICT(recording_id, key) DO UPDATE SET value = excluded.value, origin = 'pattern' WHERE meta.origin != 'manual'",
+            params![rec, k, v])?;
     }
     Ok(())
 }
@@ -256,12 +324,13 @@ pub fn duplicates(cat: &Catalog, limit: usize) -> Result<(usize, Vec<DuplicateGr
         "SELECT COUNT(*) FROM (SELECT 1 FROM asset WHERE quick_hash IS NOT NULL AND status != 'missing' GROUP BY quick_hash HAVING COUNT(*) > 1)",
         [], |r| r.get(0))?;
     let mut st = cat.conn.prepare(
-        "SELECT quick_hash, MAX(size), GROUP_CONCAT(rel_path, char(10)),
+        "SELECT quick_hash, MAX(size), json_group_array(rel_path),
                 COUNT(full_hash) = COUNT(*) AND COUNT(DISTINCT full_hash) = 1 FROM asset
          WHERE quick_hash IS NOT NULL AND status != 'missing' GROUP BY quick_hash HAVING COUNT(*) > 1
          ORDER BY COUNT(*) DESC, MIN(rel_path) LIMIT ?1")?;
     let v = st.query_map([limit as i64], |r| Ok(DuplicateGroup {
-        hash: r.get(0)?, size: r.get(1)?, paths: r.get::<_, String>(2)?.split('\n').map(String::from).collect(),
+        // JSON array: a file name may contain any character, a newline too.
+        hash: r.get(0)?, size: r.get(1)?, paths: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or_default(),
         verified: r.get(3)?,
     }))?.collect::<std::result::Result<_, _>>()?;
     Ok((total as usize, v))
@@ -419,6 +488,135 @@ mod tests {
         assert_eq!(rep.moved.len(), 1);
         assert_eq!(rep.moved[0].by, "size+mtime");
         assert_eq!(rep.new_count, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("aw-hash-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+    fn plain() -> ImportProfile { ProfileSpec { name: "t".into(), patterns: vec!["{x}.wav".into()], ..Default::default() }.build().unwrap() }
+    fn hash_all(cat: &mut Catalog, root: i64, dir: &Path, kinds: &[HashKind]) {
+        for k in kinds { hash_missing(cat, root, dir, *k, &AtomicBool::new(false), &mut |_, _| {}).unwrap(); }
+    }
+
+    #[test]
+    fn every_quick_hash_match_is_checked_with_sha256() {
+        let dir = tmp("f");
+        let a = noise(1, 300_000);
+        let mut b = a.clone();
+        b[150_000] ^= 1;   // same quick hash as a, different SHA-256
+        write(&dir, "a.wav", &a);
+        write(&dir, "b.wav", &b);
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &plain()).unwrap();
+        hash_all(&mut cat, root, &dir, &[HashKind::Quick, HashKind::Full]);
+        std::fs::remove_file(dir.join("a.wav")).unwrap();
+        std::fs::rename(dir.join("b.wav"), dir.join("moved-b.wav")).unwrap();
+        let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, None).unwrap();
+        assert_eq!(rep.moved.len(), 1);
+        assert_eq!((rep.moved[0].from.as_str(), rep.moved[0].by), ("b.wav", "sha256"));
+        assert_eq!(rep.missing, vec!["a.wav".to_string()]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_sha256_only_asset_is_not_matched_by_size_and_mtime() {
+        let dir = tmp("g");
+        write(&dir, "a.wav", &noise(1, 1000));
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &plain()).unwrap();
+        hash_all(&mut cat, root, &dir, &[HashKind::Full]);
+        let mtime = std::fs::metadata(dir.join("a.wav")).unwrap().modified().unwrap();
+        std::fs::remove_file(dir.join("a.wav")).unwrap();
+        write(&dir, "other.wav", &noise(2, 1000));
+        std::fs::File::options().write(true).open(dir.join("other.wav")).unwrap().set_modified(mtime).unwrap();
+        let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, None).unwrap();
+        assert!(rep.moved.is_empty(), "different content with the same size and mtime");
+        assert_eq!(rep.new_count, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_changed_file_loses_what_its_old_header_gave() {
+        let dir = tmp("h");
+        write(&dir, "S1/R1_20240501_120000.wav", &noise(1, 1000));
+        let spec = ProfileSpec {
+            name: "t".into(), patterns: vec!["S{s}/R{d}_{t:%Y%m%d_%H%M%S}.wav".into()],
+            mappings: vec![
+                MappingSpec { field: "d".into(), role: "device".into(), ..Default::default() },
+                MappingSpec { field: "t".into(), role: "start".into(), ..Default::default() },
+            ],
+            utc_offset_min: 60, ..Default::default()
+        };
+        let profile = spec.build().unwrap();
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &profile).unwrap();
+        let start0: i64 = cat.conn.query_row("SELECT start_ms FROM recording", [], |r| r.get(0)).unwrap();
+        // The old header said UTC+02:00 and gave a GPS position.
+        let id: i64 = cat.conn.query_row("SELECT id FROM recording", [], |r| r.get(0)).unwrap();
+        let info = crate::header::AudioInfo { sample_rate: Some(48000), offset_min: Some(120),
+            meta: vec![("guano:Loc Position".into(), "52 13".into())], ..Default::default() };
+        crate::header::store_infos(&mut cat, &[(id, Ok(info))]).unwrap();
+        assert_eq!(cat.conn.query_row("SELECT start_ms FROM recording", [], |r| r.get::<_, i64>(0)).unwrap(), start0 - 3_600_000);
+        cat.conn.execute("INSERT INTO meta(recording_id, key, value, origin) VALUES (?1, 'habitat', 'reed', 'manual')", [id]).unwrap();
+        write(&dir, "S1/R1_20240501_120000.wav", &noise(2, 2000));   // replaced: no header offset, no GPS
+        let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, Some(&profile)).unwrap();
+        assert_eq!(rep.changed.len(), 1);
+        let (start, lat, hdr): (i64, Option<f64>, Option<i64>) = cat.conn.query_row(
+            "SELECT start_ms, lat, header_offset_min FROM recording", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!((start, lat, hdr), (start0, None, None), "back to the import clock, no header position");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_moved_file_keeps_metadata_set_by_hand() {
+        let dir = tmp("i");
+        write(&dir, "A/x.wav", &noise(1, 1000));
+        let profile = ProfileSpec {
+            name: "t".into(), patterns: vec!["{habitat}/{f}.wav".into()],
+            mappings: vec![MappingSpec { field: "habitat".into(), role: "meta:habitat".into(), ..Default::default() }],
+            ..Default::default()
+        }.build().unwrap();
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &profile).unwrap();
+        cat.conn.execute("UPDATE meta SET value = 'reed bed', origin = 'manual' WHERE key = 'habitat'", []).unwrap();
+        std::fs::create_dir_all(dir.join("B")).unwrap();
+        std::fs::rename(dir.join("A/x.wav"), dir.join("B/x.wav")).unwrap();
+        reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, Some(&profile)).unwrap();
+        let (v, o): (String, String) = cat.conn.query_row("SELECT value, origin FROM meta WHERE key = 'habitat'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!((v.as_str(), o.as_str()), ("reed bed", "manual"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_paths_may_contain_newlines() {
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", "/x").unwrap();
+        for p in ["survey\nnight.wav", "b.wav"] {
+            cat.conn.execute("INSERT INTO asset(uid, root_id, rel_path, size, mtime, quick_hash) VALUES (?1, ?2, ?3, 1, 0, 'q')",
+                params![crate::new_uid(), root, p]).unwrap();
+        }
+        let (_, g) = duplicates(&cat, 10).unwrap();
+        assert_eq!(g[0].paths.len(), 2);
+        assert!(g[0].paths.contains(&"survey\nnight.wav".to_string()));
+    }
+
+    #[test]
+    fn a_cancelled_run_reports_only_attempted_files() {
+        let dir = tmp("j");
+        for i in 0..3 { write(&dir, &format!("{i}.wav"), &noise(i, 100)); }
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("r", "referenced", "m", &dir.to_string_lossy()).unwrap();
+        import_scanned(&mut cat, root, &scan(&dir, &ScanOptions::default()).audio, &plain()).unwrap();
+        let mut last = (usize::MAX, 0);
+        hash_missing(&mut cat, root, &dir, HashKind::Quick, &AtomicBool::new(true), &mut |d, t| last = (d, t)).unwrap();
+        assert_eq!(last, (0, 3));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
