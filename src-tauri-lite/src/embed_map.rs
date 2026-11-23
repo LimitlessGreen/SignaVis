@@ -69,6 +69,10 @@ pub struct MapData {
     /// Ort pro Datei (GUANO), parallel zu `files`; nicht im Cache.
     #[serde(default, skip_deserializing)]
     places: Vec<Option<crate::guano::GuanoPlace>>,
+    /// Signatur (Groesse:mtime) pro Datei, parallel zu `files`; nur im Cache.
+    /// Geaenderte Datei am selben Pfad → ihre Fenster gelten als neu.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sigs: Vec<String>,
 }
 
 pub(crate) struct Projection {
@@ -562,9 +566,14 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
 pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>) -> Result<MapData, String> {
     let mut data = tauri::async_runtime::spawn_blocking(move || {
         let mut d = compute_map(&app, &root, force.unwrap_or(false))?;
-        d.level = point_values(crate::embeddings::levels_by_row(&root), &d);
-        d.score = point_values(crate::embeddings::scores_by_row(&root), &d);
-        d.places = d.files.iter().map(|f| crate::guano::read_place(&std::path::Path::new(&root).join(f))).collect();
+        // Pegel und Score aus einem Index-Snapshot, und nur, wenn er zur Karte passt
+        // (sonst koennten sie per Reihenfolge an fremde Punkte geraten).
+        if let Some((_, meta)) = crate::embeddings::file_meta(&root).filter(|(s, _)| *s == d.stamp) {
+            d.level = point_values(&meta, &d, |m| &m.level);
+            d.score = point_values(&meta, &d, |m| &m.score);
+        }
+        d.places = d.files.iter().map(|f| safe_join(&root, f).and_then(|p| crate::guano::read_place(&p))).collect();
+        d.sigs = vec![];
         Ok::<_, String>(d)
     })
     .await
@@ -575,9 +584,21 @@ pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>)
     Ok(data)
 }
 
+/// Projektpfad + relativer Dateipfad aus dem Karten-Cache; None, wenn der Pfad
+/// absolut ist oder den Projektordner verlassen wuerde.
+fn safe_join(root: &str, rel: &str) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+    let p = std::path::Path::new(rel);
+    p.components().all(|c| matches!(c, Component::Normal(_))).then(|| std::path::Path::new(root).join(p))
+}
+
 /// Wert (Pegel, Score) jedes Kartenpunkts; leer, wenn er auch nur einer Datei fehlt.
-fn point_values(by_file: Option<std::collections::BTreeMap<String, Vec<f32>>>, d: &MapData) -> Vec<f32> {
-    let Some(by_file) = by_file else { return vec![] };
+fn point_values(
+    meta: &std::collections::BTreeMap<String, crate::embeddings::FileMeta>,
+    d: &MapData,
+    pick: impl Fn(&crate::embeddings::FileMeta) -> &Vec<f32>,
+) -> Vec<f32> {
+    let by_file: std::collections::BTreeMap<&String, &Vec<f32>> = meta.iter().map(|(k, m)| (k, pick(m))).collect();
     let mut out = Vec::with_capacity(d.x.len());
     // Punkte einer Datei liegen hintereinander, in Zeilenreihenfolge.
     let (mut prev, mut row) = (u32::MAX, 0usize);
@@ -604,29 +625,46 @@ fn compute_map(app: &tauri::AppHandle, root: &str, force: bool) -> Result<MapDat
 
 /// Karte aus dem Cache oder neu berechnet (und gecacht).
 pub(crate) fn build_map(state: &EmbedState, root: &str, force: bool, emit: &dyn Fn(&'static str, f32)) -> Result<MapData, String> {
-    let stamp = store_stamp(root).ok_or("Noch keine Embeddings in diesem Projekt")?;
+    let (stamp, meta) = crate::embeddings::file_meta(root).ok_or("Noch keine Embeddings in diesem Projekt")?;
+    let sigs: std::collections::HashMap<&str, &str> = meta.iter().map(|(k, m)| (k.as_str(), m.sig.as_str())).collect();
     if !force {
-        let cached = std::fs::read(map_path(root)).ok().and_then(|b| serde_json::from_slice::<MapData>(&b).ok());
-        if let Some(c) = cached.filter(|c| c.version == MAP_VERSION) {
+        if let Some(c) = cached_map(state, root) {
             if c.stamp == stamp {
                 return Ok(c);
             }
-            // Wenig geaendert: alte Punkte behalten, neue einsortieren.
+            // Wenig geaendert: alte Punkte behalten, neue einsortieren. Nur wenn die
+            // Matrix zum gelesenen Index passt (sonst passen die Signaturen nicht).
             emit("place", 0.0);
-            if let Some(d) = with_loaded(state, root, |l| update_map(&c, l))? {
-                if let Ok(json) = serde_json::to_vec(&d) {
-                    let _ = std::fs::write(map_path(root), json);
-                }
-                return Ok(d);
+            if let Some(mut d) = with_loaded(state, root, |l| (l.stamp == stamp).then(|| update_map(&c, l, &sigs)).flatten())? {
+                d.sigs = d.files.iter().map(|f| sigs.get(f.as_str()).unwrap_or(&"").to_string()).collect();
+                return Ok(keep_map(state, root, d));
             }
         }
     }
     // Laeuft auf der gecachten Matrix (kein Kopieren); die Suche wartet solange.
-    let data = with_loaded(state, root, |l| assemble(l, project_2d(&l.vecs, l.rows.len(), DIM, emit)))?;
-    if let Ok(json) = serde_json::to_vec(&data) {
-        let _ = std::fs::write(map_path(root), json);
+    let mut data = with_loaded(state, root, |l| assemble(l, project_2d(&l.vecs, l.rows.len(), DIM, emit)))?;
+    if data.stamp == stamp {
+        data.sigs = data.files.iter().map(|f| sigs.get(f.as_str()).unwrap_or(&"").to_string()).collect();
     }
-    Ok(data)
+    Ok(keep_map(state, root, data))
+}
+
+/// Zuletzt berechnete Karte: aus dem Speicher, sonst aus map.json.
+fn cached_map(state: &EmbedState, root: &str) -> Option<MapData> {
+    let mem = state.map.lock().unwrap().as_ref().filter(|(r, _)| r == root).map(|(_, m)| m.clone());
+    mem.or_else(|| std::fs::read(map_path(root)).ok().and_then(|b| serde_json::from_slice::<MapData>(&b).ok()))
+        .filter(|c| c.version == MAP_VERSION)
+}
+
+/// Karte im Speicher halten und nach map.json schreiben (Schreibfehler: nur Speicher).
+fn keep_map(state: &EmbedState, root: &str, d: MapData) -> MapData {
+    if let Ok(json) = serde_json::to_vec(&d) {
+        if let Err(e) = std::fs::write(map_path(root), json) {
+            eprintln!("[map] map.json nicht geschrieben: {e}");
+        }
+    }
+    *state.map.lock().unwrap() = Some((root.to_string(), d.clone()));
+    d
 }
 
 /// Kartendaten aus geladener Matrix und Projektion.
@@ -660,6 +698,7 @@ fn assemble(l: &Loaded, proj: Projection) -> MapData {
             level: vec![],
             score: vec![],
             places: vec![],
+            sigs: vec![],
         }
     }
 }
@@ -668,10 +707,17 @@ fn assemble(l: &Loaded, proj: Projection) -> MapData {
 /// Lage und Anker; neue Fenster kommen ans Mittel ihrer K_PLACE naechsten alten
 /// Punkte (Kosinus im Embedding-Raum) und erben den Anker des naechsten.
 /// None, wenn sich zu viel geaendert hat (dann neues Layout).
-pub(crate) fn update_map(old: &MapData, l: &Loaded) -> Option<MapData> {
+pub(crate) fn update_map(old: &MapData, l: &Loaded, sigs: &std::collections::HashMap<&str, &str>) -> Option<MapData> {
     let key = |path: &str, start: f64| (path.to_string(), (start * 1000.0).round() as i64);
-    let old_idx: std::collections::HashMap<(String, i64), usize> =
-        (0..old.x.len()).map(|i| (key(&old.files[old.file[i] as usize], old.start[i]), i)).collect();
+    // Dateien, deren Inhalt sich geaendert hat (andere Signatur), zaehlen nicht als alt.
+    let same_file = |fi: usize| {
+        let f = old.files[fi].as_str();
+        old.sigs.get(fi).is_none_or(|s| sigs.get(f).is_none_or(|n| n == s))
+    };
+    let old_idx: std::collections::HashMap<(String, i64), usize> = (0..old.x.len())
+        .filter(|&i| same_file(old.file[i] as usize))
+        .map(|i| (key(&old.files[old.file[i] as usize], old.start[i]), i))
+        .collect();
     let n = l.rows.len();
     let found: Vec<Option<usize>> = l.rows.iter().map(|r| old_idx.get(&key(&r.path, r.start)).copied()).collect();
     let kept = found.iter().filter(|f| f.is_some()).count();
@@ -735,6 +781,7 @@ pub(crate) fn update_map(old: &MapData, l: &Loaded) -> Option<MapData> {
         level: vec![],
         score: vec![],
         places: vec![],
+        sigs: vec![],
     })
 }
 
@@ -844,15 +891,13 @@ pub(crate) fn nearest_centroid(vecs: &[f32], labels: &[i32]) -> Vec<i32> {
 pub async fn embed_clusters(app: tauri::AppHandle, root: String, min_cluster_size: Option<usize>) -> Result<Clusters, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let stamp = store_stamp(&root).ok_or("Noch keine Embeddings in diesem Projekt")?;
-        let map = std::fs::read(map_path(&root))
-            .ok()
-            .and_then(|b| serde_json::from_slice::<MapData>(&b).ok())
-            .filter(|m| m.version == MAP_VERSION && m.stamp == stamp)
+        let state = app.state::<EmbedState>();
+        let map = cached_map(&state, &root)
+            .filter(|m| m.stamp == stamp)
             .ok_or("Karte ist veraltet – bitte neu berechnen")?;
         let mut c = clusters_from_map(&map, min_cluster_size);
         // Naechster Cluster ueber die Schwerpunkte, wenn die Matrix zur Karte passt;
         // sonst bleibt der Weg durch den Minimalbaum.
-        let state = app.state::<EmbedState>();
         if let Ok(Some(n)) = with_loaded(&state, &root, |l| {
             (l.stamp == map.stamp && l.rows.len() == map.x.len()).then(|| nearest_centroid(&l.vecs, &c.labels))
         }) {
@@ -923,6 +968,38 @@ mod tests {
     }
 
     #[test]
+    fn update_treats_windows_of_a_replaced_file_as_new() {
+        let l0 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 2, 10)], 1);
+        let mut old = assemble(&l0, project_2d(&l0.vecs, l0.rows.len(), DIM, &|_, _| {}));
+        old.sigs = vec!["1:1".into(), "2:2".into(), "3:3".into()];
+        // c.wav am selben Pfad mit anderem Inhalt (andere Art, andere Signatur)
+        let l1 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 0, 10)], 2);
+        let same: std::collections::HashMap<&str, &str> = [("a.wav", "1:1"), ("b.wav", "2:2"), ("c.wav", "3:3")].into();
+        assert_eq!(update_map(&old, &l1, &same).unwrap().placed_new, 0, "gleiche Signatur: Lage bleibt");
+        let changed: std::collections::HashMap<&str, &str> = [("a.wav", "1:1"), ("b.wav", "2:2"), ("c.wav", "9:9")].into();
+        let new = update_map(&old, &l1, &changed).unwrap();
+        assert_eq!(new.placed_new, 10, "Fenster der ersetzten Datei werden neu einsortiert");
+        // ...und landen jetzt bei Art 0 (a.wav), nicht mehr an der alten Stelle
+        let mean = |m: &MapData, f: &str| {
+            let p: Vec<usize> = (0..m.x.len()).filter(|&i| m.files[m.file[i] as usize] == f).collect();
+            (p.iter().map(|&i| m.x[i]).sum::<f32>() / p.len() as f32, p.iter().map(|&i| m.y[i]).sum::<f32>() / p.len() as f32)
+        };
+        let (a, c) = (mean(&new, "a.wav"), mean(&new, "c.wav"));
+        let (b, c_old) = (mean(&new, "b.wav"), mean(&old, "c.wav"));
+        let d = |p: (f32, f32), q: (f32, f32)| ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt();
+        assert!(d(c, a) < d(c, b), "ersetzte Datei liegt bei ihrer neuen Art");
+        assert!(d(c, c_old) > 0.0);
+    }
+
+    #[test]
+    fn safe_join_rejects_paths_leaving_the_project() {
+        assert!(safe_join("/p", "a/b.wav").is_some());
+        assert!(safe_join("/p", "../x.wav").is_none());
+        assert!(safe_join("/p", "/etc/x.wav").is_none());
+        assert!(safe_join("/p", "a/../../x.wav").is_none());
+    }
+
+    #[test]
     fn update_places_new_windows_without_moving_old_ones() {
         let l0 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 2, 100)], 1);
         let old = assemble(&l0, project_2d(&l0.vecs, l0.rows.len(), DIM, &|_, _| {}));
@@ -933,7 +1010,7 @@ mod tests {
         };
         // 10 neue Fenster der Art b in einer neuen Datei (sortiert zwischen b und c)
         let l1 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("b2.wav", 1, 10), ("c.wav", 2, 100)], 1);
-        let new = update_map(&old, &l1).expect("kleine Aenderung → inkrementell");
+        let new = update_map(&old, &l1, &Default::default()).expect("kleine Aenderung → inkrementell");
         assert_eq!(new.placed_new, 10);
         assert_eq!(new.x.len(), 310);
         for f in ["a.wav", "b.wav", "c.wav"] {
@@ -952,7 +1029,7 @@ mod tests {
         assert!(b2.iter().all(|&c| c == b_label), "{b2:?} vs {b_label}");
         // Ein Drittel weg → zu viel, neues Layout
         let l2 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100)], 1);
-        assert!(update_map(&old, &l2).is_none());
+        assert!(update_map(&old, &l2, &Default::default()).is_none());
     }
 
     #[test]

@@ -51,6 +51,9 @@ pub struct EmbedState {
     running: Arc<AtomicBool>,
     /// Zuletzt geladene Matrix (normiert, f32) fuer die Suche.
     cache: Mutex<Option<Loaded>>,
+    /// Zuletzt berechnete Karte (Projektordner, Karte): Clustern geht auch,
+    /// wenn map.json nicht geschrieben werden konnte.
+    pub(crate) map: Mutex<Option<(String, crate::embed_map::MapData)>>,
 }
 
 pub(crate) struct Loaded {
@@ -154,6 +157,28 @@ pub(crate) fn window_levels(windows: &[f32]) -> Vec<f32> {
             ((db * 10.0).round() / 10.0) as f32
         })
         .collect()
+}
+
+/// Metadaten einer Datei aus einem Index-Snapshot (fuer die Karte).
+pub(crate) struct FileMeta {
+    /// Groesse und mtime: aendern sie sich, ist das Embedding ein anderes.
+    pub sig: String,
+    pub level: Vec<f32>,
+    pub score: Vec<f32>,
+}
+
+/// Revision und Metadaten aller Dateien aus *einem* Lesen des Index.
+pub(crate) fn file_meta(root: &str) -> Option<(u64, BTreeMap<String, FileMeta>)> {
+    let idx = read_index(root)?;
+    let files = idx
+        .files
+        .into_iter()
+        .map(|(k, e)| {
+            let ok = |v: Vec<f32>| if v.len() as u64 == e.count { v } else { vec![] };
+            (k, FileMeta { sig: format!("{}:{}", e.size, e.last_modified), level: ok(e.level), score: ok(e.score) })
+        })
+        .collect();
+    Some((idx.stamp, files))
 }
 
 /// Score pro Fenster je Datei (nur Dateien mit vollstaendigem Score).
@@ -433,6 +458,37 @@ pub fn embed_start(
     Ok(())
 }
 
+/// Index fuer einen Lauf: vorhandener (passendes Modell/Hop) oder neuer Store.
+fn open_index(root: &str, hop_s: f64) -> Index {
+    let prev = read_index(root);
+    // Neuer Store setzt die Revision fort: sonst kann er nach dem Neuaufbau eine
+    // alte Revision wieder erreichen, und Karte/Cache hielten alte Zeilen fuer aktuell.
+    let prev_stamp = prev.as_ref().map_or(0, |i| i.stamp);
+    match prev {
+        Some(mut i) if COMPATIBLE_SHA256.contains(&i.model_sha256.as_str()) && (i.hop_s - hop_s).abs() < 1e-9 && vectors_path(root).is_file() => {
+            i.model_sha256 = MODEL_SHA256.into();
+            i
+        }
+        _ => {
+            let _ = std::fs::remove_file(vectors_path(root));
+            let mut i = Index::new(hop_s);
+            i.stamp = prev_stamp + 1;
+            i
+        }
+    }
+}
+
+/// Geloeschte Dateien austragen; aendert sich die Zeilenmenge, steigt die Revision.
+fn drop_missing(idx: &mut Index, audio: &[crate::project_fs::FileInfo]) {
+    let present: std::collections::HashSet<&str> = audio.iter().map(|f| f.path.as_str()).collect();
+    let before = idx.files.len();
+    idx.files.retain(|k, _| present.contains(k.as_str()));
+    if idx.files.len() != before {
+        idx.stamp += 1;   // Zeilen fallen weg: Karte und Cache muessen neu laden
+    }
+    idx.failed.retain(|k, _| present.contains(k.as_str()));
+}
+
 fn run_job(
     emit: &dyn Fn(&JobProgress),
     root: &str,
@@ -445,23 +501,11 @@ fn run_job(
         return Err("Perch-Modell fehlt (erst herunterladen)".into());
     }
     let audio = crate::project_fs::project_list_audio(root.to_string())?;
-    let mut idx = match read_index(root) {
-        Some(mut i) if COMPATIBLE_SHA256.contains(&i.model_sha256.as_str()) && (i.hop_s - hop_s).abs() < 1e-9 && vectors_path(root).is_file() => {
-            i.model_sha256 = MODEL_SHA256.into();
-            i
-        }
-        _ => {
-            let _ = std::fs::remove_file(vectors_path(root));
-            Index::new(hop_s)
-        }
-    };
+    let mut idx = open_index(root, hop_s);
     // Vorher oeffnen: ob das Modell Scores liefert, bestimmt, was nachzurechnen ist.
     let (mut embedder, device) = open_embedder(model)?;
     let want_score = embedder.has_score();
-    // Geloeschte Dateien austragen
-    let present: std::collections::HashSet<&str> = audio.iter().map(|f| f.path.as_str()).collect();
-    idx.files.retain(|k, _| present.contains(k.as_str()));
-    idx.failed.retain(|k, _| present.contains(k.as_str()));
+    drop_missing(&mut idx, &audio);
     let todo: Vec<_> = audio
         .iter()
         .filter(|f| match idx.files.get(&f.path) {
@@ -510,6 +554,8 @@ fn run_job(
         let full = Path::new(root).join(&f.path);
         // Unveraenderte Datei, nur der Pegel fehlt: dekodieren, nicht neu einbetten.
         // (Fehlt der Score, muss das Modell laufen: dann wie eine geaenderte Datei.)
+        // Unveraenderte Datei, deren Score fehlt: altes Embedding bleibt gueltig.
+        let backfill = idx.files.get(&f.path).is_some_and(|e| e.size == f.size && e.last_modified == f.last_modified);
         let levels_only = idx.files.get(&f.path).is_some_and(|e| {
             e.size == f.size && e.last_modified == f.last_modified && !(want_score && e.score.len() as u64 != e.count)
         });
@@ -567,6 +613,11 @@ fn run_job(
                 p.phase = "cancelled".into();
                 write_index(root, &idx)?;
                 return Ok(());
+            }
+            Err(e) if backfill => {
+                // Score nicht nachrechenbar: Eintrag behalten (Suche/Karte gehen weiter),
+                // beim naechsten Lauf erneut versuchen.
+                eprintln!("[embed] Score fuer {} nicht nachgerechnet: {e}", f.path);
             }
             Err(e) => {
                 idx.files.remove(&f.path);
@@ -692,6 +743,34 @@ pub(crate) fn top_k(scores: impl Iterator<Item = f32>, k: usize, skip: Option<us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_revision_never_goes_back() {
+        let dir = std::env::temp_dir().join(format!("signavis-embed-stamp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = dir.to_string_lossy().into_owned();
+        let entry = || FileEntry { size: 1, last_modified: 1.0, row: 0, count: 1, duration: 5.0, level: vec![0.0], score: vec![] };
+        let mut idx = Index::new(5.0);
+        idx.files.insert("a.wav".into(), entry());
+        idx.files.insert("b.wav".into(), entry());
+        idx.stamp = 7;
+        write_index(&root, &idx).unwrap();
+        std::fs::write(vectors_path(&root), [0u8; 4]).unwrap();
+        // Gleicher Hop: Store bleibt, Revision auch
+        assert_eq!(open_index(&root, 5.0).stamp, 7);
+        // Anderer Hop: neuer Store, Revision zaehlt weiter statt bei 0 zu beginnen
+        let fresh = open_index(&root, 2.5);
+        assert!(fresh.files.is_empty());
+        assert_eq!(fresh.stamp, 8);
+        // Entfernte Datei erhoeht die Revision; reiner No-op nicht
+        let info = |p: &str| crate::project_fs::FileInfo { path: p.into(), size: 1, last_modified: 1.0 };
+        let mut i = idx.clone();
+        drop_missing(&mut i, &[info("a.wav"), info("b.wav")]);
+        assert_eq!(i.stamp, 7);
+        drop_missing(&mut i, &[info("a.wav")]);
+        assert_eq!((i.stamp, i.files.len()), (8, 1));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// Realtest mit Modell: SIGNAVIS_PERCH_MODEL und EMBED_TEST_DIR (Ordner mit Audio) setzen,
     /// optional EMBED_TEST_HOP (Sekunden, Standard 5).
