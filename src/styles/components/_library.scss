@@ -299,6 +299,7 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 .lib-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
 
 .library-panel {
+    padding: 8px 12px;   // like the other sidebar panels
     .lib-panel-stats { color: var(--color-text-secondary); font-size: 12px; margin: 6px 0 10px; }
     .lib-panel-actions { display: flex; flex-direction: column; gap: 6px; }
 }
