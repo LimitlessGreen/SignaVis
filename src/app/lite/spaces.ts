@@ -13,7 +13,7 @@
 import type { DockviewApi, IContentRenderer } from 'dockview-core';
 import '../../styles/vendor/dockview.css';
 import {
-    isVisible, layoutPanelIds, layoutUsable, parseSpacesState, stringifySpacesState,
+    isVisible, layoutUsable, parseSpacesState, stringifySpacesState,
     type SpaceDef, type SpacesState,
 } from './spaces-state.ts';
 
@@ -75,6 +75,7 @@ export class SpacesShell {
         this.#tabs.setAttribute('role', 'tablist');
         this.#tabs.setAttribute('aria-label', 'Spaces');
         o.tabsBefore.before(this.#tabs);
+        this.#tabs.addEventListener('keydown', (e) => this.#onTabKey(e));
         for (const p of o.panels) {
             const host = document.createElement('div');
             host.className = 'space-panel';
@@ -85,12 +86,17 @@ export class SpacesShell {
             const el = document.createElement('section');
             el.className = 'space';
             el.dataset.space = def.id;
+            el.id = `space-${def.id}`;
+            el.setAttribute('role', 'tabpanel');
+            el.setAttribute('aria-labelledby', `space-tab-${def.id}`);
             el.hidden = true;
             this.el.appendChild(el);
             const tab = document.createElement('button');
             tab.type = 'button';
             tab.className = 'spaces-tab';
+            tab.id = `space-tab-${def.id}`;
             tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-controls', el.id);
             tab.dataset.space = def.id;
             tab.innerHTML = `${def.icon}<span></span>`;
             tab.querySelector('span')!.textContent = def.title;
@@ -147,8 +153,7 @@ export class SpacesShell {
 
     /** Show the space that holds the panel and bring the panel to the front. */
     async reveal(panelId: string) {
-        const sp = [...this.#spaces.values()].find((s) => s.api?.getPanel(panelId)
-            || (!s.api && this.#initialPanels(s).includes(panelId)));
+        const sp = [...this.#spaces.values()].find((s) => s.def.panels.includes(panelId));
         if (!sp) return;
         await this.show(sp.def.id);
         sp.api?.getPanel(panelId)?.api.setActive();
@@ -168,21 +173,22 @@ export class SpacesShell {
             const on = sp.def.id === this.#state.active;
             sp.tab.classList.toggle('is-active', on);
             sp.tab.setAttribute('aria-selected', String(on));
+            sp.tab.tabIndex = on ? 0 : -1;   // roving tabindex: one Tab stop for the tab list
         }
     }
 
-    /** Panels placed by spaces that are already built. */
-    #placed(except?: SpaceRuntime): Set<string> {
-        const ids = new Set<string>();
-        for (const s of this.#spaces.values()) if (s !== except) for (const id of this.#initialPanels(s)) ids.add(id);
-        return ids;
-    }
-
-    /** Panels a space has (built: from dockview; not built yet: what it will be built with). */
-    #initialPanels(sp: SpaceRuntime): string[] {
-        if (sp.api) return sp.api.panels.map((p) => p.id);
-        const stored = this.#state.spaces[sp.def.id]?.layout;
-        return stored ? layoutPanelIds(stored) : sp.def.panels;
+    /** Arrow keys, Home and End move between the visible tabs and show the space (tabs pattern). */
+    #onTabKey(e: KeyboardEvent) {
+        const tabs = [...this.#spaces.values()].filter((s) => !s.tab.hidden);
+        const i = tabs.findIndex((s) => s.tab === document.activeElement);
+        if (i < 0) return;
+        const j = e.key === 'ArrowRight' ? (i + 1) % tabs.length
+            : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+            : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+        if (j < 0) return;
+        e.preventDefault();
+        tabs[j].tab.focus();
+        void this.show(tabs[j].def.id);
     }
 
     #build(sp: SpaceRuntime) {
@@ -194,17 +200,17 @@ export class SpacesShell {
         });
         sp.api = api;
         const stored = this.#state.spaces[sp.def.id]?.layout;
-        const known = new Set(this.#panels.keys());
+        // A panel belongs to the space that lists it, so restored and default layouts never share one.
+        const own = new Set(sp.def.panels.filter((id) => this.#panels.has(id)));
         let restored = false;
-        if (stored && layoutUsable(stored, known, this.#placed(sp))) {
+        if (stored && layoutUsable(stored, own)) {
             try { api.fromJSON(stored as any); restored = api.panels.length > 0; }
             catch (e) { console.warn(`[spaces] layout of ${sp.def.id} not usable, using the default`, e); api.clear(); }
         }
         if (!restored) {
             let first: string | null = null;
-            for (const id of sp.def.panels) {
-                const p = this.#panels.get(id);
-                if (!p) continue;
+            for (const id of own) {
+                const p = this.#panels.get(id)!;
                 api.addPanel({ id, component: id, title: p.def.title, ...(first ? { position: { referencePanel: first } } : {}) });
                 first ??= id;
             }

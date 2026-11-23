@@ -73,12 +73,18 @@ export function layoutPanelIds(layout: unknown): string[] {
 }
 
 /**
- * A stored layout is only used when it holds no panel that is unknown or already
- * placed in another space (a panel's element can live in one place only).
+ * A stored layout is only used when every panel in it belongs to this space
+ * (a panel's element can live in one place only) and every entry names the
+ * panel it is stored under: dockview restores an entry by its own `id` and
+ * `contentComponent`, not by the map key.
  */
-export function layoutUsable(layout: unknown, known: ReadonlySet<string>, taken: ReadonlySet<string>): boolean {
-    const ids = layoutPanelIds(layout);
-    return ids.length > 0 && ids.every((id) => known.has(id) && !taken.has(id));
+export function layoutUsable(layout: unknown, own: ReadonlySet<string>): boolean {
+    const panels = (layout as any)?.panels;
+    if (!panels || typeof panels !== 'object') return false;
+    const entries = Object.entries<any>(panels);
+    return entries.length > 0 && entries.every(([key, e]) =>
+        own.has(key) && !!e && typeof e === 'object' && e.id === key
+        && (e.contentComponent === undefined || e.contentComponent === key));
 }
 
 export function isVisible(def: SpaceDef, state: SpacesState): boolean {

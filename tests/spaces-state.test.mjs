@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { dockviewCss, vendoredFile, VENDORED_CSS } from '../scripts/vendor-dockview-css.mjs';
 
 import {
     isVisible, layoutPanelIds, layoutUsable, parseSpacesState, stringifySpacesState,
@@ -45,12 +46,19 @@ test('stringify → parse round trip', () => {
     assert.deepEqual(parseSpacesState(stringifySpacesState(s), DEFS, 'annotate'), s);
 });
 
-test('layoutUsable: only with known panels that no other space holds', () => {
-    const known = new Set(['library', 'editor', 'embeddings']);
-    assert.equal(layoutUsable(layout('library'), known, new Set(['editor'])), true);
-    assert.equal(layoutUsable(layout('library', 'editor'), known, new Set(['editor'])), false);
-    assert.equal(layoutUsable(layout('library', 'old-panel'), known, new Set()), false);
-    assert.equal(layoutUsable(layout(), known, new Set()), false);
+test('layoutUsable: only panels of this space, each entry matching its key', () => {
+    const own = new Set(['library']);
+    assert.equal(layoutUsable(layout('library'), own), true);
+    assert.equal(layoutUsable(layout('library', 'editor'), own), false, 'editor belongs to another space');
+    assert.equal(layoutUsable(layout('old-panel'), own), false);
+    assert.equal(layoutUsable(layout(), own), false);
+    const renamed = layout('library');
+    renamed.panels.library.id = 'editor';   // dockview would restore the editor here
+    assert.equal(layoutUsable(renamed, own), false);
+    const otherComponent = layout('library');
+    otherComponent.panels.library.contentComponent = 'editor';
+    assert.equal(layoutUsable(otherComponent, own), false);
+    assert.equal(layoutUsable({ grid: {}, panels: { library: null } }, own), false);
 });
 
 test('isVisible: optional spaces only once made available', () => {
@@ -61,9 +69,9 @@ test('isVisible: optional spaces only once made available', () => {
     assert.equal(isVisible(DEFS[2], s), true);
 });
 
-test('vendored dockview stylesheet matches the installed dockview-core', () => {
-    const { version } = JSON.parse(fs.readFileSync(new URL('../node_modules/dockview-core/package.json', import.meta.url), 'utf8'));
-    const head = fs.readFileSync(new URL('../src/styles/vendor/dockview.css', import.meta.url), 'utf8').slice(0, 200);
-    assert.match(head, new RegExp(`dockview-core ${version.replace(/\./g, '\\.')} stylesheet`),
-        'run node scripts/vendor-dockview-css.mjs after updating dockview-core');
+test('vendored dockview stylesheet is the installed one, with its licence', () => {
+    const d = dockviewCss();
+    const file = fs.readFileSync(VENDORED_CSS, 'utf8');
+    assert.ok(file === vendoredFile(d), 'run node scripts/vendor-dockview-css.mjs after updating dockview-core');
+    assert.match(file, /Permission is hereby granted/);
 });
