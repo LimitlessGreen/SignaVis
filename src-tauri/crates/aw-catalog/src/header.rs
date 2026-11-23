@@ -28,12 +28,18 @@ pub fn offset_from_meta(meta: &[(String, String)]) -> Option<i32> {
     use std::sync::LazyLock;
     static ISO: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|([+-])(\d{2}):?(\d{2}))$").unwrap());
     static AM: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)").unwrap());
+    // Hours up to 14, minutes below 60; anything else is not an offset (an invalid GUANO value
+    // falls through to the AudioMoth comment).
+    let hm = |neg: bool, h: &str, m: Option<&str>| -> Option<i32> {
+        let h: i32 = h.parse().ok()?;
+        let m: i32 = m.map_or(Some(0), |x| x.parse().ok())?;
+        (h <= 14 && m < 60 && h * 60 + m <= crate::clock::MAX_OFFSET_MIN).then_some(if neg { -(h * 60 + m) } else { h * 60 + m })
+    };
     for (k, v) in meta {
         if k == "guano:Timestamp" {
             if let Some(c) = ISO.captures(v.trim()) {
                 if &c[1] == "Z" { return Some(0); }
-                let sign = if &c[2] == "-" { -1 } else { 1 };
-                return Some(sign * (c[3].parse::<i32>().ok()? * 60 + c[4].parse::<i32>().ok()?));
+                if let Some(o) = hm(&c[2] == "-", &c[3], Some(&c[4])) { return Some(o); }
             }
         }
     }
@@ -41,10 +47,7 @@ pub fn offset_from_meta(meta: &[(String, String)]) -> Option<i32> {
         if k == "comment" && v.contains("AudioMoth") {
             if let Some(c) = AM.captures(v) {
                 let Some(sign) = c.get(1) else { return Some(0) };
-                let sign = if sign.as_str() == "-" { -1 } else { 1 };
-                let h: i32 = c[2].parse().ok()?;
-                let m: i32 = c.get(3).map_or(Some(0), |x| x.as_str().parse().ok())?;
-                return Some(sign * (h * 60 + m));
+                if let Some(o) = hm(sign.as_str() == "-", &c[2], c.get(3).map(|x| x.as_str())) { return Some(o); }
             }
         }
     }
@@ -65,7 +68,11 @@ pub fn read_info(path: &Path) -> std::io::Result<AudioInfo> {
         let p = &t.codec_params;
         info.sample_rate = p.sample_rate;
         info.channels = p.channels.map(|c| c.count() as u32);
-        if let (Some(n), Some(sr)) = (p.n_frames, p.sample_rate) {
+        // n_frames is in time-base ticks (MP4: the media header's time scale, not always the sample rate).
+        if let (Some(n), Some(tb)) = (p.n_frames, p.time_base) {
+            let t = tb.calc_time(n);
+            info.duration_s = Some(t.seconds as f64 + t.frac);
+        } else if let (Some(n), Some(sr)) = (p.n_frames, p.sample_rate) {
             if sr > 0 { info.duration_s = Some(n as f64 / sr as f64); }
         }
     }
@@ -169,11 +176,13 @@ pub fn store_infos(cat: &mut Catalog, infos: &[(i64, std::result::Result<AudioIn
             }
         }
     }
+    // GPS position written by the recorder (GUANO `Loc Position`), for this batch only and in the
+    // same transaction: a failure leaves the batch unread, so the next run does it again.
+    let with_gps: Vec<i64> = infos.iter()
+        .filter(|(_, r)| r.as_ref().is_ok_and(|i| i.meta.iter().any(|(k, _)| k == "guano:Loc Position")))
+        .map(|(id, _)| *id).collect();
+    if !with_gps.is_empty() { crate::geo::header_positions(&tx, Some(&with_gps))?; }
     tx.commit()?;
-    // GPS position written by the recorder (GUANO `Loc Position`).
-    if infos.iter().any(|(_, r)| r.as_ref().is_ok_and(|i| i.meta.iter().any(|(k, _)| k == "guano:Loc Position"))) {
-        crate::geo::positions_from_header(cat)?;
-    }
     Ok(())
 }
 
@@ -241,6 +250,11 @@ mod tests {
         assert_eq!(offset_from_meta(&m("comment", "Recorded at 21:00:00 24/02/2019 (UTC) by AudioMoth 0FE0")), Some(0));
         assert_eq!(offset_from_meta(&m("comment", "Recorded at 21:00:00 24/02/2019 (UTC+5:30) by AudioMoth 0FE0")), Some(330));
         assert_eq!(offset_from_meta(&m("comment", "(UTC+1) written by some other recorder")), None);
+        assert_eq!(offset_from_meta(&m("guano:Timestamp", "2023-10-29T02:30:00+01:99")), None, "minutes ≥ 60");
+        assert_eq!(offset_from_meta(&m("comment", "Recorded at 02:30:00 (UTC+1:75) by AudioMoth")), None);
+        let both = vec![("guano:Timestamp".to_string(), "2023-10-29T02:30:00+01:99".to_string()),
+                        ("comment".to_string(), "Recorded at 02:30:00 (UTC+1) by AudioMoth".to_string())];
+        assert_eq!(offset_from_meta(&both), Some(60), "an invalid GUANO value falls through to the AudioMoth comment");
     }
 
     #[test]

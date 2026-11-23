@@ -347,7 +347,7 @@ export interface MapCell { lat: number; lon: number; recordings: number; firstMs
 export interface MapData { sites: MapSite[]; cells: MapCell[]; cellDeg: number; withoutPosition: number; withOwnPosition: number }
 export interface TrackInfo { id: number; name: string; device: string | null; startMs: number; endMs: number; nPoints: number; recordings: number }
 export interface MatchReport { candidates: number; positioned: number; kept: number; tooFar: number }
-export interface TrackImport { trackId: number; points: number; untimed: number; match: MatchReport }
+export interface TrackImport { trackId: number; points: number; untimed: number; invalid?: number; match: MatchReport }
 
 /** Grid cell in degrees for a map zoom level: about `px` screen pixels per cell. */
 export function cellDegForZoom(zoom: number, px = 12): number {

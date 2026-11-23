@@ -430,12 +430,12 @@ pub async fn catalog_import_track(
     let cat = state.get(&project_root)?;
     blocking(move || {
         let text = std::fs::read_to_string(&path).map_err(err)?;
-        let (pts, untimed) = aw_catalog::geo::parse_gpx(&text).map_err(err)?;
+        let (pts, untimed, invalid) = aw_catalog::geo::parse_gpx(&text).map_err(err)?;
         let name = name.unwrap_or_else(|| Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
         let mut c = cat.lock().map_err(err)?;
         let id = aw_catalog::geo::save_track(&mut c, &name, Some(&path), device_id, &pts).map_err(err)?;
         let m = aw_catalog::geo::match_track(&mut c, id, &selection, max_gap_s).map_err(err)?;
-        Ok(serde_json::json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "match": m }))
+        Ok(serde_json::json!({ "trackId": id, "points": pts.len(), "untimed": untimed, "invalid": invalid, "match": m }))
     }).await
 }
 

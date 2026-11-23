@@ -207,7 +207,8 @@ export class MapDialog {
                     out.classList.remove('lib-warn');
                     out.textContent = 'Reading track…';
                     const r = await catalogApi.importTrack(this.#o.projectRoot, path, dev ? Number(dev) : null, { filter }, gap);
-                    out.textContent = `${r.points.toLocaleString()} points${r.untimed ? ` (${r.untimed} without time ignored)` : ''}. ${matchReportText(r.match)}`;
+                    const dropped = [r.untimed ? `${r.untimed} without time` : '', r.invalid ? `${r.invalid} with invalid coordinates` : ''].filter(Boolean).join(', ');
+                    out.textContent = `${r.points.toLocaleString()} points${dropped ? ` (${dropped} ignored)` : ''}. ${matchReportText(r.match)}`;
                     this.#fitted = false;
                     await Promise.all([this.#loadTracks(), this.#loadPoints()]);
                     const last = this.#tracks.find((t) => t.id === r.trackId);
