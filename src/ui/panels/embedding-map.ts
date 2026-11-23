@@ -88,6 +88,8 @@ export class EmbeddingMap {
     #groupNames: string[] = [];
     // view: screen = (p - c) * scale + centre
     #cx = 0.5; #cy = 0.5; #scale = 1; #fitScale = 1;
+    /** View still shows the whole map (not zoomed/panned) → refit when the stage resizes. */
+    #fitted = false;
     #grid = new Map<number, number[]>();
     #hover = -1;
     #sel = new Set<number>();
@@ -139,7 +141,10 @@ export class EmbeddingMap {
         });
         this.el.addEventListener('click', (e) => this.#onButton(e));
         this.#bindPointer();
-        new ResizeObserver(() => this.#draw()).observe(this.el.querySelector('.emap-stage')!);
+        new ResizeObserver(() => {
+            if (this.#fitted && this.#data) this.#fit();
+            this.#draw();
+        }).observe(this.el.querySelector('.emap-stage')!);
     }
 
     async open(force = false) {
@@ -149,6 +154,7 @@ export class EmbeddingMap {
         try {
             this.#data = await this.#opts.load(force);
             this.#sel.clear();
+            this.#renderSel();
             this.#clusters = null;
             this.#scores = null;
             this.#suspects = null;
@@ -335,6 +341,7 @@ export class EmbeddingMap {
         if (!d.x.length) return;
         this.#fitTo(d.x.map((_, i) => i));
         this.#fitScale = this.#scale;
+        this.#fitted = true;
     }
 
     /** Zoom to the given points (with some margin; a single point gets a close-up). */
@@ -349,6 +356,7 @@ export class EmbeddingMap {
         const { w, h, s } = this.#size();
         if (!w || !h) return;
         const minSpan = 0.03;
+        this.#fitted = false;
         this.#cx = (x0 + x1) / 2;
         this.#cy = (y0 + y1) / 2;
         this.#scale = 0.9 * Math.min(w / Math.max(minSpan, x1 - x0), h / Math.max(minSpan, y1 - y0)) / s;
@@ -466,6 +474,7 @@ export class EmbeddingMap {
             const [x2, y2] = this.#toData(sx, sy);
             this.#cx += x - x2;
             this.#cy += y - y2;
+            this.#fitted = false;
             this.#draw();
         }, { passive: false });
         c.addEventListener('pointerdown', (e) => {
@@ -488,6 +497,7 @@ export class EmbeddingMap {
                     const s = this.#size().s * this.#scale;
                     this.#cx = this.#drag.cx - dx / s;
                     this.#cy = this.#drag.cy - dy / s;
+                    this.#fitted = false;
                     this.#draw();
                     return;
                 }
