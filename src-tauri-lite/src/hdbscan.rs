@@ -113,10 +113,20 @@ pub fn cluster(n: usize, mst: &[(u32, u32, f32)], min_cluster_size: usize) -> Cl
             point_lambda[node] = lam_in;
             continue;
         }
-        let (l, r) = children[node];
         let lam = lambda_of(dist[node]);
-        let big_l = size[l] >= mcs;
-        let big_r = size[r] >= mcs;
+        // Teilungen auf gleicher Distanz sind eine Ebene: alle Teilbaeume, die erst
+        // bei genau dieser Distanz zusammenkommen, werden gemeinsam bewertet. Sonst
+        // haengt das Ergebnis von der Reihenfolge gleich langer Kanten ab.
+        let mut parts = Vec::new();
+        let mut open = vec![children[node].0, children[node].1];
+        while let Some(x) = open.pop() {
+            if x >= n && dist[x] == dist[node] {
+                open.push(children[x].0);
+                open.push(children[x].1);
+            } else {
+                parts.push(x);
+            }
+        }
         let fall = |sub: usize, point_cluster: &mut Vec<usize>, point_lambda: &mut Vec<f32>| {
             let mut pts = Vec::new();
             leaves_of(sub, &mut pts);
@@ -125,26 +135,20 @@ pub fn cluster(n: usize, mst: &[(u32, u32, f32)], min_cluster_size: usize) -> Cl
                 point_lambda[p] = lam;
             }
         };
-        match (big_l, big_r) {
-            (true, true) => {
-                for sub in [l, r] {
+        let big: Vec<usize> = parts.iter().copied().filter(|&x| size[x] >= mcs).collect();
+        for &x in parts.iter().filter(|&&x| size[x] < mcs) {
+            fall(x, &mut point_cluster, &mut point_lambda);
+        }
+        match big.len() {
+            0 => {}
+            1 => stack.push((big[0], c, lam)),
+            _ => {
+                for sub in big {
                     let id = cl_parent.len();
                     cl_parent.push(c);
                     birth.push(lam);
                     stack.push((sub, id, lam));
                 }
-            }
-            (true, false) => {
-                fall(r, &mut point_cluster, &mut point_lambda);
-                stack.push((l, c, lam));
-            }
-            (false, true) => {
-                fall(l, &mut point_cluster, &mut point_lambda);
-                stack.push((r, c, lam));
-            }
-            (false, false) => {
-                fall(l, &mut point_cluster, &mut point_lambda);
-                fall(r, &mut point_cluster, &mut point_lambda);
             }
         }
     }
@@ -285,6 +289,46 @@ pub fn assign_noise(n: usize, mst: &[(u32, u32, f32)], labels: &[i32]) -> Vec<i3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Partition als Menge von Punktmengen (unabhaengig von Cluster-Ids).
+    fn partition(labels: &[i32]) -> Vec<Vec<usize>> {
+        let mut m: std::collections::BTreeMap<i32, Vec<usize>> = Default::default();
+        for (i, &l) in labels.iter().enumerate() {
+            m.entry(l).or_default().push(i);
+        }
+        let mut v: Vec<_> = m.into_iter().map(|(l, p)| if l < 0 { p.into_iter().map(|x| x + 1000).collect() } else { p }).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn equal_weight_edges_do_not_depend_on_order() {
+        // Zehn Punkte, alle Kanten Gewicht 1: als Kette zweier Fuenfergruppen und als Stern.
+        let chain: Vec<(u32, u32, f32)> = (0..9).map(|i| (i, i + 1, 1.0)).collect();
+        let star: Vec<(u32, u32, f32)> = (1..10).map(|i| (0, i, 1.0)).collect();
+        let a = cluster(10, &chain, 5);
+        let b = cluster(10, &star, 5);
+        assert_eq!(partition(&a.labels), partition(&b.labels));
+        assert!(a.labels.iter().all(|&l| l < 0), "gleiche Distanz ueberall: keine Teilung, {:?}", a.labels);
+        // Zwei Fuenfergruppen zuerst, die verbindende Kante zuletzt (gleiches Gewicht)
+        let mut late: Vec<(u32, u32, f32)> = (0..4).map(|i| (i, i + 1, 1.0)).chain((5..9).map(|i| (i, i + 1, 1.0))).collect();
+        late.push((4, 5, 1.0));
+        assert_eq!(partition(&cluster(10, &late, 5).labels), partition(&a.labels), "Brueckenkante zuletzt");
+        // Kantenreihenfolge vertauschen aendert nichts
+        let mut rev = chain.clone();
+        rev.reverse();
+        assert_eq!(partition(&cluster(10, &rev, 5).labels), partition(&a.labels));
+    }
+
+    #[test]
+    fn equal_internal_weights_still_split_at_a_longer_bridge() {
+        let mut e: Vec<(u32, u32, f32)> = (0..4).map(|i| (i, i + 1, 1.0)).chain((5..9).map(|i| (i, i + 1, 1.0))).collect();
+        e.push((4, 5, 5.0));
+        let want = partition(&cluster(10, &e, 3).labels);
+        assert_eq!(want, vec![vec![0, 1, 2, 3, 4], vec![5, 6, 7, 8, 9]]);
+        e.reverse();
+        assert_eq!(partition(&cluster(10, &e, 3).labels), want);
+    }
 
     #[test]
     fn assign_noise_follows_smallest_bottleneck() {
