@@ -625,6 +625,23 @@ pub struct Hit {
     score: f32,
 }
 
+/// Zeilenbereich (erste Zeile, Anzahl) jeder Datei; Zeilen einer Datei liegen
+/// zusammenhaengend und nach Startzeit sortiert.
+pub(crate) fn row_ranges(l: &Loaded) -> std::collections::HashMap<&str, (usize, usize)> {
+    let mut m: std::collections::HashMap<&str, (usize, usize)> = std::collections::HashMap::new();
+    for (i, r) in l.rows.iter().enumerate() {
+        m.entry(r.path.as_str()).and_modify(|e| e.1 += 1).or_insert((i, 1));
+    }
+    m
+}
+
+/// Wie `find_row`, aber ueber `row_ranges` (Binaersuche statt Scan).
+pub(crate) fn find_row_in(l: &Loaded, ranges: &std::collections::HashMap<&str, (usize, usize)>, path: &str, start: f64) -> Option<usize> {
+    let &(first, count) = ranges.get(path)?;
+    let k = l.rows[first..first + count].partition_point(|r| r.start <= start + 1e-6);
+    (k > 0).then(|| first + k - 1)
+}
+
 /// Fenster eines Treffers -> Zeile, gesucht ueber Pfad und Startzeit.
 pub(crate) fn find_row(l: &Loaded, path: &str, start: f64) -> Option<usize> {
     l.rows

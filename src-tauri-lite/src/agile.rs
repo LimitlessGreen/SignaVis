@@ -170,8 +170,20 @@ pub fn agile_label_set_many(
         f.classes.push(AgileClass { name: class.clone(), examples: vec![] });
     }
     let c = f.classes.iter_mut().find(|c| c.name == class).unwrap();
-    let same = |e: &Example, w: &WindowRef| e.path == w.path && (e.start - w.start).abs() < 1e-3;
-    c.examples.retain(|e| !items.iter().any(|w| same(e, w)));
+    // Auswahl nach Datei, Starts sortiert: Abgleich per Binaersuche statt n x m.
+    let mut by_path: std::collections::HashMap<&str, Vec<f64>> = std::collections::HashMap::new();
+    for w in &items {
+        by_path.entry(w.path.as_str()).or_default().push(w.start);
+    }
+    by_path.values_mut().for_each(|v| v.sort_by(f64::total_cmp));
+    let selected = |e: &Example| {
+        by_path.get(e.path.as_str()).is_some_and(|v| {
+            let k = v.partition_point(|&s| s < e.start - 1e-3);
+            v.get(k).is_some_and(|&s| (s - e.start).abs() < 1e-3)
+        })
+    };
+    c.examples.retain(|e| !selected(e));
+    drop(by_path);
     if let Some(label) = label {
         c.examples.extend(items.into_iter().map(|w| Example { path: w.path, start: w.start, label: label.clone() }));
     }
@@ -603,12 +615,28 @@ pub struct Suspect {
 /// naechste gelabelte Nachbarn (Kosinus, volle Embeddings) mehrheitlich das
 /// andere Label tragen oder die der Klassifikator deutlich anders sieht.
 pub(crate) fn find_suspects(l: &Loaded, examples: &[Example], clf: Option<&Classifier>, k: usize) -> Vec<Suspect> {
-    let lab: Vec<(&Example, usize)> = examples
-        .iter()
-        .filter(|e| e.label == "pos" || e.label == "neg")
-        .filter_map(|e| find_row(l, &e.path, e.start).map(|r| (e, r)))
-        .collect();
-    let vec = |r: usize| &l.vecs[r * DIM..(r + 1) * DIM];
+    let (lab, vecs) = labelled_vectors(l, examples);
+    suspects_from(&lab, &vecs, clf, k)
+}
+
+/// Gelabelte pos/neg-Beispiele mit Kopie ihres Embeddings (kurz, unter dem Cache-Lock).
+pub(crate) fn labelled_vectors(l: &Loaded, examples: &[Example]) -> (Vec<Example>, Vec<f32>) {
+    let ranges = crate::embeddings::row_ranges(l);
+    let mut lab = Vec::new();
+    let mut vecs = Vec::new();
+    for e in examples.iter().filter(|e| e.label == "pos" || e.label == "neg") {
+        if let Some(r) = crate::embeddings::find_row_in(l, &ranges, &e.path, e.start) {
+            lab.push(e.clone());
+            vecs.extend_from_slice(&l.vecs[r * DIM..(r + 1) * DIM]);
+        }
+    }
+    (lab, vecs)
+}
+
+/// Verdachtsfaelle aus gelabelten Beispielen und ihren Embeddings (ohne Cache-Lock).
+fn suspects_from(lab: &[Example], vecs: &[f32], clf: Option<&Classifier>, k: usize) -> Vec<Suspect> {
+    let lab: Vec<(&Example, usize)> = lab.iter().enumerate().map(|(i, e)| (e, i)).collect();
+    let vec = |r: usize| &vecs[r * DIM..(r + 1) * DIM];
     let mut out = Vec::new();
     for (i, &(e, r)) in lab.iter().enumerate() {
         let mut sims: Vec<(f32, bool)> = lab
@@ -651,7 +679,12 @@ pub async fn agile_suspects(
     let labels = read_labels(&root);
     let examples = labels.classes.iter().find(|c| c.name == class).map(|c| c.examples.clone()).unwrap_or_default();
     let clf = read_classifier(&root, &class).filter(|c| c.dim == DIM);
-    with_loaded(&state, &root, |l| find_suspects(l, &examples, clf.as_ref(), k.unwrap_or(5).clamp(3, 25)))
+    // Nur das Kopieren der Vektoren haelt den Cache-Lock; der Paarvergleich laeuft danach.
+    let (lab, vecs) = with_loaded(&state, &root, |l| labelled_vectors(l, &examples))?;
+    let k = k.unwrap_or(5).clamp(3, 25);
+    tauri::async_runtime::spawn_blocking(move || suspects_from(&lab, &vecs, clf.as_ref(), k))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -746,6 +779,42 @@ pub async fn agile_export(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_set_many_replaces_only_selected_windows() {
+        let dir = std::env::temp_dir().join(format!("signavis-agile-many-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().into_owned();
+        let w = |p: &str, s: f64| WindowRef { path: p.into(), start: s };
+        agile_label_set_many(root.clone(), "c".into(), vec![w("a", 0.0), w("a", 5.0), w("b", 5.0)], Some("pos".into())).unwrap();
+        // 5.0004 liegt in der 1-ms-Toleranz, 10.0 ist neu, b/5 bleibt unberuehrt
+        let f = agile_label_set_many(root.clone(), "c".into(), vec![w("a", 5.0004), w("a", 10.0)], Some("neg".into())).unwrap();
+        let mut ex: Vec<_> = f.classes[0].examples.iter().map(|e| (e.path.clone(), e.start, e.label.clone())).collect();
+        ex.sort_by(|x, y| (&x.0, x.1).partial_cmp(&(&y.0, y.1)).unwrap());
+        assert_eq!(ex, vec![
+            ("a".into(), 0.0, "pos".into()), ("a".into(), 5.0004, "neg".into()),
+            ("a".into(), 10.0, "neg".into()), ("b".into(), 5.0, "pos".into()),
+        ]);
+        let f = agile_label_set_many(root.clone(), "c".into(), vec![w("a", 0.0), w("b", 4.0)], None).unwrap();
+        assert_eq!(f.classes[0].examples.len(), 3, "a/0 entfernt, b/4 gibt es nicht");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_row_in_matches_find_row() {
+        let rows: Vec<_> = [("a", 3), ("b", 4)]
+            .iter()
+            .flat_map(|&(p, n)| (0..n).map(move |i| crate::embeddings::RowRef { path: p.into(), start: i as f64 * 2.5 }))
+            .collect();
+        let l = Loaded { root: "x".into(), stamp: 1, vecs: vec![0.0; rows.len() * DIM], rows };
+        let ranges = crate::embeddings::row_ranges(&l);
+        for p in ["a", "b", "c"] {
+            for t in [-1.0, 0.0, 1.0, 2.5, 4.9999999, 7.4, 100.0] {
+                assert_eq!(crate::embeddings::find_row_in(&l, &ranges, p, t), crate::embeddings::find_row(&l, p, t), "{p} {t}");
+            }
+        }
+    }
 
     #[test]
     fn logreg_separates() {
