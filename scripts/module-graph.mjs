@@ -6,8 +6,11 @@
 //   node scripts/module-graph.mjs src/app/BirdNETPlayer.ts [--sizes]
 import fs from 'node:fs';
 import path from 'node:path';
+import { isMain } from './is-main.mjs';
 
-const STATIC_RE = /(?:^|[\n;])\s*(import|export)\s+(type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"]+)['"]/g;
+// `import'./a.scss'` and `import{ x }from'./b'` need no whitespace; `import type`/`export type`
+// (also `type{`) are erased and skipped.
+const STATIC_RE = /(?:^|[\n;])\s*(import|export)(?![\w$])\s*(type(?![\w$])\s*)?(?:[\w*{}\s,$]+?(?<![\w$])from(?![\w$])\s*)?['"]([^'"]+)['"]/g;
 const DYNAMIC_RE = /\bimport\(\s*(?:\/\*[^*]*\*\/\s*)?['"]([^'"]+)['"]\s*\)/g;
 
 function stripComments(src) {
@@ -78,7 +81,7 @@ export function chainTo(entry, target, srcRoot = path.resolve('src')) {
     return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
     const entry = process.argv[2] || 'src/app/BirdNETPlayer.ts';
     const files = reachable(entry);
     if (process.argv.includes('--sizes')) {
