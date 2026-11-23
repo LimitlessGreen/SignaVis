@@ -108,19 +108,35 @@ export class SpacesShell {
         this.#syncTabs();
     }
 
-    /** Build the shell in place of `o.replace` and show the stored (or default) space. */
+    /**
+     * Build the shell in place of `o.replace` and show the stored (or default) space.
+     * On failure the page is left as it was (workspace back in place, no tabs) and the error is thrown.
+     */
     static async create(o: SpacesShellOptions): Promise<SpacesShell> {
         let text: string | null = null;
         try { text = await o.storage.load(); } catch (e) { console.warn('[spaces] cannot read the layout', e); }
+        const dv = await import('dockview-core');   // before anything in the page changes
         const shell = new SpacesShell(o, parseSpacesState(text, o.spaces, o.defaultActive));
-        shell.#dv = await import('dockview-core');
-        for (const id of o.eager ?? []) {
-            const sp = shell.#spaces.get(id);
-            if (sp && !sp.api) shell.#build(sp);
+        shell.#dv = dv;
+        try {
+            for (const id of o.eager ?? []) {
+                const sp = shell.#spaces.get(id);
+                if (sp && !sp.api) shell.#build(sp);
+            }
+            const first = shell.#spaces.get(shell.#state.active);
+            await shell.show(first && isVisible(first.def, shell.#state) ? shell.#state.active : o.defaultActive);
+        } catch (e) {
+            shell.#undo();
+            throw e;
         }
-        const first = shell.#spaces.get(shell.#state.active);
-        await shell.show(first && isVisible(first.def, shell.#state) ? shell.#state.active : o.defaultActive);
         return shell;
+    }
+
+    /** Put the replaced element back and remove the tabs (failed setup). */
+    #undo() {
+        for (const sp of this.#spaces.values()) { try { sp.api?.dispose(); } catch { /* half-built */ } }
+        this.el.replaceWith(this.#o.replace);
+        this.#tabs.remove();
     }
 
     get active(): string { return this.#state.active; }

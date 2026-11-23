@@ -213,6 +213,22 @@ export const xcMetaPath = (xcId: string) => `xc/${toXcId(xcId)}.json`;
  * 'xc/XC123.mp3' is an XC download (e.g. copied from another project): it keeps its XC number,
  * shows under "Xeno-canto" and fetches the XC labels when opened.
  */
+/**
+ * Project-relative path ('a/b.wav') of an absolute file path inside the project
+ * folder, null when the file is outside it. Either separator; Windows drive paths
+ * compare case-insensitively.
+ */
+export function projectRelativePath(root: string, abs: string): string | null {
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const r = norm(root), a = norm(abs);
+    if (!r || !a) return null;
+    const win = /^[a-z]:\//i.test(r);
+    const prefix = `${r}/`;
+    if (!(win ? a.toLowerCase().startsWith(prefix.toLowerCase()) : a.startsWith(prefix))) return null;
+    const rel = a.slice(prefix.length).split('/').filter((x) => x && x !== '.');
+    return rel.length && !rel.includes('..') ? rel.join('/') : null;
+}
+
 export function folderFileEntry(path: string, extra: Record<string, unknown> = {}): any {
     const filename = path.split('/').pop() || path;
     const m = /^xc\/(XC\d+)\.mp3$/i.exec(path);
