@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 mod agile;
+mod catalog;
 mod data_cache;
 mod embed_map;
 mod hdbscan;
@@ -101,6 +102,54 @@ pub fn run() {
             agile::agile_scores,
             agile::agile_suspects,
             agile::agile_label_set_many,
+            catalog::catalog_preview,
+            catalog::catalog_suggest,
+            catalog::catalog_import,
+            catalog::catalog_profiles,
+            catalog::catalog_roots,
+            catalog::catalog_facets,
+            catalog::catalog_list,
+            catalog::catalog_heatmap,
+            catalog::catalog_recording_path,
+            catalog::catalog_hash_start,
+            catalog::catalog_hash_cancel,
+            catalog::catalog_integrity,
+            catalog::catalog_sites,
+            catalog::catalog_set_site_clock,
+            catalog::catalog_devices,
+            catalog::catalog_clock_shifts,
+            catalog::catalog_set_device_clocks,
+            catalog::catalog_site_fields,
+            catalog::catalog_save_site,
+            catalog::catalog_device_fields,
+            catalog::catalog_save_device,
+            catalog::catalog_delete_entity,
+            catalog::catalog_merge,
+            catalog::catalog_derive_deployments,
+            catalog::catalog_deployments,
+            catalog::catalog_set_deployment_notes,
+            catalog::catalog_tags,
+            catalog::catalog_meta_keys,
+            catalog::catalog_bulk_edit,
+            catalog::catalog_recording_detail,
+            catalog::catalog_stats,
+            catalog::catalog_import_track,
+            catalog::catalog_match_track,
+            catalog::catalog_tracks,
+            catalog::catalog_track_line,
+            catalog::catalog_delete_track,
+            catalog::catalog_map,
+            catalog::catalog_thumbs,
+            catalog::catalog_thumbs_clear,
+            catalog::catalog_datasets,
+            catalog::catalog_create_dataset,
+            catalog::catalog_update_dataset,
+            catalog::catalog_delete_dataset,
+            catalog::catalog_dataset_add,
+            catalog::catalog_dataset_remove,
+            catalog::catalog_duplicate_dataset,
+            catalog::catalog_recording_datasets,
+            catalog::catalog_dataset_remove_range,
             agile::agile_labels,
             agile::agile_class_add,
             agile::agile_class_remove,
@@ -116,6 +165,7 @@ pub fn run() {
         .manage(launch::LaunchQueue::default())
         .manage(updater::PendingUpdate::default())
         .manage(embeddings::EmbedState::default())
+        .manage(catalog::CatalogState::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
             // Windows, have to do it themselves at run time.

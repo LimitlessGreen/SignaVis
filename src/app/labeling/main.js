@@ -34,7 +34,7 @@ import { isLite, installExternalLinkHandler } from '../../infrastructure/tauri/r
 import { pickAudioFile, readAudioPath } from '../../infrastructure/tauri/nativeFiles.ts';
 import { saveFile } from '../../infrastructure/saveFile.ts';
 import { ProjectAutosaver, acquireTabLock } from '../../app/project-autosave.ts';
-import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, xcRecordingPath, xcMetaPath } from '../../domain/project/workspaceProject.ts';
+import { serializeProject, deserializeProject, filesNotInProject, folderFileEntry, projectRelativePath, xcRecordingPath, xcMetaPath } from '../../domain/project/workspaceProject.ts';
 import { ProjectLocationPanel } from '../../ui/panels/project-location.ts';
 import { validateAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayload.ts';
 import { adoptionPlan, withoutKnownBoxes, boxSetsBoundsOf } from '../../app/adopt-detection.ts';
@@ -79,10 +79,13 @@ import {
 } from '../../app/analysis-backend-config.ts';
 import { createProjectRepositoryRuntime } from '../../infrastructure/tauri/project-repository-runtime.ts';
 import { getDesktopRuntimeInfo } from '../../infrastructure/tauri/desktop-runtime-info.ts';
-import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines, ListChecks } from 'lucide-static';
+import { Tags, Bird, Globe, CircleHelp, SlidersHorizontal, Info, Volume2, FolderOpen, AudioLines, ListChecks, Library, LayoutGrid, PenLine, ChartScatter } from 'lucide-static';
 import { SpeciesListStore, speciesFilterSet } from '../../domain/species-lists.ts';
 import { SpeciesListsPanel } from '../../ui/panels/species-lists-panel.ts';
 import { SimilarPanel } from '../../ui/panels/similar-panel.ts';
+import { LibraryView } from '../../ui/panels/library/library-view.ts';
+import { catalogApi } from '../../infrastructure/tauri/catalogApi.ts';
+import { formatBytes } from '../../domain/catalog/catalog-types.ts';
 import {
   buildLiteLink, linkTargetFromSearch, isHandoffAvailable, shouldAutoRedirect,
   getAutoOpen, setAutoOpen, getStayInBrowser, setStayInBrowser, openLiteLink,
@@ -1408,6 +1411,7 @@ async function openProject() {
     onReopenRecent: () => reopenRecentFolder(),
     onUseBrowserProject: async () => {
       await projectAutosaver?.flush();
+      await spaces?.flush();
       lsSet(PROJECT_LOCATION_KEY, 'browser');
       window.location.reload();
     },
@@ -1552,6 +1556,7 @@ async function chooseProjectFolder(preset = null) {
     catch (e) { await appAlert(`Could not write to “${handle.name}”: ${e?.message || e}`, { title: 'Folder error' }); return; }
   }
   await rememberFolder(handle);
+  await spaces?.flush();
   lsSet(PROJECT_LOCATION_KEY, 'folder');
   window.location.reload();
 }
@@ -1635,6 +1640,7 @@ async function reopenRecentFolder() {
   const perm = await ensurePermission(recentFolderHandle, { request: true });
   if (perm !== 'granted') return;
   await projectAutosaver?.flush();
+  await spaces?.flush();
   lsSet(PROJECT_LOCATION_KEY, 'folder');
   window.location.reload();
 }
@@ -3667,6 +3673,16 @@ function createGeoAwareSpeciesSearch(opts) {
   return w;
 }
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
+/** Lite spaces (src/app/lite/spaces.ts); null in the web app and until built. */
+let spaces = null;
+const libraryHost = document.createElement('div');
+libraryHost.className = 'space-fill';
+const embedMapHost = document.createElement('div');
+embedMapHost.className = 'space-fill';
+let mountLibraryPanel = () => {};
+let _embedMapOpened = false;
+/** Store size the hosted map was last loaded for (null: not read yet). */
+let _embedStoreKey = null;
 // ── Similar (Perch-2 embeddings, Lite + folder project only) ──────
 let similarPanel = null;   // Lite + folder project: Perch search over the project
 if (isLite()) {
@@ -3690,14 +3706,134 @@ if (isLite()) {
         entry = recordingManager.add(folderFileEntry(hit.path, { pinned: false }));
         renderProjectLocation();
       }
+      if (!play) void spaces?.reveal('editor');   // double-click on the map: open in Annotate
       if (recordingManager.getActive()?.id !== entry.id) await activateRecordingEntry(entry);
       if (play) player.playSegment(hit.start, hit.end);
       else { player.playSegment(hit.start, hit.end); player.pause(); }
+    },
+    // Read when the map is created: the panel once the spaces exist, else the overlay.
+    get mapHost() {
+      return spaces ? {
+        mount: (el) => { embedMapHost.replaceChildren(el); },
+        reveal: () => { _embedMapOpened = true; void spaces?.reveal('embeddings'); },
+      } : undefined;
+    },
+    onInfo: (info) => {
+      if (info?.windows) spaces?.setAvailable('embeddings');
+      // New or removed windows: the hosted map reloads the next time it is shown.
+      const key = info ? `${info.files}:${info.windows}:${info.hopS}` : '';
+      if (_embedStoreKey !== null && key !== _embedStoreKey) _embedMapOpened = false;
+      _embedStoreKey = key;
     },
   });
   sidebar.addPanel('similar', {
     icon: AudioLines, label: 'Similar', element: similarPanel.el,
     onActivate: () => similarPanel.refresh(),
+  });
+}
+// ── Library (project catalog, Lite + folder project only) ─────────
+if (isLite()) {
+  const libRoot = () => (projectKind === 'folder' && projectStore?.rootPath) || null;
+  const libPanel = document.createElement('div');
+  libPanel.className = 'scroll-panel library-panel';
+  let libView = null;
+  const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
+  /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
+  mountLibraryPanel = () => {
+    const root = libRoot();
+    if (libView) return;
+    if (!root) {
+      libraryHost.innerHTML = '<p class="lib-hint space-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab in Annotate).</p>';
+      return;
+    }
+    libraryHost.replaceChildren();
+    libView = new LibraryView({
+      projectRoot: root,
+      embedded: true,
+      openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
+    });
+    libraryHost.appendChild(libView.el);
+  };
+  let _catalogOpenSeq = 0;
+  /**
+   * Open a catalog recording in the editor, where it lies (never copied).
+   * In the project folder: the same project-relative entry as the Project tab and
+   * Similar use (reused if present). Outside: matched only by its absolute path.
+   * A newer open wins; read errors are shown and the library stays open.
+   */
+  async function openCatalogRecording(path, beforeActivate) {
+    const seq = ++_catalogOpenSeq;
+    const root = libRoot();
+    const rel = root ? projectRelativePath(root, path) : null;
+    let entry = recordingManager.getAll().find((e) => (rel ? e.path === rel : !e.path && e.filePath === path));
+    let audio = null;
+    if (!entry || (!rel && !entry.audioUrl)) {
+      let file = null;
+      try { file = rel ? await projectStore.readAudio(rel) : await readAudioPath(path); }
+      catch (e) { if (seq === _catalogOpenSeq) showLoadError(`Could not read ${path}: ${e?.message || e}`, 'Cannot open'); return; }
+      if (seq !== _catalogOpenSeq) return;
+      if (!file) { showLoadError(`File not found: ${path}`, 'Cannot open'); return; }
+      if (!rel) audio = { audioUrl: URL.createObjectURL(file), isBlobUrl: true };
+    }
+    if (seq !== _catalogOpenSeq) return;
+    liteRecentAdd({ kind: 'file', path });
+    // pinned false: kept in the project only once it has labels (workspaceProject.keepRecording)
+    if (!entry) {
+      entry = recordingManager.add(rel ? folderFileEntry(rel, { pinned: false })
+        : { source: 'file', filename: path.split(/[\\/]/).pop() || path, filePath: path, pinned: false, ...audio });
+      renderProjectLocation();
+    } else if (audio) {
+      recordingManager.update(entry.id, audio);
+    }
+    await beforeActivate?.();
+    if (seq !== _catalogOpenSeq) return;
+    await activateRecordingEntry(entry);
+  }
+  const openLibrary = (startImport = false) => {
+    const root = libRoot();
+    if (!root) return;
+    if (spaces) {
+      void spaces.reveal('library').then(() => {
+        libView?.focus();
+        if (startImport) libView?.el.querySelector('[data-act="open-import"]')?.click();
+      });
+      return;
+    }
+    libView?.dispose();
+    libView?.el.remove();
+    libView = new LibraryView({
+      projectRoot: root,
+      onClose: closeLibrary,
+      openRecording: (path) => openCatalogRecording(path, closeLibrary),
+    });
+    document.body.appendChild(libView.el);
+    libView.focus();
+    if (startImport) libView.el.querySelector('[data-act="open-import"]')?.click();
+  };
+  async function refreshLibraryPanel() {
+    const root = libRoot();
+    if (!root) {
+      libPanel.innerHTML = '<p class="lib-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab).</p>';
+      return;
+    }
+    let stats = '';
+    try {
+      const f = await catalogApi.facets(root, {});
+      stats = f.total ? `${f.total.toLocaleString()} recordings · ${formatBytes(f.bytes)} · ${f.sites.length} sites · ${f.devices.length} recorders`
+        : 'No recordings imported yet.';
+    } catch (e) { stats = `Catalog error: ${e}`; }
+    libPanel.innerHTML = `<div class="lib-panel-stats"></div><div class="lib-panel-actions">
+      <button class="btn btn--primary" data-lib="open">Open library</button>
+      <button class="btn" data-lib="import">Import folder…</button></div>`;
+    libPanel.querySelector('.lib-panel-stats').textContent = stats;
+  }
+  libPanel.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-lib]')?.dataset.lib;
+    if (act) openLibrary(act === 'import');
+  });
+  sidebar.addPanel('library', {
+    icon: Library, label: 'Library', element: libPanel,
+    onActivate: () => void refreshLibraryPanel(),
   });
 }
 // Project is the starting point: set + recordings
@@ -4410,8 +4546,10 @@ fileInput.addEventListener('change', async () => {
 /**
  * Load a local audio file (file picker or drag & drop).
  * `extra.filePath` (Lite): absolute path, stored on the recording so it reopens after a restart.
+ * `copyIntoProject: false`: leave the file where it is (library recordings: the catalog already
+ * knows them; copying would duplicate a whole collection into audio/).
  */
-async function loadLocalAudioFile(file, extra = {}) {
+async function loadLocalAudioFile(file, extra = {}, { copyIntoProject = true } = {}) {
   if (extra.filePath) liteRecentAdd({ kind: 'file', path: extra.filePath });
   // Re-picked session-only file from a restored project: reattach audio, keep its labels.
   const _orphan = recordingManager.getAll().find((e) =>
@@ -4421,7 +4559,7 @@ async function loadLocalAudioFile(file, extra = {}) {
     recordingManager.update(_orphan.id, { audioUrl: URL.createObjectURL(file), isBlobUrl: true, ...extra });
     fileInput.value = '';
     await activateRecordingEntry(_orphan);
-    await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
+    if (copyIntoProject) await keepFileInProjectFolder(recordingManager.getById(_orphan.id), file);
     return;
   }
   const _prep = await prepareRecordingLoad();
@@ -4463,7 +4601,7 @@ async function loadLocalAudioFile(file, extra = {}) {
   labelStore.claim(_fileEntry.id);  // empty labels now belong to the new entry
   fileInput.value = '';
   finishRecordingLoad(_prep);
-  await keepFileInProjectFolder(_fileEntry, file);
+  if (copyIntoProject) await keepFileInProjectFolder(_fileEntry, file);
 }
 
 // ── Drag & drop of audio files anywhere on the page ──────────────
@@ -5134,6 +5272,7 @@ async function openLiteRecent(index) {
 }
 async function useDefaultProject() {
   await projectAutosaver?.flush();
+  await spaces?.flush();
   lsSet(PROJECT_LOCATION_KEY, 'browser');
   window.location.reload();
 }
@@ -5242,6 +5381,45 @@ AGPL-3.0 · github.com/LimitlessGreen/SignaVis`, { title: 'About SignaVis Lite' 
   }
 }
 
+// ── Lite: spaces (Browse | Annotate | Embeddings) ───────────────────
+const SPACES_PREF = 'signavis.lite.spaces';
+async function installLiteSpaces() {
+  const { SpacesShell } = await import('../lite/spaces.ts');
+  const { SPACES_FILE } = await import('../lite/spaces-state.ts');
+  const workspace = document.getElementById('workspace');
+  const folder = projectKind === 'folder' && projectStore?.readText ? projectStore : null;
+  return SpacesShell.create({
+    tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
+    replace: workspace,
+    defaultActive: 'annotate',
+    eager: ['annotate'],
+    spaces: [
+      { id: 'browse', title: 'Browse', icon: LayoutGrid, panels: ['library'] },
+      { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor'] },
+      { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
+    ],
+    panels: [
+      { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
+      { id: 'library', title: 'Library', mount: (host) => { host.appendChild(libraryHost); mountLibraryPanel(); },
+        onShow: () => focusLibrarySoon() },
+      { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
+        onShow: () => {
+          if (_embedMapOpened) return;
+          _embedMapOpened = true;
+          if (similarPanel?.openMap) similarPanel.openMap();
+        } },
+    ],
+    storage: folder
+      ? { load: () => folder.readText(SPACES_FILE), save: (text) => folder.writeText(SPACES_FILE, text) }
+      : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
+    onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
+  });
+}
+/** Keys (arrows, Enter) go to the library once Browse is shown. */
+function focusLibrarySoon() {
+  requestAnimationFrame(() => libraryHost.querySelector('.lib-overlay')?.focus());
+}
+
 // ── Lite: window title and close guard ──────────────────────────────
 async function installLiteWindow() {
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -5256,6 +5434,7 @@ async function installLiteWindow() {
   updateTitle();
   // Closing: save what is pending first; if that fails, ask before losing it.
   await win.onCloseRequested(async (event) => {
+    await spaces?.flush();
     if (!projectAutosaver || projectAutosaver.readOnly) return;
     await projectAutosaver.flush({ force: true });
     if (!projectAutosaver.hasUnsavedChanges) return;
@@ -5284,6 +5463,12 @@ const _hasXcParam = ['xc', 'XC', 'xcid', 'XCID'].some((k) => _startParams.has(k)
 // Lite: a link / file that started the app opens instead of the last recording (like ?xc= above).
 const _liteInitialLaunch = isLite() ? await takeLiteLaunchRequests().catch(() => []) : [];
 const _restoredFromProject = await openProject();
+if (isLite() && !mobileApp.isActive) {
+  try { spaces = await installLiteSpaces(); }
+  catch (e) { console.warn('[spaces] setup failed, keeping the plain layout', e); }
+  // Reads the embedding store: offers the Embeddings space when there are windows.
+  if (spaces && projectKind === 'folder') void similarPanel?.refresh();
+}
 if (!_restoredFromProject) {
   await restoreProjectSnapshotIfPossible();
   // Restore sets from last session (only if no URL params will load a recording)

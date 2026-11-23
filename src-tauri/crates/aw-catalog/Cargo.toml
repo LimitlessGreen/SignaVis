@@ -1,0 +1,18 @@
+[package]
+name = "aw-catalog"
+version = "0.1.0"
+edition = "2024"
+description = "SignaVis project catalog (SQLite): assets, metadata, datasets, labels, runs, jobs"
+
+[dependencies]
+rusqlite = { version = "0.37", features = ["bundled", "functions"] }
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+uuid = { version = "1", features = ["v7"] }
+chrono-tz = "0.10"
+sha2 = "0.10"
+symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac", "adpcm"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+roxmltree = "0.21.2"

@@ -23,7 +23,7 @@ const LEAFLET_JS  = () => vendorUrl('leaflet/leaflet.js', `https://unpkg.com/lea
 
 let leafletLoadPromise: any = null;
 
-function loadLeaflet() {
+export function loadLeaflet() {
   if (leafletLoadPromise) return leafletLoadPromise;
   leafletLoadPromise = new Promise<void>((resolve, reject) => {
     if ((window as any).L?.map) { resolve(); return; }

@@ -207,3 +207,14 @@ test('Lite filePath (local file outside the project) survives save and load', ()
     assert.equal(back.audioUrl, null);                 // re-read from filePath on open
     assert.equal('filePath' in toProjectRecording({ id: 'r2', filename: 'b.wav' }), false);
 });
+
+test('projectRelativePath: inside the folder → relative path, outside → null', async () => {
+    const { projectRelativePath } = await import('../src/domain/project/workspaceProject.ts');
+    assert.equal(projectRelativePath('/p/proj', '/p/proj/audio/a.wav'), 'audio/a.wav');
+    assert.equal(projectRelativePath('/p/proj/', '/p/proj/a.wav'), 'a.wav');
+    assert.equal(projectRelativePath('/p/proj', '/p/project2/a.wav'), null, 'sibling folder with the same prefix');
+    assert.equal(projectRelativePath('/p/proj', '/archive/a.wav'), null);
+    assert.equal(projectRelativePath('/p/proj', '/p/proj'), null);
+    assert.equal(projectRelativePath('/p/proj', '/p/proj/x/../../etc/a.wav'), null);
+    assert.equal(projectRelativePath('C:\\Data\\Proj', 'c:\\data\\proj\\Rec\\a.WAV'), 'Rec/a.WAV');
+});

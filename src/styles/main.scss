@@ -81,6 +81,9 @@
 // Shared tab building blocks (section header, field grid, mode tiles)
 @use "components/tab-layout";
 @use "components/species-lists";
+@use "components/library";
+// Lite spaces (tabs + dock panels)
+@use "components/spaces";
 // Drag & drop of audio files
 @use "components/file-drop";
 @use "components/mobile-app";

@@ -1,0 +1,103 @@
+// Spaces in SignaVis Lite (src/app/lite/spaces.ts): tabs in the top bar,
+// one dock layout (dockview-core) per space. The dockview stylesheet itself
+// is src/styles/vendor/dockview.css, loaded with the spaces chunk.
+
+// ── Tabs in the top bar ──────────────────────────────────────────────
+.spaces-tabs {
+  display: flex; align-items: stretch; align-self: stretch;
+  gap: 2px; margin: 0 6px;
+}
+.spaces-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 12px;
+  border: 0; border-bottom: 2px solid transparent;
+  background: none; color: var(--color-text-secondary);
+  font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  svg { width: 15px; height: 15px; }
+  &:hover { color: var(--color-text-primary); background: var(--color-accent-faint); }
+  &.is-active { color: var(--color-text-primary); border-bottom-color: var(--color-accent); }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+  &[hidden] { display: none; }
+}
+
+// ── Spaces area (takes the place of #workspace in .app) ─────────────
+.spaces-host {
+  position: relative;
+  min-height: 0; min-width: 0;
+  display: flex; flex-direction: column;
+}
+.space {
+  position: relative; flex: 1; min-height: 0; min-width: 0;
+  &[hidden] { display: none; }
+}
+.space-panel {
+  position: relative;
+  width: 100%; height: 100%;
+  display: flex; min-height: 0; min-width: 0; overflow: hidden;
+  background: var(--color-bg-primary);
+  > .workspace { flex: 1; height: 100%; }
+}
+.space-panel--missing { align-items: center; justify-content: center; color: var(--color-text-secondary); }
+.space-fill { position: relative; flex: 1; min-width: 0; min-height: 0; }
+.space-hint { padding: 24px; max-width: 520px; color: var(--color-text-secondary); }
+
+// Library and embedding map as panels instead of window overlays.
+.lib-overlay.lib-embedded,
+.emap-overlay.emap-embedded {
+  position: absolute; inset: 0; z-index: auto;
+}
+.lib-embedded .lib-head h2 { display: none; }   // the panel tab already says "Library"
+
+// ── Dock theme: dockview variables on the SignaVis tokens ───────────
+.dockview-theme-signavis {
+  --dv-paneview-active-outline-color: var(--color-accent);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-drag-over-background-color: var(--color-accent-faint);
+  --dv-drag-over-border-color: var(--color-accent);
+  --dv-drag-over-border: 2px solid var(--color-accent);
+  --dv-edge-dock-indicator-color: var(--color-accent);
+  --dv-edge-drop-strip-size: 8px;
+  --dv-tabs-container-scrollbar-color: var(--color-border);
+  --dv-icon-hover-background-color: var(--color-accent-faint);
+  --dv-floating-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --dv-floating-border: 1px solid var(--color-border);
+  --dv-overlay-z-index: 999;
+  --dv-tab-font-size: inherit;
+  --dv-border-radius: 6px;
+  --dv-tab-margin: 0;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--color-accent);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.3s;
+  --dv-spacing-padding: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: 6px;
+  --dv-tab-close-icon-size: inherit;
+  --dv-floating-group-border: none;
+  --dv-floating-group-dragging-opacity: 0.5;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--dv-tabs-and-actions-container-background-color);
+  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);
+
+  --dv-group-view-background-color: var(--color-bg-primary);
+  --dv-tabs-and-actions-container-background-color: var(--color-bg-surface);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-bg-primary);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-bg-primary);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-tab-divider-color: var(--color-border);
+  --dv-activegroup-visiblepanel-tab-color: var(--color-text-primary);
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-text-secondary);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-text-secondary);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-text-secondary);
+  --dv-separator-border: var(--color-border);
+  --dv-paneview-header-border-color: var(--color-border);
+
+  .dv-tab { font-weight: 600; }
+  // Step 1: every panel is part of its space; closing one would leave it unreachable.
+  .dv-tab .dv-default-tab .dv-default-tab-action { display: none; }
+  .dv-groupview { border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; }
+}

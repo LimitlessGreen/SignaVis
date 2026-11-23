@@ -19,7 +19,7 @@
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
-import { EmbeddingMap, type Clusters, type MapData, type Suspect } from './embedding-map.ts';
+import { EmbeddingMap, type EmbeddingMapHost, type Clusters, type MapData, type Suspect } from './embedding-map.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -50,6 +50,10 @@ export interface SimilarPanelOptions {
     openHit: (hit: SimilarHit, play: boolean) => Promise<void> | void;
     /** Project-side context of a recording (manual place, XC metadata) for the map's site colouring. */
     contextOf?: (path: string) => { manual?: unknown; xc?: unknown } | null;
+    /** Lite spaces: the map opens in its panel instead of covering the window. */
+    mapHost?: EmbeddingMapHost;
+    /** The store was (re)read: e.g. offer the Embeddings space once there are windows. */
+    onInfo?: (info: { windows: number } | null) => void;
 }
 
 const WINDOW_S = 5;
@@ -151,6 +155,7 @@ export class SimilarPanel {
             const root = this.#opts.getRoot();
             this.#info = root ? await this.#call<StoreInfo>('embed_info', { root }) : null;
             if (this.#info && !this.#info.running && this.#job?.phase === 'running') this.#job = null;
+            this.#opts.onInfo?.(this.#info);
             if (root) {
                 this.#labels = await this.#call<LabelsFile>('agile_labels', { root });
                 if (!this.#labels.classes.some((c) => c.name === this.#cls)) this.#cls = this.#labels.classes[0]?.name || '';
@@ -243,7 +248,8 @@ export class SimilarPanel {
 
     // ── Map ───────────────────────────────────────────────────────────
 
-    #openMap() {
+    /** Open the 2-D map of all windows (overlay, or its panel with `mapHost`). */
+    openMap() {
         const root = this.#opts.getRoot();
         if (!root) return;
         this.#map ??= new EmbeddingMap({
@@ -262,6 +268,7 @@ export class SimilarPanel {
             loadScores: () => this.#call<{ stamp: number; scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls }),
             loadSuspects: () => this.#call<Suspect[]>('agile_suspects', { root: this.#opts.getRoot(), class: this.#cls }),
             contextOf: (path) => this.#opts.contextOf?.(path) ?? null,
+            host: this.#opts.mapHost,
         });
         this.#map.open();
     }
@@ -379,7 +386,7 @@ export class SimilarPanel {
             case 'start': this.#start(); break;
             case 'cancel': this.#call('embed_cancel').catch(fail); break;
             case 'search': this.#search(); break;
-            case 'map': this.#openMap(); break;
+            case 'map': this.openMap(); break;
             case 'class-add': this.#addClass().catch(fail); break;
             case 'class-del': this.#removeClass().catch(fail); break;
             case 'qlabel': this.#labelQuery(btn.dataset.l as Label).catch(fail); break;
