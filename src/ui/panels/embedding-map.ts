@@ -165,6 +165,7 @@ export class EmbeddingMap {
             this.#buildGrid();
             if (this.#colorBy === 'cluster' || this.#colorBy === 'score') await this.#ensure(this.#colorBy);
             this.#regroup();
+            this.#renderSide();   // new data: cluster cards and label check from the previous map are stale
             const d = this.#data;
             const n = d.x.length;
             this.#setStatus(`${n.toLocaleString()} windows${d.layoutPoints < n ? ` (layout on ${d.layoutPoints.toLocaleString()}, rest placed by neighbours)` : ''}`);
