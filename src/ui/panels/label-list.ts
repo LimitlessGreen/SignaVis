@@ -25,6 +25,7 @@ import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
 import { appConfirm } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELD_KEYS } from '../../domain/annotaFields.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // Species thumbnails: from the BirdNET taxonomy, cached for offline use in Lite (speciesImageUrl).
 const BIRD_IMG_FALLBACK = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23252525'/%3E%3Cpath d='M20 9c-4 0-7 3-8 6l-4-2c-1-1-2 0-1 1l3 5c-1 1-2 3-2 5 0 6 5 10 12 10s12-4 12-10c0-2-1-3-1-4l3-5c1-1-1-2-2-1l-4 3c-1-4-4-8-8-8z' fill='%23444'/%3E%3C/svg%3E`;
@@ -242,7 +243,7 @@ export class LabelList {
     this._onToggleSetVisibility = opts.onToggleSetVisibility || null;
     this._onToggleSpeciesVisibility = opts.onToggleSpeciesVisibility || null;
     this._view = 'source';
-    try { if (localStorage.getItem(VIEW_KEY) === 'time') this._view = 'time'; } catch { /* ignore */ }
+    if (prefs.get(VIEW_KEY) === 'time') this._view = 'time';
     this._filter = '';
     this._playingId = null;
     this._container.addEventListener('keydown', (e: KeyboardEvent) => this._onKey(e));
@@ -287,7 +288,7 @@ export class LabelList {
   /** 'source' (tree by set) or 'time' (flat, by start time). */
   setView(view: 'source' | 'time') {
     this._view = view === 'time' ? 'time' : 'source';
-    try { localStorage.setItem(VIEW_KEY, this._view); } catch { /* ignore */ }
+    prefs.set(VIEW_KEY, this._view);
     this.render(this._labels);
   }
 

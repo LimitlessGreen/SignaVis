@@ -1,0 +1,17 @@
+// Base of the player, scoped to its root (.daw-shell). Before, the library CSS
+// set `* { margin: 0 }` and font, size, colours and 100 % size on html/body of
+// the host page. :where() keeps the specificity of the old `*` rule (0), so
+// component rules still win as before.
+:where(.daw-shell, .daw-shell *, .daw-shell *::before, .daw-shell *::after) { box-sizing: border-box; margin: 0; }
+.daw-shell {
+  color: var(--color-text-primary);
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  font-size: 13px;
+}
+// Native controls (checkboxes, scrollbars) follow the theme, as the app's
+// html/body rules did for the whole page.
+.daw-shell { color-scheme: dark; }
+html[data-theme="light"] .daw-shell { color-scheme: light; }
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) .daw-shell { color-scheme: light; }
+}

@@ -2,9 +2,10 @@
  * Strings of the phone UI (mobile-app.ts). English is the default and the fallback;
  * another language is one more dictionary with the same keys (missing keys fall back to English).
  *
- * Language: `?lang=de` in the URL, else localStorage `signavis.lang`, else English
+ * Language: `?lang=de` in the URL, else prefs `signavis.lang`, else English
  * (the desktop UI is English, so the phone follows it until there is a language setting).
  */
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 type Vars = Record<string, string | number>;
 type Entry = string | ((v: Vars) => string);
@@ -502,7 +503,7 @@ function detectLang(): string {
   try {
     const q = new URLSearchParams(location.search).get('lang');
     if (known(q)) return q;
-    const s = localStorage.getItem(STORE_KEY);
+    const s = prefs.get(STORE_KEY);
     if (known(s)) return s;
   } catch { /* no window / storage */ }
   return 'en';
@@ -516,7 +517,7 @@ export function getLang() { return lang; }
 export function setLang(next: string) {
   if (!known(next)) return;
   lang = next;
-  try { localStorage.setItem(STORE_KEY, next); } catch { /* ignore */ }
+  prefs.set(STORE_KEY, next);
 }
 
 export function t(key: MKey, vars: Vars = {}): string {

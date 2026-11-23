@@ -30,14 +30,14 @@ test('template with a species: new label gets species and tags without the dialo
     assert.notEqual(all[0].tags, all[1].tags, 'each label has its own tags object');
 });
 
-test('Alt (forcePicker) and a tags-only template go to the dialog instead', () => {
+test('Alt (forcePicker) and a tags-only template go to the dialog instead', async () => {
     const forced = createLayer({ name: 'Chaffinch', color: '', scientificName: '', tags: {} });
-    // No DOM in this test: reaching the dialog shows up as its failed document access
-    assert.throws(() => forced._openNewLabelPicker(forced._normalize(region()), { forcePicker: true }), /document/);
+    // No DOM in this test: reaching the dialog shows up as its failed document access (async: the editor loads on first use)
+    await assert.rejects(async () => forced._openNewLabelPicker(forced._normalize(region()), { forcePicker: true }), /document/);
     assert.equal(forced._items.length, 0);
 
     const tagsOnly = createLayer({ name: '', color: '', scientificName: '', tags: { sex: 'male' } });
-    assert.throws(() => tagsOnly._openNewLabelPicker(tagsOnly._normalize(region())), /document/);
+    await assert.rejects(async () => tagsOnly._openNewLabelPicker(tagsOnly._normalize(region())), /document/);
     assert.equal(tagsOnly._items.length, 0);
 });
 

@@ -1,5 +1,6 @@
-// Theme toggle: light / dark, saved in localStorage; without a saved choice the system setting wins.
+// Theme toggle: light / dark, saved in prefs; without a saved choice the system setting wins.
 import { Sun, Moon } from 'lucide-static';
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 
 const KEY = 'aw:theme';
 
@@ -13,13 +14,11 @@ export function installThemeToggle(button: HTMLElement | null): void {
         button.innerHTML = theme === 'light' ? Sun : Moon;
         button.setAttribute('aria-pressed', String(theme === 'light'));
     };
-    let saved: string | null = null;
-    try { saved = localStorage.getItem(KEY); } catch { /* storage blocked */ }
-    apply(saved || systemTheme());
+    apply(prefs.get(KEY) || systemTheme());
     button.addEventListener('click', () => {
         const current = document.documentElement.getAttribute('data-theme') || systemTheme();
         const next = current === 'light' ? 'dark' : 'light';
         apply(next);
-        try { localStorage.setItem(KEY, next); } catch { /* storage blocked */ }
+        prefs.set(KEY, next);
     });
 }

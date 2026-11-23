@@ -43,6 +43,7 @@ import { speciesImageUrl } from '../../../infrastructure/tauri/runtime.ts';
 import { findCall } from './find-call.ts';
 import { getXcAudioStore, xcAudioKey } from '../../../infrastructure/storage/audioBlobStore.ts';
 import { formatMinSec } from '../../../shared/utils.ts';
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 
 const XC_API = 'https://xeno-canto.org/api/3/recordings';
 // Species thumbnails: from the BirdNET taxonomy, cached for offline use in Lite (speciesImageUrl).
@@ -325,16 +326,16 @@ function matchTypeOpt(type: string) {
       ?? '';
 }
 
-// ─── Pinned references (per species, localStorage + Cache API audio) ──
+// ─── Pinned references (per species, prefs + Cache API audio) ──
 const PINS_KEY = 'rc-pins';
 const AUDIO_CACHE_NAME = 'rc-pinned-audio';
 const audioCacheUrl = (xcId: string) => `https://rc-cache.local/xc/${encodeURIComponent(xcId)}`;
 
 function readPins(): Record<string, any[]> {
-  try { return JSON.parse(localStorage.getItem(PINS_KEY) || '{}') || {}; } catch { return {}; }
+  return prefs.json<Record<string, any[]>>(PINS_KEY, {});
 }
 function writePins(pins: Record<string, any[]>) {
-  try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {}
+  prefs.setJson(PINS_KEY, pins);
 }
 function trimRec(r: any) {
   return { id: r.id, type: r.type, q: r.q, len: r.len, cnt: r.cnt, rec: r.rec, lic: r.lic,
@@ -504,8 +505,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   main.appendChild(list);
 
   const DOCK_KEY = 'rc-docked';
-  let _docked = false;
-  try { _docked = localStorage.getItem(DOCK_KEY) === '1'; } catch {}
+  let _docked = prefs.flag(DOCK_KEY);
   let _kbdInside = false;      // docked: keys only after clicking into the drawer
 
   const isOpen = () => !backdrop.hidden;
@@ -527,7 +527,7 @@ export function createReferenceCallsModal({ xcPanel, getSuggestions, BirdNETPlay
   dockBtn.addEventListener('click', () => {
     if (!_docked) manager.close();   // drop focus trap + backdrop handlers
     _docked = !_docked;
-    try { localStorage.setItem(DOCK_KEY, _docked ? '1' : '0'); } catch {}
+    prefs.setFlag(DOCK_KEY, _docked);
     show();
     // Player heights are fixed at creation: rebuild for the new layout.
     if (_label) open(_label, _audioUrl);

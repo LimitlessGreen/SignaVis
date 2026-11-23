@@ -12,6 +12,7 @@
  */
 
 import { readDspSettings } from '../../domain/dsp/DspSettings.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 const EXPERT_MODE_KEY = 'signavis.spectrogram-expert-mode';
 
@@ -81,7 +82,7 @@ export class SpectrogramSettingsPanel {
   setExpertMode(on: boolean) {
     this.el.classList.toggle('expert-mode', on);
     if (this._expertCheck) this._expertCheck.checked = on;
-    try { localStorage.setItem(EXPERT_MODE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+    prefs.setFlag(EXPERT_MODE_KEY, on);
     this._updateHint();
   }
 
@@ -108,9 +109,7 @@ export class SpectrogramSettingsPanel {
     // Every control change bubbles up to the panel; preset changes rewrite controls synchronously
     this.el.addEventListener('change', () => this._updateHint());
 
-    let on = false;
-    try { on = localStorage.getItem(EXPERT_MODE_KEY) === '1'; } catch { /* ignore */ }
-    this.setExpertMode(on);
+    this.setExpertMode(prefs.flag(EXPERT_MODE_KEY));
   }
 
   /** Names of hidden settings that differ from the active preset (plus active overlays). */

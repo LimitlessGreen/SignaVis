@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // xcHelpers.js — Shared utilities for Xeno-canto API modules
 // ═══════════════════════════════════════════════════════════════════════
+import { prefs } from '../storage/prefs.ts';
 
 export function sleep(ms: number) {
     return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -50,10 +51,10 @@ export function resolveFetch(fetchImpl: unknown) {
     return null;
 }
 
-/** localStorage key under which the XC panel keeps the user's API key. */
+/** prefs key under which the XC panel keeps the user's API key. */
 export const XC_API_KEY_STORAGE = 'signavis.xc-api-key.v1';
 
 /** The XC API key saved by the XC panel, or '' if none / storage unavailable. */
 export function readStoredXcApiKey(): string {
-    try { return String(globalThis.localStorage?.getItem(XC_API_KEY_STORAGE) || '').trim(); } catch { return ''; }
+    return String(prefs.get(XC_API_KEY_STORAGE) || '').trim();
 }

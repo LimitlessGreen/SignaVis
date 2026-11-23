@@ -4,6 +4,7 @@
 // - the own source (label-sources.ts, origin 'manual', unlocked): own labels + upload metadata,
 //   status draft → ready from the local check; uploads are snapshots (upload-selection.ts);
 // - imported sets (xeno-canto, BirdNET, file): locked, labels can be copied into the own source.
+import { prefsStorage } from '../infrastructure/storage/prefs.ts';
 
 export type SetStatus = 'draft' | 'ready';
 
@@ -135,7 +136,7 @@ const LEGACY_MODE_KEY = 'audio-workbench.mode.v1';
  * Migrate stored session data to the set model:
  * drops the old multi-file/standalone mode, normalizes every set.
  */
-export function migrateSessionState(state: any, storage: any = (globalThis as any).localStorage) {
+export function migrateSessionState(state: any, storage: any = prefsStorage) {
     try { storage?.removeItem?.(LEGACY_MODE_KEY); } catch { /* ignore */ }
     delete state.mode;
     const sets = state.labelSets instanceof Map ? state.labelSets : new Map();

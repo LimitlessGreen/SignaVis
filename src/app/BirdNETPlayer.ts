@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // BirdNETPlayer.ts - Public API for the BirdNET Audio Player module
 //
+// Package entries: src/index.ts (everything) and src/core.ts (player only).
+//
 // Usage:
-//   import { BirdNETPlayer } from './BirdNETPlayer.ts';
+//   import { BirdNETPlayer } from 'signavis';
 //   const player = new BirdNETPlayer(document.getElementById('root'));
 //   await player.ready;
 //   await player.loadUrl('https://example.com/audio.wav');
@@ -20,14 +22,13 @@ import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb }
 import { UndoStack } from '../domain/undoStack.ts';
 import { computeSnapPatch } from './snapPatch.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
-import '../styles/main.scss';  // Vite compiles SCSS and extracts into birdnet-player.css
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
 import { EventBus } from '../shared/EventBus.ts';
 import type { LinkedLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
-import { LabelGrid } from '../ui/panels/label-grid.ts';
+import type { PlayerFeature, OptionFeatureFactory } from './playerFeature.ts';
 
 export type { LinkedLabel };
 
@@ -79,26 +80,10 @@ const DEFAULT_LABEL_TAXONOMY = [
 ];
 
 export { DEFAULT_OPTIONS };
-export {
-    DEFAULT_XC_ENDPOINT,
-    XenoCantoApiClient,
-    XenoCantoApiError,
-    buildXenoCantoAnnotationSet,
-} from '../infrastructure/xeno-canto/xenoCantoApi.ts';
-export {
-    DEFAULT_XC_RECORDINGS_ENDPOINT,
-    normalizeXcId,
-    getRecordingScientificName,
-    fetchXenoCantoRecording,
-    extractXenoCantoRawLabels,
-    mapXenoCantoLabelsToSpectrogram,
-    importXenoCantoSpectrogramLabels,
-} from '../infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
-export { TaxonomyResolver } from '../infrastructure/taxonomyResolver.ts';
 import { isoClockTime, type RecordingStart } from '../domain/recordingTime.ts';
-import { LiveRecorder, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
-import { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
-export { LiveRecorder, encodeWav, recordingFileName, type LiveRecorderOptions, type LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+import type { LiveRecorder, LiveRecorderOptions, LiveRecording } from '../infrastructure/audio/LiveRecorder.ts';
+import type { LiveSpectrogramView } from '../ui/components/live-view/live-spectrogram-view.ts';
+import { liveRecordingSupported } from '../infrastructure/audio/liveSupport.ts';
 
 export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Load the recording into the player when it stops (default true). */
@@ -106,8 +91,6 @@ export interface StartRecordingOptions extends LiveRecorderOptions {
     /** Seconds across the live view (default 20). */
     spanSeconds?: number;
 }
-export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from '../domain/recordingTime.ts';
-export { BirdNETInference, BIRDNET_MODEL_URL, BIRDNET_V24_MODEL_URL } from '../infrastructure/birdnetInference.ts';
 
 /** Copy of `tags` without empty values. */
 function cleanTags(tags: Record<string, string> | null | undefined): Record<string, string> {
@@ -208,7 +191,10 @@ export class BirdNETPlayer {
      * @param {boolean}     [options.labelTable] - show the labels in a built-in, sortable table
      *   below the overview; clicking a row selects the label and moves the playhead to it (default: false)
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
-     *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set)
+     *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set).
+     *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
+     * @param {PlayerFeature[]} [options.features] - optional building blocks to install, e.g.
+     *   [labelTable()] from 'signavis/label-table' (see playerFeature.ts)
      */
     constructor(container: HTMLElement, options: { labelTaxonomy?: any[]; WaveSurfer?: any; onDspCommand?: ((cmd: any) => void) | null; [k: string]: any } = {}) {
         if (!container) throw new Error('BirdNETPlayer: container element required');
@@ -284,7 +270,7 @@ export class BirdNETPlayer {
         if (Array.isArray(this.options.toolbar)) this._applyToolbarAllowList(this.options.toolbar);
         if (this.options.labelDisplay === 'focus') this.root?.classList.add('label-display-focus');
         if (this.options.labelDisplay === 'lanes') this.root?.classList.add('label-display-lanes');
-        if (this.options.labelTable) this._initBuiltinLabelTable();
+        this._installFeatures();
         if (this.options.normalize) this.setNormalize(true);
         // Note: stampmodechange is now handled inside _bindLinkedLabelSync()
         // via a direct listener on this.spectrogramLabels (no longer needs
@@ -765,10 +751,13 @@ export class BirdNETPlayer {
 
     /** Tear down the player and free resources */
     destroy() {
+        this._liveStartToken++;
         this._liveRecorder?.cancel();
         this._liveView?.detach();
-        this._labelGrid?.destroy();
-        this._labelGrid = null;
+        for (const teardown of this._featureTeardowns.splice(0).reverse()) {
+            try { teardown(); } catch (e) { console.error('[signavis] feature teardown failed', e); }
+        }
+        this._features.clear();
         if (this._globalKeyHandler) {
             keyScope('label').removeEventListener('keydown', this._globalKeyHandler);
             this._globalKeyHandler = null;
@@ -1047,9 +1036,12 @@ export class BirdNETPlayer {
 
     _liveRecorder: LiveRecorder | null = null;
     _liveView: LiveSpectrogramView | null = null;
+    _liveLoading = false;
+    /** Bumped by cancel/stop/destroy: a start still loading the recorder modules gives up. */
+    _liveStartToken = 0;
 
     /** True when this browser can record from a microphone. */
-    static get recordingSupported(): boolean { return LiveRecorder.supported; }
+    static get recordingSupported(): boolean { return liveRecordingSupported(); }
 
     get isRecording(): boolean { return !!this._liveRecorder?.recording; }
 
@@ -1061,10 +1053,25 @@ export class BirdNETPlayer {
      * The WAV carries the start time, so `recordingStart` knows it after loading.
      */
     async startRecording(opts: StartRecordingOptions = {}): Promise<void> {
-        if (this._liveRecorder) throw new Error('Already recording');
+        if (this._liveRecorder || this._liveLoading) throw new Error('Already recording');
         const s = this._state;
         if (!s) throw new Error('Player not ready');
         this.pause();
+        // Loaded on first use: hosts that never record don't download the recorder.
+        this._liveLoading = true;
+        const token = ++this._liveStartToken;
+        let LiveRecorder: typeof import('../infrastructure/audio/LiveRecorder.ts').LiveRecorder;
+        let LiveSpectrogramView: typeof import('../ui/components/live-view/live-spectrogram-view.ts').LiveSpectrogramView;
+        try {
+            [{ LiveRecorder }, { LiveSpectrogramView }] = await Promise.all([
+                import('../infrastructure/audio/LiveRecorder.ts'),
+                import('../ui/components/live-view/live-spectrogram-view.ts'),
+            ]);
+        } finally {
+            this._liveLoading = false;
+        }
+        // Cancelled (or stopped, destroyed) while the modules loaded: never open the microphone.
+        if (token !== this._liveStartToken) { this._emit('recordingstop', { reason: 'user' }); return; }
         const rec = new LiveRecorder(opts);
         this._liveRecorder = rec;
         const host = (s.d.spectrogramContainer && s._showSpectrogram ? s.d.spectrogramContainer : this.container) as HTMLElement;
@@ -1100,11 +1107,15 @@ export class BirdNETPlayer {
 
     /** Stops the recording; resolves with it (null when nothing was recorded or none was running). */
     async stopRecording(): Promise<LiveRecording | null> {
+        if (this._liveLoading) this._liveStartToken++;
         return this._liveRecorder ? this._liveRecorder.stop('user') : null;
     }
 
     /** Stops the recording and throws it away. */
-    cancelRecording(): void { this._liveRecorder?.cancel(); }
+    cancelRecording(): void {
+        if (this._liveLoading) this._liveStartToken++;
+        this._liveRecorder?.cancel();
+    }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
     /** Show both analysis views, or only the waveform or the spectrogram. A hidden spectrogram is not computed. */
@@ -1114,53 +1125,71 @@ export class BirdNETPlayer {
 
     get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }
 
-    // ── Built-in label table ────────────────────────────────────────
+    // ── Features (optional building blocks, see playerFeature.ts) ───
 
-    _labelGrid: LabelGrid | null = null;
+    /**
+     * Features a boolean option turns on, e.g. { labelTable: true }. Empty in
+     * 'signavis/core'; the full 'signavis' entry fills it with every feature.
+     */
+    static optionFeatures: Record<string, OptionFeatureFactory> = {};
 
-    _initBuiltinLabelTable() {
-        const host = this.enableLabelTable();
-        if (!host) return;
-        const grid = new LabelGrid({
-            host,
-            tools: this.getLabelTableTools(),
-            resolveName: (l: any) => ({
-                display: l.commonName || l.label || l.species || '',
-                scientific: l.scientificName && l.scientificName !== (l.commonName || l.label) ? l.scientificName : '',
-            }),
-            isLocked: (l: any) => this._readOnly || !!l.readonly,
-            getViewRange: () => this.getVisibleTimeRange(),
-            getDuration: () => this.duration,
-            getMaxFreq: () => (this._state?.audioBuffer?.sampleRate || 0) / 2,
-            onChange: () => {},
-            onFocus: (id: string) => {
-                const l = this._linkedLabels.get(id);
-                this._emit('labelfocus', { id, source: 'table', interaction: 'click' });
-                if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
-            },
-            onHover: (id: string | null) => this._emit('labelfocus', { id, source: 'table', interaction: 'hover' }),
-            onTogglePlay: () => this.togglePlayPause(),
-            columns: Array.isArray(this.options.labelTableColumns) ? this.options.labelTableColumns : undefined,
-            storageKey: 'signavis.labelgrid.embed.v1',
-        });
-        this._labelGrid = grid;
-        const refresh = () => grid.render([...this._linkedLabels.values()]);
-        this.on('labelsync', refresh);
-        this.on('timeupdate', (e: any) => grid.setPlayhead(e.detail?.currentTime ?? this.currentTime));
-        this.on('labelfocus', (e: any) => {
-            const d = e.detail || {};
-            if (d.source === 'table') return;
-            if (d.interaction === 'click') grid.highlightRow(d.id ?? null);
-            else grid.setHover(d.id ?? null);
-        });
-        refresh();
-        this.setLabelView('table');
+    _features = new Set<string>();
+    _featureTeardowns: Array<() => void> = [];
+
+    /** Install a feature now (after ready). Installing the same name again does nothing. */
+    use(feature: PlayerFeature): this {
+        if (this._features.has(feature.name)) return this;
+        this._features.add(feature.name);
+        let teardown;
+        try {
+            teardown = feature.install(this);
+        } catch (err) {
+            this._features.delete(feature.name);   // not installed: a later use() may retry
+            throw err;
+        }
+        if (typeof teardown === 'function') this._featureTeardowns.push(teardown);
+        return this;
     }
+
+    /** True when a feature of that name is installed. */
+    hasFeature(name: string): boolean { return this._features.has(name); }
+
+    _installFeatures() {
+        for (const f of Array.isArray(this.options.features) ? this.options.features : []) this.use(f);
+        const byOption = (this.constructor as typeof BirdNETPlayer).optionFeatures;
+        for (const option of ['labelTable']) {
+            if (!this.options[option] || this._features.has(option)) continue;
+            const make = byOption[option];
+            if (make) this.use(make(this));
+            else console.warn(`[signavis] option ${option} needs its feature with 'signavis/core': `
+                + `import { ${option} } from 'signavis/${option.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}' `
+                + `and pass { features: [${option}()] }`);
+        }
+    }
+
+    // ── Read access for features and hosts ──────────────────────────
+
+    /** All labels (copies of the entries, in insertion order). */
+    getLabels(): LinkedLabel[] { return [...this._linkedLabels.values()].map((l) => ({ ...l })); }
+
+    /** One label by id (a copy), or null. */
+    getLabel(id: string): LinkedLabel | null {
+        const l = this._linkedLabels.get(id);
+        return l ? { ...l } : null;
+    }
+
+    /** Sample rate of the loaded audio (0 before loading). */
+    get sampleRate(): number { return this._state?.audioBuffer?.sampleRate || 0; }
+
+    /** Seek to a time in seconds, as a user seek (follow mode recentres). */
+    seekTo(seconds: number) { this._state?._seekToTime(seconds, true, { userInitiated: true }); }
+
+    /** Emit a player event (for features), e.g. emit('labelfocus', { id, source, interaction }). */
+    emit(event: PlayerEventName | string, detail: unknown = {}): void { this._emit(event, detail); }
 
     /** Select a label as if it was clicked: highlights it everywhere and scrolls it into view. */
     selectLabel(id: string | null) {
         this._emit('labelfocus', { id, source: 'api', interaction: 'click' });
-        this._labelGrid?.highlightRow(id);
         const l = id ? this._linkedLabels.get(id) : null;
         if (l) this._state?._seekToTime(l.start, true, { userInitiated: true });
     }

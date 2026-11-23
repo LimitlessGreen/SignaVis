@@ -83,6 +83,9 @@ jobs:
       - name: Build library + types
         run: npm run build
 
+      - name: Check bundle size budget
+        run: npm run size:check
+
       - name: Check version sync
         run: bash ./scripts/check-version-sync.sh
 

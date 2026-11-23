@@ -1,5 +1,6 @@
 import './daily-tips.scss';
 import ModalManager from '../modal/modal-manager.ts';
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 
 const DEFAULT_TIPS = [
   {
@@ -83,7 +84,7 @@ export function showTip(
   disableCheckbox.type = 'checkbox';
   disableCheckbox.className = 'daily-tip-disable-checkbox';
   disableCheckbox.id = disableId;
-  try { disableCheckbox.checked = localStorage.getItem('signavis.daily-tips.disabled') === '1'; } catch (e) { /* ignore */ }
+  disableCheckbox.checked = prefs.flag('signavis.daily-tips.disabled');
   disableLabel.appendChild(disableCheckbox);
   disableLabel.appendChild(document.createTextNode(" Don't show again"));
 
@@ -132,7 +133,7 @@ export function showTip(
   closeBtn.addEventListener('click', () => modal.close());
 
   disableCheckbox.addEventListener('change', () => {
-    try { localStorage.setItem('signavis.daily-tips.disabled', disableCheckbox.checked ? '1' : '0'); } catch (e) { /* ignore */ }
+    prefs.setFlag('signavis.daily-tips.disabled', disableCheckbox.checked);
     try { onDisable && onDisable(disableCheckbox.checked); } catch (e) { /* ignore */ }
   });
 
@@ -146,10 +147,10 @@ export function showTip(
  */
 export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, storagePrefix = 'signavis.daily-tips', force = false } = {}) {
   try {
-    const disabled = localStorage.getItem(`${storagePrefix}.disabled`) === '1';
+    const disabled = prefs.flag(`${storagePrefix}.disabled`);
     if (disabled && !force) return;
     const today = _today();
-    const last = localStorage.getItem(`${storagePrefix}.lastDate`);
+    const last = prefs.get(`${storagePrefix}.lastDate`);
     if (!force && last === today) return;
     // The tips are about mouse/keyboard shortcuts: don't pop them up unasked on touch devices.
     if (!force && _isCoarsePointer()) return;
@@ -166,7 +167,7 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
         }
     } catch (e) { /* ignore */ }
 
-    let index = parseInt(localStorage.getItem(`${storagePrefix}.index`) || '0', 10) || 0;
+    let index = parseInt(prefs.get(`${storagePrefix}.index`) || '0', 10) || 0;
 
     const showAt = (idx: number) => {
       const tip = tips[idx % tips.length] as Tip;
@@ -175,19 +176,19 @@ export function initDailyTips({ host = document.body, tips = DEFAULT_TIPS, stora
         count: tips.length,
         onNext() {
           index = (idx + 1) % tips.length;
-          try { localStorage.setItem(`${storagePrefix}.index`, String(index)); } catch (e) { /* ignore */ }
+          prefs.set(`${storagePrefix}.index`, String(index));
           showAt(index);
         },
         onPrev() {
           index = (idx - 1 + tips.length) % tips.length;
-          try { localStorage.setItem(`${storagePrefix}.index`, String(index)); } catch (e) { /* ignore */ }
+          prefs.set(`${storagePrefix}.index`, String(index));
           showAt(index);
         },
         onClose() {
-          try { localStorage.setItem(`${storagePrefix}.lastDate`, today); } catch (e) { /* ignore */ }
+          prefs.set(`${storagePrefix}.lastDate`, today);
         },
         onDisable(disabled: unknown) {
-          try { localStorage.setItem(`${storagePrefix}.disabled`, disabled ? '1' : '0'); } catch (e) { /* ignore */ }
+          prefs.setFlag(`${storagePrefix}.disabled`, !!disabled);
         }
       });
     };

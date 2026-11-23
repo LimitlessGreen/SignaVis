@@ -5,6 +5,8 @@
  * depend on the group (birds, bats, grasshoppers, …), so they are cached per group. Recordings
  * without XC number use the cached list of the last group seen, else a built-in fallback.
  */
+import { prefs } from '../infrastructure/storage/prefs.ts';
+import { prefsStorage } from '../infrastructure/storage/prefs.ts';
 
 export type VocabKey = 'soundType' | 'sex' | 'lifeStage';
 export type Vocabulary = Record<VocabKey, string[]>;
@@ -76,13 +78,13 @@ const STORAGE_KEY = 'signavis.xc-group-vocab.v1';
 
 interface VocabStorage { getItem(k: string): string | null; setItem(k: string, v: string): void }
 
-/** Per-group cache of XC value lists, persisted in localStorage. */
+/** Per-group cache of XC value lists, persisted in prefs. */
 export class TagVocabularyCache {
     _groups: Record<string, Partial<Vocabulary>> = {};
     _lastGroup = '';
     _storage: VocabStorage | null;
 
-    constructor(storage: VocabStorage | null = (typeof localStorage !== 'undefined' ? localStorage : null)) {
+    constructor(storage: VocabStorage | null = prefsStorage) {
         this._storage = storage;
         try {
             const data = JSON.parse(this._storage?.getItem(STORAGE_KEY) || '{}');

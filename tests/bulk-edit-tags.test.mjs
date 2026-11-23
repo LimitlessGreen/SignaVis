@@ -67,7 +67,7 @@ test('bulk rename applies tags to whole group', async () => {
     ];
 
     // Trigger bulk prompt for both labels
-    layer._renameBulkPrompt(['L1','L2']);
+    await layer._renameBulkPrompt(['L1','L2']);   // the editor loads on first use
 
     // Confirm button should be in the player's root (openLabelNameEditor attaches to player.root)
     const confirm = root.querySelector('.label-search-confirm');

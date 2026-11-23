@@ -20,6 +20,7 @@ import { formatCoords } from '../../app/recording-context.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, formatAnnotaValue, toYN } from '../../domain/annotaFields.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -308,11 +309,11 @@ export class PropertiesPanel {
     recHeader.innerHTML = '<span class="props-toggle-caret" aria-hidden="true">▾</span><span>Recording</span><span class="props-toggle-summary"></span>';
     this._recSummary = recHeader.querySelector('.props-toggle-summary');
     let collapsed = false;
-    try { collapsed = localStorage.getItem('aw.props.recCollapsed') === '1'; } catch {}
+    collapsed = prefs.flag('aw.props.recCollapsed');
     const applyCollapsed = (c: boolean) => {
       this._recSection.classList.toggle('props-section--collapsed', c);
       recHeader.setAttribute('aria-expanded', String(!c));
-      try { localStorage.setItem('aw.props.recCollapsed', c ? '1' : '0'); } catch {}
+      prefs.setFlag('aw.props.recCollapsed', c);
     };
     applyCollapsed(collapsed);
     this._setRecCollapsed = applyCollapsed;
@@ -870,11 +871,11 @@ export class PropertiesPanel {
     header.innerHTML = `<span class="props-annota-chev" aria-hidden="true">▾</span> Annota fields${filled ? ` <span class="props-annota-count">${filled}</span>` : ''}`;
     header.title = 'Further fields of the Xeno-canto Annota format';
     let collapsed = false;
-    try { collapsed = localStorage.getItem('aw.props.annotaCollapsed') === '1'; } catch { /* storage blocked */ }
+    collapsed = prefs.flag('aw.props.annotaCollapsed');
     const apply = (c: boolean) => {
       wrap.classList.toggle('collapsed', c);
       header.setAttribute('aria-expanded', String(!c));
-      try { localStorage.setItem('aw.props.annotaCollapsed', c ? '1' : '0'); } catch { /* storage blocked */ }
+      prefs.setFlag('aw.props.annotaCollapsed', c);
     };
     header.addEventListener('click', () => apply(!wrap.classList.contains('collapsed')));
     wrap.appendChild(header);

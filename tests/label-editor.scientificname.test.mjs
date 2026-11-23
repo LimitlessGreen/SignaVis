@@ -185,7 +185,7 @@ test('label editor preserves initial scientificName when saving without selectin
     const { openLabelNameEditor } = await import('../src/domain/annotations.ts');
 
     let received = null;
-    openLabelNameEditor({
+    await openLabelNameEditor({
       player,
       initialValue: 'My bird',
       initialColor: '#112233',
@@ -207,6 +207,43 @@ test('label editor preserves initial scientificName when saving without selectin
     assert.ok(received, 'onSubmit should have been invoked');
     assert.equal(received.name, 'My bird');
     assert.equal(received.scientificName, 'Turdus merula', 'scientificName must be preserved when not changed');
+  } finally {
+    globalThis.document = oldDoc;
+  }
+});
+
+// The editor loads lazily: a box drawn in recording A must never land in recording B.
+test('label editor does not open or submit after another recording started loading', async () => {
+  const fakeDoc = createFakeDocument();
+  const oldDoc = globalThis.document;
+  globalThis.document = fakeDoc;
+  try {
+    const root = fakeDoc.createElement('div');
+    root.className = 'player-root';
+    fakeDoc.body.appendChild(root);
+    const state = { loadGeneration: 1 };
+    const player = {
+      root, _state: state,
+      getTagPresets: () => [], getLabelEditorSuggestionMode: () => 'merge', getLabelTaxonomy: () => [],
+      getLabelSuggestions: () => [], getLabelEditorSuggestions: () => [], _emit: () => {},
+    };
+    const { openLabelNameEditor } = await import('../src/domain/annotations.ts');
+    const opts = (onSubmit) => ({ player, initialValue: 'Bird', initialColor: '#112233', existingLabels: [], title: 'T', onSubmit });
+
+    // Recording changes while the module loads: nothing opens
+    let submitted = 0;
+    const pending = openLabelNameEditor(opts(() => { submitted++; }));
+    state.loadGeneration++;
+    assert.equal(await pending, null);
+    assert.equal(root.querySelector('.label-search-confirm'), null);
+
+    // Opened on the old recording, confirmed after the switch: the submit is dropped
+    const modal = await openLabelNameEditor(opts(() => { submitted++; }));
+    assert.ok(modal);
+    state.loadGeneration++;
+    root.querySelector('.label-search-confirm')._emit('click');
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(submitted, 0);
   } finally {
     globalThis.document = oldDoc;
   }

@@ -1,0 +1,28 @@
+{
+  "_comment": "Optional modules the player core still pulls in statically. Shrinks as they become plugins (plans/modular-architecture-plan.md in SignaVis-lab). Never add to this list: load the module lazily or through a plugin instead.",
+  "entry": "src/core.ts",
+  "optional": [
+    "domain/annotations",
+    "domain/annotaFields.ts",
+    "ui/components/label-editor/",
+    "ui/panels/label-grid.ts",
+    "ui/panels/label-table.ts",
+    "ui/panels/label-list.ts",
+    "ui/components/taxonomy-ui/",
+    "infrastructure/taxonomyResolver.ts",
+    "infrastructure/xeno-canto/",
+    "infrastructure/export/",
+    "infrastructure/birdnetInference.ts",
+    "infrastructure/audio/LiveRecorder.ts",
+    "ui/components/live-view/",
+    "app/annotation-sets.ts",
+    "app/label-sources.ts",
+    "ui/components/reference-calls-modal/",
+    "ui/components/similar-review/",
+    "app/similarSpectrogram.ts",
+    "app/suggest-similar.ts"
+  ],
+  "stillCoupled": [
+    "domain/annotations.ts"
+  ]
+}

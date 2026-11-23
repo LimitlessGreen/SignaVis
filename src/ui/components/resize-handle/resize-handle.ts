@@ -14,13 +14,14 @@
  *     onResizeEnd: () => player.resize(),
  *   });
  */
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 
 /**
  * @param {object} opts
  * @param {HTMLElement} opts.handle          Drag-handle element
  * @param {HTMLElement} opts.container       Outer container (for measuring total height)
  * @param {string}      [opts.cssProp]       CSS custom property name (default: '--panel-height')
- * @param {string}      [opts.storageKey]    localStorage key for persistence
+ * @param {string}      [opts.storageKey]    prefs key for persistence
  * @param {number}      [opts.defaultHeight] Default panel height in px (default: 220)
  * @param {number}      [opts.minPanel]      Minimum panel height (default: 80)
  * @param {number}      [opts.minStage]      Minimum stage height (default: 120)
@@ -43,7 +44,7 @@ export function initResizeHandle(opts: any) {
   // Restore saved height
   if (storageKey) {
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = prefs.get(storageKey);
       if (saved) {
         const h = Math.max(minPanel, parseInt(saved, 10));
         document.documentElement.style.setProperty(cssProp, h + 'px');
@@ -75,7 +76,7 @@ export function initResizeHandle(opts: any) {
     if (storageKey) {
       try {
         const val = getComputedStyle(document.documentElement).getPropertyValue(cssProp).trim();
-        localStorage.setItem(storageKey, String(parseInt(val, 10)));
+        prefs.set(storageKey, String(parseInt(val, 10)));
       } catch { /* ignore */ }
     }
     onResizeEnd?.();

@@ -1,8 +1,9 @@
 /**
  * User species lists — the SignaVis counterpart of BirdNET's `--slist` file.
  * A list is a named set of scientific names; the active one restricts BirdNET
- * detections. Pure helpers + a small localStorage-backed store.
+ * detections. Pure helpers + a small prefs-backed store.
  */
+import { prefsStorage } from '../infrastructure/storage/prefs.ts';
 
 export interface SpeciesList {
   id: string;
@@ -150,7 +151,7 @@ function dedupe(species: string[]): string[] {
   return out;
 }
 
-/** localStorage, or null when the browser blocks it (the getter itself can throw). */
+/** The prefs store (blocked storage is handled there). */
 function defaultStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
-  try { return globalThis.localStorage ?? null; } catch { return null; }
+  return prefsStorage;
 }

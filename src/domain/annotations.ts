@@ -6,11 +6,11 @@ import { classifyHit, resolvePress, type Tool } from './pointer-priority.ts';
 import { labelModeOf } from '../app/interactionState.ts';
 import { escapeHtml, clamp } from '../shared/utils.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
-import { LabelEditorModal } from '../ui/components/label-editor/LabelEditorModal.ts';
 import type { AnnotationRegion, SpectrogramLabel } from '../shared/label.types.ts';
 import { normalizeLabelStrings } from '../shared/labelNormalize.ts';
 import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
 const LANE_H = 18;
@@ -175,10 +175,39 @@ function _hslToHex(h: number, s: number, l: number) {
  * instead of calling player._emit() directly — eliminating the circular dependency.
  * @param {any} opts
  */
-function openLabelNameEditor(opts: any) {
+// The editor (with the species search) loads on first use, so the player core
+// does not carry it; preloadLabelEditor() fetches it while the browser is idle.
+type LabelEditorModule = typeof import('../ui/components/label-editor/LabelEditorModal.ts');
+let _editorModule: Promise<LabelEditorModule> | null = null;
+function loadLabelEditor(): Promise<LabelEditorModule> {
+    _editorModule ??= import('../ui/components/label-editor/LabelEditorModal.ts')
+        .catch((e) => { _editorModule = null; throw e; });
+    return _editorModule;
+}
+
+/** Fetch the label editor in the background so the first open is instant. */
+export function preloadLabelEditor(): void {
+    if (_editorModule) return;
+    const idle = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
+    const run = () => { loadLabelEditor().catch(() => { /* retried on first open */ }); };
+    if (idle) idle(run, { timeout: 3000 }); else setTimeout(run, 0);
+}
+
+async function openLabelNameEditor(opts: any) {
+    // The editor may still be loading when another recording is opened: then don't
+    // open it, and never let its submit/delete act on the new recording's labels.
+    const state = opts?.player?._state;
+    const generation = state?.loadGeneration;
+    const sameRecording = () => state?.loadGeneration === generation;
+    const { LabelEditorModal } = await loadLabelEditor();
+    if (!sameRecording()) return null;
     const layer = opts?.layer;
     const rest  = { ...opts };
     delete rest.layer;
+    for (const key of ['onSubmit', 'onDelete']) {
+        const fn = rest[key];
+        if (typeof fn === 'function') rest[key] = (...args: any[]) => (sameRecording() ? fn(...args) : undefined);
+    }
     // Wire onLayerEmit: dispatch tag events on the layer (which BirdNETPlayer
     // already listens to), or fall back to player._emit for legacy callers.
     const onLayerEmit = layer
@@ -442,6 +471,7 @@ class AnnotationLayerBase extends EventTarget {
         this.player = player;
         const root = this._getRoot();
         if (!root) return;
+        if (!(player as any)?.options?.readOnly) preloadLabelEditor();
         // Report drawing / editing / grabbing / zoom-box drags to the player's interaction FSM,
         // so the player does not start its own drag meanwhile (one interaction at a time)
         const fsm = (player as any)?._state?.interaction;
@@ -535,12 +565,12 @@ class AnnotationLayerBase extends EventTarget {
         if (!sel.dataset.awBound) {
             sel.dataset.awBound = '1';
             let stored: string | null = null;
-            try { stored = localStorage.getItem('aw-label-dense'); } catch { /* storage blocked */ }
+            stored = prefs.get('aw-label-dense');
             // Only a remembered or user-made choice overrides each view's own default
             if (stored && [...sel.options].some((o) => o.value === stored)) { sel.value = stored; sel.dataset.awUser = '1'; }
             sel.addEventListener('change', () => {
                 sel.dataset.awUser = '1';
-                try { localStorage.setItem('aw-label-dense', sel.value); } catch { /* storage blocked */ }
+                prefs.set('aw-label-dense', sel.value);
                 p?.spectrogramLabels?.render?.();
                 p?.annotations?.render?.();
             });
@@ -1076,7 +1106,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         if (!region || region.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = region.species || 'Annotation';
         const el = this.overlay?.querySelector?.(`.annotation-region[data-id="${region.id}"]`);
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl: el || this.overlay,
@@ -2449,7 +2479,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const initialValue = tpl?.name || ref?.label || '';
         const initialColor = (tpl?.name ? tpl.color : ref?.color) || _autoAssignColor(this._items);
         const refName = initialValue.trim().toLowerCase();
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             initialValue,
@@ -2642,9 +2672,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!sel) return 'pointer';
         if (!sel.dataset.awBound) {
             sel.dataset.awBound = '1';
-            try { const v = localStorage.getItem('aw-loupe-mode'); if (v) sel.value = v; } catch { /* storage blocked */ }
+            const saved = prefs.get('aw-loupe-mode'); if (saved) sel.value = saved;
             sel.addEventListener('change', () => {
-                try { localStorage.setItem('aw-loupe-mode', sel.value); } catch { /* storage blocked */ }
+                prefs.set('aw-loupe-mode', sel.value);
             });
         }
         const v = sel.value;
@@ -2662,19 +2692,17 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ?? null;
     }
 
-    /** Settings checkbox, default on, choice remembered in localStorage. */
+    /** Settings checkbox, default on, choice remembered in prefs. */
     _loupeOption(dataAw: string, storageKey: string, fallback = true): boolean {
         const box = this._settingEl(dataAw) as HTMLInputElement | null;
         if (!box) return fallback;
         if (!box.dataset.awBound) {
             box.dataset.awBound = '1';
-            try {
-                const v = localStorage.getItem(storageKey);
-                if (v === '0') box.checked = false;
-                else if (v === '1') box.checked = true;
-            } catch { /* storage blocked */ }
+            const v = prefs.get(storageKey);
+            if (v === '0') box.checked = false;
+            else if (v === '1') box.checked = true;
             box.addEventListener('change', () => {
-                try { localStorage.setItem(storageKey, box.checked ? '1' : '0'); } catch { /* storage blocked */ }
+                prefs.setFlag(storageKey, box.checked);
             });
         }
         return box.checked;
@@ -2879,10 +2907,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
         cv.style.width = `${W}px`; cv.style.height = `${H}px`;
         el.appendChild(cv);
-        let pos = { x: window.innerWidth - W - 40, y: 120 };
-        try { const p = JSON.parse(localStorage.getItem('aw-loupe-window-pos') || 'null'); if (p) pos = p; } catch { /* ignore */ }
-        let zoom = 4;
-        try { zoom = Number(localStorage.getItem('aw-loupe-window-zoom')) || 4; } catch { /* ignore */ }
+        let pos = prefs.json('aw-loupe-window-pos', { x: window.innerWidth - W - 40, y: 120 });
+        let zoom = Number(prefs.get('aw-loupe-window-zoom')) || 4;
         const place = (x: number, y: number) => {
             pos = { x: Math.max(0, Math.min(window.innerWidth - 80, x)), y: Math.max(0, Math.min(window.innerHeight - 40, y)) };
             el.style.left = `${pos.x}px`; el.style.top = `${pos.y}px`;
@@ -2902,7 +2928,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const move = (m: PointerEvent) => place(m.clientX - ox, m.clientY - oy);
             const up = () => {
                 bar.removeEventListener('pointermove', move);
-                try { localStorage.setItem('aw-loupe-window-pos', JSON.stringify(pos)); } catch { /* ignore */ }
+                prefs.setJson('aw-loupe-window-pos', pos);
             };
             bar.addEventListener('pointermove', move);
             bar.addEventListener('pointerup', up, { once: true });
@@ -2920,7 +2946,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             const i = Math.max(0, steps.indexOf(this._loupeWin.zoom));
             this._loupeWin.zoom = steps[Math.max(0, Math.min(steps.length - 1, i + Number(btn.dataset.z)))];
             this._loupeWin.zoomEl.textContent = `${this._loupeWin.zoom}×`;
-            try { localStorage.setItem('aw-loupe-window-zoom', String(this._loupeWin.zoom)); } catch { /* ignore */ }
+            prefs.set('aw-loupe-window-zoom', String(this._loupeWin.zoom));
         });
     }
 
@@ -3187,7 +3213,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!label || label.readonly || this._lockedIds.has(id) || (this.player as any)?._readOnly) return;
         const current = label.label || 'Label';
         const el = this.overlay?.querySelector?.(`.spectrogram-label-region[data-id="${label.id}"]`);
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl: el || this.overlay,
@@ -3229,7 +3255,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (labels.length === 0) return;
         const first = labels[0];
         const anchorEl = this.overlay || null;
-        openLabelNameEditor({
+        return openLabelNameEditor({
             layer: this,
             player: this.player,
             anchorEl,

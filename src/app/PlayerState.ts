@@ -866,6 +866,9 @@ export class PlayerState {
     //  File Loading
     // ═════════════════════════════════════════════════════════════════
 
+    /** Bumped whenever another recording starts loading: work begun on the old one can tell. */
+    loadGeneration = 0;
+
     async _handleFileSelect(e: Event) {
         const input = e.target as HTMLInputElement | null;
         const file = input?.files?.[0] ?? null;
@@ -875,6 +878,7 @@ export class PlayerState {
 
     async loadFile(file: File) {
         if (!file) return;
+        this.loadGeneration++;
 
         this.d.fileInfo!.innerHTML = `<span class="statusbar-label">${escapeHtml(file.name)}</span>`;
         this.d.fileInfo!.classList.add('loading');
@@ -895,6 +899,7 @@ export class PlayerState {
 
     /** @param localPath  file path behind `url` (desktop app), enables the native spectrogram. */
     async loadUrl(url: string, localPath: string | null = null) {
+        this.loadGeneration++;
         this.d.fileInfo!.innerHTML = `<span class="statusbar-label">Loading…</span>`;
         this.d.fileInfo!.classList.add('loading');
         this._setTransportState('loading', 'url-load');

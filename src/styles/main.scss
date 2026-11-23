@@ -4,6 +4,7 @@
 // the plain CSS file `src/styles/tokens.css` which should be
 // included with a <link> in HTML. This avoids deprecated @import.
 @use "utils";
+@use "components/player-base";
 
 // Core shell & layout
 @use "components/shell";
@@ -23,6 +24,7 @@
 //   so the CSS is in the synchronous render-blocking stylesheet in dev mode.
 
 // Spectrogram labels & annotations
+@use "components/label-tokens";
 @use "components/annotation";
 @use "components/spectrogram-labels";
 @use "components/label-editor";
@@ -73,6 +75,8 @@
 @use "components/onboarding";
 
 // UI clarity layer — keep last
+@use "components/theme-tokens";
+@use "components/player-clarity";
 @use "components/ui-clarity";
 // Shared tab building blocks (section header, field grid, mode tiles)
 @use "components/tab-layout";

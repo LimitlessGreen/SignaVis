@@ -22,6 +22,7 @@ import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { LABEL_EXPORT_FORMATS, type LabelExportColumn, type LabelExportFormat } from '../../infrastructure/export/labelTableFormats.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { OWN_SOURCE_ID } from '../../app/label-sources.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 type Lbl = any;
 type SourceKey = 'own' | 'bn' | 'xc' | 'imp';
@@ -71,7 +72,7 @@ export interface LabelGridOptions {
   onExport?: (format: LabelExportFormat, labels: Lbl[], columns: LabelExportColumn[]) => void;
   /** Columns shown until the user changes them (keys as in the column menu); default: all but the optional ones. */
   columns?: string[];
-  /** localStorage key for sort, filter and column preferences, so embeds don't share them with the app. */
+  /** prefs key for sort, filter and column preferences, so embeds don't share them with the app. */
   storageKey?: string;
 }
 
@@ -178,10 +179,10 @@ function withTag(l: Lbl, key: string, v: string) {
 }
 
 function loadPrefs(key = STORE_KEY): any {
-  try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; }
+  return prefs.json<any>(key, {});
 }
 function savePrefs(p: any, key = STORE_KEY) {
-  try { localStorage.setItem(key, JSON.stringify(p)); } catch { /* storage blocked */ }
+  prefs.setJson(key, p);
 }
 
 export class LabelGrid {

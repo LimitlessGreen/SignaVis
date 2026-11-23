@@ -17,7 +17,7 @@
 
     .toolbar-btn {
         padding: 0 6px;
-        font-size: 0.72rem;
+        font-size: 9.36px;
     }
 
     .transport-btn {
@@ -53,33 +53,40 @@
     color: #38bdf8;
 }
 
+// $global-scope: prefix for rules that would otherwise style the whole page.
+// '' in the app (main.scss); player.scss sets ':where(.daw-shell) ' so the
+// library leaves the host page alone (:where adds no specificity).
+$global-scope: '' !default;
+
 /* Scrollbar styling (uses tokens in src/styles/tokens.css)
    - `scrollbar-color` supports Firefox
    - WebKit uses ::-webkit-scrollbar pseudo elements
    These values adapt automatically when `html[data-theme="light"]` is set.
 */
-:root {
+$-scroll-root: ':root';
+@if $global-scope != '' { $-scroll-root: '.daw-shell'; }
+#{$-scroll-root} {
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     scrollbar-width: thin;
 }
 
-*::-webkit-scrollbar {
+#{$global-scope}*::-webkit-scrollbar {
     width: var(--scrollbar-width);
     height: var(--scrollbar-width);
 }
-*::-webkit-scrollbar-track {
+#{$global-scope}*::-webkit-scrollbar-track {
     background: var(--scrollbar-track);
 }
-*::-webkit-scrollbar-thumb {
+#{$global-scope}*::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: padding-box;
 }
-*::-webkit-scrollbar-thumb:hover {
+#{$global-scope}*::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
 }
-*::-webkit-scrollbar-thumb:active {
+#{$global-scope}*::-webkit-scrollbar-thumb:active {
     background: var(--scrollbar-thumb-active);
 }
 

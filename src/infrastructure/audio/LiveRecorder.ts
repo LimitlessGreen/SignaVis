@@ -13,6 +13,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { isoClockTime, localRecordingStart } from '../../domain/recordingTime.ts';
+import { liveRecordingSupported } from './liveSupport.ts';
 
 export interface LiveRecorderOptions {
     /** Recording stops by itself after this many seconds (default 300). */
@@ -112,10 +113,7 @@ export class LiveRecorder extends EventTarget {
         this.deviceId = opts.deviceId;
     }
 
-    static get supported(): boolean {
-        return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
-            && typeof AudioContext !== 'undefined';
-    }
+    static get supported(): boolean { return liveRecordingSupported(); }
 
     get recording(): boolean { return !!this.startedAt && !this.stopping; }
 

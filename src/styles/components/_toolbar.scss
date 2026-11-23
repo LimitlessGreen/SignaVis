@@ -47,7 +47,7 @@
 }
 
 .toolbar-label {
-  font-size: 0.72rem;
+  font-size: 9.36px;
   color: var(--color-text-secondary);
   flex-shrink: 0;
   text-transform: uppercase;
@@ -61,7 +61,7 @@
   border-radius: 4px;
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
-  font-size: 0.78rem;
+  font-size: 10.14px;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -70,7 +70,7 @@
   border: 1px solid var(--color-accent, #0ea5e9);
   border-radius: 13px;
   color: var(--color-accent, #0ea5e9);
-  font-size: 0.75rem;
+  font-size: 9.75px;
   padding: 0 10px;
   white-space: nowrap;
   &[hidden] { display: none; }
@@ -117,7 +117,7 @@
 }
 .zoom-axis + .zoom-axis { border-left: 1px solid var(--color-border, rgba(127, 127, 127, 0.3)); }
 .zoom-axis-icon { opacity: 0.7; flex-shrink: 0; }
-.zoom-axis-name { font-size: 0.66rem; opacity: 0.7; margin-right: 1px; }
+.zoom-axis-name { font-size: 8.58px; opacity: 0.7; margin-right: 1px; }
 .zoom-step {
   width: 18px;
   height: 18px;
@@ -129,13 +129,13 @@
   border-radius: 4px;
   background: none;
   color: var(--color-text-secondary);
-  font-size: 0.9rem;
+  font-size: 11.7px;
   line-height: 1;
   cursor: pointer;
 }
 .zoom-step:hover { background: var(--color-hover, rgba(127, 127, 127, 0.15)); }
 .zoom-value {
-  font-size: 0.66rem;
+  font-size: 8.58px;
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
   min-width: 34px;
@@ -145,7 +145,7 @@
 .zoom-auto-btn {
   margin-left: 2px;
   padding: 1px 6px;
-  font-size: 0.66rem;
+  font-size: 8.58px;
   border: 1px solid var(--color-border, rgba(127, 127, 127, 0.35));
   border-radius: 4px;
   background: none;
@@ -168,7 +168,7 @@
 .icon-btn.muted { color: var(--color-accent-dim, #664444); }
 
 .toolbar-value {
-  font-size: 0.72rem;
+  font-size: 9.36px;
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
   color: var(--color-text-secondary);
   min-width: 56px;
@@ -176,7 +176,7 @@
 }
 .toolbar-value-sm {
   min-width: 40px;
-  font-size: 0.65rem;
+  font-size: 8.45px;
 }
 
 /* Settings toggle button */

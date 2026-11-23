@@ -12,6 +12,7 @@ import { buildAnnotaPayload } from '../../infrastructure/xeno-canto/annotaPayloa
 import { softwareNameAndVersion } from '../../version.ts';
 import { getXcAudioStore, xcAudioKey } from '../../infrastructure/storage/audioBlobStore.ts';
 import ModalManager from '../components/modal/modal-manager.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // Parse XC API "len" field ("m:ss" or "mm:ss" or "h:mm:ss") → seconds, or null.
 function parseXcLen(len: any) {
@@ -55,8 +56,8 @@ export function xcUploadTarget() {
   let env = '';
   try {
     const fromUrl = new URLSearchParams(window.location.search).get('xcenv')?.toLowerCase() || '';
-    if (XC_UPLOAD_TARGETS[fromUrl]) { env = fromUrl; localStorage.setItem(XC_ENV_STORAGE, env); }
-    else env = localStorage.getItem(XC_ENV_STORAGE) || '';
+    if (XC_UPLOAD_TARGETS[fromUrl]) { env = fromUrl; prefs.set(XC_ENV_STORAGE, env); }
+    else env = prefs.get(XC_ENV_STORAGE) || '';
   } catch { /* no window/storage */ }
   return XC_UPLOAD_TARGETS[env] || XC_UPLOAD_TARGETS.live;
 }
@@ -348,7 +349,7 @@ export class XenoCantoPanel {
     this.useProxies = (typeof opts.useProxies === 'boolean')
       ? opts.useProxies
       : (() => {
-        try { const v = localStorage.getItem('aw:xcUseProxies'); if (v != null) return v === '1' || v === 'true'; } catch {}
+        const v = prefs.get('aw:xcUseProxies'); if (v != null) return v === '1' || v === 'true';
         return true;
       })();
 
@@ -409,11 +410,11 @@ export class XenoCantoPanel {
     this._refreshCacheInfo();
   }
 
-  /** Store the API key (localStorage) and tell the listeners. */
+  /** Store the API key (prefs) and tell the listeners. */
   setApiKey(key: string) {
     this.apiKey = String(key || '').trim();
     if (this.keyInput) this.keyInput.value = this.apiKey;
-    try { localStorage.setItem(API_KEY_STORAGE, this.apiKey); } catch {}
+    prefs.set(API_KEY_STORAGE, this.apiKey);
     this._updateButtonState();
     this._updateUploadState();
     this.onKeyChange?.(this.apiKey);
@@ -902,18 +903,16 @@ export class XenoCantoPanel {
   // ── Private ──────────────────────────────────────────────────────────
 
   _restoreKey() {
-    try { this.apiKey = String(localStorage.getItem(API_KEY_STORAGE) || ''); } catch {}
+    this.apiKey = String(prefs.get(API_KEY_STORAGE) || '');
   }
 
   _restoreSetMeta() {
-    try {
-      const data = JSON.parse(localStorage.getItem(SET_META_STORAGE) || '{}');
-      if (data && typeof data === 'object') Object.assign(this.setMeta, data);
-    } catch {}
+    const data = prefs.json(SET_META_STORAGE, {});
+    if (data && typeof data === 'object') Object.assign(this.setMeta, data);
   }
 
   _saveSetMeta() {
-    try { localStorage.setItem(SET_META_STORAGE, JSON.stringify(this.setMeta)); } catch {}
+    prefs.setJson(SET_META_STORAGE, this.setMeta);
   }
 
   _updateButtonState() {

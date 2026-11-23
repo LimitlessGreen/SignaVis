@@ -100,6 +100,7 @@ import { dedupeLabels } from './dedupe-labels.ts';
 import { initSponsorCard } from './sponsor-card.ts';
 import { initHelpMenu, HELP_ICONS } from './help-menu.ts';
 import { formatMinSec } from '../../shared/utils.ts';
+import { prefs, prefsStorage } from '../../infrastructure/storage/prefs.ts';
 
 // Xeno-canto export/upload (features/xc-upload.ts), installed further down. Declared here, before
 // anything that may call the forwarders during startup (e.g. the sidebar restoring the Upload tab);
@@ -115,12 +116,12 @@ function uploadBlockReason() { return xcUpload ? xcUpload.blockReason() : ''; }
 // hands its link (?xc=, ?lang=) to Lite and stops here, so nothing is downloaded twice.
 {
   const available = isHandoffAvailable(navigator.userAgent, '__TAURI_INTERNALS__' in window);
-  const ls = (() => { try { return localStorage; } catch { return null; } })();
+  const ls = prefsStorage;
   const ss = (() => { try { return sessionStorage; } catch { return null; } })();
   const currentLink = () => {
     const target = linkTargetFromSearch(window.location.search);
     let lang = target.lang || document.getElementById('taxonomyLangSelect')?.value || null;
-    if (!target.lang) { try { lang = localStorage.getItem('birdnet-taxonomy-lang') || lang; } catch { /* ignore */ } }
+    if (!target.lang) lang = prefs.get('birdnet-taxonomy-lang') || lang;
     return { link: buildLiteLink({ xc: target.xc, lang }), xc: target.xc };
   };
 
@@ -193,14 +194,14 @@ const AUTO_FREQ_VIEW_KEY = 'signavis.labeling.auto-freq-view.v1';
 const NORMALIZE_KEY = 'signavis.labeling.normalize.v1';
 const ULTRASOUND_PROMPT_KEY = 'signavis.labeling.ultrasound-prompt.v1';
 const BIRDNET_SHOW_LABELS_KEY = 'signavis.labeling.birdnet-show-labels.v1';
-const readFlag = (key, fallback) => { try { const v = localStorage.getItem(key); return v == null ? fallback : v === '1'; } catch { return fallback; } };
-const writeFlag = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* ignore */ } };
-const showMainWaveform = (() => { try { return localStorage.getItem(SHOW_WAVEFORM_KEY) !== '0'; } catch { return true; } })();
+const readFlag = (key, fallback) => prefs.flag(key, fallback);
+const writeFlag = (key, on) => prefs.setFlag(key, on);
+const showMainWaveform = prefs.get(SHOW_WAVEFORM_KEY) !== '0';
 const player = new BirdNETPlayer(document.getElementById('playerRoot'), {
   showFileOpen: false,
   enableProgressiveSpectrogram: true,
   showOverview: true,
-  overviewMode: (() => { try { return localStorage.getItem(OVERVIEW_MODE_KEY) === 'spectrogram' ? 'spectrogram' : 'waveform'; } catch { return 'waveform'; } })(),
+  overviewMode: prefs.get(OVERVIEW_MODE_KEY) === 'spectrogram' ? 'spectrogram' : 'waveform',
   viewMode: showMainWaveform ? 'both' : 'spectrogram',
   showTransport: true,
   // BirdNET detections (no frequency bounds) as strips along the top edge
@@ -525,7 +526,7 @@ function applyAnalysisBackendConfig(config, { persist = true } = {}) {
   return normalized;
 }
 
-// Apply config from URL/localStorage and sync controls.
+// Apply config from URL/prefs and sync controls.
 applyAnalysisBackendConfig(initialAnalysisConfig, { persist: false });
 
 // If running in desktop mode with configured passthrough endpoint,
@@ -814,7 +815,7 @@ specPanel.relocate();
   const check = wf.querySelector('input');
   check.checked = showMainWaveform;
   check.addEventListener('change', () => {
-    try { localStorage.setItem(SHOW_WAVEFORM_KEY, check.checked ? '1' : '0'); } catch { /* ignore */ }
+    prefs.setFlag(SHOW_WAVEFORM_KEY, check.checked);
     wf.querySelector('.field-hint').hidden = check.checked === showMainWaveform;
   });
   specPanel.el.insertBefore(wf, sec);
@@ -831,7 +832,7 @@ specPanel.relocate();
   const ovSel = ov.querySelector('select');
   ovSel.value = player.overviewMode;
   ovSel.addEventListener('change', () => {
-    try { localStorage.setItem(OVERVIEW_MODE_KEY, ovSel.value); } catch { /* ignore */ }
+    prefs.set(OVERVIEW_MODE_KEY, ovSel.value);
     player.setOverviewMode(ovSel.value);
   });
   wf.appendChild(ov);
@@ -1010,11 +1011,11 @@ function buildAudioPanel() {
   // Auto band-pass when a label is played (default on, remembered)
   const bandpassCheck = el.querySelector('#audioLabelBandpassCheck');
   const BANDPASS_KEY = 'signavis.audio.labelBandpass';
-  try { bandpassCheck.checked = localStorage.getItem(BANDPASS_KEY) !== '0'; } catch { /* private mode */ }
+  bandpassCheck.checked = prefs.get(BANDPASS_KEY) !== '0';
   player.labelBandpass = bandpassCheck.checked;
   bandpassCheck.addEventListener('change', () => {
     player.labelBandpass = bandpassCheck.checked;
-    try { localStorage.setItem(BANDPASS_KEY, bandpassCheck.checked ? '1' : '0'); } catch { /* private mode */ }
+    prefs.setFlag(BANDPASS_KEY, bandpassCheck.checked);
   });
   divisorSel.value = '10';
   pitchSel.value = '10';
@@ -1296,7 +1297,7 @@ async function saveProjectSnapshotNow() {
 
 // ── Project storage: browser project (OPFS) or a project folder (File System Access).
 // Recordings, sets and labels survive closing the tab. Replaces sessionStorage
-// (RecordingManager), localStorage sets and the autosave above; those only serve
+// (RecordingManager), prefs sets and the autosave above; those only serve
 // as a one-time migration source (project folder plan).
 // Switching the location reloads the page, like "New…" does.
 const PROJECT_LOCATION_KEY = 'signavis.project.location.v1';   // 'browser' | 'folder'
@@ -1313,8 +1314,8 @@ let projectScanning = false;
 let recentFolderHandle = null;       // remembered folder that still needs a click
 let projectLocationPanel = null;
 let _projectConflictOpen = false;
-const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+const lsGet = (k) => prefs.get(k);
+const lsSet = (k, v) => prefs.set(k, v);
 const xcToFolder = () => lsGet(XC_TO_FOLDER_KEY) !== '0';
 
 function buildWorkspaceProject() {
@@ -1330,7 +1331,7 @@ function buildWorkspaceProject() {
 
 function saveSessionSets(st) {
   if (projectAutosaver) projectAutosaver.schedule();
-  else saveSessionSetsLegacy(st);   // no OPFS: old localStorage sets
+  else saveSessionSetsLegacy(st);   // no OPFS: old prefs sets
 }
 
 function renderProjectLocation() {
@@ -2055,17 +2056,16 @@ const PROFILE_FIELDS = ['creator', 'creatorId', 'license', 'owner'];
 const PROFILE_KEY = 'audio-workbench.labeler-profile.v1';
 function saveSetProfile(s) {
   if (s.origin !== 'manual') return;
-  try {
-    const prev = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
-    let changed = false;
-    for (const k of PROFILE_FIELDS) {
-      if (s[k] != null && s[k] !== '') { prev[k] = s[k]; changed = true; }
-    }
-    if (changed) localStorage.setItem(PROFILE_KEY, JSON.stringify(prev));
-  } catch {}
+  const prev = prefs.json(PROFILE_KEY, {});
+  if (typeof prev !== 'object') return;
+  let changed = false;
+  for (const k of PROFILE_FIELDS) {
+    if (s[k] != null && s[k] !== '') { prev[k] = s[k]; changed = true; }
+  }
+  if (changed) prefs.setJson(PROFILE_KEY, prev);
 }
 function loadSetProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; }
+  return prefs.json(PROFILE_KEY, {});
 }
 
 // Persist/restore session sets — delegated to src/app/session-sets.ts
@@ -4059,7 +4059,7 @@ function showXcNokeyModal() {
     selectionMeta.textContent = 'No XC API key — add one in the setup or the Upload tab to load annotations.';
     return false;
   }
-  const dismissed = localStorage.getItem(XC_NOKEY_DISMISSED_KEY) === '1';
+  const dismissed = prefs.flag(XC_NOKEY_DISMISSED_KEY);
   if (dismissed || _xcNokeyShownThisSession) {
     selectionMeta.textContent = 'No XC API key — add one in the Xeno Canto tab to load and upload annotations.';
     return false;
@@ -4073,7 +4073,7 @@ function showXcNokeyModal() {
 }
 function closeXcNokeyModal() {
   if (xcNokeyDismiss.checked) {
-    try { localStorage.setItem(XC_NOKEY_DISMISSED_KEY, '1'); } catch {}
+    prefs.setFlag(XC_NOKEY_DISMISSED_KEY, true);
   }
   xcNokeyModalManager.close();
 }
@@ -4094,7 +4094,7 @@ async function saveNokeyKey() {
 }
 /** Save the XC API key, then import labels + metadata of the open XC recording (desktop dialog + phone settings). */
 async function applyXcKey(key) {
-  xcPanel.setApiKey(key);   // localStorage + state + callbacks
+  xcPanel.setApiKey(key);   // prefs + state + callbacks
   updateXcKeyIndicator();
   if (!key) return;
   // Re-import labels now that a key is available
@@ -4224,7 +4224,7 @@ const LANG_STORAGE_KEY = 'birdnet-taxonomy-lang';
 
 function getLangParam() {
   const p = new URLSearchParams(window.location.search || '');
-  return p.get('lang') || p.get('LANG') || localStorage.getItem(LANG_STORAGE_KEY) || '';
+  return p.get('lang') || p.get('LANG') || prefs.get(LANG_STORAGE_KEY) || '';
 }
 
 /** Resolve a scientific name to the current language, falling back to the English name. */
@@ -4866,7 +4866,7 @@ player._state?.d?.overviewLabelTracks?.addEventListener('contextmenu', (e) => {
 taxonomyLangSelect.addEventListener('change', () => {
   taxonomyLangSelect.blur();  // closes the ⚙ popover on narrow screens
   state.taxonomyLang = taxonomyLangSelect.value || 'en_uk';
-  try { localStorage.setItem(LANG_STORAGE_KEY, state.taxonomyLang); } catch {}
+  prefs.set(LANG_STORAGE_KEY, state.taxonomyLang);
   if (taxonomy.data) {
     taxonomyMeta.textContent = formatTaxonomyMeta(taxonomy, state.taxonomyLang);
   }
@@ -5076,7 +5076,7 @@ let topbarWidget = null;
 // they are pulled here once at start and on every event, one after the other.
 let _liteLaunchChain = Promise.resolve();
 function applyLiteLanguage(lang) {
-  try { localStorage.setItem(LANG_STORAGE_KEY, lang); } catch { /* ignore */ }
+  prefs.set(LANG_STORAGE_KEY, lang);
   if (![...taxonomyLangSelect.options].some((o) => o.value === lang)) return;  // taxonomy not loaded yet
   taxonomyLangSelect.value = lang;
   taxonomyLangSelect.dispatchEvent(new Event('change'));
@@ -5103,7 +5103,7 @@ async function runLiteLaunchRequests(requests) {
   }
 }
 // ── Lite: native menu (src-tauri-lite/src/menu.rs) and "Open Recent" ─
-const _lsLite = (() => { try { return localStorage; } catch { return null; } })();
+const _lsLite = prefsStorage;
 function liteRecentSync() {
   if (!isLite()) return;
   import('@tauri-apps/api/core')

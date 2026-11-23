@@ -7,6 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { channelData } from './utils.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
 
 export type ChannelSelection = { mode: 'mix' } | { mode: 'single'; channel: number };
 
@@ -47,7 +48,7 @@ let current: ChannelSelection = load();
 const listeners = new Set<(sel: ChannelSelection) => void>();
 
 function load(): ChannelSelection {
-    try { return parseChannelSelection(globalThis.localStorage?.getItem(STORAGE_KEY)); }
+    try { return parseChannelSelection(prefs.get(STORAGE_KEY)); }
     catch { return DEFAULT_CHANNEL_SELECTION; }
 }
 
@@ -56,7 +57,7 @@ export function getChannelSelection(): ChannelSelection { return current; }
 export function setChannelSelection(sel: ChannelSelection): void {
     if (channelSelectionKey(sel) === channelSelectionKey(current)) return;
     current = sel;
-    try { globalThis.localStorage?.setItem(STORAGE_KEY, channelSelectionKey(sel)); } catch { /* private mode */ }
+    prefs.set(STORAGE_KEY, channelSelectionKey(sel));
     for (const fn of listeners) fn(sel);
 }
 

@@ -5,34 +5,8 @@
    - Section headers start a visible group; field labels muted, values bright.
    Loaded last in main.scss so it wins over the older partials. */
 
-@mixin dark-tokens {
-  --color-bg-primary:     #17191d;   // app / main area
-  --color-bg-secondary:   #1d2025;   // panels, sidebars
-  --color-bg-tertiary:    #2a2f37;   // raised / selected
-  --color-bg-surface:     #1d2025;
-  --color-card:           #23272d;   // grouped block inside a panel
-  --color-toolbar:        #131518;
-  --color-statusbar:      #101215;
-  --color-text-primary:   #e7e9ec;
-  --color-text-secondary: #969ca6;
-  --color-border:         rgba(255, 255, 255, 0.07);
-  --color-border-strong:  rgba(255, 255, 255, 0.14);
-  --input-bg:             rgba(255, 255, 255, 0.045);
-  --input-bg-weak:        rgba(255, 255, 255, 0.07);
-  --color-on-accent:      #04131c;
-  --color-warning:        #fbbf24;
-}
-@mixin light-tokens {
-  --color-card:           #f6f6f9;
-  --color-border-strong:  rgba(0, 0, 0, 0.16);
-  --color-on-accent:      #ffffff;
-  --color-warning:        #b45309;
-}
 
-html[data-theme="dark"] { @include dark-tokens; }
-@media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { @include dark-tokens; } }
-html[data-theme="light"] { @include light-tokens; }
-@media (prefers-color-scheme: light) { html:not([data-theme="dark"]) { @include light-tokens; } }
+// Theme tokens: _theme-tokens.scss. Player rules: _player-clarity.scss.
 
 /* ── Panels: section header = start of a group ─────────────────────── */
 .sidebar-section-header,
@@ -177,16 +151,6 @@ html[data-theme="light"] { @include light-tokens; }
   border-top: 1px solid var(--color-border-strong);
 }
 
-// Player toolbar: related buttons sit in one visible group.
-.toolbar-group {
-  gap: 1px;
-  padding: 1px;
-  border-radius: 5px;
-  background: var(--input-bg);
-  border: 1px solid var(--color-border);
-  .toolbar-btn { border-color: transparent; }
-}
-.toolbar-sep, .tb-sep { background: var(--color-border-strong); margin: 0 4px; }
 
 /* ── Project tab: adding = XC first ────────────────────────────────── */
 .xc-load-row .xc-load-primary { width: auto; flex: 0 0 auto; padding: 5px 14px; }
@@ -246,25 +210,7 @@ html[data-theme="light"] { @include light-tokens; }
 .rec-set-rename { width: 100%; font-size: 11px; padding: 0 3px; }
 .rec-set--editing .rec-set-actions { display: none !important; }
 
-
-
-/* ── Selects: own look instead of the native one ───────────────────
-   WebKitGTK (SignaVis Lite on Linux) draws native selects with the GTK
-   theme and ignores our background — with a dark GTK theme they turned
-   black with dark text. appearance:none + a chevron in currentColor
-   keeps every select on our tokens. */
-select:not([multiple]):not([size]) {
-  -webkit-appearance: none;
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
-  background-size: 4px 4px, 4px 4px;
-  background-repeat: no-repeat;
-  padding-right: 20px !important;
-}
-select option { background-color: var(--color-bg-surface); color: var(--color-text-primary); }
+// Select look: _player-clarity.scss (with $global-scope for the library).
 
 /* ── App modals: clearer hierarchy and contrast ────────────────────── */
 .app-modal-backdrop, .xc-nokey-backdrop {

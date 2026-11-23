@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { versionDefines } from './scripts/build-version.mjs';
 import { resolve, dirname } from 'path';
 import { readFileSync } from 'fs';
+import { PACKAGE_ENTRIES } from './scripts/package-entries.mjs';
 
 // Library build only: Vite inlines every asset as base64 in lib mode, which
 // put the 510 kB aw-dsp WASM into the bundle three times (?url import plus
@@ -69,7 +70,16 @@ function dropWbgDefaultUrl() {
     };
 }
 
-export default defineConfig({
+// Two passes (npm run build): ESM with one file per package entry and shared
+// chunks, so hosts that import 'signavis/core' get only the core; then the IIFE
+// (a single script, so a single entry) from the full index.
+const ESM_ENTRIES = Object.fromEntries(
+    Object.entries(PACKAGE_ENTRIES).map(([name, e]) => [name, resolve(__dirname, e.src)]),
+);
+
+export default defineConfig(({ mode }) => {
+  const IIFE = mode === 'iife';
+  return {
   plugins: [wasmAsFile(), dropWbgDefaultUrl()],
   worker: { plugins: () => [dropWbgDefaultUrl()] },
   define: versionDefines(),
@@ -79,18 +89,17 @@ export default defineConfig({
     },
     build: {
         lib: {
-            entry: resolve(__dirname, 'src/app/BirdNETPlayer.ts'),
+            entry: IIFE ? resolve(__dirname, 'src/index.ts') : ESM_ENTRIES,
             name: 'BirdNETPlayerModule',
-            formats: ['es', 'iife'],
-            fileName: (format) => {
-                if (format === 'es')   return 'birdnet-player.esm.js';
+            formats: IIFE ? ['iife'] : ['es'],
+            fileName: (format, entryName) => {
                 if (format === 'iife') return 'birdnet-player.iife.js';
-                return `birdnet-player.${format}.js`;
+                return `${entryName}.esm.js`;
             },
             cssFileName: 'birdnet-player',
         },
         outDir: 'dist',
-        emptyOutDir: true,
+        emptyOutDir: !IIFE,
         rollupOptions: {
             // WaveSurfer is loaded at runtime (CDN / global / option),
             // NOT bundled — mark as external if it ever shows up as import
@@ -101,6 +110,10 @@ export default defineConfig({
                 },
                 // Ensure IIFE wraps exports on the right global
                 exports: 'named',
+                // The chunk shared by both ESM entries holds the player: name it so
+                // (rolldown would call it after the core entry, next to tauri's core-*.js).
+                chunkFileNames: (chunk) => (chunk.moduleIds.some((id) => id.includes('/src/app/BirdNETPlayer.ts'))
+                    ? 'signavis-player-[hash].js' : '[name]-[hash].js'),
                 // IIFE has no import.meta.url: remember this bundle's <script>
                 // src (local to the bundle) for locating aw_dsp_wasm_bg.wasm.
                 intro: (chunk) => (chunk.isEntry ? IIFE_INTRO : ''),
@@ -110,4 +123,5 @@ export default defineConfig({
         minify: true,
         sourcemap: true,
     },
+};
 });
