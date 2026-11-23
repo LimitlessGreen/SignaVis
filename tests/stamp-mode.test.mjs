@@ -325,3 +325,10 @@ test('stamp from manual ref preserves tags and author', () => {
     assert.equal(stamped.author, 'MyUser', 'manual author should carry over');
     assert.deepStrictEqual(stamped.tags, { soundType: 'call' }, 'manual tags should carry over');
 });
+
+test('SpectrogramLabelLayer._normalize keeps a valid channel, drops junk', () => {
+    const { layer } = createLayer();
+    assert.equal(layer._normalize({ start: 0, end: 1, freqMin: 1000, freqMax: 5000, channel: 1 }).channel, 1);
+    assert.equal('channel' in layer._normalize({ start: 0, end: 1, freqMin: 1000, freqMax: 5000 }), false);
+    assert.equal('channel' in layer._normalize({ start: 0, end: 1, freqMin: 1000, freqMax: 5000, channel: -1 }), false);
+});

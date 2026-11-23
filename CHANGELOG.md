@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Channel selection**: also under Settings → Display. Player API: `channel`
+  option, `setChannel()`, `getChannel()` and the `channelselectionchange` event.
+- Labels remember the **channel** they were made on (drawn, stamped, pasted,
+  BirdNET, BirdBox); labels on the mix or on mono recordings carry none. The
+  Raven export writes it to the Channel column (1-based), the JSON exports as
+  `channel` (0-based); the label table has an optional "Ch" column.
+
 ## [1.4.1] - 2026-11-23
 
 ### Changed

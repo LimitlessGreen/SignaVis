@@ -2,6 +2,7 @@
 // xenoCantoRecordingsApi.js — Xeno-canto recordings API helpers
 // ═══════════════════════════════════════════════════════════════════════
 
+import { importAnnotaTags } from '../../domain/labelFields.ts';
 import {
     firstNonEmpty, toFiniteNumber, normalizeXcId, resolveFetch,
 } from './xcHelpers.ts';
@@ -151,21 +152,10 @@ function _buildXcLabel(src: any, index: number, meta: any) {
 
     const annSciName = firstNonEmpty([src.scientific_name, src.scientificName]) || '';
     const annotator = firstNonEmpty([src.annotator, src.annotator_name]) || '';
-    const animalSeen = firstNonEmpty([src.animal_seen, src.animalSeen, recAnimalSeen]) || '';
-    const playbackUsed = firstNonEmpty([src.playback_used, src.playbackUsed, recPlaybackUsed]) || '';
-    const remarks = firstNonEmpty([src.annotation_remarks, src.remarks, src.notes]) || '';
     if (annotator) tags.annotator = annotator;
-    if (animalSeen) tags.animalSeen = animalSeen;
-    if (playbackUsed) tags.playbackUsed = playbackUsed;
-    if (remarks) tags.remarks = remarks;
-    const overlap = firstNonEmpty([src.overlap]) || '';
-    const collectionDate = firstNonEmpty([src.collection_date, src.collectionDate]) || '';
-    const collectionSpecimen = firstNonEmpty([src.collection_specimen, src.collectionSpecimen]) || '';
-    const temperature = firstNonEmpty([src.temperature]) || '';
-    if (overlap) tags.overlap = overlap;
-    if (collectionDate) tags.collectionDate = collectionDate;
-    if (collectionSpecimen) tags.collectionSpecimen = collectionSpecimen;
-    if (temperature) tags.temperature = temperature;
+    // Remarks, animal seen, playback, overlap, collection, temperature (domain/labelFields.ts);
+    // seen / playback fall back to the recording's values
+    Object.assign(tags, importAnnotaTags(src, { animalSeen: recAnimalSeen, playbackUsed: recPlaybackUsed }));
     const annotatorXcId = firstNonEmpty([src.annotator_xc_id, src.annotatorXcId]) || '';
     const dateIdentified = firstNonEmpty([src.date_identified, src.dateIdentified]) || '';
     const snrRaw = Number(firstNonEmpty([src.signal_noise_ratio, src.snr]));

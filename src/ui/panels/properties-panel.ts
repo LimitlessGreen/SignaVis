@@ -19,7 +19,7 @@ import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-mod
 import { formatCoords } from '../../app/recording-context.ts';
 import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
-import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, formatAnnotaValue, toYN } from '../../domain/annotaFields.ts';
+import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, PROP_FIELDS, formatAnnotaValue, toYN } from '../../domain/labelFields.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
@@ -50,8 +50,8 @@ const RECORDING_FIELDS = [
  * @typedef {'text'|'number'|'color'} EditType
  */
 
-/** @type {Array<{key: string, label: string, fmt?: (v:any)=>string, edit?: EditType, step?: number, suffix?: string}>} */
-const LABEL_FIELDS = [
+interface LabelRow { key: string; label: string; fmt?: (v: any) => string; edit?: 'text' | 'number' | 'color'; step?: number; suffix?: string }
+const LABEL_FIELDS: LabelRow[] = [
   { key: 'label',            label: 'Name',            edit: 'text' },
   { key: 'scientificName',   label: 'Scientific name', edit: 'text' },
   { key: 'start',            label: 'Start',           edit: 'number', step: 0.001, suffix: 's', fmt: (v: any) => `${Number(v).toFixed(3)} s` },
@@ -59,10 +59,15 @@ const LABEL_FIELDS = [
   { key: 'freqMin',          label: 'Freq min',        edit: 'number', step: 1,     suffix: 'Hz', fmt: (v: any) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
   { key: 'freqMax',          label: 'Freq max',        edit: 'number', step: 1,     suffix: 'Hz', fmt: (v: any) => v != null ? `${Number(v).toFixed(0)} Hz` : '' },
   { key: 'confidence',       label: 'Confidence',      fmt: (v: any) => v != null ? `${(Number(v) * 100).toFixed(1)}%` : '' },
+  // Property fields (channel, …): read-only, shown when set (domain/labelFields.ts)
+  ...PROP_FIELDS.map((f) => ({ key: f.key, label: f.label, fmt: f.display })),
   { key: 'origin',           label: 'Origin' },
   { key: 'author',           label: 'Author',          edit: 'text' },
   { key: 'color',            label: 'Color',           edit: 'color' },
 ];
+
+/** Keys of the label rows (tests check every label field has one). */
+export const PROPERTIES_LABEL_KEYS = LABEL_FIELDS.map((f) => f.key);
 
 const PRESET_MAP = new Map(TAG_PRESETS.map((p) => [p.key, p.options]));
 

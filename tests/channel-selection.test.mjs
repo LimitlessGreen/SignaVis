@@ -89,3 +89,25 @@ test('spectrogram cache key differs per channel even when the sample fingerprint
     assert.equal(await keyOf(l, { mode: 'single', channel: 0 }), await keyOf(l, { mode: 'single', channel: 0 }));
     assert.equal(withChannelKey(opts, 1), opts, 'mono keys stay as they were');
 });
+
+test('public channel option: mix/left/right/index round-trip, junk rejected', async () => {
+    const { toChannelSelection, toChannelOption } = await import('../src/shared/channels.ts');
+    assert.deepEqual(toChannelSelection('mix'), { mode: 'mix' });
+    assert.deepEqual(toChannelSelection('left'), { mode: 'single', channel: 0 });
+    assert.deepEqual(toChannelSelection('right'), { mode: 'single', channel: 1 });
+    assert.deepEqual(toChannelSelection(3), { mode: 'single', channel: 3 });
+    for (const bad of [-1, 1.5, 'center', null, undefined, '1']) assert.equal(toChannelSelection(bad), null, String(bad));
+    assert.equal(toChannelOption({ mode: 'mix' }), 'mix');
+    assert.equal(toChannelOption({ mode: 'single', channel: 2 }), 2);
+});
+
+test('labelChannel: the selected channel of a multichannel buffer, else none', async () => {
+    const { labelChannel, validLabelChannel } = await import('../src/shared/channels.ts');
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'single', channel: 1 }), 1);
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'mix' }), undefined);
+    assert.equal(labelChannel({ numberOfChannels: 1 }, { mode: 'single', channel: 0 }), undefined);
+    assert.equal(labelChannel({ numberOfChannels: 2 }, { mode: 'single', channel: 4 }), undefined, 'falls back to mix');
+    assert.equal(labelChannel(null), undefined);
+    assert.equal(validLabelChannel('2'), 2);
+    assert.equal(validLabelChannel(1.5), undefined);
+});

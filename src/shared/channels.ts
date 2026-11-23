@@ -102,6 +102,39 @@ export function withChannelKey<T extends object>(params: T, nChannels: number, s
     return { ...params, channels: channelSelectionKey(effectiveSelection(sel, nChannels)) };
 }
 
+/**
+ * Channel to store on a label made now from `buf`: the selected channel (0-based) of a
+ * multichannel recording, or undefined for mono recordings and the mix (= all channels).
+ */
+export function labelChannel(buf: { numberOfChannels: number } | null | undefined, sel: ChannelSelection = current): number | undefined {
+    if (!buf || buf.numberOfChannels <= 1) return undefined;
+    const eff = effectiveSelection(sel, buf.numberOfChannels);
+    return eff.mode === 'single' ? eff.channel : undefined;
+}
+
+/** A label's `channel` if it is a valid 0-based index, else undefined (= all channels). */
+export function validLabelChannel(v: unknown): number | undefined {
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 1000 ? n : undefined;
+}
+
+/** Public form of a selection: 'mix', 'left' (= 0), 'right' (= 1) or a 0-based channel index. */
+export type ChannelOption = 'mix' | 'left' | 'right' | number;
+
+/** ChannelOption → ChannelSelection; null for anything invalid. */
+export function toChannelSelection(v: unknown): ChannelSelection | null {
+    if (v === 'mix') return { mode: 'mix' };
+    if (v === 'left') return { mode: 'single', channel: 0 };
+    if (v === 'right') return { mode: 'single', channel: 1 };
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1000) return { mode: 'single', channel: v };
+    return null;
+}
+
+/** ChannelSelection → ChannelOption ('mix' or a 0-based index). */
+export function toChannelOption(sel: ChannelSelection): 'mix' | number {
+    return sel.mode === 'mix' ? 'mix' : sel.channel;
+}
+
 /** Short label for UI: "Mix", "L", "R", or "Ch 3". */
 export function channelLabel(sel: ChannelSelection, n: number): string {
     if (sel.mode === 'mix') return 'Mix';

@@ -32,6 +32,8 @@ export const ANNOTA_WARN_ANNOTATION_FIELDS = [
 ] as const;
 
 
+import { annotaFieldValues, isoDay } from '../../domain/labelFields.ts';
+
 const str = (v: any) => (v == null ? '' : String(v).trim());
 
 /** 'XC12345' / 'xc 12345' / 12345 → '12345' */
@@ -39,15 +41,6 @@ export function normalizeXcNr(v: any) {
     return str(v).replace(/^xc\s*/i, '');
 }
 
-/** Yes/no-ish values → 'y' | 'n' | '' (unknown). */
-export function toYesNo(v: any): 'y' | 'n' | '' {
-    if (v === true) return 'y';
-    if (v === false) return 'n';
-    const s = str(v).toLowerCase();
-    if (['y', 'yes', 'true', '1', 'ja', 'j'].includes(s)) return 'y';
-    if (['n', 'no', 'false', '0', 'nein'].includes(s)) return 'n';
-    return '';
-}
 
 /** 'all' | 'part' | '' — accepts legacy free-text values ('complete', 'partial', …). */
 export function normalizeCompleteness(v: any): 'all' | 'part' | '' {
@@ -77,11 +70,6 @@ function freqValue(v: any) {
     return Number.isFinite(n) ? n.toFixed(1) : null;
 }
 
-function isoDate(v: any) {
-    if (v == null || v === '') return '';
-    const d = typeof v === 'number' ? new Date(v) : new Date(String(v));
-    return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
-}
 
 /** Labels whose frequency range was never set explicitly (e.g. full-band) carry `freqUnset`. */
 function labelFrequencies(l: any) {
@@ -127,18 +115,16 @@ export function buildAnnotaAnnotation(l: any, ctx: { defaultXcNr?: any; annotato
         frequency_high: high,
         scientific_name: str(l?.scientificName ?? l?.scientific_name),
         sound_type: str(tags.soundType),
-        date_identified: isoDate(l?.updatedAt ?? l?.createdAt),
+        date_identified: isoDay(l?.updatedAt ?? l?.createdAt),
         sex: str(tags.sex),
         life_stage: str(tags.lifeStage),
-        animal_seen: toYesNo(tags.animalSeen),
-        playback_used: toYesNo(tags.playbackUsed),
-        collection_date: isoDate(tags.collectionDate),
-        collection_specimen: str(tags.collectionSpecimen),
-        temperature: str(tags.temperature),
-        annotation_remarks: [str(tags.remarks), tags.referenceXc ? `compared with ${str(tags.referenceXc)}` : '']
-            .filter(Boolean).join('; '),
-        overlap: toYesNo(tags.overlap),
+        // Remarks, animal seen, playback, overlap, collection, temperature (domain/labelFields.ts)
+        ...annotaFieldValues(tags),
     };
+    // A reference recording the label was compared with goes into the remarks
+    if (tags.referenceXc) {
+        ann.annotation_remarks = [ann.annotation_remarks, `compared with ${str(tags.referenceXc)}`].filter(Boolean).join('; ');
+    }
     if (ann.frequency_low === null) delete ann.frequency_low;
     if (ann.frequency_high === null) delete ann.frequency_high;
     return ann;
