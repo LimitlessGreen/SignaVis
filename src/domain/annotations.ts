@@ -557,12 +557,12 @@ class AnnotationLayerBase extends EventTarget {
         if (!sel.dataset.awBound) {
             sel.dataset.awBound = '1';
             let stored: string | null = null;
-            try { stored = localStorage.getItem('aw-label-dense'); } catch { /* storage blocked */ }
+            stored = prefs.get('aw-label-dense');
             // Only a remembered or user-made choice overrides each view's own default
             if (stored && [...sel.options].some((o) => o.value === stored)) { sel.value = stored; sel.dataset.awUser = '1'; }
             sel.addEventListener('change', () => {
                 sel.dataset.awUser = '1';
-                try { localStorage.setItem('aw-label-dense', sel.value); } catch { /* storage blocked */ }
+                prefs.set('aw-label-dense', sel.value);
                 p?.spectrogramLabels?.render?.();
                 p?.annotations?.render?.();
             });

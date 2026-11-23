@@ -5,7 +5,11 @@
    Rules: nothing hides the signal (no fill, name/buttons outside) · colour = species/set ·
    stroke = origin (solid own, dashed suggestion, dotted similar call) · weight = state. */
 
-:root {
+// Where the tokens live: ':root' in the app (main.scss); player.scss sets '.daw-shell'
+// so the library sets nothing on the host page.
+$root: ':root' !default;
+
+#{$root} {
     --label-frame: 1.5px;
     --label-frame-strong: 2px;
     --label-halo: 0 0 0 1px rgba(0, 0, 0, 0.55);

@@ -17,6 +17,7 @@ $scope: ':where(.daw-shell) ';   // see $global-scope in the configured partials
 @use "../ui/components/transport/transport";
 @use "../ui/components/playhead/playhead";
 @use "../ui/components/settings-panel/settings-panel";
+@use "components/label-tokens" with ($root: '.daw-shell');
 @use "components/annotation";
 @use "components/spectrogram-labels";
 @use "components/label-editor";
