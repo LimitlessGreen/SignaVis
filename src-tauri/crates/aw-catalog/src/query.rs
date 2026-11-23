@@ -45,7 +45,7 @@ pub struct Filter {
 }
 
 /// Nesting limit for dynamic datasets that refer to other datasets (also stops cycles).
-const MAX_DATASET_DEPTH: usize = 4;
+pub(crate) const MAX_DATASET_DEPTH: usize = 4;
 
 const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
 /// Effective position: own, else the site's.

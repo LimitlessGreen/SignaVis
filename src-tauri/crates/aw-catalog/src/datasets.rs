@@ -35,13 +35,32 @@ pub struct DatasetInfo {
 #[serde(rename_all = "camelCase", default)]
 pub struct DatasetEdit {
     pub name: Option<String>,
-    pub description: Option<String>,
+    /// `None` = keep; `Some(None)` = clear (`null` in JSON).
+    #[serde(deserialize_with = "present_or_null")]
+    pub description: Option<Option<String>>,
     pub color: Option<String>,
     /// Only for dynamic datasets.
     pub filter: Option<Filter>,
 }
 
+/// Reads `null` as `Some(None)`, so an explicit clear differs from an omitted field.
+fn present_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(d).map(Some)
+}
+
 fn clean(s: &Option<String>) -> Option<String> { s.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(String::from) }
+
+/// Colours end up in style attributes: only #rgb, #rgba, #rrggbb or #rrggbbaa.
+fn check_color(c: &Option<String>) -> Result<Option<String>> {
+    let c = clean(c);
+    if let Some(x) = &c {
+        let hex = x.strip_prefix('#').unwrap_or("");
+        if ![3, 4, 6, 8].contains(&hex.len()) || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return Err(format!("not a colour: {x} (use #rrggbb)").into());
+        }
+    }
+    Ok(c)
+}
 
 fn check_name(cat: &Catalog, name: &str, except: Option<i64>) -> Result<String> {
     let n = name.trim();
@@ -53,36 +72,68 @@ fn check_name(cat: &Catalog, name: &str, except: Option<i64>) -> Result<String> 
 }
 
 /// A filter that only narrows to the dataset itself would be a loop; nested datasets are fine.
-fn check_filter(cat: &Catalog, f: &Filter, own: Option<i64>) -> Result<String> {
+fn check_filter(f: &Filter, own: Option<i64>) -> Result<String> {
     if own.is_some() && f.dataset_id == own { return Err("a dataset's filter cannot refer to the dataset itself".into()); }
-    let json = serde_json::to_string(f)?;
-    if let Some(id) = own {
-        // Evaluate once with the new filter in place to catch indirect cycles before saving.
-        let tx = cat.conn.unchecked_transaction()?;
-        tx.execute("UPDATE dataset SET filter_json = ?1 WHERE id = ?2", params![json, id])?;
-        let r = query::ids(cat, &Filter { dataset_id: Some(id), ..Default::default() });
-        tx.rollback()?;
-        r?;
-    } else {
-        query::ids(cat, f)?;
+    Ok(serde_json::to_string(f)?)
+}
+
+/// After a change (inside the caller's transaction): every dataset that could be evaluated
+/// before must still be (no cycle, nesting not too deep, also for datasets that build on it).
+fn check_nesting(cat: &Catalog, was_ok: &[i64]) -> Result<()> {
+    for &id in was_ok {
+        query::where_clause(cat, &Filter { dataset_id: Some(id), ..Default::default() }, query::Skip::None)
+            .map_err(|e| format!("this change would break dataset {}: {e}", name_of(cat, id)))?;
     }
-    Ok(json)
+    Ok(())
+}
+
+fn name_of(cat: &Catalog, id: i64) -> String {
+    cat.conn.query_row("SELECT name FROM dataset WHERE id = ?1", [id], |r| r.get(0)).unwrap_or_else(|_| format!("#{id}"))
+}
+
+/// Datasets whose filter can be evaluated now.
+fn evaluable(cat: &Catalog) -> Result<Vec<i64>> {
+    let all: Vec<i64> = cat.conn.prepare("SELECT id FROM dataset")?.query_map([], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+    Ok(all.into_iter().filter(|&id| query::where_clause(cat, &Filter { dataset_id: Some(id), ..Default::default() }, query::Skip::None).is_ok()).collect())
+}
+
+/// Next dataset id: above every id in use and every id a saved filter still refers to, so a
+/// filter pointing at a deleted dataset never silently matches a new one.
+fn next_id(cat: &Catalog) -> Result<i64> {
+    let mut max: i64 = cat.conn.query_row("SELECT COALESCE(MAX(id), 0) FROM dataset", [], |r| r.get(0))?;
+    let mut st = cat.conn.prepare("SELECT filter_json FROM dataset WHERE filter_json IS NOT NULL")?;
+    for j in st.query_map([], |r| r.get::<_, String>(0))? {
+        if let Ok(f) = serde_json::from_str::<Filter>(&j?) { max = max.max(f.dataset_id.unwrap_or(0)); }
+    }
+    Ok(max + 1)
 }
 
 pub fn create(cat: &Catalog, kind: &str, e: &DatasetEdit) -> Result<i64> {
+    let tx = cat.conn.unchecked_transaction()?;
+    let id = create_in(cat, kind, e)?;
+    tx.commit()?;
+    Ok(id)
+}
+
+/// `create` inside the caller's transaction.
+fn create_in(cat: &Catalog, kind: &str, e: &DatasetEdit) -> Result<i64> {
     if kind != "static" && kind != "filter" { return Err(format!("unknown dataset kind {kind}").into()); }
     let name = check_name(cat, e.name.as_deref().unwrap_or(""), None)?;
     let filter_json = match (kind, &e.filter) {
-        ("filter", Some(f)) => Some(check_filter(cat, f, None)?),
+        ("filter", Some(f)) => Some(check_filter(f, None)?),
         ("filter", None) => return Err("a dynamic dataset needs a filter".into()),
         _ => None,
     };
+    let color = check_color(&e.color)?;
+    let id = next_id(cat)?;
     let now = now_ms();
     cat.conn.execute(
-        "INSERT INTO dataset(uid, name, description, kind, filter_json, color, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-        params![new_uid(), name, clean(&e.description), kind, filter_json, clean(&e.color), now])?;
-    Ok(cat.conn.last_insert_rowid())
+        "INSERT INTO dataset(id, uid, name, description, kind, filter_json, color, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        params![id, new_uid(), name, clean(&e.description.clone().flatten()), kind, filter_json, color, now])?;
+    // Evaluated from the new dataset itself: its own level counts towards the nesting limit.
+    check_nesting(cat, &[id])?;
+    Ok(id)
 }
 
 fn kind_of(cat: &Catalog, id: i64) -> Result<String> {
@@ -90,20 +141,27 @@ fn kind_of(cat: &Catalog, id: i64) -> Result<String> {
         .ok_or_else(|| format!("unknown dataset {id}").into())
 }
 
+/// Change a dataset: everything is checked first and written together (or nothing is).
 pub fn update(cat: &Catalog, id: i64, e: &DatasetEdit) -> Result<()> {
     let kind = kind_of(cat, id)?;
-    if let Some(n) = &e.name {
-        let n = check_name(cat, n, Some(id))?;
-        cat.conn.execute("UPDATE dataset SET name = ?1 WHERE id = ?2", params![n, id])?;
-    }
-    if e.description.is_some() { cat.conn.execute("UPDATE dataset SET description = ?1 WHERE id = ?2", params![clean(&e.description), id])?; }
-    if e.color.is_some() { cat.conn.execute("UPDATE dataset SET color = ?1 WHERE id = ?2", params![clean(&e.color), id])?; }
-    if let Some(f) = &e.filter {
-        if kind != "filter" { return Err("only dynamic datasets have a filter".into()); }
-        let json = check_filter(cat, f, Some(id))?;
+    let name = e.name.as_deref().map(|n| check_name(cat, n, Some(id))).transpose()?;
+    let color = if e.color.is_some() { Some(check_color(&e.color)?) } else { None };
+    let filter = match &e.filter {
+        Some(_) if kind != "filter" => return Err("only dynamic datasets have a filter".into()),
+        Some(f) => Some(check_filter(f, Some(id))?),
+        None => None,
+    };
+    let was_ok = if filter.is_some() { evaluable(cat)? } else { vec![] };
+    let tx = cat.conn.unchecked_transaction()?;
+    if let Some(n) = name { cat.conn.execute("UPDATE dataset SET name = ?1 WHERE id = ?2", params![n, id])?; }
+    if let Some(d) = &e.description { cat.conn.execute("UPDATE dataset SET description = ?1 WHERE id = ?2", params![clean(d), id])?; }
+    if let Some(c) = color { cat.conn.execute("UPDATE dataset SET color = ?1 WHERE id = ?2", params![c, id])?; }
+    if let Some(json) = filter {
         cat.conn.execute("UPDATE dataset SET filter_json = ?1 WHERE id = ?2", params![json, id])?;
+        check_nesting(cat, &was_ok)?;   // also the datasets that build on this one
     }
     cat.conn.execute("UPDATE dataset SET updated_at = ?1 WHERE id = ?2", params![now_ms(), id])?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -141,10 +199,18 @@ pub fn list(cat: &Catalog) -> Result<Vec<DatasetInfo>> {
 /// Add recordings to a static dataset, whole or as the range `t0..t1` seconds. Whole recordings
 /// already in it and identical ranges are skipped. Returns how many members were added.
 pub fn add_members(cat: &mut Catalog, id: i64, sel: &Selection, range: Option<(f64, f64)>) -> Result<usize> {
+    let tx = cat.conn.unchecked_transaction()?;
+    let added = add_members_in(cat, id, sel, range)?;
+    tx.commit()?;
+    Ok(added)
+}
+
+/// `add_members` inside the caller's transaction.
+fn add_members_in(cat: &Catalog, id: i64, sel: &Selection, range: Option<(f64, f64)>) -> Result<usize> {
     if kind_of(cat, id)? != "static" { return Err("members can only be added to a static dataset".into()); }
     if let Some((a, b)) = range && !(a >= 0.0 && b > a) { return Err("time range must have 0 ≤ start < end".into()); }
     let ids = selected_ids(cat, sel)?;
-    let tx = cat.conn.transaction()?;
+    let tx = &cat.conn;
     let mut added = 0;
     {
         let mut whole = tx.prepare("SELECT 1 FROM dataset_member WHERE dataset_id = ?1 AND recording_id = ?2 AND t0 IS NULL")?;
@@ -168,7 +234,6 @@ pub fn add_members(cat: &mut Catalog, id: i64, sel: &Selection, range: Option<(f
         }
     }
     tx.execute("UPDATE dataset SET updated_at = ?1 WHERE id = ?2", params![now_ms(), id])?;
-    tx.commit()?;
     Ok(added)
 }
 
@@ -190,10 +255,13 @@ pub fn remove_members(cat: &mut Catalog, id: i64, sel: &Selection) -> Result<usi
 /// Remove one time range of a recording from a static dataset. Returns 1 if it was there.
 pub fn remove_range(cat: &Catalog, id: i64, recording_id: i64, t0: f64, t1: f64) -> Result<usize> {
     if kind_of(cat, id)? != "static" { return Err("ranges only exist in static datasets".into()); }
-    // Ranges come back from JSON: compare with a small tolerance.
-    let n = cat.conn.execute(
-        "DELETE FROM dataset_member WHERE dataset_id = ?1 AND recording_id = ?2 AND abs(t0 - ?3) < 1e-6 AND abs(t1 - ?4) < 1e-6",
-        params![id, recording_id, t0, t1])?;
+    // Ranges come back from JSON: the nearest stored range within a small tolerance, only that one
+    // (two ranges a millionth apart are two ranges).
+    let row: Option<i64> = cat.conn.query_row(
+        "SELECT rowid FROM dataset_member WHERE dataset_id = ?1 AND recording_id = ?2 AND abs(t0 - ?3) < 1e-6 AND abs(t1 - ?4) < 1e-6
+         ORDER BY abs(t0 - ?3) + abs(t1 - ?4) LIMIT 1",
+        params![id, recording_id, t0, t1], |r| r.get(0)).optional()?;
+    let n = match row { Some(r) => cat.conn.execute("DELETE FROM dataset_member WHERE rowid = ?1", [r])?, None => 0 };
     if n > 0 { cat.conn.execute("UPDATE dataset SET updated_at = ?1 WHERE id = ?2", params![now_ms(), id])?; }
     Ok(n)
 }
@@ -206,16 +274,20 @@ pub fn duplicate(cat: &mut Catalog, id: i64, name: &str, freeze: bool) -> Result
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional()?.ok_or_else(|| format!("unknown dataset {id}"))?;
     let to_static = kind == "static" || freeze;
     let e = DatasetEdit {
-        name: Some(name.into()), description: desc, color,
+        name: Some(name.into()), description: Some(desc), color,
         filter: if to_static { None } else { fj.as_deref().map(serde_json::from_str).transpose()? },
     };
-    let new_id = create(cat, if to_static { "static" } else { "filter" }, &e)?;
+    // One transaction: a freeze that fails (e.g. the source refers to a deleted dataset) leaves no
+    // empty snapshot behind that would block a retry under the same name.
+    let tx = cat.conn.unchecked_transaction()?;
+    let new_id = create_in(cat, if to_static { "static" } else { "filter" }, &e)?;
     if kind == "static" {
         cat.conn.execute("INSERT INTO dataset_member(dataset_id, recording_id, t0, t1)
             SELECT ?1, recording_id, t0, t1 FROM dataset_member WHERE dataset_id = ?2", params![new_id, id])?;
     } else if freeze {
-        add_members(cat, new_id, &Selection { ids: None, filter: Some(Filter { dataset_id: Some(id), ..Default::default() }) }, None)?;
+        add_members_in(cat, new_id, &Selection { ids: None, filter: Some(Filter { dataset_id: Some(id), ..Default::default() }) }, None)?;
     }
+    tx.commit()?;
     Ok(new_id)
 }
 
@@ -283,6 +355,73 @@ mod tests {
     }
     fn named(n: &str) -> DatasetEdit { DatasetEdit { name: Some(n.into()), ..Default::default() } }
     fn site_ids(cat: &Catalog) -> Vec<i64> { facets(cat, &Filter::default()).unwrap().sites.iter().map(|s| s.id).collect() }
+
+    fn dyn_on(name: &str, inner: Option<i64>) -> DatasetEdit {
+        DatasetEdit { filter: Some(Filter { dataset_id: inner, hour_from: Some(0), hour_to: Some(23), ..Default::default() }), ..named(name) }
+    }
+    /// A → B → C → … chain of `n` dynamic datasets (the first has no inner one); returns their ids.
+    fn chain(cat: &Catalog, n: usize) -> Vec<i64> {
+        let mut ids: Vec<i64> = Vec::new();
+        for i in 0..n { ids.push(create(cat, "filter", &dyn_on(&format!("D{i}"), ids.last().copied())).unwrap()); }
+        ids
+    }
+
+    #[test]
+    fn nesting_limit_counts_the_new_dataset_and_dependents() {
+        let cat = fixture();
+        let depth = query::MAX_DATASET_DEPTH;
+        let ids = chain(&cat, depth);   // the deepest allowed chain
+        assert!(list(&cat).unwrap().iter().all(|d| d.error.is_none()));
+        assert!(create(&cat, "filter", &dyn_on("too deep", ids.last().copied())).is_err(), "one more level is refused at creation");
+        assert!(list(&cat).unwrap().iter().all(|d| d.name != "too deep"));
+        // Editing the innermost to refer to another dataset would push the outermost over the limit.
+        let other = create(&cat, "filter", &dyn_on("other", None)).unwrap();
+        let e = update(&cat, ids[0], &DatasetEdit { filter: Some(Filter { dataset_id: Some(other), ..Default::default() }), ..Default::default() });
+        assert!(e.is_err());
+        assert!(list(&cat).unwrap().iter().all(|d| d.error.is_none()), "nothing changed");
+    }
+
+    #[test]
+    fn a_failed_edit_changes_nothing_and_null_clears_the_description() {
+        let cat = fixture();
+        let d = create(&cat, "filter", &DatasetEdit { description: Some(Some("old".into())), ..dyn_on("A", None) }).unwrap();
+        let bad = DatasetEdit { name: Some("B".into()), filter: Some(Filter { dataset_id: Some(d), ..Default::default() }), ..Default::default() };
+        assert!(update(&cat, d, &bad).is_err());
+        assert_eq!(list(&cat).unwrap()[0].name, "A");
+        assert!(update(&cat, d, &DatasetEdit { color: Some("red\" onclick=\"x".into()), ..Default::default() }).is_err());
+        update(&cat, d, &DatasetEdit { color: Some("#4cb5e8".into()), ..Default::default() }).unwrap();
+        let clear: DatasetEdit = serde_json::from_str(r#"{"description": null}"#).unwrap();
+        update(&cat, d, &clear).unwrap();
+        assert_eq!(list(&cat).unwrap()[0].description, None);
+        let keep: DatasetEdit = serde_json::from_str(r#"{"name": "A2"}"#).unwrap();
+        assert_eq!(keep.description, None, "omitted = keep");
+    }
+
+    #[test]
+    fn a_failed_freeze_leaves_no_snapshot_and_ids_are_not_reused() {
+        let mut cat = fixture();
+        let inner = create(&cat, "filter", &dyn_on("inner", None)).unwrap();
+        let outer = create(&cat, "filter", &dyn_on("outer", Some(inner))).unwrap();
+        delete(&cat, inner).unwrap();
+        assert!(duplicate(&mut cat, outer, "frozen", true).is_err());
+        assert!(list(&cat).unwrap().iter().all(|d| d.name != "frozen"));
+        // A new dataset must not take the deleted id that `outer` still refers to.
+        let fresh = create(&cat, "static", &named("fresh")).unwrap();
+        assert_ne!(fresh, inner);
+        assert!(list(&cat).unwrap().iter().find(|d| d.id == outer).unwrap().error.is_some(), "still reports the missing dataset");
+    }
+
+    #[test]
+    fn remove_range_removes_only_the_nearest_range() {
+        let mut cat = fixture();
+        let d = create(&cat, "static", &named("R")).unwrap();
+        let r = ids(&cat, &Filter::default()).unwrap()[0];
+        let sel = Selection { ids: Some(vec![r]), filter: None };
+        add_members(&mut cat, d, &sel, Some((5.0, 8.0))).unwrap();
+        add_members(&mut cat, d, &sel, Some((5.000_000_5, 8.000_000_5))).unwrap();
+        assert_eq!(remove_range(&cat, d, r, 5.0, 8.0).unwrap(), 1);
+        assert_eq!(recording_datasets(&cat, r).unwrap()[0].ranges, vec![(5.000_000_5, 8.000_000_5)]);
+    }
 
     #[test]
     fn static_members_whole_and_ranges() {
