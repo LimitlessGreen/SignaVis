@@ -17,7 +17,8 @@ use crate::embeddings::{store_dir, store_stamp, with_loaded, EmbedState, Loaded}
 use aw_embed::{DIM, SAMPLE_RATE, WINDOW};
 
 pub const MAP_EVENT: &str = "lite-map-progress";
-const MAP_VERSION: u32 = 2;
+/// 3: Signaturen pro Datei (`sigs`); aeltere Caches werden neu berechnet.
+const MAP_VERSION: u32 = 3;
 /// Kern-Abstand fuer HDBSCAN (Mutual Reachability): Abstand zum 5. Nachbarn.
 const MIN_SAMPLES: usize = 5;
 const PCA_DIM: usize = 50;
@@ -712,7 +713,8 @@ pub(crate) fn update_map(old: &MapData, l: &Loaded, sigs: &std::collections::Has
     // Dateien, deren Inhalt sich geaendert hat (andere Signatur), zaehlen nicht als alt.
     let same_file = |fi: usize| {
         let f = old.files[fi].as_str();
-        old.sigs.get(fi).is_none_or(|s| sigs.get(f).is_none_or(|n| n == s))
+        // Ohne bekannte Signatur laesst sich „unveraendert“ nicht belegen: neu einsortieren.
+        matches!((old.sigs.get(fi), sigs.get(f)), (Some(s), Some(n)) if !s.is_empty() && n == s)
     };
     let old_idx: std::collections::HashMap<(String, i64), usize> = (0..old.x.len())
         .filter(|&i| same_file(old.file[i] as usize))
@@ -987,6 +989,10 @@ mod tests {
         let l1 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 0, 10)], 2);
         let same: std::collections::HashMap<&str, &str> = [("a.wav", "1:1"), ("b.wav", "2:2"), ("c.wav", "3:3")].into();
         assert_eq!(update_map(&old, &l1, &same).unwrap().placed_new, 0, "gleiche Signatur: Lage bleibt");
+        // Cache ohne Signaturen (aelteres Format): nichts gilt als unveraendert → neues Layout
+        let mut unsigned = old.clone();
+        unsigned.sigs = vec![];
+        assert!(update_map(&unsigned, &l1, &same).is_none());
         let changed: std::collections::HashMap<&str, &str> = [("a.wav", "1:1"), ("b.wav", "2:2"), ("c.wav", "9:9")].into();
         let new = update_map(&old, &l1, &changed).unwrap();
         assert_eq!(new.placed_new, 10, "Fenster der ersetzten Datei werden neu einsortiert");
@@ -1013,7 +1019,9 @@ mod tests {
     #[test]
     fn update_places_new_windows_without_moving_old_ones() {
         let l0 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 2, 100)], 1);
-        let old = assemble(&l0, project_2d(&l0.vecs, l0.rows.len(), DIM, &|_, _| {}));
+        let mut old = assemble(&l0, project_2d(&l0.vecs, l0.rows.len(), DIM, &|_, _| {}));
+        old.sigs = vec!["a".into(), "b".into(), "c".into()];
+        let sigs: std::collections::HashMap<&str, &str> = [("a.wav", "a"), ("b.wav", "b"), ("b2.wav", "b2"), ("c.wav", "c")].into();
         let centroid = |m: &MapData, f: &str| {
             let pts: Vec<usize> = (0..m.x.len()).filter(|&i| m.files[m.file[i] as usize] == f).collect();
             let c = pts.iter().fold((0.0, 0.0), |a, &i| (a.0 + m.x[i], a.1 + m.y[i]));
@@ -1021,7 +1029,7 @@ mod tests {
         };
         // 10 neue Fenster der Art b in einer neuen Datei (sortiert zwischen b und c)
         let l1 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("b2.wav", 1, 10), ("c.wav", 2, 100)], 1);
-        let new = update_map(&old, &l1, &Default::default()).expect("kleine Aenderung → inkrementell");
+        let new = update_map(&old, &l1, &sigs).expect("kleine Aenderung → inkrementell");
         assert_eq!(new.placed_new, 10);
         assert_eq!(new.x.len(), 310);
         for f in ["a.wav", "b.wav", "c.wav"] {
@@ -1040,7 +1048,7 @@ mod tests {
         assert!(b2.iter().all(|&c| c == b_label), "{b2:?} vs {b_label}");
         // Ein Drittel weg → zu viel, neues Layout
         let l2 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100)], 1);
-        assert!(update_map(&old, &l2, &Default::default()).is_none());
+        assert!(update_map(&old, &l2, &sigs).is_none());
     }
 
     #[test]
