@@ -149,16 +149,23 @@ fn clean_name(s: &str) -> String {
 /// Build one template for a group of token lists with identical shape.
 fn template_for(group: &[Vec<Tok>]) -> Option<(String, Vec<MappingSpec>)> {
     let len = group[0].len();
+    // An HHMMSS number next to a date-only block is a time of day, even when every file has the
+    // same one (a recorder that starts at 04:30 each day).
+    let has_date_only = group[0].iter().any(|t| matches!(t, Tok::Time(_, f) if !f.contains("%H")));
+    let clock_like = |i: usize| has_date_only && matches!(group[0][i], Tok::Digits(_)) && group.iter().all(|t| is_hhmmss(&t[i].text()));
     let variable: Vec<bool> = (0..len).map(|i| {
-        matches!(group[0][i], Tok::Time(..)) || group.iter().any(|t| t[i].text() != group[0][i].text())
+        matches!(group[0][i], Tok::Time(..)) || clock_like(i) || group.iter().any(|t| t[i].text() != group[0][i].text())
     }).collect();
+    let is_time = |i: usize| matches!(group[0][i], Tok::Time(..)) || clock_like(i);
     // Field slots: maximal runs of adjacent variable non-separator tokens (no field next to a field).
     let mut slots: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < len {
         if variable[i] && !matches!(group[0][i], Tok::Sep(_)) {
             let start = i;
-            while i + 1 < len && (variable[i + 1] || matches!(group[0][i + 1], Tok::Digits(_) | Tok::Alpha(_)) && variable[i])
+            // A time block stays a slot of its own (a constant suffix like the Z of 043000Z is literal text).
+            while i + 1 < len && !is_time(i) && !is_time(i + 1)
+                && (variable[i + 1] || matches!(group[0][i + 1], Tok::Digits(_) | Tok::Alpha(_)) && variable[i])
                 && !matches!(group[0][i + 1], Tok::Sep(_)) { i += 1; }
             slots.push((start, i));
         } else if variable[i] {
@@ -354,6 +361,18 @@ mod tests {
         let sm = suggest(&paths(&["SMA01234_20240501_043000.wav", "SMA01234_20240501_053000.wav", "SMA05678_20240502_043000.wav"]), 2);
         assert_eq!(sm[0].pattern, "SMA{sma}_{start:%Y%m%d_%H%M%S}.wav");
         assert_eq!(sm[0].matches, 3);
+    }
+
+    #[test]
+    fn a_constant_time_of_day_is_still_the_time() {
+        let s = suggest(&paths(&["site_A/2024-05-01/rec_043000.flac", "site_B/2024-05-02/rec_043000.flac"]), 1);
+        assert_eq!(s[0].pattern, "site_{site}/{date:%Y-%m-%d}/rec_{time:%H%M%S}.flac");
+    }
+
+    #[test]
+    fn a_letter_after_the_timestamp_stays_literal() {
+        let s = suggest(&paths(&["A/20240501_043000Z.wav", "B/20240502_051500Z.wav"]), 1);
+        assert_eq!(s[0].pattern, "{f1}/{start:%Y%m%d_%H%M%S}Z.wav");
     }
 
     #[test]

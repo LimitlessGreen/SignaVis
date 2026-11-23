@@ -56,9 +56,10 @@ pub fn scan(root: &Path, opts: &ScanOptions) -> ScanResult {
             Ok(e) => e,
             Err(e) => { out.errors.push(format!("{}: {e}", dir.display())); continue; }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry { Ok(e) => e, Err(e) => { out.errors.push(format!("{}: {e}", dir.display())); continue; } };
             let path = entry.path();
-            let Ok(ft) = entry.file_type() else { continue };
+            let ft = match entry.file_type() { Ok(t) => t, Err(e) => { out.errors.push(format!("{}: {e}", path.display())); continue; } };
             let name = entry.file_name().to_string_lossy().into_owned();
             if ft.is_dir() {
                 if depth + 1 > opts.max_depth { continue; }
@@ -72,7 +73,7 @@ pub fn scan(root: &Path, opts: &ScanOptions) -> ScanResult {
             let is_table = lower.ends_with(".selection.table.txt");
             let is_audio = !derived && lower.rsplit_once('.').is_some_and(|(_, e)| AUDIO_EXTENSIONS.contains(&e));
             if !is_table && !is_audio { continue; }
-            let Ok(md) = entry.metadata() else { continue };
+            let md = match entry.metadata() { Ok(m) => m, Err(e) => { out.errors.push(format!("{}: {e}", path.display())); continue; } };
             let mtime_ms = md.modified().ok()
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map_or(0, |d| d.as_millis() as i64);
@@ -104,5 +105,20 @@ mod tests {
         assert_eq!(r.selection_tables.len(), 1);
         assert_eq!(r.skipped_dirs, ["R1/Ergebnis", "R1/Woche_1/Probe"]);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_folders_are_reported() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("aw-scan-err-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("locked")).unwrap();
+        std::fs::write(dir.join("locked/a.wav"), b"x").unwrap();
+        std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let r = scan(&dir, &ScanOptions::default());
+        std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        if r.audio.is_empty() { assert_eq!(r.errors.len(), 1, "{:?}", r.errors); }   // (root can read anyway)
     }
 }

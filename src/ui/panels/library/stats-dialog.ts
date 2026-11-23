@@ -77,12 +77,14 @@ export class StatsDialog {
           <h4>Coverage</h4>${cov}
           <h4>Recorders</h4>
           <table class="lib-table lib-table--compact"><thead><tr><th>Recorder</th><th>First day</th><th>Last day</th><th class="num">Days</th>
-            <th class="num">Recordings</th><th class="num">Audio</th><th>Days without recordings</th></tr></thead><tbody>
+            <th class="num">Recordings</th><th class="num">Audio</th><th>${this.#o.filtered ? 'Days without matching recordings' : 'Days without recordings'}</th></tr></thead><tbody>
           ${s.devices.map((d) => `<tr><td>${esc(d.device ?? '(none)')}</td><td>${esc(d.firstDay ?? '')}</td><td>${esc(d.lastDay ?? '')}</td>
             <td class="num">${n(d.days)}</td><td class="num">${n(d.recordings)}</td><td class="num">${d.seconds ? formatDuration(d.seconds) : ''}</td>
             <td class="${d.missingDays.length ? 'lib-warn' : 'lib-hint'}">${d.missingDays.length ? `${d.missingDays.length}: ${esc(dayRanges(d.missingDays).join(', '))}` : 'none'}</td></tr>`).join('')}
           </tbody></table>
-          ${gaps.length ? `<p class="lib-hint">A missing day between the first and the last can be a failure, a full card, or a planned pause.</p>` : ''}
+          ${gaps.length ? `<p class="lib-hint">${this.#o.filtered
+              ? 'Days between the first and the last with no recording that matches the filter (the recorder may have recorded then).'
+              : 'A missing day between the first and the last can be a failure, a full card, or a planned pause.'}</p>` : ''}
           <h4>Files</h4>
           <table class="lib-table lib-table--compact"><tbody>
             <tr><td>present</td><td class="num">${n(it.ok)}</td><td class="num">${pct(it.ok)}</td></tr>

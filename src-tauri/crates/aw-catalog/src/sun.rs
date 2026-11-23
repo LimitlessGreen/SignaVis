@@ -78,9 +78,11 @@ pub fn in_window(t_ms: i64, lat: f64, lon: f64, w: &SunWindow) -> bool {
     for d in day - 2..=day + 1 {
         let Some(a) = cached_event_ms(d, lat, lon, w.from.event).map(|e| e + w.from.offset_min * 60_000) else { continue };
         if t_ms < a { continue; }
-        let b = (d..=d + 2)
+        // The first end after the start in time, whatever solar day it belongs to (offsets can move an
+        // earlier day's end past this day's start).
+        let b = (d - 1..=d + 2)
             .filter_map(|k| cached_event_ms(k, lat, lon, w.to.event).map(|e| e + w.to.offset_min * 60_000))
-            .find(|&b| b > a);
+            .filter(|&b| b > a).min();
         if let Some(b) = b && t_ms < b { return true; }
     }
     false
@@ -149,5 +151,20 @@ mod tests {
         let day = SunWindow { from: night.to, to: SunRef { event: SunEvent::Sunset, offset_min: 0 } };
         assert!(in_window(at(20, 12, 0), lat, lon, &day));
         assert!(!in_window(at(20, 23, 0), lat, lon, &day));
+    }
+
+    #[test]
+    fn the_first_end_in_time_closes_the_window() {
+        // Berlin near the March equinox: sunrise − 6 h … sunset + 8 h. The previous day's shifted
+        // sunset falls after this day's shifted sunrise, so the window is that short night stretch.
+        let (lat, lon) = (52.52, 13.40);
+        let d = Utc.with_ymd_and_hms(2023, 3, 20, 0, 0, 0).unwrap().timestamp_millis().div_euclid(DAY_MS);
+        let a = event_ms(d, lat, lon, SunEvent::Sunrise).unwrap() - 6 * 3_600_000;
+        let b = event_ms(d - 1, lat, lon, SunEvent::Sunset).unwrap() + 8 * 3_600_000;
+        assert!(b > a, "scenario: the earlier day's end lies after this start");
+        let w = SunWindow { from: SunRef { event: SunEvent::Sunrise, offset_min: -360 }, to: SunRef { event: SunEvent::Sunset, offset_min: 480 } };
+        assert!(in_window((a + b) / 2, lat, lon, &w));
+        let noon = Utc.with_ymd_and_hms(2023, 3, 20, 11, 0, 0).unwrap().timestamp_millis();
+        assert!(!in_window(noon, lat, lon, &w), "noon is not in a night window");
     }
 }

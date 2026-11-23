@@ -47,11 +47,12 @@ pub struct Filter {
 /// Nesting limit for dynamic datasets that refer to other datasets (also stops cycles).
 pub(crate) const MAX_DATASET_DEPTH: usize = 4;
 
-const LOCAL_HOUR: &str = "(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 3600000) % 24)";
+// Local wall time in ms; divided with floor (SQLite truncates toward zero, wrong before 1970).
+const LOCAL_HOUR: &str = "((((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) - (((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) % 3600000) + 3600000) % 3600000) / 3600000) % 24 + 24) % 24";
 /// Effective position: own, else the site's.
 const POS_LAT: &str = "COALESCE(r.lat, (SELECT lat FROM site WHERE id = r.site_id))";
 const POS_LON: &str = "COALESCE(r.lon, (SELECT lon FROM site WHERE id = r.site_id))";
-pub(crate) const LOCAL_DAY: &str = "date((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) / 1000, 'unixepoch')";
+pub(crate) const LOCAL_DAY: &str = "date(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) - (((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) % 1000) + 1000) % 1000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Skip { None, Site, Device, Tag, Dataset }
@@ -289,7 +290,9 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     let (x, y) = (split(a), split(b));
     for (p, q) in x.iter().zip(&y) {
         let o = if p.0 && q.0 {
-            p.1.trim_start_matches('0').len().cmp(&q.1.trim_start_matches('0').len()).then(p.1.cmp(&q.1))
+            // Numeric value first (length, then digits without leading zeros); padding only breaks ties.
+            let (a, b) = (p.1.trim_start_matches('0'), q.1.trim_start_matches('0'));
+            a.len().cmp(&b.len()).then(a.cmp(b)).then(p.1.cmp(&q.1))
         } else { p.1.to_lowercase().cmp(&q.1.to_lowercase()) };
         if o.is_ne() { return o; }
     }
@@ -328,6 +331,26 @@ pub fn heatmap(cat: &Catalog, f: &Filter) -> Result<Vec<HeatCell>> {
 mod tests {
     use super::*;
     use crate::{import_scanned, profile_spec::{MappingSpec, ProfileSpec}, scan::ScannedFile};
+
+    #[test]
+    fn natural_order_compares_values_before_padding() {
+        use std::cmp::Ordering::*;
+        assert_eq!(natural_cmp("Week_2", "Week_09"), Less);
+        assert_eq!(natural_cmp("Week_10", "Week_9"), Greater);
+        assert_eq!(natural_cmp("Week_02", "Week_2"), Less, "same value: padding breaks the tie");
+    }
+
+    #[test]
+    fn local_hour_and_day_before_1970() {
+        let c = Catalog::open_in_memory().unwrap();
+        // 1969-12-31 23:30 local (UTC, offset 0) and one millisecond before 1970.
+        for (ms, hour, day) in [(-1_800_000i64, 23i64, "1969-12-31"), (-1, 23, "1969-12-31"), (3_600_000, 1, "1970-01-01")] {
+            let (h, d): (i64, String) = c.conn.query_row(
+                &format!("SELECT {LOCAL_HOUR}, {LOCAL_DAY} FROM (SELECT ?1 AS start_ms, 0 AS local_offset_min) r"), [ms],
+                |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+            assert_eq!((h, d.as_str()), (hour, day), "{ms}");
+        }
+    }
 
     fn fixture() -> Catalog {
         let mut cat = Catalog::open_in_memory().unwrap();
