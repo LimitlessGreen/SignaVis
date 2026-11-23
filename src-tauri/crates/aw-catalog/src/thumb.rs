@@ -16,6 +16,9 @@ const NFFT: usize = 512;
 const FRAMES_PER_COL: usize = 4;
 /// Files up to this many sample frames are decoded completely (≈ 2 min at 48 kHz).
 const FULL_DECODE_MAX: u64 = 6_000_000;
+/// Spectra kept while decoding a whole file: beyond that, neighbours are merged (loudest value
+/// per bin), which keeps memory bounded for files of unknown length (≈ 4 MB).
+const MAX_KEPT_FRAMES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +53,7 @@ pub struct ThumbResult {
 pub fn cached(cat: &Catalog, recording_id: i64, spec: ThumbSpec) -> Result<Option<Thumb>> {
     let spec = spec.clamp();
     Ok(cat.conn.query_row(
-        "SELECT w, h, max_hz, data FROM thumb WHERE recording_id = ?1 AND w = ?2 AND h = ?3 AND max_hz = ?4",
+        "SELECT w, h, COALESCE(shown_hz, max_hz), data FROM thumb WHERE recording_id = ?1 AND w = ?2 AND h = ?3 AND max_hz = ?4",
         params![recording_id, spec.w, spec.h, spec.max_hz],
         |r| Ok(Thumb { recording_id, w: r.get(0)?, h: r.get(1)?, max_hz: r.get(2)?, data: r.get(3)? })).optional()?)
 }
@@ -58,8 +61,8 @@ pub fn cached(cat: &Catalog, recording_id: i64, spec: ThumbSpec) -> Result<Optio
 /// `key_hz`: the requested top frequency (cache key); `t.max_hz` may be lower (Nyquist).
 pub fn store(cat: &Catalog, t: &Thumb, key_hz: f64) -> Result<()> {
     cat.conn.execute(
-        "INSERT OR REPLACE INTO thumb(recording_id, w, h, max_hz, data, created_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![t.recording_id, t.w, t.h, key_hz, t.data, now_ms()])?;
+        "INSERT OR REPLACE INTO thumb(recording_id, w, h, max_hz, data, created_ms, shown_hz) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![t.recording_id, t.w, t.h, key_hz, t.data, now_ms(), t.max_hz])?;
     Ok(())
 }
 
@@ -104,7 +107,7 @@ pub fn render(path: &Path, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
     let full = src.frames.is_none_or(|n| n <= FULL_DECODE_MAX);
     if full {
         // Whole file; each column keeps the loudest value per bin over its frames.
-        let mut frames: Vec<Vec<f32>> = Vec::new();
+        let mut frames = FramePool::default();
         let mut buf = Vec::with_capacity(NFFT);
         while let Some(chunk) = src.next_samples()? {
             for s in chunk {
@@ -112,7 +115,9 @@ pub fn render(path: &Path, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
                 if buf.len() == NFFT { frames.push(fft.power(&buf, &window)); buf.clear(); }
             }
         }
-        if frames.is_empty() && !buf.is_empty() { buf.resize(NFFT, 0.0); frames.push(fft.power(&buf, &window)); }
+        // The last partial frame counts too (zero-padded).
+        if !buf.is_empty() { buf.resize(NFFT, 0.0); frames.push(fft.power(&buf, &window)); }
+        let frames = frames.finish();
         let n = frames.len();
         if n == 0 { return Err(std::io::Error::other("no audio")); }
         for (c, col) in cols.iter_mut().enumerate() {
@@ -154,6 +159,31 @@ pub fn render(path: &Path, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
         }
     }
     Ok((scale(&img, w, h), max_hz))
+}
+
+/// Spectra of a whole decode, at most 2 × MAX_KEPT_FRAMES at a time: when full, neighbours are
+/// merged pairwise (per-bin maximum) and later frames are merged in groups of the same size.
+#[derive(Default)]
+struct FramePool { kept: Vec<Vec<f32>>, group: usize, pending: Option<(Vec<f32>, usize)> }
+
+impl FramePool {
+    fn push(&mut self, f: Vec<f32>) {
+        let group = self.group.max(1);
+        let (acc, n) = match self.pending.take() {
+            Some((mut acc, n)) => { for (a, b) in acc.iter_mut().zip(&f) { *a = a.max(*b); } (acc, n + 1) }
+            None => (f, 1),
+        };
+        if n < group { self.pending = Some((acc, n)); return; }
+        self.kept.push(acc);
+        if self.kept.len() >= 2 * MAX_KEPT_FRAMES {
+            self.kept = self.kept.chunks(2).map(max_of).collect();
+            self.group = group * 2;
+        }
+    }
+    fn finish(mut self) -> Vec<Vec<f32>> {
+        if let Some((acc, _)) = self.pending.take() { self.kept.push(acc); }
+        self.kept
+    }
 }
 
 /// Remove each row's 20th percentile (steady background) and map 0 dB .. top (≥ 20 dB) to 0..255.
@@ -309,6 +339,18 @@ mod tests {
         std::fs::write(path, b).unwrap();
     }
 
+    /// Temp folder removed when the test ends (also when an assertion fails).
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let d = std::env::temp_dir().join(format!("aw-thumb-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            TempDir(d)
+        }
+    }
+    impl Drop for TempDir { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+
     /// Row with the highest value in column c.
     fn peak_row(d: &[u8], w: usize, h: usize, c: usize) -> (usize, u8) {
         (0..h).map(|r| (r, d[r * w + c])).max_by_key(|x| x.1).unwrap()
@@ -316,9 +358,8 @@ mod tests {
 
     #[test]
     fn short_file_shows_tone_at_its_frequency_and_time() {
-        let dir = std::env::temp_dir().join(format!("aw-thumb-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("short.wav");
+        let dir = TempDir::new("short");
+        let p = dir.0.join("short.wav");
         // 10 s, 4 kHz tone in the second half only.
         wav(&p, 24_000, 10.0, |t| (t >= 5.0).then_some(4000.0));
         let spec = ThumbSpec { w: 40, h: 24, max_hz: 12_000.0 };
@@ -335,9 +376,8 @@ mod tests {
 
     #[test]
     fn long_file_is_sampled_and_capped_at_nyquist() {
-        let dir = std::env::temp_dir().join(format!("aw-thumb-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("long.wav");
+        let dir = TempDir::new("long");
+        let p = dir.0.join("long.wav");
         // 8 kHz sample rate, 13 min (> FULL_DECODE_MAX frames), tone 2 kHz rising to 3 kHz halfway.
         wav(&p, 8_000, 780.0, |t| Some(if t < 390.0 { 2000.0 } else { 3000.0 }));
         let spec = ThumbSpec { w: 20, h: 16, max_hz: 12_000.0 };
@@ -346,6 +386,37 @@ mod tests {
         // 2 kHz of 4 kHz → middle (row 7/8); 3 kHz → row ≈ 3.
         assert!((7..=8).contains(&peak_row(&d, 20, 16, 2).0), "{:?}", peak_row(&d, 20, 16, 2));
         assert!((3..=4).contains(&peak_row(&d, 20, 16, 17).0), "{:?}", peak_row(&d, 20, 16, 17));
+    }
+
+    #[test]
+    fn the_last_partial_frame_is_drawn() {
+        let dir = TempDir::new("tail");
+        let p = dir.0.join("tail.wav");
+        // 768 samples at 8 kHz: a tone only in the last 256.
+        wav(&p, 8_000, 768.0 / 8_000.0, |t| (t >= 512.0 / 8_000.0).then_some(2000.0));
+        let (d, _) = render(&p, ThumbSpec { w: 16, h: 16, max_hz: 4000.0 }).unwrap();
+        let w = ThumbSpec { w: 16, h: 16, max_hz: 4000.0 }.clamp().w as usize;
+        assert!(peak_row(&d, w, 16, w - 1).1 > 100, "tone in the last column");
+    }
+
+    #[test]
+    fn frame_pool_stays_bounded_and_keeps_maxima() {
+        let mut pool = FramePool::default();
+        for i in 0..(10 * MAX_KEPT_FRAMES) { pool.push(vec![if i == 12_345 { 9.0 } else { 1.0 }; 3]); }
+        let kept = pool.finish();
+        assert!(kept.len() < 2 * MAX_KEPT_FRAMES);
+        assert_eq!(kept.iter().filter(|f| f[0] == 9.0).count(), 1, "a loud frame survives merging");
+    }
+
+    #[test]
+    fn cache_keeps_the_frequency_actually_shown() {
+        let cat = Catalog::open_in_memory().unwrap();
+        cat.conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+        // An 8 kHz file asked at 12 kHz shows 4 kHz.
+        let t = Thumb { recording_id: 7, w: 16, h: 8, max_hz: 4000.0, data: vec![1; 128] };
+        store(&cat, &t, 12_000.0).unwrap();
+        let hit = cached(&cat, 7, ThumbSpec { w: 16, h: 8, max_hz: 12_000.0 }).unwrap().unwrap();
+        assert_eq!(hit.max_hz, 4000.0);
     }
 
     #[test]

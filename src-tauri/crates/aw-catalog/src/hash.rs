@@ -248,6 +248,7 @@ pub fn reconcile(cat: &mut Catalog, root_id: i64, base: &Path, scanned: &[Scanne
                 // Content changed: read the header again.
                 tx.execute("UPDATE recording SET sample_rate = NULL, channels = NULL, duration_s = NULL WHERE asset_id = ?1", [k.id])?;
                 tx.execute("DELETE FROM meta WHERE origin = 'header' AND recording_id IN (SELECT id FROM recording WHERE asset_id = ?1)", [k.id])?;
+                tx.execute("DELETE FROM thumb WHERE recording_id IN (SELECT id FROM recording WHERE asset_id = ?1)", [k.id])?;
                 // What the old header gave is gone too: its position, and its clock offset.
                 tx.execute("UPDATE recording SET lat = NULL, lon = NULL, alt = NULL, pos_accuracy_m = NULL, pos_origin = NULL
                             WHERE asset_id = ?1 AND pos_origin = 'header'", [k.id])?;
@@ -564,12 +565,14 @@ mod tests {
         crate::header::store_infos(&mut cat, &[(id, Ok(info))]).unwrap();
         assert_eq!(cat.conn.query_row("SELECT start_ms FROM recording", [], |r| r.get::<_, i64>(0)).unwrap(), start0 - 3_600_000);
         cat.conn.execute("INSERT INTO meta(recording_id, key, value, origin) VALUES (?1, 'habitat', 'reed', 'manual')", [id]).unwrap();
+        cat.conn.execute("INSERT INTO thumb(recording_id, w, h, max_hz, data, created_ms) VALUES (?1, 1, 1, 1, x'00', 0)", [id]).unwrap();
         write(&dir, "S1/R1_20240501_120000.wav", &noise(2, 2000));   // replaced: no header offset, no GPS
         let rep = reconcile(&mut cat, root, &dir, &scan(&dir, &ScanOptions::default()).audio, Some(&profile)).unwrap();
         assert_eq!(rep.changed.len(), 1);
         let (start, lat, hdr): (i64, Option<f64>, Option<i64>) = cat.conn.query_row(
             "SELECT start_ms, lat, header_offset_min FROM recording", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
         assert_eq!((start, lat, hdr), (start0, None, None), "back to the import clock, no header position");
+        assert_eq!(cat.conn.query_row("SELECT COUNT(*) FROM thumb", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "old preview gone");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -44,6 +44,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("recording", "pos_origin", "TEXT"),
     ("recording", "track_id", "INTEGER"),
     ("recording", "wall_ms", "INTEGER"),
+    ("thumb", "shown_hz", "REAL"),
 ];
 
 /// Recorder wall time of a recording (ms, as if UTC): stored since `wall_ms` exists; for older rows
