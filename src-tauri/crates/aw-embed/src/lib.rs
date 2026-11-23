@@ -165,7 +165,7 @@ impl Embedder {
 
     /// `windows`: n * WINDOW Samples. Liefert n * DIM Werte.
     pub fn embed(&mut self, windows: &[f32], batch: usize) -> Result<Vec<f32>, Error> {
-        Ok(self.embed_scored(windows, batch)?.0)
+        Ok(self.run(windows, batch, false)?.0)
     }
 
     /// Wie `embed`, dazu pro Fenster das max. Klassen-Logit — „klingt nach
@@ -173,9 +173,14 @@ impl Embedder {
     /// Perch 2 meist zwischen 5 und 15, ein Sigmoid waere dort gesaettigt.
     /// Leer, wenn das Modell keinen Kopf hat.
     pub fn embed_scored(&mut self, windows: &[f32], batch: usize) -> Result<(Vec<f32>, Vec<f32>), Error> {
+        let with_score = self.has_score;
+        self.run(windows, batch, with_score)
+    }
+
+    fn run(&mut self, windows: &[f32], batch: usize, with_score: bool) -> Result<(Vec<f32>, Vec<f32>), Error> {
         let n = windows.len() / WINDOW;
         let mut out = Vec::with_capacity(n * DIM);
-        let mut scores = Vec::with_capacity(if self.has_score { n } else { 0 });
+        let mut scores = Vec::with_capacity(if with_score { n } else { 0 });
         for b in windows.chunks(batch * WINDOW) {
             let bn = b.len() / WINDOW;
             // Letzten Batch auf volle Groesse auffuellen: GPU-EPs (DirectML)
@@ -185,12 +190,40 @@ impl Embedder {
             let t = ort::value::Tensor::from_array(([batch, WINDOW], buf.into_boxed_slice()))?;
             let res = self.session.run(ort::inputs!["inputs" => t])?;
             let (_, e) = res["embedding"].try_extract_tensor::<f32>()?;
+            if e.len() != batch * DIM {
+                return Err(format!("embedding: {} Werte statt {}", e.len(), batch * DIM).into());
+            }
             out.extend_from_slice(&e[..bn * DIM]);
-            if self.has_score {
+            if with_score {
                 let (_, l) = res[SCORE_OUTPUT].try_extract_tensor::<f32>()?;
+                check_scores(l, batch)?;
                 scores.extend_from_slice(&l[..bn]);
             }
         }
         Ok((out, scores))
+    }
+}
+
+/// Eine endliche Zahl pro Batch-Zeile, sonst Fehler (statt Panic/Verschiebung).
+fn check_scores(l: &[f32], batch: usize) -> Result<(), Error> {
+    if l.len() != batch {
+        return Err(format!("{SCORE_OUTPUT}: {} Werte statt {batch}", l.len()).into());
+    }
+    if let Some(x) = l.iter().find(|x| !x.is_finite()) {
+        return Err(format!("{SCORE_OUTPUT}: ungueltiger Wert {x}").into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod score_tests {
+    use super::check_scores;
+
+    #[test]
+    fn check_scores_needs_one_finite_value_per_row() {
+        assert!(check_scores(&[1.0, 2.0], 2).is_ok());
+        assert!(check_scores(&[1.0], 2).is_err());
+        assert!(check_scores(&[1.0, 2.0, 3.0, 4.0], 2).is_err());
+        assert!(check_scores(&[1.0, f32::NAN], 2).is_err());
     }
 }
