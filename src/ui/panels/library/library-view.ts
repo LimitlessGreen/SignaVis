@@ -480,15 +480,18 @@ export class LibraryView {
         const entry = { gen, p: Promise.resolve() };
         this.#page = entry;
         entry.p = (async () => {
+            let got = false;
             try {
                 const page = await catalogApi.list(this.#o.projectRoot, this.#filter, this.#sort, this.#next, PAGE);
                 if (gen !== this.#gen) return;
                 this.#rows.push(...page.rows);
                 this.#next = page.next;
-                this.#renderRows();
+                got = true;
             } finally {
                 if (this.#page === entry) this.#page = null;
             }
+            // After the release: rendering may ask for the next page right away (deep scroll position).
+            if (got) this.#renderRows();
         })();
         return entry.p;
     }
