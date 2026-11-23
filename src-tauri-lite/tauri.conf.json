@@ -12,6 +12,7 @@
   "app": {
     "windows": [],
     "security": {
+      "dangerousDisableAssetCspModification": ["style-src"],
       "csp": {
         "default-src": "'self'",
         "script-src": "'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
