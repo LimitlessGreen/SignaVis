@@ -29,6 +29,11 @@ pub struct Filter {
     /// UTC ms, inclusive / exclusive.
     pub from_ms: Option<i64>,
     pub to_ms: Option<i64>,
+    /// Local calendar days "YYYY-MM-DD", both inclusive (the days statistics group by).
+    pub local_day_from: Option<String>,
+    pub local_day_to: Option<String>,
+    /// Only recordings without a site.
+    pub no_site: bool,
     /// Local time of day, hours 0–23; `hour_from > hour_to` wraps over midnight (night).
     pub hour_from: Option<u8>,
     pub hour_to: Option<u8>,
@@ -102,6 +107,9 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
         None => {}
     }
     if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
+    if f.no_site { push("r.site_id IS NULL".into(), vec![], &mut p); }
+    if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
+    if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
     if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
     if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
     if let (Some(a), Some(b)) = (f.hour_from, f.hour_to) {
@@ -331,6 +339,22 @@ pub fn heatmap(cat: &Catalog, f: &Filter) -> Result<Vec<HeatCell>> {
 mod tests {
     use super::*;
     use crate::{import_scanned, profile_spec::{MappingSpec, ProfileSpec}, scan::ScannedFile};
+
+    #[test]
+    fn local_days_and_no_site_select_what_statistics_count() {
+        let cat = fixture();
+        // Recordings 2023-…; shift one to UTC−7 so its local day differs from its UTC day.
+        cat.conn.execute("UPDATE recording SET local_offset_min = -420 WHERE id = 1", []).unwrap();
+        let day: String = cat.conn.query_row(&format!("SELECT {LOCAL_DAY} FROM recording r WHERE r.id = 1"), [], |r| r.get(0)).unwrap();
+        let f = Filter { local_day_from: Some(day.clone()), local_day_to: Some(day.clone()), ..Default::default() };
+        assert!(ids(&cat, &f).unwrap().contains(&1));
+        cat.conn.execute("UPDATE recording SET site_id = NULL WHERE id = 2", []).unwrap();
+        let none = ids(&cat, &Filter { no_site: true, ..Default::default() }).unwrap();
+        assert!(none.contains(&2));
+        let with_site: i64 = cat.conn.query_row(&format!("SELECT COUNT(*) FROM recording WHERE site_id IS NOT NULL AND id IN ({})",
+            none.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")), [], |r| r.get(0)).unwrap();
+        assert_eq!(with_site, 0);
+    }
 
     #[test]
     fn natural_order_compares_values_before_padding() {

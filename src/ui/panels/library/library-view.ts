@@ -669,6 +669,8 @@ export class LibraryView {
         if (tf.pathContains) chips.push(['path', `“${tf.pathContains}”`]);
         if (tf.hourFrom != null) chips.push(['tod', `${String(tf.hourFrom).padStart(2, '0')}–${String(tf.hourTo).padStart(2, '0')} h`]);
         if (tf.fromMs != null || tf.toMs != null) chips.push(['period', `${tf.fromMs != null ? day(tf.fromMs) : '…'} – ${tf.toMs != null ? day(tf.toMs - 86_400_000) : '…'}`]);
+        if (tf.localDayFrom || tf.localDayTo) chips.push(['localdays', `${tf.localDayFrom ?? '…'} – ${tf.localDayTo ?? '…'} (local)`]);
+        if (tf.noSite) chips.push(['nosite', 'without site']);
         if (tf.hasLabels != null) chips.push(['labels', tf.hasLabels ? 'with labels' : 'without labels']);
         if (tf.hasPosition != null) chips.push(['pos', tf.hasPosition ? 'with position' : 'without position']);
         if (tf.bbox) chips.push(['bbox', `area ${bboxLabel(tf.bbox)}`]);
@@ -695,6 +697,8 @@ export class LibraryView {
         else if (k === 'path') tf.pathContains = null;
         else if (k === 'tod') { tf.hourFrom = null; tf.hourTo = null; }
         else if (k === 'period') { tf.fromMs = null; tf.toMs = null; }
+        else if (k === 'localdays') { tf.localDayFrom = null; tf.localDayTo = null; }
+        else if (k === 'nosite') tf.noSite = false;
         else if (k === 'labels') tf.hasLabels = null;
         else if (k === 'pos') tf.hasPosition = null;
         else if (k === 'bbox') tf.bbox = null;
@@ -1074,8 +1078,12 @@ export class LibraryView {
         this.#showHost('Statistics', new StatsDialog({
             projectRoot: this.#o.projectRoot, filter: { ...tf }, filtered,
             onPickWeek: (siteId, week) => {
-                const from = Date.parse(`${week}T00:00:00Z`);
-                this.#filter = { ...this.#filter, siteIds: siteId == null ? [] : [siteId], fromMs: from, toMs: from + 7 * 86_400_000 };
+                // The same recordings the cell counts: its local Monday–Sunday, and "(no site)" really without one.
+                const sunday = new Date(Date.parse(`${week}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+                this.#filter = {
+                    ...this.#filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
+                    fromMs: null, toMs: null, localDayFrom: week, localDayTo: sunday,
+                };
                 this.#hideImport();
                 void this.reload();
             },

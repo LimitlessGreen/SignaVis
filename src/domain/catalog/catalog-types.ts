@@ -63,6 +63,11 @@ export interface CatalogFilter {
     hasPosition?: boolean | null;
     fromMs?: number | null;
     toMs?: number | null;
+    /** Local calendar days YYYY-MM-DD, both inclusive (as the statistics count). */
+    localDayFrom?: string | null;
+    localDayTo?: string | null;
+    /** Only recordings without a site. */
+    noSite?: boolean;
     hourFrom?: number | null;
     hourTo?: number | null;
     pathContains?: string | null;
@@ -420,7 +425,7 @@ export interface DatasetEdit { name?: string; description?: string | null; color
 export interface Membership { datasetId: number; name: string; kind: 'static' | 'filter'; color: string | null; ranges: [number, number][] }
 
 /** Flags where false is the default (no restriction); for the others false is a choice (hasPosition: false = without). */
-const DEFAULT_FALSE = new Set(['unassigned', 'noStart']);
+const DEFAULT_FALSE = new Set(['unassigned', 'noStart', 'noSite']);
 
 /** Filter without empty parts, keys sorted: two filters that select the same thing compare equal. */
 export function normalizeFilter(f: CatalogFilter): CatalogFilter {
