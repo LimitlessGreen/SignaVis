@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 // embeddings.rs — Perch-2-Embeddings pro Projektordner (Plattform-Phase 1)
 //
-// Modell: perch_v2_no_dft_embed.onnx (49 MB), beim ersten Gebrauch nach
+// Modell: perch_v2_no_dft_embed_score.onnx (141 MB: Embedding + max. Klassen-
+// Score pro Fenster, Kopf int8, siehe aw-embed/scripts/make_scored.py), nach
 // <app data>/models/perch-v2/ geladen und per SHA-256 geprueft. Ueberschreibbar
 // mit SIGNAVIS_PERCH_MODEL=<pfad> (Entwicklung).
 //
@@ -26,12 +27,15 @@ use tauri::{Emitter, Manager};
 
 use aw_embed::{DIM, SAMPLE_RATE, WINDOW};
 
-const MODEL_FILE: &str = "perch_v2_no_dft_embed.onnx";
-const MODEL_SHA256: &str = "1da731f3db5e98708cee6dd116403897f9e2204a74b5d56760fd8ec8503350ac";
-const MODEL_SIZE: u64 = 49_447_593;
-/// Release-Asset mit dem headless Perch-2-Modell (Apache 2.0, siehe ADR 001).
+const MODEL_FILE: &str = "perch_v2_no_dft_embed_score.onnx";
+const MODEL_SHA256: &str = "1c91f45ce73d29410d5037a977f09cfddb4371aa6e88063e28965d1ba2b6e662";
+const MODEL_SIZE: u64 = 140_652_250;
+/// Release-Asset mit dem Perch-2-Modell (Apache 2.0, siehe ADR 001).
 const MODEL_URL: &str =
-    "https://github.com/LimitlessGreen/SignaVis/releases/download/models-perch-v2/perch_v2_no_dft_embed.onnx";
+    "https://github.com/LimitlessGreen/SignaVis/releases/download/models-perch-v2/perch_v2_no_dft_embed_score.onnx";
+/// Frueheres headless Modell: gleicher Rumpf, bitgleiche Embeddings — Stores
+/// damit bleiben gueltig, nur der Score wird nachgerechnet.
+const COMPATIBLE_SHA256: &[&str] = &[MODEL_SHA256, "1da731f3db5e98708cee6dd116403897f9e2204a74b5d56760fd8ec8503350ac"];
 const MODEL_ENV: &str = "SIGNAVIS_PERCH_MODEL";
 pub const MODEL_EVENT: &str = "lite-embed-model";
 pub const EMBED_EVENT: &str = "lite-embed-progress";
@@ -78,6 +82,10 @@ struct FileEntry {
     /// ausblenden“ auf der Karte. Leer in aelteren Stores (wird nachgereicht).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     level: Vec<f32>,
+    /// Score pro Fenster (max. Perch-Klassen-Logit, 0,01 genau): „klingt nach
+    /// einem Tier“; nur als Rangfolge sinnvoll. Leer ohne Modellkopf / alte Stores.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    score: Vec<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -146,6 +154,12 @@ pub(crate) fn window_levels(windows: &[f32]) -> Vec<f32> {
             ((db * 10.0).round() / 10.0) as f32
         })
         .collect()
+}
+
+/// Score pro Fenster je Datei (nur Dateien mit vollstaendigem Score).
+pub(crate) fn scores_by_row(root: &str) -> Option<BTreeMap<String, Vec<f32>>> {
+    let idx = read_index(root)?;
+    Some(idx.files.into_iter().filter(|(_, e)| e.score.len() as u64 == e.count).map(|(k, e)| (k, e.score)).collect())
 }
 
 /// Pegel pro Fenster: Datei/Start → dBFS (fehlt bei Stores ohne Pegel).
@@ -261,6 +275,8 @@ pub async fn embed_model_download(app: tauri::AppHandle) -> Result<ModelStatus, 
         return Err(format!("Modell-Pruefsumme falsch ({got})"));
     }
     std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
+    // Frueheres headless Modell (49 MB) wird nicht mehr gebraucht.
+    let _ = std::fs::remove_file(dir.join("perch_v2_no_dft_embed.onnx"));
     let _ = app.emit(MODEL_EVENT, DownloadProgress { bytes, total: MODEL_SIZE });
     embed_model_status(app)
 }
@@ -430,12 +446,18 @@ fn run_job(
     }
     let audio = crate::project_fs::project_list_audio(root.to_string())?;
     let mut idx = match read_index(root) {
-        Some(i) if i.model_sha256 == MODEL_SHA256 && (i.hop_s - hop_s).abs() < 1e-9 && vectors_path(root).is_file() => i,
+        Some(mut i) if COMPATIBLE_SHA256.contains(&i.model_sha256.as_str()) && (i.hop_s - hop_s).abs() < 1e-9 && vectors_path(root).is_file() => {
+            i.model_sha256 = MODEL_SHA256.into();
+            i
+        }
         _ => {
             let _ = std::fs::remove_file(vectors_path(root));
             Index::new(hop_s)
         }
     };
+    // Vorher oeffnen: ob das Modell Scores liefert, bestimmt, was nachzurechnen ist.
+    let (mut embedder, device) = open_embedder(model)?;
+    let want_score = embedder.has_score();
     // Geloeschte Dateien austragen
     let present: std::collections::HashSet<&str> = audio.iter().map(|f| f.path.as_str()).collect();
     idx.files.retain(|k, _| present.contains(k.as_str()));
@@ -443,8 +465,13 @@ fn run_job(
     let todo: Vec<_> = audio
         .iter()
         .filter(|f| match idx.files.get(&f.path) {
-            // geaendert, oder aus einem aelteren Store ohne Pegel (dann nur Pegel nachrechnen)
-            Some(e) => e.size != f.size || e.last_modified != f.last_modified || e.level.len() as u64 != e.count,
+            // geaendert, oder aus einem aelteren Store ohne Pegel/Score (wird nachgerechnet)
+            Some(e) => {
+                e.size != f.size
+                    || e.last_modified != f.last_modified
+                    || e.level.len() as u64 != e.count
+                    || want_score && e.score.len() as u64 != e.count
+            }
             None => match idx.failed.get(&f.path) {
                 // fehlgeschlagene nur nach Aenderung erneut versuchen
                 Some(_) => false,
@@ -463,7 +490,6 @@ fn run_job(
         return Ok(());
     }
 
-    let (mut embedder, device) = open_embedder(model)?;
     p.device = device.into();
     std::fs::create_dir_all(store_dir(root)).map_err(|e| e.to_string())?;
     let mut vec_file = std::fs::OpenOptions::new()
@@ -483,7 +509,10 @@ fn run_job(
         emit(p);
         let full = Path::new(root).join(&f.path);
         // Unveraenderte Datei, nur der Pegel fehlt: dekodieren, nicht neu einbetten.
-        let levels_only = idx.files.get(&f.path).is_some_and(|e| e.size == f.size && e.last_modified == f.last_modified);
+        // (Fehlt der Score, muss das Modell laufen: dann wie eine geaenderte Datei.)
+        let levels_only = idx.files.get(&f.path).is_some_and(|e| {
+            e.size == f.size && e.last_modified == f.last_modified && !(want_score && e.score.len() as u64 != e.count)
+        });
         if levels_only {
             if let Ok((x, sr)) = decode_mono(&full) {
                 if let Ok(x) = aw_embed::resample_to_32k(&x, sr) {
@@ -508,22 +537,25 @@ fn run_job(
             let n = windows.len() / WINDOW;
             let level = window_levels(&windows);
             let mut vecs = Vec::with_capacity(n * DIM);
+            let mut score = Vec::with_capacity(if want_score { n } else { 0 });
             // in Stuecken, damit Abbrechen auch bei langen Aufnahmen greift
             for chunk in windows.chunks(BATCH * 8 * WINDOW) {
                 if cancel.load(Ordering::SeqCst) {
                     return Err("cancelled".into());
                 }
-                vecs.extend(embedder.embed(chunk, BATCH).map_err(|e| e.to_string())?);
+                let (v, s) = embedder.embed_scored(chunk, BATCH).map_err(|e| e.to_string())?;
+                vecs.extend(v);
+                score.extend(s.into_iter().map(|x| (x * 100.0).round() / 100.0));
             }
-            Ok((vecs, n as u64, duration, level))
+            Ok((vecs, n as u64, duration, level, score))
         });
         match result {
-            Ok((vecs, n, duration, level)) => {
+            Ok((vecs, n, duration, level, score)) => {
                 vec_file.write_all(&to_f16_bytes(&vecs)).map_err(|e| e.to_string())?;
                 vec_file.flush().map_err(|e| e.to_string())?;
                 idx.files.insert(
                     f.path.clone(),
-                    FileEntry { size: f.size, last_modified: f.last_modified, row: idx.total_rows, count: n, duration, level },
+                    FileEntry { size: f.size, last_modified: f.last_modified, row: idx.total_rows, count: n, duration, level, score },
                 );
                 idx.failed.remove(&f.path);
                 idx.total_rows += n;
@@ -676,6 +708,45 @@ mod tests {
         assert!((hits[0].1 - 1.0).abs() < 1e-2);
     }
 
+    /// Store vom alten headless Modell (SIGNAVIS_PERCH_MODEL_OLD) auf das Score-Modell
+    /// (SIGNAVIS_PERCH_MODEL) heben: Score wird nachgerechnet, Embeddings bleiben gleich.
+    #[test]
+    #[ignore]
+    fn upgrade_adds_scores() {
+        let old = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL_OLD").unwrap());
+        let new = PathBuf::from(std::env::var("SIGNAVIS_PERCH_MODEL").unwrap());
+        let root = std::env::var("EMBED_TEST_DIR").unwrap();
+        let _ = std::fs::remove_dir_all(store_dir(&root));
+        let cancel = AtomicBool::new(false);
+        let rows = |root: &str| {
+            let idx = read_index(root).unwrap();
+            let mut f = std::fs::File::open(vectors_path(root)).unwrap();
+            idx.files.iter().map(|(k, e)| (k.clone(), read_rows(&mut f, e.row, e.count).unwrap())).collect::<BTreeMap<_, _>>()
+        };
+        // Alten Store so anlegen, wie ihn die fruehere Version schrieb.
+        run_job(&|_| {}, &root, 5.0, &old, &cancel, &mut JobProgress::default()).unwrap();
+        let mut idx = read_index(&root).unwrap();
+        idx.model_sha256 = COMPATIBLE_SHA256[1].into();
+        write_index(&root, &idx).unwrap();
+        assert!(scores_by_row(&root).unwrap().is_empty(), "altes Modell liefert keinen Score");
+        let before = rows(&root);
+        let mut p = JobProgress::default();
+        run_job(&|_| {}, &root, 5.0, &new, &cancel, &mut p).unwrap();
+        assert_eq!(p.total, before.len(), "jede Datei bekommt ihren Score");
+        let scores = scores_by_row(&root).unwrap();
+        assert_eq!(scores.len(), before.len());
+        assert!(scores.values().flatten().all(|s| s.is_finite()));
+        let after = rows(&root);
+        for (k, v) in &before {
+            let d = v.iter().zip(&after[k]).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+            assert!(d < 1e-3, "{k}: Embedding weicht ab ({d})");
+        }
+        let mut p2 = JobProgress::default();
+        run_job(&|_| {}, &root, 5.0, &new, &cancel, &mut p2).unwrap();
+        assert_eq!(p2.total, 0);
+        eprintln!("{} Dateien, Scores z. B. {:?}", before.len(), scores.values().next().map(|s| &s[..s.len().min(8)]));
+    }
+
     #[test]
     fn top_k_sorts_and_skips() {
         let s = vec![0.1, 0.9, 0.5, 0.95, 0.2];
@@ -704,7 +775,7 @@ mod tests {
             f.write_all(&to_f16_bytes(&rows(v, n))).unwrap();
             idx.files.insert(
                 name.into(),
-                FileEntry { size: 0, last_modified: 0.0, row: idx.total_rows, count: n as u64, duration: 0.0, level: vec![v; n] },
+                FileEntry { size: 0, last_modified: 0.0, row: idx.total_rows, count: n as u64, duration: 0.0, level: vec![v; n], score: vec![] },
             );
             idx.total_rows += n as u64;
         }

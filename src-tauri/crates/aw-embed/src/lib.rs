@@ -130,7 +130,12 @@ pub fn frame(x: &[f32], hop: usize, normalize: bool) -> Vec<f32> {
 
 pub struct Embedder {
     session: ort::session::Session,
+    /// Modell hat die Zusatzausgabe `score_logit` (max. Klassen-Logit pro Fenster).
+    has_score: bool,
 }
+
+/// Name der optionalen Score-Ausgabe (siehe scripts/make_scored.py).
+pub const SCORE_OUTPUT: &str = "score_logit";
 
 impl Embedder {
     /// `ep`: "cpu", "directml" oder "cuda" (Feature muss aktiv sein).
@@ -149,13 +154,28 @@ impl Embedder {
             b = b.with_execution_providers(list)?;
         }
         let session = b.commit_from_file(model)?;
-        Ok(Self { session })
+        let has_score = session.outputs.iter().any(|o| o.name == SCORE_OUTPUT);
+        Ok(Self { session, has_score })
+    }
+
+    /// Liefert das Modell einen Score pro Fenster?
+    pub fn has_score(&self) -> bool {
+        self.has_score
     }
 
     /// `windows`: n * WINDOW Samples. Liefert n * DIM Werte.
     pub fn embed(&mut self, windows: &[f32], batch: usize) -> Result<Vec<f32>, Error> {
+        Ok(self.embed_scored(windows, batch)?.0)
+    }
+
+    /// Wie `embed`, dazu pro Fenster das max. Klassen-Logit — „klingt nach
+    /// irgendeinem Tier“. Roh, nicht durch ein Sigmoid: die Werte liegen bei
+    /// Perch 2 meist zwischen 5 und 15, ein Sigmoid waere dort gesaettigt.
+    /// Leer, wenn das Modell keinen Kopf hat.
+    pub fn embed_scored(&mut self, windows: &[f32], batch: usize) -> Result<(Vec<f32>, Vec<f32>), Error> {
         let n = windows.len() / WINDOW;
         let mut out = Vec::with_capacity(n * DIM);
+        let mut scores = Vec::with_capacity(if self.has_score { n } else { 0 });
         for b in windows.chunks(batch * WINDOW) {
             let bn = b.len() / WINDOW;
             // Letzten Batch auf volle Groesse auffuellen: GPU-EPs (DirectML)
@@ -166,7 +186,11 @@ impl Embedder {
             let res = self.session.run(ort::inputs!["inputs" => t])?;
             let (_, e) = res["embedding"].try_extract_tensor::<f32>()?;
             out.extend_from_slice(&e[..bn * DIM]);
+            if self.has_score {
+                let (_, l) = res[SCORE_OUTPUT].try_extract_tensor::<f32>()?;
+                scores.extend_from_slice(&l[..bn]);
+            }
         }
-        Ok(out)
+        Ok((out, scores))
     }
 }
