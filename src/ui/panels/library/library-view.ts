@@ -19,6 +19,7 @@ import {
     type Thumb, type ThumbSpec,
 } from '../../../domain/catalog/thumb-grid.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
+import { prefs } from '../../../infrastructure/storage/prefs.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
 import { EntitiesDialog } from './entities-dialog.ts';
 import { SelectionPanel } from './selection-panel.ts';
@@ -91,7 +92,7 @@ export class LibraryView {
     #side: SelectionPanel;
     #mapDialog: MapDialog | null = null;
     /** Table or tile grid (spectrogram thumbnails). */
-    #view: 'table' | 'grid' = localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'table';
+    #view: 'table' | 'grid' = prefs.get(VIEW_KEY) === 'grid' ? 'grid' : 'table';
     #cols = 1;
     /** Thumbnails by recording id; a string = the error why there is none. */
     #thumbs = new Map<number, Thumb | string>();
@@ -102,7 +103,7 @@ export class LibraryView {
     #tile: { zoom: number; maxHz: number; show: { site: boolean; device: boolean } } = (() => {
         const d = { zoom: 2, maxHz: 12_000, show: { site: true, device: true } };
         try {
-            const t = JSON.parse(localStorage.getItem(TILE_KEY) ?? '{}');
+            const t = prefs.json<any>(TILE_KEY, {});
             return {
                 zoom: Number.isInteger(t.zoom) && t.zoom >= 0 && t.zoom < TILE_SIZES.length ? t.zoom : d.zoom,
                 maxHz: TILE_HZ.includes(t.maxHz) ? t.maxHz : d.maxHz,
@@ -226,7 +227,7 @@ export class LibraryView {
     #setTile(change: Partial<{ zoom: number; maxHz: number; show: { site: boolean; device: boolean } }>) {
         const keep = this.#selected;
         this.#tile = { ...this.#tile, ...change };
-        localStorage.setItem(TILE_KEY, JSON.stringify(this.#tile));
+        prefs.setJson(TILE_KEY, this.#tile);
         if (change.zoom !== undefined || change.maxHz !== undefined) this.#thumbs.clear();
         this.#applyView();
         this.#renderFacets();
@@ -237,7 +238,7 @@ export class LibraryView {
     #setView(v: 'table' | 'grid') {
         if (v === this.#view) return;
         this.#view = v;
-        localStorage.setItem(VIEW_KEY, v);
+        prefs.set(VIEW_KEY, v);
         this.#applyView();
         const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
         grid.scrollTop = 0;
