@@ -31,7 +31,7 @@ const MODEL_SHA256: &str = "1da731f3db5e98708cee6dd116403897f9e2204a74b5d56760fd
 const MODEL_SIZE: u64 = 49_447_593;
 /// Release-Asset mit dem headless Perch-2-Modell (Apache 2.0, siehe ADR 001).
 const MODEL_URL: &str =
-    "https://github.com/LimitlessGreen/Audio-Workbench/releases/download/models-perch-v2/perch_v2_no_dft_embed.onnx";
+    "https://github.com/LimitlessGreen/SignaVis/releases/download/models-perch-v2/perch_v2_no_dft_embed.onnx";
 const MODEL_ENV: &str = "SIGNAVIS_PERCH_MODEL";
 pub const MODEL_EVENT: &str = "lite-embed-model";
 pub const EMBED_EVENT: &str = "lite-embed-progress";
