@@ -823,7 +823,11 @@ pub(crate) fn clusters_from_map(map: &MapData, min_cluster_size: Option<usize>) 
     let c = hdbscan::cluster(m, &mst, mcs);
     let n = map.x.len();
     let labels: Vec<i32> = (0..n).map(|i| c.labels.get(map.anchor[i] as usize).copied().unwrap_or(-1)).collect();
-    let near_layout = hdbscan::assign_noise(m, &mst, &c.labels);
+    // Nach inkrementellen Updates kann ein Cluster keine lebenden Punkte mehr haben:
+    // dann darf er im Baum nur Durchgang sein, kein Ziel der Zuordnung.
+    let live: std::collections::HashSet<i32> = labels.iter().copied().filter(|&l| l >= 0).collect();
+    let seeds: Vec<i32> = c.labels.iter().map(|&l| if live.contains(&l) { l } else { -1 }).collect();
+    let near_layout = hdbscan::assign_noise(m, &mst, &seeds);
     let nearest: Vec<i32> = (0..n).map(|i| near_layout.get(map.anchor[i] as usize).copied().unwrap_or(-1)).collect();
     // Platzierte Punkte erben Cluster und Staerke ihres Ankers.
     let strength: Vec<f32> = (0..n).map(|i| c.strength.get(map.anchor[i] as usize).copied().unwrap_or(0.0)).collect();
@@ -851,6 +855,7 @@ pub(crate) fn clusters_from_map(map: &MapData, min_cluster_size: Option<usize>) 
             pts.truncate(6);
             ClusterInfo { id: id as i32, size, exemplars: pts }
         })
+        .filter(|c| c.size > 0)
         .collect();
     let noise = labels.iter().filter(|&&l| l < 0).count();
     Clusters { stamp: map.stamp, min_cluster_size: mcs, labels, strength, nearest, clusters, noise }
@@ -866,8 +871,10 @@ pub(crate) fn nearest_centroid(vecs: &[f32], labels: &[i32]) -> Vec<i32> {
         return labels.to_vec();
     }
     let mut cent = vec![0.0f32; k * DIM];
+    let mut count = vec![0usize; k];
     for (i, &l) in labels.iter().enumerate() {
         if l >= 0 {
+            count[l as usize] += 1;
             let c = &mut cent[l as usize * DIM..(l as usize + 1) * DIM];
             c.iter_mut().zip(&vecs[i * DIM..(i + 1) * DIM]).for_each(|(a, b)| *a += b);
         }
@@ -882,7 +889,11 @@ pub(crate) fn nearest_centroid(vecs: &[f32], labels: &[i32]) -> Vec<i32> {
         }
         let v = &vecs[i * DIM..(i + 1) * DIM];
         let dot = |c: &[f32]| c.iter().zip(v).map(|(a, b)| a * b).sum::<f32>();
-        (0..k).max_by(|&a, &b| dot(&cent[a * DIM..(a + 1) * DIM]).total_cmp(&dot(&cent[b * DIM..(b + 1) * DIM]))).unwrap() as i32
+        // Nur Cluster mit Mitgliedern (leere Schwerpunkte waeren Nullvektoren).
+        (0..k)
+            .filter(|&c| count[c] > 0)
+            .max_by(|&a, &b| dot(&cent[a * DIM..(a + 1) * DIM]).total_cmp(&dot(&cent[b * DIM..(b + 1) * DIM])))
+            .map_or(-1, |c| c as i32)
     })
 }
 
@@ -1041,6 +1052,40 @@ mod tests {
         let want: Vec<i32> = (0..40).map(|i| (i / 20) as i32).collect();
         assert_eq!(near, want);
         assert_eq!(nearest_centroid(&l.vecs, &vec![-1; 40]), vec![-1; 40]);
+    }
+
+    #[test]
+    fn tree_assignment_skips_clusters_without_live_points() {
+        // Layout: A = {0,1,2}, B = {3,4,5} (eng), Punkt 6 haengt an B (Rauschen).
+        let e = |a: u32, b: u32, w: f32| (a, b, w);
+        let mst = [e(0, 1, 0.1), e(1, 2, 0.1), e(2, 3, 5.0), e(3, 4, 0.1), e(4, 5, 0.1), e(5, 6, 10.0)];
+        let c = hdbscan::cluster(7, &mst, 2);
+        let (ca, cb) = (c.labels[0], c.labels[3]);
+        assert!(ca >= 0 && cb >= 0 && ca != cb && c.labels[6] < 0, "{:?}", c.labels);
+        // Lebende Kartenpunkte nur in A und am Rauschpunkt 6 (B wurde entfernt).
+        let map = MapData {
+            version: MAP_VERSION, stamp: 1, window: 5.0, layout_points: 7,
+            files: vec!["a".into()], file: vec![0; 4], start: vec![0.0, 5.0, 10.0, 15.0],
+            x: vec![0.0; 4], y: vec![0.0; 4], anchor: vec![0, 1, 2, 6],
+            mst_a: mst.iter().map(|x| x.0).collect(), mst_b: mst.iter().map(|x| x.1).collect(),
+            mst_w: mst.iter().map(|x| x.2).collect(),
+            placed_new: 0, level: vec![], score: vec![], places: vec![], sigs: vec![],
+        };
+        let k = clusters_from_map(&map, Some(2));
+        assert_eq!(k.labels[3], -1);
+        assert_eq!(k.nearest[3], ca, "Rauschen geht zum lebenden Cluster, nicht zum leeren B");
+        assert!(k.clusters.iter().all(|x| x.size > 0 && x.id != cb));
+    }
+
+    #[test]
+    fn nearest_centroid_skips_empty_cluster_ids() {
+        // Cluster 0 hat keine Mitglieder mehr; ein Punkt, der von Cluster 1 weg zeigt,
+        // haette gegen den Nullvektor (Kosinus 0) „gewonnen“.
+        let mut vecs = vec![0f32; 3 * DIM];
+        vecs[0] = 1.0; // Mitglied von Cluster 1
+        vecs[DIM] = 1.0; // zweites Mitglied
+        vecs[2 * DIM] = -1.0; // Rauschen, entgegengesetzt
+        assert_eq!(nearest_centroid(&vecs, &[1, 1, -1]), vec![1, 1, 1]);
     }
 
     #[test]
