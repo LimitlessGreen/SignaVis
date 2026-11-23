@@ -5,20 +5,32 @@
 // Wheel: zoom · drag: pan · hover: tooltip · click: play · double-click: open
 // Shift+drag: lasso → label the selection for the current agile class.
 // Colour by folder / recording / HDBSCAN cluster / class labels / classifier
-// score; cluster cards (size, make-up, typical windows) and a label check
-// (embed_clusters, agile_scores, agile_suspects).
+// score / time of day / date; cluster cards (size, make-up, typical windows),
+// optional assignment of unclustered windows to their nearest cluster, and a
+// label check (embed_clusters, agile_scores, agile_suspects). Filters: hours,
+// dates (from AudioMoth-style file names) and quiet windows (RMS level).
 // See plans/lite-embedding-map-plan.md.
 // ═══════════════════════════════════════════════════════════════════════
+
+import { contextFromFilename } from '../../app/recording-context.ts';
 
 export interface MapData {
     stamp: number; window: number; layoutPoints: number;
     files: string[]; file: number[]; start: number[]; x: number[]; y: number[];
+    /** Window level (RMS, dBFS); empty when the store predates levels. */
+    level?: number[];
+    /** New windows placed onto the existing layout since it was computed (0 = fresh layout). */
+    placedNew?: number;
 }
 export interface MapWindow { path: string; start: number; end: number; score: number }
 type Label = 'pos' | 'neg' | 'unsure';
-type ColorBy = 'folder' | 'file' | 'cluster' | 'label' | 'score';
+type ColorBy = 'folder' | 'file' | 'cluster' | 'label' | 'score' | 'time' | 'date';
 export interface ClusterInfo { id: number; size: number; exemplars: number[] }
-export interface Clusters { stamp: number; minClusterSize: number; labels: number[]; strength: number[]; clusters: ClusterInfo[]; noise: number }
+export interface Clusters {
+    stamp: number; minClusterSize: number; labels: number[]; strength: number[]; clusters: ClusterInfo[]; noise: number;
+    /** Nearest cluster of every point, also for unclustered ones (−1: none reachable). */
+    nearest?: number[];
+}
 export interface Suspect { path: string; start: number; label: Label; otherFrac: number; neighbours: number; score: number | null }
 
 export interface EmbeddingMapOptions {
@@ -53,6 +65,65 @@ export function scoreColor(v: number): string {
     return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * f)).join(',')})`;
 }
 
+/** Hour of day (0–24) → colour: night blue – dawn orange – noon yellow – dusk magenta (cyclic). */
+export function timeColor(hour: number): string {
+    const stops: [number, [number, number, number]][] = [[0, [40, 50, 110]], [6, [235, 130, 50]], [12, [240, 200, 40]], [18, [200, 70, 140]], [24, [40, 50, 110]]];
+    const h = ((hour % 24) + 24) % 24;
+    let k = 0;
+    while (k < stops.length - 2 && h >= stops[k + 1][0]) k++;
+    const [[h0, a], [h1, b]] = [stops[k], stops[k + 1]];
+    const f = (h - h0) / (h1 - h0);
+    return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * f)).join(',')})`;
+}
+
+/** 0..1 → sequential colour (viridis-like), for dates. */
+export function seqColor(t: number): string {
+    const stops: [number, number, number][] = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
+    const x = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+    const k = Math.min(stops.length - 2, Math.floor(x));
+    const f = x - k;
+    return `rgb(${stops[k].map((c, i) => Math.round(c + (stops[k + 1][i] - c) * f)).join(',')})`;
+}
+
+/**
+ * Time of day (minutes, 0..1440) and day number (days since 1970) of every window, from the
+ * recording start in its file name (AudioMoth "20240512_053000", "…_dt20230322_065001_…").
+ * NaN where the name carries no date and time.
+ */
+export function windowTimes(files: string[], file: number[], start: number[]): { minute: Float64Array; day: Float64Array; known: number } {
+    const fileStart = files.map((f) => {
+        const ctx = contextFromFilename(f.split('/').pop() || f);
+        if (!ctx.date || !ctx.time) return null;
+        const [y, m, d] = ctx.date.split('-').map(Number);
+        const [hh, mm] = ctx.time.split(':').map(Number);
+        return { day: Date.UTC(y, m - 1, d) / 86_400_000, minute: hh * 60 + mm };
+    });
+    const n = file.length;
+    const minute = new Float64Array(n).fill(NaN), day = new Float64Array(n).fill(NaN);
+    let known = 0;
+    for (let i = 0; i < n; i++) {
+        const fs = fileStart[file[i]];
+        if (!fs) continue;
+        const t = fs.minute + start[i] / 60;
+        day[i] = fs.day + Math.floor(t / 1440);
+        minute[i] = t - Math.floor(t / 1440) * 1440;
+        known++;
+    }
+    return { minute, day, known };
+}
+
+/** Is `hour` (0..24) inside [h0, h1)? Wraps past midnight when h0 > h1 (e.g. 20–6). */
+export function inHours(hour: number, h0: number, h1: number): boolean {
+    if (h0 === h1 || (h0 === 0 && h1 === 24)) return true;
+    return h0 < h1 ? hour >= h0 && hour < h1 : hour >= h0 || hour < h1;
+}
+
+const dayToIso = (d: number) => new Date(d * 86_400_000).toISOString().slice(0, 10);
+const isoToDay = (s: string) => (s ? Date.parse(`${s}T00:00:00Z`) / 86_400_000 : NaN);
+
+/** '#rrggbb' → rgba with the given alpha. */
+const withAlpha = (hex: string, a: number) => `rgba(${[1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16)).join(',')},${a})`;
+
 /** Make-up of a group: the most frequent keys with their share. */
 export function topShares(keys: string[], max = 2): { key: string; share: number }[] {
     const cnt = new Map<string, number>();
@@ -66,6 +137,8 @@ const fmtTime = (s: number) => {
     return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
 };
 const dirOf = (p: string) => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.';
+/** Short name of a folder key from dirOf ('.' = files directly in the project folder). */
+const folderLabel = (k: string) => (k === '.' ? '(project folder)' : k.split('/').pop() || k);
 
 /** Point-in-polygon (even-odd rule). */
 export function inPolygon(px: number, py: number, poly: [number, number][]): boolean {
@@ -102,8 +175,17 @@ export class EmbeddingMap {
     #suspects: Suspect[] | null = null;
     #suspectPts = new Set<number>();
     #indexOf = new Map<string, number>();
-    #order: number[] = [];
+    /** Paint layers: background first; one colour per layer, so a layer is one fill. */
+    #layers: { color: string; big: boolean; pts: Int32Array }[] = [];
     #onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') this.close(); };
+    /** Unclustered windows take the colour (lighter) and membership of their nearest cluster. */
+    #assign = false;
+    #times: { minute: Float64Array; day: Float64Array; known: number } | null = null;
+    #dayRange: [number, number] = [0, 0];
+    #levelRange: [number, number] = [0, 0];
+    #filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+    /** 1 = filtered out (not drawn, not pickable, not selectable). */
+    #hidden = new Uint8Array(0);
 
     constructor(opts: EmbeddingMapOptions) {
         this.#opts = opts;
@@ -115,6 +197,7 @@ export class EmbeddingMap {
                 <label>Colour <select class="field-select emap-color">
                     <option value="folder">Folder</option><option value="file">Recording</option><option value="cluster">Cluster</option>
                     <option value="label">Class labels</option><option value="score">Classifier score</option>
+                    <option value="time">Time of day</option><option value="date">Date</option>
                 </select></label>
                 <button class="sidebar-action-btn secondary" data-act="suspects" type="button" title="Find labels of the current class that disagree with their neighbours or the classifier">Check labels</button>
                 <span class="emap-sel"></span>
@@ -123,6 +206,7 @@ export class EmbeddingMap {
                 <button class="sidebar-action-btn secondary" data-act="recompute" type="button" title="Recompute the layout">Recompute</button>
                 <button class="sidebar-action-btn secondary" data-act="close" type="button">Close</button>
             </div>
+            <div class="emap-filter" hidden></div>
             <div class="emap-body"><div class="emap-side" hidden></div>
                 <div class="emap-stage"><canvas></canvas><div class="emap-tip" hidden></div><div class="emap-legend"></div>
                 <p class="emap-help">Scroll: zoom · drag: pan · click: play · double-click: open · Shift+drag: select</p></div></div>`;
@@ -133,11 +217,26 @@ export class EmbeddingMap {
         });
         this.el.addEventListener('change', (e) => {
             const t = e.target as HTMLSelectElement;
+            if (t.classList.contains('emap-assign')) {
+                this.#assign = (t as unknown as HTMLInputElement).checked;
+                this.#buildLayers();
+                this.#renderLegend();
+                this.#renderSide();
+                this.#draw();
+                return;
+            }
+            if (t.closest('.emap-filter')) {
+                this.#readFilter();
+                return;
+            }
             if (t.classList.contains('emap-minsize')) {
                 this.#minSize = t.value ? Number(t.value) : null;
                 this.#clusters = null;
                 this.#setColor('cluster');
             }
+        });
+        this.el.addEventListener('input', (e) => {
+            if ((e.target as HTMLElement).classList.contains('emap-level')) this.#readFilter();
         });
         this.el.addEventListener('click', (e) => this.#onButton(e));
         this.#bindPointer();
@@ -161,6 +260,7 @@ export class EmbeddingMap {
             this.#suspectPts.clear();
             const d0 = this.#data;
             this.#indexOf = new Map(d0.file.map((f, i) => [`${f}@${d0.start[i].toFixed(3)}`, i]));
+            this.#prepareFilters();
             this.#fit();
             this.#buildGrid();
             if (this.#colorBy === 'cluster' || this.#colorBy === 'score') await this.#ensure(this.#colorBy);
@@ -168,7 +268,8 @@ export class EmbeddingMap {
             this.#renderSide();   // new data: cluster cards and label check from the previous map are stale
             const d = this.#data;
             const n = d.x.length;
-            this.#setStatus(`${n.toLocaleString()} windows${d.layoutPoints < n ? ` (layout on ${d.layoutPoints.toLocaleString()}, rest placed by neighbours)` : ''}`);
+            this.#setStatus(`${n.toLocaleString()} windows${d.layoutPoints < n ? ` (layout on ${d.layoutPoints.toLocaleString()}, rest placed by neighbours)` : ''}`
+                + (d.placedNew ? ` · ${d.placedNew.toLocaleString()} new placed on the existing layout (Recompute for a fresh one)` : ''));
         } catch (e) {
             this.#setStatus(`Error: ${(e as Error)?.message || e}`);
         }
@@ -217,6 +318,9 @@ export class EmbeddingMap {
 
     async #ensure(c: ColorBy) {
         if (!this.#data) return;
+        if ((c === 'time' || c === 'date') && !this.#times?.known) {
+            throw new Error('No recording times: file names carry no date and time (e.g. 20240512_053000).');
+        }
         if (c === 'cluster' && !this.#clusters) {
             this.#setStatus('Clustering…');
             this.#clusters = await this.#opts.loadClusters(this.#minSize);
@@ -237,6 +341,108 @@ export class EmbeddingMap {
 
     #setStatus(s: string) {
         this.el.querySelector('.emap-status')!.textContent = s;
+    }
+
+    // ── Filters ───────────────────────────────────────────────────────
+
+    /** Cluster of a point; unclustered points get their nearest cluster when assignment is on. */
+    #clusterOf(i: number): number {
+        const k = this.#clusters;
+        if (!k) return -1;
+        const own = k.labels[i] ?? -1;
+        return own >= 0 || !this.#assign ? own : k.nearest?.[i] ?? -1;
+    }
+
+    /** New data: recording times, ranges, reset filters. */
+    #prepareFilters() {
+        const d = this.#data!;
+        this.#times = windowTimes(d.files, d.file, d.start);
+        let [d0, d1] = [Infinity, -Infinity];
+        for (const v of this.#times.day) if (Number.isFinite(v)) { d0 = Math.min(d0, v); d1 = Math.max(d1, v); }
+        this.#dayRange = [d0, d1];
+        const lv = d.level?.length === d.x.length ? d.level : null;
+        let [l0, l1] = [Infinity, -Infinity];
+        if (lv) for (const v of lv) if (v > -120) { l0 = Math.min(l0, v); l1 = Math.max(l1, v); }
+        this.#levelRange = [Math.floor(l0), Math.ceil(l1)];
+        this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+        if (!this.#times.known && (this.#colorBy === 'time' || this.#colorBy === 'date')) this.#colorBy = 'folder';
+        this.#renderFilter();
+        this.#recomputeHidden();
+    }
+
+    #renderFilter() {
+        const box = this.el.querySelector<HTMLElement>('.emap-filter')!;
+        const d = this.#data!;
+        const parts: string[] = [];
+        const t = this.#times;
+        if (t?.known) {
+            const hours = (sel: number, from: number) => Array.from({ length: 24 }, (_, k) => k + from)
+                .map((h) => `<option value="${h}"${h === sel ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('');
+            parts.push(`<label title="Only windows recorded between these hours (wraps past midnight, e.g. 20:00–06:00)">Hours
+                <select class="field-select emap-h0">${hours(this.#filter.h0, 0)}</select>–<select class="field-select emap-h1">${hours(this.#filter.h1, 1)}</select></label>`);
+            const [lo, hi] = this.#dayRange.map(dayToIso);
+            parts.push(`<label title="Only windows recorded on these days">Dates
+                <input type="date" class="field-input emap-d0" min="${lo}" max="${hi}" value="${this.#filter.d0 || lo}">–<input type="date" class="field-input emap-d1" min="${lo}" max="${hi}" value="${this.#filter.d1 || hi}"></label>`);
+        }
+        if (d.level?.length === d.x.length && this.#levelRange[1] > this.#levelRange[0]) {
+            const [l0, l1] = this.#levelRange;
+            const v = Number.isFinite(this.#filter.minLevel) ? this.#filter.minLevel : l0;
+            parts.push(`<label title="Hide windows whose level (RMS) is below this value: mostly silence and faint background">Hide quiet
+                <input type="range" class="emap-level" min="${l0}" max="${l1}" step="1" value="${v}"><span class="emap-level-val">${v} dBFS</span></label>`);
+        }
+        if (!parts.length) {
+            box.hidden = true;
+            box.innerHTML = '';
+            return;
+        }
+        box.hidden = false;
+        box.innerHTML = parts.join('') + '<span class="emap-spacer"></span><span class="emap-shown field-hint"></span>'
+            + '<button class="sidebar-action-btn secondary" data-act="filter-reset" type="button">Show all</button>';
+    }
+
+    /** Filter controls → #filter → hidden mask, redraw. */
+    #readFilter() {
+        const q = <T extends HTMLElement>(c: string) => this.el.querySelector<T>(`.emap-filter .${c}`);
+        const f = this.#filter;
+        f.h0 = Number(q<HTMLSelectElement>('emap-h0')?.value ?? 0);
+        f.h1 = Number(q<HTMLSelectElement>('emap-h1')?.value ?? 24);
+        f.d0 = q<HTMLInputElement>('emap-d0')?.value ?? '';
+        f.d1 = q<HTMLInputElement>('emap-d1')?.value ?? '';
+        const lv = q<HTMLInputElement>('emap-level');
+        f.minLevel = lv && Number(lv.value) > this.#levelRange[0] ? Number(lv.value) : -Infinity;
+        const val = q<HTMLElement>('emap-level-val');
+        if (val && lv) val.textContent = `${lv.value} dBFS`;
+        this.#recomputeHidden();
+        this.#renderSide();
+        this.#draw();
+    }
+
+    #recomputeHidden() {
+        const d = this.#data!;
+        const n = d.x.length, f = this.#filter, t = this.#times;
+        const hidden = new Uint8Array(n);
+        const byHours = !(f.h0 === 0 && f.h1 === 24) && f.h0 !== f.h1;
+        const [lo, hi] = [isoToDay(f.d0), isoToDay(f.d1)];
+        const byDate = t?.known && ((Number.isFinite(lo) && lo > this.#dayRange[0]) || (Number.isFinite(hi) && hi < this.#dayRange[1]));
+        const lv = d.level?.length === n && Number.isFinite(f.minLevel) ? d.level : null;
+        let shown = 0;
+        for (let i = 0; i < n; i++) {
+            let h = 0;
+            if (t && (byHours || byDate)) {
+                const m = t.minute[i], day = t.day[i];
+                if (!Number.isFinite(m)) h = 1;   // no time → cannot satisfy a time filter
+                else if (byHours && !inHours(m / 60, f.h0, f.h1)) h = 1;
+                else if (byDate && ((Number.isFinite(lo) && day < lo) || (Number.isFinite(hi) && day > hi))) h = 1;
+            }
+            if (!h && lv && lv[i] < f.minLevel) h = 1;
+            hidden[i] = h;
+            if (!h) shown++;
+        }
+        this.#hidden = hidden;
+        for (const i of [...this.#sel]) if (hidden[i]) this.#sel.delete(i);
+        this.#renderSel();
+        const lab = this.el.querySelector('.emap-shown');
+        if (lab) lab.textContent = shown === n ? `${n.toLocaleString()} windows` : `${shown.toLocaleString()} of ${n.toLocaleString()} shown`;
     }
 
     // ── Data helpers ──────────────────────────────────────────────────
@@ -261,40 +467,62 @@ export class EmbeddingMap {
             });
             this.#groupNames = [...dirs.keys()];
         }
-        this.#order = this.#drawOrder();
+        this.#buildLayers();
         this.#renderLegend();
     }
 
-    /** Points in paint order: background (noise, unlabelled, low scores) first. */
-    #drawOrder(): number[] {
+    /**
+     * Group points by colour into paint layers, background (noise, unlabelled, low scores) first.
+     * Continuous scales are quantised, so a map of 100 k windows needs only ~100 fills per frame.
+     */
+    #buildLayers() {
         const d = this.#data!;
-        const idx = d.x.map((_, i) => i);
+        const n = d.x.length;
         const cls = this.#opts.getClass();
         const rank = (i: number): number => {
             switch (this.#colorBy) {
-                case 'cluster': return (this.#clusters?.labels[i] ?? -1) < 0 ? 0 : 1;
+                case 'cluster': return (this.#clusters?.labels[i] ?? -1) >= 0 ? 2 : this.#clusterOf(i) >= 0 ? 1 : 0;
                 case 'label': return cls && this.#opts.labelOf(d.files[d.file[i]], d.start[i]) ? 1 : 0;
-                case 'score': return this.#scores?.[i] ?? 0;
+                case 'score': return Math.round((this.#scores?.[i] ?? 0) * 32);
                 default: return 0;
             }
         };
-        const rk = idx.map(rank);
-        return idx.sort((a, b) => rk[a] - rk[b]);
+        const groups = new Map<string, { rank: number; color: string; pts: number[] }>();
+        for (let i = 0; i < n; i++) {
+            const rk = rank(i), color = this.#colorOf(i), key = `${rk}|${color}`;
+            let gr = groups.get(key);
+            if (!gr) groups.set(key, gr = { rank: rk, color, pts: [] });
+            gr.pts.push(i);
+        }
+        const byLabel = this.#colorBy === 'label';
+        this.#layers = [...groups.values()].sort((a, b) => a.rank - b.rank)
+            .map((gr) => ({ color: gr.color, big: byLabel && gr.color !== UNLABELED, pts: Int32Array.from(gr.pts) }));
     }
 
     #colorOf(i: number): string {
         const d = this.#data!;
         switch (this.#colorBy) {
             case 'cluster': {
-                const c = this.#clusters?.labels[i] ?? -1;
-                return c < 0 ? NOISE : PALETTE[c % PALETTE.length];
+                const own = this.#clusters?.labels[i] ?? -1;
+                if (own >= 0) return PALETTE[own % PALETTE.length];
+                const c = this.#clusterOf(i);
+                return c < 0 ? NOISE : withAlpha(PALETTE[c % PALETTE.length], 0.4);
+            }
+            case 'time': {   // quarter hours
+                const m = this.#times?.minute[i] ?? NaN;
+                return Number.isFinite(m) ? timeColor(Math.round(m / 15) / 4) : NOISE;
+            }
+            case 'date': {   // 48 steps
+                const day = this.#times?.day[i] ?? NaN;
+                const [d0, d1] = this.#dayRange;
+                return Number.isFinite(day) ? seqColor(d1 > d0 ? Math.round(((day - d0) / (d1 - d0)) * 48) / 48 : 0.5) : NOISE;
             }
             case 'label': {
                 const cls = this.#opts.getClass();
                 const l = cls ? this.#opts.labelOf(d.files[d.file[i]], d.start[i]) : null;
                 return l ? LABEL_COLOR[l] : UNLABELED;
             }
-            case 'score': return this.#scores ? scoreColor(this.#scores[i]) : UNLABELED;
+            case 'score': return this.#scores ? scoreColor(Math.round(this.#scores[i] * 32) / 32) : UNLABELED;
             default: return PALETTE[this.#groupOf[d.file[i]] % PALETTE.length];
         }
     }
@@ -307,7 +535,21 @@ export class EmbeddingMap {
             return;
         }
         if (this.#colorBy === 'cluster') {
-            leg.innerHTML = this.#clusters ? `${this.#clusters.clusters.length} clusters<div><i style="background:${NOISE}"></i>unassigned</div>` : '';
+            const k = this.#clusters;
+            const left = k ? k.labels.reduce((a, l, i) => a + (l < 0 && this.#clusterOf(i) < 0 ? 1 : 0), 0) : 0;
+            leg.innerHTML = k ? `${k.clusters.length} clusters${left ? `<div><i style="background:${NOISE}"></i>unassigned</div>` : ''}` : '';
+            return;
+        }
+        if (this.#colorBy === 'time') {
+            const g = Array.from({ length: 9 }, (_, k) => timeColor(k * 3)).join(',');
+            leg.innerHTML = `<b>Time of day</b><div class="emap-grad" style="background:linear-gradient(90deg,${g})"></div>`
+                + '<div class="emap-grad-scale"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 h</span></div>';
+            return;
+        }
+        if (this.#colorBy === 'date') {
+            const g = Array.from({ length: 5 }, (_, k) => seqColor(k / 4)).join(',');
+            leg.innerHTML = `<b>Date</b><div class="emap-grad" style="background:linear-gradient(90deg,${g})"></div>`
+                + `<div class="emap-grad-scale"><span>${dayToIso(this.#dayRange[0])}</span><span>${dayToIso(this.#dayRange[1])}</span></div>`;
             return;
         }
         if (this.#colorBy === 'label') {
@@ -319,7 +561,7 @@ export class EmbeddingMap {
         }
         const names = this.#groupNames;
         const shown = names.slice(0, 12).map((nm, i) =>
-            `<div title="${esc(nm)}"><i style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(nm.split('/').pop() || nm)}</div>`).join('');
+            `<div title="${esc(nm)}"><i style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(this.#colorBy === 'folder' ? folderLabel(nm) : nm.split('/').pop() || nm)}</div>`).join('');
         leg.innerHTML = shown + (names.length > 12 ? `<div class="field-hint">+${names.length - 12} more (colours repeat)</div>` : '');
     }
 
@@ -389,7 +631,7 @@ export class EmbeddingMap {
             for (let gy = Math.floor((y - r) * 100); gy <= Math.floor((y + r) * 100); gy++) {
                 for (const i of this.#grid.get(gx * 1000 + gy) || []) {
                     const dd = (d.x[i] - x) ** 2 + (d.y[i] - y) ** 2;
-                    if (dd < bestD) { bestD = dd; best = i; }
+                    if (dd < bestD && !this.#hidden[i]) { bestD = dd; best = i; }
                 }
             }
         }
@@ -415,16 +657,21 @@ export class EmbeddingMap {
         const n = d.x.length;
         const base = Math.max(1.5, 7 - 1.2 * Math.log10(Math.max(10, n)));   // 160 → ~4.4, 100 k → ~1.5
         const r = Math.min(8, base * Math.sqrt(Math.max(1, this.#scale / this.#fitScale)));
-        const byLabel = this.#colorBy === 'label';
-        g.globalAlpha = byLabel || this.#colorBy === 'score' ? 1 : 0.8;
-        const order = this.#order.length === n ? this.#order : d.x.map((_, i) => i);
-        for (const i of order) {
-            const [sx, sy] = this.#toScreen(d.x[i], d.y[i]);
-            if (sx < -5 || sy < -5 || sx > w + 5 || sy > h + 5) continue;
-            const col = this.#colorOf(i);
-            g.fillStyle = col;
-            const rr = byLabel && col !== UNLABELED ? r * 1.6 : r;
-            g.fillRect(sx - rr / 2, sy - rr / 2, rr, rr);
+        g.globalAlpha = this.#colorBy === 'label' || this.#colorBy === 'score' ? 1 : 0.8;
+        const hidden = this.#hidden.length === n ? this.#hidden : null;
+        // screen = data * k + o (same as #toScreen, without a layout query per point)
+        const k = this.#size().s * this.#scale, ox = w / 2 - this.#cx * k, oy = h / 2 - this.#cy * k;
+        for (const L of this.#layers) {
+            const rr = L.big ? r * 1.6 : r, hr = rr / 2;
+            g.fillStyle = L.color;
+            g.beginPath();
+            for (const i of L.pts) {
+                if (hidden?.[i]) continue;
+                const sx = d.x[i] * k + ox, sy = d.y[i] * k + oy;
+                if (sx < -5 || sy < -5 || sx > w + 5 || sy > h + 5) continue;
+                g.rect(sx - hr, sy - hr, rr, rr);
+            }
+            g.fill();
         }
         g.globalAlpha = 1;
         g.strokeStyle = SUSPECT;
@@ -438,10 +685,9 @@ export class EmbeddingMap {
         // Selection, hover and lasso in the text colour, so they show on both themes.
         g.strokeStyle = getComputedStyle(this.el).color || '#888';
         g.lineWidth = 1;
-        for (const i of this.#sel) {
-            const [sx, sy] = this.#toScreen(d.x[i], d.y[i]);
-            g.strokeRect(sx - r, sy - r, r * 2, r * 2);
-        }
+        g.beginPath();
+        for (const i of this.#sel) g.rect(d.x[i] * k + ox - r, d.y[i] * k + oy - r, r * 2, r * 2);
+        g.stroke();
         if (this.#hover >= 0) {
             const [sx, sy] = this.#toScreen(d.x[this.#hover], d.y[this.#hover]);
             g.beginPath();
@@ -547,9 +793,12 @@ export class EmbeddingMap {
         const c = this.#clusters?.labels[i];
         const sc = this.#scores && this.#scoresClass === cls ? this.#scores[i] : null;
         this.#tip.innerHTML = `${esc(w.path)}<br>${fmtTime(w.start)}–${fmtTime(w.end)}`
-            + (c != null ? `<br>${c < 0 ? 'no cluster' : `cluster #${c}`}` : '')
+            + (c != null ? `<br>${c >= 0 ? `cluster #${c}` : this.#clusterOf(i) >= 0 ? `no cluster (nearest #${this.#clusterOf(i)})` : 'no cluster'}` : '')
             + (l ? `<br>${esc(cls)}: ${l}` : '')
-            + (sc != null ? `<br>score ${sc.toFixed(2)}` : '');
+            + (sc != null ? `<br>score ${sc.toFixed(2)}` : '')
+            + (this.#times && Number.isFinite(this.#times.minute[i])
+                ? `<br>${dayToIso(this.#times.day[i])} ${String(Math.floor(this.#times.minute[i] / 60)).padStart(2, '0')}:${String(Math.floor(this.#times.minute[i] % 60)).padStart(2, '0')}` : '')
+            + (this.#data?.level?.length ? `<br>${this.#data.level[i].toFixed(1)} dBFS` : '');
         this.#tip.hidden = false;
         const { w: cw, h: ch } = this.#size();
         const tw = this.#tip.offsetWidth, th = this.#tip.offsetHeight;
@@ -564,9 +813,10 @@ export class EmbeddingMap {
         const d = this.#data;
         if (d && poly.length > 2) {
             if (!add) this.#sel.clear();
+            const { w, h, s } = this.#size();
+            const k = s * this.#scale, ox = w / 2 - this.#cx * k, oy = h / 2 - this.#cy * k;
             for (let i = 0; i < d.x.length; i++) {
-                const [sx, sy] = this.#toScreen(d.x[i], d.y[i]);
-                if (inPolygon(sx, sy, poly)) this.#sel.add(i);
+                if (!this.#hidden[i] && inPolygon(d.x[i] * k + ox, d.y[i] * k + oy, poly)) this.#sel.add(i);
             }
         }
         this.#renderSel();
@@ -597,6 +847,13 @@ export class EmbeddingMap {
             case 'close': this.close(); break;
             case 'recompute': this.open(true); break;
             case 'sel-clear': this.#sel.clear(); this.#renderSel(); this.#draw(); break;
+            case 'filter-reset':
+                this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity };
+                this.#renderFilter();
+                this.#recomputeHidden();
+                this.#renderSide();
+                this.#draw();
+                break;
             case 'play': {
                 const i = Number(btn.dataset.i);
                 Promise.resolve(this.#opts.openHit(this.#win(i), true)).catch((err) => this.#setStatus(`${err}`));
@@ -605,7 +862,9 @@ export class EmbeddingMap {
             case 'cl-select':
             case 'cl-zoom': {
                 const c = Number(btn.dataset.c);
-                const pts = (this.#clusters?.labels || []).flatMap((l, i) => (l === c ? [i] : []));
+                const own = this.#clusters?.labels || [];
+                // c = −1 selects the unassigned windows; with assignment on, clusters include their assigned ones.
+                const pts = own.flatMap((l, i) => ((c < 0 ? l < 0 && this.#clusterOf(i) < 0 : this.#clusterOf(i) === c) && !this.#hidden[i] ? [i] : []));
                 if (btn.dataset.act === 'cl-select') {
                     this.#sel = new Set(pts);
                     this.#renderSel();
@@ -681,11 +940,17 @@ export class EmbeddingMap {
         const sizes = [null, 5, 10, 20, 50, 100];
         const opts = sizes.map((v) => `<option value="${v ?? ''}"${v === this.#minSize ? ' selected' : ''}>${v == null ? `Auto (${k.minClusterSize})` : v}</option>`).join('');
         const members = new Map<number, number[]>();
-        k.labels.forEach((l, i) => { if (l >= 0) (members.get(l) || members.set(l, []).get(l)!).push(i); });
+        k.labels.forEach((_, i) => {
+            const l = this.#clusterOf(i);
+            if (l >= 0) (members.get(l) || members.set(l, []).get(l)!).push(i);
+        });
+        const oneFolder = new Set(d.files.map(dirOf)).size <= 1;
+        const nAssigned = this.#assign ? k.labels.filter((l, i) => l < 0 && this.#clusterOf(i) >= 0).length : 0;
         const cards = k.clusters.map((c) => {
             const pts = members.get(c.id) || [];
-            const make = topShares(pts.map((i) => dirOf(d.files[d.file[i]])))
-                .map((x) => `${esc(x.key.split('/').pop() || x.key)} ${Math.round(x.share * 100)} %`).join(', ');
+            // Make-up by folder; meaningless when the project has only one folder.
+            const make = oneFolder ? '' : topShares(pts.map((i) => dirOf(d.files[d.file[i]])))
+                .map((x) => `${esc(folderLabel(x.key))} ${Math.round(x.share * 100)} %`).join(', ');
             let lab = '';
             if (cls) {
                 let pos = 0, neg = 0;
@@ -698,7 +963,7 @@ export class EmbeddingMap {
             const ex = c.exemplars.map((i, n) => `<button class="sim-play" data-act="play" data-i="${i}" type="button" title="Typical window ${n + 1}: ${esc(d.files[d.file[i]])} @ ${fmtTime(d.start[i])}">▶</button>`).join('');
             return `<div class="emap-card">
                 <div class="emap-card-head"><i style="background:${PALETTE[c.id % PALETTE.length]}"></i><b>#${c.id}</b>
-                    <span>${c.size.toLocaleString()} windows</span><span class="emap-spacer"></span>
+                    <span>${c.size.toLocaleString()} windows${this.#assign && pts.length > c.size ? ` <span class="field-hint">+ ${(pts.length - c.size).toLocaleString()} assigned</span>` : ''}</span><span class="emap-spacer"></span>
                     <button class="sim-icon-btn" data-act="cl-zoom" data-c="${c.id}" type="button" title="Zoom to cluster">⌖</button>
                     <button class="sim-icon-btn" data-act="cl-select" data-c="${c.id}" type="button" title="Select (then label in the top bar)">☐</button></div>
                 <div class="field-hint">${make}</div>${lab}
@@ -706,8 +971,10 @@ export class EmbeddingMap {
         }).join('');
         return `<div class="emap-side-sec"><div class="emap-card-head"><b>Clusters</b><span class="emap-spacer"></span>
                 <label class="field-hint">min size <select class="field-select emap-minsize">${opts}</select></label></div>
-            <p class="field-hint">${k.clusters.length} clusters · ${k.noise.toLocaleString()} windows unassigned
-                ${k.noise ? '<button class="sim-icon-btn" data-act="cl-select" data-c="-1" type="button" title="Select unassigned windows">☐</button>' : ''}</p>
+            <p class="field-hint">${k.clusters.length} clusters · ${(k.noise - nAssigned).toLocaleString()} windows unassigned
+                ${k.noise - nAssigned ? '<button class="sim-icon-btn" data-act="cl-select" data-c="-1" type="button" title="Select unassigned windows">☐</button>' : ''}</p>
+            ${k.noise && k.nearest ? `<label class="field-hint emap-assign-row" title="Give every unassigned window the cluster whose centre is most similar (shown lighter)">
+                <input type="checkbox" class="emap-assign"${this.#assign ? ' checked' : ''}> Assign unassigned windows to their nearest cluster</label>` : ''}
             ${cards}</div>`;
     }
 

@@ -74,6 +74,10 @@ struct FileEntry {
     row: u64,
     count: u64,
     duration: f64,
+    /// Pegel pro Fenster (RMS in dBFS, 0,1 dB genau), fuer „leise Fenster
+    /// ausblenden“ auf der Karte. Leer in aelteren Stores (wird nachgereicht).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    level: Vec<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -130,6 +134,24 @@ fn write_index(root: &str, idx: &Index) -> Result<(), String> {
     let json = serde_json::to_vec(idx).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, dir.join("index.json")).map_err(|e| format!("replace index.json: {e}"))
+}
+
+/// RMS-Pegel jedes Fensters in dBFS (Stille: −120), auf 0,1 dB gerundet.
+pub(crate) fn window_levels(windows: &[f32]) -> Vec<f32> {
+    windows
+        .chunks_exact(WINDOW)
+        .map(|w| {
+            let ms = w.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>() / WINDOW as f64;
+            let db = if ms > 1e-12 { 10.0 * ms.log10() } else { -120.0 };
+            ((db * 10.0).round() / 10.0) as f32
+        })
+        .collect()
+}
+
+/// Pegel pro Fenster: Datei/Start → dBFS (fehlt bei Stores ohne Pegel).
+pub(crate) fn levels_by_row(root: &str) -> Option<BTreeMap<String, Vec<f32>>> {
+    let idx = read_index(root)?;
+    Some(idx.files.into_iter().filter(|(_, e)| e.level.len() as u64 == e.count).map(|(k, e)| (k, e.level)).collect())
 }
 
 fn vectors_path(root: &str) -> PathBuf {
@@ -421,7 +443,8 @@ fn run_job(
     let todo: Vec<_> = audio
         .iter()
         .filter(|f| match idx.files.get(&f.path) {
-            Some(e) => e.size != f.size || e.last_modified != f.last_modified,
+            // geaendert, oder aus einem aelteren Store ohne Pegel (dann nur Pegel nachrechnen)
+            Some(e) => e.size != f.size || e.last_modified != f.last_modified || e.level.len() as u64 != e.count,
             None => match idx.failed.get(&f.path) {
                 // fehlgeschlagene nur nach Aenderung erneut versuchen
                 Some(_) => false,
@@ -459,12 +482,31 @@ fn run_job(
         p.current = Some(f.path.clone());
         emit(p);
         let full = Path::new(root).join(&f.path);
+        // Unveraenderte Datei, nur der Pegel fehlt: dekodieren, nicht neu einbetten.
+        let levels_only = idx.files.get(&f.path).is_some_and(|e| e.size == f.size && e.last_modified == f.last_modified);
+        if levels_only {
+            if let Ok((x, sr)) = decode_mono(&full) {
+                if let Ok(x) = aw_embed::resample_to_32k(&x, sr) {
+                    let lv = window_levels(&aw_embed::frame(&x, hop, false));
+                    if let Some(e) = idx.files.get_mut(&f.path) {
+                        if lv.len() as u64 == e.count {
+                            e.level = lv;
+                        }
+                    }
+                }
+            }
+            write_index(root, &idx)?;
+            p.done += 1;
+            emit(p);
+            continue;
+        }
         let result = decode_mono(&full).and_then(|(x, sr)| {
             let x = aw_embed::resample_to_32k(&x, sr).map_err(|e| e.to_string())?;
             let duration = x.len() as f64 / SAMPLE_RATE as f64;
             let windows = aw_embed::frame(&x, hop, false);
             drop(x);
             let n = windows.len() / WINDOW;
+            let level = window_levels(&windows);
             let mut vecs = Vec::with_capacity(n * DIM);
             // in Stuecken, damit Abbrechen auch bei langen Aufnahmen greift
             for chunk in windows.chunks(BATCH * 8 * WINDOW) {
@@ -473,15 +515,15 @@ fn run_job(
                 }
                 vecs.extend(embedder.embed(chunk, BATCH).map_err(|e| e.to_string())?);
             }
-            Ok((vecs, n as u64, duration))
+            Ok((vecs, n as u64, duration, level))
         });
         match result {
-            Ok((vecs, n, duration)) => {
+            Ok((vecs, n, duration, level)) => {
                 vec_file.write_all(&to_f16_bytes(&vecs)).map_err(|e| e.to_string())?;
                 vec_file.flush().map_err(|e| e.to_string())?;
                 idx.files.insert(
                     f.path.clone(),
-                    FileEntry { size: f.size, last_modified: f.last_modified, row: idx.total_rows, count: n, duration },
+                    FileEntry { size: f.size, last_modified: f.last_modified, row: idx.total_rows, count: n, duration, level },
                 );
                 idx.failed.remove(&f.path);
                 idx.total_rows += n;
@@ -642,6 +684,14 @@ mod tests {
     }
 
     #[test]
+    fn window_levels_in_dbfs() {
+        // Sinus mit Amplitude 1 → −3,0 dBFS; halbe Amplitude → −9,0; Stille → −120
+        let sine = |a: f32| (0..WINDOW).map(move |i| a * (i as f32 * 0.05).sin());
+        let w: Vec<f32> = sine(1.0).chain(sine(0.5)).chain(std::iter::repeat(0.0).take(WINDOW)).collect();
+        assert_eq!(window_levels(&w), vec![-3.0, -9.0, -120.0]);
+    }
+
+    #[test]
     fn append_compact_round_trip() {
         let dir = std::env::temp_dir().join(format!("signavis-embed-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -654,7 +704,7 @@ mod tests {
             f.write_all(&to_f16_bytes(&rows(v, n))).unwrap();
             idx.files.insert(
                 name.into(),
-                FileEntry { size: 0, last_modified: 0.0, row: idx.total_rows, count: n as u64, duration: 0.0 },
+                FileEntry { size: 0, last_modified: 0.0, row: idx.total_rows, count: n as u64, duration: 0.0, level: vec![v; n] },
             );
             idx.total_rows += n as u64;
         }
@@ -666,6 +716,8 @@ mod tests {
         let c = &idx.files["c.wav"];
         assert_eq!(c.row, 2);
         assert!(read_rows(&mut f, c.row, c.count).unwrap().iter().all(|x| *x == 3.0));
+        assert_eq!(c.level, vec![3.0; 3], "Pegel bleiben beim Verdichten an ihrer Datei");
+        assert_eq!(levels_by_row(&root).unwrap().len(), 2);
         assert_eq!(std::fs::metadata(vectors_path(&root)).unwrap().len(), 5 * DIM as u64 * 2);
         let _ = std::fs::remove_dir_all(&dir);
     }

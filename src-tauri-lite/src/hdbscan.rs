@@ -235,9 +235,67 @@ pub fn cluster(n: usize, mst: &[(u32, u32, f32)], min_cluster_size: usize) -> Cl
     Clustering { labels, strength }
 }
 
+/// Rauschpunkte dem naechsten Cluster zuordnen: naechst im Sinne von HDBSCAN,
+/// also mit dem kleinsten Engpass (groesste Kante) auf dem Weg durch den
+/// Minimalbaum – der Cluster, mit dem der Punkt in der Hierarchie zuerst
+/// verschmilzt. Punkte, die nur ueber `DISCONNECTED` erreichbar sind,
+/// bleiben −1. Cluster-Punkte behalten ihr Label.
+pub fn assign_noise(n: usize, mst: &[(u32, u32, f32)], labels: &[i32]) -> Vec<i32> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let mut adj: Vec<Vec<(usize, f32)>> = vec![vec![]; n];
+    for &(a, b, w) in mst {
+        if w < DISCONNECTED {
+            adj[a as usize].push((b as usize, w));
+            adj[b as usize].push((a as usize, w));
+        }
+    }
+    let mut out: Vec<i32> = labels.iter().copied().take(n).collect();
+    out.resize(n, -1);
+    let mut best = vec![f32::INFINITY; n];
+    // Heap ueber (Engpass, Knoten); f32 als geordnete Bits (alle Werte >= 0).
+    let mut heap = BinaryHeap::new();
+    for i in 0..n {
+        if out[i] >= 0 {
+            best[i] = 0.0;
+            heap.push(Reverse((0u32, i)));
+        }
+    }
+    let mut done = vec![false; n];
+    while let Some(Reverse((bits, i))) = heap.pop() {
+        if done[i] {
+            continue;
+        }
+        done[i] = true;
+        let cur = f32::from_bits(bits);
+        for &(j, w) in &adj[i] {
+            let cand = cur.max(w);
+            if !done[j] && cand < best[j] {
+                best[j] = cand;
+                if labels.get(j).copied().unwrap_or(-1) < 0 {
+                    out[j] = out[i];
+                }
+                heap.push(Reverse((cand.max(0.0).to_bits(), j)));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assign_noise_follows_smallest_bottleneck() {
+        // 0-1 Cluster A, 4-5 Cluster B; 2 und 3 Rauschen dazwischen.
+        // 1 -(0.5)- 2 -(0.9)- 3 -(0.4)- 4 ; 6 nur ueber DISCONNECTED erreichbar.
+        let mst = vec![(0, 1, 0.1), (1, 2, 0.5), (2, 3, 0.9), (3, 4, 0.4), (4, 5, 0.1), (5, 6, DISCONNECTED)];
+        let labels = vec![0, 0, -1, -1, 1, 1, -1];
+        assert_eq!(assign_noise(7, &mst, &labels), vec![0, 0, 0, 1, 1, 1, -1]);
+        // ohne Cluster bleibt alles Rauschen
+        assert_eq!(assign_noise(3, &[(0, 1, 0.1), (1, 2, 0.2)], &[-1, -1, -1]), vec![-1, -1, -1]);
+    }
 
     fn full_mst(pts: &[(f32, f32)], min_samples: usize) -> Vec<(u32, u32, f32)> {
         let n = pts.len();

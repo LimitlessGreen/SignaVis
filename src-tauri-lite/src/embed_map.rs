@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 
 use crate::hdbscan;
-use crate::embeddings::{store_dir, store_stamp, with_loaded, EmbedState};
+use crate::embeddings::{store_dir, store_stamp, with_loaded, EmbedState, Loaded};
 use aw_embed::{DIM, SAMPLE_RATE, WINDOW};
 
 pub const MAP_EVENT: &str = "lite-map-progress";
@@ -25,6 +25,10 @@ const K: usize = 15;
 const K_PLACE: usize = 5;
 const MAX_LAYOUT: usize = 40_000;
 const SEED: u64 = 0x5167_4E41_5649_5321;
+/// Inkrementell nur, solange hoechstens dieser Anteil neu oder weg ist.
+const MAX_INCREMENTAL: f64 = 0.25;
+/// Kandidaten fuer das Einsortieren neuer Fenster (Stichprobe der alten Punkte).
+const MAX_PLACE_CAND: usize = 20_000;
 // min_dist 0.1, spread 1.0 (Werte wie umap-learn)
 const UMAP_A: f32 = 1.577;
 const UMAP_B: f32 = 0.8951;
@@ -53,6 +57,12 @@ pub struct MapData {
     mst_b: Vec<u32>,
     #[serde(default)]
     mst_w: Vec<f32>,
+    /// Neue Fenster, die zuletzt ohne neues Layout einsortiert wurden (0: frisch gerechnet).
+    #[serde(default)]
+    placed_new: usize,
+    /// Pegel pro Punkt (dBFS) aus dem Index; nicht im Cache, leer ohne Pegel.
+    #[serde(default, skip_deserializing)]
+    level: Vec<f32>,
 }
 
 pub(crate) struct Projection {
@@ -544,13 +554,35 @@ pub(crate) fn project_2d(x: &[f32], n: usize, dim: usize, progress: &dyn Fn(&'st
 /// 2-D-Karte aller Fenster des Projekts (gecacht; `force` rechnet neu).
 #[tauri::command]
 pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>) -> Result<MapData, String> {
-    let mut data = tauri::async_runtime::spawn_blocking(move || compute_map(&app, &root, force.unwrap_or(false)))
-        .await
-        .map_err(|e| e.to_string())??;
+    let mut data = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = compute_map(&app, &root, force.unwrap_or(false))?;
+        d.level = point_levels(&root, &d);
+        Ok::<_, String>(d)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     data.mst_a = vec![];
     data.mst_b = vec![];
     data.mst_w = vec![];
     Ok(data)
+}
+
+/// Pegel jedes Kartenpunkts; leer, wenn auch nur einer Datei der Pegel fehlt.
+fn point_levels(root: &str, d: &MapData) -> Vec<f32> {
+    let Some(by_file) = crate::embeddings::levels_by_row(root) else { return vec![] };
+    let mut out = Vec::with_capacity(d.x.len());
+    // Punkte einer Datei liegen hintereinander, in Zeilenreihenfolge.
+    let (mut prev, mut row) = (u32::MAX, 0usize);
+    for &f in &d.file {
+        row = if f == prev { row + 1 } else { 0 };
+        prev = f;
+        let Some(lv) = by_file.get(&d.files[f as usize]) else { return vec![] };
+        match lv.get(row) {
+            Some(&v) => out.push(v),
+            None => return vec![],
+        }
+    }
+    out
 }
 
 fn compute_map(app: &tauri::AppHandle, root: &str, force: bool) -> Result<MapData, String> {
@@ -567,14 +599,33 @@ pub(crate) fn build_map(state: &EmbedState, root: &str, force: bool, emit: &dyn 
     let stamp = store_stamp(root).ok_or("Noch keine Embeddings in diesem Projekt")?;
     if !force {
         let cached = std::fs::read(map_path(root)).ok().and_then(|b| serde_json::from_slice::<MapData>(&b).ok());
-        if let Some(c) = cached.filter(|c| c.version == MAP_VERSION && c.stamp == stamp) {
-            return Ok(c);
+        if let Some(c) = cached.filter(|c| c.version == MAP_VERSION) {
+            if c.stamp == stamp {
+                return Ok(c);
+            }
+            // Wenig geaendert: alte Punkte behalten, neue einsortieren.
+            emit("place", 0.0);
+            if let Some(d) = with_loaded(state, root, |l| update_map(&c, l))? {
+                if let Ok(json) = serde_json::to_vec(&d) {
+                    let _ = std::fs::write(map_path(root), json);
+                }
+                return Ok(d);
+            }
         }
     }
     // Laeuft auf der gecachten Matrix (kein Kopieren); die Suche wartet solange.
-    let data = with_loaded(state, root, |l| {
-        let n = l.rows.len();
-        let Projection { xy, layout_points, anchor, mst } = project_2d(&l.vecs, n, DIM, emit);
+    let data = with_loaded(state, root, |l| assemble(l, project_2d(&l.vecs, l.rows.len(), DIM, emit)))?;
+    if let Ok(json) = serde_json::to_vec(&data) {
+        let _ = std::fs::write(map_path(root), json);
+    }
+    Ok(data)
+}
+
+/// Kartendaten aus geladener Matrix und Projektion.
+fn assemble(l: &Loaded, proj: Projection) -> MapData {
+    let Projection { xy, layout_points, anchor, mst } = proj;
+    let n = l.rows.len();
+    {
         let mut files: Vec<String> = Vec::new();
         let mut file = Vec::with_capacity(n);
         for r in &l.rows {
@@ -597,12 +648,82 @@ pub(crate) fn build_map(state: &EmbedState, root: &str, force: bool, emit: &dyn 
             mst_a: mst.iter().map(|e| e.0).collect(),
             mst_b: mst.iter().map(|e| e.1).collect(),
             mst_w: mst.iter().map(|e| e.2).collect(),
+            placed_new: 0,
+            level: vec![],
         }
-    })?;
-    if let Ok(json) = serde_json::to_vec(&data) {
-        let _ = std::fs::write(map_path(root), json);
     }
-    Ok(data)
+}
+
+/// Karte fortschreiben statt neu rechnen: Punkte, die es noch gibt, behalten
+/// Lage und Anker; neue Fenster kommen ans Mittel ihrer K_PLACE naechsten alten
+/// Punkte (Kosinus im Embedding-Raum) und erben den Anker des naechsten.
+/// None, wenn sich zu viel geaendert hat (dann neues Layout).
+pub(crate) fn update_map(old: &MapData, l: &Loaded) -> Option<MapData> {
+    let key = |path: &str, start: f64| (path.to_string(), (start * 1000.0).round() as i64);
+    let old_idx: std::collections::HashMap<(String, i64), usize> =
+        (0..old.x.len()).map(|i| (key(&old.files[old.file[i] as usize], old.start[i]), i)).collect();
+    let n = l.rows.len();
+    let found: Vec<Option<usize>> = l.rows.iter().map(|r| old_idx.get(&key(&r.path, r.start)).copied()).collect();
+    let kept = found.iter().filter(|f| f.is_some()).count();
+    let (added, removed) = (n - kept, old.x.len() - kept);
+    if kept == 0 || (added + removed) as f64 > MAX_INCREMENTAL * old.x.len() as f64 {
+        return None;
+    }
+    // Kandidaten: alte Punkte, die es noch gibt (Stichprobe bei grossen Stores)
+    let mut cand: Vec<usize> = (0..n).filter(|&i| found[i].is_some()).collect();
+    if cand.len() > MAX_PLACE_CAND {
+        let mut rng = Rng(SEED ^ old.stamp);
+        for i in 0..MAX_PLACE_CAND {
+            let j = i + rng.below(cand.len() - i);
+            cand.swap(i, j);
+        }
+        cand.truncate(MAX_PLACE_CAND);
+    }
+    let new_rows: Vec<usize> = (0..n).filter(|&i| found[i].is_none()).collect();
+    let placed = par_map(new_rows.len(), |r| {
+        let i = new_rows[r];
+        let nb = nearest(&l.vecs, DIM, &l.vecs[i * DIM..(i + 1) * DIM], &cand, K_PLACE, None);
+        let w = nb.len().max(1) as f32;
+        let (sx, sy) = nb.iter().fold((0.0f32, 0.0f32), |a, &(ci, _)| {
+            let o = found[cand[ci]].unwrap();
+            (a.0 + old.x[o], a.1 + old.y[o])
+        });
+        let anchor = nb.first().map_or(0, |&(ci, _)| old.anchor[found[cand[ci]].unwrap()]);
+        (sx / w, sy / w, anchor)
+    });
+    let mut new_iter = placed.into_iter();
+    let (mut files, mut file) = (Vec::<String>::new(), Vec::with_capacity(n));
+    let (mut x, mut y, mut anchor) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+    for (i, r) in l.rows.iter().enumerate() {
+        if files.last() != Some(&r.path) {
+            files.push(r.path.clone());
+        }
+        file.push((files.len() - 1) as u32);
+        let (px, py, a) = match found[i] {
+            Some(o) => (old.x[o], old.y[o], old.anchor[o]),
+            None => new_iter.next().unwrap(),
+        };
+        x.push(px);
+        y.push(py);
+        anchor.push(a);
+    }
+    Some(MapData {
+        version: MAP_VERSION,
+        stamp: l.stamp,
+        window: old.window,
+        layout_points: old.layout_points,
+        files,
+        file,
+        start: l.rows.iter().map(|r| r.start).collect(),
+        x,
+        y,
+        anchor,
+        mst_a: old.mst_a.clone(),
+        mst_b: old.mst_b.clone(),
+        mst_w: old.mst_w.clone(),
+        placed_new: old.placed_new + added,
+        level: vec![],
+    })
 }
 
 // ── Cluster ───────────────────────────────────────────────────────────
@@ -624,6 +745,9 @@ pub struct Clusters {
     /// Pro Kartenpunkt Cluster-Id (0 = groesster) oder −1 (Rauschen).
     labels: Vec<i32>,
     strength: Vec<f32>,
+    /// Pro Kartenpunkt der naechste Cluster, auch fuer Rauschen (−1 nur ohne
+    /// erreichbaren Cluster) – fuer „Unzugeordnete dem naechsten Cluster zuordnen“.
+    nearest: Vec<i32>,
     clusters: Vec<ClusterInfo>,
     noise: usize,
 }
@@ -640,6 +764,8 @@ pub(crate) fn clusters_from_map(map: &MapData, min_cluster_size: Option<usize>) 
     let c = hdbscan::cluster(m, &mst, mcs);
     let n = map.x.len();
     let labels: Vec<i32> = (0..n).map(|i| c.labels.get(map.anchor[i] as usize).copied().unwrap_or(-1)).collect();
+    let near_layout = hdbscan::assign_noise(m, &mst, &c.labels);
+    let nearest: Vec<i32> = (0..n).map(|i| near_layout.get(map.anchor[i] as usize).copied().unwrap_or(-1)).collect();
     // Platzierte Punkte erben Cluster und Staerke ihres Ankers.
     let strength: Vec<f32> = (0..n).map(|i| c.strength.get(map.anchor[i] as usize).copied().unwrap_or(0.0)).collect();
     let k = labels.iter().copied().max().map_or(0, |v| (v + 1).max(0) as usize);
@@ -668,12 +794,42 @@ pub(crate) fn clusters_from_map(map: &MapData, min_cluster_size: Option<usize>) 
         })
         .collect();
     let noise = labels.iter().filter(|&&l| l < 0).count();
-    Clusters { stamp: map.stamp, min_cluster_size: mcs, labels, strength, clusters, noise }
+    Clusters { stamp: map.stamp, min_cluster_size: mcs, labels, strength, nearest, clusters, noise }
+}
+
+/// Unzugeordnete Punkte zum Cluster mit dem aehnlichsten Schwerpunkt (Kosinus im
+/// Embedding-Raum). `vecs` normiert, eine Zeile pro Kartenpunkt. Auf Hawaii
+/// (Zenodo 7078499, 73 k Fenster) trifft das die annotierte Art in 81 % der Faelle,
+/// der Weg durch den Minimalbaum in 76 %, die haeufigste Art allein in 61 %.
+pub(crate) fn nearest_centroid(vecs: &[f32], labels: &[i32]) -> Vec<i32> {
+    let k = labels.iter().copied().max().map_or(0, |v| (v + 1).max(0) as usize);
+    if k == 0 {
+        return labels.to_vec();
+    }
+    let mut cent = vec![0.0f32; k * DIM];
+    for (i, &l) in labels.iter().enumerate() {
+        if l >= 0 {
+            let c = &mut cent[l as usize * DIM..(l as usize + 1) * DIM];
+            c.iter_mut().zip(&vecs[i * DIM..(i + 1) * DIM]).for_each(|(a, b)| *a += b);
+        }
+    }
+    for c in cent.chunks_exact_mut(DIM) {
+        let nrm = c.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-12);
+        c.iter_mut().for_each(|x| *x /= nrm);
+    }
+    par_map(labels.len(), |i| {
+        if labels[i] >= 0 {
+            return labels[i];
+        }
+        let v = &vecs[i * DIM..(i + 1) * DIM];
+        let dot = |c: &[f32]| c.iter().zip(v).map(|(a, b)| a * b).sum::<f32>();
+        (0..k).max_by(|&a, &b| dot(&cent[a * DIM..(a + 1) * DIM]).total_cmp(&dot(&cent[b * DIM..(b + 1) * DIM]))).unwrap() as i32
+    })
 }
 
 /// HDBSCAN-Cluster auf der aktuellen Karte (`min_cluster_size` leer = automatisch).
 #[tauri::command]
-pub async fn embed_clusters(root: String, min_cluster_size: Option<usize>) -> Result<Clusters, String> {
+pub async fn embed_clusters(app: tauri::AppHandle, root: String, min_cluster_size: Option<usize>) -> Result<Clusters, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let stamp = store_stamp(&root).ok_or("Noch keine Embeddings in diesem Projekt")?;
         let map = std::fs::read(map_path(&root))
@@ -681,7 +837,16 @@ pub async fn embed_clusters(root: String, min_cluster_size: Option<usize>) -> Re
             .and_then(|b| serde_json::from_slice::<MapData>(&b).ok())
             .filter(|m| m.version == MAP_VERSION && m.stamp == stamp)
             .ok_or("Karte ist veraltet – bitte neu berechnen")?;
-        Ok(clusters_from_map(&map, min_cluster_size))
+        let mut c = clusters_from_map(&map, min_cluster_size);
+        // Naechster Cluster ueber die Schwerpunkte, wenn die Matrix zur Karte passt;
+        // sonst bleibt der Weg durch den Minimalbaum.
+        let state = app.state::<EmbedState>();
+        if let Ok(Some(n)) = with_loaded(&state, &root, |l| {
+            (l.stamp == map.stamp && l.rows.len() == map.x.len()).then(|| nearest_centroid(&l.vecs, &c.labels))
+        }) {
+            c.nearest = n;
+        }
+        Ok(c)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -729,6 +894,66 @@ mod tests {
         }
     }
 
+    /// Drei Arten als Dateien a/b/c, je `per` Fenster um eine eigene Richtung im Embedding-Raum.
+    fn synth(files: &[(&str, usize, usize)], seed: u64) -> Loaded {
+        let mut rng = Rng(seed);
+        let (mut rows, mut vecs) = (vec![], vec![]);
+        for &(name, cls, count) in files {
+            for k in 0..count {
+                let mut v: Vec<f32> = (0..DIM).map(|d| if d % 3 == cls { 1.0 } else { 0.0 } + rng.gauss() * 0.3).collect();
+                let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                v.iter_mut().for_each(|x| *x /= norm);
+                vecs.extend(v);
+                rows.push(crate::embeddings::RowRef { path: name.into(), start: k as f64 * 5.0 });
+            }
+        }
+        Loaded { root: String::new(), stamp: seed, rows, vecs }
+    }
+
+    #[test]
+    fn update_places_new_windows_without_moving_old_ones() {
+        let l0 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("c.wav", 2, 100)], 1);
+        let old = assemble(&l0, project_2d(&l0.vecs, l0.rows.len(), DIM, &|_, _| {}));
+        let centroid = |m: &MapData, f: &str| {
+            let pts: Vec<usize> = (0..m.x.len()).filter(|&i| m.files[m.file[i] as usize] == f).collect();
+            let c = pts.iter().fold((0.0, 0.0), |a, &i| (a.0 + m.x[i], a.1 + m.y[i]));
+            (c.0 / pts.len() as f32, c.1 / pts.len() as f32)
+        };
+        // 10 neue Fenster der Art b in einer neuen Datei (sortiert zwischen b und c)
+        let l1 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100), ("b2.wav", 1, 10), ("c.wav", 2, 100)], 1);
+        let new = update_map(&old, &l1).expect("kleine Aenderung → inkrementell");
+        assert_eq!(new.placed_new, 10);
+        assert_eq!(new.x.len(), 310);
+        for f in ["a.wav", "b.wav", "c.wav"] {
+            assert_eq!(centroid(&new, f), centroid(&old, f), "{f}: alte Punkte bleiben liegen");
+        }
+        let (bx, by) = centroid(&old, "b.wav");
+        let d2 = |(x, y): (f32, f32), (u, v): (f32, f32)| (x - u).powi(2) + (y - v).powi(2);
+        for i in (0..new.x.len()).filter(|&i| new.files[new.file[i] as usize] == "b2.wav") {
+            let p = (new.x[i], new.y[i]);
+            assert!(d2(p, (bx, by)) < d2(p, centroid(&old, "a.wav")) && d2(p, (bx, by)) < d2(p, centroid(&old, "c.wav")));
+        }
+        // Cluster der neuen Punkte = Cluster von b
+        let cl = clusters_from_map(&new, Some(20));
+        let b_label = cl.labels[(0..new.x.len()).find(|&i| new.files[new.file[i] as usize] == "b.wav" && cl.labels[i] >= 0).unwrap()];
+        let b2: Vec<i32> = (0..new.x.len()).filter(|&i| new.files[new.file[i] as usize] == "b2.wav").map(|i| cl.nearest[i]).collect();
+        assert!(b2.iter().all(|&c| c == b_label), "{b2:?} vs {b_label}");
+        // Ein Drittel weg → zu viel, neues Layout
+        let l2 = synth(&[("a.wav", 0, 100), ("b.wav", 1, 100)], 1);
+        assert!(update_map(&old, &l2).is_none());
+    }
+
+    #[test]
+    fn nearest_centroid_assigns_by_direction() {
+        let l = synth(&[("a.wav", 0, 20), ("b.wav", 1, 20)], 3);
+        // je 15 im Cluster, Rest Rauschen
+        let labels: Vec<i32> = (0..40).map(|i| if i % 20 < 15 { (i / 20) as i32 } else { -1 }).collect();
+        let near = nearest_centroid(&l.vecs, &labels);
+        let want: Vec<i32> = (0..40).map(|i| (i / 20) as i32).collect();
+        assert_eq!(near, want);
+        assert_eq!(nearest_centroid(&l.vecs, &vec![-1; 40]), vec![-1; 40]);
+    }
+
     #[test]
     fn jacobi_matches_known_eigenvalues() {
         let (vals, _) = jacobi_eigen(&[2.0, 1.0, 1.0, 2.0], 2);
@@ -761,7 +986,20 @@ mod tests {
     #[ignore]
     fn real_store() {
         let root = std::env::var("EMBED_MAP_DIR").unwrap();
-        let m = build_map(&EmbedState::default(), &root, true, &|_, _| {}).unwrap();
+        let t0 = std::time::Instant::now();
+        let last = std::sync::Mutex::new("");
+        let m = build_map(&EmbedState::default(), &root, true, &|phase, _| {
+            let mut l = last.lock().unwrap();
+            if *l != phase {
+                eprintln!("{:7.1} s  {phase}", t0.elapsed().as_secs_f64());
+                *l = phase;
+            }
+        })
+        .unwrap();
+        eprintln!("{:7.1} s  fertig ({} Punkte, Layout auf {})", t0.elapsed().as_secs_f64(), m.x.len(), m.layout_points);
+        let t1 = std::time::Instant::now();
+        let _ = clusters_from_map(&m, None);
+        eprintln!("HDBSCAN aus dem Cache: {:.2} s", t1.elapsed().as_secs_f64());
         assert_eq!(m.x.len(), m.start.len());
         for mcs in [3, 8, 12, 20] {
             let c = clusters_from_map(&m, Some(mcs));
@@ -782,6 +1020,21 @@ mod tests {
             }
             eprintln!("  #{}: {by:?}", cl.id);
         }
+        // Rauschen → naechster Cluster: passt die Art (oberster Ordner) zur Mehrheit des Clusters?
+        let top = |i: usize| m.files[m.file[i] as usize].split('/').next().unwrap();
+        let major: Vec<&str> = c
+            .clusters
+            .iter()
+            .map(|cl| {
+                let mut by: std::collections::BTreeMap<&str, usize> = Default::default();
+                c.labels.iter().enumerate().filter(|(_, &l)| l == cl.id).for_each(|(i, _)| *by.entry(top(i)).or_default() += 1);
+                by.into_iter().max_by_key(|x| x.1).map_or("", |x| x.0)
+            })
+            .collect();
+        let noise: Vec<usize> = (0..m.x.len()).filter(|&i| c.labels[i] < 0).collect();
+        let assigned = noise.iter().filter(|&&i| c.nearest[i] >= 0).count();
+        let right = noise.iter().filter(|&&i| c.nearest[i] >= 0 && major[c.nearest[i] as usize] == top(i)).count();
+        eprintln!("Rauschen {}: {} zugeordnet, davon {} zur Mehrheitsart des Clusters ({:.2})", noise.len(), assigned, right, right as f64 / assigned.max(1) as f64);
         eprintln!("{} Punkte, {} Dateien -> {}", m.x.len(), m.files.len(), map_path(&root).display());
     }
 }
